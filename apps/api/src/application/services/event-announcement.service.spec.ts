@@ -167,6 +167,7 @@ describe('EventAnnouncementService', () => {
           ...baseEvent,
           name: 'Exec Meeting',
           required_role_ids: ['role-officer'],
+          others_invited: false,
         });
         mockMemberRepo.findByChapter.mockResolvedValue([
           { user_id: 'user-officer', role_ids: ['role-officer'] },
@@ -179,6 +180,7 @@ describe('EventAnnouncementService', () => {
           start_time: baseEvent.start_time,
           end_time: baseEvent.end_time,
           required_role_ids: ['role-officer'],
+          others_invited: false,
         });
 
         expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
@@ -195,6 +197,7 @@ describe('EventAnnouncementService', () => {
           ...baseEvent,
           name: 'Exec Meeting',
           required_role_ids: ['role-officer'],
+          others_invited: false,
           location: 'New Location',
         });
         mockMemberRepo.findByChapter.mockResolvedValue([
@@ -369,12 +372,37 @@ describe('EventAnnouncementService', () => {
             end_time: baseEvent.end_time,
             created_by: 'user-1',
             required_role_ids: ['role-officer'],
+            others_invited: false,
             ...chatKeys,
           }),
         ).rejects.toThrow(BadRequestException);
 
         expect(mockEventRepo.create).not.toHaveBeenCalled();
         expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+      });
+
+      // An event required for one role but open to everyone else hides
+      // nothing from the channel, so its card may post.
+      it('posts a card for an event required for a role and open to everyone else', async () => {
+        mockEventRepo.create.mockResolvedValue(baseEvent);
+        mockUserRepo.findByIds.mockResolvedValue([
+          { id: 'user-1', display_name: 'Alice' },
+        ]);
+
+        await service.create({
+          ...chatInput,
+          required_role_ids: ['role-officer'],
+          others_invited: true,
+        });
+
+        expect(mockChatService.sendMessage).toHaveBeenCalledTimes(1);
+      });
+
+      it('refuses a card for an event that leaves a role out', async () => {
+        await expect(
+          service.create({ ...chatInput, excluded_role_ids: ['role-new'] }),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockEventRepo.create).not.toHaveBeenCalled();
       });
 
       it('still posts a card when required_role_ids is an empty array', async () => {
@@ -399,6 +427,7 @@ describe('EventAnnouncementService', () => {
         mockEventRepo.create.mockResolvedValue({
           ...baseEvent,
           required_role_ids: ['role-officer'],
+          others_invited: false,
         });
 
         await service.create({
@@ -407,6 +436,7 @@ describe('EventAnnouncementService', () => {
           start_time: baseEvent.start_time,
           end_time: baseEvent.end_time,
           required_role_ids: ['role-officer'],
+          others_invited: false,
         });
 
         expect(mockEventRepo.create).toHaveBeenCalledTimes(1);

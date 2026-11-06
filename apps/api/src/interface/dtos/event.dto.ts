@@ -78,11 +78,42 @@ export class CreateEventDto {
   @IsIn(RECURRENCE_RULES)
   recurrence_rule?: string;
 
-  @ApiPropertyOptional({ type: [String] })
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Roles that must attend. See `others_invited` for members holding none of the listed roles.',
+  })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   required_role_ids?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Roles invited but not required.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  optional_role_ids?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  excluded_role_ids?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      'Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is true unless `required_role_ids` is non-empty, which keeps the older "only these roles" meaning for a caller that sends no other attendance field.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  others_invited?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -111,7 +142,7 @@ export class CreateEventDto {
 
   @ApiPropertyOptional({
     description:
-      'When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when `required_role_ids` is non-empty, on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both target roles and post one. (`PATCH` can still add targeting to an event whose card already posted; that card is left as-is.)',
+      'When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when the event keeps anyone out (`others_invited` false, including its default when `required_role_ids` is non-empty, or a non-empty `excluded_role_ids`), on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both limit its audience and post one. (`PATCH` can still limit the audience of an event whose card already posted; that card is left as-is.)',
   })
   @IsOptional()
   @IsUUID()
@@ -119,7 +150,7 @@ export class CreateEventDto {
 
   @ApiPropertyOptional({
     description:
-      'Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when `required_role_ids` is non-empty, even without `channel_id` — see that field.',
+      'Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when the event keeps anyone out, even without `channel_id` — see that field.',
   })
   @IsOptional()
   @IsUUID()
@@ -177,6 +208,15 @@ export class CreateEventResponseDto implements Event {
 
   @ApiProperty({ type: [String], nullable: true })
   required_role_ids: string[] | null;
+
+  @ApiProperty({ type: [String], nullable: true })
+  optional_role_ids: string[] | null;
+
+  @ApiProperty({ type: [String], nullable: true })
+  excluded_role_ids: string[] | null;
+
+  @ApiProperty()
+  others_invited: boolean;
 
   @ApiProperty({ type: String, nullable: true })
   notes: string | null;
@@ -266,11 +306,42 @@ export class UpdateEventDto {
   @IsIn(RECURRENCE_RULES)
   recurrence_rule?: string;
 
-  @ApiPropertyOptional({ type: [String] })
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Roles that must attend. See `others_invited` for members holding none of the listed roles.',
+  })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   required_role_ids?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Roles invited but not required.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  optional_role_ids?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  excluded_role_ids?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      'Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored, unless `required_role_ids` is sent: then it becomes true for an empty list and false otherwise, the older "only these roles" meaning.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  others_invited?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()

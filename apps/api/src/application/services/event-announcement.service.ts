@@ -7,7 +7,11 @@ import { Event } from '#domain/entities/event.entity';
 import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
 import { ChatService } from './chat.service';
-import { hasRequiredRole } from './event-role-targeting';
+import { isInvited } from './event-role-targeting';
+import {
+  eventLimitsAudience,
+  type EventAttendanceFields,
+} from '@repo/validation';
 import type { CreateEventInput, UpdateEventInput } from './event-input';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
@@ -35,7 +39,7 @@ export class EventAnnouncementService {
    */
   async notifyEventCreated(chapterId: string, event: Event): Promise<void> {
     try {
-      await this.notifyEligibleMembers(chapterId, event.required_role_ids, {
+      await this.notifyEligibleMembers(chapterId, event, {
         title: 'New Event',
         body: `${event.name} has been scheduled`,
         priority: 'SILENT',
@@ -161,7 +165,7 @@ export class EventAnnouncementService {
       return;
     }
     try {
-      await this.notifyEligibleMembers(chapterId, updated.required_role_ids, {
+      await this.notifyEligibleMembers(chapterId, updated, {
         title: 'Event Updated',
         body: `${updated.name} has been updated`,
         priority: 'NORMAL',
@@ -179,24 +183,24 @@ export class EventAnnouncementService {
   }
 
   /**
-   * Chapter-wide notification, unless the event is role-targeted — then only
-   * members whose `role_ids` intersect `required_role_ids` are notified.
+   * Chapter-wide notification, unless the event leaves anyone out by role —
+   * then only the members it invites (`isInvited`) are notified.
    * Without this, `notifyChapter`'s "New Event"/"Event Updated" push still
    * named a role-targeted event (and deep-linked to it) for every member,
    * even one who now correctly 404s reading the event itself (#1463).
    */
   private async notifyEligibleMembers(
     chapterId: string,
-    requiredRoleIds: string[] | null | undefined,
+    event: EventAttendanceFields,
     payload: NotifyPayload,
   ): Promise<void> {
-    if (!requiredRoleIds || requiredRoleIds.length === 0) {
+    if (!eventLimitsAudience(event)) {
       await this.notificationService.notifyChapter(chapterId, payload);
       return;
     }
     const members = await this.memberRepo.findByChapter(chapterId);
     const eligible = members.filter((member) =>
-      hasRequiredRole(requiredRoleIds, member.role_ids),
+      isInvited(event, member.role_ids),
     );
     await Promise.allSettled(
       eligible.map((member) =>

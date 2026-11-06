@@ -22,7 +22,11 @@ export interface SweepUpcomingEventRow {
   name: string;
   start_time: string;
   is_mandatory: boolean;
+  /** Attendance by role (`eventAttendanceFor`): who the reminder reaches. */
   required_role_ids: string[] | null;
+  optional_role_ids: string[] | null;
+  excluded_role_ids: string[] | null;
+  others_invited: boolean;
 }
 
 export interface SweepInvoiceRow {

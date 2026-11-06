@@ -14,7 +14,8 @@ import { EventSeriesService } from './event-series.service';
 import { EventAnnouncementService } from './event-announcement.service';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { toRRuleLine } from '@repo/validation';
-import { hasRequiredRole } from './event-role-targeting';
+import { isInvited } from './event-role-targeting';
+import { eventLimitsAudience } from '@repo/validation';
 import { normalizeCheckInZone } from './event-input';
 import type {
   CreateEventInput,
@@ -39,9 +40,9 @@ export class EventService {
   ) {}
 
   /**
-   * `spec/behavior/events.md` § Role-based required attendance: a role-targeted
-   * event is visible only to members who hold one of its `required_role_ids`
-   * (an untargeted event, `null`/`[]`, is visible chapter-wide) — **or** who
+   * `spec/behavior/events.md` § Attendance by role: an event is visible only
+   * to the members it invites (`isInvited`; an event that leaves nobody out is
+   * visible chapter-wide) — **or** to members who
    * hold `events:update` (which covers the wildcard President role too, per
    * `RbacService.memberHasAnyPermission`). Without that exemption, an officer
    * who can `PATCH`/`DELETE` any event but doesn't hold the specific targeted
@@ -58,9 +59,7 @@ export class EventService {
     chapterId: string,
     viewerId: string,
   ): Promise<boolean> {
-    if (!event.required_role_ids || event.required_role_ids.length === 0) {
-      return true;
-    }
+    if (!eventLimitsAudience(event)) return true;
     if (
       await this.rbac.memberHasAnyPermission(chapterId, viewerId, [
         SystemPermissions.EVENTS_UPDATE,
@@ -73,7 +72,7 @@ export class EventService {
       chapterId,
     );
     if (!member) return false;
-    return hasRequiredRole(event.required_role_ids, member.role_ids);
+    return isInvited(event, member.role_ids);
   }
 
   async findById(
@@ -100,9 +99,7 @@ export class EventService {
     // Skip the permission/member lookups entirely for the common case — a
     // chapter with no role-targeted events — rather than paying for them on
     // every list call.
-    const hasTargetedEvents = events.some(
-      (event) => event.required_role_ids && event.required_role_ids.length > 0,
-    );
+    const hasTargetedEvents = events.some(eventLimitsAudience);
     if (!hasTargetedEvents) return events;
     if (
       await this.rbac.memberHasAnyPermission(chapterId, viewerId, [
@@ -116,9 +113,7 @@ export class EventService {
       chapterId,
     );
     const memberRoleIds = member?.role_ids ?? [];
-    return events.filter((event) =>
-      hasRequiredRole(event.required_role_ids, memberRoleIds),
-    );
+    return events.filter((event) => isInvited(event, memberRoleIds));
   }
 
   async create(input: CreateEventInput): Promise<CreateEventResult> {
@@ -171,14 +166,16 @@ export class EventService {
     // `EventAnnouncementService.tryPostEventCard`), but
     // accepting one piecemeal would make the guard depend on which key a
     // caller happened to omit.
-    if (
-      (input.required_role_ids?.length ?? 0) > 0 &&
-      (input.channel_id || input.client_message_id)
-    ) {
+    const others_invited = othersInvitedOf(input) ?? true;
+    const limitsAudience = eventLimitsAudience({
+      others_invited,
+      excluded_role_ids: input.excluded_role_ids,
+    });
+    if (limitsAudience && (input.channel_id || input.client_message_id)) {
       throw new BadRequestException(
         'A role-targeted event cannot post a chat card: the card would show the ' +
           'event to everyone in the channel, including members its ' +
-          'required_role_ids exclude. Create it without channel_id/client_message_id.',
+          'its attendance by role leaves out. Create it without channel_id/client_message_id.',
       );
     }
 
@@ -194,6 +191,9 @@ export class EventService {
       recurrence_rule: input.recurrence_rule ?? null,
       parent_event_id: null,
       required_role_ids: input.required_role_ids ?? null,
+      optional_role_ids: input.optional_role_ids ?? null,
+      excluded_role_ids: input.excluded_role_ids ?? null,
+      others_invited,
       notes: input.notes ?? null,
       check_in_zone: normalizeCheckInZone(input.check_in_zone) ?? null,
       check_in_zone_name: input.check_in_zone_name ?? null,
@@ -245,14 +245,22 @@ export class EventService {
       }
     }
 
+    // A caller that sends `required_role_ids` without `others_invited` means
+    // the older "only these roles" targeting (`othersInvitedOf`).
+    const othersInvited = othersInvitedOf(input);
+    const patch: UpdateEventInput =
+      othersInvited === undefined
+        ? input
+        : { ...input, others_invited: othersInvited };
+
     if (scope === 'series') {
       // Hand on the row already read rather than reading it twice.
       const target = existing ?? (await this.findById(id, chapterId));
-      return this.series.updateSeries(target, chapterId, input);
+      return this.series.updateSeries(target, chapterId, patch);
     }
 
     const updated = await this.eventRepo.update(id, chapterId, {
-      ...input,
+      ...patch,
       // Spread first, then overwrite: `normalizeCheckInZone` returns `undefined`
       // for an absent key, which the repository's partial update ignores, so an
       // update that never mentions the zone leaves it untouched.
@@ -261,7 +269,7 @@ export class EventService {
         : {}),
     });
 
-    await this.announcements.notifyEventUpdated(chapterId, updated, input);
+    await this.announcements.notifyEventUpdated(chapterId, updated, patch);
 
     return updated;
   }
@@ -343,4 +351,21 @@ export class EventService {
 
     return lines.join('\r\n');
   }
+}
+
+/**
+ * `others_invited` as a write means it: sent, it is taken as is. Omitted
+ * beside `required_role_ids`, it keeps the older meaning of that field, where
+ * a non-empty list was the whole audience (`spec/behavior/events.md`
+ * § Attendance by role, "Older callers"): false for a non-empty list, true for
+ * an empty one. Omitted with neither, `undefined`: a create defaults it to
+ * true, an update leaves it as stored.
+ */
+export function othersInvitedOf(input: {
+  others_invited?: boolean;
+  required_role_ids?: string[] | null;
+}): boolean | undefined {
+  if (input.others_invited !== undefined) return input.others_invited;
+  if (input.required_role_ids === undefined) return undefined;
+  return (input.required_role_ids?.length ?? 0) === 0;
 }

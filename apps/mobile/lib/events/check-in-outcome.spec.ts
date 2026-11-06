@@ -97,7 +97,10 @@ describe("checkInFailure", () => {
 
     it("marks a refusal of the code itself", () => {
       expect(
-        attemptOnly({ statusCode: 403, message: CHECK_IN_CODE_REFUSED_MESSAGE }),
+        attemptOnly({
+          statusCode: 403,
+          message: CHECK_IN_CODE_REFUSED_MESSAGE,
+        }),
       ).toBe(true);
       // The API's validation of the scanned token: a QR that is ours in
       // shape but carries no code the server could check.
@@ -152,7 +155,10 @@ describe("checkInFailure", () => {
       ).toBe(false);
       expect(attemptOnly(new Error(CHECK_IN_LOCATION_DENIED_COPY))).toBe(false);
       expect(
-        attemptOnly({ statusCode: 400, message: ["lat must be a latitude string or number"] }),
+        attemptOnly({
+          statusCode: 400,
+          message: ["lat must be a latitude string or number"],
+        }),
       ).toBe(false);
       expect(attemptOnly({ statusCode: 404, message: "Event not found" })).toBe(
         false,

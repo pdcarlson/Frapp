@@ -828,12 +828,36 @@ export {
 // series cannot describe different meetings.
 export {
   RECURRENCE_RULES,
+  RECURRENCE_REPEAT_LABELS,
   RECURRENCE_RULE_LABELS,
   isRecurrenceRule,
   recurrenceChildCount,
+  recurrenceLastStart,
+  recurrenceMeetingCount,
   toRRuleLine,
 } from "./recurrence";
 export type { RecurrenceRule } from "./recurrence";
+// Event attendance by role: who an event is for, read the same way by the
+// API's read gate, check-in, auto-absent and pushes, and by both editors.
+export {
+  EVENT_ATTENDANCE_LABELS,
+  EVENT_ATTENDANCE_STATUSES,
+  attendanceFromEvent,
+  attendanceToWire,
+  describeAttendance,
+  emptyAttendanceDraft,
+  eventAttendanceFor,
+  eventDefaultAttendance,
+  eventLimitsAudience,
+  eventRequiresAnyone,
+} from "./event-attendance";
+export type {
+  EventAttendance,
+  EventAttendanceDraft,
+  EventAttendanceFields,
+  EventAttendanceStatus,
+  EventAttendanceWire,
+} from "./event-attendance";
 export { MISSING_SIGNED_UPLOAD, readSignedUpload } from "./signed-upload";
 
 export {

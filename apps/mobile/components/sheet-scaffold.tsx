@@ -8,7 +8,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
 import { useBackToClose } from "@/lib/overlay";
-import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { fieldTypeRole, tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { CloseGlyph } from "@/components/control-glyphs";
 import { IconButton } from "@/components/icon-button";
 
@@ -369,8 +369,15 @@ export function sheetFieldStyles(tokens: SignetTokens, accent: string) {
       paddingHorizontal: tokens.spacing.md,
       paddingVertical: tokens.spacing.sm,
       minHeight: tokens.touch.minimum,
-      ...typeRole(tokens.typography.role.body),
+      // Single-line: no lineHeight, or iOS sits the text low (`fieldTypeRole`).
+      // A multiline field adds `fieldMultilineText`.
+      ...fieldTypeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
+    },
+    /** What a multiline field adds to `field`: body's leading, text from the top. */
+    fieldMultilineText: {
+      ...typeRole(tokens.typography.role.body),
+      textAlignVertical: "top" as const,
     },
     fieldFocused: {
       borderColor: accent,

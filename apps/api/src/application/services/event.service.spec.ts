@@ -56,6 +56,7 @@ describe('EventService', () => {
       ...baseEvent,
       id: 'evt-targeted',
       required_role_ids: ['role-officer'],
+      others_invited: false,
     };
 
     describe('findByChapter', () => {
@@ -103,6 +104,39 @@ describe('EventService', () => {
         const result = await service.findByChapter('ch-1', 'user-1');
 
         expect(result).toEqual([]);
+      });
+
+      // Attendance by role: "required for officers, optional for everyone
+      // else" names a role without hiding the event from anyone.
+      it('keeps an event required for one role when everyone else is invited', async () => {
+        const mixed: Event = {
+          ...baseEvent,
+          id: 'evt-mixed',
+          required_role_ids: ['role-officer'],
+          others_invited: true,
+        };
+        mockEventRepo.findByChapter.mockResolvedValue([mixed]);
+
+        const result = await service.findByChapter('ch-1', 'user-1');
+
+        expect(result).toEqual([mixed]);
+        expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+      });
+
+      it('drops an event for a viewer whose only role is not invited', async () => {
+        const excluding: Event = {
+          ...baseEvent,
+          id: 'evt-excluding',
+          excluded_role_ids: ['role-new-member'],
+        };
+        mockEventRepo.findByChapter.mockResolvedValue([baseEvent, excluding]);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+          role_ids: ['role-new-member'],
+        });
+
+        const result = await service.findByChapter('ch-1', 'user-1');
+
+        expect(result).toEqual([baseEvent]);
       });
 
       it('treats an empty required_role_ids array as untargeted', async () => {
@@ -236,6 +270,9 @@ describe('EventService', () => {
       recurrence_rule: null,
       parent_event_id: null,
       required_role_ids: null,
+      optional_role_ids: null,
+      excluded_role_ids: null,
+      others_invited: true,
       notes: null,
       check_in_zone: null,
       check_in_zone_name: null,
@@ -398,6 +435,7 @@ describe('EventService', () => {
       mockEventRepo.findById.mockResolvedValue({
         ...baseEvent,
         required_role_ids: ['role-officer'],
+        others_invited: false,
       });
       mockMemberRepo.findByUserAndChapter.mockResolvedValue({
         role_ids: ['role-member'],
@@ -413,6 +451,7 @@ describe('EventService', () => {
         ...baseEvent,
         name: 'Exec Meeting',
         required_role_ids: ['role-officer'],
+        others_invited: false,
       });
       mockMemberRepo.findByUserAndChapter.mockResolvedValue({
         role_ids: ['role-officer'],

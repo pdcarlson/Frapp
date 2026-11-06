@@ -9,17 +9,23 @@ import {
 } from "react-native";
 import {
   BottomSheetModal,
+  BottomSheetScrollView,
   BottomSheetTextInput,
-  BottomSheetView,
 } from "@gorhom/bottom-sheet";
 import DateTimePicker, {
   DateTimePickerAndroid,
 } from "@react-native-community/datetimepicker";
 import { formatWeekdayDay } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
-import { useCreateEvent, usePermissionList } from "@repo/hooks";
-import { canAll } from "@repo/validation";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useCreateEvent, usePermissionList, useRoles } from "@repo/hooks";
+import {
+  RECURRENCE_REPEAT_LABELS,
+  RECURRENCE_RULES,
+  canAll,
+  describeAttendance,
+  isRecurrenceRule,
+} from "@repo/validation";
+import { fieldTypeRole, typeRole, useFrappTheme } from "@/lib/theme";
 import {
   useChapterBranding,
   type ChapterBranding,
@@ -35,11 +41,16 @@ import {
   useSheetClose,
   useSheetVisit,
 } from "@/components/sheet-scaffold";
-import { Toggle } from "@/components/toggle";
+import { FilterChips } from "@/components/filter-chips";
+import { DisclosureGlyph } from "@/components/control-glyphs";
+import { AttendanceSheet } from "@/components/events/attendance-sheet";
+import { roleOptionsFrom } from "@/lib/events/attendance-roles";
 import {
   EVENT_NAME_MAX_LENGTH,
   emptyEventDraft,
   MINUTE_INTERVAL,
+  moreOptionsSummary,
+  repeatCaption,
   resolveEventTimes,
   shiftEnd,
   validateNewEvent,
@@ -62,10 +73,12 @@ import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
  *
  * ## What it asks
  *
- * Name, start, end, place, points and Mandatory. The rest of the web editor
- * (description, recurrence, role targeting, the check-in zone) stays there,
- * as it does for the `/event` chat command; `lib/events/create-event.ts`
- * holds the rules. Mandatory starts off, as `/event` creates it: a mandatory
+ * It opens simple: name, start, end and place, the four things every event
+ * needs. "More options" holds the rest, and says in one line what they are
+ * set to while closed: who's coming (by role, in its own stacked sheet,
+ * `attendance-sheet.tsx`), points, Repeat and a description. The check-in
+ * zone stays on the web editor. `lib/events/create-event.ts` holds the rules.
+ * Attendance starts optional for everyone, as `/event` creates it: a required
  * event marks everyone who misses it absent, so it is a choice, not a default.
  *
  * ## The platform's own pickers
@@ -122,10 +135,20 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
       useSheetVisit(ref);
     const createEvent = useCreateEvent();
+    const attendanceRef = useRef<BottomSheetModal>(null);
+    const rolesQuery = useRoles();
+    const roleName = useMemo(() => {
+      const byId = new Map(
+        roleOptionsFrom(rolesQuery.data).map((role) => [role.id, role.name]),
+      );
+      return (id: string) => byId.get(id);
+    }, [rolesQuery.data]);
 
     const at = useMemo(() => now ?? new Date(), [now]);
     const [draft, setDraft] = useState<NewEventDraft>(emptyEventDraft);
-    const [focused, setFocused] = useState<"name" | "location" | null>(null);
+    const [focused, setFocused] = useState<
+      "name" | "location" | "points" | "description" | null
+    >(null);
     // Written by Create; a field's line goes when that field is edited.
     const [errors, setErrors] = useState<NewEventErrors>({});
     const [submitFailed, setSubmitFailed] = useState(false);
@@ -191,6 +214,10 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       const result = validateNewEvent({ ...draft, start, end }, new Date());
       if (!result.ok) {
         setErrors(result.errors);
+        // An error inside the closed options would otherwise say nothing.
+        if (result.errors.points || result.errors.attendance) {
+          setDraft((previous) => ({ ...previous, showMore: true }));
+        }
         return;
       }
       sending.current = true;
@@ -218,151 +245,294 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       });
     }
 
+    const repeatNote = repeatCaption(start, draft.recurrenceRule);
+
     return (
-      <BottomSheetModal
-        ref={ref}
-        enableDynamicSizing
-        keyboardBehavior="interactive"
-        backgroundStyle={backgroundStyle}
-        handleComponent={SheetGrabber}
-        backdropComponent={SheetScrim}
-        onAnimate={onAnimate}
-        onDismiss={closed}
-      >
-        <SheetBackToClose onClose={closeSheet} />
-        <BottomSheetView onAccessibilityEscape={closeSheet} style={styles.body}>
-          <SheetHeader
-            title="New event"
-            onCancel={cancel}
-            cancelDisabled={pending}
-          />
-
-          <View
-            style={[styles.ring, focused === "name" ? styles.ringActive : null]}
+      <>
+        <BottomSheetModal
+          ref={ref}
+          enableDynamicSizing
+          keyboardBehavior="interactive"
+          backgroundStyle={backgroundStyle}
+          handleComponent={SheetGrabber}
+          backdropComponent={SheetScrim}
+          onAnimate={onAnimate}
+          onDismiss={closed}
+        >
+          <SheetBackToClose onClose={closeSheet} />
+          <BottomSheetScrollView
+            onAccessibilityEscape={closeSheet}
+            contentContainerStyle={styles.body}
+            keyboardShouldPersistTaps="handled"
           >
-            <BottomSheetTextInput
-              value={draft.name}
-              onChangeText={(name) => update({ name }, ["name"])}
-              onFocus={() => setFocused("name")}
-              onBlur={() => setFocused(null)}
-              editable={!pending}
-              placeholder="Event name"
-              placeholderTextColor={tokens.color.text.muted}
-              accessibilityLabel="Event name"
-              maxLength={EVENT_NAME_MAX_LENGTH}
-              style={[
-                styles.field,
-                focused === "name" ? styles.fieldFocused : null,
-                errors.name ? styles.fieldError : null,
-              ]}
+            <SheetHeader
+              title="New event"
+              onCancel={cancel}
+              cancelDisabled={pending}
             />
-          </View>
-          {errors.name ? <Text style={styles.error}>{errors.name}</Text> : null}
 
-          <View style={styles.group}>
-            <WhenRow
-              label="Starts"
-              value={start}
-              now={at}
-              minimumDate={at}
-              disabled={pending}
-              onChange={setStart}
-            />
-            <View style={styles.groupDivider} />
-            <WhenRow
-              label="Ends"
-              value={end}
-              now={at}
-              minimumDate={start}
-              disabled={pending}
-              onChange={setEnd}
-            />
-          </View>
-          {errors.start ? (
-            <Text style={styles.error}>{errors.start}</Text>
-          ) : null}
-          {errors.end ? <Text style={styles.error}>{errors.end}</Text> : null}
-
-          <View
-            style={[
-              styles.ring,
-              focused === "location" ? styles.ringActive : null,
-            ]}
-          >
-            <BottomSheetTextInput
-              value={draft.location}
-              onChangeText={(location) => update({ location }, [])}
-              onFocus={() => setFocused("location")}
-              onBlur={() => setFocused(null)}
-              editable={!pending}
-              placeholder="Location (optional)"
-              placeholderTextColor={tokens.color.text.muted}
-              accessibilityLabel="Location"
-              style={[
-                styles.field,
-                focused === "location" ? styles.fieldFocused : null,
-              ]}
-            />
-          </View>
-
-          <View style={styles.splitRow}>
             <View
               style={[
-                styles.field,
-                styles.splitField,
-                errors.points ? styles.fieldError : null,
+                styles.ring,
+                focused === "name" ? styles.ringActive : null,
               ]}
             >
-              <Text style={[styles.pointsSign, { color: brand.accent }]}>
-                +
-              </Text>
               <BottomSheetTextInput
-                value={draft.pointsInput}
-                onChangeText={(pointsInput) =>
-                  update({ pointsInput }, ["points"])
-                }
+                value={draft.name}
+                onChangeText={(name) => update({ name }, ["name"])}
+                onFocus={() => setFocused("name")}
+                onBlur={() => setFocused(null)}
                 editable={!pending}
-                placeholder="0"
+                placeholder="Event name"
                 placeholderTextColor={tokens.color.text.muted}
-                accessibilityLabel="Points for attending"
-                keyboardType="number-pad"
-                style={styles.pointsInput}
-              />
-              <Text style={styles.fieldCaption}>pts</Text>
-            </View>
-            <View style={[styles.field, styles.splitField]}>
-              <Text style={styles.fieldValue}>Mandatory</Text>
-              <Toggle
-                value={draft.isMandatory}
-                onValueChange={(isMandatory) => update({ isMandatory }, [])}
-                accessibilityLabel="Mandatory"
+                accessibilityLabel="Event name"
+                maxLength={EVENT_NAME_MAX_LENGTH}
+                style={[
+                  styles.field,
+                  focused === "name" ? styles.fieldFocused : null,
+                  errors.name ? styles.fieldError : null,
+                ]}
               />
             </View>
-          </View>
-          {errors.points ? (
-            <Text style={styles.error}>{errors.points}</Text>
-          ) : null}
+            {errors.name ? (
+              <Text style={styles.error}>{errors.name}</Text>
+            ) : null}
 
-          {refusal ? <Text style={styles.error}>{refusal}</Text> : null}
-          {submitFailed ? (
-            <Text style={styles.error}>
-              That didn&apos;t save. Your event is still here, so try again.
-            </Text>
-          ) : null}
+            <View style={styles.group}>
+              <WhenRow
+                label="Starts"
+                value={start}
+                now={at}
+                minimumDate={at}
+                disabled={pending}
+                onChange={setStart}
+              />
+              <View style={styles.groupDivider} />
+              <WhenRow
+                label="Ends"
+                value={end}
+                now={at}
+                minimumDate={start}
+                disabled={pending}
+                onChange={setEnd}
+              />
+            </View>
+            {errors.start ? (
+              <Text style={styles.error}>{errors.start}</Text>
+            ) : null}
+            {errors.end ? <Text style={styles.error}>{errors.end}</Text> : null}
 
-          <SheetPrimaryButton
-            label={pending ? "Creating…" : "Create event"}
-            onPress={submit}
-            disabled={!canSubmit}
-            accessibilityHint={refusal ?? undefined}
-            accent={brand.accent}
-            onAccent={tokens.color.gold.onHouse}
-          />
-        </BottomSheetView>
-      </BottomSheetModal>
+            <View
+              style={[
+                styles.ring,
+                focused === "location" ? styles.ringActive : null,
+              ]}
+            >
+              <BottomSheetTextInput
+                value={draft.location}
+                onChangeText={(location) => update({ location }, [])}
+                onFocus={() => setFocused("location")}
+                onBlur={() => setFocused(null)}
+                editable={!pending}
+                placeholder="Location (optional)"
+                placeholderTextColor={tokens.color.text.muted}
+                accessibilityLabel="Location"
+                style={[
+                  styles.field,
+                  focused === "location" ? styles.fieldFocused : null,
+                ]}
+              />
+            </View>
+
+            <MoreOptionsRow
+              open={draft.showMore}
+              summary={moreOptionsSummary(draft, roleName)}
+              onToggle={() => {
+                Keyboard.dismiss();
+                update({ showMore: !draft.showMore }, []);
+              }}
+            />
+
+            {draft.showMore ? (
+              <View style={styles.more}>
+                <View style={styles.group}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Who's coming: ${describeAttendance(draft.attendance, roleName)}`}
+                    accessibilityHint="Sets who must attend, by role."
+                    accessibilityState={{ disabled: pending }}
+                    disabled={pending}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      attendanceRef.current?.present();
+                    }}
+                    style={styles.optionRow}
+                  >
+                    <Text style={styles.optionLabel}>Who&apos;s coming</Text>
+                    <Text style={styles.optionValue} numberOfLines={1}>
+                      {describeAttendance(draft.attendance, roleName)}
+                    </Text>
+                    <DisclosureGlyph
+                      color={tokens.color.text.muted}
+                      size={16}
+                      direction="right"
+                    />
+                  </Pressable>
+                  <View style={styles.groupDivider} />
+                  <View style={styles.optionRow}>
+                    <Text style={styles.optionLabel}>Points for attending</Text>
+                    <BottomSheetTextInput
+                      value={draft.pointsInput}
+                      onChangeText={(pointsInput) =>
+                        update({ pointsInput }, ["points"])
+                      }
+                      onFocus={() => setFocused("points")}
+                      onBlur={() => setFocused(null)}
+                      editable={!pending}
+                      placeholder="0"
+                      placeholderTextColor={tokens.color.text.muted}
+                      accessibilityLabel="Points for attending"
+                      keyboardType="number-pad"
+                      selectTextOnFocus
+                      style={[
+                        styles.pointsInput,
+                        focused === "points" ? styles.fieldFocused : null,
+                        errors.points ? styles.fieldError : null,
+                      ]}
+                    />
+                  </View>
+                </View>
+                {errors.attendance ? (
+                  <Text style={styles.error}>{errors.attendance}</Text>
+                ) : null}
+                {errors.points ? (
+                  <Text style={styles.error}>{errors.points}</Text>
+                ) : null}
+
+                <Text style={styles.sectionLabel}>Repeat</Text>
+                <FilterChips
+                  chips={REPEAT_CHIPS}
+                  selected={draft.recurrenceRule ?? NEVER}
+                  onSelect={(value) =>
+                    update(
+                      {
+                        recurrenceRule: isRecurrenceRule(value) ? value : null,
+                      },
+                      [],
+                    )
+                  }
+                  accessibilityLabel="Repeat"
+                />
+                {repeatNote ? (
+                  <Text style={styles.caption}>{repeatNote}</Text>
+                ) : null}
+
+                <View
+                  style={[
+                    styles.ring,
+                    focused === "description" ? styles.ringActive : null,
+                  ]}
+                >
+                  <BottomSheetTextInput
+                    value={draft.description}
+                    onChangeText={(description) => update({ description }, [])}
+                    onFocus={() => setFocused("description")}
+                    onBlur={() => setFocused(null)}
+                    editable={!pending}
+                    placeholder="Description (optional)"
+                    placeholderTextColor={tokens.color.text.muted}
+                    accessibilityLabel="Description"
+                    multiline
+                    style={[
+                      styles.field,
+                      styles.fieldMultiline,
+                      focused === "description" ? styles.fieldFocused : null,
+                    ]}
+                  />
+                </View>
+              </View>
+            ) : null}
+
+            {refusal ? <Text style={styles.error}>{refusal}</Text> : null}
+            {submitFailed ? (
+              <Text style={styles.error}>
+                That didn&apos;t save. Your event is still here, so try again.
+              </Text>
+            ) : null}
+
+            <SheetPrimaryButton
+              label={pending ? "Creating…" : "Create event"}
+              onPress={submit}
+              disabled={!canSubmit}
+              accessibilityHint={refusal ?? undefined}
+              accent={brand.accent}
+              onAccent={tokens.color.gold.onHouse}
+            />
+          </BottomSheetScrollView>
+        </BottomSheetModal>
+
+        <AttendanceSheet
+          ref={attendanceRef}
+          value={draft.attendance}
+          onChange={(attendance) => update({ attendance }, ["attendance"])}
+        />
+      </>
     );
   },
 );
+
+/** The Repeat chips: one-time first, then the rules the API generates. */
+const NEVER = "never";
+const REPEAT_CHIPS = [
+  { value: NEVER, label: "Never" },
+  ...RECURRENCE_RULES.map((rule) => ({
+    value: rule,
+    label: RECURRENCE_REPEAT_LABELS[rule],
+  })),
+];
+
+/**
+ * The row that opens and closes the sheet's further options. Closed, it says
+ * what they are set to, so nothing hidden is a surprise on Create.
+ */
+function MoreOptionsRow({
+  open,
+  summary,
+  onToggle,
+}: {
+  open: boolean;
+  summary: string;
+  onToggle: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={open ? "Fewer options" : `More options: ${summary}`}
+      accessibilityState={{ expanded: open }}
+      onPress={onToggle}
+      style={styles.moreRow}
+    >
+      <View style={styles.moreText}>
+        <Text style={styles.moreLabel}>
+          {open ? "Fewer options" : "More options"}
+        </Text>
+        {open ? null : (
+          <Text style={styles.caption} numberOfLines={1}>
+            {summary}
+          </Text>
+        )}
+      </View>
+      <DisclosureGlyph
+        color={tokens.color.text.mutedForeground}
+        size={18}
+        direction={open ? "up" : "down"}
+      />
+    </Pressable>
+  );
+}
 
 /**
  * One row of the When group: its label, then the day and the time. On iOS
@@ -480,6 +650,10 @@ export function WhenRow({
 
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   const fieldStyles = sheetFieldStyles(tokens, brand.accent);
+  const rowText = {
+    ...typeRole(tokens.typography.role.body),
+    color: tokens.color.text.foreground,
+  };
   return StyleSheet.create({
     body: {
       paddingHorizontal: tokens.spacing.lg,
@@ -494,11 +668,16 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       alignItems: "center",
       gap: tokens.spacing.sm,
     },
+    fieldMultiline: {
+      ...fieldStyles.fieldMultilineText,
+      minHeight: 88,
+    },
     fieldFocused: fieldStyles.fieldFocused,
     fieldError: {
       borderColor: tokens.color.semantic.destructive,
     },
-    // Starts and Ends as one grouped field, the way Calendar sets them.
+    // Starts and Ends as one grouped field, the way Calendar sets them; the
+    // options under "More options" are rows of the same kind of group.
     group: {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
@@ -517,10 +696,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       minHeight: tokens.touch.minimum + tokens.spacing.xs,
       gap: tokens.spacing.sm,
     },
-    whenLabel: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
-    },
+    whenLabel: rowText,
     whenPickers: {
       flexDirection: "row",
       alignItems: "center",
@@ -534,33 +710,63 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       borderRadius: tokens.radius.chip,
       backgroundColor: tokens.color.surface.popover,
     },
-    pillText: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
-    },
-    splitRow: {
+    pillText: rowText,
+    moreRow: {
       flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+      minHeight: tokens.touch.minimum,
+      paddingVertical: tokens.spacing.xs,
+    },
+    moreText: {
+      flex: 1,
+      gap: 2,
+    },
+    moreLabel: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.mutedForeground,
+    },
+    more: {
       gap: tokens.spacing.sm,
     },
-    splitField: {
-      flex: 1,
+    optionRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+      minHeight: tokens.touch.minimum + tokens.spacing.xs,
     },
-    fieldValue: {
+    optionLabel: rowText,
+    optionValue: {
       flex: 1,
+      textAlign: "right",
       ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
+    },
+    // The value sits right, the way Settings sets a number in a row, in a
+    // chip that shows it is editable. Single-line, so no line height: iOS
+    // sits a field's text low inside a taller line box (`fieldTypeRole`).
+    pointsInput: {
+      marginLeft: "auto",
+      minWidth: 64,
+      minHeight: 34,
+      paddingHorizontal: tokens.spacing.sm,
+      paddingVertical: 0,
+      borderRadius: tokens.radius.chip,
+      borderWidth: 1,
+      borderColor: "transparent",
+      backgroundColor: tokens.color.surface.popover,
+      textAlign: "center",
+      ...fieldTypeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },
-    fieldCaption: {
+    sectionLabel: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.mutedForeground,
+      marginTop: tokens.spacing.xs,
+    },
+    caption: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
-    },
-    pointsSign: {
-      ...typeRole(tokens.typography.role.label),
-    },
-    pointsInput: {
-      flex: 1,
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
     },
     error: {
       ...typeRole(tokens.typography.role.caption),

@@ -112,8 +112,7 @@ function refusesTheCode(error: unknown): boolean {
     message.length > 0 &&
     message.every(
       (line) =>
-        typeof line === "string" &&
-        line.startsWith(`${CHECK_IN_TOKEN_FIELD} `),
+        typeof line === "string" && line.startsWith(`${CHECK_IN_TOKEN_FIELD} `),
     )
   );
 }

@@ -13404,10 +13404,29 @@
             "description": "Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY)"
           },
           "required_role_ids": {
+            "description": "Roles that must attend. See `others_invited` for members holding none of the listed roles.",
             "type": "array",
             "items": {
               "type": "string"
             }
+          },
+          "optional_role_ids": {
+            "description": "Roles invited but not required.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excluded_role_ids": {
+            "description": "Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "others_invited": {
+            "type": "boolean",
+            "description": "Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is true unless `required_role_ids` is non-empty, which keeps the older \"only these roles\" meaning for a caller that sends no other attendance field."
           },
           "notes": {
             "type": "string"
@@ -13425,11 +13444,11 @@
           },
           "channel_id": {
             "type": "string",
-            "description": "When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when `required_role_ids` is non-empty, on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both target roles and post one. (`PATCH` can still add targeting to an event whose card already posted; that card is left as-is.)"
+            "description": "When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when the event keeps anyone out (`others_invited` false, including its default when `required_role_ids` is non-empty, or a non-empty `excluded_role_ids`), on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both limit its audience and post one. (`PATCH` can still limit the audience of an event whose card already posted; that card is left as-is.)"
           },
           "client_message_id": {
             "type": "string",
-            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when `required_role_ids` is non-empty, even without `channel_id` — see that field."
+            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when the event keeps anyone out, even without `channel_id` — see that field."
           }
         },
         "required": [
@@ -13490,6 +13509,23 @@
               "type": "string"
             }
           },
+          "optional_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excluded_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "others_invited": {
+            "type": "boolean"
+          },
           "notes": {
             "type": "string",
             "nullable": true
@@ -13528,6 +13564,9 @@
           "recurrence_rule",
           "parent_event_id",
           "required_role_ids",
+          "optional_role_ids",
+          "excluded_role_ids",
+          "others_invited",
           "notes",
           "check_in_zone",
           "check_in_zone_name",
@@ -13563,10 +13602,29 @@
             "description": "Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY)"
           },
           "required_role_ids": {
+            "description": "Roles that must attend. See `others_invited` for members holding none of the listed roles.",
             "type": "array",
             "items": {
               "type": "string"
             }
+          },
+          "optional_role_ids": {
+            "description": "Roles invited but not required.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excluded_role_ids": {
+            "description": "Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "others_invited": {
+            "type": "boolean",
+            "description": "Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored, unless `required_role_ids` is sent: then it becomes true for an empty list and false otherwise, the older \"only these roles\" meaning."
           },
           "notes": {
             "type": "string"

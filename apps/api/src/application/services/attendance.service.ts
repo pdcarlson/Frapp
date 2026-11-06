@@ -15,7 +15,11 @@ import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interf
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import type { EventAttendance } from '#domain/entities/event-attendance.entity';
 import { RbacService } from './rbac.service';
-import { hasRequiredRole } from './event-role-targeting';
+import { attendanceFor } from './event-role-targeting';
+import {
+  eventRequiresAnyone,
+  type EventAttendanceFields,
+} from '@repo/validation';
 import { isValidZone, pointInPolygon } from '#domain/utils/geofence';
 import {
   mintCheckInToken,
@@ -200,9 +204,16 @@ export class AttendanceService {
       }
     }
 
-    // If the event targets specific roles, only members with matching roles can check in.
-    const isRoleTargeted = Boolean(event.required_role_ids?.length);
-    if (isRoleTargeted) {
+    // Attendance by role (`spec/behavior/events.md`): a member the event
+    // doesn't invite can't check in. Read only when some role is listed or
+    // the default leaves anyone out; an untargeted event invites everyone.
+    const listsRoles =
+      (event.required_role_ids?.length ?? 0) > 0 ||
+      (event.optional_role_ids?.length ?? 0) > 0 ||
+      (event.excluded_role_ids?.length ?? 0) > 0 ||
+      event.others_invited === false;
+    let invitedByRole = false;
+    if (listsRoles) {
       const member = await this.memberRepo.findByUserAndChapter(
         userId,
         chapterId,
@@ -211,21 +222,22 @@ export class AttendanceService {
         throw new ForbiddenException('You are not a member of this chapter');
       }
 
-      if (!hasRequiredRole(event.required_role_ids, member.role_ids)) {
+      const attendance = attendanceFor(event, member.role_ids);
+      if (attendance.status === 'not_invited') {
         throw new ForbiddenException(
           'You are not eligible to check in for this event',
         );
       }
+      invitedByRole = attendance.byRole;
     }
 
     // Alumni do not check in to events or accrue attendance points
     // (`spec/behavior/alumni.md`), and the route carries no permission
-    // requirement, so the lifecycle rule is enforced here. A role-targeted
-    // event is an explicit chapter decision about who attends — an
-    // alumni-facing event (homecoming) lists the Alumni role in
-    // `required_role_ids`, and the check above already proved the caller
-    // matches — so the lifecycle rule does not override it.
-    if (!isRoleTargeted && (await this.rbac.isAlumni(chapterId, userId))) {
+    // requirement, so the lifecycle rule is enforced here. An event that
+    // names a role of theirs as required or optional is an explicit chapter
+    // decision about who attends (an alumni homecoming lists the Alumni role),
+    // so the lifecycle rule does not override it.
+    if (!invitedByRole && (await this.rbac.isAlumni(chapterId, userId))) {
       throw new ForbiddenException(
         'Alumni members cannot check in to chapter events',
       );
@@ -314,44 +326,42 @@ export class AttendanceService {
    * differently would push a role-targeted event's name to members who cannot
    * see that event through `GET /v1/events` at all.
    *
-   * - **Role-targeted** (`required_role_ids` non-empty) → members holding an
-   *   intersecting role, alumni included. Targeting names its audience
-   *   explicitly, so nothing is subtracted from it.
-   * - **Mandatory, untargeted** → every member except alumni. Alumni cannot
-   *   check in to a non-targeted event and cannot self-excuse, so including
-   *   them would hand every alumnus a guaranteed ABSENT record on every
-   *   mandatory event.
-   * - **Neither** → `[]`. An optional, untargeted event requires nothing of
-   *   anyone, so it has no required audience.
-   *
-   * Note `required_role_ids` is stored as a non-null empty array when cleared,
-   * so emptiness — not nullness — is the test.
+   * The rule is `eventAttendanceFor` (`spec/behavior/events.md` § Attendance
+   * by role): every member it calls Required, except an alumnus who is
+   * required only by the event's default. Alumni cannot check in to an event
+   * that doesn't name a role of theirs and cannot self-excuse, so including
+   * them would hand every alumnus a guaranteed ABSENT record on every
+   * mandatory event. A role that names them is an explicit decision, so it
+   * holds. An event that requires nobody returns `[]`.
    */
   async resolveRequiredMembers(
     chapterId: string,
-    event: { is_mandatory: boolean; required_role_ids?: string[] | null },
+    event: EventAttendanceFields,
   ): Promise<Awaited<ReturnType<IMemberRepository['findByChapter']>>> {
-    const isRoleTargeted = (event.required_role_ids?.length ?? 0) > 0;
-    if (!event.is_mandatory && !isRoleTargeted) return [];
+    if (!eventRequiresAnyone(event)) return [];
 
     const allMembers = await this.memberRepo.findByChapter(chapterId);
-
-    if (isRoleTargeted) {
-      // `hasRequiredRole` rather than a local intersection: it is the predicate
-      // `GET /v1/events` and search already filter visibility with, and its own
-      // docstring exists to stop a change landing at one call site and not the
-      // other. That matters more here than anywhere — this list decides who is
-      // told an event's *name*, so any drift from the visibility rule is a
-      // disclosure, not a mismatch.
-      return allMembers.filter((m) =>
-        hasRequiredRole(event.required_role_ids, m.role_ids),
-      );
+    // `attendanceFor`, the rule `GET /v1/events` and search filter visibility
+    // with: this list decides who is told an event's *name*, so any drift from
+    // the visibility rule is a disclosure, not a mismatch. A required member
+    // is always an invited one.
+    const required = allMembers
+      .map((m) => ({ m, attendance: attendanceFor(event, m.role_ids) }))
+      .filter(({ attendance }) => attendance.status === 'required');
+    // Only members required by the default can be alumni to drop: a role that
+    // names an alumnus is an explicit decision to hold them to it.
+    if (!required.some(({ attendance }) => !attendance.byRole)) {
+      return required.map(({ m }) => m);
     }
-
     const alumniRoleId = await this.rbac.getAlumniRoleId(chapterId);
-    return alumniRoleId
-      ? allMembers.filter((m) => !m.role_ids.includes(alumniRoleId))
-      : allMembers;
+    return required
+      .filter(
+        ({ m, attendance }) =>
+          attendance.byRole ||
+          !alumniRoleId ||
+          !m.role_ids.includes(alumniRoleId),
+      )
+      .map(({ m }) => m);
   }
 
   async markAutoAbsent(

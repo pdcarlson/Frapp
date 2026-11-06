@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   defaultEventStart,
   emptyEventDraft,
+  moreOptionsSummary,
+  repeatCaption,
   resolveEventTimes,
   shiftEnd,
   validateNewEvent,
@@ -54,7 +56,9 @@ describe("validateNewEvent", () => {
         end: local(9, 1, 30),
         location: "  Great Hall ",
         pointsInput: "25",
-        isMandatory: true,
+        attendance: { everyone: "required", roles: {} },
+        description: " Bring dues forms. ",
+        recurrenceRule: "WEEKLY",
       }),
       AFTERNOON,
     );
@@ -65,8 +69,11 @@ describe("validateNewEvent", () => {
         start_time: local(8, 21).toISOString(),
         end_time: local(9, 1, 30).toISOString(),
         location: "Great Hall",
+        description: "Bring dues forms.",
         point_value: 25,
         is_mandatory: true,
+        others_invited: true,
+        recurrence_rule: "WEEKLY",
       },
     });
   });
@@ -107,6 +114,67 @@ describe("validateNewEvent", () => {
         points: "Points must be a whole number, up to 100,000.",
       },
     });
+  });
+});
+
+describe("attendance by role", () => {
+  it("sends the roles that differ and says who else is invited", () => {
+    const result = validateNewEvent(
+      draft({
+        attendance: {
+          everyone: "optional",
+          roles: { officers: "required", "new-members": "not_invited" },
+        },
+      }),
+      AFTERNOON,
+    );
+    expect(result.ok && result.body).toMatchObject({
+      is_mandatory: false,
+      others_invited: true,
+      required_role_ids: ["officers"],
+      excluded_role_ids: ["new-members"],
+    });
+    expect(result.ok && result.body).not.toHaveProperty("optional_role_ids");
+  });
+
+  it("refuses an event that invites nobody", () => {
+    const result = validateNewEvent(
+      draft({ attendance: { everyone: "not_invited", roles: {} } }),
+      AFTERNOON,
+    );
+    expect(result).toEqual({
+      ok: false,
+      errors: {
+        attendance: "Nobody is invited. Add a role, or invite everyone.",
+      },
+    });
+  });
+});
+
+describe("the More options summary", () => {
+  it("says points, who's coming and repeat while closed", () => {
+    expect(
+      moreOptionsSummary(
+        {
+          pointsInput: "10",
+          attendance: { everyone: "required", roles: { a: "optional" } },
+          recurrenceRule: "BIWEEKLY",
+        },
+        (id) => (id === "a" ? "Alumni" : undefined),
+      ),
+    ).toBe(
+      "10 pts · Required for everyone, optional for Alumni · Every 2 weeks",
+    );
+    expect(moreOptionsSummary(emptyEventDraft(), () => undefined)).toBe(
+      "10 pts · Optional for everyone · Doesn't repeat",
+    );
+  });
+
+  it("says how long a series runs", () => {
+    expect(repeatCaption(local(10, 20), "WEEKLY")).toBe(
+      "13 meetings, the last on Feb 2, 2027.",
+    );
+    expect(repeatCaption(local(10, 20), null)).toBeNull();
   });
 });
 

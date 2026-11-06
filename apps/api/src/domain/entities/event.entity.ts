@@ -12,7 +12,19 @@ export interface Event {
   is_mandatory: boolean;
   recurrence_rule: string | null;
   parent_event_id: string | null;
+  /**
+   * Who the event is for, by role (`spec/behavior/events.md` § Attendance by
+   * role; the rule is `eventAttendanceFor` in `@repo/validation`). Roles that
+   * must attend; `optional_role_ids` are invited, `excluded_role_ids` are not.
+   */
   required_role_ids: string[] | null;
+  optional_role_ids: string[] | null;
+  excluded_role_ids: string[] | null;
+  /**
+   * Whether a member holding none of the listed roles is invited. When it is,
+   * `is_mandatory` says whether they must attend.
+   */
+  others_invited: boolean;
   notes: string | null;
   /**
    * Optional check-in geofence: the polygon a member must be standing inside for

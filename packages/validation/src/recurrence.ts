@@ -30,6 +30,16 @@ export const RECURRENCE_RULE_LABELS: Record<RecurrenceRule, string> = {
 };
 
 /**
+ * The rule as a calendar app says it ("Every week"), for the Repeat pickers.
+ * {@link RECURRENCE_RULE_LABELS} stays the short form a list badge uses.
+ */
+export const RECURRENCE_REPEAT_LABELS: Record<RecurrenceRule, string> = {
+  WEEKLY: "Every week",
+  BIWEEKLY: "Every 2 weeks",
+  MONTHLY: "Every month",
+};
+
+/**
  * How many *child* occurrences the API materializes for a rule.
  *
  * These are children only — `EventSeriesService.buildOccurrencePayloads` loops from
@@ -67,7 +77,9 @@ export function isRecurrenceRule(value: unknown): value is RecurrenceRule {
  * *materializes* and the series an exported `.ics` *describes* cannot drift
  * apart — changing one number now changes both.
  */
-export function recurrenceChildCount(rule: string | null | undefined): number | null {
+export function recurrenceChildCount(
+  rule: string | null | undefined,
+): number | null {
   return isRecurrenceRule(rule) ? CHILD_OCCURRENCE_COUNT[rule] : null;
 }
 
@@ -103,4 +115,48 @@ function toRRuleValue(rule: string | null | undefined): string | null {
 export function toRRuleLine(rule: string | null | undefined): string | null {
   const value = toRRuleValue(rule);
   return value === null ? null : `RRULE:${value}`;
+}
+
+/**
+ * How many meetings a new series holds, its first included: what a Repeat
+ * picker tells the officer ("13 meetings"), since the series is not open-ended.
+ */
+export function recurrenceMeetingCount(
+  rule: string | null | undefined,
+): number | null {
+  return isRecurrenceRule(rule) ? CHILD_OCCURRENCE_COUNT[rule] + 1 : null;
+}
+
+/**
+ * The start of a new series' last meeting, stepped the way
+ * `EventSeriesService.buildOccurrencePayloads` steps it (a monthly series on
+ * the 31st lands on each month's last day), so the editor can say when the
+ * series ends. `null` for a value that is not a rule.
+ */
+export function recurrenceLastStart(
+  start: Date,
+  rule: string | null | undefined,
+): Date | null {
+  if (!isRecurrenceRule(rule)) return null;
+  const steps = CHILD_OCCURRENCE_COUNT[rule];
+  const last = new Date(start);
+  switch (rule) {
+    case "WEEKLY":
+      last.setDate(last.getDate() + steps * 7);
+      return last;
+    case "BIWEEKLY":
+      last.setDate(last.getDate() + steps * 14);
+      return last;
+    case "MONTHLY": {
+      last.setDate(1);
+      last.setMonth(start.getMonth() + steps);
+      const maxDay = new Date(
+        last.getFullYear(),
+        last.getMonth() + 1,
+        0,
+      ).getDate();
+      last.setDate(Math.min(start.getDate(), maxDay));
+      return last;
+    }
+  }
 }
