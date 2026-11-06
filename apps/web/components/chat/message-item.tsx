@@ -382,6 +382,30 @@ export function MessageItem({
    */
   // The pointer that started the latest press on the row, for `handleRowTap`.
   const lastPointerType = useRef<string | null>(null);
+  const extentRef = useRef<HTMLDivElement | null>(null);
+  const barRef = useRef<HTMLDivElement | null>(null);
+
+  /*
+   * Puts the action bar beside the message: its left edge 8px past the right
+   * edge of what the message draws, or, where that would run past the row,
+   * flush with the row's right edge (a long message, a narrow pane), which
+   * is the corner it always used to sit in. Beside rather than over, so a
+   * short message's own text is never under the bar it is hovered for.
+   *
+   * Measured, not laid out: no CSS places a box at the lesser of two other
+   * boxes' edges. It runs on reveal (hover, focus, a tap), writes one inline
+   * margin and re-renders nothing, so a list being scrolled under the
+   * pointer pays a measure per row entered and no React work.
+   */
+  function placeActionBar() {
+    const extent = extentRef.current;
+    const bar = barRef.current;
+    const track = bar?.parentElement;
+    if (!extent || !bar || !track) return;
+    const beside = extent.offsetWidth + 8;
+    const flush = track.clientWidth - bar.offsetWidth;
+    bar.style.marginLeft = `${Math.max(0, Math.min(beside, flush))}px`;
+  }
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
   const editFieldRef = useRef<HTMLTextAreaElement | null>(null);
   const restoreFocusOnExit = useRef(false);
@@ -514,6 +538,7 @@ export function MessageItem({
     ) {
       return;
     }
+    placeActionBar();
     onToggleTapReveal();
   }
 
@@ -665,9 +690,9 @@ export function MessageItem({
   );
 
   /*
-   * The action bar: icons centred on the row's top edge, ending at the right
-   * edge of what the message actually draws (`components.md` §11 § Per-message
-   * actions).
+   * The action bar: icons centred on the row's top edge, beside what the
+   * message actually draws (`placeActionBar`; `components.md` §11 §
+   * Per-message actions).
    *
    * It stays mounted and fades, rather than mounting on a JS `hovered` flag: a
    * keyboard user reaches it through focus (a mounted-on-hover version was
@@ -703,6 +728,7 @@ export function MessageItem({
         // "Reply, Save, Edit, Delete" with nothing saying what they belong to —
         // on a virtualized list of them. Not `role="toolbar"`, which would
         // promise arrow-key roving this does not implement.
+        ref={barRef}
         role="group"
         aria-label="Message actions"
         className={cn(
@@ -710,6 +736,9 @@ export function MessageItem({
           // again by the row's top padding, since the track it rides starts
           // where the content does.
           "flex -translate-y-[calc(50%+var(--row-pt))] items-center gap-0.5",
+          // At the row's right edge until `placeActionBar` has measured: the
+          // old place, and where a long message's bar ends up anyway.
+          "ml-auto",
           // Wraps rather than spilling past the row's left edge: on a coarse
           // pointer every icon is 44px, and nine of them (your own message) are
           // wider than a 375px thread, where the scroller would clip the first.
@@ -719,10 +748,11 @@ export function MessageItem({
           "group-hover/message:pointer-events-auto group-hover/message:opacity-100",
           "group-has-[:focus-visible]/message:pointer-events-auto group-has-[:focus-visible]/message:opacity-100",
           "has-[[aria-expanded=true]]:pointer-events-auto has-[[aria-expanded=true]]:opacity-100",
-          // Coarse-pointer path: a tap on the row sets `isTapRevealed`, since
-          // `:hover`/`:focus-visible` never fire there. Kept as a JS-driven
-          // class rather than a `pointer-coarse:` variant so the same row also
-          // works from a stylus or a mouse click, and so "tapping elsewhere
+          // Touch path: a tap on the row sets `isTapRevealed`, since `:hover`
+          // never fires there. Kept as a JS-driven class rather than a
+          // `pointer-coarse:` variant so the same row also works from a
+          // stylus (a mouse click does not toggle it: `handleRowTap`), and
+          // so "tapping elsewhere
           // dismisses this" (the parent list's single `tapRevealedId`) has
           // something to key off.
           isTapRevealed
@@ -954,18 +984,18 @@ export function MessageItem({
     <div
       role="listitem"
       className={cn(
-        "group/message relative px-5 pb-0.5",
+        "group/message relative px-5 pt-(--row-pt) pb-0.5",
         // An audit stack's first line sits 8 below the row above: a log line
         // is not a new speaker, so it takes less than a run's 16.
-        // `--row-pt` repeats the padding for the action bar, which is
-        // centred on the row's top edge from a track that starts below it.
+        // One value for the padding and for the action bar, which is centred
+        // on the row's top edge from a track that starts below it.
         auditLine
           ? showHeader
-            ? "pt-2 [--row-pt:0.5rem]"
-            : "pt-0.5 [--row-pt:0.125rem]"
+            ? "[--row-pt:0.5rem]"
+            : "[--row-pt:0.125rem]"
           : showHeader
-            ? "pt-4 [--row-pt:1rem]"
-            : "pt-0.5 [--row-pt:0.125rem]",
+            ? "[--row-pt:1rem]"
+            : "[--row-pt:0.125rem]",
         // Delineation without a bubble (§11): the whole row lifts one surface
         // step under a pointer, with keyboard focus inside it, or once tapped.
         // Pointer feedback, not information, so the ~1.1:1 step is enough.
@@ -980,26 +1010,29 @@ export function MessageItem({
       onPointerDown={(event) => {
         lastPointerType.current = event.pointerType;
       }}
+      // Every way the bar is revealed: hover, keyboard focus, a tap.
+      onPointerEnter={placeActionBar}
+      onFocus={placeActionBar}
       onClick={handleRowTap}
     >
       {/*
-        The message's extent: as wide as what it draws (`w-fit`), so the action
-        bar ends over the message rather than at the far side of a wide pane
-        (owner report 2026-11-06). A grid, so the bar can share the content's
-        cell without adding height, and in its second column, so it never
-        starts over the avatar gutter: on a short message it reaches right
-        from the text's left edge. The bar's own width counts toward the
-        extent; nothing paints the extent, so the extra width is invisible.
-        Full width while editing, where the field takes the column's width.
+        One cell holds the message and the action bar's track, so the bar
+        rides over the message without adding height.
+
+        The message itself is as wide as what it draws (`w-fit`), which is
+        what `placeActionBar` measures to put the bar beside it rather than
+        at the far side of a wide pane (owner report 2026-11-06). Full width
+        while editing, where the field takes the column's width.
       */}
-      <div
-        data-slot="message-extent"
-        className={cn(
-          "grid max-w-full grid-cols-[2.75rem_auto]",
-          isEditing ? "w-full" : "w-fit",
-        )}
-      >
-        <div className="col-span-2 col-start-1 row-start-1 min-w-0">
+      <div className="grid">
+        <div
+          ref={extentRef}
+          data-slot="message-extent"
+          className={cn(
+            "col-start-1 row-start-1 min-w-0 max-w-full justify-self-start",
+            isEditing ? "w-full" : "w-fit",
+          )}
+        >
           {replyQuote}
           <div className="flex gap-3">
             {/* The 32px gutter, held open on every row of a run. */}
@@ -1153,17 +1186,19 @@ export function MessageItem({
         </div>
         {actions ? (
           /*
-          The bar's zero-height track, sticky inside the message's cell. At
-          rest it sits on the content's top edge, and the bar centres itself on
-          the row's. Once the row's top scrolls under the top of the timeline,
-          the track holds the bar fully on screen for as long as any of the
-          message is, so a tall message (an image, a long import) keeps its
-          actions in reach rather than clipping them at the pane's edge. The
-          offset is the bar's half height plus a margin, past `--row-pt`.
+          The bar's zero-height track, sticky inside the message's cell and as
+          wide as the row. At rest it sits on the content's top edge, and the
+          bar centres itself on the row's. Once the row's top scrolls under the top of the timeline,
+          the track holds the bar on screen while the message scrolls under
+          it, so a tall message (an image, a long import) keeps its actions in
+          reach rather than clipping them at the pane's edge. It lets go once
+          the message's own bottom passes the top of the pane. The offset is
+          the bar's half height plus a margin, past `--row-pt`: 34px tall on a
+          fine pointer, 50px (44px icons) on a coarse one.
         */
           <div
             data-slot="action-track"
-            className="sticky top-[calc(var(--row-pt)+1.5rem)] z-10 col-start-2 row-start-1 h-0 min-w-0 self-start justify-self-end"
+            className="sticky top-[calc(var(--row-pt)+1.5rem)] z-10 col-start-1 row-start-1 flex h-0 min-w-0 items-start self-start pointer-coarse:top-[calc(var(--row-pt)+2rem)]"
           >
             {actions}
           </div>

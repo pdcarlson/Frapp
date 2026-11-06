@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import { MessageItem, type MessageItemProps } from "./message-item";
@@ -294,7 +294,7 @@ describe("MessageItem compact layout (#2873)", () => {
     expect(screen.queryByText("Alice Chen")).not.toBeInTheDocument();
     expect(screen.queryByText("AC")).not.toBeInTheDocument();
     expect(container.querySelector('[role="listitem"]')?.className).toContain(
-      "pt-0.5",
+      "[--row-pt:0.125rem]",
     );
   });
 
@@ -365,7 +365,7 @@ describe("MessageItem compact layout (#2873)", () => {
     const { container } = renderItem(message());
     expect(container.querySelector('[data-slot="gutter-time"]')).toBeNull();
     expect(container.querySelector('[role="listitem"]')?.className).toContain(
-      "pt-4",
+      "[--row-pt:1rem]",
     );
   });
 
@@ -415,7 +415,7 @@ describe("MessageItem compact layout (#2873)", () => {
 });
 
 /**
- * The action bar floats over the row's top-right corner, icon-only
+ * The action bar floats over the message's top edge, icon-only
  * (`components.md` §11 § Per-message actions; #2247's action-bar item).
  */
 describe("MessageItem action bar", () => {
@@ -427,26 +427,34 @@ describe("MessageItem action bar", () => {
     return found;
   }
 
-  it("ends over the message, centred on the row's top edge, and reserves no height", () => {
+  it("rides a sticky track over the message, centred on the row's top edge, and reserves no height", () => {
     for (const sender of [VIEWER, OTHER]) {
       const { container, unmount } = renderItem(message({ sender_id: sender }));
       const className = bar(container).className;
       const track = bar(container).parentElement!;
-      const extent = track.parentElement!;
+      const extent = container.querySelector<HTMLElement>(
+        '[data-slot="message-extent"]',
+      )!;
 
-      // The bar rides a zero-height sticky track in the message's own cell,
-      // and the cell is as wide as the message draws: the bar ends over the
-      // message rather than at the far side of a wide pane (2026-11-06).
+      // A zero-height sticky track in the message's own cell, so a tall
+      // message keeps the bar on screen (2026-11-06).
       expect(track.dataset.slot, sender).toBe("action-track");
       expect(track.className.split(/\s+/), sender).toEqual(
         expect.arrayContaining([
+          // A sticky box with no inset never sticks.
+          "top-[calc(var(--row-pt)+1.5rem)]",
+          "pointer-coarse:top-[calc(var(--row-pt)+2rem)]",
           "sticky",
           "h-0",
-          "justify-self-end",
-          "col-start-2",
+          // A zero-height flex row would stretch the bar to zero height.
+          "items-start",
+          "col-start-1",
+          "row-start-1",
         ]),
       );
-      expect(extent.dataset.slot, sender).toBe("message-extent");
+      expect(extent.parentElement, sender).toBe(track.parentElement);
+      // The message is as wide as it draws, which is what the bar is placed
+      // beside.
       expect(extent.className.split(/\s+/), sender).toContain("w-fit");
       // Centred on the row's top edge, past the row's own top padding.
       expect(className, sender).toContain(
@@ -458,11 +466,41 @@ describe("MessageItem action bar", () => {
     }
   });
 
-  it("names the row's top padding for the bar to centre on", () => {
+  it("sits beside the message, or flush with the row edge when that won't fit", () => {
+    const { container } = renderItem(message());
+    const row = container.querySelector<HTMLElement>('[role="listitem"]')!;
+    const extent = container.querySelector<HTMLElement>(
+      '[data-slot="message-extent"]',
+    )!;
+    const barEl = bar(container);
+    const track = barEl.parentElement!;
+    // jsdom lays nothing out, so the three widths the placement reads are
+    // stubbed: a 900px row, a 34px-tall bar 280px wide.
+    const size = (el: HTMLElement, prop: string, value: number) =>
+      Object.defineProperty(el, prop, { configurable: true, value });
+    size(track, "clientWidth", 900);
+    size(barEl, "offsetWidth", 280);
+
+    // A short message: beside its right edge, 8px clear of it, not over it.
+    size(extent, "offsetWidth", 300);
+    fireEvent.pointerEnter(row);
+    expect(barEl.style.marginLeft).toBe("308px");
+
+    // A long one: flush with the row's right edge, where it always sat.
+    size(extent, "offsetWidth", 800);
+    fireEvent.focusIn(row);
+    expect(barEl.style.marginLeft).toBe("620px");
+  });
+
+  it("pads the row from the same value the bar centres on", () => {
     const lead = renderItem(message());
     expect(
       lead.container.querySelector('[role="listitem"]')?.className,
     ).toContain("[--row-pt:1rem]");
+    // One source: the padding reads the variable, so the two cannot drift.
+    expect(
+      lead.container.querySelector('[role="listitem"]')?.className,
+    ).toContain("pt-(--row-pt)");
     lead.unmount();
 
     const follow = renderItemWithProps({ showHeader: false });
@@ -489,9 +527,12 @@ describe("MessageItem action bar", () => {
     const { container } = renderItem(message());
     const extent = container.querySelector('[data-slot="message-extent"]')!;
 
-    // Last in the message's cell, so a screen reader and the tab sequence
+    // After the message in its cell, so a screen reader and the tab sequence
     // reach the message before the controls that act on it.
-    expect(extent.lastElementChild).toBe(bar(container).parentElement);
+    expect(extent.nextElementSibling).toBe(bar(container).parentElement);
+    expect(extent.parentElement?.lastElementChild).toBe(
+      bar(container).parentElement,
+    );
   });
 
   it("is revealed by keyboard focus, not by any focus a click leaves behind", () => {
@@ -507,7 +548,14 @@ describe("MessageItem action bar", () => {
     expect(barTokens).toContain(
       "group-has-[:focus-visible]/message:opacity-100",
     );
-    for (const token of [...rowTokens, ...barTokens]) {
+    const gutterTime = renderItemWithProps({
+      showHeader: false,
+    }).container.querySelector('[data-slot="gutter-time"]')!;
+    const timeTokens = gutterTime.className.split(/\s+/);
+    expect(timeTokens).toContain(
+      "group-has-[:focus-visible]/message:opacity-100",
+    );
+    for (const token of [...rowTokens, ...barTokens, ...timeTokens]) {
       expect(token).not.toMatch(/focus-within/);
     }
     // A portalled menu takes focus and the pointer out of the row; its open
@@ -536,7 +584,7 @@ describe("MessageItem action bar", () => {
 });
 
 /**
- * #1193: `:hover`/`:focus-within` never fire on a coarse pointer, so the
+ * #1193: `:hover` never fires on a coarse pointer, so the
  * per-message action cluster (quick reactions, Reply) was unreachable there.
  * `isTapRevealed`/`onToggleTapReveal` are the parent-owned reveal state; this
  * file pins the row's own half — the CSS class that actually paints it
@@ -707,7 +755,10 @@ describe("MessageItem tap-to-reveal (#1193)", () => {
     const onReply = vi.fn();
     renderItemWithProps({ onToggleTapReveal, onReply, isTapRevealed: true });
 
-    await user.click(screen.getByRole("button", { name: /reply/i }));
+    await user.pointer({
+      keys: "[TouchA]",
+      target: screen.getByRole("button", { name: /reply/i }),
+    });
 
     expect(onReply).toHaveBeenCalledTimes(1);
     expect(onToggleTapReveal).not.toHaveBeenCalled();
@@ -1868,8 +1919,9 @@ describe("MessageItem inline editor keyboard", () => {
 
     await user.click(screen.getByRole("button", { name: /cancel/i }));
 
-    // The action cluster is revealed by `group-focus-within`, so focusing Edit
-    // holds it open. That is what a keyboard user wants and the opposite of
+    // The action cluster is revealed by a `:focus-visible` in the row, and a
+    // script focus right after a keyboard event can match it, so focusing Edit
+    // can hold it open. That is what a keyboard user wants and the opposite of
     // what a member who just clicked Cancel wants — their pointer is somewhere
     // else, and they would be left with four controls painted over the message
     // until focus happened to move again. A real click reports `detail >= 1`;
@@ -2007,16 +2059,21 @@ describe("MessageItem Report and Block (#2687)", () => {
 
   it("does not pin the bar open when a menu item is chosen", async () => {
     const onToggleTapReveal = vi.fn();
+    const onReport = vi.fn();
     renderItemWithProps({
-      onReport: vi.fn(),
+      onReport,
       onBlock: vi.fn(),
       isMember: everyoneIsMember,
       onToggleTapReveal,
     });
     await userEvent.click(screen.getByRole("button", { name: "More actions" }));
-    await userEvent.click(
-      screen.getByRole("menuitem", { name: "Report message" }),
-    );
+    // A touch pick: a mouse click never toggles the tap state at all, so it
+    // would pass without reaching the menuitem guard this pins.
+    await userEvent.pointer({
+      keys: "[TouchA]",
+      target: screen.getByRole("menuitem", { name: "Report message" }),
+    });
+    expect(onReport).toHaveBeenCalledTimes(1);
     expect(onToggleTapReveal).not.toHaveBeenCalled();
   });
 
