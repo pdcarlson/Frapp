@@ -53,6 +53,8 @@ const FAMILY = [
   "components/auth/floating-field.tsx",
   "components/auth/oauth-buttons.tsx",
   "components/auth/chapter-showcase.tsx",
+  // `/no-access`'s sign-out action, split out as a client component (#3236).
+  "components/auth/no-access-sign-out.tsx",
   "components/auth/signet-mark.tsx",
   "components/profile/profile-panel.tsx",
   "components/profile/profile-glyphs.tsx",

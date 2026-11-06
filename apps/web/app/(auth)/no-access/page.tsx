@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AuthScreen } from "@/components/auth/auth-screen";
+import { NoAccessSignOut } from "@/components/auth/no-access-sign-out";
 import { LockGlyph } from "@/components/profile/profile-glyphs";
 import { StateTile } from "@/components/shared/async-states";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,9 @@ export const metadata = {
 
 /**
  * Signed in, but holding no chapter role.
+ *
+ * The dashboard shell sends a one-chapter member whose roles grant nothing
+ * here (`components/layout/no-access-redirect.tsx`, #3236).
  *
  * The least broken screen in the Profile & pre-auth family — no staging copy,
  * no opacity washes — so the #920 slice changes three things and leaves the
@@ -56,9 +60,7 @@ export default function NoAccessPage() {
           <Button asChild className="w-full">
             <Link href="/join">Open invite link</Link>
           </Button>
-          <Button asChild variant="secondary" className="w-full">
-            <Link href="/sign-in">Sign in to a different account</Link>
-          </Button>
+          <NoAccessSignOut />
         </div>
       </div>
     </AuthScreen>
