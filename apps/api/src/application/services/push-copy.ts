@@ -147,15 +147,17 @@ export function formatEventWhen(
   const oneDay = !end || sameDay(start, end);
   const span = oneDay ? timeSpan(start, end) : null;
 
-  if (options.recurrence && span) {
+  if (options.recurrence) {
+    // A weekly overnight event ("Fri, 10 PM–2 AM") is still a pattern.
+    const hours = timeSpan(start, end);
     const from = `${start.month} ${start.day}`;
     switch (options.recurrence) {
       case 'WEEKLY':
-        return `Every ${start.weekday}, ${span}${zone}, from ${from}`;
+        return `Every ${start.weekday}, ${hours}${zone}, from ${from}`;
       case 'BIWEEKLY':
-        return `Every other ${start.weekday}, ${span}${zone}, from ${from}`;
+        return `Every other ${start.weekday}, ${hours}${zone}, from ${from}`;
       case 'MONTHLY':
-        return `Monthly on the ${ordinal(start.day)}, ${span}${zone}, from ${from}`;
+        return `Monthly on the ${ordinal(start.day)}, ${hours}${zone}, from ${from}`;
     }
   }
 

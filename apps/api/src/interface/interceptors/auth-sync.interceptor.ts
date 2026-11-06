@@ -34,7 +34,11 @@ export class AuthSyncInterceptor implements NestInterceptor {
       request.appUser = { id };
       // Fire-and-forget: pushes name times in this zone, and the request
       // never waits on recording it.
-      this.timeZones.record(id, request.headers?.[TIME_ZONE_HEADER]);
+      // Never on a DELETE: account deletion is one, and an upsert racing its
+      // `anonymize_user` could recreate the settings row it just removed.
+      if (request.method !== 'DELETE') {
+        this.timeZones.record(id, request.headers?.[TIME_ZONE_HEADER]);
+      }
     }
 
     return next.handle().pipe(tap());

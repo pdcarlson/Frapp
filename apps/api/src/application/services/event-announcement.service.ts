@@ -300,7 +300,9 @@ export class EventAnnouncementService {
   ): Promise<void> {
     const [members, alumniRoleId, actorZone] = await Promise.all([
       this.memberRepo.findByChapter(chapterId),
-      this.rbac.getAlumniRoleId(chapterId),
+      // Only the Required/Optional label for alumni depends on it, so a
+      // failed read costs that label, never the push.
+      this.rbac.getAlumniRoleId(chapterId).catch(() => null),
       actorId ? this.notificationService.timeZoneFor(actorId) : null,
     ]);
 

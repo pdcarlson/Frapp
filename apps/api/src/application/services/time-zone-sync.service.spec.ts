@@ -52,4 +52,15 @@ describe('TimeZoneSyncService', () => {
 
     expect(setTimeZone).toHaveBeenCalledTimes(2);
   });
+
+  it('writes the same zone again after a while, in case another instance changed it', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(0);
+    service.record('u-1', 'America/Chicago');
+    now.mockReturnValue(7 * 60 * 60 * 1000);
+    service.record('u-1', 'America/Chicago');
+    await flush();
+    now.mockRestore();
+
+    expect(setTimeZone).toHaveBeenCalledTimes(2);
+  });
 });

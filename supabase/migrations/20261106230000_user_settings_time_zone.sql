@@ -23,4 +23,8 @@ alter table public.user_settings
   drop constraint if exists user_settings_time_zone_length;
 alter table public.user_settings
   add constraint user_settings_time_zone_length
-  check (time_zone is null or char_length(time_zone) <= 100);
+  check (time_zone is null or char_length(time_zone) <= 100) not valid;
+-- Added NOT VALID, then validated, so the scan runs under a lock that does not
+-- block reads and writes of a table the push fan-out reads.
+alter table public.user_settings
+  validate constraint user_settings_time_zone_length;

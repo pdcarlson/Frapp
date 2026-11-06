@@ -8,6 +8,14 @@ import { logThrowable } from '../../infrastructure/observability/log-throwable';
 const REMEMBERED_MEMBERS = 5_000;
 
 /**
+ * How long one process trusts its memo before writing the same zone again.
+ * With several API instances, another one may have written a different zone
+ * since (a member who travelled and came back), so the memo only saves writes
+ * for a while rather than forever.
+ */
+const REMEMBER_FOR_MS = 6 * 60 * 60 * 1000;
+
+/**
  * Keeps `user_settings.time_zone` matching the zone the member's device reports
  * (`x-time-zone`), so pushes can name times in it.
  *
@@ -20,7 +28,10 @@ const REMEMBERED_MEMBERS = 5_000;
 @Injectable()
 export class TimeZoneSyncService {
   private readonly logger = new Logger(TimeZoneSyncService.name);
-  private readonly recorded = new Map<string, string>();
+  private readonly recorded = new Map<
+    string,
+    { timeZone: string; at: number }
+  >();
 
   constructor(
     @Inject(USER_SETTINGS_REPOSITORY)
@@ -31,12 +42,20 @@ export class TimeZoneSyncService {
   record(userId: string, header: unknown): void {
     const timeZone = typeof header === 'string' ? header.trim() : '';
     if (!isSupportedTimeZone(timeZone)) return;
-    if (this.recorded.get(userId) === timeZone) return;
+    const known = this.recorded.get(userId);
+    if (
+      known?.timeZone === timeZone &&
+      Date.now() - known.at < REMEMBER_FOR_MS
+    ) {
+      return;
+    }
 
     this.remember(userId, timeZone);
     this.settingsRepo.setTimeZone(userId, timeZone).catch((error: unknown) => {
       // Forget it, so the member's next request tries again.
-      if (this.recorded.get(userId) === timeZone) this.recorded.delete(userId);
+      if (this.recorded.get(userId)?.timeZone === timeZone) {
+        this.recorded.delete(userId);
+      }
       logThrowable(
         this.logger,
         'warn',
@@ -50,7 +69,7 @@ export class TimeZoneSyncService {
     // A Map iterates in insertion order, so re-inserting keeps the most recent
     // members at the end and the first key is the one heard from longest ago.
     this.recorded.delete(userId);
-    this.recorded.set(userId, timeZone);
+    this.recorded.set(userId, { timeZone, at: Date.now() });
     if (this.recorded.size > REMEMBERED_MEMBERS) {
       const oldest = this.recorded.keys().next().value;
       if (oldest !== undefined) this.recorded.delete(oldest);

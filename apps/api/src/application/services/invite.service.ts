@@ -495,9 +495,13 @@ export class InviteService {
       // Named, and not sent to the member who just joined: "A new member has
       // joined the chapter" told everyone nothing, the joiner included
       // (notifications.md § What a push says).
-      const [roster, [joiner]] = await Promise.all([
+      const [roster, joiner] = await Promise.all([
         this.memberRepo.findByChapter(invite.chapter_id),
-        this.userRepo.findByIds([userId]),
+        // The name is a nicety: a failed read costs the name, not the push.
+        this.userRepo
+          .findByIds([userId])
+          .then(([user]) => user)
+          .catch(() => undefined),
       ]);
       const name = joiner?.display_name?.trim();
       await this.notificationService.notifyMembers(

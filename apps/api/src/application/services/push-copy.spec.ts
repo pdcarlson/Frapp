@@ -72,6 +72,15 @@ describe('formatEventWhen', () => {
     );
   });
 
+  it('keeps the pattern for a weekly event that runs past midnight', () => {
+    expect(
+      formatEventWhen('2026-11-14T03:00:00Z', '2026-11-14T07:00:00Z', {
+        ...NY,
+        recurrence: 'WEEKLY',
+      }),
+    ).toBe('Every Fri, 10 PM–2 AM, from Nov 13');
+  });
+
   it('writes a start alone when the end is missing or not after it', () => {
     expect(formatEventWhen('2026-11-10T01:00:00Z', null, NY)).toBe(
       'Mon, Nov 9, 8 PM',
