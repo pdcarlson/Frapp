@@ -326,7 +326,7 @@ describe("bounds", () => {
       `?channel=` to `#general`. A member who read `#general` first and three
       other channels after it evicted exactly the tail their next reload would
       ask for — the cache missing on the commonest cold load there is.
-      `default-channel.ts` is now the one rule both sides read.
+      `landingChannelId` in `@repo/hooks` is now the one rule both sides read.
     */
     await seedRail(ALICE);
     await writeChannelTail(ALICE, "chan-1", [confirmed("1")], AT);
@@ -337,6 +337,32 @@ describe("bounds", () => {
     const tails = (await readFirstChunk(ALICE)).tails;
     expect(tails.map((row) => row.channelId)).toContain("chan-1");
     expect(tails).toHaveLength(FIRST_CHUNK_CHANNEL_LIMIT);
+  });
+
+  it("pins the member's last channel, read under their users.id", async () => {
+    /*
+      The shell stores the last channel under `users.id`; this scope is keyed
+      by the auth uid. The pin has to cross through the cached viewer id or it
+      never matches and only `#general` is protected.
+    */
+    window.localStorage.setItem(
+      "frapp.chat.last-channel.user-alice.chapter-1",
+      "chan-2",
+    );
+    try {
+      await seedRail(ALICE);
+      await writeViewerId(ALICE, "user-alice", AT);
+      await writeChannelTail(ALICE, "chan-2", [confirmed("1")], AT);
+      for (const [index, id] of ["chan-1", "chan-3", "chan-4"].entries()) {
+        await writeChannelTail(ALICE, id, [confirmed("2")], AT + 100 + index);
+      }
+
+      const tails = (await readFirstChunk(ALICE)).tails;
+      expect(tails.map((row) => row.channelId)).toContain("chan-2");
+      expect(tails).toHaveLength(FIRST_CHUNK_CHANNEL_LIMIT);
+    } finally {
+      window.localStorage.clear();
+    }
   });
 
   it("ignores rows past the maximum age instead of painting them", async () => {

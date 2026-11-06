@@ -4,7 +4,7 @@
 
 Chat is not a module — it is the spine of the app, and every other capability (events, tasks, dues, points, polls) is a **chat integration** surfaced inline in conversation rather than behind a separate nav tab. The mobile app opens directly into chat.
 
-- **Chat is non-optional. It cannot be disabled.** Every chapter always has, at minimum: `#general` (everyone, default landing), `#announcements` (exec-write, member-read, push by default), `#chapter-audit` (system-write only, member-read — the audit feed), and DMs / group DMs (always on).
+- **Chat is non-optional. It cannot be disabled.** Every chapter always has, at minimum: `#general` (everyone, the landing channel when a device has no last channel), `#announcements` (exec-write, member-read, push by default), `#chapter-audit` (system-write only, member-read — the audit feed), and DMs / group DMs (always on).
 - **Modules-as-integrations.** When an ops module is enabled it does not get a top-level nav tab first. It gets: (1) one or more **slash commands** in chat, (2) a **rich message renderer** that turns the artifact into an inline card with primary actions (RSVP / Done / Vote / Pay / Confirm / Submit), and (3) *optionally* a secondary dashboard page for the longer-form view. The dashboard is secondary to the chat experience, never primary.
 - **Slash-command dispatch** is the entry point for module actions — a treasurer typing `/dues remind overdue` in `#general` gets a rich card inline, no tab-switching. The command catalog, dispatch path, and renderer registry are specified in [integrations.md](./integrations.md).
 - Disabling a paid module hides its slash commands and its dashboard page. A module gets no system channel of its own ([`../integrations.md`](../integrations.md#integration-pattern)).
@@ -47,6 +47,16 @@ Chat is not a module — it is the spine of the app, and every other capability 
 - **Welcome message on onboarding submit.** A chapter created through the onboarding wizard gets a one-time welcome `system_audit` message, the first message it sees. Its channel and text, and where each client lands after submit, are owned by [`../onboarding.md` § First-Officer Onboarding Wizard](../onboarding.md#first-officer-onboarding-wizard).
 - **Performance requirement:** chapter setup must seed default channels in one write operation to avoid N+1 insert latency.
 - **Failure behavior:** chapter setup must fail if default channel seeding fails; the API must not return chapter-create success when channel seeding errors.
+
+### Where Chat opens
+
+Added 2026-11-05, owner direction ("Mobile opens up to the last channel you were in. like discord").
+
+- **Chat opens on the member's last channel**, remembered per device, member and chapter: a phone and a laptop each open where they left off. It is device state, not a server preference.
+- **Mobile:** launching the app opens that channel's thread, with back going to chat home. It happens once per app process and only at launch: never on a later return to chat home, never once the member has left chat home, and never when the channel list only answers after launch (a slow or offline start). A notification tap that launched the app opens its own target instead. With no remembered channel, launch stays on chat home.
+- **Web:** `/chat` with no `?channel=` opens it, once the member's identity is known (so `#general` is never opened and marked read on the way). A link, by channel id or name, and a channel picked in this visit both win over it. A member whose token carries no chapter claim is remembered under a "sole" chapter key, as on mobile.
+- **Fallback:** a remembered channel that is deleted, no longer visible to the member, or a DM they hid is skipped. Web then opens `#general`, else the first channel. The same applies in the middle of a visit: hiding the open DM, or the open channel disappearing, lands on `#general`.
+- One rule for both clients: `landingChannelId` / `lastChannelLandingId` in [`packages/hooks/src/landing-channel.ts`](../../../packages/hooks/src/landing-channel.ts). Web's first-chunk cache pins the same channel's tail against eviction.
 
 ## Direct Messages
 
