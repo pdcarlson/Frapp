@@ -235,6 +235,16 @@ vi.mock("./use-unblock-flow", () => ({
   }),
 }));
 
+vi.mock("./use-block-flow", () => ({
+  useBlockFlow: () => ({
+    requestBlock: vi.fn(),
+    isPending: false,
+    confirmDialog: null,
+  }),
+}));
+vi.mock("./report-message-dialog", () => ({
+  ReportMessageDialog: () => null,
+}));
 // The member list owns its own reads and has its own spec; here it is only a
 // column the shell decides to show.
 vi.mock("./channel-member-list", () => ({

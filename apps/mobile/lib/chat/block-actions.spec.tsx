@@ -40,9 +40,10 @@ import {
 import {
   BLOCK_NOT_A_MEMBER_BODY,
   blockConfirmBody,
+} from "@repo/chat-core/block-copy";
+import {
   confirmBlockMember,
   confirmUnblockMember,
-  isMemberNotFound,
   useBlockActions,
 } from "./block-actions";
 
@@ -296,22 +297,6 @@ describe("useBlockActions", () => {
   });
 });
 
-describe("isMemberNotFound", () => {
-  it("is the API's non-member answer and nothing else", () => {
-    expect(
-      isMemberNotFound({ statusCode: 404, message: "Member not found" }),
-    ).toBe(true);
-    // A 404 from a route this build expects but the server does not serve.
-    expect(isMemberNotFound({ statusCode: 404, message: "Cannot POST" })).toBe(
-      false,
-    );
-    expect(isMemberNotFound({ statusCode: 404 })).toBe(false);
-    expect(
-      isMemberNotFound({ statusCode: 400, message: "Member not found" }),
-    ).toBe(false);
-  });
-});
-
 describe("confirmBlockMember / confirmUnblockMember", () => {
   function buttons() {
     const call = vi.mocked(Alert.alert).mock.calls[0]!;
@@ -330,14 +315,11 @@ describe("confirmBlockMember / confirmUnblockMember", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it("says a block is this chapter's, and promises the directory only when it is true", () => {
-    expect(blockConfirmBody(true)).toMatch(/this chapter's chat/);
-    expect(blockConfirmBody(true)).toMatch(/stay in the directory/);
-    expect(blockConfirmBody(false)).not.toMatch(/directory/);
-
+  // The wording itself is pinned in `@repo/chat-core`'s block-copy spec.
+  it("asks with the shared body, pointing at Settings", () => {
     confirmBlockMember({ name: "Blake", inDirectory: false, run: vi.fn() });
     expect(vi.mocked(Alert.alert).mock.calls[0]![1]).toBe(
-      blockConfirmBody(false),
+      blockConfirmBody(false, "in Settings"),
     );
   });
 

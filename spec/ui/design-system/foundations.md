@@ -137,7 +137,9 @@ The accent is a signal, so it goes only where a member has to act or notice. The
 
 Unread and mentions keep their own rule above (§5): neutral for unread, red for direct address.
 
-**Still accent, waiting on the owner's call.** Four uses that other docs sanction predate this rule and were left as they are: the `+N pts` reward chip and the meter fill ([`components.md`](components.md) §5, §12), the PRO chip ([`web-dashboard/README.md`](../web-dashboard/README.md)), the empty-state icon tile (§10 of `components.md`, which the empty-states redesign owns) and mobile's back arrow and inline text actions ([`navigation.md`](../mobile/navigation.md)). Each is either an item above or the next thing to take neutral; until the owner decides, they stay. Where the accent's own text step (`--accent-text`) is used, it is for items 1 to 6, never to make a label stand out.
+**Kept on the owner's call (2026-11-06).** The `+N pts` reward chip ([`components.md`](components.md) §5) keeps the accent: a reward is something the member needs to notice. The active nav row and channel keep it too, under item 6 above.
+
+**Still accent, waiting on the owner's call.** Four uses that other docs sanction predate this rule and were left as they are: the meter fill ([`components.md`](components.md) §12), the PRO chip ([`web-dashboard/README.md`](../web-dashboard/README.md)), the empty-state icon tile (§10 of `components.md`, which the empty-states redesign owns) and mobile's back arrow and inline text actions ([`navigation.md`](../mobile/navigation.md)). Each is either an item above or the next thing to take neutral; until the owner decides, they stay. Where the accent's own text step (`--accent-text`) is used, it is for items 1 to 6, never to make a label stand out.
 
 ---
 

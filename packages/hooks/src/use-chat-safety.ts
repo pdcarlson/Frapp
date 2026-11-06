@@ -48,30 +48,6 @@ export type ChatReportReason =
 
 export type ChatReport = components["schemas"]["ChatReportDto"];
 
-/**
- * The reasons `POST /v1/chat/reports` accepts, in the order a picker shows
- * them. The `satisfies` + the exhaustiveness check below make a reason the API
- * adds (or drops) a compile error here rather than a picker that silently
- * cannot file it.
- */
-export const CHAT_REPORT_REASONS = [
-  "harassment",
-  "hate",
-  "violence",
-  "sexual",
-  "self_harm",
-  "spam",
-  "other",
-] as const satisfies readonly ChatReportReason[];
-
-// Every member of the SDK's union is listed above. Fails to compile otherwise.
-const _allReportReasonsListed: Record<
-  Exclude<ChatReportReason, (typeof CHAT_REPORT_REASONS)[number]>,
-  never
-> = {};
-void _allReportReasonsListed;
-
-
 export interface BlockedUserIds {
   /**
    * Everyone known to be blocked: the last list the server returned, with
