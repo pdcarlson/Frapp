@@ -8,12 +8,12 @@ import { ChannelMark, type ChannelStartChannel } from "./channel-start";
  * Every item is centered on the row, never baseline-aligned
  * ([foundations.md](../../../../spec/ui/design-system/foundations.md) §7,
  * Aligning a row). The row used to be `items-baseline`, and the heading is a
- * flex box whose first item is the mark. When that mark is an icon (lock, DM,
- * audit), the browser has no text baseline to read from it, so it takes the
- * icon's bottom edge as the heading's baseline and lines the description's
- * baseline up with that. The description dropped about 4px below the name on
- * every private channel, DM and the audit channel, while `#` channels, whose
- * mark is type, looked right (Paul, 2026-11-06).
+ * flex box whose first item is the mark. When that mark is an icon (the lock
+ * on private and role-gated channels, DMs, the audit channel), the browser has
+ * no text baseline to read from it, so it takes the icon's bottom edge as the
+ * heading's baseline and lines the description's baseline up with that. The
+ * description dropped about 4px below the name on every one of those channels,
+ * while `#` channels, whose mark is type, looked right (Paul, 2026-11-06).
  */
 export function ChannelHeaderTitle({
   channel,

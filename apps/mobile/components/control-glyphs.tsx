@@ -3,10 +3,11 @@ import { Frame, paint } from "@/components/more/more-glyphs";
 
 /**
  * The verbs an icon-only control draws (`spec/ui/design-system/components.md`
- * § Icon-only actions, `iconography.md` §6.1.5): close or dismiss, edit, and
- * mark all read. Control furniture, so they draw only the §1 stroke recipe's
- * detail strokes, with no silhouette fill, from `more-glyphs.tsx`'s `Frame`
- * and `paint`, so a change to the recipe reaches them too.
+ * § Icon-only actions, `iconography.md` §6.1.5): close or dismiss, edit, mark
+ * all read, and back. Control furniture, so they draw only the §1 stroke
+ * recipe's detail strokes, with no silhouette fill, from `more-glyphs.tsx`'s
+ * `Frame` and `paint`, so a change to the recipe reaches them too. Back keeps
+ * the recipe but draws a heavier stroke.
  *
  * One file, so every dismiss on mobile is the same ×: the network banner, the
  * thread's error banner, the composer's chips, the image viewer, the
@@ -62,16 +63,24 @@ export function CheckAllGlyph({
 }
 
 /**
- * Back: a left chevron, the chat thread header's way out. Drawn, never typed:
- * a `‹` character sits on the text's x-height, so in a centered row its ink
- * lands below the title's middle (foundations.md §7, Aligning a row). Same
- * path as the back row's capsule arrow and the image viewer's previous.
+ * The back arrow's stroke: heavier than the recipe's 1.6, the weight the
+ * back-row capsule drew its own arrow at before it drew this one. Every back
+ * arrow on mobile takes it.
+ */
+const BACK_STROKE_WIDTH = 2.2;
+
+/**
+ * Back: a left chevron. The chat thread header draws it at 20, and every
+ * `BackRow` capsule (`‹ More`, `‹ Events`, `‹ Chat`) at 18, so the two
+ * kinds of back control show one arrow. Drawn, never typed: a `‹` character
+ * sits on the text's x-height, so in a centered row its ink lands below the
+ * title's middle (foundations.md §7, Aligning a row).
  */
 export function BackGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   const { detail } = paint({ color });
   return (
     <Frame size={size}>
-      <Path d="M14.5 6l-6 6 6 6" {...detail} />
+      <Path d="M14.5 6l-6 6 6 6" {...detail} strokeWidth={BACK_STROKE_WIDTH} />
     </Frame>
   );
 }

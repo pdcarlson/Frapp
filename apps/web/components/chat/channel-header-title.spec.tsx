@@ -30,19 +30,39 @@ describe("ChannelHeaderTitle", () => {
     expect(container).not.toHaveTextContent("•");
   });
 
-  // An icon mark (lock, DM, audit) has no text baseline, so a baseline row
-  // reads the icon's bottom edge and drops the description ~4px below the
-  // name. jsdom has no layout, so the guard is the alignment class itself.
-  it("centers the row rather than aligning baselines", () => {
-    const { container } = render(
-      <ChannelHeaderTitle
-        channel={{ name: "alumni", type: "PRIVATE" }}
-        name="alumni"
-        description="Alumni and actives keeping in touch."
-      />,
-    );
-    const row = container.querySelector('[data-slot="channel-header-title"]')!;
-    expect(row).toHaveClass("items-center");
-    expect(row).not.toHaveClass("items-baseline");
-  });
+  // An icon mark (the lock, DM, audit) has no text baseline, so a baseline row
+  // reads the icon's bottom edge: the description drops ~4px below the name,
+  // and inside the heading the name would sit off the icon's middle. jsdom has
+  // no layout, so the guard is the alignment class on both flex rows, for each
+  // kind of mark, the typed `#` included.
+  it.each([
+    ["a private channel", { name: "alumni", type: "PRIVATE" }, "alumni"],
+    ["a role-gated channel", { name: "exec", type: "ROLE_GATED" }, "exec"],
+    ["a public channel", { name: "general", type: "PUBLIC" }, "general"],
+    ["a DM", { name: "dm-a-b", type: "DM" }, "Jordan Reyes"],
+    [
+      "the audit channel",
+      { name: "chapter-audit", type: "PUBLIC" },
+      "chapter-audit",
+    ],
+  ] as const)(
+    "centers %s rather than aligning baselines",
+    (_, channel, name) => {
+      const { container } = render(
+        <ChannelHeaderTitle
+          channel={channel}
+          name={name}
+          description="A description."
+        />,
+      );
+      const row = container.querySelector(
+        '[data-slot="channel-header-title"]',
+      )!;
+      const heading = screen.getByRole("heading", { level: 2 });
+      for (const flexRow of [row, heading]) {
+        expect(flexRow).toHaveClass("items-center");
+        expect(flexRow).not.toHaveClass("items-baseline");
+      }
+    },
+  );
 });
