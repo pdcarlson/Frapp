@@ -13,7 +13,7 @@ import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
-import { MuteGlyph } from "./mute-glyph";
+import { OverflowGlyph } from "./overflow-glyph";
 
 /**
  * Per-channel notification level, from the thread header (#1406).
@@ -155,7 +155,6 @@ export function NotificationLevelControl({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
-  const isMuted = menu.level === "off";
   const glyphColor = menu.blocked
     ? tokens.color.text.muted
     : tokens.color.text.foreground;
@@ -173,11 +172,14 @@ export function NotificationLevelControl({
       style={({ pressed }) => [styles.trigger, pressed ? styles.pressed : null]}
     >
       {/*
-        The glyph alone (components.md § Icon-only actions). Muted already
-        draws its own × over the speaker, and the label says "Muted" to a
-        screen reader, so a "Muted" word beside it said the same thing twice.
+        `⋯`, not the speaker (owner decision 2026-11-06): the level is a
+        setting a couple of taps away, not a state the header shows, so a
+        muted channel's header looks like any other (components.md § Chrome
+        weight). The level is still in the label for a screen reader, and on
+        the checked row once the menu opens. Until then this drew the speaker,
+        with an × when muted, and before that the word "Muted" beside it.
       */}
-      <MuteGlyph color={glyphColor} active={isMuted} size={24} />
+      <OverflowGlyph color={glyphColor} size={24} />
     </Pressable>
   );
 }

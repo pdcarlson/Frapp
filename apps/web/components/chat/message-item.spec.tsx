@@ -169,6 +169,28 @@ describe("MessageItem system post avatar", () => {
     expect(screen.queryByText("00")).not.toBeInTheDocument();
   });
 
+  it("draws an audit entry as a line: shield in the gutter, no author line", () => {
+    const { container } = renderItem(
+      message({
+        sender_id: SYSTEM_SENDER_ID,
+        author_name: "Frapp",
+        kind: "system_audit",
+        content: "chapter_profile_updated",
+        client_message_id: "audit:a1",
+        payload: {
+          action: "chapter_profile_updated",
+          actor_user_id: OTHER,
+          diff: { accent_color: { from: "#000", to: "#fff" } },
+        },
+      }),
+    );
+
+    expect(container.querySelector("[data-system-avatar]")).toBeNull();
+    expect(screen.queryByText("Frapp")).not.toBeInTheDocument();
+    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
+    expect(container.textContent).toContain("updated the chapter profile");
+  });
+
   it("leaves a member's avatar alone", () => {
     const { container } = renderItem(message());
 
@@ -374,7 +396,11 @@ describe("MessageItem compact layout (#2873)", () => {
       message({ sender_id: VIEWER, _status: "pending" }),
     );
     expect(bodyOf(container).className).toContain("text-muted-foreground");
-    expect(screen.getByText("Sending…")).toBeInTheDocument();
+    // The gray text is the whole pending state on screen: no caption and no
+    // spinner under it (owner decision 2026-11-06). A screen reader hears it.
+    expect(screen.queryByText("Sending…")).not.toBeInTheDocument();
+    expect(screen.getByText("Sending")).toHaveClass("sr-only");
+    expect(container.querySelector(".animate-spin")).toBeNull();
   });
 
   it("dims a failed message's text and says so in the danger tone", () => {
