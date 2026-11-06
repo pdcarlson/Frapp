@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -22,10 +22,17 @@ vi.mock("@/lib/auth/session", () => ({
   signOutCurrentSession: () => signOutCurrentSession(),
 }));
 
+const bulkDropNotice = vi.fn((): string | null => null);
+vi.mock("@/lib/backwork-bulk/session", () => ({
+  bulkDropNotice: () => bulkDropNotice(),
+}));
+
 const { AccountMenu } = await import("./account-menu");
 
 describe("AccountMenu", () => {
   beforeEach(() => {
+    bulkDropNotice.mockReturnValue(null);
+    signOutCurrentSession.mockClear();
     useCurrentUser.mockReturnValue({
       data: {
         display_name: "Paul Carlson",
@@ -132,5 +139,32 @@ describe("AccountMenu", () => {
 
     expect(screen.queryByText(/theme/i)).not.toBeInTheDocument();
     expect(screen.queryAllByRole("menuitemradio")).toHaveLength(0);
+  });
+  it("asks before signing out drops Bulk upload documents, and stays put on Cancel", async () => {
+    bulkDropNotice.mockReturnValue(
+      "Bulk upload has 1 document that isn't uploaded yet. Signing out drops it.",
+    );
+    const user = userEvent.setup();
+    render(<AccountMenu variant="topbar" />);
+    await user.click(screen.getByRole("button", { name: /account menu/i }));
+    await user.click(screen.getByRole("menuitem", { name: /sign out/i }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("Signing out drops it.");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(signOutCurrentSession).not.toHaveBeenCalled();
+  });
+
+  it("signs out once the member agrees to drop them", async () => {
+    bulkDropNotice.mockReturnValue(
+      "Bulk upload has 1 document that isn't uploaded yet. Signing out drops it.",
+    );
+    const user = userEvent.setup();
+    render(<AccountMenu variant="topbar" />);
+    await user.click(screen.getByRole("button", { name: /account menu/i }));
+    await user.click(screen.getByRole("menuitem", { name: /sign out/i }));
+    await user.click(await screen.findByRole("button", { name: "Sign out" }));
+    await waitFor(() => expect(signOutCurrentSession).toHaveBeenCalledTimes(1));
   });
 });
