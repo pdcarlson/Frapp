@@ -65,7 +65,7 @@
     "typescript": "npm:@typescript/typescript6@6.0.2"
   },
   "optionalDependencies": {
-    "@infisical/cli": "0.44.11"
+    "@infisical/cli": "0.44.12"
   },
   "overrides": {
     "react": "19.2.3",
