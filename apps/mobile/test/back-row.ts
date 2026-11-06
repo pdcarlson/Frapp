@@ -48,12 +48,12 @@ export function expectBackRow(
 }
 
 /**
- * The colour of a back row's drawn `‹`: the stroke of the arrow's `Svg`. The
+ * The colour of a back row's drawn `‹`: the stroke of its `BackGlyph` path. The
  * arrow is a glyph, not a character, so a row's accent or house gold lives
  * there rather than on its text.
  */
 export function backArrowColor(row: ReactTestInstance): unknown {
-  return row.findByType("Path" as never).parent!.props.stroke;
+  return row.findByType("Path" as never).props.stroke;
 }
 
 /** The view that holds a back capsule and its trailing control side by side. */

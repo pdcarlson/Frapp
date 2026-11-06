@@ -44,9 +44,7 @@ const labelText = (tree: ReactTestRenderer) =>
 
 /** The `‹` is drawn, not typed: its stroke is the arrow's colour. */
 const arrowColor = (tree: ReactTestRenderer) =>
-  tree.root
-    .findByType("Path" as unknown as React.ElementType)
-    .parent!.props.stroke;
+  tree.root.findByType("Path" as unknown as React.ElementType).props.stroke;
 
 describe("BackRow (#3022)", () => {
   it.each([
