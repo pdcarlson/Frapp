@@ -24,10 +24,12 @@ jest.mock('@repo/org-archetypes', () => ({
   })),
   getArchetype: jest.fn((key: string) => ({ key, rolePack: 'ifc_standard' })),
   // Enough of the real catalog to exercise the activation funnel's paid-module
-  // detection (#267): one always-on free module and two paid ones.
+  // detection (#267): one always-on free module and three paid ones, one of
+  // them (`dues`) beta-off.
   MODULE_CATALOG: [
     { key: 'chat', tier: 'free', alwaysOn: true },
     { key: 'events', tier: 'paid', alwaysOn: false },
+    { key: 'tasks', tier: 'paid', alwaysOn: false },
     { key: 'dues', tier: 'paid', alwaysOn: false },
   ],
 }));
@@ -1144,18 +1146,31 @@ describe('ChapterConfigService — activation funnel (#267)', () => {
   });
 
   it('names the alphabetically-first module when a patch enables several', async () => {
-    const repos = makeRepos([], null, { events: false, dues: false });
+    // Not `dues`: while it is beta-off (`BETA_OFF_MODULES`), switching it on
+    // turns nothing on, so it is no activation.
+    const repos = makeRepos([], null, { tasks: false, events: false });
     const service = await buildService(repos);
 
     await service.patchConfig(CHAPTER_ID, 'user-1', {
-      enabled_modules: { events: true, dues: true },
+      enabled_modules: { tasks: true, events: true },
     });
 
     expect(mockActivation.record).toHaveBeenCalledWith(
       CHAPTER_ID,
       'activation-first-paid-module-enabled',
-      { module: 'dues', modules_enabled: 2 },
+      { module: 'events', modules_enabled: 2 },
     );
+  });
+
+  it('records no activation for switching on a beta-off module', async () => {
+    const repos = makeRepos([], null, { dues: false });
+    const service = await buildService(repos);
+
+    await service.patchConfig(CHAPTER_ID, 'user-1', {
+      enabled_modules: { dues: true },
+    });
+
+    expect(mockActivation.record).not.toHaveBeenCalled();
   });
 
   it('ignores a free module being toggled', async () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   eligibleSetupLines,
   SETUP_CHECKLIST_LINES,
@@ -6,6 +6,15 @@ import {
   selectSetupChecklist,
   type SetupChecklistInput,
 } from "./setup-checklist";
+
+// These pin the checklist's own rules, so `@repo/validation`'s beta list is
+// emptied: its `dues` line would otherwise never show while dues is beta-off.
+// What a beta-off module does is pinned in that package's
+// `beta-off-modules.spec.ts`.
+vi.mock("@repo/validation/beta-off-modules", () => ({
+  BETA_OFF_MODULES: [],
+  isBetaOffModule: () => false,
+}));
 
 const ALL_ON = {};
 const PRESIDENT = ["*"];
