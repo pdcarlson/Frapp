@@ -8,10 +8,11 @@ import {
   MESSAGE_MARKDOWN_ELEMENTS,
   layOutMessageBody,
   remarkDepthCap,
+  remarkMentionChips,
   skipsMarkdownParse,
   type HastNode,
 } from "@repo/chat-core/markdown";
-import { remarkMentionChips } from "./remark-mention-chips";
+import { MENTION_CHIP } from "../chip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -83,11 +84,11 @@ export const MessageMarkdown = memo(function MessageMarkdown({ content }: { cont
       //
       // The mention plugin needs the RAW body, not the decoded text remark
       // hands it — `&#64;Jane` is a mention to the renderer and to nobody
-      // else. See `remark-mention-chips.ts`.
+      // else. See `markdown-mentions.ts` in `@repo/chat-core`.
       remarkPlugins={[
         [remarkDepthCap, { content, flatten }],
         remarkBreaks,
-        [remarkMentionChips, { content }],
+        [remarkMentionChips, { content, properties: { className: MENTION_CHIP } }],
       ]}
       // Last, so it lays out the tree that renders.
       // `source` is the string remark parses, which the positions index into.

@@ -287,3 +287,83 @@ describe("ChatComposer input", () => {
     expect(style.textAlignVertical).toBe("center");
   });
 });
+
+describe("ChatComposer @-mention picker", () => {
+  const ROSTER = [
+    { user_id: "u-paul", display_name: "Paul Carlson" },
+    { user_id: "u-pat", display_name: "Pat O'Brien" },
+    { user_id: "u-sam", display_name: "Sam (VP)" },
+  ];
+
+  /** The draft, focused, with the caret at `caret` (default: the end). */
+  function typed(value: string, caret = value.length, overrides: Partial<ChatComposerProps> = {}) {
+    const result = renderComposer({ value, mentionCandidates: ROSTER, ...overrides });
+    const input = result.tree.root.findByType("TextInput" as never);
+    act(() => {
+      input.props.onFocus?.();
+      input.props.onSelectionChange?.({
+        nativeEvent: { selection: { start: caret, end: caret } },
+      });
+    });
+    return result;
+  }
+
+  const offered = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAll(
+        (node) =>
+          typeof node.props?.accessibilityLabel === "string" &&
+          node.props.accessibilityLabel.startsWith("Mention ") &&
+          typeof node.props.onPress === "function",
+      )
+      .map((node) => node.props.accessibilityLabel as string);
+
+  it("offers the members whose name holds what follows the `@`", () => {
+    // Anywhere in the name: "Sam (VP)" holds a "p" too, and "pa" narrows it.
+    expect(offered(typed("@p").tree)).toHaveLength(3);
+    expect(offered(typed("@pa").tree)).toEqual([
+      "Mention Paul Carlson",
+      "Mention Pat O'Brien",
+    ]);
+    expect(offered(typed("hey @sa").tree)).toEqual(["Mention Sam (VP)"]);
+  });
+
+  it("offers everyone on a bare `@`", () => {
+    expect(offered(typed("@").tree)).toHaveLength(3);
+  });
+
+  it("stays closed until the input is focused", () => {
+    const { tree } = renderComposer({ value: "@p", mentionCandidates: ROSTER });
+    expect(offered(tree)).toEqual([]);
+  });
+
+  it("closes after a space, and away from a handle", () => {
+    expect(offered(typed("@paul ").tree)).toEqual([]);
+    expect(offered(typed("me@p").tree)).toEqual([]);
+    expect(offered(typed("@p and more", 11).tree)).toEqual([]);
+  });
+
+  it("says so when nobody matches, and offers nothing while the roster loads", () => {
+    const { tree } = typed("@zz");
+    expect(byLabel(tree, "Members to mention")).toBeUndefined();
+    expect(JSON.stringify(tree.toJSON())).toContain("No matching members");
+
+    const loading = typed("@p", 2, { mentionCandidates: undefined });
+    expect(JSON.stringify(loading.tree.toJSON())).not.toContain(
+      "No matching members",
+    );
+    expect(offered(loading.tree)).toEqual([]);
+  });
+
+  it("writes the picked member's label in place of the typed handle", () => {
+    const { tree, props } = typed("hi @pa");
+    act(() => byLabel(tree, "Mention Paul Carlson")!.props.onPress());
+    expect(props.onChangeText).toHaveBeenCalledWith("hi @PaulCarlson ");
+  });
+
+  it("keeps text after the caret, reusing a space already there", () => {
+    const { tree, props } = typed("@sa how are you", 3);
+    act(() => byLabel(tree, "Mention Sam (VP)")!.props.onPress());
+    expect(props.onChangeText).toHaveBeenCalledWith("@SamVP how are you");
+  });
+});

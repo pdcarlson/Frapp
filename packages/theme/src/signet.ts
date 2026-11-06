@@ -67,6 +67,13 @@ export type SignetTokens = {
       /** "You were addressed" — @-mention or DM. Never replaced by the chapter accent. */
       mention: string;
       mentionForeground: string;
+      /**
+       * The in-body `@Name` chip: its fill, and the handle drawn on it
+       * (components.md § In-body mention chip). A second fixed family, not a
+       * lift of `mention`, which is a badge fill and has no text tone.
+       */
+      mentionChip: string;
+      mentionChipText: string;
     };
     /**
      * Signet's own gold. Fixed for every chapter — the Ask/AI surface speaks in
@@ -162,6 +169,8 @@ const SIGNET_DARK: SignetTokens = {
       info: "#2F81F7",
       mention: "#E5484D",
       mentionForeground: "#FFFFFF",
+      mentionChip: "#4C3A1A",
+      mentionChipText: "#FAA81A",
     },
     gold: {
       house: "#EFB63B",
@@ -261,6 +270,8 @@ export function getSignetCssVars(
     "--info": t.color.semantic.info,
     "--mention": t.color.semantic.mention,
     "--mention-foreground": t.color.semantic.mentionForeground,
+    "--mention-chip": t.color.semantic.mentionChip,
+    "--mention-chip-text": t.color.semantic.mentionChipText,
 
     "--gold-house": t.color.gold.house,
     "--gold-on-house": t.color.gold.onHouse,

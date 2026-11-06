@@ -1,6 +1,8 @@
+import { useEffect, useRef, useState, type RefObject } from "react";
 import {
   ActivityIndicator,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -8,8 +10,14 @@ import {
 } from "react-native";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { formatBytes } from "@repo/formatting";
+import {
+  activeMentionQuery,
+  mentionSuggestions,
+  type MentionCandidate,
+} from "@repo/validation";
+import { initialsFor } from "@/lib/more/narrow";
 import { SignetTokens } from "@repo/theme/signet";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { CloseGlyph } from "@/components/control-glyphs";
 import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 
@@ -44,6 +52,14 @@ import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding
  * message, so it always carries a cancel. While editing, the send control
  * saves the edit and says so to a screen reader, and the caller withholds the
  * attach control, since an edit changes text only.
+ *
+ * **`@` opens a member picker** above the input, as web's composer does: the
+ * members whose name holds what follows the `@`, from `mentionCandidates`.
+ * Picking one writes `@` and their label (`mentionLabelFor` in
+ * `@repo/validation`) in place of what was typed, so the body is the plain text
+ * a typed handle would be and the server resolves it as one. A space, or moving
+ * the caret out of the handle, closes it; with no member matching it says so,
+ * as web's does.
  *
  * This is a plain `TextInput`, deliberately. `BottomSheetTextInput` is mandatory
  * only *inside* a gorhom sheet (`spec/ui/mobile/patterns.md` § Bottom sheets);
@@ -100,6 +116,11 @@ export interface ChatComposerProps {
   attachDisabledReason?: string | null;
   /** A staged reply or an edit in progress; `null` for an ordinary send. */
   context?: ComposerContext | null;
+  /**
+   * Who `@` offers: the chapter roster, as web's picker reads it. `undefined`
+   * while it loads, which offers nothing rather than "No matching members".
+   */
+  mentionCandidates?: readonly MentionCandidate[];
 }
 
 export function ChatComposer({
@@ -116,10 +137,18 @@ export function ChatComposer({
   isUploading = false,
   attachDisabledReason,
   context = null,
+  mentionCandidates,
 }: ChatComposerProps) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand);
+  const inputRef = useRef<TextInput>(null);
+  const mention = useMentionPicker(
+    inputRef,
+    value,
+    onChangeText,
+    mentionCandidates,
+  );
 
   // An empty or whitespace-only body is not a send — unless something is
   // attached. An attachment-only message is a real message, and gating it on
@@ -201,6 +230,14 @@ export function ChatComposer({
         </View>
       ) : null}
 
+      {mention.open ? (
+        <MentionPicker
+          suggestions={mention.suggestions}
+          onPick={mention.pick}
+          styles={styles}
+        />
+      ) : null}
+
       <View style={styles.row}>
         {onAttach ? (
           <Pressable
@@ -228,10 +265,14 @@ export function ChatComposer({
         ) : null}
 
         <TextInput
+          ref={inputRef}
           accessibilityLabel={placeholder}
           editable={canSend}
           multiline
           onChangeText={onChangeText}
+          onSelectionChange={mention.onSelectionChange}
+          onFocus={mention.onFocus}
+          onBlur={mention.onBlur}
           placeholder={placeholder}
           placeholderTextColor={tokens.color.text.muted}
           style={styles.input}
@@ -265,6 +306,119 @@ export function ChatComposer({
     </View>
   );
 }
+
+/** The picker's state, read off the draft and where the caret sits in it. */
+function useMentionPicker(
+  inputRef: RefObject<TextInput | null>,
+  value: string,
+  onChangeText: (next: string) => void,
+  candidates: readonly MentionCandidate[] | undefined,
+) {
+  const [focused, setFocused] = useState(false);
+  const [caret, setCaret] = useState<number | null>(null);
+  // Where the caret goes once a pick's text has reached the input. Set
+  // straight away it would land in the old, shorter draft.
+  const pendingCaret = useRef<number | null>(null);
+
+  useEffect(() => {
+    const target = pendingCaret.current;
+    if (target === null || target > value.length) return;
+    pendingCaret.current = null;
+    inputRef.current?.setSelection?.(target, target);
+  }, [inputRef, value]);
+
+  // No selection event yet (a restored draft) reads as a caret at the end.
+  const at = Math.min(caret ?? value.length, value.length);
+  const active = focused && candidates ? activeMentionQuery(value, at) : null;
+  // A filter over one chapter's roster, cheap enough to run every render.
+  const suggestions =
+    active && candidates ? mentionSuggestions(candidates, active.query) : [];
+
+  const pick = (label: string) => {
+    if (!active) return;
+    const after = value.slice(at);
+    // One space after the handle, reusing one already there, as web's does.
+    const inserted = `@${label}${after.startsWith(" ") ? "" : " "}`;
+    const next = value.slice(0, active.start) + inserted + after;
+    const nextCaret = active.start + inserted.length + (after.startsWith(" ") ? 1 : 0);
+    pendingCaret.current = nextCaret;
+    setCaret(nextCaret);
+    onChangeText(next);
+  };
+
+  return {
+    open: active !== null,
+    suggestions,
+    pick,
+    onSelectionChange: (event: {
+      nativeEvent: { selection: { start: number; end: number } };
+    }) => {
+      const { start, end } = event.nativeEvent.selection;
+      // A range selected is not a caret in a handle.
+      setCaret(start === end ? end : -1);
+    },
+    onFocus: () => setFocused(true),
+    onBlur: () => setFocused(false),
+  };
+}
+
+/**
+ * The member list `@` opens, between the staged strips and the input, so it
+ * sits right above where the handle is typed and the keyboard stays up.
+ * Each row is a 44pt touch target (components.md §2) with the 24pt initials
+ * circle the channel member list draws; four rows show and the rest scroll.
+ * `keyboardShouldPersistTaps` lets the first tap pick, rather than only close
+ * the keyboard.
+ */
+function MentionPicker({
+  suggestions,
+  onPick,
+  styles,
+}: {
+  suggestions: ReturnType<typeof mentionSuggestions<MentionCandidate>>;
+  onPick: (label: string) => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  if (suggestions.length === 0) {
+    return (
+      <View style={styles.mentionList}>
+        <Text style={styles.mentionEmpty}>No matching members</Text>
+      </View>
+    );
+  }
+  return (
+    <ScrollView
+      accessibilityLabel="Members to mention"
+      keyboardShouldPersistTaps="always"
+      style={[styles.mentionList, styles.mentionListScroll]}
+    >
+      {suggestions.map(({ member, label }) => (
+        <Pressable
+          key={member.user_id}
+          accessibilityRole="button"
+          accessibilityLabel={`Mention ${member.display_name}`}
+          onPress={() => onPick(label)}
+          style={({ pressed }) => [
+            styles.mentionRow,
+            pressed ? styles.mentionRowPressed : null,
+          ]}
+        >
+          <View style={styles.mentionAvatar}>
+            <Text style={styles.mentionAvatarText}>
+              {initialsFor(member.display_name)}
+            </Text>
+          </View>
+          <Text numberOfLines={1} style={styles.mentionName}>
+            {member.display_name}
+          </Text>
+        </Pressable>
+      ))}
+    </ScrollView>
+  );
+}
+
+const MENTION_AVATAR_SIZE = 24;
+const MENTION_ROWS_SHOWN = 4;
 
 /**
  * The input's line height. With body type's 16/25 and 12pt of padding above
@@ -365,6 +519,51 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       flexDirection: "row",
       alignItems: "flex-end",
       gap: tokens.spacing.sm,
+    },
+    // The staged-chip surface, so the list reads as part of the composer
+    // rather than a floating card over the thread.
+    mentionList: {
+      borderRadius: tokens.radius.control,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.surface1,
+      paddingVertical: tokens.spacing.xs,
+    },
+    mentionListScroll: {
+      maxHeight: MENTION_ROWS_SHOWN * tokens.touch.minimum + 2 * tokens.spacing.xs,
+    },
+    mentionRow: {
+      minHeight: tokens.touch.minimum,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+      paddingHorizontal: tokens.spacing.sm,
+    },
+    mentionRowPressed: {
+      backgroundColor: tokens.color.surface.popover,
+    },
+    mentionAvatar: {
+      width: MENTION_AVATAR_SIZE,
+      height: MENTION_AVATAR_SIZE,
+      borderRadius: avatarRadius(MENTION_AVATAR_SIZE),
+      backgroundColor: tokens.color.surface.popover,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    mentionAvatarText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+    },
+    mentionName: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
+      flexShrink: 1,
+    },
+    mentionEmpty: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      paddingHorizontal: tokens.spacing.sm,
+      paddingVertical: tokens.spacing.xs,
     },
     input: {
       flex: 1,

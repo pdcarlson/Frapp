@@ -46,7 +46,7 @@
  * the parse is the one stage that handles depth iteratively. Every plugin after
  * this one, and everything react-markdown runs after the plugins, sees a tree
  * at most the cap deep. The measurement below is an explicit-stack walk for the
- * same reason. `apps/web/components/chat/renderers/remark-mention-chips.ts`
+ * same reason. `markdown-mentions.ts`
  * explains why neither file imports `unist-util-visit` or `@types/mdast`, and
  * the reason holds here too: `@repo/chat-core` declares neither.
  */

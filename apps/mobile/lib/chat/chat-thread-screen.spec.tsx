@@ -290,6 +290,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
         { data: undefined, isFetching: channelRow === "reading" },
   useCurrentUser: () => viewerQuery,
   useMemberDisplayNames: () => ROSTER,
+  useChapterRoster: () => ({ data: [] }),
   usePermissionList: () => [],
   useMarkChannelRead: () => markRead,
   useRequestChatUploadUrl: () => requestUploadUrl,

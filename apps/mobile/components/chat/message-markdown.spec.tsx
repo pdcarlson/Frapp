@@ -11,6 +11,7 @@ import {
   COSTLY_MARKDOWN_BODIES,
   NEAR_BUDGET_MARKDOWN_BODY,
 } from "@repo/chat-core/test/markdown-parse-budget.fixtures";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, MONO_FONT_FAMILY } from "@/lib/theme";
 import { drawnText } from "@/test/screen-text";
 import {
@@ -114,6 +115,55 @@ describe("MessageMarkdown: the formatting set (#2861)", () => {
 
   it("decodes entities as web does", () => {
     expect(drawn("&amp; &copy; &#64;")).toBe("& © @");
+  });
+});
+
+const mentionRuns = (content: string) =>
+  texts(render(content))
+    .slice(1)
+    .filter((node) =>
+      [node.props.style]
+        .flat(Infinity)
+        .some(
+          (part) =>
+            (part as Record<string, unknown> | null)?.backgroundColor ===
+            signetDarkTokens.color.semantic.mentionChip,
+        ),
+    );
+
+describe("MessageMarkdown: the in-body mention chip", () => {
+  it("chips the handle alone, in the fixed amber pair at weight 600", () => {
+    const [chip, ...rest] = mentionRuns("How are you doing @frapp");
+    expect(rest).toHaveLength(0);
+    expect(drawnText(chip!)).toBe("@frapp");
+    expect([chip!.props.style].flat()).toContainEqual({
+      backgroundColor: signetDarkTokens.color.semantic.mentionChip,
+      color: signetDarkTokens.color.semantic.mentionChipText,
+    });
+    expect(fontOf(chip!)).toBe("Figtree_600SemiBold");
+    expect(drawn("How are you doing @frapp")).toBe("How are you doing @frapp");
+  });
+
+  it("chips every handle, and leaves the stop after one outside it", () => {
+    expect(mentionRuns("@jane and @bob.").map((node) => drawnText(node))).toEqual([
+      "@jane",
+      "@bob",
+    ]);
+  });
+
+  it("chips nothing in code, an email address or a link label", () => {
+    expect(mentionRuns("`@jane` mail me@example.com")).toHaveLength(0);
+    expect(mentionRuns("[@jane](https://example.com)")).toHaveLength(0);
+  });
+
+  it("does not chip a handle spelled with an entity, which notifies nobody", () => {
+    expect(drawn("&#64;PresidentJane")).toBe("@PresidentJane");
+    expect(mentionRuns("&#64;PresidentJane")).toHaveLength(0);
+  });
+
+  it("keeps the bold face for a handle inside bold", () => {
+    const [chip] = mentionRuns("**hi @jane**");
+    expect(fontOf(chip!)).toBe("Figtree_700Bold");
   });
 });
 
