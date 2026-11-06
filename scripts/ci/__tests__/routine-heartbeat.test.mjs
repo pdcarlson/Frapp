@@ -14,6 +14,7 @@ import {
   DST_SHIFT_MS,
   WORKFLOW_FILE,
   buildAlertIssueBody,
+  describeRoutine,
   dueFire,
   evaluateHeartbeat,
   lastScheduledFire,
@@ -39,8 +40,9 @@ const AGENT_INFRA = join(REPO_ROOT, "docs", "ci-cd", "agent-infra.md");
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
-// Wednesday 2026-10-07, 19:20 UTC: the workflow's daily slot.
-const NOW = Date.parse("2026-10-07T19:20:00Z");
+// Wednesday 2026-11-18, 19:20 UTC: the workflow's daily slot, after every
+// routine's `since`.
+const NOW = Date.parse("2026-11-18T19:20:00Z");
 const LONG_AGO = Date.parse("2026-09-01T00:00:00Z");
 
 const bySlug = Object.fromEntries(
@@ -75,66 +77,89 @@ function allDone(now = NOW) {
 
 describe("the schedule", () => {
   it("finds a daily routine's fire today once it has passed, and yesterday's before", () => {
-    const hygiene = bySlug["hygiene-scan"];
+    const beta = bySlug["beta-watch"];
     assert.equal(
-      lastScheduledFire(hygiene, NOW),
-      Date.parse("2026-10-07T03:07:00Z"),
+      lastScheduledFire(beta, NOW),
+      Date.parse("2026-11-18T12:07:00Z"),
     );
     assert.equal(
-      lastScheduledFire(hygiene, Date.parse("2026-10-07T03:06:00Z")),
-      Date.parse("2026-10-06T03:07:00Z"),
+      lastScheduledFire(beta, Date.parse("2026-11-18T12:06:00Z")),
+      Date.parse("2026-11-17T12:07:00Z"),
     );
     assert.equal(
-      lastScheduledFire(hygiene, Date.parse("2026-10-07T03:07:00Z")),
-      Date.parse("2026-10-07T03:07:00Z"),
+      lastScheduledFire(beta, Date.parse("2026-11-18T12:07:00Z")),
+      Date.parse("2026-11-18T12:07:00Z"),
     );
   });
 
   it("finds a weekly routine's fire on its weekday, across a month boundary", () => {
-    // Curator is Friday 12:07 UTC; 2026-10-07 is a Wednesday.
+    // Weekly Upkeep is Thursday 03:07 UTC; 2026-11-18 is a Wednesday.
     assert.equal(
-      lastScheduledFire(bySlug["issue-curator"], NOW),
-      Date.parse("2026-10-02T12:07:00Z"),
+      lastScheduledFire(bySlug["weekly-upkeep"], NOW),
+      Date.parse("2026-11-12T03:07:00Z"),
     );
-    // PR Follow-ups is Monday 11:07 UTC; from Thursday 2026-10-01 that is 2026-09-28.
+    // Board Sweep is Monday 01:07 UTC; from Tuesday 2026-12-01 that is 2026-11-30.
     assert.equal(
       lastScheduledFire(
-        bySlug["pr-followups"],
-        Date.parse("2026-10-01T00:00:00Z"),
+        bySlug["board-sweep"],
+        Date.parse("2026-12-01T00:00:00Z"),
       ),
-      Date.parse("2026-09-28T11:07:00Z"),
+      Date.parse("2026-11-30T01:07:00Z"),
     );
-    // Docs Upkeep on its own Wednesday: before 11:07 it is the previous week's.
+    // Board Sweep on its own Monday: before 01:07 it is the previous week's.
     assert.equal(
       lastScheduledFire(
-        bySlug["docs-upkeep"],
-        Date.parse("2026-10-07T11:00:00Z"),
+        bySlug["board-sweep"],
+        Date.parse("2026-11-16T01:00:00Z"),
       ),
-      Date.parse("2026-09-30T11:07:00Z"),
+      Date.parse("2026-11-09T01:07:00Z"),
     );
   });
 
   it("judges the latest fire that has had its slack and run allowance", () => {
-    const triage = bySlug["issue-triage"];
-    // 13:07 + 1h + 4h = 18:07: before it, a run judges yesterday's triage.
+    const beta = bySlug["beta-watch"];
+    // 12:07 + 1h + 4h = 17:07: before it, a run judges yesterday's watch.
     assert.equal(
-      dueFire(triage, Date.parse("2026-10-07T18:00:00Z")),
-      Date.parse("2026-10-06T13:07:00Z"),
+      dueFire(beta, Date.parse("2026-11-18T17:00:00Z")),
+      Date.parse("2026-11-17T12:07:00Z"),
     );
-    assert.equal(dueFire(triage, NOW), Date.parse("2026-10-07T13:07:00Z"));
+    assert.equal(dueFire(beta, NOW), Date.parse("2026-11-18T12:07:00Z"));
   });
 
-  it("mirrors the routines' stored schedules (list_triggers, 2026-09-30)", () => {
+  it("mirrors routines.md § Settings: each CRON_TZ schedule as its EDT-time UTC", () => {
+    const doc = readFileSync(ROUTINES_DOC, "utf8");
+    const row = doc.split("\n").find((line) => line.startsWith("| Schedule |"));
+    assert.ok(row, "routines.md § Settings has a Schedule row");
+    for (const routine of ROUTINES) {
+      const match = row.match(
+        new RegExp(
+          `${routine.name} \`CRON_TZ=America/New_York (\\d+) (\\d+) \\* \\* (\\*|\\d)\``,
+        ),
+      );
+      assert.ok(match, `${routine.name} has a CRON_TZ schedule in routines.md`);
+      const [, minute, hour, weekday] = match;
+      // EDT is UTC-4: add four hours, and a day when that crosses midnight.
+      const utcHour = Number(hour) + 4;
+      const nextDay = utcHour >= 24;
+      assert.equal(routine.minute, Number(minute), routine.slug);
+      assert.equal(routine.hour, utcHour % 24, routine.slug);
+      assert.equal(
+        routine.weekday,
+        weekday === "*" ? undefined : (Number(weekday) + (nextDay ? 1 : 0)) % 7,
+        routine.slug,
+      );
+    }
+  });
+
+  it("pins the routines' schedules as EDT-time UTC", () => {
     const cron = ({ minute, hour, weekday }) =>
       `${minute} ${hour} * * ${weekday ?? "*"}`;
     assert.deepEqual(
       Object.fromEntries(ROUTINES.map((r) => [r.slug, cron(r)])),
       {
-        "issue-curator": "7 12 * * 5",
-        "issue-triage": "7 13 * * *",
-        "pr-followups": "7 11 * * 1",
-        "docs-upkeep": "7 11 * * 3",
-        "hygiene-scan": "7 3 * * *",
+        "beta-watch": "7 12 * * *",
+        "board-sweep": "7 1 * * 1",
+        "weekly-upkeep": "7 3 * * 4",
       },
     );
   });
@@ -143,12 +168,12 @@ describe("the schedule", () => {
 describe("parseRecords", () => {
   it("reads a record in a code fence, with the next line as its reason", () => {
     const [parsed] = parseRecords([
-      record("hygiene-scan", "stopped", NOW, {
+      record("beta-watch", "stopped", NOW, {
         fenced: true,
         reason: "sandbox bringup failed",
       }),
     ]);
-    assert.equal(parsed.routine, "hygiene-scan");
+    assert.equal(parsed.routine, "beta-watch");
     assert.equal(parsed.outcome, "stopped");
     assert.equal(parsed.reason, "sandbox bringup failed");
     assert.equal(parsed.createdAt, NOW);
@@ -163,7 +188,7 @@ describe("parseRecords", () => {
       null,
     ]) {
       assert.deepEqual(
-        parseRecords([record("issue-triage", "done", NOW, { author })]),
+        parseRecords([record("beta-watch", "done", NOW, { author })]),
         [],
         String(author),
       );
@@ -179,11 +204,11 @@ describe("parseRecords", () => {
     assert.deepEqual(
       parseRecords([
         comment("Routine-state issue. Please pin it."),
-        comment("routine-run: v2 routine=issue-triage outcome=done"),
-        comment("routine-run: v1 routine=issue-triage outcome=finished"),
-        comment("see routine-run: v1 routine=issue-triage outcome=done"),
+        comment("routine-run: v2 routine=beta-watch outcome=done"),
+        comment("routine-run: v1 routine=beta-watch outcome=finished"),
+        comment("see routine-run: v1 routine=beta-watch outcome=done"),
         {
-          ...comment("routine-run: v1 routine=issue-triage outcome=done"),
+          ...comment("routine-run: v1 routine=beta-watch outcome=done"),
           created_at: "not a date",
         },
       ]),
@@ -197,7 +222,7 @@ describe("parseRecords", () => {
       created_at: new Date(NOW).toISOString(),
       body,
     });
-    const line = "routine-run: v1 routine=issue-triage outcome=done";
+    const line = "routine-run: v1 routine=beta-watch outcome=done";
     for (const body of [
       `\`${line}\``,
       `> ${line}`,
@@ -214,15 +239,15 @@ describe("parseRecords", () => {
 
   it("takes no reason from the attribution footer", () => {
     const [parsed] = parseRecords([
-      record("issue-triage", "done", NOW, { fenced: true }),
+      record("beta-watch", "done", NOW, { fenced: true }),
     ]);
     assert.equal(parsed.reason, "");
   });
 
   it("returns records oldest first", () => {
     const parsed = parseRecords([
-      record("issue-triage", "done", NOW),
-      record("issue-triage", "stopped", NOW - HOUR),
+      record("beta-watch", "done", NOW),
+      record("beta-watch", "stopped", NOW - HOUR),
     ]);
     assert.deepEqual(
       parsed.map((r) => r.outcome),
@@ -246,27 +271,27 @@ describe("evaluateHeartbeat", () => {
 
   it("fails a routine with no record since its due fire: the 09-17 startup failure", () => {
     const comments = allDone().filter(
-      (c) => !c.body.includes("routine=issue-triage"),
+      (c) => !c.body.includes("routine=beta-watch"),
     );
     const verdict = evaluate(comments);
     assert.equal(verdict.ok, false);
     assert.deepEqual(
       verdict.failing.map((r) => r.slug),
-      ["issue-triage"],
+      ["beta-watch"],
     );
     assert.match(
       verdict.reason,
-      /Issue Triage: no run record since its 2026-10-07T13:07Z run/,
+      /Beta Watch: no run record since its 2026-11-18T12:07Z run/,
     );
   });
 
   it("fails a routine whose newest record says it stopped: the 09-30 bringup failure", () => {
-    const hygiene = bySlug["hygiene-scan"];
+    const beta = bySlug["beta-watch"];
     const comments = allDone().filter(
-      (c) => !c.body.includes("routine=hygiene-scan"),
+      (c) => !c.body.includes("routine=beta-watch"),
     );
     comments.push(
-      record("hygiene-scan", "stopped", dueFire(hygiene, NOW) + HOUR, {
+      record("beta-watch", "stopped", dueFire(beta, NOW) + HOUR, {
         reason: "port 54322 already in use",
       }),
     );
@@ -274,41 +299,41 @@ describe("evaluateHeartbeat", () => {
     assert.equal(verdict.ok, false);
     assert.match(
       verdict.reason,
-      /Hygiene Scan: its 2026-10-07T03:07Z run stopped \(port 54322 already in use\)/,
+      /Beta Watch: its 2026-11-18T12:07Z run stopped \(port 54322 already in use\)/,
     );
   });
 
   it("lets the newest record in the window win, so a re-run clears a stopped one", () => {
-    const hygiene = bySlug["hygiene-scan"];
-    const fire = dueFire(hygiene, NOW);
+    const beta = bySlug["beta-watch"];
+    const fire = dueFire(beta, NOW);
     const comments = allDone().filter(
-      (c) => !c.body.includes("routine=hygiene-scan"),
+      (c) => !c.body.includes("routine=beta-watch"),
     );
     const stoppedThenDone = [
       ...comments,
-      record("hygiene-scan", "stopped", fire + HOUR),
-      record("hygiene-scan", "done", fire + 3 * HOUR),
+      record("beta-watch", "stopped", fire + HOUR),
+      record("beta-watch", "done", fire + 3 * HOUR),
     ];
     assert.equal(evaluate(stoppedThenDone).ok, true);
     const doneThenStopped = [
       ...comments,
-      record("hygiene-scan", "done", fire + HOUR),
-      record("hygiene-scan", "stopped", fire + 3 * HOUR),
+      record("beta-watch", "done", fire + HOUR),
+      record("beta-watch", "stopped", fire + 3 * HOUR),
     ];
     assert.equal(evaluate(doneThenStopped).ok, false);
   });
 
   it("does not count the previous run's record for this one", () => {
-    const hygiene = bySlug["hygiene-scan"];
+    const beta = bySlug["beta-watch"];
     const comments = allDone().filter(
-      (c) => !c.body.includes("routine=hygiene-scan"),
+      (c) => !c.body.includes("routine=beta-watch"),
     );
     comments.push(
-      record("hygiene-scan", "done", dueFire(hygiene, NOW) - DAY + HOUR),
+      record("beta-watch", "done", dueFire(beta, NOW) - DAY + HOUR),
     );
     assert.deepEqual(
       evaluate(comments).failing.map((r) => r.slug),
-      ["hygiene-scan"],
+      ["beta-watch"],
     );
   });
 
@@ -324,17 +349,17 @@ describe("evaluateHeartbeat", () => {
   });
 
   it("doesn't let a manual run before the fire stand in for it", () => {
-    // Issue Triage run by hand at 12:00, then its 13:07 fire dies at startup.
-    const triage = bySlug["issue-triage"];
+    // Beta Watch run by hand at 11:00, then its 12:07 fire dies at startup.
+    const beta = bySlug["beta-watch"];
     const comments = allDone().filter(
-      (c) => !c.body.includes("routine=issue-triage"),
+      (c) => !c.body.includes("routine=beta-watch"),
     );
     comments.push(
-      record("issue-triage", "done", dueFire(triage, NOW) - 67 * 60 * 1000),
+      record("beta-watch", "done", dueFire(beta, NOW) - 67 * 60 * 1000),
     );
     assert.deepEqual(
       evaluate(comments).failing.map((r) => r.slug),
-      ["issue-triage"],
+      ["beta-watch"],
     );
   });
 
@@ -348,22 +373,44 @@ describe("evaluateHeartbeat", () => {
   });
 
   it("starts judging each routine at its first fire after the watch's first run", () => {
-    // First run Tuesday 2026-10-06 19:20: fires since then are judged
-    // (Wednesday's Hygiene, Docs Upkeep and Triage), the rest not until they
-    // next fire.
+    // First run Tuesday 2026-11-17 19:20: fires since then are judged
+    // (Wednesday's Beta Watch), the rest not until they next fire.
     const verdict = evaluate([], {
-      judgeFrom: Date.parse("2026-10-06T19:20:00Z"),
+      judgeFrom: Date.parse("2026-11-17T19:20:00Z"),
     });
     const status = Object.fromEntries(
       verdict.routines.map((r) => [r.slug, r.status]),
     );
     assert.deepEqual(status, {
-      "issue-curator": "not-judged",
-      "issue-triage": "missing",
-      "pr-followups": "not-judged",
-      "docs-upkeep": "missing",
-      "hygiene-scan": "missing",
+      "beta-watch": "missing",
+      "board-sweep": "not-judged",
+      "weekly-upkeep": "not-judged",
     });
+  });
+
+  it("judges no fire from before the routine's own scheduled task existed", () => {
+    // Monday 2026-11-09 19:20, the watch long running: the Board Sweep's 01:07
+    // fire that day is judged, while Weekly Upkeep's latest due fire
+    // (Thursday 2026-11-05) predates the tasks' creation on 2026-11-06.
+    const now = Date.parse("2026-11-09T19:20:00Z");
+    const status = Object.fromEntries(
+      evaluate([], { now }).routines.map((r) => [r.slug, r.status]),
+    );
+    assert.deepEqual(status, {
+      "beta-watch": "missing",
+      "board-sweep": "missing",
+      "weekly-upkeep": "not-judged",
+    });
+    for (const routine of ROUTINES)
+      assert.ok(Number.isFinite(routine.since), routine.slug);
+    const upkeep = evaluate([], { now }).routines.find(
+      (r) => r.slug === "weekly-upkeep",
+    );
+    assert.match(describeRoutine(upkeep), /predates its scheduled task/);
+    const early = evaluate([], { now, judgeFrom: now - HOUR }).routines.find(
+      (r) => r.slug === "weekly-upkeep",
+    );
+    assert.match(describeRoutine(early), /predates this watch/);
   });
 });
 
@@ -472,7 +519,7 @@ describe("readHeartbeat", () => {
     const since = Date.parse(
       new URL(commentsCall.url).searchParams.get("since"),
     );
-    assert.equal(since, dueFire(bySlug["issue-curator"], NOW));
+    assert.equal(since, dueFire(bySlug["weekly-upkeep"], NOW));
   });
 
   it("pages through a full page of comments", async () => {

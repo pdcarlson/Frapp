@@ -30,6 +30,7 @@ import type {
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
 import { ChapterPointsConfigService } from './chapter-points-config.service';
+import { RbacService } from './rbac.service';
 import { clampListLimit } from '#domain/constants/list-query-limits';
 import { instantOrThrow } from './instant-bound';
 import {
@@ -98,6 +99,7 @@ export class PointsService {
     private readonly notificationService: NotificationService,
     private readonly chatService: ChatService,
     private readonly chapterPointsConfig: ChapterPointsConfigService,
+    private readonly rbacService: RbacService,
   ) {}
 
   private filterByWindow(
@@ -307,6 +309,13 @@ export class PointsService {
    * row per member rather than loading the chapter's full transaction history
    * into the API process (#522). Only the window boundaries are resolved here —
    * see {@link resolveLeaderboardWindow} for why they are not re-derived in SQL.
+   *
+   * Zero is a standing, not a gap (`spec/behavior/points.md` § Leaderboard):
+   * every current member who isn't an alumnus is on the board, at 0 when they
+   * have no transaction in the window, so a new chapter's board is its whole
+   * roster tied for first rather than nothing. An archived semester is the
+   * exception: today's roster says nothing about who was in the chapter then,
+   * so that board stays the members who earned or lost points in it.
    */
   async getLeaderboard(
     chapterId: string,
@@ -324,7 +333,14 @@ export class PointsService {
       semesterArchiveId,
     );
 
-    return this.pointTxnRepo.leaderboard(chapterId, bounds);
+    const archived = Boolean(semesterArchiveId);
+    const [board, roster, alumniRoleId] = await Promise.all([
+      this.pointTxnRepo.leaderboard(chapterId, bounds),
+      archived ? [] : this.memberRepo.findByChapter(chapterId),
+      archived ? null : this.rbacService.getAlumniRoleId(chapterId),
+    ]);
+
+    return withRosterAtZero(board, roster, alumniRoleId);
   }
 
   private static readonly RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
@@ -659,4 +675,32 @@ export class PointsService {
       system_originated: true,
     });
   }
+}
+
+/**
+ * The board plus every roster member it lacks, at 0, in the order
+ * `get_points_leaderboard` ranks by: total descending, ties by `user_id`.
+ * Alumni are left out unless they already have a row: they can't earn points
+ * themselves (`spec/behavior/alumni.md`), so a 0 for them is no standing at
+ * all. A departed member keeps the row their transactions give them.
+ */
+function withRosterAtZero(
+  board: { user_id: string; total: number }[],
+  roster: { user_id: string; role_ids: string[] }[],
+  alumniRoleId: string | null,
+): { user_id: string; total: number }[] {
+  const ranked = new Set(board.map((row) => row.user_id));
+  const zeros = roster
+    .filter(
+      (member) =>
+        !ranked.has(member.user_id) &&
+        !(alumniRoleId && member.role_ids.includes(alumniRoleId)),
+    )
+    .map((member) => ({ user_id: member.user_id, total: 0 }));
+  if (zeros.length === 0) return board;
+  return [...board, ...zeros].sort(
+    (a, b) =>
+      b.total - a.total ||
+      (a.user_id < b.user_id ? -1 : a.user_id > b.user_id ? 1 : 0),
+  );
 }

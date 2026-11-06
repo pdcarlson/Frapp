@@ -78,6 +78,9 @@ export function subscriptionRefusalOf(
  * difference between an explanation and a shrug.
  */
 export const SUBSCRIPTION_REFUSAL_COPY = {
+  /** `POST /v1/events`, the New event sheet. */
+  event:
+    "Your chapter's subscription isn't active, so new events can't be saved. An officer can sort this out for the chapter.",
   task: "Your chapter's subscription isn't active, so new tasks can't be saved. An officer can sort this out for the chapter.",
   /**
    * `PATCH /v1/tasks/:id/status`, the s08 board's checkbox (#2710). Says

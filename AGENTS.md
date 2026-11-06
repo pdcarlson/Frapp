@@ -101,7 +101,7 @@ Read the matching skill before deep work. Skills live in [`.claude/skills/`](.cl
 - Reviewing and verifying: `diff-review` (the pre-push gate; [runbook](docs/ci-cd/ai-code-review-runbook.md)), `audit`, `infrastructure-research`, `live-verification` (deployed staging only, never production).
 - Tracker and sessions: `file-follow-up`, `needs-me`, `handoff`.
 - Multi-agent work: `multi-agent` (budget, effort and mechanics for any Workflow or subagent fan-out).
-- The five scheduled routines, 1 to 5: `issue-curator`, `issue-triage`, `pr-followups`, `docs-upkeep`, `hygiene-scan` ([`routines.md`](docs/ci-cd/routines.md)).
+- The three scheduled routines, 1 to 3: `beta-watch`, `board-sweep` (runs `pr-followups`, `issue-curator`, `issue-triage` as phases), `weekly-upkeep` (alternates `docs-upkeep` and `hygiene-scan`) ([`routines.md`](docs/ci-cd/routines.md)).
 
 Long sessions degrade. Offer `/handoff` when context is filling or a task is ending, written as orientation for the next session, not instructions. Where the session has the suggested-task tool, the offer can be a card ([Operating mindset](#operating-mindset)).
 
@@ -132,7 +132,7 @@ Claude Code (web and CLI) is the agent harness this repo configures. Bringup is 
 
 - **Review gate:** `/diff-review`. [`.githooks/pre-push`](.githooks/pre-push), installed by the root `prepare` script, requires `.cache/diff-review/<PUSHED_COMMIT_SHA>` for each pushed ref's tip that adds unreviewed work (a clean merge of `main` adds none), whoever pushes it; retrying doesn't release it. Never push with `--no-verify`: the hook is local, so nothing server-side catches the bypass.
 - **Tracker and PRs:** GitHub Issues through the GitHub MCP, `mcp__github__*` ([Work tracking](#work-tracking)). PRs go against `main` with `create_pull_request` / `update_pull_request`, never `gh`. `.claude/settings.json` sets `doneMeansMerged: true`.
-- **Scheduled agents:** Claude Code Routines ([`routines.md`](docs/ci-cd/routines.md)).
+- **Scheduled agents:** Claude scheduled tasks bound to a Frapp project thread ([`routines.md`](docs/ci-cd/routines.md)).
 - **Branch protection:** agent sessions run only `npm run configure:branch-protection:verify`, never a live apply.
 
 ## Autonomous PR lifecycle (cloud sessions)
