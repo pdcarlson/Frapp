@@ -225,11 +225,15 @@ Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assem
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading points ledger...` |
-| Empty leaderboard | `No leaderboard entries` | `Point activity will populate after attendance, study, or admin adjustments.` |
-| Leaderboard search matched nothing | `No members match that search` | `Check the spelling, or clear the search to see the full leaderboard.` |
-| Empty transactions | `No transactions in this window` | `Your attendance, study sessions, and adjustments will appear here.` |
+| Everyone at 0 | — | `Everyone is tied at 0. The first points earned take the lead.` (one line under the board) |
+| Empty leaderboard | — | `Nobody has points in this period.` (one line) |
+| Leaderboard search matched nothing | — | `No members match that search.` then a **Clear search** link (one line) |
+| Empty transactions | — | `No points in this period yet.` (one line) |
+| Transaction filters matched nothing | — | `No transactions match these filters.` then a **Clear filters** link (one line) |
 | Error | `Couldn't load the points ledger` | `Standings and transactions are unavailable, so none are shown. Confirm your chapter access and retry.` |
 | Offline | `Points ledger unavailable offline` | `Reconnect to refresh leaderboard standings and transaction history.` |
+
+The board lists the whole roster, at 0 until a member earns points ([`points.md` § Leaderboard](../../behavior/points.md#leaderboard)), so a new chapter sees its members tied for first with the one line above rather than a card. The empty and no-match states are single lines (`InlineNote`, `apps/web/components/shared/inline-note.tsx`) where the rows would be, not cards; error and offline keep theirs (2026-11-06).
 
 ### Points — Audit tab (dashboard)
 
