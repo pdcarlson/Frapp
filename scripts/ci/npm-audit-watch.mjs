@@ -53,7 +53,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseAllowlistSource, validateAllowlist } from "../check-npm-audit.mjs";
-import { defineAlert, findAlertIssuesDetailed, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
+import { defineAlert, findAlertIssuesDetailed, markerLine, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
 import { NPM_AUDIT_GATE_DOC } from "./lib/ops-docs.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
@@ -216,10 +216,7 @@ export function expiryMarker(expiring) {
 
 /** The marker line in an issue body, or null. */
 export function markerIn(body) {
-  if (typeof body !== "string") return null;
-  // A body edited in GitHub's web UI comes back with CRLF line endings.
-  const line = body.split("\n").find((candidate) => candidate.startsWith(MARKER_PREFIX));
-  return line === undefined ? null : line.trimEnd();
+  return markerLine(body, MARKER_PREFIX);
 }
 
 function describeExpiry(entry, today) {
