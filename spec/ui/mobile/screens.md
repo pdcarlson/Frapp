@@ -53,7 +53,7 @@ These pre-Signet screens had no Canvas counterpart and have been **deleted**:
 | Removed route | Why removed |
 | ------------- | ----------- |
 | `(tabs)/index.tsx` (old Home) | There is no Home tab — chat is home (s04). The `index.tsx` path is reused by the chat list. |
-| `(tabs)/points.tsx` | Absorbed into Tasks (s08): points balance + house rank render at the top of the task board. **Landed.** The rank denominator counts members with points in the window, not chapter members — `getLeaderboard` groups transactions. |
+| `(tabs)/points.tsx` | Absorbed into Tasks (s08): points balance + house rank render at the top of the task board. **Landed.** The rank denominator is the board's own count: every current member who isn't an alumnus (listed at 0 until they earn points), plus anyone who left or graduated with points in the window ([`points.md` § Leaderboard](../../behavior/points.md#leaderboard), 2026-11-06). |
 | `(tabs)/points-details.tsx` | Absorbed into Tasks (s08) and Profile (s15) stat cards; the ledger stays authoritative in [`../../behavior/points.md`](../../behavior/points.md). The s08 half has landed as the balance + house-rank card; no standalone leaderboard list replaced the deleted one, by design. |
 | `(tabs)/notification-targets.tsx` | Notification preferences live in Settings (s16); opt-in happens via the contextual primer (s03 and [`patterns.md`](patterns.md)). |
 | `(tabs)/onboarding-tour.tsx` | Replaced by the first-run screen (s03) — join flow behavior in [`../../behavior/onboarding.md`](../../behavior/onboarding.md). |
