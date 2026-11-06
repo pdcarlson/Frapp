@@ -257,11 +257,22 @@ Officers get one **Set up your chapter** list instead of an officer half on ever
 | --- | --- | --- | --- |
 | Invite members | `members:invite` | always on | the roster has someone besides the officer, or an invite is out |
 | Schedule the first event | `events:create` | `events` | the chapter has an event |
-| Add a study zone | `geofences:manage` | `geofences` | the chapter has a study zone |
+| Add a study zone | `geofences:manage` | `geofences` | the chapter has an active study zone |
 | Upload the bylaws | `chapter_docs:upload` | `documents` | the library has a document |
 | Send the first dues | `billing:manage` and `billing:view` (only `view` reads the whole chapter's invoices) | `dues` | the chapter has an invoice |
 
 A line shows only to an officer who can do it, and only while the module the server gates its action on is on (switching a module on is the ops nudge's job, above). The list draws nothing until every read it needs has loaded, so it never flashes in half-checked, and a read that fails leaves it undrawn rather than guessing a line. It is worked out from live counts, so it goes away while every line it shows is done and comes back if one comes undone, say the only event is deleted or a module is switched on. An officer can hide it for good; like a nudge, the hide is stored per user per chapter, as `setup-checklist` in `members.dismissed_ops_nudges`. The rule, the copy and each line's web page are shared by both clients (`useChapterSetupChecklist` and `SETUP_CHECKLIST_WEB_PATH` in `@repo/hooks`). The phone can upload a document, so that line opens Documents in the app; it has no screen for inviting, scheduling or study zones, so those lines say "Web", done or not, and open the same page of the web app in the in-app browser. Closing the browser re-reads the lists, since the step may just have been done there, and so does chat home's pull to refresh. The web page opens in whichever chapter the web session has active, not necessarily the phone's ([#3575](https://github.com/pdcarlson/Frapp/issues/3575)).
+
+## Not-set-up features
+
+Nobody is sent to a feature that is on but that nobody has set up yet, when its screen could only say so. Two features qualify, and the web nav, the mobile More tab and the web Ask popover leave them out until the first item exists:
+
+- **Study hours** with no active study zone hides from everyone. Zones are made in the web app's Study zones tool (`/geofences`), which neither Study screen links to, so an officer who manages zones would land on the same dead end; the [setup checklist](#setup-checklist) above sends them to the tool instead. Only active zones count, because both Study screens list only those, and a zone that has sessions can't be deleted, so a chapter done with zones deactivates them. While the zones module (`geofences`) is off no zone can exist, so Study hours counts as not set up.
+- **Documents** with nothing in it hides from a viewer without `chapter_docs:upload`. Whoever can upload keeps it, because the upload is on that screen.
+
+The rule is shared by both clients (`useHiddenUnsetFeatures` in `@repo/hooks`), and it reads a feature's list only for a viewer it could hide the feature from, and only while the list's module is on. Nothing hides while the viewer's permissions, the chapter's modules or the list are still loading, or after the list's read fails: a row hides on a read that answers "none", or on its list's module being off. Only the entry points hide: the routes stay open, so a link into one still lands.
+
+**Backwork is not one of them.** Members upload it themselves (`backwork:upload` is in the Member and New Member roles), so an empty library is theirs to start, and hiding it would hide the only way to add the first file. Its nav row is instead gated on `backwork:upload` or `backwork:admin`, the pair the library's read requires, so a viewer the library would refuse (Alumni, an officer whose roles carry neither) isn't sent to a page that can only fail.
 
 ## Module disabling behavior
 

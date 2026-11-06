@@ -225,14 +225,67 @@ export function readSystemAuditPayload(
 }
 
 /**
- * An audit card's last line: the fields the change touched, or that it
- * touched none. One copy so web's and mobile's cards say the same.
+ * What each audited action did, as the words after the actor's name in an
+ * audit line ("Paul **updated the chapter profile**"). One copy so web's and
+ * mobile's lines say the same. An action not listed here reads as its key
+ * with the underscores taken out, so a new writer never draws a raw key.
  */
-export function auditChangeSummary(payload: SystemAuditPayload): string {
-  const fields = Object.keys(payload.diff);
-  return fields.length > 0
-    ? `Changed: ${fields.join(", ")}`
-    : "No field changes recorded";
+const AUDIT_ACTION_PHRASES: Record<string, string> = {
+  chapter_config_updated: "updated chapter settings",
+  chapter_profile_updated: "updated the chapter profile",
+  chapter_logo_updated: "updated the chapter logo",
+  chapter_logo_removed: "removed the chapter logo",
+  chapter_custom_field_created: "added a profile field",
+  chapter_custom_field_updated: "edited a profile field",
+  chapter_custom_field_deleted: "removed a profile field",
+  chapter_custom_role_created: "added a role",
+  chapter_custom_role_updated: "edited a role",
+  chapter_custom_role_deleted: "removed a role",
+  role_created: "added a role",
+  role_updated: "edited a role",
+  role_deleted: "removed a role",
+  member_removed: "removed a member",
+  presidency_transferred: "handed over the presidency",
+  presidency_claimed: "claimed the presidency",
+  president_orphaned: "left the chapter without a president",
+};
+
+/** `accent_color` → `accent color`: a key as words, never as a key. */
+function keyAsWords(key: string): string {
+  return key.replace(/[_-]+/g, " ").trim();
+}
+
+/**
+ * An audit line's words: what the actor did, and which fields it touched
+ * (`null` when the row recorded none). The line draws them after the actor's
+ * name, the detail muted: "Paul updated the chapter profile · accent color"
+ * (`spec/ui/design-system/components.md` §11 § Audit lines).
+ */
+export function auditLineText(payload: SystemAuditPayload): {
+  phrase: string;
+  detail: string | null;
+} {
+  const phrase =
+    AUDIT_ACTION_PHRASES[payload.action] ?? keyAsWords(payload.action);
+  const fields = Object.keys(payload.diff).map(keyAsWords).filter(Boolean);
+  return { phrase, detail: fields.length > 0 ? fields.join(", ") : null };
+}
+
+/**
+ * Whether a message draws as an audit line rather than a message: a
+ * `system_audit` row the `#chapter-audit` mirror wrote, so it carries a
+ * readable payload. The server's other notices (a poll closing, the chapter
+ * welcome) are `system_audit` rows without one and stay sentences in the
+ * thread, from Frapp.
+ */
+export function isAuditLine(message: {
+  kind?: string | null;
+  payload?: unknown;
+}): boolean {
+  return (
+    message.kind === "system_audit" &&
+    readSystemAuditPayload(message as ChatMessage) !== null
+  );
 }
 
 /**

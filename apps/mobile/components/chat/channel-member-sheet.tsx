@@ -90,7 +90,7 @@ export const ChannelMemberSheet = forwardRef<
 
 /**
  * The thread header's trigger for the sheet: the Directory glyph, web's
- * members toggle (`iconography.md` §6.2.2), drawn at the mute trigger's
+ * members toggle (`iconography.md` §6.2.2), drawn at the ⋯ menu trigger's
  * geometry beside it (a 24pt glyph in a 44pt box) so the two header glyphs
  * line up. The glyph alone (`components.md` § Icon-only actions).
  */
