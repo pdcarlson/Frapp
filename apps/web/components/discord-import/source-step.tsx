@@ -24,10 +24,13 @@ export function SourceStep({
   value,
   onChange,
   botAvailable,
+  intro = true,
 }: {
   value: ImportSource | null;
   onChange: (next: ImportSource) => void;
   botAvailable: boolean;
+  /** The paragraph above the cards. The page's start has its own words. */
+  intro?: boolean;
 }) {
   const options: {
     key: ImportSource;
@@ -56,11 +59,13 @@ export function SourceStep({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        There are two ways to bring your Discord history into Frapp. Both end up
-        in the same place, and both ask you the same questions about where each
-        channel should land.
-      </p>
+      {intro ? (
+        <p className="text-sm text-muted-foreground">
+          There are two ways to bring your Discord history into Frapp. Both end
+          up in the same place, and both ask you the same questions about where
+          each channel should land.
+        </p>
+      ) : null}
 
       <div className="space-y-3">
         {options.map((option) => {
