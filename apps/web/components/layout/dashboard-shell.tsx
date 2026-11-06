@@ -29,6 +29,7 @@ import { isNavItemVisible } from "@/components/layout/protected-nav-item";
 import { useChapterTheme } from "@/lib/hooks/use-chapter-theme";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import { ChapterWizardGate } from "@/components/onboarding/chapter-wizard-gate";
+import { NoAccessRedirect } from "@/components/layout/no-access-redirect";
 import { TermsPromptGate } from "@/components/auth/terms-prompt";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
 import { useChapterStore } from "@/lib/stores/chapter-store";
@@ -176,6 +177,8 @@ export function DashboardShell({
       className="flex h-dvh overflow-hidden bg-background"
     >
       <ChapterWizardGate />
+      {/* A member whose roles grant nothing (#3236). */}
+      <NoAccessRedirect />
       {/* A member who hasn't accepted the current Terms (#2302). */}
       <TermsPromptGate />
       <OnboardingTutorial />
