@@ -28,6 +28,7 @@ import { clampListLimit } from '#domain/constants/list-query-limits';
 import { ID_CHUNK_SIZE, chunkIds } from '#domain/utils/chunk-ids';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import { isNotificationCategoryKey } from '@repo/validation';
 import { ChatBlockService } from './chat-block.service';
 
 /**
@@ -119,6 +120,19 @@ function inAppRow(
   };
 }
 
+/**
+ * Whether a member's category preference can stop this payload: never for
+ * URGENT (#1041), and only for a category the member has a switch for
+ * (`NOTIFICATION_CATEGORIES`). A row for any other key has no control left to
+ * undo it. `chat` is the case that matters: its switch was dropped
+ * (2026-11-06) in favour of per-channel and per-DM levels, and a `chat` row an
+ * older build wrote must not keep a member muted with nothing to turn it back
+ * on (`spec/behavior/notifications.md` § Preference sync).
+ */
+function isMemberSwitchable(category: string, priority: string): boolean {
+  return priority !== 'URGENT' && isNotificationCategoryKey(category);
+}
+
 @Injectable()
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
@@ -166,7 +180,7 @@ export class NotificationService {
     // The lookup is gated rather than reordered so neither path pays for the
     // other: URGENT skips the preference read entirely, and a suppressed
     // category still returns before the `user_settings` read.
-    if (priority !== 'URGENT') {
+    if (isMemberSwitchable(category, priority)) {
       const pref = await this.preferenceRepo.findByUserChapterCategory(
         userId,
         chapterId,
@@ -238,7 +252,7 @@ export class NotificationService {
     const priority = payload.priority ?? 'NORMAL';
 
     let eligible = userIds;
-    if (priority !== 'URGENT') {
+    if (isMemberSwitchable(category, priority)) {
       const { rows: prefs, failedIds } = await this.loadInChunks(
         userIds,
         (chunk) =>

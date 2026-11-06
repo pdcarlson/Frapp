@@ -24,9 +24,9 @@ import { CheckGlyph } from "@/components/tasks/task-glyphs";
  * UP NEXT and above the channels, drawn the way UP NEXT is (an eyebrow over
  * rows), so it reads as one more strip of chrome and not a card.
  *
- * The phone can upload a document, so that line opens Documents, where the
- * upload sheet is. It has no screen for inviting, scheduling or study zones,
- * so those lines open the same page of the web app in the in-app browser, and
+ * The phone can upload a document and schedule an event, so those lines open
+ * Documents and Events, where the upload and New event sheets are. It has no
+ * screen for inviting or study zones, so those lines open the same page of the web app in the in-app browser, and
  * say so before the tap, the way Settings' Study zones row says where zones
  * are managed. It never draws dues ({@link MOBILE_SETUP_CHECKLIST_OMIT}).
  *
@@ -47,6 +47,7 @@ export const SETUP_CHECKLIST_APP_ROUTE: Partial<
   Record<SetupChecklistKey, string>
 > = {
   document: "/documents",
+  event: "/events",
 };
 
 /** The trailing note on a line that opens the web app. */

@@ -168,166 +168,191 @@ async function savePreferences() {
   );
 }
 
-describe("ProfilePanel — quiet-hours timezone save (#687)", () => {
+/**
+ * Quiet hours (owner, 2026-11-06): a switch, the times only while it is on,
+ * and the zone as a fact rather than a typed field. A member with no zone
+ * gets this browser's; a stored zone is never replaced without a click,
+ * because this browser's tzdata can be older than the server's.
+ */
+describe("ProfilePanel — quiet hours switch and zone", () => {
+  const ON = {
+    quiet_hours_start: "22:00",
+    quiet_hours_end: "08:00",
+    quiet_hours_tz: "America/New_York",
+    theme: "system",
+  };
+  const OFF = {
+    quiet_hours_start: null,
+    quiet_hours_end: null,
+    quiet_hours_tz: null,
+    theme: "system",
+  };
+  const quietSwitch = () =>
+    screen.getByRole("switch", { name: /quiet hours/i });
+
+  afterEach(() => {
+    mockOffline.value = false;
+    vi.restoreAllMocks();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.settingsQuery.data = undefined;
+    mockOffline.value = false;
     mocks.updateSettingsMutateAsync.mockResolvedValue({});
     mocks.updateSettings.mutateAsync = mocks.updateSettingsMutateAsync;
     mocks.updateSettings.isPending = false;
     mocks.updateSettings.isError = false;
-  });
-
-  // The headline regression of this change. The Quiet hours section renders before
-  // the settings query resolves, so the draft is empty — and mapping that absent
-  // value to an explicit null would tell the server to CLEAR the member's stored
-  // zone. Absent must stay absent so the PATCH omits the field.
-  it("omits quiet_hours_tz entirely when the settings query has not loaded", async () => {
-    mocks.settingsQuery.data = undefined;
-    render(<ProfilePanel />);
-
-    await savePreferences();
-
-    await waitFor(() => {
-      expect(mocks.updateSettingsMutateAsync).toHaveBeenCalled();
-    });
-    expect(lastSettingsBody()).toHaveProperty("quiet_hours_tz", undefined);
-    expect(lastSettingsBody().quiet_hours_tz).not.toBeNull();
-  });
-
-  // Omitted, not echoed. Re-sending a value the member never touched is how a
-  // client ends up overwriting the server with its own stale idea of it; the
-  // server already has this zone and nothing here should restate it.
-  it("omits an untouched stored zone so the server keeps its own value", async () => {
-    mocks.settingsQuery.data = {
-      quiet_hours_start: "22:00",
-      quiet_hours_end: "08:00",
-      quiet_hours_tz: "America/New_York",
-      theme: "system",
-    };
-    render(<ProfilePanel />);
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("America/New_York")).toBeTruthy();
-    });
-    await savePreferences();
-
-    await waitFor(() => {
-      expect(mocks.updateSettingsMutateAsync).toHaveBeenCalled();
-    });
-    expect(lastSettingsBody()).toHaveProperty("quiet_hours_tz", undefined);
-  });
-
-  it("sends the edited zone when the member changes it to a valid one", async () => {
-    mocks.settingsQuery.data = {
-      quiet_hours_start: "22:00",
-      quiet_hours_end: "08:00",
-      quiet_hours_tz: "America/New_York",
-      theme: "system",
-    };
-    render(<ProfilePanel />);
-
-    const input = await screen.findByDisplayValue("America/New_York");
-    await userEvent.clear(input);
-    await userEvent.type(input, "Europe/Berlin");
-    await savePreferences();
-
-    await waitFor(() => {
-      expect(lastSettingsBody()?.quiet_hours_tz).toBe("Europe/Berlin");
+    vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
+      ...new Intl.DateTimeFormat().resolvedOptions(),
+      timeZone: "America/New_York",
     });
   });
 
-  // Blank is a clear, not an error — otherwise a member holding an unusable
-  // stored zone could never save their way out of it.
-  it("sends null when the member clears the timezone field", async () => {
-    mocks.settingsQuery.data = {
-      quiet_hours_start: "22:00",
-      quiet_hours_end: "08:00",
-      quiet_hours_tz: "America/New_York",
-      theme: "system",
-    };
+  it("shows only the switch while quiet hours are off", () => {
+    mocks.settingsQuery.data = OFF;
     render(<ProfilePanel />);
 
-    const input = await screen.findByDisplayValue("America/New_York");
-    await userEvent.clear(input);
-    await savePreferences();
-
-    await waitFor(() => {
-      expect(lastSettingsBody()?.quiet_hours_tz).toBeNull();
-    });
-  });
-
-  // This browser's tzdata can be older than the server's, so our verdict on a
-  // zone we never showed the member being edited is unreliable. Judging it would
-  // abort the whole save over an untouched field — and "fixing" it would
-  // overwrite a zone the server considers valid, on every device.
-  it("does not judge an untouched stored zone this browser cannot resolve", async () => {
-    mocks.settingsQuery.data = {
-      quiet_hours_start: "22:00",
-      quiet_hours_end: "08:00",
-      quiet_hours_tz: "Mars/Olympus",
-      theme: "system",
-    };
-    render(<ProfilePanel />);
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Mars/Olympus")).toBeTruthy();
-    });
-    await savePreferences();
-
-    // The save goes through, and the untouched zone is omitted rather than
-    // cleared or rewritten — the server keeps what it has.
-    await waitFor(() => {
-      expect(mocks.updateSettingsMutateAsync).toHaveBeenCalled();
-    });
-    expect(lastSettingsBody()).toHaveProperty("quiet_hours_tz", undefined);
+    expect(quietSwitch().getAttribute("aria-checked")).toBe("false");
+    expect(screen.queryByLabelText("From")).toBeNull();
     expect(
-      screen.queryByText(/time zone name this server recognizes/i),
+      screen.queryByRole("button", { name: /save quiet hours/i }),
     ).toBeNull();
   });
 
-  it("blocks the save and explains when the zone cannot be resolved", async () => {
-    mocks.settingsQuery.data = {
-      quiet_hours_start: "22:00",
-      quiet_hours_end: "08:00",
-      quiet_hours_tz: "America/New_York",
-      theme: "system",
-    };
+  it("turns on with 10 PM to 8 AM in this browser's zone for a member with none", async () => {
+    mocks.settingsQuery.data = OFF;
     render(<ProfilePanel />);
 
-    const input = await screen.findByDisplayValue("America/New_York");
-    await userEvent.clear(input);
-    await userEvent.type(input, "Mars/Olympus");
-    await savePreferences();
+    await userEvent.click(quietSwitch());
 
-    expect(
-      await screen.findByText(/time zone name this server recognizes/i),
-    ).toBeTruthy();
-    expect(mocks.updateSettingsMutateAsync).not.toHaveBeenCalled();
-    expect(input.getAttribute("aria-invalid")).toBe("true");
+    await waitFor(() => {
+      expect(lastSettingsBody()).toEqual({
+        quiet_hours_start: "22:00",
+        quiet_hours_end: "08:00",
+        quiet_hours_tz: "America/New_York",
+      });
+    });
   });
 
-  // An offset is rejected by rule, not by this browser's `Intl` (#2361), so
-  // the panel refuses it on any runtime, before a PATCH the server would 400.
-  it("blocks the save when the member types a fixed UTC offset", async () => {
-    mocks.settingsQuery.data = {
-      quiet_hours_start: "22:00",
-      quiet_hours_end: "08:00",
-      quiet_hours_tz: "America/New_York",
-      theme: "system",
-    };
+  it("turns off by clearing the window", async () => {
+    mocks.settingsQuery.data = ON;
     render(<ProfilePanel />);
 
-    const input = await screen.findByDisplayValue("America/New_York");
-    await userEvent.clear(input);
-    await userEvent.type(input, "-05:00");
+    expect(quietSwitch().getAttribute("aria-checked")).toBe("true");
+    await userEvent.click(quietSwitch());
+
+    await waitFor(() => {
+      expect(lastSettingsBody()).toEqual({
+        quiet_hours_start: null,
+        quiet_hours_end: null,
+        quiet_hours_tz: null,
+      });
+    });
+  });
+
+  it("saves times without touching the stored zone", async () => {
+    mocks.settingsQuery.data = ON;
+    render(<ProfilePanel />);
+
+    fireEvent.change(screen.getByLabelText("From"), {
+      target: { value: "23:30" },
+    });
     await savePreferences();
 
-    expect(
-      await screen.findByText(/fixed offset such as -05:00/i),
-    ).toBeTruthy();
+    await waitFor(() => {
+      expect(lastSettingsBody()).toEqual({
+        quiet_hours_start: "23:30",
+        quiet_hours_end: "08:00",
+      });
+    });
+  });
+
+  it("says nothing about the zone when it is this browser's", () => {
+    mocks.settingsQuery.data = ON;
+    render(<ProfilePanel />);
+
+    expect(screen.queryByText(/times are in/i)).toBeNull();
+  });
+
+  // Never re-judged: a zone this browser cannot even resolve stays stored
+  // until the member asks for this browser's instead.
+  it("names a different stored zone and replaces it only on a click", async () => {
+    mocks.settingsQuery.data = { ...ON, quiet_hours_tz: "Mars/Olympus" };
+    render(<ProfilePanel />);
+
+    expect(screen.getByText(/times are in olympus time/i)).toBeTruthy();
+    await savePreferences();
+    await waitFor(() => {
+      expect(mocks.updateSettingsMutateAsync).toHaveBeenCalled();
+    });
+    expect(lastSettingsBody()).not.toHaveProperty("quiet_hours_tz");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /use new york time/i }),
+    );
+    await waitFor(() => {
+      expect(lastSettingsBody()).toEqual({
+        quiet_hours_tz: "America/New_York",
+      });
+    });
+  });
+
+  // The server evaluates a window stored with no zone in UTC, so that is the
+  // zone the line names, with the same one-click fix.
+  it("names UTC when a window is stored with no zone", async () => {
+    mocks.settingsQuery.data = { ...ON, quiet_hours_tz: null };
+    render(<ProfilePanel />);
+
+    expect(screen.getByText(/times are in utc time/i)).toBeTruthy();
+    await userEvent.click(
+      screen.getByRole("button", { name: /use new york time/i }),
+    );
+    await waitFor(() => {
+      expect(lastSettingsBody()).toEqual({
+        quiet_hours_tz: "America/New_York",
+      });
+    });
+  });
+
+  it("brings back the member's window and zone when switched off and on", async () => {
+    mocks.settingsQuery.data = {
+      ...ON,
+      quiet_hours_start: "23:15",
+      quiet_hours_end: "06:45",
+      quiet_hours_tz: "Europe/Lisbon",
+    };
+    const { rerender } = render(<ProfilePanel />);
+
+    await userEvent.click(quietSwitch());
+    await waitFor(() => {
+      expect(lastSettingsBody()).toMatchObject({ quiet_hours_start: null });
+    });
+
+    // What the off save leaves stored.
+    mocks.settingsQuery.data = OFF;
+    rerender(<ProfilePanel />);
+    await userEvent.click(quietSwitch());
+
+    await waitFor(() => {
+      expect(lastSettingsBody()).toEqual({
+        quiet_hours_start: "23:15",
+        quiet_hours_end: "06:45",
+        quiet_hours_tz: "Europe/Lisbon",
+      });
+    });
+  });
+
+  it("refuses the switch offline and says so", async () => {
+    mocks.settingsQuery.data = ON;
+    mockOffline.value = true;
+    render(<ProfilePanel />);
+
+    await userEvent.click(quietSwitch());
+
     expect(mocks.updateSettingsMutateAsync).not.toHaveBeenCalled();
-    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(mocks.toast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "You're offline" }),
+    );
   });
 });
 
@@ -477,7 +502,10 @@ describe("ProfilePanel — offline, then loading, then error, then the screen", 
      */
     mockOffline.value = true;
     mocks.userQuery.fetchStatus = "paused";
-    mocks.settingsQuery.data = { quiet_hours_start: "22:00" };
+    mocks.settingsQuery.data = {
+      quiet_hours_start: "22:00",
+      quiet_hours_end: "08:00",
+    };
     render(<ProfilePanel />);
 
     expect(screen.getByLabelText("Display name")).toBeInTheDocument();
@@ -647,7 +675,7 @@ describe("ProfilePanel — the theme control is gone, not hidden", () => {
     render(<ProfilePanel />);
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue("America/New_York")).toBeTruthy();
+      expect(screen.getByDisplayValue("22:00")).toBeTruthy();
     });
     await savePreferences();
 
@@ -841,11 +869,16 @@ describe("ProfilePanel — notification categories (#564)", () => {
     return screen.getByRole("switch", { name });
   }
 
+  /** The category grid's switches, without the Quiet hours one above it. */
+  function categorySwitches() {
+    return screen
+      .queryAllByRole("switch")
+      .filter((element) => element.id.startsWith("notification-category-"));
+  }
+
   it("renders a switch for every catalog category", () => {
     render(<ProfilePanel />);
-    expect(screen.getAllByRole("switch")).toHaveLength(
-      NOTIFICATION_CATEGORIES.length,
-    );
+    expect(categorySwitches()).toHaveLength(NOTIFICATION_CATEGORIES.length);
     for (const category of NOTIFICATION_CATEGORIES) {
       expect(
         screen.getByRole("switch", {
@@ -858,9 +891,7 @@ describe("ProfilePanel — notification categories (#564)", () => {
   it("draws no Billing switch while dues is beta-off", () => {
     betaOff.keys = ["dues"];
     render(<ProfilePanel />);
-    expect(screen.getAllByRole("switch")).toHaveLength(
-      NOTIFICATION_CATEGORIES.length - 1,
-    );
+    expect(categorySwitches()).toHaveLength(NOTIFICATION_CATEGORIES.length - 1);
     expect(screen.queryByRole("switch", { name: /^billing$/i })).toBeNull();
   });
 
@@ -874,7 +905,10 @@ describe("ProfilePanel — notification categories (#564)", () => {
       "data-state",
       "unchecked",
     );
-    expect(categorySwitch(/^chat$/i)).toHaveAttribute("data-state", "checked");
+    expect(categorySwitch(/^events$/i)).toHaveAttribute(
+      "data-state",
+      "checked",
+    );
   });
 
   // A row for a category the catalog does not draw must not leak into the
@@ -884,10 +918,8 @@ describe("ProfilePanel — notification categories (#564)", () => {
       { category: "announcements", is_enabled: false },
     ];
     render(<ProfilePanel />);
-    expect(screen.getAllByRole("switch")).toHaveLength(
-      NOTIFICATION_CATEGORIES.length,
-    );
-    for (const element of screen.getAllByRole("switch")) {
+    expect(categorySwitches()).toHaveLength(NOTIFICATION_CATEGORIES.length);
+    for (const element of categorySwitches()) {
       expect(element).toHaveAttribute("data-state", "checked");
     }
   });
@@ -1001,7 +1033,7 @@ describe("ProfilePanel — notification categories (#564)", () => {
     mocks.preferencesQuery.isLoading = false;
     render(<ProfilePanel />);
 
-    expect(screen.queryAllByRole("switch")).toHaveLength(0);
+    expect(categorySwitches()).toHaveLength(0);
     expect(
       screen.queryByText(/loading your notification settings/i),
     ).toBeNull();
@@ -1015,18 +1047,18 @@ describe("ProfilePanel — notification categories (#564)", () => {
     expect(
       screen.getByText(/couldn't load your notification settings/i),
     ).toBeTruthy();
-    expect(screen.queryAllByRole("switch")).toHaveLength(0);
+    expect(categorySwitches()).toHaveLength(0);
   });
 
   // Same rule the screen-scale block follows: TanStack keeps `data` through a
   // background refetch failure, and switches drawn from a still-held cache
   // beat a card that vanishes when a focus refetch blips.
   it("keeps the switches when a refetch fails but the cache still holds rows", () => {
-    mocks.preferencesQuery.data = [{ category: "chat", is_enabled: false }];
+    mocks.preferencesQuery.data = [{ category: "points", is_enabled: false }];
     mocks.preferencesQuery.isError = true;
     render(<ProfilePanel />);
 
-    expect(categorySwitch(/^chat$/i)).toHaveAttribute(
+    expect(categorySwitch(/^points$/i)).toHaveAttribute(
       "data-state",
       "unchecked",
     );
@@ -1043,7 +1075,7 @@ describe("ProfilePanel — notification categories (#564)", () => {
     expect(
       screen.getByText(/notification settings unavailable offline/i),
     ).toBeTruthy();
-    expect(screen.queryAllByRole("switch")).toHaveLength(0);
+    expect(categorySwitches()).toHaveLength(0);
   });
 
   // The "only when" half, which the test above cannot pin on its own. Review
@@ -1052,13 +1084,13 @@ describe("ProfilePanel — notification categories (#564)", () => {
   // whole card for every member holding cached rows.
   it("keeps the switches offline when rows are cached, but refuses writes", async () => {
     mockOffline.value = true;
-    mocks.preferencesQuery.data = [{ category: "chat", is_enabled: false }];
+    mocks.preferencesQuery.data = [{ category: "points", is_enabled: false }];
     render(<ProfilePanel />);
 
     expect(
       screen.queryByText(/notification settings unavailable offline/i),
     ).toBeNull();
-    expect(categorySwitch(/^chat$/i)).toHaveAttribute(
+    expect(categorySwitch(/^points$/i)).toHaveAttribute(
       "data-state",
       "unchecked",
     );
@@ -1091,14 +1123,14 @@ describe("ProfilePanel — notification categories (#564)", () => {
     mocks.preferencesQuery.data = [];
     render(<ProfilePanel />);
 
-    const described = categorySwitch(/^chat$/i)
+    const described = categorySwitch(/^points$/i)
       .getAttribute("aria-describedby")
       ?.split(" ")
       .map((id) => document.getElementById(id)?.textContent ?? "")
       .join(" ");
     expect(described).toMatch(/offline/i);
     // The category blurb must survive alongside it, not be replaced by it.
-    expect(described).toMatch(/mentions/i);
+    expect(described).toMatch(/leaderboard/i);
   });
 
   it("drops the offline reference from the switches once back online", () => {
@@ -1106,8 +1138,8 @@ describe("ProfilePanel — notification categories (#564)", () => {
     mocks.preferencesQuery.data = [];
     render(<ProfilePanel />);
 
-    expect(categorySwitch(/^chat$/i).getAttribute("aria-describedby")).toBe(
-      "notification-category-chat-description",
+    expect(categorySwitch(/^points$/i).getAttribute("aria-describedby")).toBe(
+      "notification-category-points-description",
     );
   });
 
@@ -1124,7 +1156,7 @@ describe("ProfilePanel — notification categories (#564)", () => {
     expect(screen.getByText(/select a chapter/i)).toBeTruthy();
     expect(screen.queryByText(/no active chapter/i)).toBeNull();
     expect(screen.queryByText(/you have no chapter/i)).toBeNull();
-    expect(screen.queryAllByRole("switch")).toHaveLength(0);
+    expect(categorySwitches()).toHaveLength(0);
   });
 
   // The one piece of copy that is not decorative: `announcements` is the
