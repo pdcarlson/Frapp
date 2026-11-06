@@ -120,16 +120,37 @@ export interface RequestUploadInput {
 }
 
 /**
- * Statuses in which a bot import's progress is shown: waiting to run, running,
- * or stopped part-way. A finished one reads 100%, and a deleted or unstarted
- * one has no progress to show, so neither pays for the counts.
+ * Statuses in which a bot import's channel counts are sent: waiting to run,
+ * running, stopped part-way, or finished (the done summary counts its
+ * channels and threads; a chapter has one import, so this is one count). A
+ * deleted or unstarted one has nothing to count, so neither pays for it.
  */
 const PROGRESS_STATUSES: ReadonlySet<DiscordImportStatus> = new Set([
   'ready',
   'running',
+  'completed',
   'failed',
   'cancelled',
 ]);
+
+/**
+ * Statuses in which an import holds, or is about to hold, what it brought in.
+ * A chapter has one such import at a time: it moves off Discord once, and a
+ * second import of the same server would bring every message in twice. A
+ * draft holds nothing yet and a purged import holds nothing any more, so
+ * neither counts. To import again, delete the first one.
+ */
+const HOLDING_STATUSES: ReadonlySet<DiscordImportStatus> = new Set([
+  'ready',
+  'running',
+  'completed',
+  'failed',
+  'cancelled',
+  'purging',
+]);
+
+export const ONE_IMPORT_MESSAGE =
+  'Your chapter already has a Discord import. Delete it before starting another.';
 
 /**
  * An import as list and detail hand it to the controller: the whole row, plus
@@ -195,6 +216,7 @@ export class DiscordImportService {
     }
 
     const source = input.source ?? 'upload';
+    await this.assertNoOtherImport(chapterId);
 
     // A bot import is bound to the chapter's connected guild AT CREATION, and
     // the id is read through `requireGuildId` — which resolves it by
@@ -220,6 +242,27 @@ export class DiscordImportService {
     return this.importRepo.update(created.id, chapterId, {
       storage_prefix: archiveImportPrefix(chapterId, created.id),
     });
+  }
+
+  /**
+   * Refuses while another of the chapter's imports holds what it brought in
+   * (`HOLDING_STATUSES`). Checked at create, so the wizard stops before any
+   * work, and again at start, for a draft made before the other import began.
+   * Two starts racing past the check could still both run; this is a guard
+   * against a second import by mistake, not a lock.
+   */
+  private async assertNoOtherImport(
+    chapterId: string,
+    exceptId?: string,
+  ): Promise<void> {
+    const imports = await this.importRepo.findByChapter(chapterId);
+    if (
+      imports.some(
+        (other) => other.id !== exceptId && HOLDING_STATUSES.has(other.status),
+      )
+    ) {
+      throw new ConflictException(ONE_IMPORT_MESSAGE);
+    }
   }
 
   async list(chapterId: string): Promise<DiscordImportWithProgress[]> {
@@ -394,6 +437,7 @@ export class DiscordImportService {
   ): Promise<DiscordImport> {
     const job = await loadImport(this.importRepo, id, chapterId);
     assertImportMutable(job);
+    await this.assertNoOtherImport(chapterId, job.id);
     // Checked before anything below creates a role.
     const cutoff = this.resolveCutoff(job, options.messagesAfter);
 

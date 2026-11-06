@@ -52,7 +52,8 @@ function messages(count: number): string {
 }
 
 /**
- * What Watch opens on an import's row (#2857): the import channel by channel.
+ * What See every channel opens on a bot import (#2857): the import channel by
+ * channel.
  *
  * The channel importing now, the ones finished last, and the failures, each
  * linking to the Frapp channel it lands in once there is one. The counts come

@@ -2798,7 +2798,7 @@ export interface paths {
         put?: never;
         /**
          * Start a Discord archive import
-         * @description Requires the consent acknowledgement. Returns the import to upload an export against.
+         * @description Requires the consent acknowledgement. Returns the import to upload an export against. 409 while another of the chapter's imports still holds what it brought in (queued, running, completed, failed, cancelled or deleting): a chapter has one import at a time, so delete it first.
          */
         post: operations["DiscordImportController_create_v1"];
         delete?: never;
@@ -2816,7 +2816,7 @@ export interface paths {
         };
         /**
          * Import detail and progress
-         * @description Poll this while an import is running. An upload's progress is `imported_messages` / `total_messages`; its total grows a part at a time, as each export part is opened. A bot import's total grows with every page it reads from Discord, so its progress is `channels_done` / `channels_total`: the channel and thread rows being imported, and how many of those are finished (imported, or skipped because Discord no longer showed them to the bot). Both are null for an upload, and for a bot import that is not queued, running, failed or cancelled. While an import is being deleted (`purging`), `purged_messages` counts the messages deleted so far, out of `imported_messages`; the count can stop short of that total, so `purged` is what says the deletion finished.
+         * @description Poll this while an import is running. An upload's progress is `imported_messages` / `total_messages`; its total grows a part at a time, as each export part is opened. A bot import's total grows with every page it reads from Discord, so its progress is `channels_done` / `channels_total`: the channel and thread rows being imported, and how many of those are finished (imported, or skipped because Discord no longer showed them to the bot). Both are null for an upload, and for a bot import that is not queued, running, completed, failed or cancelled. While an import is being deleted (`purging`), `purged_messages` counts the messages deleted so far, out of `imported_messages`; the count can stop short of that total, so `purged` is what says the deletion finished.
          */
         get: operations["DiscordImportController_get_v1"];
         put?: never;
@@ -3000,7 +3000,7 @@ export interface paths {
         put?: never;
         /**
          * Queue the import
-         * @description The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818). A bot import may carry a date cutoff, `messages_after` (#2858); the body is optional.
+         * @description The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818). A bot import may carry a date cutoff, `messages_after` (#2858); the body is optional. 409 while another of the chapter's imports still holds what it brought in, as on create.
          */
         post: operations["DiscordImportController_start_v1"];
         delete?: never;
@@ -4822,6 +4822,11 @@ export interface components {
             created_at: string;
             /**
              * Format: date-time
+             * @description When the import finished. Null until then, and for one that failed or was stopped.
+             */
+            completed_at: string | null;
+            /**
+             * Format: date-time
              * @description A bot import's date cutoff (#2858): only messages sent at or after it. Null imports all history.
              */
             messages_after: string | null;
@@ -4856,12 +4861,17 @@ export interface components {
             created_at: string;
             /**
              * Format: date-time
+             * @description When the import finished. Null until then, and for one that failed or was stopped.
+             */
+            completed_at: string | null;
+            /**
+             * Format: date-time
              * @description A bot import's date cutoff (#2858): only messages sent at or after it. Null imports all history.
              */
             messages_after: string | null;
             /** @description Imported messages the deletion has removed so far (#2944), out of `imported_messages`. It can stop short of that total, so `purged` is what says the deletion finished. */
             purged_messages: number;
-            /** @description Channel and thread rows being imported. Null for an upload, and for a bot import that is not queued, running, failed or cancelled. */
+            /** @description Channel and thread rows being imported. Null for an upload, and for a bot import that is not queued, running, completed, failed or cancelled. */
             channels_total: number | null;
             /** @description Of those, how many are finished (imported, or skipped because Discord no longer showed them to the bot). Null when `channels_total` is. */
             channels_done: number | null;

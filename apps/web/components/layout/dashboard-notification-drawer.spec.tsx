@@ -53,6 +53,8 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/hooks")>();
   return {
     CHAT_REPORTS_NOTIFICATION_SCREEN: actual.CHAT_REPORTS_NOTIFICATION_SCREEN,
+    DISCORD_IMPORT_NOTIFICATION_SCREEN:
+      actual.DISCORD_IMPORT_NOTIFICATION_SCREEN,
     useNotifications: () => ({
       data: queryFailed.value ? undefined : notifications.value,
       isPending: false,
@@ -258,5 +260,22 @@ describe("DashboardNotificationDrawer — chrome (components.md § Chrome weight
     const retry = screen.getByRole("button", { name: "Try again" });
     expect(retry).toBeDisabled();
     expect(retry.querySelector(".animate-spin")).not.toBeNull();
+  });
+});
+
+describe("DashboardNotificationDrawer — a Discord import that ended", () => {
+  it("opens the import page", () => {
+    notifications.value = [
+      notification(
+        "n-import",
+        "discord_import",
+        "2026-11-06T10:00:00Z",
+        "Discord import finished",
+      ),
+    ];
+    renderDrawer();
+    expect(
+      screen.getByRole("link", { name: /Discord import finished/ }),
+    ).toHaveAttribute("href", "/discord-import");
   });
 });
