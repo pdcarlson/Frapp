@@ -39,6 +39,10 @@ const spies: { mockRestore: () => void }[] = [];
 // Hashing and the stubbed load go through real async work, which a busy
 // full-suite run can slow past vitest's 1 s default.
 const WAIT = { timeout: 5000 };
+// A test runs up to three WAITs in a row, so its own budget has to cover
+// their sum: inside vitest's 5 s default, one slow CI wait failed the test
+// as a timeout before the wait itself could give up.
+const TEST_TIMEOUT = 20_000;
 
 function pdf(name: string, body = name): File {
   return new File([`%PDF ${body}`], name, { type: "application/pdf" });
@@ -87,7 +91,7 @@ afterEach(() => {
   for (const spy of spies.splice(0)) spy.mockRestore();
 });
 
-describe("bulk upload session", () => {
+describe("bulk upload session", { timeout: TEST_TIMEOUT }, () => {
   it("keeps one batch per chapter across visits", () => {
     const first = getBulkSession("u1", "c1");
     first.queue.add([pdf("a.pdf")]);
