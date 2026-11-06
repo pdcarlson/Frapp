@@ -141,6 +141,7 @@ export const FEATURE_EVENTS = {
   },
   'invite-redeemed': { feature: 'members', properties: [] },
   'member-onboarding-completed': { feature: 'members', properties: [] },
+  'profile-photo-updated': { feature: 'members', properties: [] },
   'chapter-onboarded': {
     feature: 'chapter-settings',
     properties: ['archetype', 'from_directory'],
