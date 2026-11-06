@@ -656,6 +656,66 @@ describe('SupabaseSearchRepository — message search over many channels (#3265)
     );
   });
 
+  it('merges batches by instant, then by the microseconds Date drops', async () => {
+    // Each pair sits in two different batches (channel 5 and channel 205), so
+    // only the merge decides between them. 01:00+01:00 is 00:00Z: older than
+    // 00:30Z, though it is the later string. And .123456 is newer than
+    // .123400, which Date cannot tell apart; the newer one has the lower id,
+    // so falling through to the id tie-break would get it wrong.
+    harness = createTenantHarness({
+      tables: {
+        chat_channels: [
+          inA({
+            id: channelId(5),
+            type: 'PUBLIC',
+            member_ids: null,
+            required_permissions: null,
+          }),
+          inA({
+            id: channelId(205),
+            type: 'PUBLIC',
+            member_ids: null,
+            required_permissions: null,
+          }),
+          inB({
+            id: otherChapterChannelId(5),
+            type: 'PUBLIC',
+            member_ids: null,
+            required_permissions: null,
+          }),
+          inB({
+            id: otherChapterChannelId(205),
+            type: 'PUBLIC',
+            member_ids: null,
+            required_permissions: null,
+          }),
+        ],
+        chat_messages: [
+          message(1, 205, 0, { created_at: '2026-03-01T01:00:00+01:00' }),
+          message(2, 5, 0, { created_at: '2026-03-01T00:30:00+00:00' }),
+          message(3, 5, 0, { created_at: '2026-03-01T02:00:00.123456+00:00' }),
+          message(4, 205, 0, {
+            created_at: '2026-03-01T02:00:00.123400+00:00',
+          }),
+        ],
+      },
+      untenantedTables: ['chat_messages'],
+      parentTenant: {
+        chat_messages: { column: 'channel_id', table: 'chat_channels' },
+      },
+    });
+    repo = new SupabaseSearchRepository(harness.client);
+
+    const hits = await repo.searchMessages(allChannels, 'budget', 10);
+
+    expect(hits.map((h) => h.id)).toEqual([
+      messageId(3),
+      messageId(4),
+      messageId(2),
+      messageId(1),
+    ]);
+  });
+
   it('keeps a short channel list to the one query it always was', async () => {
     const from = jest.spyOn(harness.client, 'from');
     const few = allChannels.slice(0, ID_CHUNK_SIZE);
