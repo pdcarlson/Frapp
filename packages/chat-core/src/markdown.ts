@@ -21,6 +21,11 @@ export {
   type MessageBodyLayout,
 } from "./markdown-flow";
 import { exceedsParseBudget } from "./markdown-parse-budget";
+export {
+  remarkMentionChips,
+  type MentionChipOptions,
+  type MentionChipProperties,
+} from "./markdown-mentions";
 
 // Only the combined check is exported, not its two halves: a renderer that
 // asked one of them would pay the other's parse.
@@ -61,6 +66,18 @@ export const MESSAGE_MARKDOWN_ELEMENTS: readonly string[] = [
   "pre",
   "a",
   "br",
+];
+
+/**
+ * What a renderer passes as `allowedElements`: the authored set above plus
+ * `mark`, the mention chip. No CommonMark syntax makes a `mark` and raw HTML is
+ * never parsed, so only `remarkMentionChips` emits one. Left off, the allowlist
+ * (applied after the plugins run) would unwrap every chip back to plain text,
+ * so it lives beside the plugin rather than in each client.
+ */
+export const MESSAGE_RENDER_ELEMENTS: readonly string[] = [
+  ...MESSAGE_MARKDOWN_ELEMENTS,
+  "mark",
 ];
 
 interface MdastNode {
