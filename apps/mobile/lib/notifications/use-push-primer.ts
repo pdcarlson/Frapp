@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useState } from "react";
+import { AnalyticsContext } from "@/lib/analytics-provider";
 import { getPushPermission, isPushAvailable } from "@/lib/notifications/push";
 import {
   acceptPrimer,
@@ -7,6 +8,10 @@ import {
   shouldOfferPrimer,
   type PrimerDecision,
 } from "@/lib/notifications/primer";
+import {
+  PUSH_PROMPT_ANSWERED_EVENT,
+  pushPromptAnsweredProperties,
+} from "@/lib/notifications/push-analytics";
 
 /**
  * The C7 push primer's state for a screen that hosts the card: s03 for a
@@ -28,6 +33,7 @@ export function usePushPrimer() {
     null,
   );
   const [isRequesting, setIsRequesting] = useState(false);
+  const track = useContext(AnalyticsContext);
 
   useEffect(() => {
     let live = true;
@@ -69,18 +75,26 @@ export function usePushPrimer() {
     try {
       const granted = await acceptPrimer(() => setDecision("accepted"));
       setPermissionGranted(granted);
+      track?.(
+        PUSH_PROMPT_ANSWERED_EVENT,
+        pushPromptAnsweredProperties(granted ? "allowed" : "denied", "primer"),
+      );
       return granted;
     } catch {
       return false;
     } finally {
       setIsRequesting(false);
     }
-  }, []);
+  }, [track]);
 
   const notNow = useCallback(async (): Promise<void> => {
     await recordPrimerDecision("declined");
     setDecision("declined");
-  }, []);
+    track?.(
+      PUSH_PROMPT_ANSWERED_EVENT,
+      pushPromptAnsweredProperties("not_now", "primer"),
+    );
+  }, [track]);
 
   return { showPrimer, isRequesting, turnOn, notNow };
 }

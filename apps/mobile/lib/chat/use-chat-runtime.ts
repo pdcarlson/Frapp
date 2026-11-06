@@ -18,7 +18,14 @@
  * `/realtime-manager`); the package has no barrel (#3228).
  */
 
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useFrappClient, useViewerUserId } from "@repo/hooks";
 import type { OutboxStore } from "@repo/chat-core/adapters";
@@ -28,6 +35,7 @@ import {
   chatRealtime,
   createBackfillFetcher,
 } from "@repo/chat-core/realtime-manager";
+import { AnalyticsContext } from "@/lib/analytics-provider";
 import { getSupabaseClient } from "@/lib/supabase";
 import { connectionMonitor } from "@/lib/connection/monitor";
 import { useChatScope } from "./chat-scope";
@@ -148,6 +156,26 @@ export function useChatRuntime(): ChatRuntime {
     };
   }, [queryClient, supabase, apiClient, viewerId]);
 
+  /**
+   * The outbox lifecycle events (`spec/behavior/observability.md` § Outbox
+   * Telemetry), as web passes them: chat-core calls `ctx.track` at each step of
+   * a queued send. `track` holds the chapter opt-out itself, and is absent only
+   * outside `AnalyticsProvider`, where nothing is sent.
+   *
+   * Read through a ref so `ctx` keeps its identity when `track` changes (it
+   * does once the chapter's opt-out answer arrives). A new `ctx` would re-run
+   * the flush effect below and start a second flush beside the first.
+   */
+  const track = useContext(AnalyticsContext);
+  const trackRef = useRef(track);
+  useLayoutEffect(() => {
+    trackRef.current = track;
+  }, [track]);
+  const trackThroughRef = useCallback<NonNullable<ChatActionContext["track"]>>(
+    (event, properties) => trackRef.current?.(event, properties),
+    [],
+  );
+
   const ctx = useMemo<ChatActionContext | null>(() => {
     if (!supabase || !viewerId) return null;
     return {
@@ -157,8 +185,9 @@ export function useChatRuntime(): ChatRuntime {
       userId: viewerId,
       outbox,
       net: chatNetworkState,
+      track: trackThroughRef,
     };
-  }, [queryClient, apiClient, supabase, viewerId, outbox]);
+  }, [queryClient, apiClient, supabase, viewerId, outbox, trackThroughRef]);
 
   // Boot flush, then re-flush on every reconnect. Both the trigger and the gate
   // ride the same port: `flushOutbox` consults `net` internally, so subscribing
