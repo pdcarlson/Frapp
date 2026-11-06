@@ -3,12 +3,14 @@
 import { Suspense } from "react";
 import { AlertTriangle } from "lucide-react";
 import { useCurrentUser, useInvoices } from "@repo/hooks";
+import { isModuleEnabled } from "@repo/validation";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { NestedOffline } from "@/components/shared/nested-states";
 import { PlanPanel } from "@/components/billing/plan-panel";
 import { PlanMatrix } from "@/components/billing/plan-matrix";
 import { InvoiceList } from "@/components/billing/invoice-list";
 import { subscriptionStatusKind } from "@/components/billing/invoice-status";
+import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import { useChapterSubscription } from "@/lib/hooks/use-subscription-write-state";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { PlanPanelSkeleton } from "@/components/billing/billing-skeleton";
@@ -56,7 +58,14 @@ const INVOICES_ANCHOR = "invoices";
  */
 export function BillingPage() {
   const { isOffline } = useNetwork();
-  const invoicesQuery = useInvoices();
+  /*
+   * The invoice list is the `dues` module's surface. While the gate's read is
+   * unresolved it answers like the nav does, open, except for a beta-off
+   * module, which `isModuleEnabled` reports off before any chapter loads.
+   */
+  const duesOn =
+    useChapterModuleGate()?.("dues") ?? isModuleEnabled(undefined, "dues");
+  const invoicesQuery = useInvoices(undefined, { enabled: duesOn });
   const currentUserQuery = useCurrentUser();
   const { status } = useChapterSubscription();
 
@@ -72,7 +81,10 @@ export function BillingPage() {
    * `invoice.user_id === currentUserId`, so without it a member sees their own
    * OPEN invoice with no way to pay it and nothing saying why.
    */
-  if (isOffline && anyReadUncached(invoicesQuery, currentUserQuery)) {
+  const offlineUncached = duesOn
+    ? anyReadUncached(invoicesQuery, currentUserQuery)
+    : anyReadUncached(currentUserQuery);
+  if (isOffline && offlineUncached) {
     return (
       <div className="space-y-6">
         {/*
@@ -94,9 +106,13 @@ export function BillingPage() {
         <NestedOffline
           sole
           title="Billing unavailable offline"
-          description="Reconnect to sync subscription status and invoice balances."
+          description={
+            duesOn
+              ? "Reconnect to sync subscription status and invoice balances."
+              : "Reconnect to sync subscription status."
+          }
           onRetry={() => {
-            void invoicesQuery.refetch();
+            if (duesOn) void invoicesQuery.refetch();
             void currentUserQuery.refetch();
           }}
         />
@@ -124,12 +140,12 @@ export function BillingPage() {
         does not swap a placeholder for the panel.
       */}
       <Suspense fallback={<PlanPanelSkeleton />}>
-        <PlanPanel invoicesHref={`#${INVOICES_ANCHOR}`} />
+        <PlanPanel invoicesHref={duesOn ? `#${INVOICES_ANCHOR}` : undefined} />
       </Suspense>
 
       <PlanMatrix />
 
-      <InvoiceList id={INVOICES_ANCHOR} />
+      {duesOn ? <InvoiceList id={INVOICES_ANCHOR} /> : null}
     </div>
   );
 }

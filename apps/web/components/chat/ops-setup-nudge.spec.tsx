@@ -1,6 +1,20 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// `@repo/validation`'s beta list, emptied so this spec pins the ordinary
+// module rule with dues as its example. A test that wants dues beta-off, as
+// it is for the beta, sets `betaOff.keys`.
+const betaOff = vi.hoisted(() => ({ keys: [] as string[] }));
+vi.mock("@repo/validation/beta-off-modules", () => ({
+  get BETA_OFF_MODULES() {
+    return betaOff.keys;
+  },
+  isBetaOffModule: (key: string) => betaOff.keys.includes(key),
+}));
+afterEach(() => {
+  betaOff.keys = [];
+});
 
 const dismissMutate = vi.fn();
 

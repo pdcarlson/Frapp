@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text } from "react-native";
 import {
+  useCurrentChapter,
   useCurrentUser,
   useEvents,
   useInvoices,
@@ -13,7 +14,7 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { can } from "@repo/validation";
+import { can, isModuleEnabled } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import {
@@ -139,10 +140,15 @@ export default function MoreScreen() {
   // rather than duplicating work.
   const viewerUserId = useViewerUserId();
   const sessionsQuery = useStudySessions();
+  // The Dues row hides while the chapter has dues off, or while dues is off
+  // for every chapter in the beta (`BETA_OFF_MODULES`). Fails open while the
+  // chapter loads, like Study's `hours` gate.
+  const chapterQuery = useCurrentChapter();
+  const duesOn = isModuleEnabled(chapterQuery.data?.enabled_modules, "dues");
   // Viewer-filtered server-side, for the reason `dues.tsx` records: unfiltered,
   // this row would pull the whole chapter's ledger onto an officer's device.
   const invoicesQuery = useInvoices(viewerUserId ?? undefined, {
-    enabled: !!viewerUserId,
+    enabled: duesOn && !!viewerUserId,
   });
 
   // Keyed on the week boundary rather than the ticking `now`: this
@@ -189,28 +195,30 @@ export default function MoreScreen() {
           accessibilityHint="Opens your logged service hours."
           onPress={() => router.push("/service-hours")}
         />
-        <ListRow
-          label="Dues"
-          leading={<DuesGlyph color={glyphColor} />}
-          accessibilityHint="Opens your dues and payment history."
-          accessibilityValue={duesDue?.label}
-          trailing={
-            duesDue ? (
-              <StatusChip
-                label={duesDue.label}
-                // foundations.md §5 assigns "overdue" to the destructive role.
-                // A late bill reading the same as an upcoming one is the
-                // confusion the semantic palette exists to prevent.
-                hue={
-                  duesDue.state === "past-due"
-                    ? tokens.color.semantic.destructive
-                    : tokens.color.semantic.warning
-                }
-              />
-            ) : undefined
-          }
-          onPress={() => router.push("/dues")}
-        />
+        {duesOn ? (
+          <ListRow
+            label="Dues"
+            leading={<DuesGlyph color={glyphColor} />}
+            accessibilityHint="Opens your dues and payment history."
+            accessibilityValue={duesDue?.label}
+            trailing={
+              duesDue ? (
+                <StatusChip
+                  label={duesDue.label}
+                  // foundations.md §5 assigns "overdue" to the destructive role.
+                  // A late bill reading the same as an upcoming one is the
+                  // confusion the semantic palette exists to prevent.
+                  hue={
+                    duesDue.state === "past-due"
+                      ? tokens.color.semantic.destructive
+                      : tokens.color.semantic.warning
+                  }
+                />
+              ) : undefined
+            }
+            onPress={() => router.push("/dues")}
+          />
+        ) : null}
         <ListRow
           label="Documents"
           leading={<DocumentsGlyph color={glyphColor} />}

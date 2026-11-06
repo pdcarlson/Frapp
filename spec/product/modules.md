@@ -278,6 +278,15 @@ Disabling a paid module: removes its slash commands from the chat palette (`filt
 
 Free always-on modules (chat, members, announcements, audit-log, chapter-settings) are never gated, since they cannot be toggled off. Billing and member-invoice routes are also ungated: paying dues is the recovery path for a locked chapter, so it stays reachable — the same reason `/billing` carries no `module` key in the dashboard nav.
 
+### Beta-off modules
+
+A module in `BETA_OFF_MODULES` (`@repo/validation`) is off for **every** chapter, whatever its `enabled_modules` holds, until the key is removed from that list. Today that is `dues` (Paul, 2026-11-06: the beta chapter doesn't collect dues in Frapp). `isModuleEnabled` answers `false` for it, so every gate above treats it as switched off, and it answers so before any chapter has loaded, so nothing flashes in. On top of the ordinary disabled behavior:
+
+- Settings → Modules leaves it out, and the plan matrix on `/billing` has no row for it, rather than offering what can't be turned on. No ops-setup nudge asks to enable it.
+- For dues: `/billing` drops the member invoice list, Settings drops the Dues tab, mobile More drops the Dues row (the Dues screen sends a stray deep link back to More), and the API sends no invoice due or overdue reminders. The member-invoice routes stay ungated, per the paragraph above.
+
+Nothing is deleted. Removing the key turns the module back on with each chapter's own setting, configuration and invoices as they were, and the reminder sweep picks up the open invoices again.
+
 > The toggle UI lists the modules present in `MODULE_CATALOG` today. `meetings`, `vault`, and `ai` are catalogued above for roadmap/scoping but are not yet in the toggle set; they join Settings → Modules when those features ship.
 
 ## AI feature pricing

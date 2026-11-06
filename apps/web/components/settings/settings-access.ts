@@ -1,4 +1,8 @@
-import { can, canAny } from "@repo/validation";
+import {
+  can,
+  canAny,
+  isModuleEnabled as isModuleEnabledFor,
+} from "@repo/validation";
 
 /**
  * Who Settings is for, and what each viewer finds in it.
@@ -87,6 +91,28 @@ const TAB_EXTRA_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
+ * Tabs that configure one module, and hide when the chapter switches it off,
+ * like the nav row of a module does.
+ */
+const TAB_MODULES: Readonly<Record<string, string>> = {
+  dues: "dues",
+};
+
+/**
+ * A module gate that may not have answered yet. Unresolved (`undefined`) means
+ * "do not gate", as in the nav, except for a beta-off module, which the shared
+ * `isModuleEnabled` reports off before any chapter has loaded.
+ */
+function moduleOn(
+  moduleKey: string,
+  isModuleEnabled: ((moduleKey: string) => boolean) | undefined,
+): boolean {
+  return isModuleEnabled
+    ? isModuleEnabled(moduleKey)
+    : isModuleEnabledFor(undefined, moduleKey);
+}
+
+/**
  * Holding any one of these means Settings has a tab or a tool for the viewer.
  * The nav's Settings row is gated on the set, and `hasSettingsDestination`
  * then drops the row when the only tools behind it are switched off.
@@ -116,7 +142,10 @@ export const SETTINGS_TOOL_ROUTES: readonly string[] = SETTINGS_TOOLS.map(
 export function isSettingsTabVisible(
   tab: string,
   permissions: readonly string[] | null | undefined,
+  isModuleEnabled?: (moduleKey: string) => boolean,
 ): boolean {
+  const tabModule = TAB_MODULES[tab];
+  if (tabModule && !moduleOn(tabModule, isModuleEnabled)) return false;
   if (permissions === undefined || permissions === null) return true;
   return canAny(
     [CHAPTER_CONFIG_VIEW, ...(TAB_EXTRA_PERMISSIONS[tab] ?? [])],

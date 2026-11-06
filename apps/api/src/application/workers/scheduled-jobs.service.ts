@@ -29,6 +29,7 @@ import {
 } from '#domain/entities';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { SIGNET_ENGINE_VERSION } from '@repo/chapter-theme';
+import { isBetaOffModule } from '@repo/validation';
 import {
   buildChapterPalette,
   chapterPaletteColumns,
@@ -684,8 +685,13 @@ export class ScheduledJobsService {
    * list. The threshold is per chapter and can only be applied after the rows
    * are known, so the query window is widened by the maximum configurable
    * grace and narrowed exactly, in code.
+   *
+   * Sends nothing while dues is a beta-off module (`BETA_OFF_MODULES`): a
+   * reminder would deep-link to a Dues screen no client shows. The open
+   * invoices stay as they are and are reminded about again once dues returns.
    */
   async sweepInvoiceReminders(now: Date): Promise<{ sent: number }> {
+    if (isBetaOffModule('dues')) return { sent: 0 };
     const todayKey = toDateKey(now);
     const dueSoonKey = toDateKey(addDays(now, DUE_SOON_LEAD_DAYS));
     const windowStart = toDateKey(

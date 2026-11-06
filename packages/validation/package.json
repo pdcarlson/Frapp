@@ -10,6 +10,12 @@
       "require": "./dist/index.js",
       "import": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./beta-off-modules": {
+      "types": "./dist/beta-off-modules.d.ts",
+      "require": "./dist/beta-off-modules.js",
+      "import": "./src/beta-off-modules.ts",
+      "default": "./dist/beta-off-modules.js"
     }
   },
   "scripts": {

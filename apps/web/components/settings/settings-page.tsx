@@ -444,7 +444,7 @@ function SettingsPageContent() {
   const permissions = permissionsPayload?.permissions;
   const tools = visibleSettingsTools(permissions, isModuleEnabled);
   const visibleTabs = SETTINGS_TABS.filter((tab) =>
-    isSettingsTabVisible(tab.value, permissions),
+    isSettingsTabVisible(tab.value, permissions, isModuleEnabled),
   );
   // A `?tab=` deep link to a tab this viewer does not get, or the default
   // `org` for someone with no setup tabs, lands on the first tab they do get.

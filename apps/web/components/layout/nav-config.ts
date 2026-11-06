@@ -13,6 +13,7 @@ import {
   TasksGlyph,
   type NavGlyphComponent,
 } from "@/components/layout/nav-glyphs";
+import { isBetaOffModule } from "@repo/validation";
 import {
   SETTINGS_ENTRY_PERMISSIONS,
   SETTINGS_TOOL_ROUTES,
@@ -241,7 +242,10 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Billing",
         icon: BillingGlyph,
         href: "/billing",
-        description: "Subscription, Stripe portal, member invoices, dues.",
+        // Hover text, read once: a beta-off dues has no invoices to name.
+        description: isBetaOffModule("dues")
+          ? "Subscription and Stripe portal."
+          : "Subscription, Stripe portal, member invoices, dues.",
         requirePermission: "billing:view",
       },
       {
