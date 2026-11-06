@@ -143,16 +143,36 @@ describe("sidebarPreview", () => {
     ]);
   });
 
-  it("draws Discord channels given one new name as one row, locked if any is", () => {
+  it("draws Discord channels given one new name and the same readers as one row", () => {
     expect(
       shape(
         sidebarPreview(
-          [at("1", "Rush"), at("2", "Rush")],
-          { "1": named("rush"), "2": named("Rush", "discord") },
+          [at("1", "Rush"), at("2", "Rush"), at("3", "Rush")],
+          {
+            "1": named("rush"),
+            // A leading # is not part of the name, as the merge rule reads it.
+            "2": named("#Rush"),
+            // Other readers: a channel of its own, which Needs attention asks about.
+            "3": named("rush", "discord"),
+          },
           keep,
         ),
       ),
-    ).toEqual([["Rush", ["locked rush"]]]);
+    ).toEqual([["Rush", ["rush", "locked rush"]]]);
+  });
+
+  it("joins a group the chapter already has, under its spelling and before new ones", () => {
+    const sections = sidebarPreview(
+      [at("1", "Committees", 1), at("2", "Events", 3)],
+      { "1": named("rush"), "2": named("formal") },
+      keep,
+      [{ name: "events" }, { name: "Ops" }],
+    );
+    expect(shape(sections)).toEqual([
+      ["events", ["formal"]],
+      ["Committees", ["rush"]],
+    ]);
+    expect(sections.map((section) => section.existing)).toEqual([true, false]);
   });
 
   it("sends a dropped category's channels to Channels", () => {

@@ -99,12 +99,14 @@ export function useDiscordImports(options?: { enabled?: boolean }) {
 }
 
 /**
- * How often the channel panel's progress is polled while an import runs
- * (#2857).
+ * How often an import's channel-by-channel progress is polled while it runs
+ * (#2857): the page's "Now importing" line and per-category tiles on a bot
+ * import, and the channel panel, which share the one query.
  *
  * Slower than the import's own poll: it names channels, and the worker moves to the
- * next one at most once a page of messages. Eight small reads a tick, whatever
- * the server's size, because the full channel list is too large to poll.
+ * next one at most once a page of messages. Nine small reads a tick (eight
+ * table reads and one per-category sum), whatever the server's size, because
+ * the full channel list is too large to poll.
  */
 export const DISCORD_IMPORT_PROGRESS_POLL_MS = 5_000;
 

@@ -78,7 +78,8 @@ describe("categoryTiles", () => {
 
 describe("importTotals", () => {
   it("counts channels and threads apart", () => {
-    // Staging's import, 2026-09-30, in two of its categories.
+    // Staging's import, 2026-09-30: its Notifications category, and the
+    // other ten summed into one line.
     expect(
       importTotals([
         line("Notifications", 3, 630, 633),

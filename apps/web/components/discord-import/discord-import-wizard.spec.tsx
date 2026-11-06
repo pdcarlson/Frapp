@@ -97,6 +97,8 @@ vi.mock("@repo/hooks", () => ({
   useStartDiscordImport: () => ({ mutateAsync: startImport, isPending: false }),
   useDiscordImportFiles: () => ({ data: [] }),
   useChannels: () => channelsQuery.value,
+  // The chapter already has a "Secret" group, spelled its own way.
+  useCategories: () => ({ data: [{ id: "g-1", name: "secret" }] }),
   usePermissionsCatalog: () => ({
     data: [
       { key: "CHAPTER_CONFIG_MANAGE", permission: "chapter-config:manage" },
@@ -596,10 +598,11 @@ describe("ImportWizard — the bot path", () => {
     expect(preview()).toEqual([["Channels", ["#random", "#vault"]]]);
 
     fireEvent.click(keep);
-    // Discord's order: Generic (2) before Secret (5).
+    // Secret joins the chapter's own "secret", which comes before any group
+    // the import makes, under the chapter's spelling.
     expect(preview()).toEqual([
+      ["secret", ["#vault"]],
       ["Generic", ["#random"]],
-      ["Secret", ["#vault"]],
     ]);
     const secret = screen.getByRole("checkbox", {
       name: "Keep Secret as a category",

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useChannels, usePermissionsCatalog } from "@repo/hooks";
+import { useCategories, useChannels, usePermissionsCatalog } from "@repo/hooks";
 import { asArray, cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -137,6 +137,8 @@ export function ChannelMappingStep({
   onSidebarGroups?: (next: SidebarGroups) => void;
 }) {
   const existingChannels = useChannels();
+  // The chapter's own groups: a kept category named like one joins it.
+  const chapterGroups = useCategories();
   const catalogQuery = usePermissionsCatalog();
 
   const readable = useMemo(
@@ -260,8 +262,14 @@ export function ChannelMappingStep({
     [channels, choices, readersOf, sidebarGroups],
   );
   const preview = useMemo(
-    () => sidebarPreview(readable, choices, sidebarGroups),
-    [readable, choices, sidebarGroups],
+    () =>
+      sidebarPreview(
+        readable,
+        choices,
+        sidebarGroups,
+        asArray<{ name: string }>(chapterGroups.data),
+      ),
+    [readable, choices, sidebarGroups, chapterGroups.data],
   );
 
   if (channels.length === 0) {

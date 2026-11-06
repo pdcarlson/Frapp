@@ -13,6 +13,9 @@
 -- under its parent row's category, joined on the parent's Discord id within
 -- the same import (`discord_import_channels_unique`).
 --
+-- Categories are grouped by name: two Discord categories of one name are one
+-- line, as starting the import makes them one group.
+--
 -- Per category: `channels` (rows with no parent) and `threads` (rows with
 -- one) being imported, `done` (imported, or skipped by the worker because
 -- Discord no longer showed the channel, as `countChannels` counts it) and

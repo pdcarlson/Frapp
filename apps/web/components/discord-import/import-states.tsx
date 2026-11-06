@@ -342,10 +342,12 @@ export function ImportFinished({
   const warned = row.warnings?.length ?? 0;
   const since = formatDay(row.messages_after);
   const finishedAt = row.completed_at ? formatDayTime(row.completed_at) : null;
-  // A finished bot import counts its channels and threads apart; until that
-  // read lands, or on an upload, the row's combined count stands in.
+  // A completed bot import counts its channels and threads apart; until that
+  // read lands, or on an upload, the row's combined count stands in. One
+  // stopped part-way counts only what it got through, which the categories
+  // don't split, so nothing is read for it.
   const categories = (
-    useBotImportProgress(row, false).data as ImportProgress | undefined
+    useBotImportProgress(row, false, done).data as ImportProgress | undefined
   )?.categories;
   const totals = done && categories?.length ? importTotals(categories) : null;
   return (

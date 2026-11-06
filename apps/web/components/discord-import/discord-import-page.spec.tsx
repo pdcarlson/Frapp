@@ -673,16 +673,45 @@ describe("DiscordImportPage — finished", () => {
       active: false,
       enabled: true,
     });
-    expect(screen.getByText("channels").nextSibling?.textContent).toBe(
-      "78",
-    );
-    expect(screen.getByText("threads").nextSibling?.textContent).toBe(
-      n(1068),
-    );
+    expect(screen.getByText("channels").nextSibling?.textContent).toBe("78");
+    expect(screen.getByText("threads").nextSibling?.textContent).toBe(n(1068));
     expect(screen.queryByText("channels and threads")).toBeNull();
     expect(
       screen.queryByRole("list", { name: "Progress by Discord category" }),
     ).toBeNull();
+  });
+
+  it("keeps the combined count, with no split read, on an import stopped part-way", () => {
+    hooks.rows = [{ ...done, status: "cancelled", channels_done: 300 }];
+    hooks.progress.mockReturnValue({
+      data: {
+        ...progress,
+        categories: [
+          {
+            category: "Other",
+            channels: 78,
+            threads: 1068,
+            done: 300,
+            failed: 0,
+          },
+        ],
+      },
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    render(<DiscordImportPage />);
+
+    // The categories don't split what it got through into channels and
+    // threads, so it isn't read, and a stale read isn't used.
+    expect(hooks.progress).toHaveBeenCalledWith("big", {
+      active: false,
+      enabled: false,
+    });
+    expect(
+      screen.getByText("channels and threads done").nextSibling?.textContent,
+    ).toBe("300");
+    expect(screen.queryByText("threads")).toBeNull();
   });
 
   it("groups what didn't come over by reason, in plain words", () => {

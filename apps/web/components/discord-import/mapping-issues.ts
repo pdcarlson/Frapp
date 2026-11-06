@@ -2,6 +2,7 @@ import type { StagedChannel } from "./upload-step";
 import { nameKey, type SameAsDiscordReaders } from "./role-matching";
 import {
   NO_SIDEBAR_GROUPS,
+  normaliseChannelName,
   sidebarGroupFor,
   type SidebarGroups,
 } from "./sidebar-groups";
@@ -295,10 +296,7 @@ export interface MappingIssue {
   retry?: () => void;
 }
 
-/** Channel names compare case-insensitively and ignoring a leading `#`. */
-export function normaliseChannelName(name: string): string {
-  return name.trim().replace(/^#+/, "").toLowerCase();
-}
+export { normaliseChannelName };
 
 type ReadersOf = (channel: StagedChannel) => SameAsDiscordReaders | null;
 

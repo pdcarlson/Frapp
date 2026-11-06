@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { SupabaseDiscordImportRepository } from './supabase-discord-import.repository';
 import { ArchiveQuotaExceededError } from '#domain/repositories/discord-import.repository.interface';
 import { ID_CHUNK_SIZE } from '#domain/utils/chunk-ids';
@@ -593,15 +594,22 @@ describe('SupabaseDiscordImportRepository — progress counts and clearing', () 
     expect(progress.categories).toEqual(lines);
   });
 
-  it('findChannelProgress fails when the per-category sums fail', async () => {
+  it('findChannelProgress still answers when the per-category sums fail', async () => {
     const { repo } = build('running', [], {
       discord_import_category_progress: {
-        error: { message: 'boom', code: 'XX000' },
+        error: { message: 'function does not exist', code: '42883' },
       },
     });
-    await expect(
-      repo.findChannelProgress(IMPORT_A, CHAPTER_A),
-    ).rejects.toThrow();
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const progress = await repo.findChannelProgress(IMPORT_A, CHAPTER_A);
+    expect(progress.categories).toEqual([]);
+    expect(progress.counts.running).toBe(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('progress per category'),
+    );
+    warn.mockRestore();
   });
 
   it('findChannelProgress names the last finished first, and only a few', async () => {

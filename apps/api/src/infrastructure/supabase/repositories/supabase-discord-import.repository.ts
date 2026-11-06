@@ -1,7 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import { fetchAllPages } from '../supabase.utils';
+import { logThrowable } from '../../observability/log-throwable';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type {
   ArchiveQuotaScope,
@@ -86,6 +87,8 @@ function parseArchiveQuotaError(error: {
 
 @Injectable()
 export class SupabaseDiscordImportRepository implements IDiscordImportRepository {
+  private readonly logger = new Logger(SupabaseDiscordImportRepository.name);
+
   constructor(
     @Inject(SUPABASE_CLIENT)
     private readonly supabase: FrappSupabaseClient,
@@ -343,8 +346,19 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
         p_chapter_id: chapterId,
       }),
     ]);
-    for (const result of [...counts, running, recent, failed, categories]) {
+    for (const result of [...counts, running, recent, failed]) {
       if (result.error) throw new SupabaseQueryError(result.error);
+    }
+    // The per-category sums are extra: when they fail (or the function isn't
+    // there yet, an API deployed ahead of its migration), the counts and the
+    // named rows still answer, and the page draws no tiles.
+    if (categories.error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not add up import ${importId}'s progress per category; answering without it`,
+        new SupabaseQueryError(categories.error),
+      );
     }
     const named = (
       data: DiscordImportChannelProgressRow[] | null,
@@ -369,7 +383,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       running: named(running.data),
       recent: named(recent.data),
       failed: named(failed.data),
-      categories: (categories.data ?? []).map(
+      categories: (categories.error ? [] : (categories.data ?? [])).map(
         (row): DiscordImportCategoryProgress => ({
           category: row.category,
           channels: row.channels,

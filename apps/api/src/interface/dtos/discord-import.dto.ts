@@ -410,7 +410,7 @@ export class DiscordImportProgressDto {
   @ApiProperty({
     type: [DiscordImportCategoryProgressDto],
     description:
-      "The same rows added up per Discord category: the channels in no category first, then the categories in Discord's order. `channels + threads` is the category's total; `done` of that total is finished. Rows mapped to skip are in no count.",
+      "The same rows added up per Discord category, by name (two categories of one name are one line, as they become one group): the channels in no category first, then the categories in Discord's order on a bot import, and on an upload, whose export records no order, in the order the import reaches them. A thread counts under its channel's category. `channels + threads` is the category's total; `done` of that total is finished. Rows mapped to skip are in no count. Empty when the sums could not be read; the rest of the progress still answers.",
   })
   categories: DiscordImportCategoryProgressDto[];
 

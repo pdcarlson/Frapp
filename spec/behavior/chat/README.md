@@ -754,18 +754,6 @@ channel that reports a different one fails the import rather than being skipped.
     something to resolve, as above. A category is a name every member sees,
     which the switch says.
 
-    Each Discord category on the step is one folded section with a summary
-    line (its channels, the threads they hold on a bot import, how many are
-    being imported, and what needs attention), so a server of 78 channels
-    reads as a dozen decisions; it opens on its own when something in it
-    needs attention. A thread never gets a row of its own. Beside them, "What
-    chat will look like" lists the channels the import will make under the
-    sidebar sections they will land in, in the order starting the import
-    creates them (no category first, then Discord's order, then by name;
-    channels A to Z, marked private as the sidebar marks them), and re-groups
-    as the admin keeps or drops categories. Merges aren't listed: they make
-    nothing.
-
     An officer may rename or delete one at any time. A channel the import
     still has to make then lands in no category, until the import is started
     again: a restart resolves the name again, making the category again if
@@ -773,6 +761,20 @@ channel that reports a different one fails the import rather than being skipped.
     one that does. A category a remap stops using, as after unticking one,
     stays until the import is deleted or an officer deletes it (#2882). *2026-11-05, owner's request: a
     78-channel server landed as one flat list.*
+
+    Each Discord category on the step is one folded section with a summary
+    line (its channels, the threads they hold on a bot import, how many are
+    being imported, and what needs attention), so a server of 78 channels
+    reads as a dozen decisions; it opens on its own when something in it
+    needs attention. A thread never gets a row of its own. Above them, "What
+    chat will look like" lists the channels the import will make under the
+    sidebar sections they will land in, in the order starting the import
+    creates them (no category first, then Discord's order, then by name;
+    channels A to Z, marked private as the sidebar marks them), and re-groups
+    as the admin keeps or drops categories. A category named like one of the
+    chapter's own joins it, under the chapter's spelling and before the new
+    ones, as starting the import places it. Merges aren't listed: they make
+    nothing. *2026-11-06, the server map of the #2882 redesign.*
   - **A channel an import merges into stays an ordinary channel, which an
     officer can delete at any time (#2922)**: before the import starts, while
     it runs, or long after. Each import that merged into it keeps its mapping

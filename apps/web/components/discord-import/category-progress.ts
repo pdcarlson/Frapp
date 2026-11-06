@@ -88,12 +88,17 @@ export function importTotals(categories: readonly CategoryProgress[]): {
 /**
  * A bot import's progress read, shared with the channel panel (same query).
  * An upload's channel rows record neither the order its parts ran in nor a
- * part it skipped, so it has no per-category view and nothing is read.
- * Polled only while the import is moving.
+ * part it skipped, so it has no per-category view and nothing is read; nor
+ * is anything read when `wanted` is false. Polled only while the import is
+ * moving.
  */
-export function useBotImportProgress(row: ImportRow, active: boolean) {
+export function useBotImportProgress(
+  row: ImportRow,
+  active: boolean,
+  wanted = true,
+) {
   return useDiscordImportProgress(row.id, {
     active,
-    enabled: row.source === "bot",
+    enabled: wanted && row.source === "bot",
   });
 }
