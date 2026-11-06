@@ -1628,7 +1628,7 @@ describe('DiscordImportWorkerService — Discord mention tokens (#2875)', () => 
     expect(rows[0].content).toBe('see #private-channel');
   });
 
-  it('hands a bot slice role names from the mapping and the Frapp roles', async () => {
+  it('hands a bot slice role names by their Discord names', async () => {
     const brothers = '750151182395244584';
     const amongUs = '750151182395244585';
     repoRef = makeRepo(
@@ -1681,7 +1681,8 @@ describe('DiscordImportWorkerService — Discord mention tokens (#2875)', () => 
     await worker.sweepImports(NOW);
 
     const { roleName } = exportWorker.runSlice.mock.calls[0][0];
-    expect(roleName(brothers)).toBe('Brothers');
+    // The Discord name, not the Frapp role it maps to ('Brothers' here).
+    expect(roleName(brothers)).toBe('Brothers 🦁');
     expect(roleName(amongUs)).toBe('Among Us');
     expect(roleName('700000000000000001')).toBe('everyone');
     expect(roleName('1')).toBeNull();

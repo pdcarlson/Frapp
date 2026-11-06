@@ -18,15 +18,16 @@
  *
  * What it names things from, and how that compares with a fresh import:
  * - roles and channels: the same lookups the worker uses, read now. A role
- *   renamed in Frapp since the import reads as its current name. An upload
- *   has no role mapping, so its role mentions read `@unknown-role`, as they
- *   would fresh.
+ *   reads as its Discord name, as it would fresh. An upload has no role
+ *   mapping, so its role mentions read `@unknown-role`, as they would fresh.
  * - users: the name the import stored on that user's own messages
- *   (`payload.author_username`, newest first). On a bot import that is the
- *   display name, as a fresh import writes. On an upload it is the Discord
- *   username, where a fresh import prefers the nickname DCE recorded. The
- *   message's own `mentions` were never stored, so a mentioned user who never
- *   posted in the import reads `@unknown-user`.
+ *   (`payload.author_username`, newest first), in the compact `@Handle` form.
+ *   On a bot import that is their account name, where a fresh import now
+ *   writes the server nickname: run `backfill-discord-import-people.ts`
+ *   after this one to bring those to the nickname. On an upload it is the
+ *   Discord username, where a fresh import prefers the nickname DCE
+ *   recorded. The message's own `mentions` were never stored, so a mentioned
+ *   user who never posted in the import reads `@unknown-user`.
  *
  * `content` is rewritten in place and nothing else changes; like the importer,
  * it keeps no copy of the original text (see `discord-mentions.ts`).
