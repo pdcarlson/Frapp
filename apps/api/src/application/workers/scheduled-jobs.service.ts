@@ -688,7 +688,9 @@ export class ScheduledJobsService {
    *
    * Sends nothing while dues is a beta-off module (`BETA_OFF_MODULES`): a
    * reminder would deep-link to a Dues screen no client shows. The open
-   * invoices stay as they are and are reminded about again once dues returns.
+   * invoices stay as they are. Reminders are skipped, not queued: once dues
+   * returns, only an invoice whose due date or overdue day still falls in the
+   * windows below gets one.
    */
   async sweepInvoiceReminders(now: Date): Promise<{ sent: number }> {
     if (isBetaOffModule('dues')) return { sent: 0 };

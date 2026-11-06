@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text } from "react-native";
 import {
-  useCurrentChapter,
   useCurrentUser,
   useEvents,
   useInvoices,
@@ -14,7 +13,7 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { can, isModuleEnabled } from "@repo/validation";
+import { can, isBetaOffModule } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import {
@@ -140,11 +139,11 @@ export default function MoreScreen() {
   // rather than duplicating work.
   const viewerUserId = useViewerUserId();
   const sessionsQuery = useStudySessions();
-  // The Dues row hides while the chapter has dues off, or while dues is off
-  // for every chapter in the beta (`BETA_OFF_MODULES`). Fails open while the
-  // chapter loads, like Study's `hours` gate.
-  const chapterQuery = useCurrentChapter();
-  const duesOn = isModuleEnabled(chapterQuery.data?.enabled_modules, "dues");
+  // The Dues row hides only while dues is off for every chapter in the beta
+  // (`BETA_OFF_MODULES`). A chapter's own dues switch leaves it, so a member
+  // can still pay an invoice the chapter already sent
+  // (`spec/product/modules.md` § Module disabling behavior).
+  const duesOn = !isBetaOffModule("dues");
   // Viewer-filtered server-side, for the reason `dues.tsx` records: unfiltered,
   // this row would pull the whole chapter's ledger onto an officer's device.
   const invoicesQuery = useInvoices(viewerUserId ?? undefined, {

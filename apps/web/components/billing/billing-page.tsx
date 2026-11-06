@@ -3,14 +3,13 @@
 import { Suspense } from "react";
 import { AlertTriangle } from "lucide-react";
 import { useCurrentUser, useInvoices } from "@repo/hooks";
-import { isModuleEnabled } from "@repo/validation";
+import { isBetaOffModule } from "@repo/validation";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { NestedOffline } from "@/components/shared/nested-states";
 import { PlanPanel } from "@/components/billing/plan-panel";
 import { PlanMatrix } from "@/components/billing/plan-matrix";
 import { InvoiceList } from "@/components/billing/invoice-list";
 import { subscriptionStatusKind } from "@/components/billing/invoice-status";
-import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import { useChapterSubscription } from "@/lib/hooks/use-subscription-write-state";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { PlanPanelSkeleton } from "@/components/billing/billing-skeleton";
@@ -59,12 +58,12 @@ const INVOICES_ANCHOR = "invoices";
 export function BillingPage() {
   const { isOffline } = useNetwork();
   /*
-   * The invoice list is the `dues` module's surface. While the gate's read is
-   * unresolved it answers like the nav does, open, except for a beta-off
-   * module, which `isModuleEnabled` reports off before any chapter loads.
+   * The invoice list leaves only while dues is beta-off. A chapter's own dues
+   * switch doesn't hide it: a member must still be able to pay an invoice
+   * the chapter already sent (`spec/product/modules.md` § Module disabling
+   * behavior).
    */
-  const duesOn =
-    useChapterModuleGate()?.("dues") ?? isModuleEnabled(undefined, "dues");
+  const duesOn = !isBetaOffModule("dues");
   const invoicesQuery = useInvoices(undefined, { enabled: duesOn });
   const currentUserQuery = useCurrentUser();
   const { status } = useChapterSubscription();

@@ -289,10 +289,11 @@ describe("Dues while dues is off", () => {
     expect(tree.root.findAllByType(BalanceCardSkeleton)).toHaveLength(0);
   });
 
-  it("does the same for a chapter that switched dues off", () => {
+  // A member must still be able to pay an invoice the chapter already sent.
+  it("stays open for a chapter that switched dues off itself", () => {
     chapterModules = { dues: false };
     const tree = mount();
-    expect(redirects(tree).map((node) => node.props.href)).toEqual(["/more"]);
+    expect(redirects(tree)).toHaveLength(0);
   });
 
   it("draws the screen while dues is on", () => {

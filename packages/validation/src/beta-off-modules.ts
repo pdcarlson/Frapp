@@ -5,10 +5,13 @@
  * Frapp (Paul, 2026-11-06).
  *
  * It works through `isModuleEnabled`, so every surface that already reads the
- * module gate hides the module and `ChapterGuard` refuses its writes, with no
- * per-surface list. Settings → Modules leaves these out rather than offering a
- * switch that cannot turn on. Nothing is deleted: removing a key here turns
- * the module back on with the chapter's own setting and data as they were.
+ * module gate hides the module, and any `@RequireModule` route or
+ * `assertModuleEnabled` write for it is refused. Dues has no such route: the
+ * member-invoice routes are deliberately ungated, so its own surfaces
+ * (`/billing`'s invoice list, mobile Dues) check `isBetaOffModule` directly.
+ * Settings → Modules leaves these out rather than offering a switch that
+ * cannot turn on. Nothing is deleted: removing a key here turns the module
+ * back on with the chapter's own setting and data as they were.
  */
 export const BETA_OFF_MODULES: readonly string[] = Object.freeze(["dues"]);
 

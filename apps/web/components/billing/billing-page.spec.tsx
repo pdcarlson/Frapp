@@ -54,14 +54,20 @@ const currentUserQuery: {
   refetch: vi.fn(),
 };
 
-const { mockCurrentChapter, networkState } = vi.hoisted(() => ({
-  mockCurrentChapter: vi.fn(),
-  networkState: { isOffline: false },
-}));
+const { mockCurrentChapter, networkState, invoiceReadOptions } = vi.hoisted(
+  () => ({
+    invoiceReadOptions: [] as ({ enabled?: boolean } | undefined)[],
+    mockCurrentChapter: vi.fn(),
+    networkState: { isOffline: false },
+  }),
+);
 
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
-  useInvoices: () => invoicesQuery,
+  useInvoices: (_userId?: string, options?: { enabled?: boolean }) => {
+    invoiceReadOptions.push(options);
+    return invoicesQuery;
+  },
   useCurrentUser: () => currentUserQuery,
 }));
 
@@ -158,6 +164,7 @@ describe("while dues is beta-off", () => {
     betaOff.keys = ["dues"];
     render(<BillingPage />);
 
+    expect(invoiceReadOptions.at(-1)).toEqual({ enabled: false });
     expect(screen.queryByTestId("invoice-list")).not.toBeInTheDocument();
     expect(screen.getByTestId("plan-panel")).not.toHaveAttribute(
       "data-invoices-href",

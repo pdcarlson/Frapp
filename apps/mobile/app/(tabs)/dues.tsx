@@ -7,14 +7,13 @@ import {
   payIntentErrorCopy,
   useActiveChapterId,
   useAwaitInvoicePaid,
-  useCurrentChapter,
   useCurrentUser,
   useInvoices,
   usePayInvoice,
   useViewerUserId,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { isModuleEnabled } from "@repo/validation";
+import { isBetaOffModule } from "@repo/validation";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_MORE } from "@/components/back-row";
@@ -267,12 +266,11 @@ interface PayFailure {
  */
 export default function DuesScreen() {
   const chapterId = useActiveChapterId();
-  const chapterQuery = useCurrentChapter();
-  // More hides the row while dues is off (for this chapter, or for every
-  // chapter in the beta); this catches a way in that skips More, such as an
-  // older invoice notification. Fails open while the chapter loads, like
-  // Study's `hours` gate.
-  if (!isModuleEnabled(chapterQuery.data?.enabled_modules, "dues")) {
+  // More hides the row while dues is beta-off; this catches a way in that
+  // skips More, such as a billing notification. A chapter's own dues switch
+  // doesn't close the screen, so a member can still pay an invoice the
+  // chapter already sent.
+  if (isBetaOffModule("dues")) {
     return <Redirect href="/more" />;
   }
   return <ChapterDues key={chapterId ?? "no-chapter"} />;

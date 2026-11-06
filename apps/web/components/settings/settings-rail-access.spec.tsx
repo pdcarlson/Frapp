@@ -140,7 +140,7 @@ describe("Settings shows each viewer what they can use", () => {
     ]);
   });
 
-  it("drops the Dues tab while dues is off, for the chapter or the beta", () => {
+  it("drops the Dues tab while dues is beta-off", () => {
     permissions.current = ["*"];
     betaOff.keys = ["dues"];
     render(<SettingsPage />);
@@ -148,14 +148,14 @@ describe("Settings shows each viewer what they can use", () => {
     expect(tabNames()).toContain("Workflows");
   });
 
-  it("drops the Dues tab for a chapter that switched dues off", () => {
+  it("keeps the Dues tab for a chapter that switched dues off itself", () => {
     permissions.current = ["*"];
     currentChapter.current = {
       ...currentChapter.current,
       enabled_modules: { dues: false },
     };
     render(<SettingsPage />);
-    expect(tabNames()).not.toContain("Dues");
+    expect(tabNames()).toContain("Dues");
   });
 
   it("lists a treasurer's one tool as the page, with no setup tabs to fail", () => {
