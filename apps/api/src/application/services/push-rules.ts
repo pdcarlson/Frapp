@@ -42,6 +42,12 @@ export interface PushDecisionInput {
   hasMention: boolean;
   /** Pref rows for the (user, chapter). Empty means "no preference set". */
   preferences: ChatNotificationPreferenceRow[];
+  /**
+   * The row is an audit-log mirror in `#chapter-audit` (`isAuditMirrorRow`),
+   * not one of the server's own `system_audit` notices. Mirrors are delivered
+   * silently: no preference turns them back on.
+   */
+  isAuditMirror?: boolean;
 }
 
 /**
@@ -145,9 +151,16 @@ export type PushOutcome = 'send' | 'skip-level' | 'skip-presence';
  * that turns this back on — "notify me about backfilled history" is not a
  * setting anyone wants, and `ChatPushWorkerService.handleMessage` already exits
  * before it gets here.
+ *
+ * An audit mirror is refused the same way (owner decision 2026-11-06: audit
+ * entries arrive silently). A member's `all` on `#chapter-audit`, or the
+ * `system_audit` kind opt-in, would otherwise page them for every settings
+ * save. The kind opt-in still reaches the server's own `system_audit` notices.
  */
 export function decidePush(input: PushDecisionInput): PushOutcome {
-  if (input.messageKind === 'imported') return 'skip-level';
+  if (input.messageKind === 'imported' || input.isAuditMirror) {
+    return 'skip-level';
+  }
   if (input.recipientIsPresent) return 'skip-presence';
   const level = resolveLevel(
     input.channel,

@@ -27,7 +27,25 @@ import { WorkerSubscription } from './worker-subscription';
  * `client_message_id` holds.
  */
 export function auditMirrorClientId(auditId: string): string {
-  return `audit:${auditId}`;
+  return `${AUDIT_MIRROR_PREFIX}${auditId}`;
+}
+
+const AUDIT_MIRROR_PREFIX = 'audit:';
+
+/**
+ * Whether a chat row is an audit mirror this worker posted, as opposed to one
+ * of the server's own `system_audit` notices (a poll closing, an invite
+ * accepted). The push worker refuses mirrors outright; the unread count
+ * (`get_channel_unread_counts`) skips them by the same prefix.
+ */
+export function isAuditMirrorRow(row: {
+  kind: string;
+  client_message_id?: string | null;
+}): boolean {
+  return (
+    row.kind === 'system_audit' &&
+    (row.client_message_id ?? '').startsWith(AUDIT_MIRROR_PREFIX)
+  );
 }
 
 interface AuditLogRow {
