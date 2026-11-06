@@ -1,5 +1,4 @@
 import { writePreferenceCookie } from "@/components/layout/nav-collapse";
-import { useMediaQuery } from "@/lib/use-media-query";
 
 /**
  * Persistence for Chat's member list column (#3536): shown or hidden, from
@@ -10,6 +9,10 @@ import { useMediaQuery } from "@/lib/use-media-query";
  * who hid the column never sees it paint and then vanish after hydration.
  * Below 1280px the same toggle opens a sheet instead, which is never
  * remembered.
+ *
+ * The server page imports this module, so it must stay free of React hooks:
+ * a `useSyncExternalStore` import here fails the production build with an
+ * RSC boundary error (vitest has no such boundary and never notices).
  */
 
 export const CHAT_MEMBERS_HIDDEN_COOKIE = "frapp_chat_members_hidden";
@@ -27,11 +30,9 @@ export function persistMembersHidden(hidden: boolean): void {
 }
 
 /**
- * Whether the member list is a column (1280px up, Tailwind's `xl`) or a
- * sheet. Decides what the toggle does and whether the column's read runs;
- * the column itself is shown and hidden by CSS (`hidden xl:flex`), so first
- * paint never waits on this.
+ * Where the member list is a column (1280px up, Tailwind's `xl`) rather than
+ * a sheet. The shell matches it with `useMediaQuery` to decide what the toggle
+ * does and whether the column's read runs; the column itself is shown and
+ * hidden by CSS (`hidden xl:flex`), so first paint never waits on it.
  */
-export function useIsWideChat(): boolean {
-  return useMediaQuery("(min-width: 1280px)");
-}
+export const WIDE_CHAT_QUERY = "(min-width: 1280px)";

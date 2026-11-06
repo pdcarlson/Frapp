@@ -5,7 +5,7 @@ import { useCallback, useSyncExternalStore } from "react";
  * through hydration, so a caller must never let it decide first-paint layout:
  * draw that with CSS breakpoints and use this only for what a control does.
  * Shared by the shell's desktop column (`nav-face.tsx`) and Chat's member
- * list (`lib/chat/members-panel.ts`).
+ * list (`components/chat/chat-shell.tsx`).
  *
  * `subscribe` is memoized on the query: a fresh function each render would
  * make `useSyncExternalStore` drop and re-add the listener on every render of

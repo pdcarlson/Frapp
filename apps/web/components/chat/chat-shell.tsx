@@ -48,7 +48,11 @@ import { ChevronLeft, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { PanelContent, PanelHeader } from "@/components/shared/panel";
-import { persistMembersHidden, useIsWideChat } from "@/lib/chat/members-panel";
+import {
+  persistMembersHidden,
+  WIDE_CHAT_QUERY,
+} from "@/lib/chat/members-panel";
+import { useMediaQuery } from "@/lib/use-media-query";
 import { IconButton } from "@/components/ui/icon-button";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
@@ -453,7 +457,7 @@ export function ChatShell({
   */
   const [membersHidden, setMembersHidden] = useState(defaultMembersHidden);
   const [membersSheetOpen, setMembersSheetOpen] = useState(false);
-  const isWideChat = useIsWideChat();
+  const isWideChat = useMediaQuery(WIDE_CHAT_QUERY);
   const toggleMembers = () => {
     if (!isWideChat) {
       setMembersSheetOpen(true);
