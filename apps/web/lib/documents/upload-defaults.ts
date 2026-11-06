@@ -105,3 +105,44 @@ export function documentTypeOptions(
   }
   return [...byKey.values()];
 }
+
+/**
+ * The folder a document of `type` most likely belongs in: the folder the
+ * chapter files most of that type under, or else a folder whose name says the
+ * type ("Meeting Minutes" for Minutes, "Bylaws & Governance" for Bylaws,
+ * "Finance" for Budget). `null` when neither points anywhere.
+ */
+export function suggestFolder(
+  type: string,
+  folders: readonly string[],
+  documents: ReadonlyArray<{
+    document_type: string | null;
+    folder: string | null;
+  }>,
+): string | null {
+  const key = type.toLowerCase();
+  const counts = new Map<string, number>();
+  for (const doc of documents) {
+    if (!doc.folder || doc.document_type?.toLowerCase() !== key) continue;
+    if (!folders.includes(doc.folder)) continue;
+    counts.set(doc.folder, (counts.get(doc.folder) ?? 0) + 1);
+  }
+  let best: string | null = null;
+  for (const [folder, count] of counts) {
+    if (best === null || count > (counts.get(best) ?? 0)) best = folder;
+  }
+  if (best) return best;
+
+  const words = new Set([
+    key,
+    ...(TYPE_KEYWORDS.find(([name]) => name.toLowerCase() === key)?.[1] ?? []),
+  ]);
+  return (
+    folders.find((folder) =>
+      folder
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .some((word) => words.has(word)),
+    ) ?? null
+  );
+}

@@ -156,7 +156,12 @@ export function DocumentsPage() {
     () => folders.map((folder) => folder.name),
     [folders],
   );
-  const upload = useDocumentUpload(gate, { activeFolder, typeOptions });
+  const upload = useDocumentUpload(gate, {
+    activeFolder,
+    typeOptions,
+    folders: folderNames,
+    documents,
+  });
   /*
     Which rows' deletes are in flight — a set, not a scalar. `useDeleteDocument` is pessimistic —
     the row only disappears once the DELETE round-trips — so without this

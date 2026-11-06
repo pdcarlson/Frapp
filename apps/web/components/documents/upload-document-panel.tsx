@@ -40,6 +40,7 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { cn, getErrorMessage } from "@/lib/utils";
 import {
   guessDocumentType,
+  suggestFolder,
   titleFromFilename,
 } from "@/lib/documents/upload-defaults";
 import {
@@ -70,6 +71,15 @@ type UploadDraft = {
   documentType: string;
   effectiveDate: string;
   file: File | null;
+  /*
+    Whether each guessable field still holds what the panel put there (or
+    nothing). Choosing another file replaces a guess but never something the
+    officer typed or picked. Kept in the draft, not a ref, so the updaters
+    below stay pure.
+  */
+  autoTitle: boolean;
+  autoType: boolean;
+  autoFolder: boolean;
 };
 
 const EMPTY_UPLOAD_DRAFT: UploadDraft = {
@@ -79,7 +89,16 @@ const EMPTY_UPLOAD_DRAFT: UploadDraft = {
   documentType: "",
   effectiveDate: "",
   file: null,
+  autoTitle: true,
+  autoType: true,
+  autoFolder: true,
 };
+
+/** The draft fields an officer edits by hand; editing one ends its guessing. */
+type EditableField = Exclude<
+  keyof UploadDraft,
+  "file" | "autoTitle" | "autoType" | "autoFolder"
+>;
 
 /**
  * The upload panel's state and submit. The page calls this rather than the
@@ -88,14 +107,25 @@ const EMPTY_UPLOAD_DRAFT: UploadDraft = {
  *
  * `activeFolder` is the folder the officer is looking at, which a fresh draft
  * files into; `typeOptions` are the chips, which the file name's guess is
- * matched against.
+ * matched against; `folders` and `documents` say where the guessed type is
+ * usually filed, for a draft started from "All files".
  */
 export function useDocumentUpload(
   gate: SubscriptionGate,
   {
     activeFolder,
     typeOptions,
-  }: { activeFolder: string | null; typeOptions: readonly string[] },
+    folders,
+    documents,
+  }: {
+    activeFolder: string | null;
+    typeOptions: readonly string[];
+    folders: readonly string[];
+    documents: ReadonlyArray<{
+      document_type: string | null;
+      folder: string | null;
+    }>;
+  },
 ) {
   const { toast } = useToast();
   const requestUpload = useRequestDocumentUploadUrl();
@@ -112,34 +142,38 @@ export function useDocumentUpload(
     shared allowlist.
   */
   const [uploadError, setUploadError] = useState<string | null>(null);
-  /*
-    What the panel filled in itself, so choosing a second file replaces a
-    guess but never something the officer typed. A field still holding the
-    value we put there is ours to change; anything else is theirs.
-  */
-  const autoFilled = useRef<{ title: string; documentType: string }>({
-    title: "",
-    documentType: "",
-  });
-
   const chooseFile = useCallback(
     (file: File | null) => {
       setUploadError(null);
       setUploadDraft((prev) => {
         if (!file) return { ...prev, file };
         const next = { ...prev, file };
-        if (prev.title === autoFilled.current.title) {
-          next.title = titleFromFilename(file.name);
-          autoFilled.current.title = next.title;
-        }
-        if (prev.documentType === autoFilled.current.documentType) {
+        if (prev.autoTitle) next.title = titleFromFilename(file.name);
+        if (prev.autoType) {
           next.documentType = guessDocumentType(file.name, typeOptions) ?? "";
-          autoFilled.current.documentType = next.documentType;
+        }
+        if (prev.autoFolder) {
+          next.folder = next.documentType
+            ? (suggestFolder(next.documentType, folders, documents) ?? "")
+            : "";
         }
         return next;
       });
     },
-    [typeOptions],
+    [typeOptions, folders, documents],
+  );
+
+  /** An edit by hand: sets the field and stops guessing it. */
+  const editField = useCallback(
+    <K extends EditableField>(key: K, value: UploadDraft[K]) =>
+      setUploadDraft((prev) => ({
+        ...prev,
+        [key]: value,
+        ...(key === "title" ? { autoTitle: false } : {}),
+        ...(key === "documentType" ? { autoType: false } : {}),
+        ...(key === "folder" ? { autoFolder: false } : {}),
+      })),
+    [],
   );
 
   /*
@@ -152,8 +186,12 @@ export function useDocumentUpload(
   const openPanel = useCallback(
     (file?: File) => {
       setUploadError(null);
+      // A folder on screen is a choice the officer already made, so it is
+      // not guessed over; from "All files" or "No folder" the type decides.
       setUploadDraft((prev) =>
-        prev.file ? prev : { ...prev, folder: activeFolder || "" },
+        prev.file
+          ? prev
+          : { ...prev, folder: activeFolder || "", autoFolder: !activeFolder },
       );
       if (file) chooseFile(file);
       uploadDialog.setOpen(true);
@@ -217,7 +255,6 @@ export function useDocumentUpload(
       uploadDialog.setOpen(false);
       setUploadDraft(EMPTY_UPLOAD_DRAFT);
       setDraftGeneration((n) => n + 1);
-      autoFilled.current = { title: "", documentType: "" };
     } catch (error) {
       toast({
         title: "Couldn't upload document",
@@ -235,7 +272,7 @@ export function useDocumentUpload(
   return {
     uploadDialog,
     uploadDraft,
-    setUploadDraft,
+    editField,
     uploading,
     uploadError,
     chooseFile,
@@ -275,7 +312,7 @@ export function UploadDocumentPanel({
   const {
     uploadDialog,
     uploadDraft,
-    setUploadDraft,
+    editField: set,
     uploading,
     uploadError,
     chooseFile,
@@ -311,9 +348,6 @@ export function UploadDocumentPanel({
     setCustomTypeOpen(false);
     setDetailsOpen(false);
   }
-
-  const set = <K extends keyof UploadDraft>(key: K, value: UploadDraft[K]) =>
-    setUploadDraft((prev) => ({ ...prev, [key]: value }));
 
   const folderValue = showNewFolder
     ? NEW_FOLDER

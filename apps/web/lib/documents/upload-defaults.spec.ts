@@ -3,6 +3,7 @@ import {
   DEFAULT_DOCUMENT_TYPES,
   documentTypeOptions,
   guessDocumentType,
+  suggestFolder,
   titleFromFilename,
 } from "./upload-defaults";
 
@@ -50,5 +51,26 @@ describe("documentTypeOptions", () => {
       "Form",
       "contract",
     ]);
+  });
+});
+
+describe("suggestFolder", () => {
+  const folders = ["Meeting Minutes", "Bylaws & Governance", "Finance", "Recruitment"];
+
+  it("prefers where the chapter already files that type", () => {
+    expect(
+      suggestFolder("Minutes", folders, [
+        { document_type: "minutes", folder: "Recruitment" },
+        { document_type: "Minutes", folder: "Recruitment" },
+        { document_type: "Minutes", folder: "Meeting Minutes" },
+      ]),
+    ).toBe("Recruitment");
+  });
+
+  it("falls back to a folder whose name says the type", () => {
+    expect(suggestFolder("Bylaws", folders, [])).toBe("Bylaws & Governance");
+    expect(suggestFolder("Minutes", folders, [])).toBe("Meeting Minutes");
+    expect(suggestFolder("Budget", folders, [])).toBe("Finance");
+    expect(suggestFolder("Form", folders, [])).toBeNull();
   });
 });

@@ -522,6 +522,24 @@ describe("DocumentsPage upload metadata", () => {
     );
   });
 
+  it("files a bylaws upload from All files into the folder that says Bylaws", async () => {
+    foldersQuery.data = [
+      { id: "f-1", name: "Bylaws & Governance", sort_order: 0 },
+      { id: "f-2", name: "Rush", sort_order: 1 },
+    ];
+    render(<DocumentsPage />);
+    await userEvent.click(uploadTrigger());
+
+    const dialog = screen.getByRole("dialog");
+    pickFile(dialog, "fall-2026-bylaws.pdf");
+    await userEvent.click(within(dialog).getByRole("button", { name: /^upload$/i }));
+
+    await waitFor(() => expect(mockConfirmUpload).toHaveBeenCalledTimes(1));
+    expect(mockConfirmUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ folder: "Bylaws & Governance" }),
+    );
+  });
+
   it("opens the panel with a file dropped anywhere on the page", async () => {
     render(<DocumentsPage />);
     const file = new File(["%PDF-1.4"], "chapter-budget.pdf", {
