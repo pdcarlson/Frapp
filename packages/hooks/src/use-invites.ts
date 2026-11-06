@@ -4,7 +4,15 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { markLegalAcceptanceRecorded } from "./legal-acceptance";
 
-export function useInvites(options?: { enabled?: boolean }) {
+/**
+ * `refetchInterval` is for a screen that watches its invites get used while
+ * it is open, such as mobile setup's invite step, which marks a shared link
+ * Joined. Off by default.
+ */
+export function useInvites(options?: {
+  enabled?: boolean;
+  refetchInterval?: number | false;
+}) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
@@ -15,6 +23,7 @@ export function useInvites(options?: { enabled?: boolean }) {
       return data;
     },
     staleTime: 60_000,
+    refetchInterval: options?.refetchInterval ?? false,
     enabled: (options?.enabled ?? true) && !!chapterId,
   });
 }
