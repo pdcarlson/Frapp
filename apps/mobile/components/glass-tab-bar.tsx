@@ -196,8 +196,9 @@ export function GlassTabBar({
               style={[styles.noticeRow, { bottom: aboveBar }]}
             >
               <GlassSurface style={styles.notice}>
+                {/* Read out by the host's announceForAccessibility, on both
+                    platforms, so no live region to say it twice. */}
                 <Text
-                  accessibilityLiveRegion="polite"
                   style={[
                     typeRole(tokens.typography.role.caption),
                     { color: tokens.color.text.foreground },
