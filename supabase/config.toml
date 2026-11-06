@@ -47,7 +47,7 @@ file_size_limit = "104857600" # 100MB -- the chat-archive bucket ceiling (Discor
 # This is a GLOBAL cap for the local stack and overrides a higher per-bucket
 # `storage.buckets.file_size_limit`; member-upload buckets stay pinned at 25MB
 # (MAX_UPLOAD_BYTES) by their own column and by `@repo/validation`, except
-# `backwork` at 50MB (MAX_BACKWORK_UPLOAD_BYTES), so this must stay >= 50MB.
+# `backwork` at 100MB (MAX_BACKWORK_UPLOAD_BYTES), so this must stay >= 100MB.
 
 [realtime]
 enabled = true
