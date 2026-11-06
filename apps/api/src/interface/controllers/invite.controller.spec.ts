@@ -1,3 +1,4 @@
+import { TimeZoneSyncService } from '../../application/services/time-zone-sync.service';
 import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { InviteController } from './invite.controller';
@@ -39,6 +40,7 @@ describe('InviteController', () => {
           provide: AuthService,
           useValue: mockAuthService,
         },
+        { provide: TimeZoneSyncService, useValue: { record: jest.fn() } },
       ],
     }).compile();
 

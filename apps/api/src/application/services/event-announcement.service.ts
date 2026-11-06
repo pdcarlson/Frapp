@@ -4,17 +4,72 @@ import type { IUserRepository } from '#domain/repositories/user.repository.inter
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { Event } from '#domain/entities/event.entity';
+import { isRecurrenceRule } from '@repo/validation';
 import { NotificationService } from './notification.service';
-import type { NotifyPayload } from './notification.service';
+import type { NotifyPayload, NotifyRecipient } from './notification.service';
 import { ChatService } from './chat.service';
-import { hasRequiredRole } from './event-role-targeting';
+import { RbacService } from './rbac.service';
+import { eventAttendanceFor } from './event-role-targeting';
+import type { EventAttendance } from './event-role-targeting';
 import type { CreateEventInput, UpdateEventInput } from './event-input';
+import {
+  DEFAULT_PUSH_TIME_ZONE,
+  formatEventWhen,
+  joinFacts,
+} from './push-copy';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
+/** What an edit moved that members are told about. */
+export type EventChange = 'time' | 'place' | 'time_and_place';
+
+/** A location as a member would compare it: blank is none. */
+function placeOf(location: string | null | undefined): string | null {
+  const trimmed = location?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function sameInstant(a: string, b: string): boolean {
+  return new Date(a).getTime() === new Date(b).getTime();
+}
+
 /**
- * What the chapter hears about an event write: the "New Event" / "Event
- * Updated" pushes and the `/event` chat card. Every one of these is a best-effort
+ * Which of when and where `patch` actually moves on `before`, or null when it
+ * moves neither. Compares values, not key presence: both clients round-trip
+ * the whole event, so a rename arrives carrying the same times and location,
+ * and announcing that as "rescheduled" would push the whole chapter for a typo
+ * fix. Instants are compared as instants (`+00:00` vs `Z` is no change), and a
+ * new recurrence pattern counts as a change of time.
+ */
+export function eventChangeOf(
+  before: Pick<
+    Event,
+    'start_time' | 'end_time' | 'location' | 'recurrence_rule'
+  >,
+  patch: Pick<
+    UpdateEventInput,
+    'start_time' | 'end_time' | 'location' | 'recurrence_rule'
+  >,
+): EventChange | null {
+  const time =
+    (patch.start_time !== undefined &&
+      !sameInstant(patch.start_time, before.start_time)) ||
+    (patch.end_time !== undefined &&
+      !sameInstant(patch.end_time, before.end_time)) ||
+    (patch.recurrence_rule !== undefined &&
+      (patch.recurrence_rule ?? null) !== (before.recurrence_rule ?? null));
+  const place =
+    patch.location !== undefined &&
+    placeOf(patch.location) !== placeOf(before.location);
+  if (time && place) return 'time_and_place';
+  if (time) return 'time';
+  if (place) return 'place';
+  return null;
+}
+
+/**
+ * What the chapter hears about an event write: the new-event and
+ * rescheduled pushes and the `/event` chat card. Every one of these is a best-effort
  * side effect of a committed row — the row is the source of truth, so nothing
  * here ever rolls a write back. Split out of `EventService` (#3270).
  */
@@ -27,26 +82,45 @@ export class EventAnnouncementService {
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     private readonly notificationService: NotificationService,
     private readonly chatService: ChatService,
+    private readonly rbac: RbacService,
   ) {}
 
   /**
-   * Announce a newly scheduled event. Silent priority, and best-effort: a
-   * failed push never fails the create.
+   * Announce a newly scheduled event to everyone it is for, except whoever
+   * scheduled it. Silent priority, and best-effort: a failed push never fails
+   * the create. A series is announced once, as its pattern, never once per
+   * occurrence (`create` calls this for the parent only).
+   *
+   * Each member reads the event's own name as the title and, in the body,
+   * whether it is required of *them*, when it is in their own zone, and where:
+   * "Chapter" / "Required · Mon, Nov 9, 8–9 PM · The Lodge"
+   * (`spec/behavior/notifications.md` § What a push says).
    */
-  async notifyEventCreated(chapterId: string, event: Event): Promise<void> {
+  async notifyEventCreated(
+    chapterId: string,
+    event: Event,
+    actorId?: string,
+  ): Promise<void> {
     try {
-      await this.notifyEligibleMembers(chapterId, event.required_role_ids, {
-        title: 'New Event',
-        body: `${event.name} has been scheduled`,
-        priority: 'SILENT',
-        category: 'events',
-        data: { target: { screen: 'events', eventId: event.id } },
-      });
+      await this.notifyAudience(
+        chapterId,
+        event,
+        actorId,
+        'SILENT',
+        (copy) => ({
+          title: event.name,
+          body: joinFacts(
+            attendanceLabel(copy.attendance),
+            copy.when,
+            event.location,
+          ),
+        }),
+      );
     } catch (error) {
       reportCaughtFailure(this.logger, {
         level: 'error',
         site: 'event-created-announce-failed',
-        message: `Failed to send the New Event push (event ${event.id}, chapter ${chapterId})`,
+        message: `Failed to send the new event push (event ${event.id}, chapter ${chapterId})`,
         error,
       });
     }
@@ -148,60 +222,151 @@ export class EventAnnouncementService {
   }
 
   /**
-   * Announce an edit that changes where or when members need to be. Silent for
-   * cosmetic edits, and best-effort: the row is the source of truth, so a failed
-   * push never rolls the update back.
+   * Announce an edit that changes where or when members need to be, to
+   * everyone the event is for, except whoever made the edit. Silent for
+   * cosmetic edits, and best-effort: the row is the source of truth, so a
+   * failed push never rolls the update back.
+   *
+   * "Chapter rescheduled" / "Now Tue, Nov 10, 8–9 PM · Required", or
+   * "Chapter moved" / "Now at The Lodge · Mon, Nov 9, 8–9 PM". A series edit
+   * is one push naming the new pattern.
    */
   async notifyEventUpdated(
     chapterId: string,
     updated: Event,
-    input: UpdateEventInput,
+    change: EventChange | null,
+    actorId?: string,
   ): Promise<void> {
-    if (!input.start_time && !input.end_time && input.location === undefined) {
-      return;
-    }
+    if (!change) return;
     try {
-      await this.notifyEligibleMembers(chapterId, updated.required_role_ids, {
-        title: 'Event Updated',
-        body: `${updated.name} has been updated`,
-        priority: 'NORMAL',
-        category: 'events',
-        data: { target: { screen: 'events', eventId: updated.id } },
-      });
+      await this.notifyAudience(
+        chapterId,
+        updated,
+        actorId,
+        'NORMAL',
+        ({ when, attendance }) => {
+          if (change === 'place') {
+            return {
+              title: `${updated.name} moved`,
+              body: joinFacts(
+                updated.location
+                  ? `Now at ${updated.location}`
+                  : 'No location set now',
+                when,
+                attendanceLabel(attendance),
+              ),
+            };
+          }
+          return {
+            title: `${updated.name} rescheduled`,
+            body: joinFacts(
+              `Now ${lowerFirst(when)}`,
+              change === 'time_and_place' &&
+                (updated.location ? `at ${updated.location}` : null),
+              attendanceLabel(attendance),
+            ),
+          };
+        },
+      );
     } catch (error) {
       reportCaughtFailure(this.logger, {
         level: 'error',
         site: 'event-updated-announce-failed',
-        message: `Failed to send the Event Updated push (event ${updated.id}, chapter ${chapterId})`,
+        message: `Failed to send the rescheduled event push (event ${updated.id}, chapter ${chapterId})`,
         error,
       });
     }
   }
 
   /**
-   * Chapter-wide notification, unless the event is role-targeted — then only
-   * members whose `role_ids` intersect `required_role_ids` are notified.
-   * Without this, `notifyChapter`'s "New Event"/"Event Updated" push still
-   * named a role-targeted event (and deep-linked to it) for every member,
-   * even one who now correctly 404s reading the event itself (#1463).
+   * Send `copy` to every member the event is for, with what it asks of each
+   * of them, leaving out `actorId`: whoever scheduled or moved it already
+   * knows, and a push about your own action reads as noise.
+   *
+   * The audience follows the event's read rule. A role-targeted event reaches
+   * only members holding one of its roles; without that, the push named a
+   * role-targeted event (and deep-linked to it) for every member, even one who
+   * correctly 404s reading the event itself (#1463).
    */
-  private async notifyEligibleMembers(
+  private async notifyAudience(
     chapterId: string,
-    requiredRoleIds: string[] | null | undefined,
-    payload: NotifyPayload,
+    event: Event,
+    actorId: string | undefined,
+    priority: NotifyPayload['priority'],
+    write: (copy: { attendance: EventAttendance; when: string }) => {
+      title: string;
+      body: string;
+    },
   ): Promise<void> {
-    if (!requiredRoleIds || requiredRoleIds.length === 0) {
-      await this.notificationService.notifyChapter(chapterId, payload);
-      return;
+    const [members, alumniRoleId, actorZone] = await Promise.all([
+      this.memberRepo.findByChapter(chapterId),
+      this.rbac.getAlumniRoleId(chapterId),
+      actorId ? this.notificationService.timeZoneFor(actorId) : null,
+    ]);
+
+    const attendanceByUser = new Map<string, EventAttendance>();
+    for (const member of members) {
+      if (member.user_id === actorId) continue;
+      const attendance = eventAttendanceFor(
+        event,
+        member.role_ids,
+        alumniRoleId,
+      );
+      if (attendance !== 'not_invited') {
+        attendanceByUser.set(member.user_id, attendance);
+      }
     }
-    const members = await this.memberRepo.findByChapter(chapterId);
-    const eligible = members.filter((member) =>
-      hasRequiredRole(requiredRoleIds, member.role_ids),
-    );
-    await Promise.allSettled(
-      eligible.map((member) =>
-        this.notificationService.notifyUser(member.user_id, chapterId, payload),
-      ),
+    if (attendanceByUser.size === 0) return;
+
+    const recurrence = isRecurrenceRule(event.recurrence_rule)
+      ? event.recurrence_rule
+      : null;
+    // A recipient with no zone of their own reads the event in its
+    // scheduler's zone (members share a campus), labelled, so a guess is never
+    // presented as their own clock.
+    const when = (recipient: NotifyRecipient | null): string =>
+      formatEventWhen(event.start_time, event.end_time, {
+        timeZone: recipient?.timeZone ?? actorZone ?? DEFAULT_PUSH_TIME_ZONE,
+        labelZone: !recipient?.timeZone,
+        recurrence,
+      });
+
+    const payload: NotifyPayload = {
+      // What a caller that cannot personalize would show; every recipient
+      // here reads their own `personalize` result instead.
+      ...write({ attendance: 'optional', when: when(null) }),
+      priority,
+      category: 'events',
+      data: { target: { screen: 'events', eventId: event.id } },
+      personalize: (recipient) =>
+        write({
+          attendance: attendanceByUser.get(recipient.userId) ?? 'optional',
+          when: when(recipient),
+        }),
+    };
+    await this.notificationService.notifyMembers(
+      chapterId,
+      [...attendanceByUser.keys()],
+      payload,
     );
   }
+}
+
+/** "Required" / "Optional": the first thing a member needs to know. */
+function attendanceLabel(attendance: EventAttendance): string | null {
+  switch (attendance) {
+    case 'required':
+      return 'Required';
+    case 'optional':
+      return 'Optional';
+    case 'not_invited':
+      return null;
+  }
+}
+
+/** "Mon, Nov 9" stays; "Every Mon" reads "every Mon" after "Now". */
+function lowerFirst(text: string): string {
+  return text.startsWith('Every') || text.startsWith('Monthly')
+    ? text.charAt(0).toLowerCase() + text.slice(1)
+    : text;
 }

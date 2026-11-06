@@ -21,6 +21,8 @@ export interface SweepUpcomingEventRow {
   chapter_id: string;
   name: string;
   start_time: string;
+  /** Named in the reminder's body. Optional so older fixtures type-check. */
+  location?: string | null;
   is_mandatory: boolean;
   required_role_ids: string[] | null;
 }

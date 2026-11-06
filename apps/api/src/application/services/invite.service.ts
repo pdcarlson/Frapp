@@ -492,18 +492,30 @@ export class InviteService {
     );
 
     try {
-      await this.notificationService.notifyChapter(invite.chapter_id, {
-        title: 'New Member Joined',
-        body: 'A new member has joined the chapter',
-        priority: 'NORMAL',
-        category: 'admin',
-        data: { target: { screen: 'members' } },
-      });
+      // Named, and not sent to the member who just joined: "A new member has
+      // joined the chapter" told everyone nothing, the joiner included
+      // (notifications.md § What a push says).
+      const [roster, [joiner]] = await Promise.all([
+        this.memberRepo.findByChapter(invite.chapter_id),
+        this.userRepo.findByIds([userId]),
+      ]);
+      const name = joiner?.display_name?.trim();
+      await this.notificationService.notifyMembers(
+        invite.chapter_id,
+        roster.map((m) => m.user_id).filter((id) => id !== userId),
+        {
+          title: name ? `${name} joined` : 'A new member joined',
+          body: 'New member of the chapter',
+          priority: 'NORMAL',
+          category: 'admin',
+          data: { target: { screen: 'members' } },
+        },
+      );
     } catch (error) {
       reportCaughtFailure(this.logger, {
         level: 'error',
         site: 'invite-redeem-new-member-notify-failed',
-        message: `Failed to send the New Member Joined notification (chapter ${invite.chapter_id})`,
+        message: `Failed to send the member-joined notification (chapter ${invite.chapter_id})`,
         error,
       });
     }

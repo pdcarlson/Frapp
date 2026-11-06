@@ -12,9 +12,10 @@ describe('EventSeriesService', () => {
   let service: EventServiceFixture['service'];
   let mockEventRepo: EventServiceFixture['mockEventRepo'];
   let mockNotificationService: EventServiceFixture['mockNotificationService'];
+  let mockMemberRepo: EventServiceFixture['mockMemberRepo'];
 
   beforeEach(async () => {
-    ({ service, mockEventRepo, mockNotificationService } =
+    ({ service, mockEventRepo, mockNotificationService, mockMemberRepo } =
       await createEventServiceFixture());
   });
 
@@ -950,10 +951,16 @@ describe('EventSeriesService', () => {
       });
     });
 
-    // The "Event Updated" push crosses from EventSeriesService into
+    // The "moved" push crosses from EventSeriesService into
     // EventAnnouncementService (#3270), so both series paths assert it lands,
     // and on the row that now heads the series.
     describe('series update announcements', () => {
+      beforeEach(() => {
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          { user_id: 'user-a', role_ids: [] },
+        ]);
+      });
+
       it('announces a started-head edit on the new head, not the retired one', async () => {
         mockEventRepo.findById.mockResolvedValue(parent);
         mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
@@ -966,10 +973,10 @@ describe('EventSeriesService', () => {
           'series',
         );
 
-        expect(mockNotificationService.notifyChapter).toHaveBeenCalledWith(
+        expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
           'ch-1',
+          expect.any(Array),
           expect.objectContaining({
-            title: 'Event Updated',
             data: { target: { screen: 'events', eventId: 'child-future-1' } },
           }),
         );
@@ -992,10 +999,10 @@ describe('EventSeriesService', () => {
           'series',
         );
 
-        expect(mockNotificationService.notifyChapter).toHaveBeenCalledWith(
+        expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
           'ch-1',
+          expect.any(Array),
           expect.objectContaining({
-            title: 'Event Updated',
             data: { target: { screen: 'events', eventId: 'parent-1' } },
           }),
         );

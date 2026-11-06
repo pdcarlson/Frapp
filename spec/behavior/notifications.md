@@ -299,6 +299,30 @@ Message shape:
 
 Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge logs and continues. The audit row itself is always the source of truth.
 
+## What a push says
+
+A push is read on a lock screen, in a glance, next to iOS Calendar and Google Calendar invites. So it names its subject and says what the reader needs to act on, never a category ("New Event", "Task Assigned") over a sentence that restates it. Chat pushes name their sender (above); event, task and member pushes follow the same rule (2026-11-06, from Paul's lock screen reading "New Event / Chapter has been scheduled").
+
+- **The title is the thing**: the event's or task's own name. A change says what changed after it: `Chapter rescheduled`, `Chapter moved`.
+- **The body is the facts, most important first, joined by ` · `**: for an event, whether it is required _of the reader_, when, and where: `Required · Mon, Nov 9, 8–9 PM · The Lodge`. A series is announced once, as its pattern (`Every Mon, 8–9 PM, from Nov 9`), never once per occurrence.
+- **Times are in the reader's zone.** The server renders the text, so it needs each recipient's zone: both clients send their device's or browser's zone on every request as `x-time-zone` (`@repo/api-sdk`), and the API records it in `user_settings.time_zone` when it changes (`TimeZoneSyncService`). A member with none falls back to `quiet_hours_tz`, then to the zone of whoever scheduled the event, then to `America/New_York`; a fallback zone is always labelled (`8–9 PM EST`) so a guess never reads as the member's own clock. Task due dates are calendar dates with no zone and are written as stored.
+- **Required means what attendance enforces.** `eventAttendanceFor` (`event-role-targeting.ts`) mirrors `AttendanceService.resolveRequiredMembers`: a role-targeted event is required of its role holders and not sent to anyone else; a mandatory untargeted one is required of everyone but alumni; anything else is optional.
+- **Nobody is told about their own action.** The member who scheduled or moved an event, assigned themselves a task, or just joined the chapter gets no push about it.
+- **An edit is announced only when it moves something.** Both clients round-trip the whole event on save, so a rename arrives carrying the same times and location. `eventChangeOf` compares values (instants as instants) against the row before the write; a save that moves neither time nor place sends nothing.
+
+| Push | Title | Body |
+| --- | --- | --- |
+| New event | `Chapter` | `Required · Mon, Nov 9, 8–9 PM · The Lodge` |
+| Event rescheduled | `Chapter rescheduled` | `Now Tue, Nov 10, 8–9 PM · Required` |
+| Event location changed | `Chapter moved` | `Now at The Lodge · Mon, Nov 9, 8–9 PM · Required` |
+| Event reminder | `Chapter` | `Starts in 20 minutes · The Lodge · Required` |
+| Task assigned | `Book the venue` | `From Paul Carlson · due Sat, Nov 14 · 10 points` |
+| Task marked done (to its creator) | `Book the venue` | `Alex Smith marked it done. Confirm it to award the points.` |
+| Task confirmed | `Book the venue` | `Confirmed · +10 points` |
+| Task sent back | `Book the venue` | `Sent back: <officer's comment>` |
+| Task overdue | `Book the venue` | `Overdue · was due Sat, Nov 14` |
+| Member joined | `Alex Smith joined` | `New member of the chapter` |
+
 ## Notification Triggers (Complete List)
 
 | Domain        | Trigger                                                            | Priority                    |
