@@ -6,6 +6,7 @@ import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BlockedUserIds } from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
+import { SheetHeader } from "@/components/sheet-scaffold";
 
 const BLAKE = "22222222-2222-4222-8222-222222222222";
 const GONE = "44444444-4444-4444-8444-444444444444";
@@ -59,6 +60,7 @@ import {
   BLOCKED_MEMBERS_OFFLINE_BODY,
   BLOCKED_MEMBERS_SCOPE,
   BLOCKED_MEMBERS_STALE,
+  BLOCKED_MEMBERS_TITLE,
 } from "@repo/chat-core/block-copy";
 import {
   BLOCKED_MEMBERS_EMPTY_BODY,
@@ -110,6 +112,13 @@ beforeEach(() => {
 });
 
 describe("BlockedMembersSheet", () => {
+  it("draws its title alone, with no Done: a read-only sheet closes by grabber, scrim, back or escape", () => {
+    state.blockList = list("ready", [BLAKE]);
+    const [header] = render().root.findAllByType(SheetHeader);
+    expect(header!.props.title).toBe(BLOCKED_MEMBERS_TITLE);
+    expect(header!.props.onCancel).toBeUndefined();
+  });
+
   it("never reports an unreadable list as 'nobody blocked'", () => {
     state.blockList = list("unavailable");
     const flat = text(render());

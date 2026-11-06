@@ -13,6 +13,8 @@ import {
   sheetFieldStyles,
   SheetScrim,
   useSheetBackgroundStyle,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
@@ -66,6 +68,7 @@ export const ManualCodeSheet = forwardRef<
   },
   ref,
 ) {
+  const closeSheet = useSheetClose(ref);
   const { tokens } = useFrappTheme();
   const { accent, accentPrimary, accentOnPrimary } = useChapterBranding();
   const styles = createStyles(tokens, accent);
@@ -86,7 +89,8 @@ export const ManualCodeSheet = forwardRef<
         onDismiss();
       }}
     >
-      <BottomSheetView style={styles.body}>
+      <SheetBackToClose onClose={closeSheet} />
+      <BottomSheetView onAccessibilityEscape={closeSheet} style={styles.body}>
         <SheetHeader title="Enter code" onCancel={onCancel} />
         <BottomSheetTextInput
           accessibilityLabel="Manual check-in code"

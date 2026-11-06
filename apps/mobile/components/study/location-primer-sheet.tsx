@@ -14,6 +14,8 @@ import {
   SheetPrimaryButton,
   SheetScrim,
   useSheetBackgroundStyle,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 
 /**
@@ -49,6 +51,7 @@ export const LocationPrimerSheet = forwardRef<
   BottomSheetModal,
   LocationPrimerSheetProps
 >(function LocationPrimerSheet({ canAskAgain, onAllow, onDismiss }, ref) {
+  const closeSheet = useSheetClose(ref);
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
@@ -67,7 +70,8 @@ export const LocationPrimerSheet = forwardRef<
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}
     >
-      <BottomSheetView style={styles.body}>
+      <SheetBackToClose onClose={closeSheet} />
+      <BottomSheetView onAccessibilityEscape={closeSheet} style={styles.body}>
         <SheetHeader
           title="Location check"
           onCancel={onDismiss}

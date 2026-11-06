@@ -1,5 +1,5 @@
 import { useEffect, type RefObject } from "react";
-import { AccessibilityInfo, BackHandler } from "react-native";
+import { AccessibilityInfo, BackHandler, Platform } from "react-native";
 
 /**
  * The two effects an in-tree overlay needs while it is up
@@ -19,11 +19,13 @@ export type FocusTarget = Parameters<
  * While `open`, Android's back button calls `close` and goes no further. The
  * overlay takes every tap on the screen, so a back press that popped the
  * navigator underneath would leave the member somewhere they can't see. Nothing
- * is held while it is closed.
+ * is held while it is closed. Nothing is held on web either, where there is
+ * no hardware back and react-native-web's `BackHandler` only logs an error:
+ * every sheet holds this now, so the Expo web build would log one per sheet.
  */
 export function useBackToClose(open: boolean, close: () => void): void {
   useEffect(() => {
-    if (!open) return;
+    if (!open || Platform.OS === "web") return;
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
       () => {

@@ -1,4 +1,4 @@
-import { useCallback, useRef, type ForwardedRef } from "react";
+import { useCallback, useRef, type ForwardedRef, type RefObject } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   BottomSheetBackdrop,
@@ -7,13 +7,14 @@ import {
 } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
+import { useBackToClose } from "@/lib/overlay";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { CloseGlyph } from "@/components/control-glyphs";
 import { IconButton } from "@/components/icon-button";
 
 /**
- * The chrome every Signet bottom sheet draws: the grabber, the title/Cancel
- * row, and the primary CTA — `spec/ui/design-system/components.md` § Bottom
+ * The chrome every Signet bottom sheet draws: the grabber, the title row (with
+ * a Cancel on a form), and the primary CTA — `spec/ui/design-system/components.md` § Bottom
  * sheet, drawn at `canvas-screens.dc.html` s19/s20/s21.
  *
  * Extracted because this is the third sheet in the app and the first two grew
@@ -34,6 +35,41 @@ import { IconButton } from "@/components/icon-button";
 /** `rgba(0,0,0,.55)` as drawn; the backdrop's own default is 0.5. */
 const SCRIM_OPACITY = 0.55;
 
+/** A sheet's ref, as a component holds it or as `forwardRef` hands it in. */
+type SheetRef =
+  ForwardedRef<BottomSheetModal> | RefObject<BottomSheetModal | null>;
+
+/**
+ * Closes the sheet `sheet` names, for a screen reader's escape: pass it as
+ * `onAccessibilityEscape` on the view that holds the sheet's content, so
+ * VoiceOver's two-finger scrub closes it from anywhere inside, as it closes a
+ * native sheet. gorhom wires no escape of its own.
+ *
+ * It closes like a swipe, so a form keeps its draft. It is held only while the
+ * content is mounted, which is while the sheet is up or closing, and gorhom's
+ * `dismiss()` is safe on a sheet that is still closing.
+ */
+export function useSheetClose(sheet: SheetRef): () => void {
+  return useCallback(() => {
+    if (typeof sheet === "function" || !sheet?.current) return;
+    sheet.current.dismiss();
+  }, [sheet]);
+}
+
+/**
+ * Android's back button closes the sheet, rather than going to the navigator
+ * underneath and leaving the screen the sheet was opened over. Render it as a
+ * child of the `BottomSheetModal`: gorhom mounts a modal's children only while
+ * it is presented, so the handler is held exactly that long, and a sheet
+ * stacked on top registers later and so closes first. gorhom handles no back
+ * press of its own, and `lib/sheet-scrim.spec.ts` fails the build on a sheet
+ * that leaves this out.
+ */
+export function SheetBackToClose({ onClose }: { onClose: () => void }) {
+  useBackToClose(true, onClose);
+  return null;
+}
+
 /**
  * The drawn scrim, for `BottomSheetModal`'s `backdropComponent`
  * (`spec/ui/mobile/patterns.md` § Bottom sheets). It belongs to the presented
@@ -44,9 +80,8 @@ const SCRIM_OPACITY = 0.55;
  * Every `BottomSheetModal` passes a scrim, and `lib/sheet-scrim.spec.ts`
  * fails the build on one that doesn't: the sheets that predated this one shipped
  * without it, and the screen behind them read through at full brightness.
- * s17 (`components/ask/ask-sheet.tsx`) drew this first and still renders its
- * own identical backdrop; folding it onto this is left to the next change that
- * rewrites that file, rather than churning it here.
+ * s17 (`components/ask/ask-sheet.tsx`) drew this first, at the drawn
+ * `rgba(0,0,0,.55)`, and now passes this one too.
  */
 export function SheetScrim(props: BottomSheetBackdropProps) {
   return (
@@ -55,6 +90,14 @@ export function SheetScrim(props: BottomSheetBackdropProps) {
       appearsOnIndex={0}
       disappearsOnIndex={-1}
       opacity={SCRIM_OPACITY}
+      // Named for what a tap on it does, rather than gorhom's default
+      // "Bottom sheet backdrop". A screen reader's sure way out of a sheet
+      // with no Cancel is Android back or VoiceOver's escape
+      // (`SheetBackToClose`, `useSheetClose`): gorhom closes on a touch
+      // gesture, and activating the scrim taps its centre, which a tall
+      // sheet covers.
+      accessibilityLabel="Close"
+      accessibilityHint="Closes the sheet."
     />
   );
 }
@@ -70,6 +113,17 @@ export function SheetGrabber() {
   );
 }
 
+/**
+ * A sheet's title row. Pass `onCancel` on a **form** (a sheet with a commit
+ * button: New task, Log service hours, Upload document, Edit profile, Report
+ * message), where Cancel says "give the draft up" and differs from a swipe.
+ * Leave it out on a **picker or a read-only sheet** (Study zone, Assign to,
+ * Blocked members): the pick, the grabber, the scrim, Android back and
+ * VoiceOver's escape (`SheetBackToClose`, `useSheetClose`) already close it,
+ * so a Cancel or Done there is a second close button
+ * (`spec/ui/design-system/components.md` § Chrome weight). An action menu
+ * (the message long-press) draws no SheetHeader at all.
+ */
 export function SheetHeader({
   title,
   onCancel,
@@ -77,7 +131,7 @@ export function SheetHeader({
   cancelDisabled = false,
 }: {
   title: string;
-  onCancel: () => void;
+  onCancel?: () => void;
   cancelLabel?: string;
   /**
    * Holds Cancel while a save is in flight, on a sheet whose Cancel gives the
@@ -95,19 +149,24 @@ export function SheetHeader({
       <Text style={styles.title}>{title}</Text>
       {/* `hitSlop` meets the 44pt floor while keeping components.md §9's compact
           visual — the #939 ruling. */}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={cancelDisabled ? { disabled: true } : undefined}
-        disabled={cancelDisabled}
-        onPress={onCancel}
-        hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
-      >
-        <Text
-          style={[styles.cancel, cancelDisabled ? styles.cancelDisabled : null]}
+      {onCancel ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={cancelDisabled ? { disabled: true } : undefined}
+          disabled={cancelDisabled}
+          onPress={onCancel}
+          hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
         >
-          {cancelLabel}
-        </Text>
-      </Pressable>
+          <Text
+            style={[
+              styles.cancel,
+              cancelDisabled ? styles.cancelDisabled : null,
+            ]}
+          >
+            {cancelLabel}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }

@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { AlertTriangle, CalendarPlus, Loader2, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarPlus,
+  Loader2,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { SectionSkeleton } from "@/components/shared/page-skeletons";
 import { SkeletonText } from "@/components/shared/async-states";
 import {
@@ -18,7 +24,7 @@ import {
 } from "@repo/hooks";
 import { useToast } from "@/lib/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -227,6 +233,11 @@ export function EventDetailSheet({
     }
   }
 
+  const editControl = gate.controlProps(!resolvedEvent);
+  const deleteControl = gate.controlProps(
+    !canMutate || deleteEventMutation.isPending,
+  );
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       {/*
@@ -235,7 +246,54 @@ export function EventDetailSheet({
         otherwise warns about a missing Description.
       */}
       <PanelContent aria-describedby={undefined}>
-        <PanelHeader>{eventName}</PanelHeader>
+        {/*
+          The panel's actions are icons in its title row, beside the close
+          (components.md § Chrome weight). They were three full-width worded
+          buttons opening the body, which made the first thing in an event's
+          details a toolbar. The words live on as each control's accessible
+          name and tooltip (`IconButton`, components.md § Icon-only actions).
+        */}
+        <PanelHeader
+          actions={
+            <>
+              <IconButton
+                label="Add to calendar"
+                disabled={!canMutate || downloadIcsMutation.isPending}
+                onClick={handleAddToCalendar}
+              >
+                {downloadIcsMutation.isPending ? (
+                  <Loader2 className="animate-spin" aria-hidden="true" />
+                ) : (
+                  <CalendarPlus aria-hidden="true" />
+                )}
+              </IconButton>
+              <IconButton
+                label="Edit event"
+                {...editControl}
+                onClick={() => {
+                  if (!resolvedEvent) return;
+                  onRequestEdit(resolvedEvent);
+                }}
+              >
+                <Pencil aria-hidden="true" />
+              </IconButton>
+              <IconButton
+                label="Delete event"
+                className="hover:text-destructive-text"
+                {...deleteControl}
+                onClick={handleDelete}
+              >
+                {deleteEventMutation.isPending ? (
+                  <Loader2 className="animate-spin" aria-hidden="true" />
+                ) : (
+                  <Trash2 aria-hidden="true" />
+                )}
+              </IconButton>
+            </>
+          }
+        >
+          {eventName}
+        </PanelHeader>
         {/* `gap-0`: the blocks below carry their own top margins. */}
         <PanelBody className="gap-0">
           {usingPreviewData ? (
@@ -254,45 +312,6 @@ export function EventDetailSheet({
               <SkeletonText lines={4} />
             </SectionSkeleton>
           ) : null}
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              {...gate.controlProps(!resolvedEvent)}
-              onClick={() => {
-                if (!resolvedEvent) return;
-                onRequestEdit(resolvedEvent);
-              }}
-            >
-              Edit event
-            </Button>
-            <Button
-              variant="destructive"
-              {...gate.controlProps(
-                !canMutate || deleteEventMutation.isPending,
-              )}
-              onClick={handleDelete}
-            >
-              {deleteEventMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4" />
-              )}
-              Delete event
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={!canMutate || downloadIcsMutation.isPending}
-              onClick={handleAddToCalendar}
-            >
-              {downloadIcsMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <CalendarPlus className="h-4 w-4" />
-              )}
-              Add to calendar
-            </Button>
-          </div>
 
           <SubscriptionNotice gate={gate} feature="editing events" />
 

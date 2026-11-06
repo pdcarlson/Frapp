@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import React, { act, useRef } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { AccessibilityInfo, BackHandler, Text } from "react-native";
+import { AccessibilityInfo, BackHandler, Platform, Text } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useBackToClose, useFocusOnOpen } from "./overlay";
 
@@ -62,6 +62,18 @@ describe("useBackToClose", () => {
   it("holds nothing while the overlay is closed", () => {
     render(<BackHarness open={false} close={vi.fn()} />);
     expect(addListener()).not.toHaveBeenCalled();
+  });
+
+  it("holds nothing on web, which has no back button to handle", () => {
+    // react-native-web's BackHandler warns "not supported" on every call.
+    const os = Platform.OS;
+    (Platform as { OS: string }).OS = "web";
+    try {
+      render(<BackHarness open close={vi.fn()} />);
+      expect(addListener()).not.toHaveBeenCalled();
+    } finally {
+      (Platform as { OS: string }).OS = os;
+    }
   });
 
   it("closes the open overlay on Android's back button, and stops the press there", () => {

@@ -2,24 +2,24 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
-import { Bell, CheckCheck, Loader2 } from "lucide-react";
+import { CheckCheck, Loader2 } from "lucide-react";
 import {
   CHAT_REPORTS_NOTIFICATION_SCREEN,
   useInvalidateChatReports,
   useMarkNotificationRead,
   useNotifications,
 } from "@repo/hooks";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { FOCUS_RING } from "@/components/ui/focus";
 import {
   Sheet,
   SheetContent,
-  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
 import { formatRelativeDayTime } from "@repo/formatting";
-import { asArray } from "@/lib/utils";
+import { asArray, cn } from "@/lib/utils";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { chatDeepLink } from "@/lib/chat/chat-links";
@@ -151,65 +151,60 @@ export function DashboardNotificationDrawer({
     await Promise.allSettled(unread.map((n) => markRead.mutateAsync(n.id)));
   }
 
+  /*
+    The drawer's chrome is a title and one icon (components.md § Chrome
+    weight). Until 2026-11-05 it stacked a bell, the title, a gold count, a
+    description, an "N total" line, Mark all read and Refresh above a list of
+    bordered cards, each with its own Read or New badge. The count said what
+    the dots already say, the description narrated the drawer to someone
+    reading it, and Refresh did by hand what the realtime ping above does on
+    its own. Mark all read stays, as an icon beside the close.
+  */
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex w-full flex-col sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
-            <Bell className="h-4 w-4" />
-            Notifications
-            {unreadCount > 0 ? (
-              <Badge
-                variant="outline"
-                className="ml-1 border-accent-border bg-accent-subtle text-accent-text"
-              >
-                {unreadCount}
-              </Badge>
-            ) : null}
-          </SheetTitle>
-          <SheetDescription>
-            Chapter activity, billing alerts, and point changes for your
-            account. Click a card to jump to the source.
-          </SheetDescription>
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col sm:max-w-md"
+        aria-describedby={undefined}
+      >
+        <SheetHeader className="pr-24">
+          <SheetTitle>Notifications</SheetTitle>
         </SheetHeader>
-
-        <div className="mt-4 flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">
-            {notifications.length} total
-          </span>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={unreadCount === 0 || markRead.isPending}
-              onClick={() => void markAllRead()}
-            >
-              <CheckCheck className="h-4 w-4" />
-              Mark all read
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void notificationsQuery.refetch()}
-              disabled={notificationsQuery.isFetching}
-            >
-              {notificationsQuery.isFetching ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : null}
-              Refresh
-            </Button>
-          </div>
+        <div className="absolute right-12 top-2.5 flex items-center">
+          <IconButton
+            label="Mark all read"
+            disabled={unreadCount === 0 || markRead.isPending}
+            onClick={() => void markAllRead()}
+          >
+            <CheckCheck aria-hidden="true" />
+          </IconButton>
         </div>
 
-        <div className="mt-3 flex-1 overflow-y-auto">
+        <div className="-mx-3 flex-1 overflow-y-auto px-3">
           {notificationsQuery.isPending ? (
             <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Loading notifications...
             </div>
           ) : notificationsQuery.isError ? (
-            <div className="rounded-md border border-destructive/45 bg-destructive-tint p-3 text-sm text-destructive-text">
-              Couldn&apos;t load notifications. Retry in a moment.
+            // The drawer stays mounted between opens, so closing and
+            // reopening it doesn't refetch: the retry has to live here, now
+            // that the header has no Refresh (components.md § Chrome weight).
+            <div className="grid justify-items-start gap-2 rounded-md border border-destructive/45 bg-destructive-tint p-3 text-sm text-destructive-text">
+              Couldn&apos;t load notifications.
+              <Button
+                variant="secondary"
+                size="sm"
+                // A failed query stays in its error state while the retry
+                // runs, so the button is the only thing that can say so.
+                disabled={notificationsQuery.isFetching}
+                onClick={() => void notificationsQuery.refetch()}
+              >
+                {notificationsQuery.isFetching ? (
+                  <Loader2 className="animate-spin" aria-hidden="true" />
+                ) : null}
+                Try again
+              </Button>
             </div>
           ) : notifications.length === 0 ? (
             <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
@@ -217,7 +212,16 @@ export function DashboardNotificationDrawer({
               changes will appear here.
             </div>
           ) : (
-            <ul className="space-y-3">
+            // A flat list: rows divided by hairlines, no card around each.
+            // Unread is a dot and a bolder title, neutral like the chat list's
+            // unread (foundations.md §5), not a gold card and a badge. Every row is transparent on the sheet's `--popover`, so
+            // one hover serves both states: `--card-hover`, the neutral lift
+            // above the ladder (`elevation-contrast.spec.ts`). The title and
+            // body wrap rather than clip: nothing else on web shows a
+            // notification's text, and most deep links open a list page. The
+            // focus ring is drawn inset, because the list fills the scroll
+            // area's width and its overflow would clip a ring drawn outside.
+            <ul className="-mx-3 divide-y divide-border">
               {notifications.map((notification) => {
                 const isRead = Boolean(notification.read_at);
                 return (
@@ -231,38 +235,43 @@ export function DashboardNotificationDrawer({
                         void handleMarkRead(notification);
                         onOpenChange(false);
                       }}
-                      // Each rest fill takes its own hover, because the sheet
-                      // is `--popover` and a shared one painted every row in
-                      // the sheet's own colour (#1208). A read row is card
-                      // filled, so it lifts to `--card-hover` like a Secondary
-                      // button; §2's accent tint would sit within 1.03:1 of the
-                      // sheet on four seeds (`#1F4E79` at 1.000:1). An unread
-                      // row is tinted, so it takes §3's tinted lift to
-                      // accent-4. Both are measured in
-                      // `components/shared/elevation-contrast.spec.ts`, and
-                      // `elevation-call-sites.spec.ts` pins these two hovers.
-                      className={`block rounded-md border p-3 transition focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25 ${
-                        isRead
-                          ? "border-border bg-card hover:bg-card-hover"
-                          : "border-accent-border bg-accent-subtle hover:bg-accent-subtle-hover"
-                      }`}
+                      className={cn(
+                        "grid grid-cols-[8px_minmax(0,1fr)] gap-x-3 rounded-md border border-transparent px-3 py-3 transition hover:bg-card-hover",
+                        FOCUS_RING,
+                        "focus-visible:ring-inset",
+                      )}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm font-semibold">
+                      <span
+                        aria-hidden="true"
+                        data-unread-dot={isRead ? undefined : ""}
+                        className={cn(
+                          "mt-2 size-2 rounded-full",
+                          isRead ? "bg-transparent" : "bg-foreground",
+                        )}
+                      />
+                      <span className="flex min-w-0 items-baseline justify-between gap-3">
+                        <span
+                          className={cn(
+                            "min-w-0 break-words text-sm",
+                            isRead
+                              ? "font-medium text-muted-foreground"
+                              : "font-semibold text-foreground",
+                          )}
+                        >
+                          {isRead ? null : (
+                            <span className="sr-only">Unread: </span>
+                          )}
                           {notification.title}
-                        </p>
-                        <Badge variant={isRead ? "outline" : "secondary"}>
-                          {isRead ? "Read" : "New"}
-                        </Badge>
-                      </div>
+                        </span>{" "}
+                        <span className="shrink-0 text-caption text-muted-foreground">
+                          {formatRelativeDayTime(notification.created_at)}
+                        </span>
+                      </span>{" "}
                       {notification.body ? (
-                        <p className="mt-1 text-sm text-muted-foreground">
+                        <span className="col-start-2 mt-0.5 break-words text-sm text-muted-foreground">
                           {notification.body}
-                        </p>
+                        </span>
                       ) : null}
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        {formatRelativeDayTime(notification.created_at)}
-                      </p>
                     </Link>
                   </li>
                 );

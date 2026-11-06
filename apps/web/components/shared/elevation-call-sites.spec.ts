@@ -308,60 +308,28 @@ describe("codeWithoutComments", () => {
   });
 });
 
-/**
- * The double-quoted class list that rests on `fill` and states a background
- * hover: the drawer's per-state strings. Requiring the hover skips other
- * strings that merely share the fill (the "New" badge rests on accent-3 too),
- * and a row whose hover was deleted outright fails here, loudly.
- */
-function hoveredClassList(source: string, fill: string): string[] {
-  const literal = [...source.matchAll(/"([^"\n]*)"/g)]
-    .map((m) => m[1]!.split(/\s+/).filter(Boolean))
-    .find(
-      (classes) =>
-        classes.includes(fill) &&
-        classes.some((cls) => cls.startsWith("hover:bg-")),
-    );
-  expect(
-    literal,
-    `no class list resting on ${fill} with a hover`,
-  ).toBeDefined();
-  return literal!;
-}
-
-describe("the notification drawer's row hovers (#1208)", () => {
+describe("the notification drawer's row hover (#1208)", () => {
   /*
-   * The drawer is a `SheetContent`, so every row sits on `--popover`. Each rest
-   * fill has its own hover, measured in `elevation-contrast.spec.ts`; pinned
-   * here because a hover rewritten to the sheet's own colour (`hover:bg-popover`)
-   * or to the row's own rest fill uses no alias and passes the ban above.
+   * The drawer is a `SheetContent`, so every row sits on `--popover`. Rows are
+   * flat and transparent since 2026-11-05 (components.md § Chrome weight), and
+   * unread is a dot, so read and unread share one hover: `--card-hover`,
+   * measured in `elevation-contrast.spec.ts`. Pinned here because a hover
+   * rewritten to the sheet's own colour (`hover:bg-popover`) uses no alias and
+   * passes the ban above, and because the gold-tinted unread card this
+   * replaced is exactly the decorative accent the audit took out.
    */
   const drawer = codeWithoutComments(
     join(WEB, "components", "layout", "dashboard-notification-drawer.tsx"),
   );
 
-  it("lifts a read row, which rests on --card, to --card-hover", () => {
-    const read = hoveredClassList(drawer, "bg-card");
-    expect(read.filter((cls) => cls.startsWith("hover:bg-"))).toEqual([
+  it("paints exactly one background hover, the neutral lift", () => {
+    expect(drawer.match(/(?<![\w-])hover:bg-[^\s"'`]+/g)).toEqual([
       "hover:bg-card-hover",
     ]);
   });
 
-  it("lifts an unread row, which rests on accent-3, to accent-4", () => {
-    const unread = hoveredClassList(drawer, "bg-accent-subtle");
-    expect(unread.filter((cls) => cls.startsWith("hover:bg-"))).toEqual([
-      "hover:bg-accent-subtle-hover",
-    ]);
-  });
-
-  it("paints no other background hover anywhere in the drawer", () => {
-    // A shared hover written into the row's template prefix would compete
-    // with the two above at the same specificity, and Tailwind's output order
-    // would decide which ships. So the file holds exactly these two.
-    expect(drawer.match(/(?<![\w-])hover:bg-[^\s"'`]+/g)?.sort()).toEqual([
-      "hover:bg-accent-subtle-hover",
-      "hover:bg-card-hover",
-    ]);
+  it("gives no row a card or accent rest fill", () => {
+    expect(drawer).not.toMatch(/(?<![\w:-])bg-(card|accent-subtle)(?![\w-])/);
   });
 });
 
