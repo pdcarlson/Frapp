@@ -73,7 +73,7 @@ Steps for the owner: <numbered, with exact setting, secret, and file names>.
 ```
 
 Keep the marker a visible line, not an HTML comment: lossy reads have stripped comment-form markers
-from bodies and the search index before. The weekly PR Follow-ups routine owns `fp=human/`: it
+from bodies and the search index before. The PR Follow-ups phase of the weekly Board Sweep owns `fp=human/`: it
 audits these against reality, lists every open one on the Human Action List, and closes them on
 proof. The `suggestion` label is what permits that close, so always include it.
 
