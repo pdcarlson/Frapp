@@ -13,9 +13,8 @@ describe("NOTIFICATION_CATEGORIES", () => {
   // category added to the API without a row here would otherwise be
   // unswitchable in silence, and one renamed here would start writing rows the
   // server never reads.
-  it("exposes exactly the six member-facing categories", () => {
+  it("exposes exactly the five member-facing categories", () => {
     expect(NOTIFICATION_CATEGORIES.map((category) => category.key)).toEqual([
-      "chat",
       "events",
       "points",
       "billing",
@@ -35,6 +34,15 @@ describe("NOTIFICATION_CATEGORIES", () => {
     expect(keys).not.toContain("announcements");
     expect(keys).not.toContain("admin");
     expect(keys).not.toContain("default");
+  });
+
+  // Dropped 2026-11-06: chat is muted per channel and per DM instead, and the
+  // server reads a preference only for a key listed here, so a `chat` row an
+  // older build wrote can't keep anyone muted.
+  it("has no coarse Chat switch", () => {
+    const keys = NOTIFICATION_CATEGORIES.map((category) => category.key);
+    expect(keys).not.toContain("chat");
+    expect(isNotificationCategoryKey("chat")).toBe(false);
   });
 
   // Not cosmetic: the row-absent branch of the server's gate treats a missing
@@ -83,7 +91,6 @@ describe("isNotificationCategoryKey", () => {
 describe("defaultNotificationCategoryState", () => {
   it("maps every catalog key to its default", () => {
     expect(defaultNotificationCategoryState()).toEqual({
-      chat: true,
       events: true,
       points: true,
       billing: true,
@@ -96,8 +103,8 @@ describe("defaultNotificationCategoryState", () => {
   // let one surface's edits leak into another's.
   it("returns a fresh object each call", () => {
     const first = defaultNotificationCategoryState();
-    first.chat = false;
-    expect(defaultNotificationCategoryState().chat).toBe(true);
+    first.points = false;
+    expect(defaultNotificationCategoryState().points).toBe(true);
   });
 });
 
@@ -111,7 +118,6 @@ describe("rowsToNotificationCategoryState", () => {
     expect(
       rowsToNotificationCategoryState([{ category: "points", is_enabled: false }]),
     ).toEqual({
-      chat: true,
       events: true,
       points: false,
       billing: true,
@@ -122,11 +128,11 @@ describe("rowsToNotificationCategoryState", () => {
 
   it("applies an explicit false and an explicit true", () => {
     const state = rowsToNotificationCategoryState([
-      { category: "chat", is_enabled: false },
+      { category: "tasks", is_enabled: false },
       { category: "billing", is_enabled: true },
       { category: "service", is_enabled: false },
     ]);
-    expect(state.chat).toBe(false);
+    expect(state.tasks).toBe(false);
     expect(state.billing).toBe(true);
     expect(state.service).toBe(false);
     expect(state.events).toBe(true);
@@ -174,7 +180,7 @@ describe("rowsToNotificationCategoryState", () => {
   // surfaces call this, and a shared object would cross-contaminate them.
   it("returns a fresh object each call", () => {
     const first = rowsToNotificationCategoryState([]);
-    first.chat = false;
-    expect(rowsToNotificationCategoryState([]).chat).toBe(true);
+    first.points = false;
+    expect(rowsToNotificationCategoryState([]).points).toBe(true);
   });
 });

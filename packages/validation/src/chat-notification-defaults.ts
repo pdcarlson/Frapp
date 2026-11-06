@@ -36,7 +36,7 @@ export function isDirectChannel(
  * A PUBLIC, read-only channel whose name contains `announcements`, the seeded
  * `#announcements` included. Everyone reads it and only `announcements:post`
  * holders write it, so a chapter-wide URGENT push, which skips quiet hours and
- * the member's Chat switch, is sound there and nowhere else.
+ * every category preference, is sound there and nowhere else.
  *
  * The shape is required of the exact name too. The push worker used to accept
  * any channel *named* `announcements`, so a group DM given that name, or the
