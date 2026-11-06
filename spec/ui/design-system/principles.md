@@ -36,7 +36,7 @@ The member sees the chapter's words, never the system's.
 | --- | --- |
 | P2.1 | A permission key, internal enum or code shows (`events:create`, `IN_PROGRESS`, `ROLE_GATED`, `PRESIDENT`, `chapter.module.disabled`). The status tokens [`writing.md`](writing.md) §5 lists (`PAID`, `OVERDUE`, `PENDING` …) are the exception: they render as the server's token. |
 | P2.2 | An id, uuid, hostname, file path, storage key, or a raw filename where the content itself is the point (an image) shows. |
-| P2.3 | An error shows its HTTP status, server message or stack, rather than [`writing.md`](writing.md) §3's what-happened-and-what-to-do. |
+| P2.3 | An error shows its HTTP status, an unmapped server message or a stack, rather than [`writing.md`](writing.md) §3's what-happened-and-what-to-do. |
 | P2.4 | A placeholder identity shows: "Member 000000", "Unknown", an account handle where the chapter knows the person's name, an empty avatar where an image exists. |
 | P2.5 | A setting names the mechanism, not the outcome ("Enable push channel override" rather than "Notify me about every message"). |
 | P2.6 | Branding the chapter has turned off shows (Greek letters for an organization that forbids them, the house gold inside a chapter that picked its own accent). |
@@ -48,7 +48,7 @@ Each action, title and setting appears once, at the depth that matches how often
 | Check | Fails when |
 | --- | --- |
 | P3.1 | The same action is reachable twice on one screen (a header button and a row button that both create, two closes). |
-| P3.2 | A title is drawn twice: in the top bar and again as a heading in the body, or a sheet title that repeats the button just pressed. |
+| P3.2 | A title is drawn twice: in the top bar and again as a heading in the body, or a decorative glyph before a sheet title ([`components.md`](components.md) § Chrome weight). |
 | P3.3 | A surface has more than one primary (filled accent) button. |
 | P3.4 | A setting, or the state a setting is in, sits on a header or a row rather than a couple of taps away behind `⋯` ([`components.md`](components.md) § Chrome weight). |
 | P3.5 | Every option is out at once: more than about five actions or filters visible in one row, where a menu would hold the rare ones. |
@@ -71,7 +71,7 @@ A tap is answered where it happened, at once, and the layout around it holds sti
 
 ## P5. Built for a real chapter, not a demo
 
-Every list, row and label is checked at the size of a real imported chapter. The reference volumes are the owner's own chapter, imported from Discord, counted with read-only SQL on 2026-11-06 (row counts and `percentile_cont` over `chat_messages` for that chapter); recount when the import changes:
+Every list, row and label is checked at the size of a real imported chapter. The reference volumes are the owner's own chapter, imported from Discord, counted with read-only SQL on 2026-11-06 (row counts and `percentile_cont` over `chat_messages` for that chapter); recount when the import changes (a local seed at these volumes is [#3646](https://github.com/pdcarlson/Frapp/issues/3646)):
 
 | Thing | Real scale |
 | --- | --- |
