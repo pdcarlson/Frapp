@@ -95,6 +95,13 @@ export const GRADUATION_YEAR_MIN = 1900;
 export const GRADUATION_YEAR_MAX = 2100;
 
 /**
+ * A member's major (`users.major`), set on web `/profile` and the mobile Edit
+ * profile sheet. Long enough for a double major spelled out; the API refuses
+ * a longer one and both fields stop at it.
+ */
+export const MAJOR_MAX_LENGTH = 100;
+
+/**
  * A chapter document's title (`chapter_documents.title`), set by whoever
  * uploads it on web or mobile s21 (#3399). The API refuses a longer one, and
  * the phone's field stops at it.

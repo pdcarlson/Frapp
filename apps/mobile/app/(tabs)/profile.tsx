@@ -53,19 +53,19 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  * no denominator of events a member owed. `spec/ui/mobile/screens.md` also
  * records that reports stay web-only. Filed rather than invented.
  *
- * ## Four detail rows, not four different ones
+ * ## Five detail rows, not four different ones
  *
  * Canvas draws Email, Phone, Pledge class and Big brother. Only Email exists —
  * the `users` table has no phone, pledge class, or big-brother column. The
- * rows below are Email plus three of the fields the API's `UpdateUserDto`
- * lets a member edit (graduation year, city, company); display name heads the
+ * rows below are Email plus four of the fields the API's `UpdateUserDto`
+ * lets a member edit (major, graduation year, city, company); display name heads the
  * screen and bio gets its own card. Filed.
  *
  * ## Editing
  *
  * Canvas draws an Edit action at the far end of the `‹ More` row, and that is
- * where it sits: it opens `EditProfileSheet` for the name, bio, graduation
- * year, city and company (#3387). The photo edits in place (#732):
+ * where it sits: it opens `EditProfileSheet` for the name, major, graduation
+ * year, bio, city and company (#3387). The photo edits in place (#732):
  * `ProfilePhoto` picks, uploads and confirms it. Edit appears only once the
  * profile has loaded, because a sheet opened on the loading or error state
  * would prefill blanks over fields the member has already set.
@@ -155,9 +155,12 @@ export default function ProfileScreen() {
         <Text style={styles.name}>
           {profile?.displayName ?? "Your profile"}
         </Text>
-        {profile?.graduationYear || profile?.currentCompany ? (
+        {profile?.major ||
+        profile?.graduationYear ||
+        profile?.currentCompany ? (
           <Text style={styles.identityMeta}>
             {[
+              profile.major,
               profile.currentCompany,
               formatGraduationYear(profile.graduationYear),
             ]
@@ -203,6 +206,11 @@ export default function ProfileScreen() {
       <SectionHeader>Details</SectionHeader>
       <ListSection>
         <ListRow variant="detail" label="Email" value={email ?? "Not set"} />
+        <ListRow
+          variant="detail"
+          label="Major"
+          value={profile?.major ?? "Not set"}
+        />
         <ListRow
           variant="detail"
           label="Graduation"

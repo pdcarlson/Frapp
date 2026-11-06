@@ -11,6 +11,13 @@ import {
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import { Logger } from '@nestjs/common';
+import { SupabaseSearchRepository } from '../../infrastructure/supabase/repositories/supabase-search.repository';
+import {
+  CHAPTER_A,
+  createTenantHarness,
+  inA,
+  inB,
+} from '#test/helpers/tenant-scope.harness';
 
 jest.mock('@sentry/nestjs', () => ({
   captureException: jest.fn(() => 'event-exception'),
@@ -780,5 +787,105 @@ describe('SearchService', () => {
         jest.useRealTimers();
       }
     });
+  });
+});
+
+/**
+ * The cap end to end, through the real repository (#3265): a chapter-wide
+ * search for a member who can read 250 channels goes out as several
+ * channel batches, and what `SearchService` returns is still the newest
+ * `SEARCH_LIMIT` (10) matches across all of them.
+ */
+describe('SearchService — chapter-wide message search over many channels (#3265)', () => {
+  const CHANNEL_COUNT = 250;
+  const channelId = (chapter: 'a' | 'b', n: number) =>
+    `0${chapter}000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+
+  it('returns the newest ten matches across every readable channel', async () => {
+    const channelRow = (id: string) => ({
+      id,
+      type: 'PUBLIC',
+      member_ids: null,
+      required_permissions: null,
+    });
+    // One match per channel, a minute apart, so the newest ten sit in the
+    // last channels — the third batch of 100.
+    const messages = Array.from({ length: CHANNEL_COUNT }, (_, n) => ({
+      id: `0a000000-0000-4000-9000-${String(n).padStart(12, '0')}`,
+      channel_id: channelId('a', n),
+      content: 'budget is due',
+      content_search: 'budget is due',
+      is_deleted: false,
+      created_at: new Date(Date.UTC(2026, 2, 1, 0, n)).toISOString(),
+    }));
+    const harness = createTenantHarness({
+      tables: {
+        chat_channels: [
+          ...Array.from({ length: CHANNEL_COUNT }, (_, n) =>
+            inA(channelRow(channelId('a', n))),
+          ),
+          ...Array.from({ length: CHANNEL_COUNT }, (_, n) =>
+            inB(channelRow(channelId('b', n))),
+          ),
+        ],
+        chat_messages: messages,
+      },
+      untenantedTables: ['chat_messages'],
+      parentTenant: {
+        chat_messages: { column: 'channel_id', table: 'chat_channels' },
+      },
+    });
+    const repo = new SupabaseSearchRepository(harness.client);
+    // Only the message source is under test; the other three stay empty.
+    jest.spyOn(repo, 'searchBackwork').mockResolvedValue([]);
+    jest.spyOn(repo, 'searchEvents').mockResolvedValue([]);
+    jest.spyOn(repo, 'searchMembers').mockResolvedValue([]);
+    const searchMessages = jest.spyOn(repo, 'searchMessages');
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        SearchService,
+        { provide: SEARCH_REPOSITORY, useValue: repo },
+        {
+          provide: MEMBER_REPOSITORY,
+          useValue: {
+            findByUserAndChapter: jest
+              .fn()
+              .mockResolvedValue({ id: 'member-1', role_ids: [] }),
+          },
+        },
+        {
+          provide: RbacService,
+          useValue: {
+            getEffectivePermissions: jest.fn().mockResolvedValue([]),
+            memberHasAnyPermission: jest.fn().mockResolvedValue(false),
+          },
+        },
+        {
+          provide: ChatBlockService,
+          useValue: { listBlockedUserIds: jest.fn().mockResolvedValue([]) },
+        },
+      ],
+    }).compile();
+    const service = module.get(SearchService);
+
+    const { results, timedOut } = await service.searchWithinBudget(
+      CHAPTER_A,
+      'user-1',
+      'budget',
+    );
+
+    expect(timedOut).toBe(false);
+    expect(searchMessages).toHaveBeenCalledWith(
+      Array.from({ length: CHANNEL_COUNT }, (_, n) => channelId('a', n)),
+      'budget',
+      10,
+    );
+    expect(results.messages.map((m) => m.id)).toEqual(
+      messages
+        .slice(-10)
+        .reverse()
+        .map((m) => m.id),
+    );
   });
 });

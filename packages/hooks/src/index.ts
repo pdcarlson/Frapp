@@ -62,3 +62,4 @@ export {
   type SidebarWriteOptions,
 } from "./use-chat-sidebar";
 export * from "./use-discord-author-link";
+export * from "./field-reveal";

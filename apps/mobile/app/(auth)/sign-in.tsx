@@ -368,7 +368,6 @@ export default function SignIn() {
                     ref={passwordRef}
                     value={password}
                     onChangeText={setPassword}
-                    placeholder="Your password"
                     autoCapitalize="none"
                     autoCorrect={false}
                     secureTextEntry

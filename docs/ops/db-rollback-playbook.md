@@ -2779,6 +2779,22 @@ A function body. It re-creates `get_channel_unread_counts` with one more join pr
 
 Afterwards every settings change lights the `#chapter-audit` badge again, for every member.
 
+## Rollback users major (20261106200000)
+
+* **Migration**: `20261106200000_users_major.sql`
+
+One nullable column, `users.major`, and `anonymize_user` redefined with `major = null` added. Nothing was backfilled.
+
+**Revert the API and clients forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API stops accepting `major` on `PATCH /v1/users/me` and stops returning it on the member reads; `GET /v1/users/me` still returns the row's columns, so the column shows up there until it is dropped, which every client ignores. Keep the redefined `anonymize_user`: it clears a column that exists.
+
+**Keep the column unless it is itself the problem.** Dropping it loses every major a member typed. To remove it anyway, do it in a later forward migration after the code revert has shipped, and redefine `anonymize_user` without the `major = null` line in the same migration (a function body naming a dropped column fails at call time, which would break account deletion):
+
+```sql
+alter table public.users drop column if exists major;
+-- then `create or replace function anonymize_user(...)` from
+-- 20260929230000_discord_author_links.sql, unchanged.
+```
+
 ## Rollback Discord import category progress (20261106170000)
 
 * **Migration**: `20261106170000_discord_import_category_progress.sql`

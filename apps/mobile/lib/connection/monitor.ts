@@ -40,7 +40,7 @@
  *   also counted as a failure. So the monitor now ignores link events and probe
  *   results while the app is in the background, and on return to the
  *   foreground re-reads the link and probes at once. That first probe gets one
- *   retry (`WAKE_RETRY_MS`) before a failure counts, because the first request
+ *   retry (`CONFIRM_RETRY_MS`) before a failure counts, because the first request
  *   after a long Doze can time out while the radio wakes.
  * - **A link drop waits `LINK_DOWN_GRACE_MS`, then asks `/health`.** A Wi-Fi
  *   network that re-associates on wake, or a Wi-Fi to cellular handoff,
@@ -71,7 +71,7 @@ import {
 } from "expo-network";
 import { AppState, type AppStateStatus } from "react-native";
 import { normalizeApiBaseUrl, withRequestIdInit } from "@repo/api-sdk";
-import { healthProbeIsReachable } from "@repo/validation";
+import { CONFIRM_RETRY_MS, healthProbeIsReachable } from "@repo/validation";
 import { deriveConnectionState, type ConnectionState } from "./state";
 
 export const HEALTH_POLL_INTERVAL_MS = 30_000;
@@ -83,13 +83,8 @@ export const HEALTH_TIMEOUT_MS = 5_000;
  * drop still reaches the banner and the chat outbox within a few seconds.
  */
 export const LINK_DOWN_GRACE_MS = 3_000;
-/**
- * The first probe after the app returns to the foreground gets one retry
- * after this long before its failure counts. The first request after a long
- * Doze can time out while the radio or Wi-Fi power-save wakes, and one
- * failure is enough to show "Slow connection".
- */
-export const WAKE_RETRY_MS = 2_000;
+/** Re-exported for the specs; the rule and its reasons live in `@repo/validation`. */
+export { CONFIRM_RETRY_MS };
 
 export function healthUrl(): string | null {
   const apiUrl = process.env.EXPO_PUBLIC_API_URL;
@@ -188,7 +183,7 @@ export function createConnectionMonitor(
   /** A link drop waiting out `LINK_DOWN_GRACE_MS`. */
   let pendingLinkDown: TimerHandle | null = null;
   /** The retry of a failed first probe after the foreground. */
-  let wakeRetry: TimerHandle | null = null;
+  let confirmRetry: TimerHandle | null = null;
   let poll: ReturnType<typeof setInterval> | null = null;
   let unsubscribeLink: (() => void) | null = null;
   let unsubscribeAppState: (() => void) | null = null;
@@ -290,13 +285,13 @@ export function createConnectionMonitor(
     void probeOnce();
   }
 
-  function cancelWakeRetry() {
-    if (wakeRetry === null) return;
-    deps.clearTimeout(wakeRetry);
-    wakeRetry = null;
+  function cancelConfirmRetry() {
+    if (confirmRetry === null) return;
+    deps.clearTimeout(confirmRetry);
+    confirmRetry = null;
   }
 
-  async function probeOnce({ afterWake = false } = {}) {
+  async function probeOnce({ afterWake = false, retried = false } = {}) {
     if (!started || suspended) return;
     // Wait for the link-drop verdict: a probe now would fail for a reason the
     // drop already explains and count it against the API.
@@ -337,15 +332,22 @@ export function createConnectionMonitor(
     inFlightGeneration = null;
 
     if (reachable) {
+      // A pending confirm has nothing left to confirm.
+      cancelConfirmRetry();
       consecutiveFailures = 0;
       linkOffline = false;
-    } else if (afterWake && !linkOffline) {
-      // Not counted yet: one retry first (see `WAKE_RETRY_MS`).
-      cancelWakeRetry();
-      wakeRetry = deps.setTimeout(() => {
-        wakeRetry = null;
-        void probeOnce();
-      }, WAKE_RETRY_MS);
+    } else if (
+      !retried &&
+      !linkOffline &&
+      (afterWake || consecutiveFailures === 0)
+    ) {
+      // Not counted yet: one retry first (see `CONFIRM_RETRY_MS`). A retry
+      // already on its way decides; this one doesn't push it back.
+      if (confirmRetry !== null) return;
+      confirmRetry = deps.setTimeout(() => {
+        confirmRetry = null;
+        void probeOnce({ retried: true });
+      }, CONFIRM_RETRY_MS);
       return;
     } else {
       // With the link down this changes nothing on screen: only a reachable
@@ -376,7 +378,7 @@ export function createConnectionMonitor(
     // decides both.
     discardInFlightProbe();
     cancelPendingLinkDown();
-    cancelWakeRetry();
+    cancelConfirmRetry();
     stopPolling();
   }
 
@@ -465,7 +467,7 @@ export function createConnectionMonitor(
       lifecycle += 1;
       discardInFlightProbe();
       cancelPendingLinkDown();
-      cancelWakeRetry();
+      cancelConfirmRetry();
       unsubscribeLink?.();
       unsubscribeLink = null;
       unsubscribeAppState?.();

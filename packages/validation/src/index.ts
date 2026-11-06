@@ -714,6 +714,7 @@ export {
 // mobile cannot disagree about ONLINE / DEGRADED / OFFLINE. Each app owns
 // the effects that feed it; this package owns the rule.
 export {
+  CONFIRM_RETRY_MS,
   DEGRADED_THRESHOLD,
   deriveConnectionState,
   healthProbeIsReachable,
@@ -741,11 +742,18 @@ export {
   DOCUMENT_TITLE_MAX_LENGTH,
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
+  MAJOR_MAX_LENGTH,
   POLL_OPTIONS_MAX,
   POLL_OPTIONS_MIN,
   SERVICE_DESCRIPTION_MAX_LENGTH,
   YEAR_MAX,
 } from "./field-limits";
+
+export {
+  PROFILE_ALUMNI_SECTION,
+  PROFILE_FIELD_COPY,
+  showsAfterGraduation,
+} from "./profile-copy";
 
 // ── Chapter mark (logo → short name → Greek letters → initials) ─────────────
 export {

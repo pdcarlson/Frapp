@@ -34,21 +34,8 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#F4CB63" }),
 }));
 
-/** The device's bottom inset, set per test (the suite-wide stub is all zeros). */
-const device = vi.hoisted(() => ({ bottomInset: 0 }));
-
-vi.mock("react-native-safe-area-context", () => ({
-  SafeAreaProvider: "SafeAreaProvider",
-  SafeAreaView: "SafeAreaView",
-  useSafeAreaInsets: () => ({
-    top: 0,
-    right: 0,
-    bottom: device.bottomInset,
-    left: 0,
-  }),
-}));
-
 import TabLayout from "@/app/(tabs)/_layout";
+import { TAB_ROUTES } from "@/components/glass-tab-bar";
 
 type Node = ReactTestRenderer["root"];
 
@@ -78,10 +65,7 @@ function hosts(root: Node, name: string): Node[] {
  * an object or as a function of the route, and a function-form header would
  * slip past a check that only reads object keys.
  */
-function resolved(
-  options: unknown,
-  name = "screen",
-): Record<string, unknown> {
+function resolved(options: unknown, name = "screen"): Record<string, unknown> {
   if (typeof options === "function") {
     return (
       (options as (props: object) => Record<string, unknown> | undefined)({
@@ -132,52 +116,26 @@ describe("tab layout (#2485)", () => {
 });
 
 /**
- * #3344 — the bar clears the bottom inset.
- *
- * Android draws the app edge to edge, so the swipe bar sits over the bottom of
- * the window; on the first store build the Events and Tasks labels sat under
- * it. Since the floating glass bar (owner pick 2026-11-05) the bar keeps its
- * drawn 62pt and floats above the inset by its own `bottom` offset.
+ * The bar is drawn by `GlassTabBar` (the pill and the quick-actions +), not by
+ * the navigator's own bar, so no tab style is set here: its placement and the
+ * #3344 inset are held in `components/glass-tab-bar.spec.tsx`.
  */
-describe("tab bar inset (#3344)", () => {
-  function barStyle(): Record<string, unknown> {
-    const tree = render();
-    const [tabs] = hosts(tree.root, "Tabs");
-    return resolved(tabs.props.screenOptions).tabBarStyle as Record<
-      string,
-      unknown
-    >;
-  }
-
-  it("floats the 62pt capsule above the inset, tucked 8pt into it", () => {
-    device.bottomInset = 34;
-    try {
-      const style = barStyle();
-      expect(style.position).toBe("absolute");
-      expect(style.height).toBe(62);
-      expect(style.paddingTop).toBe(6);
-      expect(style.paddingBottom).toBe(6);
-      // Tucked 8pt into the iPhone home indicator's 34pt inset.
-      expect(style.bottom).toBe(34 - 8);
-      expect(style.borderRadius).toBe(31);
-      expect(style.left).toBe(14);
-      expect(style.right).toBe(14);
-    } finally {
-      device.bottomInset = 0;
-    }
+describe("tab bar", () => {
+  it("draws in the bar exactly the tabs the layout leaves visible", () => {
+    // GlassTabBar draws `TAB_ROUTES` and ignores `href: null`, so the two
+    // lists have to agree.
+    const visible = hosts(render().root, "Tabs.Screen")
+      .filter((screen) => resolved(screen.props.options).href !== null)
+      .map((screen) => screen.props.name);
+    expect(visible).toEqual([...TAB_ROUTES]);
   });
 
-  it("keeps 12pt off the edge where there is no inset", () => {
-    const style = barStyle();
-    expect(style.height).toBe(62);
-    expect(style.bottom).toBe(12);
-  });
-
-  it("draws no shadow or glow, only glass", () => {
-    const style = barStyle();
-    expect(style.elevation).toBe(0);
-    expect(style.shadowOpacity).toBe(0);
-    expect(style.backgroundColor).toBe("transparent");
+  it("draws the glass pill and + in place of the navigator's bar", () => {
+    const [tabs] = hosts(render().root, "Tabs");
+    expect(typeof tabs.props.tabBar).toBe("function");
+    expect(resolved(tabs.props.screenOptions)).not.toHaveProperty(
+      "tabBarStyle",
+    );
   });
 });
 
@@ -215,9 +173,9 @@ describe("full-window screens", () => {
     const [tabs] = hosts(render().root, "Tabs");
 
     // Hidden for the whole navigator would hide it everywhere.
-    expect(resolved(tabs.props.screenOptions).tabBarStyle).not.toHaveProperty(
-      "display",
-    );
+    expect(
+      resolved(tabs.props.screenOptions).tabBarStyle ?? {},
+    ).not.toHaveProperty("display");
     expect(options.size).toBeGreaterThan(FULL_WINDOW.length + 4);
     for (const [name, screen] of options) {
       if (FULL_WINDOW.includes(name)) continue;
