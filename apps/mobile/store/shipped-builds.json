@@ -37,6 +37,20 @@
       "build": "4",
       "sha": "5e43a27b406f26c153d7f8192478fdafaf6b0b7b",
       "recorded": "2026-11-05"
+    },
+    {
+      "platform": "ios",
+      "version": "0.10.0",
+      "build": "10",
+      "sha": "55922eab6037b1416ce23a25089105938c49c5c9",
+      "recorded": "2026-11-06"
+    },
+    {
+      "platform": "android",
+      "version": "0.10.0",
+      "build": "5",
+      "sha": "55922eab6037b1416ce23a25089105938c49c5c9",
+      "recorded": "2026-11-06"
     }
   ]
 }
