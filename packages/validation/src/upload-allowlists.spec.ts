@@ -136,9 +136,9 @@ describe("inspectUploadFile", () => {
     ).toEqual({ ok: false, reason: "size" });
   });
 
-  it("holds backwork to its own 50 MB cap without raising the shared one", () => {
-    expect(MAX_BACKWORK_UPLOAD_BYTES).toBe(52_428_800);
-    expect(MAX_BACKWORK_UPLOAD_LABEL).toBe("50 MB");
+  it("holds backwork to its own 100 MB cap without raising the shared one", () => {
+    expect(MAX_BACKWORK_UPLOAD_BYTES).toBe(104_857_600);
+    expect(MAX_BACKWORK_UPLOAD_LABEL).toBe("100 MB");
     const scan = { name: "final.pdf", type: "application/pdf" };
     expect(
       inspectUploadFile(

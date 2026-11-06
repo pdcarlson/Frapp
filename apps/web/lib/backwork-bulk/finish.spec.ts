@@ -99,7 +99,7 @@ describe("finishUpload", () => {
     const tooBig = { byteLength: MAX_BACKWORK_UPLOAD_BYTES + 1 } as Uint8Array;
     const { deps, put } = harness(vi.fn(async () => tooBig));
     await expect(run({ document_variant: "Student Copy" }, {}, deps)).rejects.toThrow(
-      /over 50 MB once flattened/,
+      /over 100 MB once flattened/,
     );
     expect(deps.requestUpload).not.toHaveBeenCalled();
     expect(put).not.toHaveBeenCalled();

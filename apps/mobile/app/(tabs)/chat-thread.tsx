@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   MASKED_RELOAD_FAILED_BODY,
   MASKED_RELOAD_FAILED_TITLE,
@@ -91,6 +92,10 @@ import {
   threadTitleFor,
 } from "@/lib/chat/channel-list";
 import { ChannelStart } from "@/components/chat/channel-start";
+import {
+  ChannelMemberSheet,
+  ChannelMembersButton,
+} from "@/components/chat/channel-member-sheet";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useComposerStaging } from "@/lib/chat/use-composer-staging";
 import {
@@ -635,6 +640,23 @@ export default function ChatThreadScreen() {
   // One sheet for the thread, retargeted per long-press — the same shape the
   // directory uses for its member sheet.
   const actionsSheetRef = useRef<MessageActionsSheetHandle>(null);
+  // Who can read the channel (#3536). A 1:1 DM has no list: its two members
+  // are already the header.
+  const memberSheetRef = useRef<BottomSheetModal>(null);
+  const showMemberList = !!openChannel && openChannel.channel.type !== "DM";
+  // The sheet closes on a blur or a channel switch, for the mute menu's
+  // reason below: this screen stays mounted, and the sheet draws through the
+  // app's sheet provider, so left up it would sit over the next channel (a
+  // push can switch it to a 1:1 DM, which has no list) or another tab.
+  useFocusEffect(
+    useCallback(() => {
+      if (!channelId) return;
+      return () => memberSheetRef.current?.dismiss();
+    }, [channelId]),
+  );
+  useEffect(() => {
+    if (!showMemberList) memberSheetRef.current?.dismiss();
+  }, [showMemberList]);
   const [actionTarget, setActionTarget] = useState<Omit<
     MessageActionsTarget,
     "reactedWith"
@@ -941,6 +963,11 @@ export default function ChatThreadScreen() {
                 </Text>
               ) : null}
             </View>
+            {channelId && showMemberList ? (
+              <ChannelMembersButton
+                onPress={() => memberSheetRef.current?.present()}
+              />
+            ) : null}
             {channelId ? (
               <NotificationLevelControl
                 menu={muteMenu}
@@ -1252,6 +1279,7 @@ export default function ChatThreadScreen() {
           }}
         />
       </KeyboardAvoidingArea>
+      <ChannelMemberSheet ref={memberSheetRef} channelId={channelId ?? null} />
       <MessageActionsSheet
         ref={actionsSheetRef}
         target={sheetTarget}

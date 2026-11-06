@@ -1,6 +1,6 @@
 /**
  * Shared upload MIME / extension allowlists and the size caps: 25 MB for
- * every kind but two exceptions, `archive` and backwork's 50 MB
+ * every kind but two exceptions, `archive` and backwork's 100 MB
  * (`MAX_BACKWORK_UPLOAD_BYTES`).
  *
  * One table per kind; MIME types, extensions, the HTML `accept` attribute, and
@@ -88,15 +88,16 @@ export const MAX_UPLOAD_LABEL = "25 MB";
 
 /**
  * Backwork's own ceiling, the one member-upload surface above
- * `MAX_UPLOAD_BYTES`. Scanned exams run large, and the owner asked for 50 MB
- * per file (#3487). It is a separate constant rather than a raise of
+ * `MAX_UPLOAD_BYTES`. Scanned exams run large, and the owner set 100 MB per
+ * file, the hosted projects' global storage limit (#3487; 50 MB until
+ * 2026-11-06). It is a separate constant rather than a raise of
  * `MAX_UPLOAD_BYTES` for the same reason `archive` is: raising the shared cap
  * would raise it on every member upload. The `backwork` bucket's
  * `file_size_limit` mirrors it
- * (`supabase/migrations/20261105230000_backwork_bucket_50mb.sql`).
+ * (`supabase/migrations/20261106153000_backwork_bucket_100mb.sql`).
  */
-export const MAX_BACKWORK_UPLOAD_BYTES = 50 * 1024 * 1024;
-export const MAX_BACKWORK_UPLOAD_LABEL = "50 MB";
+export const MAX_BACKWORK_UPLOAD_BYTES = 100 * 1024 * 1024;
+export const MAX_BACKWORK_UPLOAD_LABEL = "100 MB";
 
 /**
  * The `archive` kind is NOT a member-upload surface.
