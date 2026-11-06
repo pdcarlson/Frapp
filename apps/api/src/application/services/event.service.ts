@@ -204,20 +204,35 @@ export class EventService {
     });
 
     if (parent.recurrence_rule) {
-      // The occurrences go in as one insert, so a failure means none landed.
-      // Take the parent back out too: otherwise the request fails while a
-      // series head with no occurrences stays behind, and a client retrying
-      // the 5xx creates a second one (#3235).
+      // The occurrences go in as one insert. If it fails, take the whole
+      // series back out: otherwise the request fails while a series head with
+      // no occurrences stays behind, and a client retrying the 5xx creates a
+      // second one (#3235). The rollback reads the parent's occurrences rather
+      // than trusting the error, because an insert can commit and still report
+      // a failure (a reset or timeout on the response), and deleting only the
+      // parent would then leave every landed row as a standalone event
+      // (`parent_event_id` is `on delete set null`). Occurrences go first, so a
+      // failure partway leaves the series whole rather than orphaned.
       try {
         await this.series.generateRecurringInstances(parent);
       } catch (error) {
         try {
+          const landed = await this.eventRepo.findChildren(
+            parent.id,
+            parent.chapter_id,
+          );
+          if (landed.length > 0) {
+            await this.eventRepo.deleteMany(
+              landed.map((row) => row.id),
+              parent.chapter_id,
+            );
+          }
           await this.eventRepo.delete(parent.id, parent.chapter_id);
         } catch (cleanupError) {
           reportCaughtFailure(this.logger, {
             level: 'error',
             site: 'event-create-series-rollback',
-            message: `Creating the occurrences of recurring event ${parent.id} failed, and so did deleting it. It is a series head with no occurrences; delete it by hand.`,
+            message: `Creating the occurrences of recurring event ${parent.id} failed, and so did taking the series back out. Check that event and its occurrences, and delete them by hand.`,
             error: cleanupError,
           });
         }

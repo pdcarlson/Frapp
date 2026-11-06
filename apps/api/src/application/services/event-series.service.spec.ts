@@ -1,4 +1,5 @@
 import { BadRequestException, Logger } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { Event } from '#domain/entities/event.entity';
 import {
   baseEvent,
@@ -9,12 +10,28 @@ import {
 
 // Moved out of `event.service.spec.ts` with the methods (#3270). Cases drive
 // `EventService.create` / `update` / `delete`, which delegate here.
+
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(() => 'event-exception'),
+  captureMessage: jest.fn(() => 'event-message'),
+}));
+
+const captureException = jest.mocked(Sentry.captureException);
+
+/** The Sentry report a swallowed failure sends, by its `caught_at` site. */
+const reportedAt = (site: string, level: 'error' | 'warning') =>
+  expect(captureException).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ level, tags: { caught_at: site } }),
+  );
+
 describe('EventSeriesService', () => {
   let service: EventServiceFixture['service'];
   let mockEventRepo: EventServiceFixture['mockEventRepo'];
   let mockNotificationService: EventServiceFixture['mockNotificationService'];
 
   beforeEach(async () => {
+    captureException.mockClear();
     ({ service, mockEventRepo, mockNotificationService } =
       await createEventServiceFixture());
   });
@@ -176,9 +193,8 @@ describe('EventSeriesService', () => {
     });
 
     it('takes the parent back out when the occurrence insert fails (#3235)', async () => {
-      // The occurrences are one insert, so a failure means none landed. A
-      // parent left behind would be a series head with no occurrences, and a
-      // client retrying the 5xx would create a second one.
+      // A parent left behind would be a series head with no occurrences, and
+      // a client retrying the 5xx would create a second one.
       const weeklyEvent: Event = {
         ...baseEvent,
         recurrence_rule: 'WEEKLY',
@@ -200,9 +216,51 @@ describe('EventSeriesService', () => {
       ).rejects.toThrow('insert failed');
 
       expect(mockEventRepo.createMany).toHaveBeenCalledTimes(1);
+      expect(mockEventRepo.findChildren).toHaveBeenCalledWith('evt-1', 'ch-1');
+      // Nothing landed, so there is nothing but the parent to delete.
+      expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
       expect(mockEventRepo.delete).toHaveBeenCalledWith('evt-1', 'ch-1');
       // Nothing announced an event that no longer exists.
       expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
+    });
+
+    it('deletes occurrences that landed although the insert reported a failure', async () => {
+      // An insert can commit and still fail on the response. Deleting only
+      // the parent would null their parent pointers and leave a dozen
+      // standalone events behind the failed request.
+      const weeklyEvent: Event = {
+        ...baseEvent,
+        recurrence_rule: 'WEEKLY',
+      };
+      mockEventRepo.create.mockResolvedValue(weeklyEvent);
+      mockEventRepo.createMany.mockRejectedValueOnce(
+        new Error('response lost'),
+      );
+      mockEventRepo.findChildren.mockResolvedValueOnce([
+        { ...baseEvent, id: 'occ-1', parent_event_id: 'evt-1' },
+        { ...baseEvent, id: 'occ-2', parent_event_id: 'evt-1' },
+      ]);
+      mockEventRepo.delete.mockResolvedValue(undefined);
+
+      await expect(
+        service.create({
+          chapter_id: 'ch-1',
+          name: 'Chapter Meeting',
+          start_time: baseEvent.start_time,
+          end_time: baseEvent.end_time,
+          recurrence_rule: 'WEEKLY',
+        }),
+      ).rejects.toThrow('response lost');
+
+      expect(mockEventRepo.deleteMany).toHaveBeenCalledWith(
+        ['occ-1', 'occ-2'],
+        'ch-1',
+      );
+      // Occurrences first, so a failure partway leaves the series whole.
+      expect(mockEventRepo.deleteMany.mock.invocationCallOrder[0]).toBeLessThan(
+        mockEventRepo.delete.mock.invocationCallOrder[0],
+      );
+      expect(mockEventRepo.delete).toHaveBeenCalledWith('evt-1', 'ch-1');
     });
 
     it('still reports the insert failure when deleting the parent also fails', async () => {
@@ -214,7 +272,7 @@ describe('EventSeriesService', () => {
       mockEventRepo.createMany.mockRejectedValueOnce(
         new Error('insert failed'),
       );
-      mockEventRepo.delete.mockRejectedValueOnce(new Error('delete failed'));
+      mockEventRepo.delete.mockRejectedValueOnce(new Error('rollback failed'));
       const logged = jest
         .spyOn(Logger.prototype, 'error')
         .mockImplementation(() => undefined);
@@ -235,6 +293,7 @@ describe('EventSeriesService', () => {
         expect.anything(),
       );
       logged.mockRestore();
+      reportedAt('event-create-series-rollback', 'error');
     });
 
     it('should not generate instances when no recurrence_rule is set', async () => {
@@ -1068,8 +1127,8 @@ describe('EventSeriesService', () => {
     });
 
     // A regenerate swaps the upcoming occurrences: it inserts the new set in
-    // one statement and only then deletes the old one, so a failure never
-    // leaves the series without upcoming occurrences (#3235).
+    // one statement and only then deletes the old one, and on any failure it
+    // reads the occurrences back rather than trusting the error (#3235).
     describe('regenerate failures (#3235)', () => {
       const upcomingParent: Event = {
         ...parent,
@@ -1077,6 +1136,15 @@ describe('EventSeriesService', () => {
         end_time: '2026-03-20T19:00:00.000Z',
       };
       const upcomingChildren = [futureChild1, futureChild2];
+      // MONTHLY over the generation window, as the first case pins.
+      const MONTHLY_COUNT = 6;
+      const landed = (headId: string, count = MONTHLY_COUNT): Event[] =>
+        Array.from({ length: count }, (_, i) => ({
+          ...futureChild1,
+          id: `occ-${i + 1}`,
+          parent_event_id: headId,
+        }));
+      const landedIds = landed('parent-1').map((row) => row.id);
 
       const changeRule = () =>
         service.update(
@@ -1104,13 +1172,13 @@ describe('EventSeriesService', () => {
           ['child-future-1', 'child-future-2'],
           'ch-1',
         );
-        expect(occurrenceRows(mockEventRepo)).toHaveLength(6);
+        expect(occurrenceRows(mockEventRepo)).toHaveLength(MONTHLY_COUNT);
         for (const row of occurrenceRows(mockEventRepo)) {
           expect(row.parent_event_id).toBe('parent-1');
         }
       });
 
-      it('changes nothing when the insert fails', async () => {
+      it('changes nothing when the insert fails and nothing landed', async () => {
         mockEventRepo.createMany.mockRejectedValueOnce(
           new Error('insert failed'),
         );
@@ -1124,24 +1192,68 @@ describe('EventSeriesService', () => {
         expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
       });
 
-      it('removes the new occurrences again when deleting the old ones fails', async () => {
-        mockEventRepo.deleteMany
-          .mockRejectedValueOnce(new Error('delete failed'))
-          .mockResolvedValueOnce(undefined);
+      it('removes rows that landed although the insert reported a failure', async () => {
+        mockEventRepo.createMany.mockRejectedValueOnce(
+          new Error('response lost'),
+        );
+        mockEventRepo.findChildren
+          .mockResolvedValueOnce(upcomingChildren)
+          .mockResolvedValueOnce([...upcomingChildren, ...landed('parent-1')]);
 
-        await expect(changeRule()).rejects.toThrow('delete failed');
+        await expect(changeRule()).rejects.toThrow('response lost');
 
-        const inserted = (await mockEventRepo.createMany.mock.results[0]
-          .value) as Event[];
-        expect(mockEventRepo.deleteMany).toHaveBeenLastCalledWith(
-          inserted.map((row) => row.id),
+        expect(mockEventRepo.deleteMany).toHaveBeenCalledTimes(1);
+        expect(mockEventRepo.deleteMany).toHaveBeenCalledWith(
+          landedIds,
           'ch-1',
         );
         expect(mockEventRepo.update).not.toHaveBeenCalled();
       });
 
-      it('logs the duplicate ids when that cleanup fails too', async () => {
-        mockEventRepo.deleteMany.mockRejectedValue(new Error('delete failed'));
+      it('removes the new occurrences again when deleting the old ones fails', async () => {
+        mockEventRepo.deleteMany
+          .mockRejectedValueOnce(new Error('delete failed'))
+          .mockResolvedValueOnce(undefined);
+        mockEventRepo.findChildren
+          .mockResolvedValueOnce(upcomingChildren)
+          .mockResolvedValueOnce([...upcomingChildren, ...landed('parent-1')]);
+
+        await expect(changeRule()).rejects.toThrow('delete failed');
+
+        expect(mockEventRepo.deleteMany).toHaveBeenLastCalledWith(
+          landedIds,
+          'ch-1',
+        );
+        expect(mockEventRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('carries on when the delete reported a failure but had landed', async () => {
+        mockEventRepo.deleteMany.mockRejectedValueOnce(
+          new Error('response lost'),
+        );
+        mockEventRepo.findChildren
+          .mockResolvedValueOnce(upcomingChildren)
+          .mockResolvedValueOnce(landed('parent-1'));
+
+        await changeRule();
+
+        // Reverting here would delete the only upcoming rows left.
+        expect(mockEventRepo.deleteMany).toHaveBeenCalledTimes(1);
+        expect(mockEventRepo.update).toHaveBeenCalledWith(
+          'parent-1',
+          'ch-1',
+          expect.objectContaining({ recurrence_rule: 'MONTHLY' }),
+        );
+        reportedAt('event-series-regenerate-committed', 'warning');
+      });
+
+      it('surfaces the original error and reports the ids when the cleanup fails too', async () => {
+        mockEventRepo.deleteMany
+          .mockRejectedValueOnce(new Error('delete failed'))
+          .mockRejectedValueOnce(new Error('cleanup failed'));
+        mockEventRepo.findChildren
+          .mockResolvedValueOnce(upcomingChildren)
+          .mockResolvedValueOnce([...upcomingChildren, ...landed('parent-1')]);
         const logged = jest
           .spyOn(Logger.prototype, 'error')
           .mockImplementation(() => undefined);
@@ -1152,27 +1264,80 @@ describe('EventSeriesService', () => {
           expect.stringContaining('occ-1'),
           expect.anything(),
         );
+        reportedAt('event-series-regenerate-cleanup', 'error');
         logged.mockRestore();
       });
 
-      it("on a started head, a failed insert keeps the new head's upcoming occurrences", async () => {
-        mockEventRepo.findById.mockResolvedValue(parent);
-        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
-        mergeUpdate([parent, ...wholeSeries]);
-        mockEventRepo.createMany.mockRejectedValueOnce(
-          new Error('insert failed'),
-        );
+      describe('on a started head', () => {
+        beforeEach(() => {
+          mockEventRepo.findById.mockResolvedValue(parent);
+          mockEventRepo.findChildren
+            .mockReset()
+            .mockResolvedValueOnce(wholeSeries)
+            .mockResolvedValue([
+              { ...futureChild2, parent_event_id: 'child-future-1' },
+            ]);
+          mergeUpdate([parent, ...wholeSeries]);
+        });
 
-        await expect(changeRule()).rejects.toThrow('insert failed');
+        it('re-points the survivors, rebuilds them, and writes the new rule last', async () => {
+          await changeRule();
 
-        // The split itself has happened (documented in splitStartedHead), but
-        // `child-future-2` was never deleted, so the new head still has it.
-        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
-        expect(mockEventRepo.update).toHaveBeenCalledWith(
-          'child-future-1',
-          'ch-1',
-          expect.objectContaining({ recurrence_rule: 'MONTHLY' }),
-        );
+          expect(mockEventRepo.updateMany).toHaveBeenCalledWith(
+            ['child-future-2'],
+            'ch-1',
+            { parent_event_id: 'child-future-1' },
+          );
+          // Promoted under the old rule while the rebuild runs.
+          expect(mockEventRepo.update).toHaveBeenCalledWith(
+            'child-future-1',
+            'ch-1',
+            expect.objectContaining({
+              recurrence_rule: 'WEEKLY',
+              parent_event_id: null,
+            }),
+          );
+          const repointAt =
+            mockEventRepo.updateMany.mock.invocationCallOrder.at(-1)!;
+          const insertAt = mockEventRepo.createMany.mock.invocationCallOrder[0];
+          const deleteAt = mockEventRepo.deleteMany.mock.invocationCallOrder[0];
+          const ruleAt = mockEventRepo.update.mock.invocationCallOrder.at(-1)!;
+          expect(repointAt).toBeLessThan(insertAt);
+          expect(insertAt).toBeLessThan(deleteAt);
+          expect(deleteAt).toBeLessThan(ruleAt);
+          expect(mockEventRepo.update).toHaveBeenLastCalledWith(
+            'child-future-1',
+            'ch-1',
+            { recurrence_rule: 'MONTHLY' },
+          );
+          for (const row of occurrenceRows(mockEventRepo)) {
+            expect(row.parent_event_id).toBe('child-future-1');
+            expect(row.recurrence_rule).toBeNull();
+          }
+        });
+
+        it('leaves a whole series under the old rule when the insert fails, so a retry still regenerates', async () => {
+          mockEventRepo.createMany.mockRejectedValueOnce(
+            new Error('insert failed'),
+          );
+
+          await expect(changeRule()).rejects.toThrow('insert failed');
+
+          // The survivor hangs off the new head, not the retired one.
+          expect(mockEventRepo.updateMany).toHaveBeenCalledWith(
+            ['child-future-2'],
+            'ch-1',
+            { parent_event_id: 'child-future-1' },
+          );
+          expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+          // The new head still says WEEKLY, so repeating the MONTHLY edit
+          // against it reads as a rule change.
+          expect(mockEventRepo.update).not.toHaveBeenCalledWith(
+            'child-future-1',
+            'ch-1',
+            expect.objectContaining({ recurrence_rule: 'MONTHLY' }),
+          );
+        });
       });
     });
 
