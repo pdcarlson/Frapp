@@ -2,7 +2,7 @@ name: Routine heartbeat
 
 # Daily watch: every scheduled routine must leave a run record.
 #
-# The five routines (docs/ci-cd/routines.md) run as Claude Code Routines,
+# The three routines (docs/ci-cd/routines.md) run as Claude scheduled tasks,
 # whose run status nothing in this repo can read, and which reads SUCCEEDED
 # even for a session that stopped before doing its job (#2358). Each routine
 # ends its run by commenting a run record on the heartbeat issue; this job
@@ -10,7 +10,7 @@ name: Routine heartbeat
 # record or a `stopped` one, and closes it when every routine's latest run is
 # `done`.
 #
-# 19:20 UTC is after the last routine of the day (Issue Triage, 13:07 UTC) has
+# 19:20 UTC is after the last routine of the day (Beta Watch, 12:07 UTC) has
 # had its daylight-saving hour and run allowance (the script's DST_SHIFT_MS and
 # RUN_ALLOWANCE_MS), so a run judges the same day's fires.
 #
