@@ -41,8 +41,11 @@ import {
   glyphCoverage,
 } from "./lib/brand-pixels.mjs";
 import {
+  IOS_ICON_LIGHT,
   IOS_ICON_TINTED,
+  assertLightIcon,
   assertTintedIcon,
+  lightFromGlyph,
   tintedFromGlyph,
 } from "./lib/ios-icon.mjs";
 import {
@@ -259,6 +262,9 @@ async function audit(buffer, label, kind) {
   } else if (kind === "tinted") {
     const rgb = await sharp(buffer).raw().toBuffer({ resolveWithObject: true });
     assertTintedIcon(rgb.data, meta.channels, rgb.info.width, rgb.info.height, label);
+  } else if (kind === "light") {
+    const rgb = await sharp(buffer).raw().toBuffer({ resolveWithObject: true });
+    assertLightIcon(rgb.data, meta.channels, rgb.info.width, rgb.info.height, label);
   }
   return stats;
 }
@@ -353,10 +359,11 @@ async function main() {
     "monochrome",
   );
 
-  // ── iOS: `expo.ios.icon`'s tinted appearance ─────────────────────────────
-  // Light and dark are `icon.png` above. Tinted is the same full-bleed crest
-  // in grey on black, its grey the alpha of the canonical glyph render above;
-  // why each appearance is what it is lives in `lib/ios-icon.mjs`.
+  // ── iOS: `expo.ios.icon`'s light and tinted appearances ──────────────────
+  // Dark is `icon.png` above. Light and tinted are the same full-bleed crest,
+  // its coverage the alpha of the canonical glyph render above: ink on cream
+  // for light, grey on black for tinted. Why each appearance is what it is
+  // lives in `lib/ios-icon.mjs`.
   const glyphRaw = await sharp(glyph1024)
     .ensureAlpha()
     .raw()
@@ -367,6 +374,13 @@ async function main() {
     .png({ compressionLevel: 9 })
     .toBuffer();
   await emit(IOS_ICON_TINTED, tinted, "tinted");
+
+  const light = await sharp(lightFromGlyph(glyphRaw.data, glyphRaw.info.channels), {
+    raw: { width: glyphRaw.info.width, height: glyphRaw.info.height, channels: 3 },
+  })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+  await emit(IOS_ICON_LIGHT, light, "light");
 
   // ── Google Play listing: apps/mobile/store/graphics ───────────────────────
   // Not read by any build: the owner uploads them in Play Console. Rendered
