@@ -74,3 +74,11 @@ describe("suggestFolder", () => {
     expect(suggestFolder("Form", folders, [])).toBeNull();
   });
 });
+
+describe("type spellings", () => {
+  it("treats By-Laws and bylaws as one type and returns the chapter's spelling", () => {
+    const options = documentTypeOptions(["By-Laws"]);
+    expect(options.filter((o) => /by-?laws/i.test(o))).toEqual(["By-Laws"]);
+    expect(guessDocumentType("bylaws-2026.pdf", options)).toBe("By-Laws");
+  });
+});

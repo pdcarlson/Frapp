@@ -28,8 +28,9 @@ import { cn } from "@/lib/utils";
  * comment dropped that clause from the quote, which made the board look vaguer
  * about the ladder than it is.
  *
- * Two consumers, `/documents` and `/backwork`, which is why this is a module
- * rather than a recipe copied into both. They previously carried two spellings
+ * The sheet chrome's one consumer now is `/backwork`; `/documents` moved to a
+ * panel (2026-11-06) and borrows only the fields and the file well, which is
+ * why those stay a module rather than a recipe copied into both. They previously carried two spellings
  * of the same dialog, and the pair had already drifted — one capped its body
  * height and scrolled, the other did not.
  *
@@ -362,7 +363,16 @@ export function UploadFileField({
         aria-describedby={
           error ? `${fieldHintId(id)} ${fieldErrorId(id)}` : fieldHintId(id)
         }
-        onChange={(event) => onSelect(event.target.files?.[0] ?? null)}
+        onChange={(event) => {
+          onSelect(event.target.files?.[0] ?? null);
+          /*
+            Cleared after every pick, so picking the same file again still
+            fires a change. Without it, pick A, drop B on the well, then pick
+            A again: the input's value never changed, no event fires, and B
+            uploads.
+          */
+          event.target.value = "";
+        }}
       />
     </>
   );

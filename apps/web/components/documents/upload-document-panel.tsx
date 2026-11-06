@@ -163,25 +163,35 @@ export function useDocumentUpload(
     [typeOptions, folders, documents],
   );
 
-  /** An edit by hand: sets the field and stops guessing it. */
+  /**
+   * An edit by hand: sets the field and stops guessing it. Correcting the type
+   * re-guesses a folder the officer has not picked, so a wrong first guess
+   * does not leave the file in the wrong type's folder.
+   */
   const editField = useCallback(
     <K extends EditableField>(key: K, value: UploadDraft[K]) =>
-      setUploadDraft((prev) => ({
-        ...prev,
-        [key]: value,
-        ...(key === "title" ? { autoTitle: false } : {}),
-        ...(key === "documentType" ? { autoType: false } : {}),
-        ...(key === "folder" ? { autoFolder: false } : {}),
-      })),
-    [],
+      setUploadDraft((prev) => {
+        const next = { ...prev, [key]: value };
+        if (key === "title") next.autoTitle = false;
+        if (key === "folder") next.autoFolder = false;
+        if (key === "documentType") {
+          next.autoType = false;
+          if (prev.autoFolder) {
+            next.folder = next.documentType
+              ? (suggestFolder(next.documentType, folders, documents) ?? "")
+              : "";
+          }
+        }
+        return next;
+      }),
+    [folders, documents],
   );
 
   /*
     Every way into the panel goes through here: the toolbar button and a file
-    dropped on the page. A fresh draft (no file yet) files into the folder on
-    screen, and a spent rejection from the last attempt is cleared. A draft
-    with a file in it is kept as it was, folder included: the officer was part
-    way through it.
+    dropped on the page. A draft whose folder nobody has picked files into the
+    folder on screen, and a spent rejection from the last attempt is cleared.
+    A folder picked by hand is kept, like the rest of the draft.
   */
   const openPanel = useCallback(
     (file?: File) => {
@@ -189,7 +199,7 @@ export function useDocumentUpload(
       // A folder on screen is a choice the officer already made, so it is
       // not guessed over; from "All files" or "No folder" the type decides.
       setUploadDraft((prev) =>
-        prev.file
+        prev.file || !prev.autoFolder
           ? prev
           : { ...prev, folder: activeFolder || "", autoFolder: !activeFolder },
       );
@@ -583,8 +593,10 @@ function TypeChip({
  * Drop a file anywhere on the Documents page to upload it: a full-window
  * target while a file is dragged over, which opens the panel with the file.
  * Mounted inside the page's `Can permission="chapter_docs:upload"`, so a member
- * who can't upload never sees it, and quiet while the subscription gate is
- * closed (the toolbar button already says why).
+ * who can't upload never sees it. Quiet whenever the panel could not open
+ * (`gate.allowed`: a lapsed subscription, offline, or the chapter still
+ * loading, where the toolbar button already says why) and while an upload is
+ * in flight, so a drop never swaps the file under a running upload.
  *
  * Listens on `window` rather than wrapping the page, so a drop on the rail,
  * the toolbar or empty space all count. A drop the panel's own file well
@@ -601,7 +613,7 @@ export function DocumentsPageDropTarget({
 }) {
   const [over, setOver] = useState(false);
   const depth = useRef(0);
-  const allowed = gate.state.allowed;
+  const allowed = gate.allowed && !upload.uploading;
   const panelOpen = upload.uploadDialog.dialogProps.open;
   // Read through a ref so a re-render (the overlay itself causes one) does not
   // tear the listeners down mid-drag and lose the enter/leave count.
@@ -654,6 +666,11 @@ export function DocumentsPageDropTarget({
   }, [allowed, panelOpen]);
 
   if (!over || !allowed || panelOpen) return null;
+  // Where the drop will land: a kept or hand-picked folder wins over the one
+  // on screen, as `openPanel` decides.
+  const draft = upload.uploadDraft;
+  const target =
+    draft.file || !draft.autoFolder ? draft.folder : activeFolder;
   return (
     <div
       aria-hidden
@@ -661,7 +678,7 @@ export function DocumentsPageDropTarget({
     >
       <div className="rounded-xl border-2 border-dashed border-muted-foreground bg-popover px-8 py-6 text-center">
         <p className="text-label font-semibold text-foreground">
-          {activeFolder ? `Drop to upload to ${activeFolder}` : "Drop to upload"}
+          {target ? `Drop to upload to ${target}` : "Drop to upload"}
         </p>
         <p className="mt-1 text-caption text-muted-foreground">
           Opens the upload panel with this file

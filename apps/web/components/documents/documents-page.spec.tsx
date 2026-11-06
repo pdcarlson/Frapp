@@ -78,7 +78,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => mockCurrentChapter(),
   useDocuments: (options?: { search?: string }) => {
-    documentsArgs.value = options;
+    // The upload panel's unsearched library read passes no options; only the
+    // page's own list call carries the search being asserted on.
+    if (options) documentsArgs.value = options;
     return documentsQuery;
   },
   useDocumentFolders: () => foldersQuery,
@@ -537,6 +539,25 @@ describe("DocumentsPage upload metadata", () => {
     await waitFor(() => expect(mockConfirmUpload).toHaveBeenCalledTimes(1));
     expect(mockConfirmUpload).toHaveBeenCalledWith(
       expect.objectContaining({ folder: "Bylaws & Governance" }),
+    );
+  });
+
+  it("re-files into the corrected type's folder when the guess was wrong", async () => {
+    foldersQuery.data = [
+      { id: "f-1", name: "Meeting Minutes", sort_order: 0 },
+      { id: "f-2", name: "Finance", sort_order: 1 },
+    ];
+    render(<DocumentsPage />);
+    await userEvent.click(uploadTrigger());
+
+    const dialog = screen.getByRole("dialog");
+    pickFile(dialog, "finance-committee-minutes.pdf");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Budget" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: /^upload$/i }));
+
+    await waitFor(() => expect(mockConfirmUpload).toHaveBeenCalledTimes(1));
+    expect(mockConfirmUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ document_type: "Budget", folder: "Finance" }),
     );
   });
 

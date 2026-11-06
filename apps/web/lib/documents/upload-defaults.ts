@@ -36,6 +36,14 @@ const TYPE_KEYWORDS: ReadonlyArray<readonly [string, readonly string[]]> = [
 ];
 
 /**
+ * One key per spelling family: case and punctuation dropped, so "By-Laws",
+ * "bylaws" and "BYLAWS" are the same type.
+ */
+export function typeKey(type: string): string {
+  return type.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
  * A readable title from a file name: the extension dropped, separators turned
  * to spaces, the first letter capitalized and the rest left as typed, so
  * "fall-2026-bylaws-revision.pdf" reads "Fall 2026 bylaws revision" and
@@ -72,9 +80,7 @@ export function guessDocumentType(
   );
   for (const [type, keywords] of TYPE_KEYWORDS) {
     if (!keywords.some((keyword) => words.has(keyword))) continue;
-    const own = options.find(
-      (option) => option.toLowerCase() === type.toLowerCase(),
-    );
+    const own = options.find((option) => typeKey(option) === typeKey(type));
     return own ?? type;
   }
   // A chapter's own type named outright in the file name ("Rush schedule.pdf"
@@ -82,7 +88,8 @@ export function guessDocumentType(
   const own = options.find((option) =>
     option
       .toLowerCase()
-      .split(/\s+/)
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean)
       .every((part) => words.has(part)),
   );
   return own ?? null;
@@ -90,18 +97,19 @@ export function guessDocumentType(
 
 /**
  * The type chips: the defaults, then every type the chapter has already used,
- * each once whatever its case. A chapter's own spelling replaces the default's
- * ("BYLAWS" stays "BYLAWS" if that is what the library says).
+ * each once whatever its case or punctuation ({@link typeKey}). A chapter's own
+ * spelling replaces the default's ("By-Laws" stays "By-Laws" if that is what
+ * the library says).
  */
 export function documentTypeOptions(
   existing: ReadonlyArray<string | null | undefined>,
 ): string[] {
   const byKey = new Map<string, string>();
-  for (const type of DEFAULT_DOCUMENT_TYPES) byKey.set(type.toLowerCase(), type);
+  for (const type of DEFAULT_DOCUMENT_TYPES) byKey.set(typeKey(type), type);
   for (const raw of existing) {
     const type = raw?.trim();
-    if (!type) continue;
-    byKey.set(type.toLowerCase(), type);
+    if (!type || !typeKey(type)) continue;
+    byKey.set(typeKey(type), type);
   }
   return [...byKey.values()];
 }
@@ -120,10 +128,11 @@ export function suggestFolder(
     folder: string | null;
   }>,
 ): string | null {
-  const key = type.toLowerCase();
+  const key = typeKey(type);
   const counts = new Map<string, number>();
   for (const doc of documents) {
-    if (!doc.folder || doc.document_type?.toLowerCase() !== key) continue;
+    if (!doc.folder || !doc.document_type || typeKey(doc.document_type) !== key)
+      continue;
     if (!folders.includes(doc.folder)) continue;
     counts.set(doc.folder, (counts.get(doc.folder) ?? 0) + 1);
   }
@@ -134,8 +143,8 @@ export function suggestFolder(
   if (best) return best;
 
   const words = new Set([
-    key,
-    ...(TYPE_KEYWORDS.find(([name]) => name.toLowerCase() === key)?.[1] ?? []),
+    type.toLowerCase(),
+    ...(TYPE_KEYWORDS.find(([name]) => typeKey(name) === key)?.[1] ?? []),
   ]);
   return (
     folders.find((folder) =>

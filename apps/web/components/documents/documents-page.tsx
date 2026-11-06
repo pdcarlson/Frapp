@@ -31,10 +31,21 @@ import {
 } from "@/components/documents/upload-document-panel";
 import { documentTypeOptions } from "@/lib/documents/upload-defaults";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
+/*
+  Keyed by chapter, so switching chapters starts the page over: the upload
+  draft (file, folder, guesses) and the folder on screen belong to the chapter
+  they were made in and must never be offered to the next one.
+*/
 export function DocumentsPage() {
+  const chapterId = useChapterStore((state) => state.activeChapterId);
+  return <ChapterDocumentsPage key={chapterId ?? "none"} />;
+}
+
+function ChapterDocumentsPage() {
   const { toast } = useToast();
   // Every write route on `ChapterDocumentController` (upload URL, confirm,
   // delete) carries no `@FreeTier`, so they are all paid-ops behind the same
@@ -148,9 +159,20 @@ export function DocumentsPage() {
     on the wire until #3642, so this keeps new uploads on the spellings the
     library already uses.
   */
+  /*
+    Read from the unsearched list, never the search results: a search for
+    "rush" must not drop the chapter's "Contract" chip or change where the
+    folder guess files a document. Same query key as the page's own list with
+    no search, so it is normally a cache hit, not a second request.
+  */
+  const libraryQuery = useDocuments();
+  const library = useMemo(
+    () => asArray<ChapterDocument>(libraryQuery.data),
+    [libraryQuery.data],
+  );
   const typeOptions = useMemo(
-    () => documentTypeOptions(documents.map((doc) => doc.document_type)),
-    [documents],
+    () => documentTypeOptions(library.map((doc) => doc.document_type)),
+    [library],
   );
   const folderNames = useMemo(
     () => folders.map((folder) => folder.name),
@@ -160,7 +182,7 @@ export function DocumentsPage() {
     activeFolder,
     typeOptions,
     folders: folderNames,
-    documents,
+    documents: library,
   });
   /*
     Which rows' deletes are in flight — a set, not a scalar. `useDeleteDocument` is pessimistic —
