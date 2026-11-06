@@ -206,14 +206,22 @@ describe("AppNav", () => {
     expect(document.querySelectorAll("nav p")).toHaveLength(0);
   });
 
-  it("offers a collapse toggle in the sidebar and none in the drawer", () => {
-    const { unmount } = renderNav();
+  it("offers a collapse toggle in the column and none in the drawer", () => {
+    const onToggleCollapsed = vi.fn();
+    const { unmount } = renderNav({ onToggleCollapsed });
     expect(
       screen.getByRole("button", { name: /collapse navigation/i }),
     ).toBeInTheDocument();
     unmount();
 
-    renderNav({ variant: "drawer" });
+    // On /chat the column passes no handler, because the rail does not apply.
+    const second = renderNav();
+    expect(
+      screen.queryByRole("button", { name: /collapse navigation/i }),
+    ).not.toBeInTheDocument();
+    second.unmount();
+
+    renderNav({ variant: "drawer", onToggleCollapsed });
     expect(
       screen.queryByRole("button", { name: /collapse navigation/i }),
     ).not.toBeInTheDocument();

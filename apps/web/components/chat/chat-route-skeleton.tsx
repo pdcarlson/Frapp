@@ -17,7 +17,7 @@ import {
  * bottom-up message rows and the composer box.
  *
  * No channels column. From `lg` up the channel list is the dashboard shell's
- * left column (`components/layout/chat-nav-column.tsx`), which draws its own
+ * left column (`components/layout/nav-column.tsx`), which draws its own
  * placeholder while the route loads; a second one here stood beside it, 480px
  * of skeleton, until chat mounted and the thread jumped left. Below `lg` the
  * route opens on the thread, so there was never a column to draw there.
