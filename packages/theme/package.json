@@ -8,7 +8,8 @@
     "./signet.css": "./src/signet.css",
     "./signet": "./src/signet.ts",
     "./glass": "./src/glass.ts",
-    "./nav-glyphs": "./src/nav-glyphs.ts"
+    "./nav-glyphs": "./src/nav-glyphs.ts",
+    "./signature": "./src/signature.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",
