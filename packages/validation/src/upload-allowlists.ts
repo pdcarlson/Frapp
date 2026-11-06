@@ -100,6 +100,17 @@ export const MAX_BACKWORK_UPLOAD_BYTES = 100 * 1024 * 1024;
 export const MAX_BACKWORK_UPLOAD_LABEL = "100 MB";
 
 /**
+ * The backwork zip's caps (owner's rule, 2026-11-05): a zip is offered only
+ * once a search or filter has narrowed the library, and holds at most this
+ * many files and bytes, so nobody pulls a chapter's whole archive at once.
+ * The API refuses more than `MAX_BACKWORK_ZIP_FILES` ids; the browser stops
+ * a zip that passes `MAX_BACKWORK_ZIP_BYTES` as it downloads.
+ */
+export const MAX_BACKWORK_ZIP_FILES = 50;
+export const MAX_BACKWORK_ZIP_BYTES = 250 * 1024 * 1024;
+export const MAX_BACKWORK_ZIP_LABEL = "250 MB";
+
+/**
  * The `archive` kind is NOT a member-upload surface.
  *
  * It exists for one flow: a chapter admin uploading a DiscordChatExporter

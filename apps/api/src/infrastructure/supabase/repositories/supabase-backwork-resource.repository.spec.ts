@@ -155,6 +155,14 @@ describe('SupabaseBackworkResourceRepository — tenant scope', () => {
     expect(resources.map((r) => r.id)).toEqual([RESOURCE_B]);
   });
 
+  it('findByIds signs nothing from another chapter, even when asked by id', async () => {
+    const resources = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByIds([RESOURCE_A, RESOURCE_B], CHAPTER_B),
+    );
+
+    expect(resources.map((r) => r.id)).toEqual([RESOURCE_B]);
+  });
+
   it('findByFileHash does not match an identical upload in another chapter', async () => {
     const existing = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.findByFileHash(CHAPTER_B, FILE_HASH),

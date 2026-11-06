@@ -13,6 +13,7 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiQuery,
   ApiTags,
@@ -44,6 +45,8 @@ import {
   UpdateProfessorDto,
   MergeBackworkTaxonomyDto,
   MergeBackworkTaxonomyResponseDto,
+  BackworkDownloadUrlsQueryDto,
+  BackworkDownloadUrlsResponseDto,
 } from '../dtos/backwork.dto';
 
 @ApiTags('Backwork')
@@ -146,6 +149,23 @@ export class BackworkController {
       document_variant: documentVariant,
       search,
     });
+  }
+
+  // MUST stay above `@Get(':id')`, like `departments` below. A GET, not a
+  // POST, so it stays a read: a lapsed chapter can still download its files,
+  // one at a time or zipped (`enforceSubscription` lets GETs through).
+  @Get('download-urls')
+  @ApiOperation({
+    summary: 'Signed download links for several resources, for a zip',
+  })
+  @ApiOkResponse({ type: BackworkDownloadUrlsResponseDto })
+  async downloadUrls(
+    @CurrentChapterId() chapterId: string,
+    @Query() query: BackworkDownloadUrlsQueryDto,
+  ): Promise<BackworkDownloadUrlsResponseDto> {
+    return {
+      files: await this.backworkService.getDownloadUrls(query.ids, chapterId),
+    };
   }
 
   // MUST stay above `@Get(':id')`. Nest matches routes in declaration order and
