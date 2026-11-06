@@ -18,6 +18,7 @@ const PROFILE: ViewerProfile = {
   initials: "AR",
   email: "alex@example.test",
   graduationYear: 2027,
+  major: "Computer Science",
   currentCity: "Troy, NY",
   currentCompany: null,
   bio: "CS, intramural soccer.",
@@ -34,6 +35,7 @@ describe("draftFromProfile (#3387)", () => {
   it("opens on the profile as it stands, with blanks for unset fields", () => {
     expect(ORIGINAL).toEqual({
       displayName: "Alex Rivera",
+      major: "Computer Science",
       bio: "CS, intramural soccer.",
       graduationYear: "2027",
       city: "Troy, NY",
@@ -44,6 +46,7 @@ describe("draftFromProfile (#3387)", () => {
   it("opens on blanks before the profile has loaded", () => {
     expect(draftFromProfile(null)).toEqual({
       displayName: "",
+      major: "",
       bio: "",
       graduationYear: "",
       city: "",
@@ -112,6 +115,7 @@ describe("profilePatch (#3387)", () => {
 describe("applyEdit and rebaseEdits (#3387)", () => {
   const ORIGINAL = {
     displayName: "Alex Rivera",
+    major: "",
     bio: "",
     graduationYear: "2027",
     city: "Troy, NY",

@@ -1,5 +1,9 @@
 import type { components } from "@repo/api-sdk";
-import { GRADUATION_YEAR_MAX, GRADUATION_YEAR_MIN } from "@repo/validation";
+import {
+  GRADUATION_YEAR_MAX,
+  GRADUATION_YEAR_MIN,
+  MAJOR_MAX_LENGTH,
+} from "@repo/validation";
 import type { ViewerProfile } from "@/lib/more/profile";
 
 /**
@@ -12,8 +16,9 @@ import type { ViewerProfile } from "@/lib/more/profile";
  */
 export type ProfileDraft = {
   displayName: string;
-  bio: string;
+  major: string;
   graduationYear: string;
+  bio: string;
   city: string;
   company: string;
 };
@@ -31,12 +36,14 @@ export type ProfilePatchResult =
   | { ok: false; field: ProfileDraftField; message: string };
 
 export const NAME_REQUIRED_MESSAGE = "Your name can't be empty.";
-export const GRADUATION_YEAR_MESSAGE = `Graduation year is a year between ${GRADUATION_YEAR_MIN} and ${GRADUATION_YEAR_MAX}, like 2027.`;
+export const GRADUATION_YEAR_MESSAGE = `Use a year between ${GRADUATION_YEAR_MIN} and ${GRADUATION_YEAR_MAX}, like 2027.`;
+export const MAJOR_TOO_LONG_MESSAGE = `Keep your major under ${MAJOR_MAX_LENGTH} characters.`;
 
 /** What the sheet opens on: the profile as it stands, blanks for unset. */
 export function draftFromProfile(profile: ViewerProfile | null): ProfileDraft {
   return {
     displayName: profile?.displayName ?? "",
+    major: profile?.major ?? "",
     bio: profile?.bio ?? "",
     graduationYear:
       profile?.graduationYear === null || profile?.graduationYear === undefined
@@ -61,7 +68,7 @@ export function draftFromProfile(profile: ViewerProfile | null): ProfileDraft {
  * - A blank graduation year clears it (`null`); anything else must be a whole
  *   year the API will take, so the refusal comes before a round trip that
  *   would only end in a 400.
- * - Bio, city and company may be cleared; an empty string reads back as "Not
+ * - Major, bio, city and company may be cleared; an empty string reads back as "Not
  *   set" (`lib/more/narrow.ts` `str`).
  */
 export function profilePatch(
@@ -95,6 +102,16 @@ export function profilePatch(
       }
       patch.graduation_year = parsed;
     }
+  }
+
+  const major = draft.major.trim();
+  if (major !== original.major.trim()) {
+    // The field stops at the cap (`maxLength`); this covers a paste that
+    // somehow lands past it, which the API would refuse with a 400.
+    if (major.length > MAJOR_MAX_LENGTH) {
+      return { ok: false, field: "major", message: MAJOR_TOO_LONG_MESSAGE };
+    }
+    patch.major = major;
   }
 
   const bio = draft.bio.trim();
