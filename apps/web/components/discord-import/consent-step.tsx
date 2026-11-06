@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   dashboardCheckboxHitAreaClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
-import { useToast } from "@/lib/hooks/use-toast";
+import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
 
 /**
  * The notice an officer pastes into their Discord server.
@@ -15,13 +14,16 @@ import { useToast } from "@/lib/hooks/use-toast";
  * Written for the members who will read it, not for the officer: what is
  * happening, who will be able to read it, and what to do if they object. It
  * names no date because Frapp doesn't know when the officer will run the
- * export, and no chapter because the server already is the chapter.
+ * export, and no chapter because the server already is the chapter. "The
+ * same people" is what the import keeps: nothing private in Discord becomes
+ * readable by the whole chapter by default (spec/behavior/chat/README.md).
  */
 export const DISCORD_NOTICE =
   "Heads up: we're moving this server's message history into Frapp, our " +
-  "chapter's new app. Every member will be able to read and search it " +
-  "there, old messages included. If there's anything you posted that you'd " +
-  "rather not carry over, delete it or tell an officer before we move it.";
+  "chapter's new app. Old messages come along, and each channel stays " +
+  "readable by the same people who can read it here. If there's anything " +
+  "you posted that you'd rather not carry over, delete it or tell an " +
+  "officer before we move it.";
 
 /**
  * The compliance step.
@@ -45,37 +47,15 @@ export function ConsentStep({
   acknowledged: boolean;
   onChange: (next: boolean) => void;
 }) {
-  const { toast } = useToast();
-  const [copied, setCopied] = useState(false);
-  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(
-    () => () => {
-      if (resetTimer.current) clearTimeout(resetTimer.current);
-    },
-    [],
+  const { copied, copy } = useCopyToClipboard(
+    "Select the message and copy it manually.",
   );
-
-  async function copyNotice() {
-    try {
-      await navigator.clipboard.writeText(DISCORD_NOTICE);
-      setCopied(true);
-      if (resetTimer.current) clearTimeout(resetTimer.current);
-      resetTimer.current = setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast({
-        title: "Copy failed",
-        description: "Select the message and copy it manually.",
-        variant: "destructive",
-      });
-    }
-  }
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Post this in your Discord first, so members can object before their
-        messages move.
+        Post this in your Discord, then give members time to respond before you
+        export.
       </p>
 
       <figure className="rounded-lg border border-border bg-surface-1">
@@ -87,7 +67,7 @@ export function ConsentStep({
             type="button"
             variant="ghost"
             size="sm"
-            onClick={copyNotice}
+            onClick={() => copy(DISCORD_NOTICE)}
             aria-label={copied ? "Message copied" : "Copy message"}
           >
             {copied ? <Check /> : <Copy />}
