@@ -102,6 +102,7 @@ export function userFixture(overrides: Partial<User> = {}): User {
     avatar_url: null,
     bio: null,
     graduation_year: null,
+    major: null,
     current_city: null,
     current_company: null,
     active_chapter_id: null,

@@ -32,6 +32,7 @@ const PROFILE: ViewerProfile = {
   initials: "AR",
   email: "alex@example.test",
   graduationYear: 2027,
+  major: null,
   currentCity: "Troy, NY",
   currentCompany: null,
   bio: null,
@@ -147,6 +148,7 @@ describe("EditProfileSheet (#3387)", () => {
     const tree = render();
 
     expect(input(tree, "Name").props.value).toBe("Alex Rivera");
+    expect(input(tree, "Major").props.value).toBe("");
     expect(input(tree, "Graduation year").props.value).toBe("2027");
     expect(input(tree, "City").props.value).toBe("Troy, NY");
     expect(input(tree, "Company").props.value).toBe("");
@@ -203,24 +205,65 @@ describe("EditProfileSheet (#3387)", () => {
     expect(saveButton(tree).props.disabled).toBe(true);
   });
 
-  it("refuses a blank name inline and sends nothing", () => {
+  it("refuses a blank name once Save is pressed, and sends nothing", () => {
     const tree = render();
 
     type(tree, "Name", "  ");
-    expect(screenText(tree)).toContain("Your name can't be empty.");
-    expect(saveButton(tree).props.disabled).toBe(true);
+    // Still being typed: no error yet (components.md, "When an error shows").
+    expect(screenText(tree)).not.toContain("Your name can't be empty.");
+    // And Save stays pressable, so pressing it can say why: a greyed Save
+    // over an error the member can't see yet is a dead end.
+    expect(saveButton(tree).props.disabled).toBe(false);
     act(() => {
       saveButton(tree).props.onPress();
     });
+    expect(screenText(tree)).toContain("Your name can't be empty.");
     expect(mutate).not.toHaveBeenCalled();
+  });
+
+  // The reported bug: "2" on the way to "2027" turned the field red.
+  it("waits for the member to leave the year before refusing it", () => {
+    const tree = render();
+
+    type(tree, "Graduation year", "2");
+    type(tree, "Graduation year", "20");
+    expect(screenText(tree)).not.toContain("Use a year between");
+    // The last style slot is the invalid border.
+    expect(input(tree, "Graduation year").props.style.at(-1)).toBeNull();
+
+    act(() => {
+      input(tree, "Graduation year").props.onBlur();
+    });
+    expect(screenText(tree)).toContain("Use a year between");
+
+    // From here it follows the value, so the fix clears it at once.
+    type(tree, "Graduation year", "2028");
+    expect(screenText(tree)).not.toContain("Use a year between");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    expect(mutate.mock.calls[0]![0]).toEqual({ graduation_year: 2028 });
   });
 
   it("refuses a graduation year the API would reject", () => {
     const tree = render();
 
     type(tree, "Graduation year", "1850");
-    expect(screenText(tree)).toContain("Graduation year is a year between");
-    expect(saveButton(tree).props.disabled).toBe(true);
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    expect(screenText(tree)).toContain("Use a year between");
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("sends a major", () => {
+    const tree = render();
+
+    type(tree, "Major", " Economics ");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    expect(mutate.mock.calls[0]![0]).toEqual({ major: "Economics" });
   });
 
   it("keeps the draft and says so when a save fails", () => {
@@ -312,12 +355,67 @@ describe("EditProfileSheet (#3387)", () => {
 
   // `display_name` defaults to '' and reads back as unset, so a member who
   // never set a name opens Edit on a blank Name field.
+  it("keeps Save off over a stored blank name until something is typed", () => {
+    const tree = render({ ...PROFILE, displayName: null });
+
+    expect(saveButton(tree).props.disabled).toBe(true);
+  });
+
+  it("says what's wrong with the year under the whole row, not in its column", () => {
+    const tree = render();
+
+    type(tree, "Graduation year", "20");
+    act(() => {
+      input(tree, "Graduation year").props.onBlur();
+    });
+    const alert = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        node.props.accessibilityRole === "alert",
+    );
+    expect(
+      screenText({ root: alert } as unknown as ReactTestRenderer),
+    ).toContain("Use a year between");
+    // Not inside the 96-wide column that holds the year's field, or the
+    // Major / Grad year row.
+    let ancestor = input(tree, "Graduation year").parent;
+    for (let depth = 0; depth < 2 && ancestor; depth += 1) {
+      expect(ancestor.findAll((node) => node === alert)).toHaveLength(0);
+      ancestor = ancestor.parent;
+    }
+  });
+
+  // Paul, 2026-11-06: an undergrad has no after-graduation city or company.
+  it("hides City and Company until the graduation year arrives", () => {
+    const undergrad = { ...PROFILE, graduationYear: 2099, currentCity: null };
+    const tree = render(undergrad);
+
+    expect(screenText(tree)).not.toContain("After graduation");
+    expect(() => input(tree, "City")).toThrow();
+
+    type(tree, "Graduation year", "2020");
+    expect(screenText(tree)).toContain("After graduation");
+    expect(input(tree, "City").props.value).toBe("");
+  });
+
+  it("keeps City showing for an undergrad who already has one, so it can be cleared", () => {
+    const tree = render({ ...PROFILE, graduationYear: 2099 });
+
+    expect(input(tree, "City").props.value).toBe("Troy, NY");
+    type(tree, "City", "");
+    expect(input(tree, "City").props.value).toBe("");
+  });
+
   it("opens on a blank name without calling it an error", () => {
     const tree = render({ ...PROFILE, displayName: null });
 
     expect(input(tree, "Name").props.value).toBe("");
     expect(screenText(tree)).not.toContain("Your name can't be empty.");
     type(tree, "Company", "Acme");
+    expect(screenText(tree)).not.toContain("Your name can't be empty.");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
     expect(screenText(tree)).toContain("Your name can't be empty.");
   });
 
@@ -384,6 +482,9 @@ describe("EditProfileSheet (#3387)", () => {
 
     type(tree, "Name", "");
     type(tree, "Company", "Acme");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
     expect(screenText(tree)).toContain("Your name can't be empty.");
     act(() => {
       modal(tree).props.onDismiss();
