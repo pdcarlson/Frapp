@@ -96,6 +96,20 @@ const mocks = vi.hoisted(() => {
 // The Blocked members card reads the block list and the unblock flow, and has
 // its own spec (`blocked-members-card.spec.tsx`). These cases are about the
 // other cards, so it renders as an inert stand-in here.
+// `@repo/validation`'s beta list, emptied so these specs draw every
+// notification switch as they do with dues on. The beta's own case, dues
+// off, sets `betaOff.keys`.
+const betaOff = vi.hoisted(() => ({ keys: [] as string[] }));
+vi.mock("@repo/validation/beta-off-modules", () => ({
+  get BETA_OFF_MODULES() {
+    return betaOff.keys;
+  },
+  isBetaOffModule: (key: string) => betaOff.keys.includes(key),
+}));
+afterEach(() => {
+  betaOff.keys = [];
+});
+
 vi.mock("@/components/profile/blocked-members-card", () => ({
   BlockedMembersCard: () => null,
 }));
@@ -872,6 +886,13 @@ describe("ProfilePanel — notification categories (#564)", () => {
         }),
       ).toBeTruthy();
     }
+  });
+
+  it("draws no Billing switch while dues is beta-off", () => {
+    betaOff.keys = ["dues"];
+    render(<ProfilePanel />);
+    expect(categorySwitches()).toHaveLength(NOTIFICATION_CATEGORIES.length - 1);
+    expect(screen.queryByRole("switch", { name: /^billing$/i })).toBeNull();
   });
 
   // The hydrate case. An absent row means enabled — that is what the server

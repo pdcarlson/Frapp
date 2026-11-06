@@ -643,6 +643,7 @@ export {
 // how two surfaces come to disagree about what a member's switches say.
 export {
   NOTIFICATION_CATEGORIES,
+  shownNotificationCategories,
   isNotificationCategoryKey,
   defaultNotificationCategoryState,
   rowsToNotificationCategoryState,

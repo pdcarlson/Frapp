@@ -17,8 +17,8 @@ import {
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
   isNotificationCategoryKey,
-  NOTIFICATION_CATEGORIES,
   localTimeZone,
+  shownNotificationCategories,
   rowsToNotificationCategoryState,
   timeZoneCity,
   type NotificationCategoryKey,
@@ -805,7 +805,7 @@ export function ProfilePanel() {
           {categoriesState ?? (
             <div className="space-y-4">
               <ul className={denseListClassName}>
-                {NOTIFICATION_CATEGORIES.map((category) => {
+                {shownNotificationCategories().map((category) => {
                   const switchId = `notification-category-${category.key}`;
                   const descriptionId = `${switchId}-description`;
                   return (
