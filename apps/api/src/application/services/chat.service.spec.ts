@@ -3375,9 +3375,9 @@ describe('ChatService', () => {
     it('answers an empty list without an access lookup when no channel has a message', async () => {
       mockMessageRepo.findLatestPerChannel.mockResolvedValue([]);
 
-      await expect(service.getLatestMessages('ch-1', 'user-1')).resolves.toEqual(
-        [],
-      );
+      await expect(
+        service.getLatestMessages('ch-1', 'user-1'),
+      ).resolves.toEqual([]);
       expect(mockChannelRepo.findByIds).not.toHaveBeenCalled();
     });
   });

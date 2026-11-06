@@ -440,7 +440,7 @@ export class ChannelLatestMessageDto {
     format: 'uuid',
     nullable: true,
     description:
-      'The sender\'s `users.id`, or null for an imported archive message, which carries `author_name` instead.',
+      "The sender's `users.id`, or null for an imported archive message, which carries `author_name` instead.",
   })
   sender_id: string | null;
 
@@ -453,7 +453,9 @@ export class ChannelLatestMessageDto {
   })
   content: string;
 
-  @ApiProperty({ description: 'The message kind (`text`, `event`, `system_audit`, ...).' })
+  @ApiProperty({
+    description: 'The message kind (`text`, `event`, `system_audit`, ...).',
+  })
   kind: string;
 
   @ApiProperty({

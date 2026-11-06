@@ -1408,10 +1408,7 @@ export class ChatService {
     chapterId: string,
     userId: string,
   ): Promise<ChannelLatestMessage[]> {
-    const rows = await this.messageRepo.findLatestPerChannel(
-      chapterId,
-      userId,
-    );
+    const rows = await this.messageRepo.findLatestPerChannel(chapterId, userId);
     if (rows.length === 0) return [];
     const [accessible, hidden] = await Promise.all([
       this.channelAccess.filterAccessibleChannelIds(
