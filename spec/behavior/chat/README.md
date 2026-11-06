@@ -916,7 +916,9 @@ channel that reports a different one fails the import rather than being skipped.
     role either.
 - **Consent is a deliberate friction point.** The admin must confirm they posted
   an in-channel notice in their Discord server before an import can be created.
-  Frapp cannot verify it, and says so — but
+  The step hands them that notice ready to copy (`DISCORD_NOTICE` in
+  `apps/web/components/discord-import/consent-step.tsx`); copying it is not
+  the answer, the box is. Frapp cannot verify it — but
   `discord_imports.consent_acknowledged_at` is NOT NULL, so no import exists
   anywhere in the system that skipped the question.
 - **An import is bounded, and so is a chapter's archive.** Both import paths
