@@ -116,11 +116,9 @@ export default function EventsScreen() {
         <EmptyState
           glyph="◷"
           title="Nothing scheduled"
-          body={
-            canCreateEvents
-              ? "Your chapter has nothing coming up. Tap + to add an event."
-              : "Your chapter has nothing coming up."
-          }
+          // The title says it; only the way to change it is worth a line
+          // (`writing.md` § 4, Empty states).
+          body={canCreateEvents ? "Tap + to add an event." : undefined}
         />
       );
     }

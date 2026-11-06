@@ -1,20 +1,24 @@
+import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
 import {
-  forwardRef,
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
+  Keyboard,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import {
   BottomSheetModal,
   BottomSheetTextInput,
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
+import DateTimePicker, {
+  DateTimePickerAndroid,
+} from "@react-native-community/datetimepicker";
+import { formatWeekdayDay } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { useCreateEvent, usePermissionList } from "@repo/hooks";
-import { can } from "@repo/validation";
+import { canAll } from "@repo/validation";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import {
   useChapterBranding,
@@ -32,26 +36,22 @@ import {
   useSheetVisit,
 } from "@/components/sheet-scaffold";
 import { Toggle } from "@/components/toggle";
-import { CalendarGlyph } from "@/components/tasks/task-glyphs";
-import { DayCalendar, TimeGrid } from "@/components/events/event-when-pickers";
 import {
+  EVENT_NAME_MAX_LENGTH,
   emptyEventDraft,
-  endsNextDay,
-  formatClock,
-  formatEventDay,
-  resolveEventDate,
+  MINUTE_INTERVAL,
+  resolveEventTimes,
   shiftEnd,
   validateNewEvent,
+  withDay,
   type NewEventDraft,
   type NewEventErrors,
 } from "@/lib/events/create-event";
-import { TITLE_MAX_LENGTH } from "@/lib/tasks/limits";
+import { formatEventClock } from "@/lib/events/format";
+import { gateRefusalOf } from "@/lib/chat/gated-upload";
 import { successHaptic } from "@/lib/haptics";
-import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
-import {
-  SUBSCRIPTION_REFUSAL_COPY,
-  subscriptionRefusalOf,
-} from "@/lib/subscription-refusal";
+import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
+import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 
 /**
  * The "New event" bottom sheet: an officer's quick create on the phone.
@@ -62,27 +62,28 @@ import {
  *
  * ## What it asks
  *
- * Name, day, start, end, place, points and Mandatory. The rest of the web
- * editor (description, recurrence, role targeting, the check-in zone) stays
- * there, as it does for the `/event` chat command; `lib/events/create-event.ts`
+ * Name, start, end, place, points and Mandatory. The rest of the web editor
+ * (description, recurrence, role targeting, the check-in zone) stays there,
+ * as it does for the `/event` chat command; `lib/events/create-event.ts`
  * holds the rules. Mandatory starts off, as `/event` creates it: a mandatory
  * event marks everyone who misses it absent, so it is a choice, not a default.
  *
- * ## One picker at a time, under its field
+ * ## The platform's own pickers
  *
- * The day and the two times are fields that read back what is picked. A tap
- * opens that field's picker under it and closes any other, and a second tap
- * closes it, so the sheet never shows every option at once. Moving the start
- * moves the end with it, keeping the event's length. An end before the start
- * is the next morning, and the field says so.
+ * Starts and Ends are rows laid out the way Calendar's are: a day and a time,
+ * each opening the system picker. On iOS they are the native compact pickers,
+ * whose popovers are the calendar and the time wheel; on Android a tap opens
+ * the Material date or time dialog. Moving the start drags the end along,
+ * keeping the event's length. Nothing is drawn by hand, so the pickers read
+ * as the phone's own (owner, 2026-11-06, after a hand-drawn grid).
  *
  * ## Errors wait for Create
  *
- * Nothing is checked per keystroke. Create runs the checks and shows what
- * stops it under the field it belongs to; from then on an error clears as
- * soon as the field is fixed. The draft keeps the sheets' rules
- * (`spec/ui/mobile/patterns.md` § Bottom sheets): it outlives a close, not a
- * Cancel, and is read-only while a create runs, with Cancel held.
+ * Nothing is checked as the officer types. Create runs the checks and shows
+ * what stops it under the field it belongs to; editing that field clears its
+ * line, and nothing reappears until the next Create. The draft keeps the
+ * sheets' rules (`spec/ui/mobile/patterns.md` § Bottom sheets): it outlives a
+ * close, not a Cancel, and is read-only while a create runs, with Cancel held.
  */
 
 export interface NewEventSheetProps {
@@ -92,13 +93,24 @@ export interface NewEventSheetProps {
   onCreated?: () => void;
 }
 
-/** Whether the viewer may create events (`POST /v1/events`). */
+/**
+ * The permissions `POST /v1/events` needs: the route's `events:create`, plus
+ * the controller's class-level `members:view`, which `PermissionsGuard`
+ * requires alongside it. Offering the button on `events:create` alone would
+ * hand a custom role a sheet whose every save is refused.
+ */
+const CREATE_EVENT_PERMISSIONS = ["events:create", "members:view"] as const;
+
+/** Whether the viewer may create events. */
 export function useCanCreateEvents(): boolean {
-  // `can`, not `includes`: an owner's grant is the wildcard `*`.
-  return can("events:create", usePermissionList());
+  // `canAll`, not `includes`: an owner's grant is the wildcard `*`.
+  return canAll(CREATE_EVENT_PERMISSIONS, usePermissionList());
 }
 
-type Panel = "date" | "start" | "end";
+const GATE_COPY = {
+  subscription: SUBSCRIPTION_REFUSAL_COPY.event,
+  module: MODULE_REFUSAL_COPY.event,
+};
 
 export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
   function NewEventSheet({ now, onCreated }, ref) {
@@ -112,46 +124,47 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     const createEvent = useCreateEvent();
 
     const at = useMemo(() => now ?? new Date(), [now]);
-    const [draft, setDraft] = useState<NewEventDraft>(() =>
-      emptyEventDraft(at),
-    );
-    const [panel, setPanel] = useState<Panel | null>(null);
+    const [draft, setDraft] = useState<NewEventDraft>(emptyEventDraft);
     const [focused, setFocused] = useState<"name" | "location" | null>(null);
-    // Set by Create; until then nothing reads as wrong.
-    const [showErrors, setShowErrors] = useState(false);
+    // Written by Create; a field's line goes when that field is edited.
+    const [errors, setErrors] = useState<NewEventErrors>({});
     const [submitFailed, setSubmitFailed] = useState(false);
     /** A gate refusal's member copy: retrying can't win, so Create goes. */
     const [refusal, setRefusal] = useState<string | null>(null);
     const sending = useRef(false);
 
     const pending = createEvent.isPending;
-    // A kept draft whose day has passed falls back to the default day.
-    const date = resolveEventDate(draft.date, at);
-    const current = { ...draft, date };
-    const result = validateNewEvent(current);
-    const errors: NewEventErrors =
-      showErrors && !result.ok ? result.errors : {};
+    const { start, end } = resolveEventTimes(draft, at);
     const canSubmit = !pending && refusal === null;
 
     const update = useCallback(
-      (patch: Partial<NewEventDraft>) => {
+      (patch: Partial<NewEventDraft>, clears: (keyof NewEventErrors)[]) => {
         if (pending) return;
         setDraft((previous) => ({ ...previous, ...patch }));
+        setErrors((previous) => {
+          if (!clears.some((key) => previous[key])) return previous;
+          const next = { ...previous };
+          for (const key of clears) delete next[key];
+          return next;
+        });
       },
       [pending],
     );
 
-    function togglePanel(next: Panel) {
-      if (pending) return;
-      Keyboard.dismiss();
-      setPanel((open) => (open === next ? null : next));
+    function setStart(next: Date) {
+      update({ start: next, end: shiftEnd({ start, end }, next) }, [
+        "start",
+        "end",
+      ]);
+    }
+    function setEnd(next: Date) {
+      update({ start, end: next }, ["end"]);
     }
 
     const reset = useCallback(() => {
-      setDraft(emptyEventDraft(new Date()));
-      setPanel(null);
+      setDraft(emptyEventDraft());
       setFocused(null);
-      setShowErrors(false);
+      setErrors({});
       setSubmitFailed(false);
       setRefusal(null);
     }, []);
@@ -159,7 +172,6 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     /** A swipe or scrim close: the draft stays, the visit's state goes. */
     const closed = useCallback(() => {
       markClosed();
-      setPanel(null);
       setFocused(null);
       setSubmitFailed(false);
       setRefusal(null);
@@ -173,15 +185,16 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
 
     function submit() {
       if (!canSubmit || sending.current) return;
-      setShowErrors(true);
+      // Read against the real clock: the host's ticks once a minute.
+      const result = validateNewEvent(draft, new Date());
       if (!result.ok) {
-        setPanel(null);
+        setErrors(result.errors);
         return;
       }
       sending.current = true;
+      setErrors({});
       setSubmitFailed(false);
       setRefusal(null);
-      setPanel(null);
       Keyboard.dismiss();
       const sentFrom = visit();
       createEvent.mutate(result.body, {
@@ -196,20 +209,12 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
         onError: (error) => {
           sending.current = false;
           if (!isSameVisit(sentFrom)) return;
-          if (subscriptionRefusalOf(error)) {
-            setRefusal(SUBSCRIPTION_REFUSAL_COPY.event);
-            return;
-          }
-          if (moduleRefusalOf(error)) {
-            setRefusal(MODULE_REFUSAL_COPY.event);
-            return;
-          }
-          setSubmitFailed(true);
+          const gated = gateRefusalOf(error, GATE_COPY);
+          if (gated) setRefusal(gated);
+          else setSubmitFailed(true);
         },
       });
     }
-
-    const nextDay = endsNextDay(draft.start, draft.end);
 
     return (
       <BottomSheetModal
@@ -235,17 +240,14 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
           >
             <BottomSheetTextInput
               value={draft.name}
-              onChangeText={(name) => update({ name })}
-              onFocus={() => {
-                setFocused("name");
-                setPanel(null);
-              }}
+              onChangeText={(name) => update({ name }, ["name"])}
+              onFocus={() => setFocused("name")}
               onBlur={() => setFocused(null)}
               editable={!pending}
-              placeholder="Chapter meeting"
+              placeholder="Event name"
               placeholderTextColor={tokens.color.text.muted}
               accessibilityLabel="Event name"
-              maxLength={TITLE_MAX_LENGTH}
+              maxLength={EVENT_NAME_MAX_LENGTH}
               style={[
                 styles.field,
                 focused === "name" ? styles.fieldFocused : null,
@@ -255,73 +257,29 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
           </View>
           {errors.name ? <Text style={styles.error}>{errors.name}</Text> : null}
 
-          <FieldButton
-            accessibilityLabel={`Day: ${formatEventDay(date)}`}
-            accessibilityHint="Choose the day."
-            open={panel === "date"}
-            disabled={pending}
-            onPress={() => togglePanel("date")}
-          >
-            <CalendarGlyph color={tokens.color.text.mutedForeground} />
-            <Text style={styles.fieldValue}>{formatEventDay(date)}</Text>
-          </FieldButton>
-          {panel === "date" ? (
-            <DayCalendar
-              value={date}
+          <View style={styles.group}>
+            <WhenRow
+              label="Starts"
+              value={start}
               now={at}
-              onChange={(picked) => {
-                update({ date: picked });
-                setPanel(null);
-              }}
+              minimumDate={at}
+              disabled={pending}
+              onChange={setStart}
             />
-          ) : null}
-
-          <View style={styles.splitRow}>
-            <FieldButton
-              accessibilityLabel={`Starts ${formatClock(draft.start)}`}
-              accessibilityHint="Choose the start time."
-              open={panel === "start"}
+            <View style={styles.groupDivider} />
+            <WhenRow
+              label="Ends"
+              value={end}
+              now={at}
+              minimumDate={start}
               disabled={pending}
-              onPress={() => togglePanel("start")}
-              invalid={Boolean(errors.time)}
-              flex
-            >
-              <Text style={styles.fieldCaption}>Starts</Text>
-              <Text style={styles.fieldValue}>{formatClock(draft.start)}</Text>
-            </FieldButton>
-            <FieldButton
-              accessibilityLabel={`Ends ${formatClock(draft.end)}${
-                nextDay ? ", the next day" : ""
-              }`}
-              accessibilityHint="Choose the end time."
-              open={panel === "end"}
-              disabled={pending}
-              onPress={() => togglePanel("end")}
-              invalid={Boolean(errors.time)}
-              flex
-            >
-              <Text style={styles.fieldCaption}>Ends</Text>
-              <Text style={styles.fieldValue}>{formatClock(draft.end)}</Text>
-              {nextDay ? <Text style={styles.fieldCaption}>+1 day</Text> : null}
-            </FieldButton>
+              onChange={setEnd}
+            />
           </View>
-          {panel === "start" ? (
-            <TimeGrid
-              label="Start time"
-              value={draft.start}
-              onChange={(start) =>
-                update({ start, end: shiftEnd(draft.start, draft.end, start) })
-              }
-            />
+          {errors.start ? (
+            <Text style={styles.error}>{errors.start}</Text>
           ) : null}
-          {panel === "end" ? (
-            <TimeGrid
-              label="End time"
-              value={draft.end}
-              onChange={(end) => update({ end })}
-            />
-          ) : null}
-          {errors.time ? <Text style={styles.error}>{errors.time}</Text> : null}
+          {errors.end ? <Text style={styles.error}>{errors.end}</Text> : null}
 
           <View
             style={[
@@ -331,11 +289,8 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
           >
             <BottomSheetTextInput
               value={draft.location}
-              onChangeText={(location) => update({ location })}
-              onFocus={() => {
-                setFocused("location");
-                setPanel(null);
-              }}
+              onChangeText={(location) => update({ location }, [])}
+              onFocus={() => setFocused("location")}
               onBlur={() => setFocused(null)}
               editable={!pending}
               placeholder="Location (optional)"
@@ -361,8 +316,9 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
               </Text>
               <BottomSheetTextInput
                 value={draft.pointsInput}
-                onChangeText={(pointsInput) => update({ pointsInput })}
-                onFocus={() => setPanel(null)}
+                onChangeText={(pointsInput) =>
+                  update({ pointsInput }, ["points"])
+                }
                 editable={!pending}
                 placeholder="0"
                 placeholderTextColor={tokens.color.text.muted}
@@ -376,7 +332,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
               <Text style={styles.fieldValue}>Mandatory</Text>
               <Toggle
                 value={draft.isMandatory}
-                onValueChange={(isMandatory) => update({ isMandatory })}
+                onValueChange={(isMandatory) => update({ isMandatory }, [])}
                 accessibilityLabel="Mandatory"
               />
             </View>
@@ -407,54 +363,111 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
 );
 
 /**
- * A field that opens a picker rather than taking text. Open, it wears the
- * focus border a text field does, so the field and its picker read as one.
+ * One row of the When group: its label, then the day and the time. On iOS
+ * each is the system's compact picker; elsewhere each is a pill that opens
+ * the platform's dialog. `platform` is a prop so a spec can draw either.
  */
-function FieldButton({
-  open,
+export function WhenRow({
+  label,
+  value,
+  now,
+  minimumDate,
   disabled,
-  invalid = false,
-  flex = false,
-  onPress,
-  accessibilityLabel,
-  accessibilityHint,
-  children,
+  onChange,
+  platform = Platform.OS,
 }: {
-  open: boolean;
+  label: "Starts" | "Ends";
+  value: Date;
+  now: Date;
+  minimumDate: Date;
   disabled: boolean;
-  invalid?: boolean;
-  flex?: boolean;
-  onPress: () => void;
-  accessibilityLabel: string;
-  accessibilityHint: string;
-  children: ReactNode;
+  onChange: (next: Date) => void;
+  platform?: string;
 }) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand);
+  // The day may not go before the minimum's day; the time is checked on
+  // Create, since a minimum time would also stop a later day's early hours.
+  const minimumDay = new Date(
+    minimumDate.getFullYear(),
+    minimumDate.getMonth(),
+    minimumDate.getDate(),
+  );
+  const day = formatWeekdayDay(value, now) ?? "";
+  const time = formatEventClock(value);
+
+  if (platform === "ios") {
+    const shared = {
+      value,
+      display: "compact" as const,
+      themeVariant: "dark" as const,
+      accentColor: brand.accent,
+      disabled,
+    };
+    return (
+      <View style={styles.whenRow}>
+        <Text style={styles.whenLabel}>{label}</Text>
+        <View style={styles.whenPickers}>
+          <DateTimePicker
+            {...shared}
+            mode="date"
+            minimumDate={minimumDay}
+            accessibilityLabel={`${label} day, ${day}`}
+            onValueChange={(_event, picked) => onChange(withDay(value, picked))}
+          />
+          <DateTimePicker
+            {...shared}
+            mode="time"
+            minuteInterval={MINUTE_INTERVAL}
+            accessibilityLabel={`${label} time, ${time}`}
+            onValueChange={(_event, picked) => onChange(withDay(picked, value))}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  function open(mode: "date" | "time") {
+    Keyboard.dismiss();
+    DateTimePickerAndroid.open({
+      value,
+      mode,
+      ...(mode === "date" ? { minimumDate: minimumDay } : {}),
+      onValueChange: (_event, picked) =>
+        onChange(
+          mode === "date" ? withDay(value, picked) : withDay(picked, value),
+        ),
+    });
+  }
+
   return (
-    <View
-      style={[
-        styles.ring,
-        open ? styles.ringActive : null,
-        flex ? styles.splitField : null,
-      ]}
-    >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={accessibilityLabel}
-        accessibilityHint={accessibilityHint}
-        accessibilityState={{ expanded: open, disabled }}
-        disabled={disabled}
-        onPress={onPress}
-        style={[
-          styles.field,
-          open ? styles.fieldFocused : null,
-          invalid ? styles.fieldError : null,
-        ]}
-      >
-        {children}
-      </Pressable>
+    <View style={styles.whenRow}>
+      <Text style={styles.whenLabel}>{label}</Text>
+      <View style={styles.whenPickers}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${label} day, ${day}`}
+          accessibilityHint="Opens the date picker."
+          accessibilityState={{ disabled }}
+          disabled={disabled}
+          onPress={() => open("date")}
+          style={styles.pill}
+        >
+          <Text style={styles.pillText}>{day}</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${label} time, ${time}`}
+          accessibilityHint="Opens the time picker."
+          accessibilityState={{ disabled }}
+          disabled={disabled}
+          onPress={() => open("time")}
+          style={styles.pill}
+        >
+          <Text style={styles.pillText}>{time}</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -478,6 +491,46 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     fieldFocused: fieldStyles.fieldFocused,
     fieldError: {
       borderColor: tokens.color.semantic.destructive,
+    },
+    // Starts and Ends as one grouped field, the way Calendar sets them.
+    group: {
+      borderRadius: tokens.radius.control,
+      borderWidth: 1,
+      borderColor: tokens.color.border.input,
+      backgroundColor: tokens.color.surface.surface1,
+      paddingHorizontal: tokens.spacing.md,
+    },
+    groupDivider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: tokens.color.border.hairline,
+    },
+    whenRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      minHeight: tokens.touch.minimum + tokens.spacing.xs,
+      gap: tokens.spacing.sm,
+    },
+    whenLabel: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
+    },
+    whenPickers: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+    },
+    // The Android stand-in for iOS's compact pill: a quiet chip, tappable.
+    pill: {
+      minHeight: 34,
+      justifyContent: "center",
+      paddingHorizontal: tokens.spacing.md,
+      borderRadius: tokens.radius.chip,
+      backgroundColor: tokens.color.surface.popover,
+    },
+    pillText: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
     },
     splitRow: {
       flexDirection: "row",
