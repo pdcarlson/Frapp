@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useFocusEffect } from "expo-router";
+import { Redirect, useFocusEffect } from "expo-router";
 import { focusManager } from "@tanstack/react-query";
 import { AppState, StyleSheet, Text, View } from "react-native";
 import type { AppStateStatus } from "react-native";
@@ -13,6 +13,7 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { isBetaOffModule } from "@repo/validation";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { useDuesMemory } from "@/lib/dues/visit-memory";
 import { ScreenShell } from "@/components/screen-shell";
@@ -261,6 +262,13 @@ interface PayFailure {
  */
 export default function DuesScreen() {
   const chapterId = useActiveChapterId();
+  // More hides the row while dues is beta-off; this catches a way in that
+  // skips More, such as a billing notification. A chapter's own dues switch
+  // doesn't close the screen, so a member can still pay an invoice the
+  // chapter already sent.
+  if (isBetaOffModule("dues")) {
+    return <Redirect href="/more" />;
+  }
   return <ChapterDues key={chapterId ?? "no-chapter"} />;
 }
 

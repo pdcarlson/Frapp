@@ -17,6 +17,14 @@ import { expectBackRow } from "@/test/back-row";
  * yet, and every mutation an idle one: the back row is drawn before any of
  * the screen's data, which is the state a member opening a slow screen sees.
  */
+// `@repo/validation`'s beta list, emptied: s11 Dues is drawn as a chapter
+// with dues on sees it. While dues is beta-off the screen sends a visitor back
+// to More instead (`lib/dues/dues-screen.spec.tsx`).
+vi.mock("@repo/validation/beta-off-modules", () => ({
+  BETA_OFF_MODULES: [],
+  isBetaOffModule: () => false,
+}));
+
 vi.mock("@repo/hooks", async (importOriginal) => {
   const real = await importOriginal<Record<string, unknown>>();
   const loading = {

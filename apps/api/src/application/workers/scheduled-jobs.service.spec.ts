@@ -13,6 +13,14 @@ import { SCHEDULED_JOBS_REPOSITORY } from '#domain/repositories/scheduled-jobs.r
 import { SIGNET_ENGINE_VERSION } from '@repo/chapter-theme';
 import { buildChapterPalette } from '../services/chapter-palette';
 
+// The beta list, controllable per test: the sweep's own rules are pinned with
+// dues on, and the beta's case (dues off, nothing sent) sets `mockBetaOff.keys`.
+const mockBetaOff: { keys: string[] } = { keys: [] };
+jest.mock('@repo/validation', () => ({
+  ...jest.requireActual<typeof import('@repo/validation')>('@repo/validation'),
+  isBetaOffModule: (key: string) => mockBetaOff.keys.includes(key),
+}));
+
 jest.mock('@sentry/nestjs', () => ({
   ...jest.requireActual<object>('@sentry/nestjs'),
   captureException: jest.fn(() => 'event-exception'),
@@ -526,6 +534,20 @@ describe('ScheduledJobsService', () => {
   });
 
   describe('sweepInvoiceReminders', () => {
+    afterEach(() => {
+      mockBetaOff.keys = [];
+    });
+
+    it('sends nothing, and reads no invoices, while dues is beta-off', async () => {
+      mockBetaOff.keys = ['dues'];
+      findOpenInvoicesDueBetween.mockResolvedValue([INVOICE]);
+
+      await expect(service.sweepInvoiceReminders(NOW)).resolves.toEqual({
+        sent: 0,
+      });
+      expect(findOpenInvoicesDueBetween).not.toHaveBeenCalled();
+    });
+
     it('notifies the member about an invoice due tomorrow', async () => {
       findOpenInvoicesDueBetween.mockResolvedValue([INVOICE]);
 
