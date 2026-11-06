@@ -28,6 +28,16 @@ describe("selectPointsSummary", () => {
 });
 
 describe("selectHouseRank", () => {
+  // The board lists the roster at 0, so a new chapter is everyone tied first.
+  it("ranks a whole roster at 0 as tied for first", () => {
+    const fresh = [
+      { user_id: "a", total: 0 },
+      { user_id: ME, total: 0 },
+      { user_id: "c", total: 0 },
+    ];
+    expect(selectHouseRank(fresh, ME)).toEqual({ rank: 1, of: 3 });
+  });
+
   const board = [
     { user_id: "a", total: 2000 },
     { user_id: "b", total: 1500 },
@@ -54,8 +64,8 @@ describe("selectHouseRank", () => {
   });
 
   it("returns null when the viewer has no standing to report", () => {
-    // A member with no transactions this window is absent from the leaderboard;
-    // the card draws an em dash, not a last place they did not earn.
+    // Someone the board leaves out (an alumnus with no points this window) gets
+    // an em dash, not a place they don't hold.
     expect(selectHouseRank(board, "stranger")).toBeNull();
     expect(selectHouseRank([], ME)).toBeNull();
     expect(selectHouseRank(board, null)).toBeNull();
