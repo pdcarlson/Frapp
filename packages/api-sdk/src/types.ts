@@ -1019,7 +1019,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Everyone who can read a channel, with their top role rank */
+        get: operations["ChatController_listChannelMembers_v1"];
         put?: never;
         /** Add a chapter member to a private channel */
         post: operations["ChatController_addChannelMember_v1"];
@@ -3883,6 +3884,15 @@ export interface components {
         CreateGroupDmDto: {
             member_ids: string[];
             name?: string;
+        };
+        ChannelMemberDto: {
+            /**
+             * Format: uuid
+             * @description The member's `users.id`.
+             */
+            user_id: string;
+            /** @description The `display_order` of the member's highest role (lower ranks higher), or null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`. */
+            role_rank: number | null;
         };
         AddChannelMemberDto: {
             /** @description The `users.id` to add. Must be a member of the channel's chapter. */
@@ -7380,6 +7390,36 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_listChannelMembers_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelMemberDto"][];
+                };
             };
             /** @description Error */
             default: {

@@ -44,6 +44,7 @@ import type {
 } from '#domain/entities/chat.entity';
 import {
   ChannelAccessService,
+  type ChannelMemberEntry,
   type ReportedMessageGrant,
 } from './channel-access.service';
 import { assertModuleEnabled, type EnabledModules } from './module-gate';
@@ -273,6 +274,18 @@ export class ChatService {
       );
       return new Set();
     }
+  }
+
+  /**
+   * Who can read a channel, for the member list beside it (#3536). The rule
+   * and its cost live in `ChannelAccessService.listChannelMembers`.
+   */
+  listChannelMembers(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChannelMemberEntry[]> {
+    return this.channelAccess.listChannelMembers(channelId, chapterId, userId);
   }
 
   /**

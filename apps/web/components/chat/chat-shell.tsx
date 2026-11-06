@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { MuteGlyph } from "./chat-glyphs";
+import { MembersGlyph, MuteGlyph } from "./chat-glyphs";
+import { ChannelMemberList } from "./channel-member-list";
 import { channelDescription } from "@repo/hooks/channel-start";
 import { ChannelMark, ChannelStart } from "./channel-start";
 import { EmptyState, ErrorState } from "@/components/shared/async-states";
@@ -45,6 +46,13 @@ import {
 import { can, isAnnouncementChannel } from "@repo/validation";
 import { ChevronLeft, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Sheet } from "@/components/ui/sheet";
+import { PanelContent, PanelHeader } from "@/components/shared/panel";
+import {
+  persistMembersHidden,
+  WIDE_CHAT_QUERY,
+} from "@/lib/chat/members-panel";
+import { useMediaQuery } from "@/lib/use-media-query";
 import { IconButton } from "@/components/ui/icon-button";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
@@ -207,9 +215,15 @@ const UNREACHABLE_COPY: Record<UnreachableReason, string> = {
 export function ChatShell({
   initialChannelId = null,
   initialMessageId = null,
+  defaultMembersHidden = false,
 }: {
   initialChannelId?: string | null;
   initialMessageId?: string | null;
+  /**
+   * The member list column's remembered state, read from its cookie on the
+   * server (`lib/chat/members-panel.ts`) so the column paints right first time.
+   */
+  defaultMembersHidden?: boolean;
 } = {}) {
   const activeChapterId = useChapterStore((state) => state.activeChapterId);
   /*
@@ -450,6 +464,23 @@ export function ChatShell({
    * the message rather than on a list the member then has to navigate out of.
    */
   const [narrowPane, setNarrowPane] = useState<"channels" | "thread">("thread");
+  /*
+    The member list (#3536). From 1280px it is a column beside the timeline,
+    shown unless the member hid it, which a cookie remembers. Below that there
+    is no room for a third column, so the same toggle opens it as a sheet.
+  */
+  const [membersHidden, setMembersHidden] = useState(defaultMembersHidden);
+  const [membersSheetOpen, setMembersSheetOpen] = useState(false);
+  const isWideChat = useMediaQuery(WIDE_CHAT_QUERY);
+  const toggleMembers = () => {
+    if (!isWideChat) {
+      setMembersSheetOpen(true);
+      return;
+    }
+    const next = !membersHidden;
+    setMembersHidden(next);
+    persistMembersHidden(next);
+  };
   // Inside the dashboard shell, from `lg` up, the channels pane is the shell's
   // left column (`components/layout/nav-face.tsx`); everywhere else it is
   // inline beside the thread.
@@ -587,6 +618,17 @@ export function ChatShell({
     () => channels.find((ch) => ch.id === activeChannelId) ?? null,
     [channels, activeChannelId],
   );
+
+  // A 1:1 DM has no list worth showing: its two members are the header's own
+  // title and the viewer.
+  const showMemberList = !!activeChannel && activeChannel.type !== "DM";
+  // Radix never reports a close it did not cause, so a sheet the window
+  // outgrew, or whose channel became a 1:1 DM, is closed here, during render
+  // (React's pattern for state derived from a change). Left open in state, it
+  // would pop back up by itself on the next narrowing.
+  if (membersSheetOpen && (isWideChat || !showMemberList)) {
+    setMembersSheetOpen(false);
+  }
 
   // DM channels are stored as `dm-<uuidA>-<uuidB>`; the header, the composer
   // placeholder and the sidebar must all show the resolved title instead.
@@ -1548,6 +1590,9 @@ export function ChatShell({
             : "empty";
   const timelineReady =
     channelsPaneState === "ready" && !requestedChannelMissing;
+  const memberColumnMounted =
+    !membersHidden &&
+    (showMemberList || (!activeChannel && channelsPaneState === "loading"));
 
   /**
    * Whether focus is in `ComposerShell` right now — the one thing the upgrade
@@ -1849,6 +1894,24 @@ export function ChatShell({
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <ReconnectPill status={channel.connection} />
+            {showMemberList ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className={compactControlClassName}
+                onClick={toggleMembers}
+                aria-label={
+                  isWideChat && !membersHidden ? "Hide members" : "Show members"
+                }
+                aria-pressed={isWideChat ? !membersHidden : undefined}
+                aria-haspopup={isWideChat ? undefined : "dialog"}
+              >
+                <MembersGlyph
+                  className="h-5 w-5"
+                  active={isWideChat && !membersHidden}
+                />
+              </Button>
+            ) : null}
             <ChannelMenu
               activeChannelId={activeChannelId}
               messages={shownMessages}
@@ -2314,6 +2377,43 @@ export function ChatShell({
           />
         ) : null}
       </section>
+
+      {/*
+        Members, 240px on the right from 1280px (#3536), the same step as the
+        channels column so the timeline reads as the floor between two rails.
+        Hidden by CSS below `xl` rather than by the width hook, so the server's
+        markup is already right for the member's width and remembered choice.
+        Mounted while the channel list is still loading too (as a skeleton),
+        so the timeline does not lose 240px a beat after first paint; it only
+        goes away if the channel turns out to be a 1:1 DM.
+      */}
+      {memberColumnMounted ? (
+        <aside
+          aria-label="Members"
+          className="hidden w-60 shrink-0 flex-col border-l border-border bg-surface-1 xl:flex"
+        >
+          {/*
+            Reads only once the width hook confirms the column is on screen:
+            below 1280px CSS hides it, and the sheet has its own copy.
+          */}
+          <ChannelMemberList
+            channelId={activeChannel?.id ?? null}
+            enabled={isWideChat}
+          />
+        </aside>
+      ) : null}
+      <Sheet open={membersSheetOpen} onOpenChange={setMembersSheetOpen}>
+        {/*
+          A Panel, §9's surface for a list that grows: the member list is the
+          panel's whole body and owns its one scroll.
+        */}
+        <PanelContent>
+          <PanelHeader>Members</PanelHeader>
+          {activeChannel ? (
+            <ChannelMemberList channelId={activeChannel.id} />
+          ) : null}
+        </PanelContent>
+      </Sheet>
 
       {confirmDialog}
       {unblockFlow.confirmDialog}

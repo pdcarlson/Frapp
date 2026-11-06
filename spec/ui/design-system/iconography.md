@@ -345,7 +345,7 @@ One pick worth pinning meanwhile:
 Since the #920 chat slice the chat family draws the duotone recipe (§1). The
 glyphs live in
 [`apps/web/components/chat/chat-glyphs.tsx`](../../../apps/web/components/chat/chat-glyphs.tsx),
-which composes the shared recipe module and re-exports the five silhouettes the
+which composes the shared recipe module and re-exports the six silhouettes the
 shell already draws rather than redrawing them. Rendered at 20px in headers and
 composer controls, 16px in card eyebrows and inline metadata (§2).
 
@@ -360,6 +360,7 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Announcement | `AnnouncementGlyph` |
 | `#chapter-audit` / audit row | `AuditGlyph` |
 | Private / role-gated channel | `LockGlyph` |
+| Show or hide the channel member list (#3536), filled while shown | `MembersGlyph` (the nav set's `DirectoryGlyph`, re-exported) |
 | Direct or group message | `DirectMessageGlyph` |
 | Connection lost | `OfflineGlyph` |
 | Reply to a message | `ThreadGlyph` |
