@@ -414,10 +414,13 @@ function assertProductionAskDisabled({ easBuildProfile, askEnabled } = {}) {
 // (`com.googleusercontent.apps.<id>`); the package's config plugin writes it
 // into Info.plist. The client IDs live in app.json → `extra.googleSignIn`
 // (they are not secrets). With no iOS client ID the plugin is left out, and
-// `lib/google-auth.ts` keeps iOS on the browser flow: the same field gates
-// both, so a binary never has the runtime path without the scheme. Setting the
-// ID therefore needs a native build, not an update. Android needs no plugin:
-// Google matches the app by package name and signing-key SHA-1.
+// `lib/google-auth.ts` keeps iOS on the browser flow. Setting the ID takes a
+// native build: an update that sets it still reaches same-version binaries
+// built without the scheme, where Google's SDK would crash a release build.
+// So the scheme also goes into LSApplicationQueriesSchemes, and the app asks
+// `Linking.canOpenURL` whether the binary it runs in registers it before it
+// uses the SDK. Android needs no plugin: Google matches the app by package
+// name and signing-key SHA-1.
 const GOOGLE_SIGN_IN_PLUGIN = "@react-native-google-signin/google-signin";
 const GOOGLE_CLIENT_ID_SUFFIX = ".apps.googleusercontent.com";
 
@@ -432,13 +435,29 @@ function googleIosUrlScheme(iosClientId) {
   return `com.googleusercontent.apps.${id.slice(0, -GOOGLE_CLIENT_ID_SUFFIX.length)}`;
 }
 
-function withGoogleSignInPlugin(plugins, extra) {
-  const iosUrlScheme = googleIosUrlScheme(extra?.googleSignIn?.iosClientId);
-  if (!iosUrlScheme) return plugins;
-  return [
-    ...(Array.isArray(plugins) ? plugins : []),
-    [GOOGLE_SIGN_IN_PLUGIN, { iosUrlScheme }],
-  ];
+function withGoogleSignIn(config) {
+  const iosUrlScheme = googleIosUrlScheme(
+    config.extra?.googleSignIn?.iosClientId,
+  );
+  if (!iosUrlScheme) return {};
+  const ios = config.ios ?? {};
+  const infoPlist = ios.infoPlist ?? {};
+  const queried = Array.isArray(infoPlist.LSApplicationQueriesSchemes)
+    ? infoPlist.LSApplicationQueriesSchemes
+    : [];
+  return {
+    plugins: [
+      ...(Array.isArray(config.plugins) ? config.plugins : []),
+      [GOOGLE_SIGN_IN_PLUGIN, { iosUrlScheme }],
+    ],
+    ios: {
+      ...ios,
+      infoPlist: {
+        ...infoPlist,
+        LSApplicationQueriesSchemes: [...queried, iosUrlScheme],
+      },
+    },
+  };
 }
 
 function applyMobileConfig(
@@ -483,7 +502,7 @@ function applyMobileConfig(
   const gitSha = env.EAS_BUILD_GIT_COMMIT_HASH;
   return {
     ...config,
-    plugins: withGoogleSignInPlugin(config.plugins, config.extra),
+    ...withGoogleSignIn(config),
     extra: {
       ...(config.extra && typeof config.extra === "object" ? config.extra : {}),
       ...(typeof gitSha === "string" && gitSha.trim()

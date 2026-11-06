@@ -4,10 +4,11 @@ import Constants, { ExecutionEnvironment } from "expo-constants";
 /**
  * Is the app running inside Expo Go?
  *
- * Three isolation modules gate on this: `lib/keyboard.tsx` calls it directly,
- * and `lib/notifications/push.ts` and `lib/payments/stripe.ts` reach it through
- * `isWebOrExpoGo` below. Go ships neither the keyboard controller, remote push,
- * nor Stripe's native module, so the package must never be required there —
+ * Four isolation modules gate on this: `lib/keyboard.tsx` calls it directly,
+ * and `lib/notifications/push.ts`, `lib/payments/stripe.ts` and
+ * `lib/google-auth.ts` reach it through `isWebOrExpoGo` below. Go ships
+ * neither the keyboard controller, remote push, Stripe's native module, nor
+ * Google Sign-In, so the package must never be required there —
  * that is the crash-prevention property, not merely a reported unavailability.
  *
  * Read inside the function rather than at module scope so a spec can mock
@@ -38,9 +39,9 @@ export function isExpoGo(): boolean {
  * `stripe.spec.ts` pin the web sentence.
  *
  * One predicate rather than two, because this one is genuinely shared: if what
- * counts as "no native target" ever changes, it must change for both, and a
- * hand-copy is how it would change for only one. The other two isolation
- * modules keep their own guards, which are genuinely different
+ * counts as "no native target" ever changes, it must change for all of them, and a
+ * hand-copy is how it would change for only one (`lib/google-auth.ts` joined
+ * it on 2026-11-06). The other two isolation modules keep their own guards, which are genuinely different
  * (`lib/keyboard.tsx` is Expo Go alone; `lib/apple-auth.ts` is
  * `Platform.OS !== "ios"`).
  */

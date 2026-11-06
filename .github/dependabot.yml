@@ -209,6 +209,10 @@ updates:
       - dependency-name: "@react-native/*"
       - dependency-name: "@react-native-community/*"
       - dependency-name: "@react-native-async-storage/*"
+      # Native iOS/Android code with no CI compile. 17.x also moved its podspec
+      # onto a conditional Swift package, which check-mobile-native-declarations
+      # refuses; move it deliberately with an EAS iOS build (#2126).
+      - dependency-name: "@react-native-google-signin/*"
       - dependency-name: "expo"
       - dependency-name: "@expo/*"
       # NOTE: the Expo client packages are listed one by one on purpose — do

@@ -506,26 +506,36 @@ describe("native Google Sign-In plugin", () => {
     );
   });
 
-  it("adds the plugin only when the iOS client ID is set", () => {
+  it("adds the plugin and the queryable scheme only when the iOS client ID is set", () => {
     const { applyMobileConfig } = loadConfig();
     const withIds = (ids: Record<string, string>) => ({
       plugins: ["expo-router"],
+      ios: { infoPlist: { ITSAppUsesNonExemptEncryption: false } },
       extra: { googleSignIn: { webClientId: "w", ...ids } },
     });
 
-    expect(
-      applyMobileConfig(withIds({ iosClientId: "" }), {
-        env: {},
-        existsSync: missing,
-      }).plugins,
-    ).toEqual(["expo-router"]);
+    const without = applyMobileConfig(withIds({ iosClientId: "" }), {
+      env: {},
+      existsSync: missing,
+    });
+    expect(without.plugins).toEqual(["expo-router"]);
+    expect(without.ios).toEqual({
+      infoPlist: { ITSAppUsesNonExemptEncryption: false },
+    });
 
-    expect(
-      applyMobileConfig(withIds({ iosClientId }), {
-        env: {},
-        existsSync: missing,
-      }).plugins,
-    ).toEqual([
+    const withIos = applyMobileConfig(withIds({ iosClientId }), {
+      env: {},
+      existsSync: missing,
+    });
+    // lib/google-auth.ts asks canOpenURL for this scheme before it touches the
+    // SDK, so a binary built without it stays on the browser flow.
+    expect(withIos.ios).toEqual({
+      infoPlist: {
+        ITSAppUsesNonExemptEncryption: false,
+        LSApplicationQueriesSchemes: ["com.googleusercontent.apps.123-abc"],
+      },
+    });
+    expect(withIos.plugins).toEqual([
       "expo-router",
       [
         "@react-native-google-signin/google-signin",
@@ -534,7 +544,7 @@ describe("native Google Sign-In plugin", () => {
     ]);
   });
 
-  it("app.json carries the Web client every hosted Google provider lists", () => {
+  it("app.json carries a Google OAuth Web client ID", () => {
     const appJson = JSON.parse(
       readFileSync(
         path.join(path.dirname(fileURLToPath(import.meta.url)), "app.json"),

@@ -20,7 +20,7 @@
  * pair waiting to.
  *
  * What does **not** live here is the platform split (`*-module.ts` /
- * `*-module.native.ts`) that three of the four use — `lib/keyboard.tsx` is the
+ * `*-module.native.ts`) that all but one use — `lib/keyboard.tsx` is the
  * documented exception, because its package touches no native module at import.
  * That split is a Metro *resolution* mechanism: the file name is the mechanism,
  * so it cannot be factored into a function. This factory does not disturb it,

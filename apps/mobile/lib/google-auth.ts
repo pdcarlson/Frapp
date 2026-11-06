@@ -1,7 +1,7 @@
-import { Platform } from "react-native";
+import { Linking, Platform } from "react-native";
 import Constants from "expo-constants";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isExpoGo } from "./expo-go";
+import { isWebOrExpoGo } from "./expo-go";
 import { requireGoogleSignIn } from "./google-auth-module";
 import type { GoogleSignInModule } from "./google-auth-types";
 import { createIsolatedModule } from "./isolated-module";
@@ -17,9 +17,10 @@ import { createIsolatedModule } from "./isolated-module";
  *
  * The browser flow stays the fallback: on web, in Expo Go (which does not ship
  * this native module), in a binary built before the package landed, when a
- * client ID is missing, and when Google or Supabase refuses the configuration
- * (see `isConfigurationError` / `isProviderConfigRejection`). A member who
- * hits a misconfiguration still signs in; the warning is for us.
+ * client ID is missing, on an iOS binary without the client's URL scheme, and
+ * when Google or Supabase refuses the configuration (see
+ * `isConfigurationError` / `isProviderConfigRejection`). A member who hits a
+ * misconfiguration still signs in; the warning is for us.
  */
 
 const googleSignIn = createIsolatedModule<GoogleSignInModule>({
@@ -28,8 +29,7 @@ const googleSignIn = createIsolatedModule<GoogleSignInModule>({
   load: requireGoogleSignIn,
   // Web has no native target, and Expo Go does not ship the module: its JS
   // reads the native constants at import, so requiring it there would throw.
-  isUnavailable: () =>
-    (Platform.OS !== "ios" && Platform.OS !== "android") || isExpoGo(),
+  isUnavailable: isWebOrExpoGo,
 });
 
 export const setGoogleSignInLoaderForTests = googleSignIn.setLoaderForTests;
@@ -67,6 +67,41 @@ function asClientId(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+const GOOGLE_CLIENT_ID_SUFFIX = ".apps.googleusercontent.com";
+
+/** The reversed client ID Google's iOS SDK returns through; mirrors `app.config.js`. */
+export function googleIosUrlScheme(iosClientId: string): string | null {
+  return iosClientId.endsWith(GOOGLE_CLIENT_ID_SUFFIX)
+    ? `com.googleusercontent.apps.${iosClientId.slice(0, -GOOGLE_CLIENT_ID_SUFFIX.length)}`
+    : null;
+}
+
+/**
+ * Whether this iOS **binary** registers the iOS client's URL scheme.
+ *
+ * `extra.googleSignIn` alone can't say: an update carries its own `extra`, and
+ * runtimeVersion follows appVersion, so an update that sets the iOS client ID
+ * reaches same-version binaries built without the scheme. There Google's SDK
+ * raises an NSException, which RNGoogleSignin turns into a rejection only in
+ * Debug (`#if DEBUG` in RNGoogleSignin.mm): a release build crashes. So this
+ * asks the OS. `app.config.js` writes the scheme into both `CFBundleURLTypes`
+ * and `LSApplicationQueriesSchemes` at build time, and `canOpenURL` is true
+ * only when the scheme is declared queryable and an installed app (this one)
+ * handles it. False, or a throw, keeps iOS on the browser flow.
+ */
+async function iosBinaryHasUrlScheme(iosClientId: string): Promise<boolean> {
+  const scheme = googleIosUrlScheme(iosClientId);
+  if (!scheme) return false;
+  try {
+    return await Linking.canOpenURL(`${scheme}://`);
+  } catch {
+    return false;
+  }
+}
+
+/** Same copy as the browser path's "did not finish" error in auth-session.tsx. */
+const FINISH_FAILED_MESSAGE = "Unable to finish sign-in. Retry in a moment.";
+
 export type NativeGoogleResult = "completed" | "cancelled" | "unavailable";
 
 export async function signInWithNativeGoogle(
@@ -74,6 +109,12 @@ export async function signInWithNativeGoogle(
 ): Promise<NativeGoogleResult> {
   const clientIds = googleClientIds();
   if (!clientIds) return "unavailable";
+  if (
+    clientIds.iosClientId &&
+    !(await iosBinaryHasUrlScheme(clientIds.iosClientId))
+  ) {
+    return "unavailable";
+  }
   const google = googleSignIn.load();
   if (!google) return "unavailable";
   const { GoogleSignin, statusCodes } = google;
@@ -82,8 +123,10 @@ export async function signInWithNativeGoogle(
   try {
     GoogleSignin.configure(clientIds);
     if (Platform.OS === "android") {
+      // No update dialog: the SDK shows it and rejects in the same moment, so
+      // the browser fallback would open on top of it.
       await GoogleSignin.hasPlayServices({
-        showPlayServicesUpdateDialog: true,
+        showPlayServicesUpdateDialog: false,
       });
     }
     const response = await GoogleSignin.signIn();
@@ -92,12 +135,7 @@ export async function signInWithNativeGoogle(
   } catch (error) {
     const code = errorCode(error);
     // A second tap while the sheet is already up: the first attempt owns it.
-    if (
-      code === statusCodes.SIGN_IN_CANCELLED ||
-      code === statusCodes.IN_PROGRESS
-    ) {
-      return "cancelled";
-    }
+    if (code === statusCodes.IN_PROGRESS) return "cancelled";
     if (isConfigurationError(code, statusCodes)) {
       console.warn(
         "Native Google sign-in is not usable on this build; using browser Google sign-in.",
@@ -105,7 +143,11 @@ export async function signInWithNativeGoogle(
       );
       return "unavailable";
     }
-    throw error;
+    // The SDK's own messages ("RNGoogleSignIn: Unknown error…", an Android
+    // ApiException) are not member copy, and the sign-in screen shows what
+    // this throws.
+    console.warn("Native Google sign-in failed.", error);
+    throw Object.assign(new Error(FINISH_FAILED_MESSAGE), { cause: error });
   }
 
   // The SDK remembers the account it signed in. Forget it, so the next sign-in
@@ -144,11 +186,13 @@ function errorCode(error: unknown): string | undefined {
  *
  * - `"10"`: Android `DEVELOPER_ERROR`, no Android OAuth client in the Cloud
  *   project matches this package and signing-key SHA-1.
+ * - `"12500"`: Android `SIGN_IN_FAILED`, which Google also returns for
+ *   Cloud-side setup problems (consent screen, some SHA-1 mismatches).
  * - `"configure"`: iOS found no client ID.
- * - `"SIGN_IN_ERROR"`: iOS raised an exception, which in practice is the
- *   missing reversed-client-ID URL scheme (a binary built without the iOS
- *   client ID, reached by an update that has one).
- * - `PLAY_SERVICES_NOT_AVAILABLE`: an Android device without Play services.
+ * - `"SIGN_IN_ERROR"`: iOS raised an exception. Debug builds only: a release
+ *   build crashes instead, which `iosBinaryHasUrlScheme` exists to prevent.
+ * - `PLAY_SERVICES_NOT_AVAILABLE`: an Android device without current Play
+ *   services.
  */
 function isConfigurationError(
   code: string | undefined,
@@ -156,6 +200,7 @@ function isConfigurationError(
 ): boolean {
   return (
     code === "10" ||
+    code === "12500" ||
     code === "configure" ||
     code === "SIGN_IN_ERROR" ||
     code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE
