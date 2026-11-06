@@ -28,11 +28,11 @@
  *      `apps/web/app/favicon.ico` shipped Next's scaffold icon through green CI
  *      for as long as the file existed.
  *
- *   6. IOS ICON — the appearances `expo.ios.icon` names are current. Light
- *      and dark are `icon.png`, byte-identical to the master raster section 4
- *      holds to the vector. Tinted is opaque grey on black, exactly the glyph
- *      raster's alpha in grey, carries a crest, and is still a render of the
- *      glyph vector. `scripts/ci/__tests__/ios-icon.test.mjs` holds `app.json`
+ *   6. IOS ICON — the appearances `expo.ios.icon` names are current. Dark
+ *      is `icon.png`, byte-identical to the master raster section 4 holds to
+ *      the vector. Light is opaque ink on cream and tinted opaque grey on
+ *      black; each is exactly the glyph raster's alpha in its two colours,
+ *      carries a crest, and is still a render of the glyph vector. `scripts/ci/__tests__/ios-icon.test.mjs` holds `app.json`
  *      to the files.
  *
  *   7. STORE GRAPHICS — the Google Play icon and feature graphic under
@@ -73,8 +73,12 @@ import {
 } from "./lib/brand-pixels.mjs";
 import {
   IOS_ICON,
+  IOS_ICON_LIGHT,
   IOS_ICON_TINTED,
+  assertLightIcon,
   assertTintedIcon,
+  lightFromGlyph,
+  lightMask,
   tintedFromGlyph,
   tintedMask,
 } from "./lib/ios-icon.mjs";
@@ -339,39 +343,56 @@ if (
 }
 
 // ── 6. The iOS icon ─────────────────────────────────────────────────────────
-// Light and dark are `icon.png`. Section 3 only censuses its colours, so a
-// different crest drawn in the locked pair would pass there; byte equality with
-// the master raster, which section 4 holds to the vector, is what keeps iOS
-// light and dark on the current mark. The rasterizer writes both from one buffer.
-for (const rel of new Set([IOS_ICON.light, IOS_ICON.dark])) {
-  if (
-    existsSync(repo(rel)) &&
-    existsSync(repo(MASTER_RASTER)) &&
-    !readFileSync(repo(rel)).equals(readFileSync(repo(MASTER_RASTER)))
-  ) {
-    fail(
-      `drift: ${rel} is not ${MASTER_RASTER}, so iOS light and dark draw another crest\n  run: npm run rasterize:brand-assets`,
-    );
-  }
+// Dark is `icon.png`. Section 3 only censuses its colours, so a different crest
+// drawn in the locked pair would pass there; byte equality with the master
+// raster, which section 4 holds to the vector, is what keeps iOS dark on the
+// current mark. The rasterizer writes it from the master's own buffer.
+if (
+  existsSync(repo(IOS_ICON.dark)) &&
+  existsSync(repo(MASTER_RASTER)) &&
+  !readFileSync(repo(IOS_ICON.dark)).equals(readFileSync(repo(MASTER_RASTER)))
+) {
+  fail(
+    `drift: ${IOS_ICON.dark} is not ${MASTER_RASTER}, so iOS dark draws another crest\n  run: npm run rasterize:brand-assets`,
+  );
 }
 
-// Tinted gets its own census, because it is off the brand axis by design (grey
-// on black, `lib/ios-icon.mjs` says why). Exact equality with the glyph raster's
-// alpha catches what a census and a mask cannot see: a faint grey plate or halo
-// below half grey, which iOS would tint. The mask check against the glyph vector
-// catches a vector edit that skipped the rasterizer, since section 4 compares
-// only the master raster.
-if (
-  present(IOS_ICON_TINTED, "run npm run rasterize:brand-assets") &&
-  existsSync(repo(GLYPH_RASTER))
-) {
+// Light and tinted get their own census, because both are off the brand axis
+// by design (ink on cream and grey on black; `lib/ios-icon.mjs` says why).
+// Exact equality with the glyph raster's alpha in the file's two colours
+// catches what a census and a mask cannot see: a faint plate or halo below the
+// half-way mark. The mask check against the glyph vector catches a vector edit
+// that skipped the rasterizer, since section 4 compares only the master raster.
+const DERIVED_IOS_ICONS = [
+  {
+    rel: IOS_ICON_LIGHT,
+    assert: assertLightIcon,
+    derive: lightFromGlyph,
+    mask: lightMask,
+    colours: "in ink on cream",
+  },
+  {
+    rel: IOS_ICON_TINTED,
+    assert: assertTintedIcon,
+    derive: tintedFromGlyph,
+    mask: tintedMask,
+    colours: "in grey",
+  },
+];
+for (const icon of DERIVED_IOS_ICONS) {
+  if (
+    !present(icon.rel, "run npm run rasterize:brand-assets") ||
+    !existsSync(repo(GLYPH_RASTER))
+  ) {
+    continue;
+  }
   try {
-    // Raw, not through `decode`: that adds an alpha channel, and this file
+    // Raw, not through `decode`: that adds an alpha channel, and these files
     // must have none.
-    const { data, info } = await sharp(readFileSync(repo(IOS_ICON_TINTED)))
+    const { data, info } = await sharp(readFileSync(repo(icon.rel)))
       .raw()
       .toBuffer({ resolveWithObject: true });
-    assertTintedIcon(data, info.channels, info.width, info.height, IOS_ICON_TINTED);
+    icon.assert(data, info.channels, info.width, info.height, icon.rel);
     const glyphRaster = await sharp(readFileSync(repo(GLYPH_RASTER)))
       .ensureAlpha()
       .raw()
@@ -379,20 +400,20 @@ if (
     if (
       glyphRaster.info.width !== info.width ||
       glyphRaster.info.height !== info.height ||
-      !tintedFromGlyph(glyphRaster.data, glyphRaster.info.channels).equals(data)
+      !icon.derive(glyphRaster.data, glyphRaster.info.channels).equals(data)
     ) {
       fail(
-        `drift: ${IOS_ICON_TINTED} is not ${GLYPH_RASTER}'s alpha in grey\n  run: npm run rasterize:brand-assets`,
+        `drift: ${icon.rel} is not ${GLYPH_RASTER}'s alpha ${icon.colours}\n  run: npm run rasterize:brand-assets`,
       );
     }
     const glyph = await vectorMask(
       readFileSync(repo("packages/brand-assets/assets/signet-emblem-B-glyph.svg")),
       info.width,
     );
-    const agreement = maskIou(tintedMask(data, info.width, info.height), glyph);
+    const agreement = maskIou(icon.mask(data, info.width, info.height), glyph);
     if (agreement < RENDER_AGREEMENT_MIN) {
       fail(
-        `stale: ${IOS_ICON_TINTED} agrees with signet-emblem-B-glyph.svg on only ` +
+        `stale: ${icon.rel} agrees with signet-emblem-B-glyph.svg on only ` +
           `${(agreement * 100).toFixed(3)}% of the glyph (floor ${(RENDER_AGREEMENT_MIN * 100).toFixed(1)}%)\n` +
           `  run: npm run rasterize:brand-assets`,
       );

@@ -9,18 +9,16 @@ const { state } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
   useChapterSetupChecklist: () => ({
     checklist: state.checklist,
     hide: state.hide,
   }),
 }));
 
-const {
-  HIDE_SETUP_CHECKLIST_LABEL,
-  SETUP_CHECKLIST_HREF,
-  SetupChecklistSection,
-} = await import("./setup-checklist");
+const { SetupChecklistSection } = await import("./setup-checklist");
+const { HIDE_SETUP_CHECKLIST_LABEL } = await import("@repo/hooks");
 
 const TWO_OF_FIVE: SetupChecklist = {
   doneCount: 2,
@@ -62,7 +60,6 @@ describe("SetupChecklistSection", () => {
       "/documents",
       "/billing",
     ]);
-    expect(SETUP_CHECKLIST_HREF["study-zone"]).toBe("/geofences");
   });
 
   it("tells a screen reader which lines are done", () => {
