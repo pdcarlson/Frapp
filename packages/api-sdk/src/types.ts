@@ -2861,7 +2861,7 @@ export interface paths {
         };
         /**
          * Channel-by-channel progress, for watching an import
-         * @description What the Watch view polls while a bot import runs (#2857): the channel and thread rows by status, the ones running now, the last ones finished, and the failures with their reasons, each with the Frapp channel it lands in once known. A few KB whatever the server holds; `GET :id/channels` is the full list, which is too large to poll. The rows follow a bot import's walk, one channel at a time in `position` order; an upload works through export parts, which leave its rows' order and a skipped part's row unrecorded, so the web shows this for bot imports only.
+         * @description What the Watch view polls while a bot import runs (#2857): the channel and thread rows by status and per Discord category, the ones running now, the last ones finished, and the failures with their reasons, each with the Frapp channel it lands in once known. A few KB whatever the server holds; `GET :id/channels` is the full list, which is too large to poll. The rows follow a bot import's walk, one channel at a time in `position` order; an upload works through export parts, which leave its rows' order and a skipped part's row unrecorded, so the web shows this for bot imports only.
          */
         get: operations["DiscordImportController_getProgress_v1"];
         put?: never;
@@ -4884,6 +4884,18 @@ export interface components {
             /** @description Skipped by the worker: Discord no longer showed the channel to the bot when it got there. */
             skipped: number;
         };
+        DiscordImportCategoryProgressDto: {
+            /** @description The Discord category; null for the channels in none. */
+            category: string | null;
+            /** @description Channels being imported: rows with no parent. */
+            channels: number;
+            /** @description Threads being imported, each counted under its parent channel's category. */
+            threads: number;
+            /** @description Channels and threads finished: imported, or skipped because Discord no longer showed them to the bot. */
+            done: number;
+            /** @description Channels and threads that failed. */
+            failed: number;
+        };
         DiscordImportChannelProgressRowDto: {
             discord_channel_id: string;
             /** @description As the scan recorded it; a thread reads `parent › thread`. */
@@ -4902,6 +4914,8 @@ export interface components {
         DiscordImportProgressDto: {
             /** @description Channel and thread rows being imported, by status. Rows mapped to skip are in no count. */
             counts: components["schemas"]["DiscordImportProgressCountsDto"];
+            /** @description The same rows added up per Discord category, by name (two categories of one name are one line, as they become one group): the channels in no category first, then the categories in Discord's order on a bot import, and on an upload, whose export records no order, in the order the import reaches them. A thread counts under its channel's category. `channels + threads` is the category's total; `done` of that total is finished. Rows mapped to skip are in no count. Empty when the sums could not be read; the rest of the progress still answers. */
+            categories: components["schemas"]["DiscordImportCategoryProgressDto"][];
             /** @description The rows running now, at most 5. On an import that is no longer moving, where it stopped. */
             running: components["schemas"]["DiscordImportChannelProgressRowDto"][];
             /** @description The rows finished last, most recent first, at most 5. */

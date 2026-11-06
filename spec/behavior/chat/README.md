@@ -575,14 +575,21 @@ deliberate race. The page shows that one import in the state it is in:
   archive space, so the newest one is named with a Delete. The import last
   deleted is named in one line until the admin dismisses it.
 - **Importing:** the messages counted in so far, channels and threads done
-  out of the total, the percent, and Stop import. The admin can leave: when
+  out of the total, the percent, and Stop import. A bot import also names
+  the channel or thread importing now, with its message count so far, and
+  shows a tile per Discord category: its channels and threads done out of
+  its total, any that failed, turning green once all are done. The channels
+  in no category come first, then the categories in Discord's order; past
+  eight, the last tile sums the rest ("+ N more"). A thread counts under its
+  channel's category. The admin can leave: when
   the import completes or fails, the admin who set it up (`created_by`) is
   notified, if they still hold `channels:manage` in the chapter. One the
   admin stopped sends nothing. The notice itself is in
   [`../notifications.md`](../notifications.md#notification-triggers-complete-list).
 - **Finished, or stopped part-way:** the messages and files that came over,
   and the channels and threads (all it read once completed, the ones it got
-  through otherwise); Open chat, once it completed; Resume import, on one
+  through otherwise; a completed bot import counts channels and threads
+  apart); Open chat, once it completed; Resume import, on one
   that failed, which starts it again from where it stopped (#2947);
   what didn't come over, grouped by reason in plain words, from the last 50
   warnings the import keeps; and Delete import. A deletion that failed
@@ -755,6 +762,20 @@ channel that reports a different one fails the import rather than being skipped.
     one that does. A category a remap stops using, as after unticking one,
     stays until the import is deleted or an officer deletes it (#2882). *2026-11-05, owner's request: a
     78-channel server landed as one flat list.*
+
+    Each Discord category on the step is one folded section with a summary
+    line (its channels, the threads they hold on a bot import, how many are
+    being imported, and what needs attention), so a server of 78 channels
+    reads as a dozen decisions; it opens on its own when something in it
+    needs attention. A thread never gets a row of its own. Above them, "What
+    chat will look like" lists the channels the import will make under the
+    sidebar sections they will land in, in the order starting the import
+    creates them (no category first, then Discord's order, then by name;
+    channels A to Z, marked private as the sidebar marks them), and re-groups
+    as the admin keeps or drops categories. A category named like one of the
+    chapter's own joins it, under the chapter's spelling and before the new
+    ones, as starting the import places it. Merges aren't listed: they make
+    nothing. *2026-11-06, the server map of the #2882 redesign.*
   - **A channel an import merges into stays an ordinary channel, which an
     officer can delete at any time (#2922)**: before the import starts, while
     it runs, or long after. Each import that merged into it keeps its mapping

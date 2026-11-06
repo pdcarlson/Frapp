@@ -310,10 +310,26 @@ export const DISCORD_IMPORT_PROGRESS_LIMITS = {
  */
 export interface DiscordImportChannelProgress {
   counts: Record<DiscordImportChannelStatus, number>;
+  /** The same rows added up per Discord category, in Discord's order. */
+  categories: DiscordImportCategoryProgress[];
   running: DiscordImportChannelProgressRow[];
   /** Finished most recently first: the worker walks rows in `position` order. */
   recent: DiscordImportChannelProgressRow[];
   failed: DiscordImportChannelProgressRow[];
+}
+
+/**
+ * One Discord category's share of an import: its channels and threads being
+ * imported, how many are done (imported, or skipped by the worker), and how
+ * many failed. A thread counts under its parent channel's category.
+ * `category` is null for channels in no category.
+ */
+export interface DiscordImportCategoryProgress {
+  category: string | null;
+  channels: number;
+  threads: number;
+  done: number;
+  failed: number;
 }
 
 export type DiscordImportFileKind = 'export' | 'media';

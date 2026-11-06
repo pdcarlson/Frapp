@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useChannels, usePermissionsCatalog } from "@repo/hooks";
+import { useCategories, useChannels, usePermissionsCatalog } from "@repo/hooks";
 import { asArray, cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +33,12 @@ import {
   type PrivacyReason,
 } from "./mapping-issues";
 import type { SameAsDiscordReaders } from "./role-matching";
-import { NO_SIDEBAR_GROUPS, type SidebarGroups } from "./sidebar-groups";
+import {
+  NO_SIDEBAR_GROUPS,
+  sidebarPreview,
+  type SidebarGroups,
+} from "./sidebar-groups";
+import { SidebarPreview } from "./sidebar-preview";
 
 type Visibility = NonNullable<ChannelChoice["visibility"]>;
 type ReadersOf = (channel: StagedChannel) => SameAsDiscordReaders | null;
@@ -132,6 +137,8 @@ export function ChannelMappingStep({
   onSidebarGroups?: (next: SidebarGroups) => void;
 }) {
   const existingChannels = useChannels();
+  // The chapter's own groups: a kept category named like one joins it.
+  const chapterGroups = useCategories();
   const catalogQuery = usePermissionsCatalog();
 
   const readable = useMemo(
@@ -254,6 +261,16 @@ export function ChannelMappingStep({
     () => newChannelGroups(channels, choices, readersOf, sidebarGroups),
     [channels, choices, readersOf, sidebarGroups],
   );
+  const preview = useMemo(
+    () =>
+      sidebarPreview(
+        readable,
+        choices,
+        sidebarGroups,
+        asArray<{ name: string }>(chapterGroups.data),
+      ),
+    [readable, choices, sidebarGroups, chapterGroups.data],
+  );
 
   if (channels.length === 0) {
     return (
@@ -345,6 +362,8 @@ export function ChannelMappingStep({
           knowsOrder={knowsPrivacy}
         />
       ) : null}
+
+      <SidebarPreview sections={preview} />
 
       <NeedsAttention issues={issues} onJump={jump} />
 
@@ -563,6 +582,12 @@ function CategoryGroup({
   const privateCount = group.channels.filter(
     (channel) => channel.privateInDiscord === true,
   ).length;
+  // Threads never get a row of their own: they follow their channel, so
+  // they are counted on the category instead (bot path only).
+  const threads = group.channels.reduce(
+    (sum, channel) => sum + (channel.threads ?? 0),
+    0,
+  );
 
   return (
     <section className="rounded-lg border border-border">
@@ -587,7 +612,11 @@ function CategoryGroup({
             </span>
             <span className="text-sm">
               {group.channels.length} channel
-              {group.channels.length === 1 ? "" : "s"} · {importing} to import
+              {group.channels.length === 1 ? "" : "s"}
+              {threads > 0
+                ? ` · ${threads.toLocaleString("en-US")} thread${threads === 1 ? "" : "s"}`
+                : ""}{" "}
+              · {importing} to import
               {privateCount > 0 ? ` · ${privateCount} private in Discord` : ""}
               {flagged > 0 ? (
                 <span className="text-warning">

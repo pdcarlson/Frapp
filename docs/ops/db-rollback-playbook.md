@@ -2769,6 +2769,20 @@ alter table public.chat_message_reports
   drop column if exists reported_attachments;
 ```
 
+## Rollback Discord import category progress (20261106170000)
+
+* **Migration**: `20261106170000_discord_import_category_progress.sql`
+
+One read-only function, `discord_import_category_progress`, which adds up an import's mapping rows per Discord category for `GET /v1/discord-imports/:id/progress`. Service role only. It writes nothing and the migration rewrites no row.
+
+**Revert the API code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API doesn't call the function, so leaving it in place is safe. The web reads the progress's `categories` defensively, so an older API without it shows no tiles and the combined channel count.
+
+**Keep the function unless it is itself the problem.** To remove it anyway, do it in a later forward migration, after the code revert has shipped:
+
+```sql
+drop function if exists public.discord_import_category_progress(uuid, uuid);
+```
+
 ## Rollback the chapter default channel (20261106010000)
 
 * **Migration**: `20261106010000_chat_channels_is_default.sql`

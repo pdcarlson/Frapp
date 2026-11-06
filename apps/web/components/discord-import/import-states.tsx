@@ -15,6 +15,14 @@ import {
   type ImportRow,
 } from "./import-progress";
 import { groupWarnings, KEPT_WARNINGS } from "./import-warnings";
+import {
+  categoryTiles,
+  importTotals,
+  useBotImportProgress,
+  type CategoryProgress,
+  type CategoryTile,
+} from "./category-progress";
+import type { ImportProgress } from "./import-watch-panel";
 import { purgeLine } from "./delete-import-copy";
 import { SourceStep, type ImportSource } from "./source-step";
 
@@ -150,6 +158,55 @@ export function ImportLanding({
   );
 }
 
+/**
+ * One Discord category on a running import: its name and how many of its
+ * channels and threads are done. It turns green when the last one finishes.
+ */
+function Tile({ tile }: { tile: CategoryTile }) {
+  return (
+    <li
+      className={cn(
+        "flex min-w-0 flex-col gap-0.5 rounded-lg border p-2.5 motion-safe:transition-colors",
+        tile.finished ? "border-success/40 bg-success-tint" : "border-border",
+      )}
+    >
+      <span className="truncate text-xs text-muted-foreground">
+        {tile.name}
+      </span>
+      <span
+        className={cn(
+          "text-sm font-semibold tabular-nums",
+          tile.finished ? "text-success" : null,
+        )}
+      >
+        {count(tile.done)}/{count(tile.total)}
+        {tile.failed > 0 ? (
+          <span className="font-normal text-destructive-text">
+            {" "}
+            · {count(tile.failed)} failed
+          </span>
+        ) : null}
+      </span>
+    </li>
+  );
+}
+
+/** The tiles, one per Discord category, read off the progress poll. */
+function CategoryTiles({ categories }: { categories: CategoryProgress[] }) {
+  const tiles = categoryTiles(categories);
+  if (tiles.length === 0) return null;
+  return (
+    <ul
+      aria-label="Progress by Discord category"
+      className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+    >
+      {tiles.map((tile) => (
+        <Tile key={tile.key} tile={tile} />
+      ))}
+    </ul>
+  );
+}
+
 /** State 3: importing. A count that only climbs, and the way to stop. */
 export function ImportRunning({
   row,
@@ -166,6 +223,10 @@ export function ImportRunning({
   const percent = importPercent(row);
   const hasChannelCounts =
     row.channels_total !== null && row.channels_total !== undefined;
+  const progress = useBotImportProgress(row, true).data as
+    ImportProgress | undefined;
+  // The worker reads one channel or thread at a time.
+  const now = row.status === "running" ? progress?.running[0] : undefined;
   return (
     <section
       aria-labelledby="discord-import-running"
@@ -196,6 +257,17 @@ export function ImportRunning({
           </p>
         </div>
       ) : null}
+      {now ? (
+        <p className="text-sm">
+          Now importing{" "}
+          <span className="font-semibold">#{now.discord_channel_name}</span>
+          <span className="text-muted-foreground tabular-nums">
+            {" "}
+            · {counted(now.imported_count, "message", "messages")}
+          </span>
+        </p>
+      ) : null}
+      <CategoryTiles categories={progress?.categories ?? []} />
       {channels}
       <div className="flex justify-end">
         <Button variant="secondary" onClick={onStop} disabled={stopping}>
@@ -270,6 +342,14 @@ export function ImportFinished({
   const warned = row.warnings?.length ?? 0;
   const since = formatDay(row.messages_after);
   const finishedAt = row.completed_at ? formatDayTime(row.completed_at) : null;
+  // A completed bot import counts its channels and threads apart; until that
+  // read lands, or on an upload, the row's combined count stands in. One
+  // stopped part-way counts only what it got through, which the categories
+  // don't split, so nothing is read for it.
+  const categories = (
+    useBotImportProgress(row, false, done).data as ImportProgress | undefined
+  )?.categories;
+  const totals = done && categories?.length ? importTotals(categories) : null;
   return (
     <section
       aria-labelledby="discord-import-finished"
@@ -295,12 +375,28 @@ export function ImportFinished({
         ) : null}
       </div>
 
-      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <dl
+        className={cn(
+          "grid grid-cols-2 gap-3",
+          totals ? "sm:grid-cols-4" : "sm:grid-cols-3",
+        )}
+      >
         <Figure value={count(row.imported_messages)} label="messages" />
         <Figure value={count(row.attachments_imported)} label="files" />
         {/* Done, every channel it read; stopped part-way, the ones it got
             through, since the rest never came over. */}
-        {done && typeof row.channels_total === "number" ? (
+        {totals ? (
+          <>
+            <Figure
+              value={count(totals.channels)}
+              label={totals.channels === 1 ? "channel" : "channels"}
+            />
+            <Figure
+              value={count(totals.threads)}
+              label={totals.threads === 1 ? "thread" : "threads"}
+            />
+          </>
+        ) : done && typeof row.channels_total === "number" ? (
           <Figure
             value={count(row.channels_total)}
             label="channels and threads"

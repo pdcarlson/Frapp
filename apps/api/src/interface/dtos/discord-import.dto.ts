@@ -372,6 +372,33 @@ export class DiscordImportProgressCountsDto {
   skipped: number;
 }
 
+export class DiscordImportCategoryProgressDto {
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'The Discord category; null for the channels in none.',
+  })
+  category: string | null;
+
+  @ApiProperty({ description: 'Channels being imported: rows with no parent.' })
+  channels: number;
+
+  @ApiProperty({
+    description:
+      "Threads being imported, each counted under its parent channel's category.",
+  })
+  threads: number;
+
+  @ApiProperty({
+    description:
+      'Channels and threads finished: imported, or skipped because Discord no longer showed them to the bot.',
+  })
+  done: number;
+
+  @ApiProperty({ description: 'Channels and threads that failed.' })
+  failed: number;
+}
+
 export class DiscordImportProgressDto {
   @ApiProperty({
     type: DiscordImportProgressCountsDto,
@@ -379,6 +406,13 @@ export class DiscordImportProgressDto {
       'Channel and thread rows being imported, by status. Rows mapped to skip are in no count.',
   })
   counts: DiscordImportProgressCountsDto;
+
+  @ApiProperty({
+    type: [DiscordImportCategoryProgressDto],
+    description:
+      "The same rows added up per Discord category, by name (two categories of one name are one line, as they become one group): the channels in no category first, then the categories in Discord's order on a bot import, and on an upload, whose export records no order, in the order the import reaches them. A thread counts under its channel's category. `channels + threads` is the category's total; `done` of that total is finished. Rows mapped to skip are in no count. Empty when the sums could not be read; the rest of the progress still answers.",
+  })
+  categories: DiscordImportCategoryProgressDto[];
 
   @ApiProperty({
     type: [DiscordImportChannelProgressRowDto],

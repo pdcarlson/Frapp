@@ -265,9 +265,12 @@ export function ImportWizard({
       // A private thread's messages land wherever its parent goes, so the
       // parent is asked about as if it were private.
       const privateThreads = new Map<string, number>();
+      const threads = new Map<string, number>();
       for (const channel of found) {
         const parent = channel.parent_discord_channel_id;
-        if (parent === null || channel.private_in_discord !== true) continue;
+        if (parent === null) continue;
+        threads.set(parent, (threads.get(parent) ?? 0) + 1);
+        if (channel.private_in_discord !== true) continue;
         privateThreads.set(parent, (privateThreads.get(parent) ?? 0) + 1);
       }
       stage({
@@ -285,6 +288,8 @@ export function ImportWizard({
             privateInDiscord: channel.private_in_discord ?? null,
             privateThreads: privateThreads.get(channel.discord_channel_id) ?? 0,
             readerRoleIds: channel.discord_reader_role_ids ?? null,
+            threads: threads.get(channel.discord_channel_id) ?? 0,
+            categoryPosition: channel.discord_category_position ?? null,
           })),
         roles: (discovery.roles ?? []).map((role) => ({
           roleId: role.discord_role_id,

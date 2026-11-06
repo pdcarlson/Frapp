@@ -115,6 +115,7 @@ export async function createDiscordImportFixture(
       counts: { pending: 0, running: 0, completed: 0, failed: 0, skipped: 0 },
       running: [],
       recent: [],
+      categories: [],
       failed: [],
     })),
     markCleared: jest.fn(async () => ({ ...current, cleared_at: 'now' })),
