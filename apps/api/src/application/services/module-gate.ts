@@ -15,7 +15,8 @@ export type EnabledModules = Record<string, boolean> | null;
  * on a poll card go through chat routes, not `poll.controller.ts` (#2993).
  *
  * Enabled unless explicitly `false` (the shared `isModuleEnabled`), so a
- * chapter with no key for a module is never locked out of it.
+ * chapter with no key for a module is never locked out of it. The exception
+ * is a module in `BETA_OFF_MODULES`, which is off for every chapter.
  */
 export function assertModuleEnabled(
   enabledModules: EnabledModules,
