@@ -86,7 +86,9 @@ export const SETUP_CHECKLIST_LINES: readonly SetupChecklistDefinition[] = [
   {
     key: "event",
     label: "Schedule the first event",
-    permissions: ["events:create"],
+    // `EventController` also requires `members:view` at class level, so
+    // `events:create` alone can't save one, on the web or the phone.
+    permissions: ["events:create", "members:view"],
     module: "events",
     doneAt: 1,
   },
@@ -211,9 +213,7 @@ function sumOf(...counts: (number | undefined)[]): number | undefined {
  * so a member, or an officer who hid it, costs nothing beyond the reads every
  * screen already makes.
  */
-export function useChapterSetupChecklist(
-  options: SetupChecklistOptions = {},
-): {
+export function useChapterSetupChecklist(options: SetupChecklistOptions = {}): {
   checklist: SetupChecklist | null;
   hide: () => void;
   /**

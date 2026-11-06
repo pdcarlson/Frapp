@@ -73,7 +73,7 @@ import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
  * Starts and Ends are rows laid out the way Calendar's are: a day and a time,
  * each opening the system picker. On iOS they are the native compact pickers,
  * whose popovers are the calendar and the time wheel; on Android a tap opens
- * the Material date or time dialog. Moving the start drags the end along,
+ * the system date or time dialog. Moving the start drags the end along,
  * keeping the event's length. Nothing is drawn by hand, so the pickers read
  * as the phone's own (owner, 2026-11-06, after a hand-drawn grid).
  *
@@ -185,8 +185,10 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
 
     function submit() {
       if (!canSubmit || sending.current) return;
-      // Read against the real clock: the host's ticks once a minute.
-      const result = validateNewEvent(draft, new Date());
+      // Send the times on screen, read against the real clock (the host's
+      // ticks every 30 seconds): an unpicked default resolved again here
+      // could land on tomorrow while the sheet still shows today.
+      const result = validateNewEvent({ ...draft, start, end }, new Date());
       if (!result.ok) {
         setErrors(result.errors);
         return;
@@ -389,10 +391,14 @@ export function WhenRow({
   const styles = createStyles(tokens, brand);
   // The day may not go before the minimum's day; the time is checked on
   // Create, since a minimum time would also stop a later day's early hours.
+  // A held value already below it (a kept draft whose day has passed) lowers
+  // the floor to its own day: iOS draws a value under its minimum as the
+  // minimum, which would show a day the draft doesn't hold.
+  const floor = value < minimumDate ? value : minimumDate;
   const minimumDay = new Date(
-    minimumDate.getFullYear(),
-    minimumDate.getMonth(),
-    minimumDate.getDate(),
+    floor.getFullYear(),
+    floor.getMonth(),
+    floor.getDate(),
   );
   const day = formatWeekdayDay(value, now) ?? "";
   const time = formatEventClock(value);

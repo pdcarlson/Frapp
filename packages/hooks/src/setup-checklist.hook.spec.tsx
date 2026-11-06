@@ -204,7 +204,7 @@ describe("useChapterSetupChecklist", () => {
   });
 
   it("refetches only the lists it reads", async () => {
-    reads.permissions = ["events:create", "geofences:manage"];
+    reads.permissions = ["events:create", "members:view", "geofences:manage"];
     const { result } = renderHook(() => useChapterSetupChecklist());
     await act(() => result.current.refetch());
     expect(refetched.sort()).toEqual(["events", "zones"]);

@@ -256,7 +256,7 @@ Officers get one **Set up your chapter** list instead of an officer half on ever
 | Line | Shown to holders of | Module | Done when |
 | --- | --- | --- | --- |
 | Invite members | `members:invite` | always on | the roster has someone besides the officer, or an invite is out |
-| Schedule the first event | `events:create` | `events` | the chapter has an event |
+| Schedule the first event | `events:create` and `members:view` (the events controller requires both) | `events` | the chapter has an event |
 | Add a study zone | `geofences:manage` | `geofences` | the chapter has a study zone |
 | Upload the bylaws | `chapter_docs:upload` | `documents` | the library has a document |
 | Send the first dues | `billing:manage` and `billing:view` (only `view` reads the whole chapter's invoices) | `dues` | the chapter has an invoice |

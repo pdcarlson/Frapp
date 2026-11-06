@@ -70,17 +70,18 @@ const local = (day: number, hour: number, minute = 0) =>
 
 const open = vi.mocked(DateTimePickerAndroid.open);
 
-function render(onCreated = vi.fn()): ReactTestRenderer {
+function renderAt(now: Date, onCreated = vi.fn()): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <NewEventSheet now={NOW} onCreated={onCreated} />
+        <NewEventSheet now={now} onCreated={onCreated} />
       </FrappThemeProvider>,
     );
   });
   return tree;
 }
+const render = (onCreated = vi.fn()) => renderAt(NOW, onCreated);
 
 /** The outermost node whose label starts with `prefix`. */
 function byLabel(tree: ReactTestRenderer, prefix: string) {
@@ -198,6 +199,19 @@ describe("New event", () => {
     act(() => tree.unmount());
   });
 
+  it("sends the start on screen, even when the clock passes 7 PM under it", () => {
+    // The host's clock ticks every 30 seconds: the sheet still shows today's
+    // 7 PM when Create is pressed at 7:00:05. It must not post tomorrow's.
+    const tree = renderAt(new Date(2026, 10, 5, 18, 59, 50));
+    vi.setSystemTime(new Date(2026, 10, 5, 19, 0, 5));
+    type(tree, "Event name", "Formal");
+    act(() => createButton(tree).props.onPress());
+
+    expect(mutate).not.toHaveBeenCalled();
+    expect(screenText(tree)).toContain("That start time has already passed.");
+    act(() => tree.unmount());
+  });
+
   it.each([
     [
       "a subscription refusal",
@@ -264,6 +278,32 @@ describe("the When row on iOS", () => {
     // A new time keeps the held day.
     act(() => pickers[1]!.props.onValueChange({}, local(1, 20, 15)));
     expect(onChange).toHaveBeenLastCalledWith(local(7, 20, 15));
+    act(() => tree.unmount());
+  });
+
+  it("lowers the day's floor to a kept start that has passed, so it shows that day", () => {
+    // Picked Wednesday, reopened Thursday: iOS would draw Wednesday as the
+    // minimum, Thursday, while the draft still held Wednesday.
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <WhenRow
+            label="Starts"
+            value={local(4, 20)}
+            now={NOW}
+            minimumDate={NOW}
+            disabled={false}
+            onChange={vi.fn()}
+            platform="ios"
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    const [dayPicker] = tree.root.findAll(
+      (node) => node.type === ("DateTimePicker" as never),
+    );
+    expect(dayPicker!.props.minimumDate).toEqual(local(4, 0));
     act(() => tree.unmount());
   });
 });
