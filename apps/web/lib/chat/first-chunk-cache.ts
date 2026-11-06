@@ -134,11 +134,16 @@
  */
 
 import Dexie, { type Table } from "dexie";
-import { toRawRow, type ChatMessage, type RawChatMessage } from "@repo/chat-core/types";
+import {
+  toRawRow,
+  type ChatMessage,
+  type RawChatMessage,
+} from "@repo/chat-core/types";
 // Type-only: erased at compile time, so the channel rail's component graph is
 // not on this module's runtime import graph.
 import type { ChatChannel } from "@/components/chat/channel-list";
-import { coldLoadDefaultChannelId } from "./default-channel";
+import { landingChannelId } from "@repo/hooks";
+import { readLastChannel } from "./last-channel";
 import { FIRST_CHUNK_DB_NAME } from "./first-chunk-wipe";
 // Type-only: the shared scope definition, erased at compile time.
 import type { ChatScope } from "./chat-scope";
@@ -155,11 +160,11 @@ export const FIRST_CHUNK_MESSAGE_LIMIT = 30;
  *
  * One would be enough if the channel a cold load lands on were always the one
  * the member last read — it is not. `chat-shell.tsx` resolves the active
- * channel from `?channel=`, then `#general`, then the first row, so a member
- * who was reading `#social` can be sent to `#general` by a plain reload, and a
- * deep link can name a third. Keeping the few most recent tails means the
- * cache is warm for whichever of those the shell picks, without this module
- * having to know the selection rule (and without changing it).
+ * channel from `?channel=`, then this browser's last channel, then `#general`,
+ * then the first row, so another tab, a deleted channel or a deep link can each
+ * send a load somewhere other than the last tail written. Keeping the few most
+ * recent tails means the cache is warm for whichever of those the shell picks;
+ * eviction pins the landing channel on top (`evictOldestTails`).
  */
 export const FIRST_CHUNK_CHANNEL_LIMIT = 3;
 
@@ -268,7 +273,8 @@ export interface CachedBlockFloor {
 }
 
 /** A {@link CachedBlockFloor} with the scope it was written under. */
-export interface CachedBlockFloorRow extends CachedBlockFloor, FirstChunkScope {}
+export interface CachedBlockFloorRow
+  extends CachedBlockFloor, FirstChunkScope {}
 
 /**
  * The viewer's `users.id` under one scope.
@@ -319,7 +325,8 @@ class ChatReadCacheDB extends Dexie {
     */
     this.version(1).stores({
       channelLists: "[userId+chapterId]",
-      channelTails: "[userId+chapterId+channelId], [userId+chapterId], cachedAt",
+      channelTails:
+        "[userId+chapterId+channelId], [userId+chapterId], cachedAt",
     });
     /*
       v2 adds `viewerIds` and changes nothing that exists.
@@ -516,13 +523,13 @@ export async function readFirstChunk(
         like the viewer id, its whole key is the scope.
       */
       blockFloor: scopeRow?.blockFloor
-          ? {
-              userId: scopeRow.userId,
-              chapterId: scopeRow.chapterId,
-              ids: scopeRow.blockFloor.ids,
-              readAt: scopeRow.blockFloor.readAt,
-            }
-          : null,
+        ? {
+            userId: scopeRow.userId,
+            chapterId: scopeRow.chapterId,
+            ids: scopeRow.blockFloor.ids,
+            readAt: scopeRow.blockFloor.readAt,
+          }
+        : null,
     };
   } catch {
     return EMPTY_CHUNK;
@@ -673,22 +680,35 @@ async function evictOldestTails(
   scope: FirstChunkScope,
 ): Promise<void> {
   const key = [scope.userId, scope.chapterId];
-  const [tails, list] = await Promise.all([
+  const [tails, list, scopeRow] = await Promise.all([
     db.channelTails.where("[userId+chapterId]").equals(key).toArray(),
     db.channelLists.get(key as [string, string]),
+    db.viewerIds.get(key as [string, string]),
   ]);
   if (tails.length <= FIRST_CHUNK_CHANNEL_LIMIT) return;
   /*
     Recency alone would evict the channel a cold load actually lands on.
 
-    The shell's default is fixed (`#general`, else the first row), not
-    most-recent — so a member who reads `#general` and then three other
-    channels makes `#general` the oldest tail and loses it, and their next
-    reload goes straight to the one channel with nothing cached. Pinning it
-    costs one slot and covers the commonest cold load there is.
-    `default-channel.ts` holds the rule both sides read.
+    The shell opens on the member's last channel, else `#general`, else the
+    first row (`landingChannelId` in `@repo/hooks`, the rule both sides
+    read). The last channel is usually the newest tail anyway, but a member
+    who reads `#general` and then three other channels in another tab makes
+    `#general` the oldest tail, and a device with no last channel would
+    reload straight into the one channel with nothing cached. Pinning the
+    landing channel costs one slot and covers the commonest cold load.
+
+    The last-channel key is in `users.id` space while this scope is keyed by
+    the auth uid, so it is read through the scope row's cached viewer id.
+    With none cached yet, the pin falls back to the fixed default.
   */
-  const pinned = list ? coldLoadDefaultChannelId(list.channels) : null;
+  const pinned = list
+    ? landingChannelId(
+        list.channels,
+        scopeRow?.viewerUserId
+          ? readLastChannel(scopeRow.viewerUserId, scope.chapterId)
+          : null,
+      )
+    : null;
   const evictable = tails
     .filter((row) => row.channelId !== pinned)
     .sort((a, b) => a.cachedAt - b.cachedAt);

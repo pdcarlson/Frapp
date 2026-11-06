@@ -16,6 +16,7 @@ const mockState = vi.hoisted(() => ({
   })),
   remove: vi.fn(async () => undefined),
   tokenListeners: [] as Array<() => void>,
+  launchResponse: null as unknown,
 }));
 
 vi.mock("expo-router", () => ({
@@ -54,7 +55,12 @@ vi.mock("./push", () => ({
     };
   },
   addNotificationResponseListener: () => ({ remove: vi.fn() }),
-  takeLastNotificationResponse: () => null,
+  takeLastNotificationResponse: () => {
+    const response = mockState.launchResponse;
+    mockState.launchResponse = null;
+    return response;
+  },
+  hasLaunchNotificationTap: () => mockState.launchResponse !== null,
   configureForegroundPresentation: vi.fn(),
   ensureAndroidChannel: vi.fn(),
 }));
@@ -74,6 +80,9 @@ vi.mock("./push-registration", async (importOriginal) => {
 });
 
 const { usePushRuntime } = await import("./use-push-runtime");
+const { claimChatLaunch, resetChatLaunchForTests } = await import(
+  "@/lib/chat/last-channel"
+);
 
 beforeEach(() => {
   mockState.isAuthenticated = false;
@@ -83,6 +92,7 @@ beforeEach(() => {
   mockState.token = "ExponentPushToken[abc]";
   mockState.stored = null;
   mockState.tokenListeners = [];
+  mockState.launchResponse = null;
   mockState.register.mockClear();
   mockState.remove.mockClear();
 });
@@ -153,5 +163,29 @@ describe("usePushRuntime token lifecycle", () => {
     mockState.status = "authenticated";
     renderHook(() => usePushRuntime());
     expect(mockState.tokenListeners).toHaveLength(0);
+  });
+});
+
+describe("usePushRuntime and the chat launch jump", () => {
+  beforeEach(() => resetChatLaunchForTests());
+
+  it("a tap that launched the app settles the jump before chat home can claim it", () => {
+    /*
+      `takeLastNotificationResponse` clears the launch response, so by the time
+      chat home's list answers, `hasLaunchNotificationTap` already reads false.
+      The settle in `handleResponse` is then the only thing keeping the last
+      channel from opening on top of the tap's own target.
+    */
+    mockState.launchResponse = {
+      notification: { request: { content: { data: {} } } },
+    };
+    renderHook(() => usePushRuntime());
+    expect(mockState.launchResponse).toBeNull();
+    expect(claimChatLaunch()).toBe(false);
+  });
+
+  it("leaves the jump to chat home when no tap launched the app", () => {
+    renderHook(() => usePushRuntime());
+    expect(claimChatLaunch()).toBe(true);
   });
 });

@@ -46,6 +46,7 @@ export * from "./use-custom-fields";
 export * from "./use-discord-import";
 export * from "./use-discord-connection";
 export * from "./channel-sidebar";
+export * from "./landing-channel";
 // `useChatSidebar` and its query keys stay module-private: every surface reads
 // the arrangement through `useSidebarPreferences`.
 export {
