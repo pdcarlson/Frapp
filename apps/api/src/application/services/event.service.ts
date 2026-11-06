@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
 import type { IEventRepository } from '#domain/repositories/event.repository.interface';
@@ -16,6 +17,7 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import { toRRuleLine } from '@repo/validation';
 import { hasRequiredRole } from './event-role-targeting';
 import { normalizeCheckInZone } from './event-input';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import type {
   CreateEventInput,
   CreateEventResult,
@@ -30,6 +32,8 @@ import type {
  */
 @Injectable()
 export class EventService {
+  private readonly logger = new Logger(EventService.name);
+
   constructor(
     @Inject(EVENT_REPOSITORY) private readonly eventRepo: IEventRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
@@ -200,7 +204,25 @@ export class EventService {
     });
 
     if (parent.recurrence_rule) {
-      await this.series.generateRecurringInstances(parent);
+      // The occurrences go in as one insert, so a failure means none landed.
+      // Take the parent back out too: otherwise the request fails while a
+      // series head with no occurrences stays behind, and a client retrying
+      // the 5xx creates a second one (#3235).
+      try {
+        await this.series.generateRecurringInstances(parent);
+      } catch (error) {
+        try {
+          await this.eventRepo.delete(parent.id, parent.chapter_id);
+        } catch (cleanupError) {
+          reportCaughtFailure(this.logger, {
+            level: 'error',
+            site: 'event-create-series-rollback',
+            message: `Creating the occurrences of recurring event ${parent.id} failed, and so did deleting it. It is a series head with no occurrences; delete it by hand.`,
+            error: cleanupError,
+          });
+        }
+        throw error;
+      }
     }
 
     await this.announcements.notifyEventCreated(input.chapter_id, parent);

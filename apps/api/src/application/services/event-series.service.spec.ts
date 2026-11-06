@@ -1,8 +1,9 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, Logger } from '@nestjs/common';
 import { Event } from '#domain/entities/event.entity';
 import {
   baseEvent,
   createEventServiceFixture,
+  occurrenceRows,
   type EventServiceFixture,
 } from '#test/helpers/event-service.fixture';
 
@@ -36,19 +37,21 @@ describe('EventSeriesService', () => {
         recurrence_rule: 'WEEKLY',
       });
 
-      // 1 parent + 12 instances = 13 total create calls
-      expect(mockEventRepo.create).toHaveBeenCalledTimes(13);
+      // The parent, then all 12 occurrences in one insert.
+      expect(mockEventRepo.create).toHaveBeenCalledTimes(1);
+      expect(mockEventRepo.createMany).toHaveBeenCalledTimes(1);
+      expect(occurrenceRows(mockEventRepo)).toHaveLength(12);
 
       // Verify first instance has correct parent_event_id and null recurrence_rule
-      const secondCall = mockEventRepo.create.mock.calls[1][0];
-      expect(secondCall.parent_event_id).toBe('evt-1');
-      expect(secondCall.recurrence_rule).toBeNull();
+      const firstOccurrence = occurrenceRows(mockEventRepo)[0];
+      expect(firstOccurrence.parent_event_id).toBe('evt-1');
+      expect(firstOccurrence.recurrence_rule).toBeNull();
 
       // Verify start_time is 7 days after parent for the first instance
       const parentStart = new Date(baseEvent.start_time);
       const expectedStart = new Date(parentStart);
       expectedStart.setDate(expectedStart.getDate() + 7);
-      expect(secondCall.start_time).toBe(expectedStart.toISOString());
+      expect(firstOccurrence.start_time).toBe(expectedStart.toISOString());
     });
 
     it('should generate 6 instances for BIWEEKLY recurrence', async () => {
@@ -66,18 +69,20 @@ describe('EventSeriesService', () => {
         recurrence_rule: 'BIWEEKLY',
       });
 
-      // 1 parent + 6 instances = 7 total create calls
-      expect(mockEventRepo.create).toHaveBeenCalledTimes(7);
+      // The parent, then all 6 occurrences in one insert.
+      expect(mockEventRepo.create).toHaveBeenCalledTimes(1);
+      expect(mockEventRepo.createMany).toHaveBeenCalledTimes(1);
+      expect(occurrenceRows(mockEventRepo)).toHaveLength(6);
 
-      const secondCall = mockEventRepo.create.mock.calls[1][0];
-      expect(secondCall.parent_event_id).toBe('evt-1');
-      expect(secondCall.recurrence_rule).toBeNull();
+      const firstOccurrence = occurrenceRows(mockEventRepo)[0];
+      expect(firstOccurrence.parent_event_id).toBe('evt-1');
+      expect(firstOccurrence.recurrence_rule).toBeNull();
 
       // Verify start_time is 14 days after parent for the first instance
       const parentStart = new Date(baseEvent.start_time);
       const expectedStart = new Date(parentStart);
       expectedStart.setDate(expectedStart.getDate() + 14);
-      expect(secondCall.start_time).toBe(expectedStart.toISOString());
+      expect(firstOccurrence.start_time).toBe(expectedStart.toISOString());
     });
 
     it('should generate 6 instances for MONTHLY recurrence', async () => {
@@ -95,18 +100,20 @@ describe('EventSeriesService', () => {
         recurrence_rule: 'MONTHLY',
       });
 
-      // 1 parent + 6 instances = 7 total create calls
-      expect(mockEventRepo.create).toHaveBeenCalledTimes(7);
+      // The parent, then all 6 occurrences in one insert.
+      expect(mockEventRepo.create).toHaveBeenCalledTimes(1);
+      expect(mockEventRepo.createMany).toHaveBeenCalledTimes(1);
+      expect(occurrenceRows(mockEventRepo)).toHaveLength(6);
 
-      const secondCall = mockEventRepo.create.mock.calls[1][0];
-      expect(secondCall.parent_event_id).toBe('evt-1');
-      expect(secondCall.recurrence_rule).toBeNull();
+      const firstOccurrence = occurrenceRows(mockEventRepo)[0];
+      expect(firstOccurrence.parent_event_id).toBe('evt-1');
+      expect(firstOccurrence.recurrence_rule).toBeNull();
 
       // Verify start_time is 1 month after parent for the first instance
       const parentStart = new Date(baseEvent.start_time);
       const expectedStart = new Date(parentStart);
       expectedStart.setMonth(expectedStart.getMonth() + 1);
-      expect(secondCall.start_time).toBe(expectedStart.toISOString());
+      expect(firstOccurrence.start_time).toBe(expectedStart.toISOString());
     });
 
     it('each instance should have correct parent_event_id and null recurrence_rule', async () => {
@@ -124,8 +131,8 @@ describe('EventSeriesService', () => {
         recurrence_rule: 'WEEKLY',
       });
 
-      for (let i = 1; i <= 12; i++) {
-        const call = mockEventRepo.create.mock.calls[i][0];
+      expect(occurrenceRows(mockEventRepo)).toHaveLength(12);
+      for (const call of occurrenceRows(mockEventRepo)) {
         expect(call.parent_event_id).toBe('evt-1');
         expect(call.recurrence_rule).toBeNull();
       }
@@ -161,24 +168,26 @@ describe('EventSeriesService', () => {
 
       // Assert the generation actually ran before asserting anything about its
       // payloads, so this cannot pass vacuously on zero generated occurrences.
-      expect(mockEventRepo.create).toHaveBeenCalledTimes(13);
-      for (let i = 1; i <= 12; i++) {
-        const call = mockEventRepo.create.mock.calls[i][0];
+      expect(occurrenceRows(mockEventRepo)).toHaveLength(12);
+      for (const call of occurrenceRows(mockEventRepo)) {
         expect(call.check_in_zone).toEqual(zone);
         expect(call.check_in_zone_name).toBe('Great Hall');
       }
     });
 
-    it('fails the request when one occurrence insert fails', async () => {
+    it('takes the parent back out when the occurrence insert fails (#3235)', async () => {
+      // The occurrences are one insert, so a failure means none landed. A
+      // parent left behind would be a series head with no occurrences, and a
+      // client retrying the 5xx would create a second one.
       const weeklyEvent: Event = {
         ...baseEvent,
         recurrence_rule: 'WEEKLY',
       };
-      mockEventRepo.create
-        .mockResolvedValueOnce(weeklyEvent)
-        .mockResolvedValueOnce(weeklyEvent)
-        .mockRejectedValueOnce(new Error('insert failed'))
-        .mockResolvedValue(weeklyEvent);
+      mockEventRepo.create.mockResolvedValue(weeklyEvent);
+      mockEventRepo.createMany.mockRejectedValueOnce(
+        new Error('insert failed'),
+      );
+      mockEventRepo.delete.mockResolvedValue(undefined);
 
       await expect(
         service.create({
@@ -189,6 +198,43 @@ describe('EventSeriesService', () => {
           recurrence_rule: 'WEEKLY',
         }),
       ).rejects.toThrow('insert failed');
+
+      expect(mockEventRepo.createMany).toHaveBeenCalledTimes(1);
+      expect(mockEventRepo.delete).toHaveBeenCalledWith('evt-1', 'ch-1');
+      // Nothing announced an event that no longer exists.
+      expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
+    });
+
+    it('still reports the insert failure when deleting the parent also fails', async () => {
+      const weeklyEvent: Event = {
+        ...baseEvent,
+        recurrence_rule: 'WEEKLY',
+      };
+      mockEventRepo.create.mockResolvedValue(weeklyEvent);
+      mockEventRepo.createMany.mockRejectedValueOnce(
+        new Error('insert failed'),
+      );
+      mockEventRepo.delete.mockRejectedValueOnce(new Error('delete failed'));
+      const logged = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      await expect(
+        service.create({
+          chapter_id: 'ch-1',
+          name: 'Chapter Meeting',
+          start_time: baseEvent.start_time,
+          end_time: baseEvent.end_time,
+          recurrence_rule: 'WEEKLY',
+        }),
+      ).rejects.toThrow('insert failed');
+
+      // The stranded head is named, so it can be found and removed.
+      expect(logged).toHaveBeenCalledWith(
+        expect.stringContaining('evt-1'),
+        expect.anything(),
+      );
+      logged.mockRestore();
     });
 
     it('should not generate instances when no recurrence_rule is set', async () => {
@@ -341,7 +387,7 @@ describe('EventSeriesService', () => {
           ['child-future-2'],
           'ch-1',
         );
-        expect(mockEventRepo.create).toHaveBeenCalledTimes(6);
+        expect(occurrenceRows(mockEventRepo)).toHaveLength(6);
       });
 
       // The web editor PATCHes the whole event back on every save, so an
@@ -361,7 +407,7 @@ describe('EventSeriesService', () => {
         );
 
         expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
-        expect(mockEventRepo.create).not.toHaveBeenCalled();
+        expect(mockEventRepo.createMany).not.toHaveBeenCalled();
       });
 
       it('treats an equivalent timestamp spelling as unchanged', async () => {
@@ -430,7 +476,7 @@ describe('EventSeriesService', () => {
           'series',
         );
 
-        const createdStarts = mockEventRepo.create.mock.calls.map(([payload]) =>
+        const createdStarts = occurrenceRows(mockEventRepo).map((payload) =>
           new Date(payload.start_time as string).getTime(),
         );
         expect(createdStarts.length).toBeGreaterThan(0);
@@ -586,8 +632,8 @@ describe('EventSeriesService', () => {
           'series',
         );
 
-        expect(mockEventRepo.create).toHaveBeenCalledTimes(6);
-        for (const [payload] of mockEventRepo.create.mock.calls) {
+        expect(occurrenceRows(mockEventRepo)).toHaveLength(6);
+        for (const payload of occurrenceRows(mockEventRepo)) {
           expect(payload.name).toBe('Renamed');
           expect(payload.check_in_zone).toEqual(ZONE);
         }
@@ -831,8 +877,8 @@ describe('EventSeriesService', () => {
         );
 
         // A BIWEEKLY series is six occurrences, and every one must be upcoming.
-        expect(mockEventRepo.create).toHaveBeenCalledTimes(6);
-        for (const [payload] of mockEventRepo.create.mock.calls) {
+        expect(occurrenceRows(mockEventRepo)).toHaveLength(6);
+        for (const payload of occurrenceRows(mockEventRepo)) {
           expect(
             new Date(payload.start_time as string).getTime(),
           ).toBeGreaterThan(NOW);
@@ -880,7 +926,7 @@ describe('EventSeriesService', () => {
 
         // A rename must not destroy and rebuild the series...
         expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
-        expect(mockEventRepo.create).not.toHaveBeenCalled();
+        expect(mockEventRepo.createMany).not.toHaveBeenCalled();
         // ...and must not drag the anchor onto the child's date. Before #1392
         // the rename landed on `parent-1`; it now lands on the promoted
         // successor. Assert that write happened before inspecting the call
@@ -939,10 +985,9 @@ describe('EventSeriesService', () => {
           recurrence_rule: 'MONTHLY',
         });
 
-        // 1 parent + 6 occurrences; assert generation ran before inspecting it.
-        expect(mockEventRepo.create).toHaveBeenCalledTimes(7);
-        for (let i = 1; i <= 6; i++) {
-          const payload = mockEventRepo.create.mock.calls[i][0];
+        // 6 occurrences; assert generation ran before inspecting it.
+        expect(occurrenceRows(mockEventRepo)).toHaveLength(6);
+        for (const payload of occurrenceRows(mockEventRepo)) {
           expect(
             new Date(payload.end_time as string).getTime(),
           ).toBeGreaterThan(new Date(payload.start_time as string).getTime());
@@ -1019,6 +1064,115 @@ describe('EventSeriesService', () => {
         );
 
         expect(mockEventRepo.findById).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    // A regenerate swaps the upcoming occurrences: it inserts the new set in
+    // one statement and only then deletes the old one, so a failure never
+    // leaves the series without upcoming occurrences (#3235).
+    describe('regenerate failures (#3235)', () => {
+      const upcomingParent: Event = {
+        ...parent,
+        start_time: '2026-03-20T18:00:00.000Z',
+        end_time: '2026-03-20T19:00:00.000Z',
+      };
+      const upcomingChildren = [futureChild1, futureChild2];
+
+      const changeRule = () =>
+        service.update(
+          'parent-1',
+          'ch-1',
+          { recurrence_rule: 'MONTHLY' },
+          'series',
+        );
+
+      beforeEach(() => {
+        mockEventRepo.findById.mockResolvedValue(upcomingParent);
+        mockEventRepo.findChildren.mockResolvedValue(upcomingChildren);
+        mergeUpdate([upcomingParent, ...upcomingChildren]);
+      });
+
+      it('inserts the new occurrences, then deletes the old, then writes the parent', async () => {
+        await changeRule();
+
+        const insertAt = mockEventRepo.createMany.mock.invocationCallOrder[0];
+        const deleteAt = mockEventRepo.deleteMany.mock.invocationCallOrder[0];
+        const parentAt = mockEventRepo.update.mock.invocationCallOrder[0];
+        expect(insertAt).toBeLessThan(deleteAt);
+        expect(deleteAt).toBeLessThan(parentAt);
+        expect(mockEventRepo.deleteMany).toHaveBeenCalledWith(
+          ['child-future-1', 'child-future-2'],
+          'ch-1',
+        );
+        expect(occurrenceRows(mockEventRepo)).toHaveLength(6);
+        for (const row of occurrenceRows(mockEventRepo)) {
+          expect(row.parent_event_id).toBe('parent-1');
+        }
+      });
+
+      it('changes nothing when the insert fails', async () => {
+        mockEventRepo.createMany.mockRejectedValueOnce(
+          new Error('insert failed'),
+        );
+
+        await expect(changeRule()).rejects.toThrow('insert failed');
+
+        // The old occurrences stay, and so does the parent's old rule, so a
+        // retried edit still reads as a rule change and regenerates.
+        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+        expect(mockEventRepo.update).not.toHaveBeenCalled();
+        expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
+      });
+
+      it('removes the new occurrences again when deleting the old ones fails', async () => {
+        mockEventRepo.deleteMany
+          .mockRejectedValueOnce(new Error('delete failed'))
+          .mockResolvedValueOnce(undefined);
+
+        await expect(changeRule()).rejects.toThrow('delete failed');
+
+        const inserted = (await mockEventRepo.createMany.mock.results[0]
+          .value) as Event[];
+        expect(mockEventRepo.deleteMany).toHaveBeenLastCalledWith(
+          inserted.map((row) => row.id),
+          'ch-1',
+        );
+        expect(mockEventRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('logs the duplicate ids when that cleanup fails too', async () => {
+        mockEventRepo.deleteMany.mockRejectedValue(new Error('delete failed'));
+        const logged = jest
+          .spyOn(Logger.prototype, 'error')
+          .mockImplementation(() => undefined);
+
+        await expect(changeRule()).rejects.toThrow('delete failed');
+
+        expect(logged).toHaveBeenCalledWith(
+          expect.stringContaining('occ-1'),
+          expect.anything(),
+        );
+        logged.mockRestore();
+      });
+
+      it("on a started head, a failed insert keeps the new head's upcoming occurrences", async () => {
+        mockEventRepo.findById.mockResolvedValue(parent);
+        mockEventRepo.findChildren.mockResolvedValue(wholeSeries);
+        mergeUpdate([parent, ...wholeSeries]);
+        mockEventRepo.createMany.mockRejectedValueOnce(
+          new Error('insert failed'),
+        );
+
+        await expect(changeRule()).rejects.toThrow('insert failed');
+
+        // The split itself has happened (documented in splitStartedHead), but
+        // `child-future-2` was never deleted, so the new head still has it.
+        expect(mockEventRepo.deleteMany).not.toHaveBeenCalled();
+        expect(mockEventRepo.update).toHaveBeenCalledWith(
+          'child-future-1',
+          'ch-1',
+          expect.objectContaining({ recurrence_rule: 'MONTHLY' }),
+        );
       });
     });
 
