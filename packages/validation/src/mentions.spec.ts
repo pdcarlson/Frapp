@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  activeMentionQuery,
   extractMentionTokens,
   findMentionSpans,
   matchMentionCandidate,
+  mentionLabelFor,
+  mentionSuggestions,
   resolveMentions,
   type MentionCandidate,
 } from "./mentions";
@@ -22,7 +25,7 @@ const BOB: MentionCandidate = {
 
 /**
  * The positional half, added for the in-body mention chip
- * (`apps/web/components/chat/renderers/remark-mention-chips.ts`). A highlight
+ * (`packages/chat-core/src/markdown-mentions.ts`). A highlight
  * has to wrap exactly the characters the resolver read, so these pin the offsets
  * as well as the tokens — the whole point of putting this here rather than
  * letting a renderer keep its own regex.
@@ -271,5 +274,172 @@ describe("resolveMentions", () => {
 
   it("returns nothing for a message with no mentions", () => {
     expect(resolveMentions("no mentions here", all)).toEqual([]);
+  });
+});
+
+// Moved from `apps/web/components/chat/mention-suggestion.spec.ts` when the
+// label became shared with mobile's composer.
+describe("mentionLabelFor", () => {
+  it("strips internal whitespace so the label matches the mention resolver's no-space tier", () => {
+    expect(mentionLabelFor("Jane Doe")).toBe("JaneDoe");
+  });
+
+  it("leaves a single-word name untouched", () => {
+    expect(mentionLabelFor("Cher")).toBe("Cher");
+  });
+
+  it("collapses multiple internal spaces, not just single ones", () => {
+    expect(mentionLabelFor("Mary  Jane   Watson")).toBe("MaryJaneWatson");
+  });
+
+  // Regression: the mention tokenizer (packages/validation/src/mentions.ts)
+  // truncates — does not reject — a token at the first character outside
+  // its allowed set. A label that kept "(", ")" or other punctuation would
+  // silently shorten to something that could resolve to a *different*
+  // member than the one actually picked. Stripping to alphanumerics-and-marks
+  // only means every kept character is one the tokenizer always carries
+  // through to the end.
+  it("strips punctuation the mention tokenizer would otherwise truncate on", () => {
+    expect(mentionLabelFor("Sam (VP)")).toBe("SamVP");
+  });
+
+  it("strips commas, slashes, and ampersands", () => {
+    expect(mentionLabelFor("Smith, John")).toBe("SmithJohn");
+    expect(mentionLabelFor("A/B Test")).toBe("ABTest");
+    expect(mentionLabelFor("Rock & Roll")).toBe("RockRoll");
+  });
+
+  it("keeps digits and Unicode letters, which the tokenizer does accept mid-token", () => {
+    expect(mentionLabelFor("Ángela 2nd")).toBe("Ángela2nd");
+  });
+
+  // Proves the fix against the real server-side resolver, not just the
+  // label-computation logic in isolation: a label built for a member whose
+  // name contains punctuation the tokenizer would otherwise truncate on
+  // must still resolve back to that exact member — not a same-named
+  // lookalike whose name the truncated token happens to match exactly.
+  it("resolves to the exact member picked, not a same-named lookalike, when the display name has punctuation", () => {
+    const candidates = [
+      { user_id: "vp-id", display_name: "Sam (VP)" },
+      { user_id: "other-sam-id", display_name: "Sam" },
+    ];
+    const label = mentionLabelFor("Sam (VP)");
+    const resolved = resolveMentions(`Hey @${label}`, candidates);
+    expect(resolved).toEqual(["vp-id"]);
+  });
+});
+
+describe("mentionSuggestions", () => {
+  const roster: MentionCandidate[] = [
+    JANE,
+    { user_id: "empty", display_name: "" },
+    JANET,
+    { user_id: "digit", display_name: "123 Squad" },
+    BOB,
+  ];
+
+  it("offers every reachable member in roster order for an empty query", () => {
+    expect(mentionSuggestions(roster, "").map((s) => s.member.user_id)).toEqual([
+      JANE.user_id,
+      JANET.user_id,
+      BOB.user_id,
+    ]);
+  });
+
+  it("matches anywhere in the display name, ignoring case", () => {
+    expect(mentionSuggestions(roster, "STONE").map((s) => s.label)).toEqual([
+      "BobStone",
+    ]);
+    expect(mentionSuggestions(roster, "jan").map((s) => s.label)).toEqual([
+      "JaneDoe",
+      "JanetRoe",
+    ]);
+  });
+
+  it("leaves out a member with no name and one whose label opens on a digit", () => {
+    const ids = mentionSuggestions(roster, "").map((s) => s.member.user_id);
+    expect(ids).not.toContain("empty");
+    expect(ids).not.toContain("digit");
+  });
+
+  it("caps the matches, not the rows it reads", () => {
+    const roster = [
+      ...Array.from({ length: 20 }, (_, i) => ({
+        user_id: `u${i}`,
+        display_name: `Member ${i}`,
+      })),
+      { user_id: "zoe", display_name: "Zoe Park" },
+    ];
+    expect(mentionSuggestions(roster, "zoe").map((s) => s.member.user_id)).toEqual([
+      "zoe",
+    ]);
+  });
+
+  it("reads iOS's curly apostrophe as the straight one, both ways", () => {
+    const roster = [
+      { user_id: "straight", display_name: "Sean O'Brien" },
+      { user_id: "curly", display_name: "Pat O’Neil" },
+    ];
+    expect(mentionSuggestions(roster, "o’br").map((s) => s.member.user_id)).toEqual([
+      "straight",
+    ]);
+    expect(mentionSuggestions(roster, "o'ne").map((s) => s.member.user_id)).toEqual([
+      "curly",
+    ]);
+  });
+
+  it("caps the list", () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      user_id: `u${i}`,
+      display_name: `Member ${i}`,
+    }));
+    expect(mentionSuggestions(many, "")).toHaveLength(8);
+    expect(mentionSuggestions(many, "", 3)).toHaveLength(3);
+  });
+
+  it("inserts a label that resolves back to the member picked", () => {
+    for (const { member, label } of mentionSuggestions(roster, "")) {
+      expect(resolveMentions(`hi @${label}`, roster)).toEqual([member.user_id]);
+    }
+  });
+});
+
+describe("activeMentionQuery", () => {
+  it("opens on a bare `@` at the caret", () => {
+    expect(activeMentionQuery("@", 1)).toEqual({ start: 0, query: "", end: 1 });
+    expect(activeMentionQuery("hi @", 4)).toEqual({ start: 3, query: "", end: 4 });
+  });
+
+  it("reads the text between the `@` and the caret", () => {
+    expect(activeMentionQuery("hi @pa", 6)).toEqual({ start: 3, query: "pa", end: 6 });
+    // Caret mid-word: only what is before it is the query, but the handle
+    // runs on to its end, so a pick replaces all of it.
+    expect(activeMentionQuery("hi @paul now", 6)).toEqual({
+      start: 3,
+      query: "pa",
+      end: 8,
+    });
+  });
+
+  it("closes once a space follows the name", () => {
+    expect(activeMentionQuery("hi @paul ", 9)).toBeNull();
+  });
+
+  it("does not open where the tokenizer would not read a mention", () => {
+    expect(activeMentionQuery("mail paul@example", 17)).toBeNull();
+    expect(activeMentionQuery("@jane@b", 7)).toBeNull();
+    // A token opens on a letter, so `@1` and `@.` are never mentions.
+    expect(activeMentionQuery("@1", 2)).toBeNull();
+    expect(activeMentionQuery("@.", 2)).toBeNull();
+  });
+
+  it("is null for a caret outside the text", () => {
+    expect(activeMentionQuery("@pa", 0)).toBeNull();
+    expect(activeMentionQuery("@pa", 9)).toBeNull();
+  });
+
+  it("closes on a query longer than any token the resolver reads", () => {
+    const long = "a".repeat(65);
+    expect(activeMentionQuery(`@${long}`, long.length + 1)).toBeNull();
   });
 });
