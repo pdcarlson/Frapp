@@ -378,8 +378,9 @@ export function ImportFinished({
   // landed yet. Every other time this is the frame it lands on.
   // A bot import's landing waits for its categories, so none arrive
   // mid-moment and the figures don't regroup under it; an upload has none.
-  const playing = useArrival(row, row.source !== "bot" || !progress.isPending);
-  const messages = useCountUp(row.imported_messages, playing);
+  const arrival = useArrival(row, row.source !== "bot" || !progress.isPending);
+  const { playing } = arrival;
+  const messages = useCountUp(row.imported_messages, arrival);
   const tiles = done && categories ? categoryTiles(categories) : [];
   return (
     <section
@@ -388,7 +389,7 @@ export function ImportFinished({
     >
       <div className="space-y-1">
         <div className="flex items-center gap-2.5">
-          {done ? <ArrivalMark playing={playing} /> : null}
+          {done ? <ArrivalMark {...arrival} /> : null}
           <h2 id="discord-import-finished" className="text-headline">
             {title}
           </h2>

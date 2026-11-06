@@ -66,16 +66,28 @@ function recent(completedAt: string | null | undefined, now: number): boolean {
 }
 
 /**
- * Whether the landing is playing now. It may play on an import that
- * completed within `ARRIVAL_WINDOW_MS` and that this browser hasn't landed
- * yet, unless the person asked for reduced motion; that is settled once,
- * when the finished state mounts (on the client, once the import has
- * loaded). It starts when `ready` (everything it lands is loaded, so nothing
- * arrives mid-moment) and stops `signatureMoment.totalMs` later. It is
- * remembered as played only once it has run to the end, so leaving mid-way
- * plays it again next time.
+ * How long the landing waits for what it lands (a bot import's categories)
+ * before it gives up and the page rests. While it waits, the count and the
+ * check mark hold their first frame instead of showing the end and then
+ * jumping back to start.
  */
-export function useArrival(row: ImportRow, ready: boolean): boolean {
+export const ARRIVAL_WAIT_MS = 1000;
+
+/**
+ * The landing's state. It may play on an import that completed within
+ * `ARRIVAL_WINDOW_MS` and that this browser hasn't landed yet, unless the
+ * person asked for reduced motion; that is settled once, when the finished
+ * state mounts (on the client, once the import has loaded). It is `holding`
+ * until `ready` (everything it lands is loaded, so nothing arrives
+ * mid-moment), for at most `ARRIVAL_WAIT_MS`; then `playing` for
+ * `signatureMoment.totalMs`. It is remembered as played only once it has run
+ * to the end, so leaving mid-way, or a wait that gave up, plays it again next
+ * time.
+ */
+export function useArrival(
+  row: ImportRow,
+  ready: boolean,
+): { playing: boolean; holding: boolean } {
   const [eligible] = useState(
     () =>
       row.status === "completed" &&
@@ -85,7 +97,15 @@ export function useArrival(row: ImportRow, ready: boolean): boolean {
       !seen(row.id),
   );
   const [over, setOver] = useState(false);
-  const playing = eligible && ready && !over;
+  const [gaveUp, setGaveUp] = useState(false);
+  const live = eligible && !over && !gaveUp;
+  const playing = live && ready;
+  const holding = live && !ready;
+  useEffect(() => {
+    if (!holding) return;
+    const timer = window.setTimeout(() => setGaveUp(true), ARRIVAL_WAIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [holding]);
   useEffect(() => {
     if (!playing) return;
     const timer = window.setTimeout(() => {
@@ -94,11 +114,17 @@ export function useArrival(row: ImportRow, ready: boolean): boolean {
     }, signatureMoment.totalMs);
     return () => window.clearTimeout(timer);
   }, [playing, row.id]);
-  return playing;
+  return { playing, holding };
 }
 
-/** `target`, or while the landing plays, the count running up to it. */
-export function useCountUp(target: number, playing: boolean): number {
+/**
+ * `target`, or while the landing plays, the count running up to it; 0 while
+ * it holds.
+ */
+export function useCountUp(
+  target: number,
+  { playing, holding }: { playing: boolean; holding: boolean },
+): number {
   const [value, setValue] = useState(0);
   useEffect(() => {
     if (!playing) return;
@@ -112,16 +138,24 @@ export function useCountUp(target: number, playing: boolean): number {
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, [playing, target]);
+  if (holding) return 0;
   return playing ? value : target;
 }
 
 /** The check mark beside a completed import's title; it lands last. */
-export function ArrivalMark({ playing }: { playing: boolean }) {
+export function ArrivalMark({
+  playing,
+  holding,
+}: {
+  playing: boolean;
+  holding: boolean;
+}) {
   return (
     <span
       aria-hidden="true"
       className={cn(
         "flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-success-tint text-success",
+        holding && "opacity-0",
         playing && "motion-safe:animate-signature-pop",
       )}
       style={

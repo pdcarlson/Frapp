@@ -935,6 +935,8 @@ describe("DiscordImportPage — the landing (#3493)", () => {
     });
     const { container, rerender } = render(<DiscordImportPage />);
     expect(container.innerHTML).not.toContain("animate-signature");
+    // It holds its first frame rather than showing the end first.
+    expect(messagesShown()).toBe("0");
 
     hooks.progress.mockReturnValue({
       data: { ...progress, categories },
@@ -944,6 +946,28 @@ describe("DiscordImportPage — the landing (#3493)", () => {
     });
     rerender(<DiscordImportPage />);
     expect(screen.getByTestId("discord-import-sweep")).toBeInTheDocument();
+  });
+
+  it("gives up and rests when the categories take too long", () => {
+    vi.useFakeTimers();
+    reducedMotion(false);
+    hooks.progress.mockReturnValue({
+      data: undefined,
+      isPending: true,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    const { container } = render(<DiscordImportPage />);
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(container.innerHTML).not.toContain("animate-signature");
+    expect(screen.getByText("messages").nextSibling?.textContent).toBe(
+      n(145574),
+    );
+    expect(
+      window.localStorage.getItem("frapp:discord-import-landed:big"),
+    ).toBeNull();
   });
 
   it("plays again next time when the person leaves mid-way", () => {
