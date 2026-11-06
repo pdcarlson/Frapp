@@ -126,14 +126,20 @@ function gh(args, { input } = {}) {
   }).trim();
 }
 
+// `null` only when GitHub says the thing doesn't exist. Any other failure (a
+// 5xx, a rate limit, a bad token) is rethrown, so it can't pass for "missing"
+// and send the script off to create something that is already there.
 function ghMaybe(args) {
   try {
     return execFileSync("gh", args, {
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
+      stdio: ["ignore", "pipe", "pipe"],
     }).trim();
-  } catch {
-    return null;
+  } catch (err) {
+    const stderr = String(err.stderr ?? "");
+    if (/HTTP 404|release not found|Not Found/i.test(stderr)) return null;
+    process.stderr.write(stderr);
+    throw err;
   }
 }
 
@@ -169,16 +175,26 @@ function mintTag(repo, { tag, sha, version }) {
     "--jq",
     ".sha",
   ]);
-  gh([
-    "api",
-    "--method",
-    "POST",
-    `repos/${repo}/git/refs`,
-    "-f",
-    `ref=refs/tags/${tag}`,
-    "-f",
-    `sha=${object}`,
-  ]);
+  try {
+    gh([
+      "api",
+      "--method",
+      "POST",
+      `repos/${repo}/git/refs`,
+      "-f",
+      `ref=refs/tags/${tag}`,
+      "-f",
+      `sha=${object}`,
+    ]);
+  } catch (err) {
+    console.log(
+      `::error::Made the ${tag} tag object (${object}) but GitHub refused refs/tags/${tag}. ` +
+        "When the recorded commit's .github/workflows differs from main, only RELEASE_GITHUB_TOKEN " +
+        "(automation environment; a user PAT with Contents and Workflows, read and write) may create it. " +
+        "Fix the token and run Mobile release tags again (trap 4 in release.yml).",
+    );
+    throw err;
+  }
 }
 
 export function run({ registryPath, repo, log = console.log }) {
