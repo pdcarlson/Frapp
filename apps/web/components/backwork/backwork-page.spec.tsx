@@ -486,12 +486,30 @@ describe("BackworkPage subscription gating", () => {
 
     const dialog = within(screen.getByRole("dialog"));
     const oversized = new File(["x"], "huge.pdf", { type: "application/pdf" });
-    Object.defineProperty(oversized, "size", { value: 40 * 1024 * 1024 });
+    // Backwork's own ceiling is 50 MB (#3487), so 40 MB no longer trips it.
+    Object.defineProperty(oversized, "size", { value: 60 * 1024 * 1024 });
     await user.upload(dialog.getByLabelText(/^file$/i), oversized);
     await user.click(dialog.getByRole("button", { name: /^upload$/i }));
 
-    expect(await dialog.findByRole("alert")).toHaveTextContent(/too large/i);
+    expect(await dialog.findByRole("alert")).toHaveTextContent(
+      /too large.*50 MB/i,
+    );
     expect(mockRequestUpload).not.toHaveBeenCalled();
+  });
+
+  it("takes a 30 MB scan, over the shared 25 MB cap but under backwork's 50 MB", async () => {
+    const user = userEvent.setup();
+    chapter.active();
+    render(<BackworkPage />);
+    await user.click(uploadTrigger());
+
+    const dialog = within(screen.getByRole("dialog"));
+    const scan = new File(["x"], "scan.pdf", { type: "application/pdf" });
+    Object.defineProperty(scan, "size", { value: 30 * 1024 * 1024 });
+    await user.upload(dialog.getByLabelText(/^file$/i), scan);
+    await user.click(dialog.getByRole("button", { name: /^upload$/i }));
+
+    await waitFor(() => expect(mockRequestUpload).toHaveBeenCalled());
   });
 
   // #1040: the call site read `download_url` while the API returns

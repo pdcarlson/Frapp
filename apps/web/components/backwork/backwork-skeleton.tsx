@@ -57,3 +57,12 @@ export function BackworkPageSkeleton() {
     </PageSkeleton>
   );
 }
+
+/** `/backwork/upload` while it loads: the empty batch's large drop zone. */
+export function BulkUploadPageSkeleton() {
+  return (
+    <PageSkeleton label="Loading bulk upload">
+      <Skeleton className="min-h-[360px] w-full rounded-xl" />
+    </PageSkeleton>
+  );
+}

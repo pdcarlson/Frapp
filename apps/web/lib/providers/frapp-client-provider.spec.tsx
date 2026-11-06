@@ -31,6 +31,8 @@ vi.mock("@/lib/auth/use-claim-chapter-sync", () => ({
 }));
 
 let authUserId: string | null = "test-auth-user";
+const endBulkSessions = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/backwork-bulk/session", () => ({ endBulkSessions }));
 vi.mock("@/lib/auth/use-auth-user-id", () => ({
   useAuthUserId: () => authUserId,
 }));
@@ -72,6 +74,7 @@ function makeClient() {
  */
 describe("FrappProvider chapter-change cache drop", () => {
   beforeEach(() => {
+    endBulkSessions.mockClear();
     seen.length = 0;
     activeChapterId = null;
     authUserId = "test-auth-user";
@@ -216,6 +219,8 @@ describe("FrappProvider chapter-change cache drop", () => {
     expect(qc.getQueryData(["user", "me"])).toBeUndefined();
     expect(qc.getQueryData(["settings"])).toBeUndefined();
     expect(qc.getQueryData(["members", "shared-chapter"])).toBeUndefined();
+    // And ends every bulk upload batch but the new account's.
+    expect(endBulkSessions).toHaveBeenCalledWith({ except: "auth-user-b" });
   });
 
   it("does not drop the cache when the first auth uid hydrates from null", async () => {
@@ -237,5 +242,6 @@ describe("FrappProvider chapter-change cache drop", () => {
     });
 
     expect(qc.getQueryData(["user", "me"])).toEqual({ id: "bootstrap" });
+    expect(endBulkSessions).not.toHaveBeenCalled();
   });
 });
