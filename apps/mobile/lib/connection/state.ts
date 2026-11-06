@@ -51,6 +51,24 @@ export function connectionBannerCopy(state: ConnectionState): string | null {
 }
 
 /**
+ * What mobile's floating pill shows: the banner copy's first clause. The pill
+ * floats over the header (it never moves the layout), so it stays short enough
+ * to sit between a back capsule and the right-hand controls on a phone; the
+ * full sentence from `connectionBannerCopy` is its accessible name
+ * (`spec/ui/design-system/writing.md` § Connection banner).
+ */
+export function connectionPillLabel(state: ConnectionState): string | null {
+  switch (state) {
+    case "OFFLINE":
+      return "Offline";
+    case "DEGRADED":
+      return "Slow connection";
+    case "ONLINE":
+      return null;
+  }
+}
+
+/**
  * Why a write control is disabled, or `null` when it is not.
  *
  * The UI Indicators table says write actions are "Disabled with tooltip: 'Reconnect to make

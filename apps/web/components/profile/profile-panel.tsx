@@ -18,8 +18,12 @@ import {
   GRADUATION_YEAR_MIN,
   isNotificationCategoryKey,
   localTimeZone,
+  MAJOR_MAX_LENGTH,
+  PROFILE_ALUMNI_SECTION,
+  PROFILE_FIELD_COPY,
   shownNotificationCategories,
   rowsToNotificationCategoryState,
+  showsAfterGraduation,
   timeZoneCity,
   type NotificationCategoryKey,
 } from "@repo/validation";
@@ -62,6 +66,7 @@ type CurrentUser = {
   bio?: string | null;
   avatar_url?: string | null;
   graduation_year?: number | null;
+  major?: string | null;
   current_city?: string | null;
   current_company?: string | null;
 };
@@ -229,6 +234,7 @@ export function ProfilePanel() {
       await updateUser.mutateAsync({
         display_name: profileDraft.display_name ?? undefined,
         bio: profileDraft.bio ?? undefined,
+        major: profileDraft.major ?? undefined,
         graduation_year:
           profileDraft.graduation_year === null
             ? null
@@ -367,6 +373,13 @@ export function ProfilePanel() {
   }
 
   const profile = profileDraft;
+  // City and Company wait for the graduation year as typed; a stored value
+  // keeps its field showing so it can be cleared (`showsAfterGraduation`).
+  const afterGraduation = showsAfterGraduation({
+    graduationYear: profile.graduation_year ?? null,
+    city: (userQuery.data as CurrentUser | undefined)?.current_city,
+    company: (userQuery.data as CurrentUser | undefined)?.current_company,
+  });
   const settings = settingsDraft;
   // Two different fallbacks, deliberately: the heading needs *something* to
   // say when a member has not set a display name, but the avatar must not
@@ -603,7 +616,9 @@ export function ProfilePanel() {
         >
           <form className="space-y-4" onSubmit={handleProfileSubmit}>
             <div className="grid gap-2">
-              <Label htmlFor="display-name">Display name</Label>
+              <Label htmlFor="display-name">
+                {PROFILE_FIELD_COPY.displayName.label}
+              </Label>
               <Input
                 id="display-name"
                 value={profile.display_name ?? ""}
@@ -613,40 +628,46 @@ export function ProfilePanel() {
                     display_name: event.target.value,
                   }))
                 }
-                placeholder="Your full name"
+                placeholder={PROFILE_FIELD_COPY.displayName.placeholder}
               />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="bio">Bio</Label>
-              <Textarea
-                id="bio"
-                value={profile.bio ?? ""}
-                onChange={(event) =>
-                  setProfileDraft((prev) => ({
-                    ...prev,
-                    bio: event.target.value,
-                  }))
-                }
-                placeholder="Major, year, anything brothers should know."
-                rows={3}
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_8rem]">
               <div className="grid gap-2">
-                <Label htmlFor="graduation-year">Graduation year</Label>
+                <Label htmlFor="major">{PROFILE_FIELD_COPY.major.label}</Label>
+                <Input
+                  id="major"
+                  value={profile.major ?? ""}
+                  maxLength={MAJOR_MAX_LENGTH}
+                  onChange={(event) =>
+                    setProfileDraft((prev) => ({
+                      ...prev,
+                      major: event.target.value,
+                    }))
+                  }
+                  placeholder={PROFILE_FIELD_COPY.major.placeholder}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="graduation-year">
+                  {PROFILE_FIELD_COPY.graduationYear.label}
+                </Label>
                 <Input
                   id="graduation-year"
+                  aria-label={PROFILE_FIELD_COPY.graduationYear.accessibleLabel}
                   type="number"
+                  inputMode="numeric"
                   min={GRADUATION_YEAR_MIN}
                   max={GRADUATION_YEAR_MAX}
                   value={profile.graduation_year ?? ""}
+                  placeholder={PROFILE_FIELD_COPY.graduationYear.placeholder}
                   onChange={(event) => {
                     const raw = event.target.value;
                     // Cleared means "no year". The range
                     // (`GRADUATION_YEAR_MIN`–`GRADUATION_YEAR_MAX`) is refused
                     // at submit, by the input's `min`/`max` and by the API,
                     // not here: guarding it on change would refuse the "2"
-                    // on the way to "2026".
+                    // on the way to "2026" (components.md § Text input,
+                    // "When an error shows").
                     const next =
                       raw.trim() === "" ? null : parseGuardedInt(raw);
                     if (next === undefined) return;
@@ -657,35 +678,68 @@ export function ProfilePanel() {
                   }}
                 />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="current-city">City</Label>
-                <Input
-                  id="current-city"
-                  value={profile.current_city ?? ""}
-                  onChange={(event) =>
-                    setProfileDraft((prev) => ({
-                      ...prev,
-                      current_city: event.target.value,
-                    }))
-                  }
-                  placeholder="Optional, for alumni directory"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="current-company">Company</Label>
-                <Input
-                  id="current-company"
-                  value={profile.current_company ?? ""}
-                  onChange={(event) =>
-                    setProfileDraft((prev) => ({
-                      ...prev,
-                      current_company: event.target.value,
-                    }))
-                  }
-                  placeholder="Optional, for alumni directory"
-                />
-              </div>
             </div>
+            <div className="grid gap-2">
+              <Label htmlFor="bio">{PROFILE_FIELD_COPY.bio.label}</Label>
+              <Textarea
+                id="bio"
+                value={profile.bio ?? ""}
+                onChange={(event) =>
+                  setProfileDraft((prev) => ({
+                    ...prev,
+                    bio: event.target.value,
+                  }))
+                }
+                placeholder={PROFILE_FIELD_COPY.bio.placeholder}
+                rows={3}
+              />
+            </div>
+            {afterGraduation ? (
+              <fieldset className="grid gap-4 pt-2">
+                <legend className="mb-4 grid gap-1">
+                  <span className="text-sm font-semibold text-foreground">
+                    {PROFILE_ALUMNI_SECTION.title}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {PROFILE_ALUMNI_SECTION.hint}
+                  </span>
+                </legend>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="current-city">
+                      {PROFILE_FIELD_COPY.city.label}
+                    </Label>
+                    <Input
+                      id="current-city"
+                      value={profile.current_city ?? ""}
+                      onChange={(event) =>
+                        setProfileDraft((prev) => ({
+                          ...prev,
+                          current_city: event.target.value,
+                        }))
+                      }
+                      placeholder={PROFILE_FIELD_COPY.city.placeholder}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="current-company">
+                      {PROFILE_FIELD_COPY.company.label}
+                    </Label>
+                    <Input
+                      id="current-company"
+                      value={profile.current_company ?? ""}
+                      onChange={(event) =>
+                        setProfileDraft((prev) => ({
+                          ...prev,
+                          current_company: event.target.value,
+                        }))
+                      }
+                      placeholder={PROFILE_FIELD_COPY.company.placeholder}
+                    />
+                  </div>
+                </div>
+              </fieldset>
+            ) : null}
             <div className="flex items-center justify-end gap-2">
               <Button type="submit" disabled={updateUser.isPending}>
                 {updateUser.isPending ? (

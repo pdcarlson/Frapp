@@ -124,10 +124,16 @@ function AccentSheetForm({
   // whatever is stored at that moment.
   const [draft, setDraft] = useState(stored);
   const [draftValid, setDraftValid] = useState(true);
+  // Save pressed over a half-typed hex: the picker's hint shows at once.
+  const [saveTried, setSaveTried] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const unchanged = draft === stored;
 
   async function save() {
+    if (!draftValid) {
+      setSaveTried(true);
+      return;
+    }
     setError(null);
     try {
       await updateChapter.mutateAsync({ accent_color: draft });
@@ -156,6 +162,7 @@ function AccentSheetForm({
         value={draft}
         onChange={setDraft}
         onValidityChange={setDraftValid}
+        showError={saveTried}
         // Keyed by the chapter's name, which is its organization's name when
         // it was created from the directory. A chapter renamed since gets the
         // presets only (#3372).
@@ -168,7 +175,9 @@ function AccentSheetForm({
       <SheetPrimaryButton
         label={updateChapter.isPending ? "Saving…" : "Save"}
         onPress={() => void save()}
-        disabled={unchanged || !draftValid || updateChapter.isPending}
+        // Pressable over a half-typed hex, so the press can say why
+        // (`showError`); a swatch the chapter already has is no change.
+        disabled={(unchanged && draftValid) || updateChapter.isPending}
         accent={accent}
         // `accent` is step 11 of the scale, and every mobile fill painted with
         // it labels in the fixed `gold.onHouse` ink (chapter-branding.ts

@@ -172,6 +172,15 @@ describe("createMonitorNetworkState", () => {
       fetchMock,
       link: () => listener,
       endGrace: () => graceTimers.splice(0).forEach((fn) => fn()),
+      /**
+       * The start probe's first failure is retried once before it counts
+       * (`CONFIRM_RETRY_MS`): let it fail, then run the retry.
+       */
+      async confirmFirstFailure() {
+        for (let i = 0; i < 10; i += 1) await Promise.resolve();
+        graceTimers.splice(0).forEach((fn) => fn());
+        for (let i = 0; i < 10; i += 1) await Promise.resolve();
+      },
     };
   }
 
@@ -180,11 +189,11 @@ describe("createMonitorNetworkState", () => {
   });
 
   it("is online until the monitor reaches OFFLINE — DEGRADED still sends", async () => {
-    const { monitor, fetchMock } = monitorHarness();
+    const { monitor, fetchMock, confirmFirstFailure } = monitorHarness();
     const net = createMonitorNetworkState(monitor);
     fetchMock.mockRejectedValue(new Error("timeout"));
     await net.prime();
-    await Promise.resolve();
+    await confirmFirstFailure();
 
     expect(net.isOffline()).toBe(false); // DEGRADED after the start probe
     await monitor.probeOnce();
@@ -194,20 +203,22 @@ describe("createMonitorNetworkState", () => {
   });
 
   it("queues when the link is up and the API is dead", async () => {
-    const { monitor, fetchMock } = monitorHarness();
+    const { monitor, fetchMock, confirmFirstFailure } = monitorHarness();
     const net = createMonitorNetworkState(monitor);
     fetchMock.mockRejectedValue(new Error("timeout"));
     await net.prime();
+    await confirmFirstFailure();
     await monitor.probeOnce();
     await monitor.probeOnce();
     expect(net.isOffline()).toBe(true);
   });
 
   it("emits online=true on health recovery with no link change", async () => {
-    const { monitor, fetchMock } = monitorHarness();
+    const { monitor, fetchMock, confirmFirstFailure } = monitorHarness();
     const net = createMonitorNetworkState(monitor);
     fetchMock.mockRejectedValue(new Error("timeout"));
     await net.prime();
+    await confirmFirstFailure();
     await monitor.probeOnce();
     await monitor.probeOnce();
     expect(net.isOffline()).toBe(true);
