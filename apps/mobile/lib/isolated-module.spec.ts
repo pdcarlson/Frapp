@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createIsolatedModule } from "./isolated-module";
 
 /**
- * The loader factory the four isolation modules share.
+ * The loader factory the isolation modules share.
  *
- * Each of `lib/keyboard.tsx`, `lib/apple-auth.ts`, `lib/notifications/push.ts`
- * and `lib/payments/stripe.ts` has its own spec covering its own guard and
+ * Each of `lib/keyboard.tsx`, `lib/apple-auth.ts`, `lib/notifications/push.ts`,
+ * `lib/payments/stripe.ts` and `lib/google-auth.ts` has its own spec covering its own guard and
  * wrappers. What those specs cannot state once is the machinery underneath, so
  * it is stated here: the caching contract, the never-invoke-when-guarded rule
  * (the Expo Go crash-prevention property), the warn-and-degrade path, and the

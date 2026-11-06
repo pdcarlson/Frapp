@@ -34,6 +34,7 @@ function loadConfig() {
       easBuildPlatform?: string;
       googleServicesFile?: string;
     }) => void;
+    googleIosUrlScheme: (iosClientId?: unknown) => string | undefined;
     applyMobileConfig: (
       config: Record<string, unknown>,
       opts?: {
@@ -490,6 +491,72 @@ describe("applyMobileConfig", () => {
         existsSync: (p) => p === "/eas/google-services.json",
       }),
     ).toThrow(PRODUCTION_SUPABASE_PUBLIC_ERROR);
+  });
+});
+
+describe("native Google Sign-In plugin", () => {
+  const iosClientId = "123-abc.apps.googleusercontent.com";
+
+  it("reverses the iOS client ID into the URL scheme the SDK returns through", () => {
+    const { googleIosUrlScheme } = loadConfig();
+    expect(googleIosUrlScheme(iosClientId)).toBe(
+      "com.googleusercontent.apps.123-abc",
+    );
+    expect(googleIosUrlScheme("")).toBeUndefined();
+    expect(googleIosUrlScheme(undefined)).toBeUndefined();
+    expect(() => googleIosUrlScheme("123-abc")).toThrow(
+      /must be a Google OAuth iOS client ID/,
+    );
+  });
+
+  it("adds the plugin and the queryable scheme only when the iOS client ID is set", () => {
+    const { applyMobileConfig } = loadConfig();
+    const withIds = (ids: Record<string, string>) => ({
+      plugins: ["expo-router"],
+      ios: { infoPlist: { ITSAppUsesNonExemptEncryption: false } },
+      extra: { googleSignIn: { webClientId: "w", ...ids } },
+    });
+
+    const without = applyMobileConfig(withIds({ iosClientId: "" }), {
+      env: {},
+      existsSync: missing,
+    });
+    expect(without.plugins).toEqual(["expo-router"]);
+    expect(without.ios).toEqual({
+      infoPlist: { ITSAppUsesNonExemptEncryption: false },
+    });
+
+    const withIos = applyMobileConfig(withIds({ iosClientId }), {
+      env: {},
+      existsSync: missing,
+    });
+    // lib/google-auth.ts asks canOpenURL for this scheme before it touches the
+    // SDK, so a binary built without it stays on the browser flow.
+    expect(withIos.ios).toEqual({
+      infoPlist: {
+        ITSAppUsesNonExemptEncryption: false,
+        LSApplicationQueriesSchemes: ["com.googleusercontent.apps.123-abc"],
+      },
+    });
+    expect(withIos.plugins).toEqual([
+      "expo-router",
+      [
+        "@react-native-google-signin/google-signin",
+        { iosUrlScheme: "com.googleusercontent.apps.123-abc" },
+      ],
+    ]);
+  });
+
+  it("app.json carries a Google OAuth Web client ID", () => {
+    const appJson = JSON.parse(
+      readFileSync(
+        path.join(path.dirname(fileURLToPath(import.meta.url)), "app.json"),
+        "utf8",
+      ),
+    ) as { expo: { extra: { googleSignIn: { webClientId: string } } } };
+    expect(appJson.expo.extra.googleSignIn.webClientId).toMatch(
+      /\.apps\.googleusercontent\.com$/,
+    );
   });
 });
 
