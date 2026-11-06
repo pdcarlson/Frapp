@@ -3,6 +3,7 @@
 import { Suspense } from "react";
 import { AlertTriangle } from "lucide-react";
 import { useCurrentUser, useInvoices } from "@repo/hooks";
+import { isBetaOffModule } from "@repo/validation";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { NestedOffline } from "@/components/shared/nested-states";
 import { PlanPanel } from "@/components/billing/plan-panel";
@@ -56,7 +57,14 @@ const INVOICES_ANCHOR = "invoices";
  */
 export function BillingPage() {
   const { isOffline } = useNetwork();
-  const invoicesQuery = useInvoices();
+  /*
+   * The invoice list leaves only while dues is beta-off. A chapter's own dues
+   * switch doesn't hide it: a member must still be able to pay an invoice
+   * the chapter already sent (`spec/product/modules.md` § Module disabling
+   * behavior).
+   */
+  const duesOn = !isBetaOffModule("dues");
+  const invoicesQuery = useInvoices(undefined, { enabled: duesOn });
   const currentUserQuery = useCurrentUser();
   const { status } = useChapterSubscription();
 
@@ -72,7 +80,10 @@ export function BillingPage() {
    * `invoice.user_id === currentUserId`, so without it a member sees their own
    * OPEN invoice with no way to pay it and nothing saying why.
    */
-  if (isOffline && anyReadUncached(invoicesQuery, currentUserQuery)) {
+  const offlineUncached = duesOn
+    ? anyReadUncached(invoicesQuery, currentUserQuery)
+    : anyReadUncached(currentUserQuery);
+  if (isOffline && offlineUncached) {
     return (
       <div className="space-y-6">
         {/*
@@ -94,9 +105,13 @@ export function BillingPage() {
         <NestedOffline
           sole
           title="Billing unavailable offline"
-          description="Reconnect to sync subscription status and invoice balances."
+          description={
+            duesOn
+              ? "Reconnect to sync subscription status and invoice balances."
+              : "Reconnect to sync subscription status."
+          }
           onRetry={() => {
-            void invoicesQuery.refetch();
+            if (duesOn) void invoicesQuery.refetch();
             void currentUserQuery.refetch();
           }}
         />
@@ -124,12 +139,12 @@ export function BillingPage() {
         does not swap a placeholder for the panel.
       */}
       <Suspense fallback={<PlanPanelSkeleton />}>
-        <PlanPanel invoicesHref={`#${INVOICES_ANCHOR}`} />
+        <PlanPanel invoicesHref={duesOn ? `#${INVOICES_ANCHOR}` : undefined} />
       </Suspense>
 
       <PlanMatrix />
 
-      <InvoiceList id={INVOICES_ANCHOR} />
+      {duesOn ? <InvoiceList id={INVOICES_ANCHOR} /> : null}
     </div>
   );
 }

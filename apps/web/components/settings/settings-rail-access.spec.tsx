@@ -1,5 +1,19 @@
 import { render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
+
+// `@repo/validation`'s beta list, emptied so this spec pins the ordinary
+// module rule with dues as its example. A test that wants dues beta-off, as
+// it is for the beta, sets `betaOff.keys`.
+const betaOff = vi.hoisted(() => ({ keys: [] as string[] }));
+vi.mock("@repo/validation/beta-off-modules", () => ({
+  get BETA_OFF_MODULES() {
+    return betaOff.keys;
+  },
+  isBetaOffModule: (key: string) => betaOff.keys.includes(key),
+}));
+afterEach(() => {
+  betaOff.keys = [];
+});
 
 /**
  * The Settings page shows each viewer what they can use (#2946).
@@ -124,6 +138,24 @@ describe("Settings shows each viewer what they can use", () => {
       "Privacy",
       "Danger zone",
     ]);
+  });
+
+  it("drops the Dues tab while dues is beta-off", () => {
+    permissions.current = ["*"];
+    betaOff.keys = ["dues"];
+    render(<SettingsPage />);
+    expect(tabNames()).not.toContain("Dues");
+    expect(tabNames()).toContain("Workflows");
+  });
+
+  it("keeps the Dues tab for a chapter that switched dues off itself", () => {
+    permissions.current = ["*"];
+    currentChapter.current = {
+      ...currentChapter.current,
+      enabled_modules: { dues: false },
+    };
+    render(<SettingsPage />);
+    expect(tabNames()).toContain("Dues");
   });
 
   it("lists a treasurer's one tool as the page, with no setup tabs to fail", () => {

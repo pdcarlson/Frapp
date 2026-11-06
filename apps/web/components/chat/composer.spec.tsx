@@ -78,6 +78,7 @@ import {
   composerPlaceholder,
   notifyDispatchOutcome,
   runDispatch,
+  slashModuleRefusal,
   uploadFailureDescription,
 } from "./composer";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
@@ -1636,5 +1637,23 @@ describe("ComposerShell (#2176)", () => {
     for (const cls of COMPOSER_INPUT_CLASS.split(" ")) {
       expect(input.className).toContain(cls);
     }
+  });
+});
+
+describe("slashModuleRefusal for a beta-off module", () => {
+  // No chapter switched dues off and Settings → Modules has no switch for it,
+  // so the refusal must not send an officer looking for one.
+  it("says the module is off for the beta, not where to turn it on", () => {
+    const dues = {
+      name: "dues",
+      description: "Dues reminders and balances",
+      usage: "remind overdue",
+      requiredModule: "dues",
+      implemented: false,
+    } as SlashCommand;
+    expect(slashModuleRefusal(dues, "ready", () => false)).toEqual({
+      title: "/dues is turned off",
+      description: "Dues is off for every chapter during the beta.",
+    });
   });
 });
