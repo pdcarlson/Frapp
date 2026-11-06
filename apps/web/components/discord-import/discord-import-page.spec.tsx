@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   render,
   screen,
   fireEvent,
   waitFor,
   within,
+  act,
 } from "@testing-library/react";
 import { cardFilledContainers } from "@/tests/card-surfaces";
 
@@ -802,6 +803,147 @@ describe("DiscordImportPage — finished", () => {
     render(<DiscordImportPage />);
     fireEvent.click(screen.getByRole("button", { name: "See every channel" }));
     expect(hooks.progress).toHaveBeenCalledWith("big", { active: false });
+  });
+});
+
+describe("DiscordImportPage — the landing (#3493)", () => {
+  const done = {
+    ...row("big", "completed", "Tau Nu Discord"),
+    imported_messages: 145574,
+    channels_total: 1146,
+    channels_done: 1146,
+    completed_at: "2026-09-30T20:12:00Z",
+  };
+  const categories = [
+    { category: null, channels: 2, threads: 0, done: 2, failed: 0 },
+    {
+      category: "Notifications",
+      channels: 3,
+      threads: 630,
+      done: 633,
+      failed: 0,
+    },
+    { category: "Secret", channels: 5, threads: 44, done: 49, failed: 0 },
+  ];
+
+  function reducedMotion(reduce: boolean) {
+    vi.spyOn(window, "matchMedia").mockImplementation(
+      (query: string) =>
+        ({
+          matches: reduce && query.includes("prefers-reduced-motion"),
+          media: query,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+        }) as unknown as MediaQueryList,
+    );
+  }
+
+  const messagesShown = () =>
+    screen
+      .getByText("messages")
+      .nextElementSibling?.querySelector('[aria-hidden="true"]')?.textContent ??
+    screen.getByText("messages").nextSibling?.textContent;
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    hooks.rows = [done];
+    hooks.progress.mockReturnValue({
+      data: { ...progress, categories },
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("lands once: the categories drop in, the count runs up, the accent sweeps, then it rests", () => {
+    vi.useFakeTimers();
+    reducedMotion(false);
+    const { container } = render(<DiscordImportPage />);
+
+    const list = screen.getByRole("heading", { name: "By Discord category" })
+      .nextElementSibling as HTMLElement;
+    const rows = within(list).getAllByRole("listitem");
+    expect(rows.map((item) => item.firstChild?.textContent)).toEqual([
+      "No category",
+      "Notifications",
+      "Secret",
+    ]);
+    for (const item of rows) {
+      expect(item.className).toContain("motion-safe:animate-signature-drop");
+    }
+    // Each row lands after the one above it.
+    expect(rows.map((item) => item.style.animationDelay)).toEqual([
+      "0ms",
+      "60ms",
+      "120ms",
+    ]);
+    expect(screen.getByTestId("discord-import-sweep")).toBeInTheDocument();
+    expect(
+      container.querySelector(".motion-safe\\:animate-signature-pop"),
+    ).not.toBeNull();
+    // The count starts from nothing on screen; a reader gets the total.
+    expect(messagesShown()).toBe("0");
+    expect(screen.getByText(n(145574))).toHaveClass("sr-only");
+
+    act(() => {
+      vi.advanceTimersByTime(1800);
+    });
+
+    expect(screen.queryByTestId("discord-import-sweep")).toBeNull();
+    expect(container.innerHTML).not.toContain("animate-signature");
+    expect(screen.getByText("messages").nextSibling?.textContent).toBe(
+      n(145574),
+    );
+    expect(window.localStorage.getItem("frapp:discord-import-landed:big")).toBe(
+      "1",
+    );
+  });
+
+  it("shows the frame it lands on under reduced motion", () => {
+    reducedMotion(true);
+    const { container } = render(<DiscordImportPage />);
+
+    expect(container.innerHTML).not.toContain("animate-signature");
+    expect(screen.queryByTestId("discord-import-sweep")).toBeNull();
+    expect(screen.getByText("messages").nextSibling?.textContent).toBe(
+      n(145574),
+    );
+    // Still there at rest: the categories and the check mark.
+    expect(
+      screen.getByRole("heading", { name: "By Discord category" }),
+    ).toBeInTheDocument();
+    expect(container.querySelector(".lucide-check")).not.toBeNull();
+    expect(
+      window.localStorage.getItem("frapp:discord-import-landed:big"),
+    ).toBeNull();
+  });
+
+  it("doesn't play again once it has landed", () => {
+    reducedMotion(false);
+    window.localStorage.setItem("frapp:discord-import-landed:big", "1");
+    const { container } = render(<DiscordImportPage />);
+
+    expect(container.innerHTML).not.toContain("animate-signature");
+    expect(screen.getByText("messages").nextSibling?.textContent).toBe(
+      n(145574),
+    );
+  });
+
+  it("plays for nothing that stopped part-way", () => {
+    reducedMotion(false);
+    hooks.rows = [{ ...done, status: "cancelled", channels_done: 300 }];
+    const { container } = render(<DiscordImportPage />);
+
+    expect(container.innerHTML).not.toContain("animate-signature");
+    expect(container.querySelector(".lucide-check")).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "By Discord category" }),
+    ).toBeNull();
   });
 });
 

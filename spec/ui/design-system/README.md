@@ -234,12 +234,32 @@ Execution protocol and evidence requirements: [`docs/guides/accessibility-testin
 | Micro-feedback | 100–180ms | `motion.duration.micro` = 140 |
 | Standard transitions | 180–260ms | `motion.duration.standard` = 220 |
 | Context shifts | 240–320ms | `motion.duration.context` = 300 |
+| Signature moments | 480–560ms a piece, 1.8s for the whole moment | `motion.duration.signature` = 520, on `motion.easing.settle` |
 
-Motion MUST remain subtle, functional, and compatible with reduced-motion preferences.
+Outside a signature moment, motion MUST remain subtle and functional. Every class, signature included, MUST be compatible with reduced-motion preferences.
+
+### Signature moments
+
+*Added 2026-11-06 (#3493).* A signature moment is the one deliberate, fun animation a flow may have, there to make an accomplishment feel like one and to set Frapp apart. The owner asked for a few of them, built consistently across the app. Every moment follows the same rules:
+
+- **Trigger.** Only a moment of accomplishment or arrival the person caused: a long job they started finishing, something they made going live. Never routine navigation, never an error, never a loading state, and never something that happens to the person without their doing it.
+- **Budget.** At most one per flow. It plays once and never loops, and it is over within `signatureMoment.totalMs` (1.8s). Each piece of it (a row landing, a mark appearing, a sweep) is one `signature`-class animation, 520ms on the `settle` curve; pieces in a list land in turn, `staggerMs` apart. "Once" means once per thing per browser: a moment remembers that it played, and a later visit shows its last frame.
+- **Never in the way.** The screen is complete and usable from its first frame. Nothing waits for the moment, and nothing it draws is the only place a fact appears.
+- **Reduced motion.** With `prefers-reduced-motion: reduce`, the moment does not play: the screen shows the frame it would land on, which is also what it shows at rest. Each moment has a test for that frame. CSS pieces sit behind `motion-safe:`; anything driven from script (a count running up) checks the preference itself. Mobile uses `useReducedMotion` or its equivalent.
+- **Brand.** It may carry the chapter accent for its length (a sweep, a glow), and ends neutral, so foundations §6's rule about where the accent goes holds at rest. It never draws Greek letters for an organization that forbids them, and never puts a design-system name on screen.
+- **One set of parts.** Timings and the settle curve are tokens (`packages/theme/src/motion.ts`). The whole-moment budget and the count-up curve are `@repo/theme/signature` (`packages/theme/src/signature.ts`), plain values web and mobile read alike. The web keyframes are the theme preset's `animate-signature-drop`, `animate-signature-pop` and `animate-signature-sweep`. A new moment uses these before it adds its own.
+
+**Catalog.** Every moment that ships is listed here. A moment beyond the first needs the owner's sign-off before it ships (#3493).
+
+| Moment | Where | What plays | At rest, and under reduced motion |
+| --- | --- | --- | --- |
+| A Discord import lands | Web, `/discord-import`, the first time a completed import is shown (`apps/web/components/discord-import/import-arrival.tsx`) | Its Discord categories drop into place in turn, the message count runs up to its total, the check mark lands beside the title, and the chapter accent sweeps once across the figures | The categories in place, the final count, the check mark |
+
+Proposed, not signed off: the backwork file drop, where PDFs dropped onto the upload area are pulled in and stacked into the queue (#3487).
 
 ### Motion budget
 
-Discipline, not palette — these rules bind **every** surface, and they govern the `fade-up` / `count-up` / `slide-down` animation utilities shipped by `packages/theme/src/tailwind.config.ts`.
+Discipline, not palette — these rules bind **every** surface, and they govern the `fade-up` / `count-up` / `slide-down` animation utilities shipped by `packages/theme/src/tailwind.config.ts`. A signature moment is held to its own rules above instead, and is the only place the `signature-*` utilities may appear.
 
 | Zone | Rule |
 | --- | --- |

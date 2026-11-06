@@ -362,6 +362,24 @@ const config: Partial<Config> = {
           "0%": { opacity: "0", transform: "translateX(100%)" },
           "100%": { opacity: "1", transform: "translateX(0)" },
         },
+        /*
+         * The signature class (`spec/ui/design-system/README.md` §7): only a
+         * signature moment uses these, once per flow, behind `motion-safe:`.
+         * Timings for the moment as a whole are in `./signature.ts`.
+         */
+        "signature-drop": {
+          "0%": { opacity: "0", transform: "translateY(-14px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "signature-pop": {
+          "0%": { opacity: "0", transform: "scale(0.6)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
+        "signature-sweep": {
+          "0%": { opacity: "0", transform: "translateX(-100%)" },
+          "30%": { opacity: "1" },
+          "100%": { opacity: "0", transform: "translateX(100%)" },
+        },
       },
       animation: {
         "fade-up": `fade-up ${motionDuration.context}ms ${motionEasing.standard} forwards`,
@@ -369,6 +387,10 @@ const config: Partial<Config> = {
         "count-up": `count-up ${motionDuration.standard}ms ${motionEasing.standard} forwards`,
         "slide-down": `slide-down ${motionDuration.context}ms ${motionEasing.entrance} forwards`,
         "slide-in-right": `slide-in-right ${motionDuration.context}ms ${motionEasing.entrance} forwards`,
+        // `both`, so a piece given a delay holds its first frame until it plays.
+        "signature-drop": `signature-drop ${motionDuration.signature}ms ${motionEasing.settle} both`,
+        "signature-pop": `signature-pop ${motionDuration.signature}ms ${motionEasing.settle} both`,
+        "signature-sweep": `signature-sweep ${motionDuration.signature}ms ${motionEasing.standard} both`,
       },
     },
   },

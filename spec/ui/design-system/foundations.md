@@ -317,6 +317,7 @@ Panel 4h defines no motion tokens, so **no Signet motion values are locked yet (
 
 - **Settled — the discipline.** The three-class taxonomy (micro-feedback, standard transition, context shift), the budget each class is held to, and the requirements that motion stay subtle, functional, and reduced-motion-compatible bind every surface today. They are owned by [`README.md`](README.md) §7 and are not restated here.
 - **Provisional — the numbers only.** The durations and easing curves in use are carried forward from the legacy `@repo/theme` system, now in `packages/theme/src/motion.ts` (`duration` / `easing`) and are listed in README §7. Implementations SHOULD keep using them so motion stays consistent across the app, but they are placeholders, not Signet canon: a Signet motion spec MAY replace every value without changing any rule above.
+- **A fourth class, added 2026-11-06: signature.** The owner asked for a few deliberate, fun moments that set Frapp apart (#3493), so the taxonomy gained a `signature` class beside the three, with its own triggers, budget, reduced-motion rule and catalog, all owned by [`README.md`](README.md) §7 § Signature moments. Its numbers (`motion.duration.signature` = 520, `motion.easing.settle`, and the 1.8s whole-moment budget in `packages/theme/src/signature.ts`) are as provisional as the other three: chosen for the first moment, the Discord import landing, not Signet canon.
 
 ---
 
