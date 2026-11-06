@@ -1,6 +1,21 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { MODULE_CATALOG } from "@repo/org-archetypes";
 import { SettingsModulesTab } from "./settings-modules-tab";
+
+// `@repo/validation`'s beta list, emptied so this spec pins the ordinary
+// module rule with dues as its example. A test that wants dues beta-off, as
+// it is for the beta, sets `betaOff.keys`.
+const betaOff = vi.hoisted(() => ({ keys: [] as string[] }));
+vi.mock("@repo/validation/beta-off-modules", () => ({
+  get BETA_OFF_MODULES() {
+    return betaOff.keys;
+  },
+  isBetaOffModule: (key: string) => betaOff.keys.includes(key),
+}));
+afterEach(() => {
+  betaOff.keys = [];
+});
 
 describe("SettingsModulesTab", () => {
   it("locks always-on (free) modules and shows a Free badge, no switch", () => {
@@ -23,6 +38,23 @@ describe("SettingsModulesTab", () => {
     expect(screen.getAllByText("Chapter Pro").length).toBeGreaterThan(0);
     expect(
       screen.getByRole("switch", { name: /events enabled/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no switch for a beta-off module, and doesn't count it", () => {
+    betaOff.keys = ["dues"];
+    render(
+      <SettingsModulesTab enabledModules={{}} canManage onToggle={() => {}} />,
+    );
+    expect(
+      screen.queryByRole("switch", { name: /dues enabled/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("switch", { name: /events enabled/i }),
+    ).toBeInTheDocument();
+    const listed = MODULE_CATALOG.length - 1;
+    expect(
+      screen.getByText(new RegExp(`of ${listed} modules enabled`)),
     ).toBeInTheDocument();
   });
 

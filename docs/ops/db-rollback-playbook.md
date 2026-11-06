@@ -2769,9 +2769,9 @@ alter table public.chat_message_reports
   drop column if exists reported_attachments;
 ```
 
-## Rollback users major (20261106190000)
+## Rollback users major (20261106193000)
 
-* **Migration**: `20261106190000_users_major.sql`
+* **Migration**: `20261106193000_users_major.sql`
 
 One nullable column, `users.major`, and `anonymize_user` redefined with `major = null` added. Nothing was backfilled.
 
@@ -2811,6 +2811,18 @@ One column on `chat_channels`, `is_default` (not null, default false), a partial
 drop function if exists public.set_chat_channel_default(uuid, uuid);
 drop index if exists public.chat_channels_one_default_per_chapter;
 alter table public.chat_channels drop column if exists is_default;
+```
+
+## Rollback backwork search wider (20261106190000)
+
+* **Migration**: `20261106190000_backwork_search_wider.sql`
+
+One function, `search_backwork_resources`, and the `pg_trgm` extension in the `extensions` schema. No row changed.
+
+**Revert the code forward and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API searches `backwork_resources.search_vector` again, which this migration left in place, so Backwork search goes back to title and course number. To remove the function anyway, do it in a later forward migration, not by hand. Leave `pg_trgm` unless nothing else uses it:
+
+```sql
+drop function if exists public.search_backwork_resources(uuid, text, integer);
 ```
 
 ## Rollback the backwork 100 MB limit (20261106153000)

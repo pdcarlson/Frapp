@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { isBetaOffModule } from "@repo/validation";
 
 /**
  * The push opt-in primer, drawn as a card.
@@ -86,8 +87,9 @@ export function PushPrimerCard({
       <BellGlyph color={tokens.color.gold.askText} />
       <Text style={styles.title}>Don&apos;t miss @channel</Text>
       <Text style={styles.body}>
-        Get pinged for mandatory events, dues deadlines, and mentions. Nothing
-        else.
+        {isBetaOffModule("dues")
+          ? "Get pinged for mandatory events and mentions. Nothing else."
+          : "Get pinged for mandatory events, dues deadlines, and mentions. Nothing else."}
       </Text>
       <View style={styles.actions}>
         <Pressable

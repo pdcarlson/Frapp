@@ -25,6 +25,8 @@ export interface IBackworkResourceRepository {
     chapterId: string,
     filters?: BackworkResourceFilter,
   ): Promise<BackworkResource[]>;
+  /** Chapter-scoped: an id from another chapter is simply not returned. */
+  findByIds(ids: string[], chapterId: string): Promise<BackworkResource[]>;
   findByFileHash(
     chapterId: string,
     fileHash: string,

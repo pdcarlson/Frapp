@@ -28,7 +28,15 @@ const {
   mockToast,
   mockOffline,
   resourcesQuery,
+  mockPush,
+  mockFetchDownloadUrls,
+  mockBuildZip,
+  mockSaveBlob,
 } = vi.hoisted(() => ({
+  mockFetchDownloadUrls: vi.fn(),
+  mockBuildZip: vi.fn(),
+  mockSaveBlob: vi.fn(),
+  mockPush: vi.fn(),
   mockCurrentChapter: vi.fn(),
   mockRequestUpload: vi.fn().mockResolvedValue({}),
   mockConfirmUpload: vi.fn().mockResolvedValue({}),
@@ -72,6 +80,7 @@ const RESOURCE = {
   document_variant: "Student Copy",
   tags: null,
   is_redacted: false,
+  storage_path: "chapter-1/bw-1.pdf",
   created_at: "2026-08-01T00:00:00Z",
 };
 
@@ -80,6 +89,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCurrentChapter: () => mockCurrentChapter(),
   useBackworkResources: () => resourcesQuery,
   useFetchBackworkResource: () => mockFetchResource,
+  useFetchBackworkDownloadUrls: () => mockFetchDownloadUrls,
   useDeleteBackworkResource: () => ({ mutateAsync: mockDeleteResource }),
   useMyPermissions: () => ({
     data: { permissions: mockPermissions.value },
@@ -116,6 +126,14 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMergeProfessors: () => ({ mutateAsync: vi.fn() }),
 }));
 
+// The zip's fetching and file building have their own spec
+// (`lib/backwork-zip.spec.ts`); the page's job is what it asks for.
+vi.mock("@/lib/backwork-zip", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/backwork-zip")>()),
+  buildBackworkZip: mockBuildZip,
+  saveBlob: mockSaveBlob,
+}));
+
 vi.mock("@/lib/stores/chapter-store", () => ({
   useChapterStore: (
     selector: (s: { activeChapterId: string | null }) => unknown,
@@ -149,12 +167,23 @@ vi.mock("@/lib/hooks/use-toast", () => ({
 
 vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: mockPush }),
+}));
+
 const { BackworkPage } = await import("./backwork-page");
+const { takeStagedBulkUpload } = await import("@/lib/backwork-bulk/handoff");
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
 /** Closed-dialog state: the trigger is the only button named "Upload". */
 const uploadTrigger = () => screen.getByRole("button", { name: /^upload$/i });
+
+/** The sheet requires a variant (#3509); a Blank Copy uploads as-is. */
+async function pickVariant(name = "Blank Copy") {
+  await userEvent.click(screen.getByRole("combobox", { name: "Document variant" }));
+  await userEvent.click(screen.getByRole("option", { name }));
+}
 
 function resolvedResourcesQuery() {
   mockChapterId.value = "chap-1";
@@ -507,6 +536,7 @@ describe("BackworkPage subscription gating", () => {
     const scan = new File(["x"], "scan.pdf", { type: "application/pdf" });
     Object.defineProperty(scan, "size", { value: 60 * 1024 * 1024 });
     await user.upload(dialog.getByLabelText(/^file$/i), scan);
+    await pickVariant();
     await user.click(dialog.getByRole("button", { name: /^upload$/i }));
 
     await waitFor(() => expect(mockRequestUpload).toHaveBeenCalled());
@@ -644,6 +674,7 @@ describe("BackworkPage upload allowlist", () => {
       target: { files: [file] },
     });
 
+    await pickVariant();
     const submit = within(dialog).getByRole("button", { name: /^upload$/i });
     await waitFor(() => expect(submit).toBeEnabled());
     await userEvent.click(submit);
@@ -680,6 +711,7 @@ describe("BackworkPage upload allowlist", () => {
     fireEvent.change(within(dialog).getByLabelText(/^file$/i), {
       target: { files: [file] },
     });
+    await pickVariant();
     const submit = within(dialog).getByRole("button", { name: /^upload$/i });
     await waitFor(() => expect(submit).toBeEnabled());
     await userEvent.click(submit);
@@ -711,6 +743,7 @@ describe("BackworkPage upload allowlist", () => {
       target: { files: [file] },
     });
 
+    await pickVariant();
     const submit = within(dialog).getByRole("button", { name: /^upload$/i });
     await waitFor(() => expect(submit).toBeEnabled());
     await userEvent.click(submit);
@@ -783,6 +816,7 @@ describe("BackworkPage year and assignment-number guard (#2206)", () => {
         files: [new File(["%PDF"], "notes.pdf", { type: "application/pdf" })],
       },
     });
+    await pickVariant();
     fireEvent.submit(document.getElementById("backwork-upload-form")!);
 
     await waitFor(() =>
@@ -807,6 +841,7 @@ describe("BackworkPage year and assignment-number guard (#2206)", () => {
         files: [new File(["%PDF"], "notes.pdf", { type: "application/pdf" })],
       },
     });
+    await pickVariant();
     fireEvent.submit(document.getElementById("backwork-upload-form")!);
 
     await waitFor(() =>
@@ -829,6 +864,7 @@ describe("BackworkPage year and assignment-number guard (#2206)", () => {
         files: [new File(["%PDF"], "notes.pdf", { type: "application/pdf" })],
       },
     });
+    await pickVariant();
     const submit = within(dialog).getByRole("button", { name: /^upload$/i });
     await waitFor(() => expect(submit).toBeEnabled());
     await userEvent.click(submit);
@@ -1324,6 +1360,242 @@ describe("BackworkPage library (2026-11-05 redesign)", () => {
         id: "dept-cogs",
         targetId: "dept-csci",
       }),
+    );
+  });
+});
+
+describe("BackworkPage hand-off to bulk upload", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPermissions.value = ["backwork:upload", "backwork:admin"];
+    resolvedResourcesQuery();
+    chapter.active();
+    takeStagedBulkUpload();
+  });
+
+  async function chooseVariant(dialog: HTMLElement, name: string) {
+    await userEvent.click(within(dialog).getByRole("combobox", { name: "Document variant" }));
+    await userEvent.click(screen.getByRole("option", { name }));
+  }
+
+  it("sends a Student Copy PDF to bulk upload with its fields, never uploading the original (#3509)", async () => {
+    render(<BackworkPage />);
+    await userEvent.click(uploadTrigger());
+    const dialog = screen.getByRole("dialog");
+    const file = new File(["%PDF-1.7"], "smithj_midterm.pdf", { type: "application/pdf" });
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), { target: { files: [file] } });
+    await userEvent.type(within(dialog).getByLabelText(/course number/i), "2120");
+    await chooseVariant(dialog, "Student Copy");
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Redact and upload" }));
+
+    expect(mockPush).toHaveBeenCalledWith("/backwork/upload");
+    expect(mockRequestUpload).not.toHaveBeenCalled();
+    const staged = takeStagedBulkUpload();
+    expect(staged?.files).toEqual([file]);
+    expect(staged?.fields).toMatchObject({
+      course_number: "2120",
+      document_variant: "Student Copy",
+    });
+  });
+
+  it("refuses a Student Copy that isn't a PDF, since only a PDF can be redacted here", async () => {
+    render(<BackworkPage />);
+    await userEvent.click(uploadTrigger());
+    const dialog = screen.getByRole("dialog");
+    const file = new File(["png"], "scan.png", { type: "image/png" });
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), { target: { files: [file] } });
+    await chooseVariant(dialog, "Student Copy");
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Redact and upload" }));
+
+    expect(await within(dialog).findByText(/Student Copy has to be a PDF/)).toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockRequestUpload).not.toHaveBeenCalled();
+    expect(takeStagedBulkUpload()).toBeNull();
+  });
+
+  it("closes the sheet when it hands a Student Copy on", async () => {
+    render(<BackworkPage />);
+    await userEvent.click(uploadTrigger());
+    const dialog = screen.getByRole("dialog");
+    const file = new File(["%PDF-1.7"], "midterm.pdf", { type: "application/pdf" });
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), { target: { files: [file] } });
+    await chooseVariant(dialog, "Student Copy");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Redact and upload" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("won't upload with the variant left blank, since that could be an unmarked Student Copy", async () => {
+    render(<BackworkPage />);
+    await userEvent.click(uploadTrigger());
+    const dialog = screen.getByRole("dialog");
+    const file = new File(["%PDF-1.7"], "smithj.pdf", { type: "application/pdf" });
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), { target: { files: [file] } });
+    await userEvent.click(within(dialog).getByRole("button", { name: /^upload$/i }));
+
+    expect(await within(dialog).findByText(/Pick a document variant first/)).toBeInTheDocument();
+    expect(mockRequestUpload).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  function dropOn(target: HTMLElement, files: File[]) {
+    const items = files.map((file) => ({ kind: "file", getAsFile: () => file }));
+    fireEvent.drop(target, { dataTransfer: { items, files } });
+  }
+
+  it("hands PDFs dropped on the strip to bulk upload", async () => {
+    render(<BackworkPage />);
+    const pdf = new File(["%PDF"], "midterm.pdf", { type: "application/pdf" });
+    dropOn(screen.getByTestId("bulk-drop-zone"), [pdf]);
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/backwork/upload"));
+    expect(takeStagedBulkUpload()?.files).toEqual([pdf]);
+  });
+
+  it("refuses a drop on a disabled strip and says why", async () => {
+    chapter.pastDue();
+    render(<BackworkPage />);
+    const pdf = new File(["%PDF"], "midterm.pdf", { type: "application/pdf" });
+    dropOn(screen.getByTestId("bulk-drop-zone"), [pdf]);
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Couldn't add those files" }),
+    );
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(takeStagedBulkUpload()).toBeNull();
+  });
+
+  it("hands PDFs picked on the drop strip to bulk upload", async () => {
+    render(<BackworkPage />);
+    const pdf = new File(["%PDF"], "midterm.pdf", { type: "application/pdf" });
+    const doc = new File(["x"], "notes.docx", { type: "application/msword" });
+    fireEvent.change(screen.getByTestId("bulk-file-input"), { target: { files: [pdf, doc] } });
+
+    expect(mockPush).toHaveBeenCalledWith("/backwork/upload");
+    expect(takeStagedBulkUpload()).toMatchObject({ files: [pdf], skipped: 1 });
+  });
+
+  it("stays put and says why when nothing picked is a PDF", () => {
+    render(<BackworkPage />);
+    const doc = new File(["x"], "notes.docx", { type: "application/msword" });
+    fireEvent.change(screen.getByTestId("bulk-file-input"), { target: { files: [doc] } });
+
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({ title: "No PDFs added" }));
+  });
+
+  it("disables the drop strip with the rest of the writes when the chapter can't upload", () => {
+    chapter.pastDue();
+    render(<BackworkPage />);
+    const choose = screen.getByRole("button", { name: /choose pdfs/i });
+    expect(choose).toBeDisabled();
+    expect(choose).toHaveAttribute("aria-describedby");
+  });
+
+  it("shows no drop strip to a member who can't upload", () => {
+    mockPermissions.value = [];
+    render(<BackworkPage />);
+    expect(screen.queryByTestId("bulk-drop-zone")).toBeNull();
+  });
+});
+
+describe("BackworkPage zip download", () => {
+  const library = (count: number) =>
+    Array.from({ length: count }, (_, n) => ({
+      ...RESOURCE,
+      id: `bw-${n}`,
+      title: `Homework ${n}`,
+      storage_path: `chapter-1/bw-${n}.pdf`,
+    }));
+  const zipButton = () => screen.queryByRole("button", { name: /as a zip/ });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resolvedResourcesQuery();
+    mockPermissions.value = ["backwork:upload", "backwork:admin"];
+    chapter.active();
+    mockFetchDownloadUrls.mockImplementation(async (ids: string[]) =>
+      ids.map((id) => ({ id, download_url: `https://signed/${id}` })),
+    );
+    mockBuildZip.mockResolvedValue({ blob: new Blob(["zip"]), added: 2, missed: 0 });
+  });
+
+  it("offers no zip until a search or filter narrows the list", async () => {
+    resourcesQuery.data = library(2);
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+    expect(zipButton()).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Search backwork"), "homework");
+    expect(
+      await screen.findByRole("button", { name: "Download 2 files as a zip" }),
+    ).toBeEnabled();
+  });
+
+  it("zips the narrowed files under their titles and saves the zip", async () => {
+    resourcesQuery.data = library(2);
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+    await user.type(screen.getByLabelText("Search backwork"), "homework");
+    await user.click(await screen.findByRole("button", { name: /as a zip/ }));
+
+    await waitFor(() => expect(mockSaveBlob).toHaveBeenCalledTimes(1));
+    expect(mockFetchDownloadUrls).toHaveBeenCalledWith(
+      expect.arrayContaining(["bw-0", "bw-1"]),
+    );
+    const [entries] = mockBuildZip.mock.calls[0]!;
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        { name: "Homework 0.pdf", url: "https://signed/bw-0" },
+        { name: "Homework 1.pdf", url: "https://signed/bw-1" },
+      ]),
+    );
+    expect(mockSaveBlob.mock.calls[0]![1]).toMatch(/^backwork-\d{4}-\d{2}-\d{2}\.zip$/);
+  });
+
+  it("won't zip more than 50 files", async () => {
+    resourcesQuery.data = library(51);
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+    await user.type(screen.getByLabelText("Search backwork"), "homework");
+
+    const button = await screen.findByRole("button", {
+      name: "Narrow the list to 50 files or fewer to download a zip",
+    });
+    expect(button).toBeDisabled();
+  });
+
+  it("says when the files are too big to zip", async () => {
+    resourcesQuery.data = library(2);
+    const { ZipTooLargeError } = await import("@/lib/backwork-zip");
+    mockBuildZip.mockRejectedValue(new ZipTooLargeError());
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+    await user.type(screen.getByLabelText("Search backwork"), "homework");
+    await user.click(await screen.findByRole("button", { name: /as a zip/ }));
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Couldn't make the zip",
+          description: expect.stringContaining("250 MB"),
+        }),
+      ),
+    );
+    expect(mockSaveBlob).not.toHaveBeenCalled();
+  });
+
+  it("says how many files it left out", async () => {
+    resourcesQuery.data = library(2);
+    mockBuildZip.mockResolvedValue({ blob: new Blob(["zip"]), added: 1, missed: 1 });
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+    await user.type(screen.getByLabelText("Search backwork"), "homework");
+    await user.click(await screen.findByRole("button", { name: /as a zip/ }));
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Zipped 1 of 2 files" }),
+      ),
     );
   });
 });
