@@ -1,12 +1,12 @@
 ---
 name: docs-upkeep
 description: >
-  Run the Docs Upkeep routine (4 of 5): sweep a rotating fifth of the docs corpus, verify its
+  Run the docs phase of the Weekly Upkeep routine (alternate weeks): sweep a rotating fifth of the docs corpus, verify its
   claims against code and providers, and fix what is wrong in a single docs-only PR. Use when the
-  scheduled "Docs Upkeep" routine fires, or when asked to sweep, audit, or refresh the docs.
+  Weekly Upkeep routine picks it, or when asked to sweep, audit, or refresh the docs.
 ---
 
-# Docs Upkeep (routine 4 of 5)
+# Docs Upkeep (a phase of Weekly Upkeep)
 
 Docs decay quietly: a reader finds a wrong claim by acting on it. This routine sweeps this week's
 slice of the corpus, checks its claims against the code and providers, and fixes what is wrong in
@@ -152,10 +152,9 @@ Otherwise:
 Work the whole slice without stopping to summarize; put any status note in the same message as your
 next tool call. The run ends when the slice is swept and either the PR is open with your own CI
 failures fixed, or the slice was clean. End earlier only if a push fails, or the MCP is down after
-you've pushed the branch. Your last tracker write is the
-[run record](../../../docs/ci-cd/routines.md#run-record-all-routines), `routine=docs-upkeep`: `done` for a swept
-slice with or without a PR, `stopped` when a push failed. With the MCP down there is none to
-post, and the missing record is the signal. Your final message is the run report.
+you've pushed the branch. This phase posts no run record of its own; the
+[`weekly-upkeep`](../weekly-upkeep/SKILL.md) record carries the outcome: `done` for a swept slice with or
+without a PR, `stopped` when a push failed. Your final message is the run report.
 
 ## Run report
 

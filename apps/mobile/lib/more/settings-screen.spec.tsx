@@ -4,7 +4,6 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { signetDarkTokens } from "@repo/theme/signet";
 import {
   defaultNotificationCategoryState,
   NOTIFICATION_CATEGORIES,
@@ -97,7 +96,15 @@ vi.mock("@/lib/notifications/push", () => ({
   pushUnavailableReason: () => state.pushReason,
 }));
 
+// The native picker has no JS half under vitest; quiet-hours-section.spec.tsx
+// covers the section itself.
+vi.mock("@react-native-community/datetimepicker", () => ({
+  default: "DateTimePicker",
+  DateTimePickerAndroid: { open: vi.fn() },
+}));
+
 vi.mock("@/lib/use-notification-preferences-sync", () => ({
+  deviceTimeZone: () => "America/New_York",
   useNotificationPreferencesSync: () => ({
     quietHoursEnabled: state.quietHoursEnabled,
     setQuietHoursEnabled: vi.fn(),
@@ -131,16 +138,21 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import SettingsScreen from "@/app/(tabs)/preferences";
+import { AnalyticsContext } from "@/lib/analytics-provider";
 
 const mounted: ReactTestRenderer[] = [];
 
-function render(): ReactTestRenderer {
+function render(
+  track: ((name: string, properties?: object) => void) | null = null,
+): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
-      <FrappThemeProvider>
-        <SettingsScreen />
-      </FrappThemeProvider>,
+      <AnalyticsContext.Provider value={track}>
+        <FrappThemeProvider>
+          <SettingsScreen />
+        </FrappThemeProvider>
+      </AnalyticsContext.Provider>,
     );
   });
   mounted.push(tree);
@@ -285,49 +297,32 @@ describe("Settings copy", () => {
     expect(text).not.toContain("always arrive");
   });
 
-  it("says what's wrong with a quiet-hours time that isn't 24-hour HH:mm", () => {
-    const tree = render();
-    expect(screenText(tree)).not.toContain("Use 24-hour HH:mm times");
-
-    const start = tree.root.find(
-      (node) =>
-        (node.type as unknown) === "TextInput" &&
-        node.props.accessibilityLabel === "Quiet hours start time",
-    );
-    act(() => start.props.onChangeText("25:99"));
-
-    expect(screenText(tree)).toContain("Use 24-hour HH:mm times (e.g. 21:00).");
-    expect(screenText(tree)).not.toContain("Enter a timezone name");
-  });
-
-  it("says what's wrong with a quiet-hours timezone that isn't a zone name", () => {
-    const tree = render();
-    expect(screenText(tree)).not.toContain("Enter a timezone name");
-
-    const tz = tree.root.find(
-      (node) =>
-        (node.type as unknown) === "TextInput" &&
-        node.props.accessibilityLabel === "Quiet hours timezone",
-    );
-    // A UTC offset, which every runtime rejects (`isUtcOffset`).
-    act(() => tz.props.onChangeText("-05:00"));
-
-    expect(screenText(tree)).toContain(
-      "Enter a timezone name like America/Chicago.",
-    );
-    expect(screenText(tree)).not.toContain("Use 24-hour HH:mm times");
-  });
-
-  it("shows the quiet-hours window only while quiet hours are on", () => {
-    const off = screenText(render());
-    expect(off).not.toContain("10:00 PM");
-    expect(off).not.toContain("Silence normal-priority pushes");
-    expect(off).not.toContain("Saved for when you turn quiet hours back on.");
+  it("shows the quiet-hours times only while quiet hours are on", () => {
+    const off = render();
+    expect(
+      off.root.findAll((node) => (node.type as unknown) === "DateTimePicker"),
+    ).toHaveLength(0);
+    expect(screenText(off)).not.toContain("From");
 
     state.quietHoursEnabled = true;
-    const on = screenText(render());
-    expect(on).toContain("10:00 PM – 7:00 AM");
-    expect(on).not.toContain("Applies to this account on every device.");
+    const on = render();
+    expect(
+      on.root.findAll((node) => (node.type as unknown) === "DateTimePicker"),
+    ).toHaveLength(2);
+    expect(screenText(on)).toContain("From");
+    expect(screenText(on)).toContain("To");
+  });
+
+  it("has no Chat switch, and says where a chat is muted", () => {
+    const tree = render();
+    const labels = tree.root
+      .findAll((node) => (node.type as unknown) === "Switch")
+      .map((node) => node.props.accessibilityLabel);
+
+    expect(labels).not.toContain("Chat");
+    expect(screenText(tree)).toContain(
+      "Mute a channel or DM from the chat itself.",
+    );
   });
 
   it("gives an editor's accent row no narration, and no web footnote", () => {
@@ -366,19 +361,6 @@ describe("Settings copy", () => {
     // Label, its line, then the value: the line sits under this row's label.
     expect(screenText(render())).toContain(
       "Study zones\nManaged on the web dashboard.\n0 zones",
-    );
-  });
-
-  it("fills the quiet-hours fields in the card's own tone", () => {
-    const tree = render();
-    const input = tree.root.find(
-      (node) =>
-        (node.type as unknown) === "TextInput" &&
-        node.props.accessibilityLabel === "Quiet hours start time",
-    );
-
-    expect(input.props.style.backgroundColor).toBe(
-      signetDarkTokens.color.surface.surface1,
     );
   });
 });
@@ -445,6 +427,30 @@ describe("Settings push switch", () => {
     expect(setItem.mock.invocationCallOrder[record]).toBeLessThan(
       state.requestPushPermission.mock.invocationCallOrder[0],
     );
+  });
+
+  it.each([
+    [true, "allowed"],
+    [false, "denied"],
+  ])("records the OS answer (%s) as push-prompt-answered from settings", async (granted, answer) => {
+    state.getPushPermission = async () => ({
+      granted: false,
+      canAskAgain: true,
+      status: "undetermined",
+    });
+    state.requestPushPermission.mockResolvedValue(granted);
+    const track = vi.fn();
+    const tree = render(track);
+    await settle();
+
+    act(() => pushSwitch(tree).props.onValueChange(true));
+    await settle();
+
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith("push-prompt-answered", {
+      answer,
+      surface: "settings",
+    });
   });
 
   it("stays off after the member denies the OS prompt, and says where to turn it on", async () => {
@@ -601,7 +607,8 @@ describe("Settings push switch", () => {
       canAskAgain: true,
       status: "denied",
     });
-    const tree = render();
+    const track = vi.fn();
+    const tree = render(track);
     await settle();
 
     expect(pushSwitch(tree).props.value).toBe(false);
@@ -616,6 +623,8 @@ describe("Settings push switch", () => {
     expect(state.requestPushPermission).not.toHaveBeenCalled();
     expect(primerWrites()).toEqual([]);
     expect(state.openSettings).toHaveBeenCalledTimes(1);
+    // Opening the OS settings answers no prompt.
+    expect(track).not.toHaveBeenCalled();
   });
 
   it("reads off on Android when the app's channel is switched off, though the permission is granted", async () => {

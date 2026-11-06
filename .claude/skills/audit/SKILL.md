@@ -4,14 +4,14 @@ description: >
   Perform code quality reviews, security audits, dependency checks, API contract audits, database
   migration reviews, or CI/CD audits on this repo. Use when asked to audit, security-review, or
   assess quality of the codebase, when checking RLS/guard coverage or dependency vulnerabilities,
-  and as the engineering-gaps lens of scheduled routines like the Issue Curator.
+  and as the engineering-gaps lens of the Issue Curator phase of the weekly Board Sweep.
 ---
 
 # Audit & Quality Review
 
 The checks, commands and repo-specific traps for auditing Frapp, interactively or as a read-only
-lens inside a scheduled routine such as the [Issue Curator](../issue-curator/SKILL.md). A read-only
-run files findings as GitHub issues instead of fixing them. Two routines fix instead:
+lens inside a scheduled routine, as in the [Issue Curator](../issue-curator/SKILL.md) phase. A read-only
+run files findings as GitHub issues instead of fixing them. Two routine phases fix instead:
 [`docs-upkeep`](../docs-upkeep/SKILL.md) fixes docs in a docs-only PR and never files `area:docs`
 issues, and [`hygiene-scan`](../hygiene-scan/SKILL.md) fixes code hygiene in a product-code PR.
 

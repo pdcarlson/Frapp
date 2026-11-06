@@ -32,12 +32,28 @@ const EVENT = {
 let events: unknown[] = [EVENT];
 let chapterId: string | null = "chapter-1";
 let query = { isPending: false, isError: false, isFetching: false };
+let permissions: string[] = [];
 const refetch = vi.fn();
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => chapterId,
   useEvents: () => ({ ...query, data: events, refetch }),
+  usePermissionList: () => permissions,
+}));
+
+// The sheet has its own rendered spec; here it would only bring its hooks.
+// It stands in with the one method the host calls, so a spec can tell the +
+// opened it.
+const presentSheet = vi.fn();
+vi.mock("@/components/events/new-event-sheet", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@/components/events/new-event-sheet")
+  >()),
+  NewEventSheet: React.forwardRef(function NewEventSheet(_props, ref) {
+    React.useImperativeHandle(ref, () => ({ present: presentSheet }));
+    return null;
+  }),
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
@@ -75,6 +91,13 @@ function styleOf(tree: ReactTestRenderer, text: string): TextStyle {
   if (!node) throw new Error(`no Text draws ${JSON.stringify(text)}`);
   return StyleSheet.flatten(node.props.style) as TextStyle;
 }
+
+const createButton = (tree: ReactTestRenderer) =>
+  tree.root.findAll(
+    (node) =>
+      node.props.accessibilityLabel === "New event" &&
+      typeof node.props.onPress === "function",
+  )[0];
 
 const skeletons = (tree: ReactTestRenderer) =>
   tree.root.findAll((node) => node.props.accessibilityRole === "progressbar");
@@ -259,6 +282,47 @@ describe("Events list states", () => {
     expect(scroll.props.refreshControl).toBeDefined();
   });
 
+  it("offers an officer the New event button, and says so when empty", () => {
+    permissions = ["events:create", "members:view"];
+    events = [];
+    const tree = render();
+
+    expect(createButton(tree)).toBeDefined();
+    expect(screenText(tree)).toContain("Tap + to add an event.");
+    permissions = [];
+  });
+
+  it("opens the New event sheet from the +, with events listed too", () => {
+    // An owner's grant is the wildcard.
+    permissions = ["*"];
+    events = [EVENT];
+    presentSheet.mockClear();
+    const tree = render();
+
+    act(() => createButton(tree)!.props.onPress());
+    expect(presentSheet).toHaveBeenCalledTimes(1);
+    permissions = [];
+  });
+
+  it("offers no button to a role whose every create would be refused", () => {
+    // `POST /v1/events` also needs the controller's `members:view`.
+    permissions = ["events:create"];
+    events = [];
+    const tree = render();
+
+    expect(createButton(tree)).toBeUndefined();
+    permissions = [];
+  });
+
+  it("offers a member no create button", () => {
+    permissions = [];
+    events = [];
+    const tree = render();
+
+    expect(createButton(tree)).toBeUndefined();
+    expect(screenText(tree)).not.toContain("Tap +");
+  });
+
   it("says nothing is scheduled without narrating the screen", () => {
     events = [];
     const tree = render();
@@ -312,7 +376,8 @@ describe("Events after the first", () => {
     expect(resting.borderRadius).toBeUndefined();
     const chip = row.find(
       (node) =>
-        (node.type as unknown) === "Text" && node.props.children === "Mandatory",
+        (node.type as unknown) === "Text" &&
+        node.props.children === "Mandatory",
     );
     expect(StyleSheet.flatten(chip.props.style).color).toBe(
       signetDarkTokens.color.semantic.destructiveText,

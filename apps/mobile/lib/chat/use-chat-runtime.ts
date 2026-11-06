@@ -28,6 +28,7 @@ import {
   chatRealtime,
   createBackfillFetcher,
 } from "@repo/chat-core/realtime-manager";
+import { useLatestTrack } from "@/lib/use-latest-track";
 import { getSupabaseClient } from "@/lib/supabase";
 import { connectionMonitor } from "@/lib/connection/monitor";
 import { useChatScope } from "./chat-scope";
@@ -148,6 +149,16 @@ export function useChatRuntime(): ChatRuntime {
     };
   }, [queryClient, supabase, apiClient, viewerId]);
 
+  /**
+   * The outbox lifecycle events (`spec/behavior/observability.md` § Outbox
+   * Telemetry), as web passes them: chat-core calls `ctx.track` at each step of
+   * a queued send. `track` holds the chapter opt-out itself, and sends nothing
+   * outside `AnalyticsProvider`. Stable, so `ctx` keeps its identity when the
+   * opt-out answer arrives and the flush effect below doesn't start a second
+   * flush (`useLatestTrack`).
+   */
+  const track = useLatestTrack();
+
   const ctx = useMemo<ChatActionContext | null>(() => {
     if (!supabase || !viewerId) return null;
     return {
@@ -157,8 +168,9 @@ export function useChatRuntime(): ChatRuntime {
       userId: viewerId,
       outbox,
       net: chatNetworkState,
+      track,
     };
-  }, [queryClient, apiClient, supabase, viewerId, outbox]);
+  }, [queryClient, apiClient, supabase, viewerId, outbox, track]);
 
   // Boot flush, then re-flush on every reconnect. Both the trigger and the gate
   // ride the same port: `flushOutbox` consults `net` internally, so subscribing
