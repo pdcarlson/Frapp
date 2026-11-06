@@ -257,6 +257,9 @@ const ROSTER = {
   refetch: () => {},
 };
 
+/** The chapter roster the composer's `@` offers. */
+const MENTION_ROSTER = [{ user_id: "u-paul", display_name: "Paul Carlson" }];
+
 const NOTIFICATION_PREFS = [
   { channel_id: CHANNEL, level: "all" as const },
   { channel_id: OTHER_CHANNEL, level: "all" as const },
@@ -291,6 +294,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
         { data: undefined, isFetching: channelRow === "reading" },
   useCurrentUser: () => viewerQuery,
   useMemberDisplayNames: () => ROSTER,
+  useChapterRoster: () => ({ data: MENTION_ROSTER }),
   usePermissionList: () => [],
   useMarkChannelRead: () => markRead,
   useRequestChatUploadUrl: () => requestUploadUrl,
@@ -1611,6 +1615,16 @@ describe("chat thread composer placeholder", () => {
     );
     expect(input.props.placeholder).toBe("Message");
     expect(input.props.accessibilityLabel).toBe("Message");
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread @-mentions", () => {
+  it("hands the chapter roster to the composer's picker", () => {
+    const tree = render();
+    expect(tree.root.findByType(ChatComposer).props.mentionCandidates).toBe(
+      MENTION_ROSTER,
+    );
     act(() => tree.unmount());
   });
 });

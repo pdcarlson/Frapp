@@ -77,8 +77,7 @@ export const SEMANTIC = signetDarkTokens.color.semantic;
  *
  * Parsed out of the stylesheet rather than restated, for the reason the fixed
  * half above already is: a guard that hardcodes the value it is guarding goes
- * green against a constant that no longer ships. `--destructive-text` was that
- * literal until the mention chip needed two more of them.
+ * green against a constant that no longer ships.
  */
 const SIGNET_CSS_PATH = join(
   // `__dirname`, not `import.meta.url`: these run under the jsdom environment,
@@ -133,8 +132,11 @@ export const CARD_HOVER = cssToken("--card-hover");
  * in `components/chat/chat-contrast.spec.ts`.
  */
 export const MENTION_CHIP = {
-  fill: cssToken("--mention-chip"),
-  text: cssToken("--mention-chip-text"),
+  // From the tokens since mobile started drawing the chip (2026-11-06): these
+  // are the values both clients paint, and `signet.css.spec.ts` holds the
+  // stylesheet to them.
+  fill: SEMANTIC.mentionChip,
+  text: SEMANTIC.mentionChipText,
 } as const;
 
 /**

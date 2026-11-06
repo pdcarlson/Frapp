@@ -16,7 +16,7 @@ export interface MentionSuggestionItem {
   id: string;
   /**
    * The mention node's serialized text label — the display name reduced to
-   * letters, digits, and marks (`mention-suggestion.ts`'s `mentionLabelFor`).
+   * letters, digits, and marks (`mentionLabelFor` in `@repo/validation`).
    * This is what gets sent, not `displayName`; see that function's comment
    * for why.
    */
