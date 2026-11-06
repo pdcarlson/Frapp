@@ -70,17 +70,21 @@ describe("SetupChecklistView (mobile)", () => {
     expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/documents");
   });
 
+  it("opens Events in the app, where the New event sheet is", () => {
+    const tree = render();
+    act(() => pressable(tree, "Schedule the first event").props.onPress());
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/events");
+  });
+
   it("opens the web app for a step the phone has no screen for, and says so first", async () => {
     const onReturnFromWeb = vi.fn();
     const tree = render({ onReturnFromWeb });
-    const row = pressable(tree, "Schedule the first event");
-    expect(row.props.accessibilityHint).toBe(
-      "Opens this step in the web app.",
-    );
+    const row = pressable(tree, "Add a study zone");
+    expect(row.props.accessibilityHint).toBe("Opens this step in the web app.");
     await act(async () => row.props.onPress());
     // No EXPO_PUBLIC_APP_URL in tests, so the production dashboard.
     expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
-      "https://app.frapp.live/events",
+      "https://app.frapp.live/geofences",
     );
     // The step may have been done there, so the lists are read again.
     expect(onReturnFromWeb).toHaveBeenCalledTimes(1);
@@ -110,9 +114,7 @@ describe("SetupChecklistView (mobile)", () => {
     );
     const onReturnFromWeb = vi.fn();
     const tree = render({ onReturnFromWeb });
-    await act(async () =>
-      pressable(tree, "Schedule the first event").props.onPress(),
-    );
+    await act(async () => pressable(tree, "Add a study zone").props.onPress());
     expect(alert).toHaveBeenCalledWith(
       SETUP_CHECKLIST_OPEN_FAILED_TITLE,
       "Sign in at app.frapp.live on a computer to finish this step.",
@@ -130,8 +132,8 @@ describe("SetupChecklistView (mobile)", () => {
         (node.type as unknown) === "Text" &&
         node.props.children === SETUP_CHECKLIST_WEB_NOTE,
     );
-    // Invite (done), event and study zone. Documents is in the app.
-    expect(notes).toHaveLength(3);
+    // Invite (done) and study zone. Documents and events are in the app.
+    expect(notes).toHaveLength(2);
   });
 
   it("never draws dues on the phone", () => {
