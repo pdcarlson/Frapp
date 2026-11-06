@@ -147,10 +147,11 @@ describe("shipped options", () => {
   it("carries a finite sample rate, so tracing cannot be enabled by NaN", async () => {
     // #904: a malformed rate parses to NaN, which the SDK treats as enabled.
     // Mobile hardcodes the value, so this asserts the property that choice buys.
+    // Every trace during the beta; back to 0.1 before a second chapter.
     const { buildMobileSentryOptions } = await loadOptions();
     const rate = buildMobileSentryOptions(DSN).tracesSampleRate;
     expect(Number.isFinite(rate)).toBe(true);
-    expect(rate).toBe(0.1);
+    expect(rate).toBe(1);
   });
 
   it("wires BOTH scrubbing hooks", async () => {

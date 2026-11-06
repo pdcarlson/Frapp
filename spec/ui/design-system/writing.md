@@ -94,7 +94,7 @@ Example (the Events surface, from the tables below):
 
 **Amended 2026-11-05**, after the owner's review of the Android build (2026-11-04): "we don't need to narrate stuff". The explanation used to be required on every empty state, which is how empty cards came to describe their own screen ("Documents the chapter uploads show up here.", "Members appear here once they join the chapter."). The rule above governs new and changed copy, for the reason [`../mobile/patterns.md` § Screen headers](../mobile/patterns.md#screen-headers) took the line under each screen title away: the member is already on the screen. The change that amended it removed those lines from the mobile screens it touched: Documents (s12), Directory (s13) and the notifications inbox (s14). Chat home's no-channels card (s04) swapped its line for what to do next: `No channels yet` / `Ask an admin to add one.` (mobile has no way to create one). A line that carries a fact stays: a search names its query, a filtered view says how to widen it, and the no-chapter state says where to pick a chapter.
 
-Lines that still narrate are follow-up ([#3429](https://github.com/pdcarlson/Frapp/issues/3429)), not changed by the amendment: mobile Events' `Events your chapter schedules will appear here.`; the second sentence of mobile Dues' empty body, `Anything they send will show up here.` ([Dues (mobile, s11)](#dues-mobile-s11)); and on web the empty rows of [Members](#members-dashboard) (`Actives appear here once they join.`), [Alumni](#alumni-dashboard) (`Graduated members appear here.`), [Notifications](#notifications-dashboard) (`… will appear here.`) and [Points](#points-dashboard)' empty transactions (`Your attendance, study sessions, and adjustments will appear here.`).
+Lines that still narrate are follow-up ([#3429](https://github.com/pdcarlson/Frapp/issues/3429)), not changed by the amendment: the second sentence of mobile Dues' empty body, `Anything they send will show up here.` ([Dues (mobile, s11)](#dues-mobile-s11)); and on web the empty rows of [Members](#members-dashboard) (`Actives appear here once they join.`), [Alumni](#alumni-dashboard) (`Graduated members appear here.`), [Notifications](#notifications-dashboard) (`… will appear here.`) and [Points](#points-dashboard)' empty transactions (`Your attendance, study sessions, and adjustments will appear here.`).
 
 The skeleton/empty/error state variants themselves — layout, structure, when each renders — are component-level and owned by [components.md](components.md). This document owns the words inside them.
 
@@ -225,11 +225,15 @@ Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assem
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading points ledger...` |
-| Empty leaderboard | `No leaderboard entries` | `Point activity will populate after attendance, study, or admin adjustments.` |
-| Leaderboard search matched nothing | `No members match that search` | `Check the spelling, or clear the search to see the full leaderboard.` |
-| Empty transactions | `No transactions in this window` | `Your attendance, study sessions, and adjustments will appear here.` |
+| Everyone at 0 | — | `Everyone is tied at 0. The first points earned take the lead.` (one line under the board) |
+| Empty leaderboard | — | `Nobody has points in this period.` (one line) |
+| Leaderboard search matched nothing | — | `No members match that search.` then a **Clear search** link (one line) |
+| Empty transactions | — | `No points in this period yet.` (one line) |
+| Transaction filters matched nothing | — | `No transactions match these filters.` then a **Clear filters** link (one line) |
 | Error | `Couldn't load the points ledger` | `Standings and transactions are unavailable, so none are shown. Confirm your chapter access and retry.` |
 | Offline | `Points ledger unavailable offline` | `Reconnect to refresh leaderboard standings and transaction history.` |
+
+The board lists the whole roster, at 0 until a member earns points ([`points.md` § Leaderboard](../../behavior/points.md#leaderboard)), so a new chapter sees its members tied for first with the one line above rather than a card. The empty and no-match states are single lines (`InlineNote`, `apps/web/components/shared/inline-note.tsx`) where the rows would be, not cards; error and offline keep theirs (2026-11-06).
 
 ### Points — Audit tab (dashboard)
 
@@ -398,6 +402,7 @@ bind every one of them, and both are the point rather than style:
 
 | Surface | Description |
 |---|---|
+| New event (sheet on s06) | `Your chapter's subscription isn't active, so new events can't be saved. An officer can sort this out for the chapter.` |
 | New task (s19) | `Your chapter's subscription isn't active, so new tasks can't be saved. An officer can sort this out for the chapter.` |
 | Task status (s08 toggle, chat task card) | `Your chapter's subscription isn't active, so task updates can't be saved. An officer can sort this out for the chapter.` Shown on the board, and on a mobile chat task card for Start, Mark complete, Confirm and Reject (one copy for both, `taskStatusGateRefusal` in `apps/mobile/lib/tasks/status-refusal.ts`). On either, the controls stay withdrawn until the member comes back to the screen or to the app ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
 | Event check-in | `Your chapter's subscription isn't active, so check-in isn't available. An officer can sort this out for the chapter.` |
@@ -427,6 +432,7 @@ the state with `pollsGateOf` in `@repo/chat-core/polls`.
 
 | Surface | Description |
 |---|---|
+| New event (sheet on s06) | `Events are turned off for your chapter right now, so new events can't be saved. An officer can turn events back on.` |
 | New task (s19) | `Tasks are turned off for your chapter right now, so new tasks can't be saved. An officer can turn tasks back on.` |
 | Task status (s08 toggle, chat task card) | `Tasks are turned off for your chapter right now, so task updates can't be saved. An officer can turn tasks back on.` Shown on the board and on a mobile chat task card, and withdrawn for as long, like the subscription row for the same writes ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
 | Event check-in | `Check-in is turned off for your chapter right now. An officer can turn events back on.` |

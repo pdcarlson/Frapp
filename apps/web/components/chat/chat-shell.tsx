@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { MembersGlyph, MuteGlyph } from "./chat-glyphs";
+import { MembersGlyph } from "./chat-glyphs";
 import { ChannelMemberList } from "./channel-member-list";
 import { channelDescription } from "@repo/hooks/channel-start";
 import { ChannelMark, ChannelStart } from "./channel-start";
@@ -1845,29 +1845,6 @@ export function ChatShell({
                     className="h-4 w-4 shrink-0 text-muted-foreground"
                   />
                   <span className="truncate">{activeChannelName}</span>
-                  {/*
-                    Muting used to be readable without opening anything: the
-                    notification popover's trigger named it in its `aria-label`
-                    ("Notifications: muted"). That trigger is now behind `⋯`, so
-                    the state moves here rather than being lost - a muted
-                    channel must not look identical to an unmuted one.
-                  */}
-                  {activeChannelLevel === "off" ? (
-                    <>
-                      <MuteGlyph
-                        className="h-4 w-4 shrink-0 text-muted-foreground"
-                        active
-                      />
-                      {/*
-                        Every duotone glyph is `aria-hidden` (`ui/duotone.tsx`),
-                        so the mark alone would restate the deleted trigger's
-                        `aria-label` for sighted members only — which is most of
-                        the point missed. `channel-list.tsx` pairs its own
-                        `MuteGlyph` the same way.
-                      */}
-                      <span className="sr-only">Muted</span>
-                    </>
-                  ) : null}
                 </>
               ) : (
                 "Pick a channel"

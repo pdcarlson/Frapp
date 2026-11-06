@@ -31,6 +31,7 @@ import type { Member } from '#domain/entities/member.entity';
 import type { PointTransaction } from '#domain/entities/point-transaction.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
+import { RbacService } from './rbac.service';
 import {
   ChapterPointsConfigService,
   POINTS_CONFIG_DEFAULTS,
@@ -88,8 +89,9 @@ describe('PointsService', () => {
   >;
   let mockUserRepo: jest.Mocked<IUserRepository>;
   let mockMemberRepo: jest.Mocked<
-    Pick<IMemberRepository, 'findByUserAndChapter'>
+    Pick<IMemberRepository, 'findByUserAndChapter' | 'findByChapter'>
   >;
+  let mockRbacService: jest.Mocked<Pick<RbacService, 'getAlumniRoleId'>>;
   let mockChatService: jest.Mocked<Pick<ChatService, 'sendMessage'>>;
   let mockChapterPointsConfig: jest.Mocked<
     Pick<ChapterPointsConfigService, 'getConfig'>
@@ -206,6 +208,12 @@ describe('PointsService', () => {
       findByUserAndChapter: jest.fn((userId: string, chapterId: string) =>
         Promise.resolve(memberRow(userId, chapterId)),
       ),
+      // No roster unless a test seeds one, so the board is exactly what the
+      // ledger aggregates.
+      findByChapter: jest.fn().mockResolvedValue([]),
+    };
+    mockRbacService = {
+      getAlumniRoleId: jest.fn().mockResolvedValue('role-alumni'),
     };
 
     mockChatService = {
@@ -238,6 +246,7 @@ describe('PointsService', () => {
           provide: ChapterPointsConfigService,
           useValue: mockChapterPointsConfig,
         },
+        { provide: RbacService, useValue: mockRbacService },
       ],
     }).compile();
 
@@ -423,6 +432,92 @@ describe('PointsService', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].user_id).toBe(txn1.user_id);
+    });
+
+    describe('roster at zero', () => {
+      it('lists a new chapter’s whole roster at 0, ordered by user_id', async () => {
+        seedTransactions([]);
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          memberRow('user-b', 'ch-1'),
+          memberRow('user-a', 'ch-1'),
+        ]);
+
+        await expect(service.getLeaderboard('ch-1')).resolves.toEqual([
+          { user_id: 'user-a', total: 0 },
+          { user_id: 'user-b', total: 0 },
+        ]);
+        expect(mockMemberRepo.findByChapter).toHaveBeenCalledWith('ch-1');
+      });
+
+      // A member below zero ranks under the ones who haven't started.
+      it('ranks a 0 between positive and negative totals', async () => {
+        seedTransactions([
+          txn1,
+          { ...txn2, id: 'pt-neg', user_id: 'user-3', amount: -5 },
+        ]);
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          memberRow('user-1', 'ch-1'),
+          memberRow('user-3', 'ch-1'),
+          memberRow('user-0', 'ch-1'),
+        ]);
+
+        const result = await service.getLeaderboard('ch-1', 'all');
+
+        expect(result.map((row) => [row.user_id, row.total])).toEqual([
+          ['user-1', 10],
+          ['user-0', 0],
+          ['user-3', -5],
+        ]);
+      });
+
+      it('leaves out alumni with nothing on the board, and keeps one who has', async () => {
+        seedTransactions([{ ...txn1, user_id: 'user-alum-1' }]);
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          memberRow('user-alum-1', 'ch-1', { role_ids: ['role-alumni'] }),
+          memberRow('user-alum-2', 'ch-1', { role_ids: ['role-alumni'] }),
+          memberRow('user-active', 'ch-1'),
+        ]);
+
+        const result = await service.getLeaderboard('ch-1', 'all');
+
+        expect(result.map((row) => row.user_id)).toEqual([
+          'user-alum-1',
+          'user-active',
+        ]);
+      });
+
+      it('pads every member when the chapter has no Alumni role', async () => {
+        seedTransactions([]);
+        mockRbacService.getAlumniRoleId.mockResolvedValue(null);
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          memberRow('user-x', 'ch-1', { role_ids: ['role-alumni'] }),
+        ]);
+
+        await expect(service.getLeaderboard('ch-1')).resolves.toEqual([
+          { user_id: 'user-x', total: 0 },
+        ]);
+      });
+
+      // Today's roster says nothing about who was in the chapter back then.
+      it('does not pad an archived semester’s board', async () => {
+        mockSemesterArchiveRepo.findById.mockResolvedValue({
+          id: 'sa-1',
+          chapter_id: 'ch-1',
+          label: 'Spring 2026',
+          start_date: '2026-01-15',
+          end_date: '2026-06-15',
+          created_at: '2026-06-15T12:00:00.000Z',
+        });
+        seedTransactions([]);
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          memberRow('user-a', 'ch-1'),
+        ]);
+
+        await expect(
+          service.getLeaderboard('ch-1', 'all', 'sa-1'),
+        ).resolves.toEqual([]);
+        expect(mockMemberRepo.findByChapter).not.toHaveBeenCalled();
+      });
     });
   });
 

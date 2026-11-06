@@ -146,6 +146,27 @@ describe("decorateThread — runs", () => {
     ).toEqual([true, true, true]);
   });
 
+  it("stacks audit lines under each other, and starts a run after the stack", () => {
+    const audit = (minute: number) =>
+      visible(
+        msg({
+          sender_id: "system",
+          kind: "system_audit",
+          payload: { action: "chapter_config_updated", diff: {} },
+          created_at: at(28, 17, minute),
+        }),
+      );
+    expect(
+      runs([
+        visible(msg({ created_at: at(28, 17, 10) })),
+        audit(11),
+        // Hours apart still stacks: each line carries its own time.
+        audit(59),
+        visible(msg({ created_at: at(28, 18, 0) })),
+      ]),
+    ).toEqual([true, true, false, true]);
+  });
+
   it("groups the imported kind like text", () => {
     expect(
       runs([

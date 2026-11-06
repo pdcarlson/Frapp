@@ -65,7 +65,8 @@ import {
  *
  * **The date is presets, not a free field.** No date-picker dependency exists
  * and `package.json` is frozen under #937's hotspot protocol — see the header of
- * `lib/tasks/create-task.ts` for the full reasoning.
+ * `lib/tasks/create-task.ts` for the full reasoning. (2026-11-06: the native
+ * picker is a dependency now; moving this row to it is #3597.)
  *
  * **The focus ring is a border, not a shadow.** Canvas draws
  * `box-shadow: 0 0 0 3px rgba(239,182,59,.22)`. React Native has no
