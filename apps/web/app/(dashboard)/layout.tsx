@@ -15,7 +15,7 @@ export default async function DashboardLayout({
 }) {
   // Read the nav collapse preference here, on the server, so the very first
   // paint is already the right width. Doing it in a client effect would render
-  // the 220px nav and then snap to the 56px rail after hydration on every
+  // the 240px nav and then snap to the 56px rail after hydration on every
   // route, which is exactly the layout shift the first-paint contract budgets
   // to zero.
   const cookieStore = await cookies();

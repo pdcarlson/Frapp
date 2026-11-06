@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/sheet";
 import { SKIP_LINK_CLASSES } from "@/components/ui/focus";
 import { AppNav } from "@/components/layout/app-nav";
-import { ChatNavColumn } from "@/components/layout/chat-nav-column";
+import { NavColumn } from "@/components/layout/nav-column";
 import {
   isChannelsNavRoute,
   NavFaceContext,
@@ -69,7 +69,7 @@ type DashboardShellProps = {
   /**
    * Collapse preference, read from a cookie by the server layout so the first
    * paint is already correct. Reading it on the client instead would render
-   * 220px and then snap to 56px after hydration, on every route.
+   * 240px and then snap to 56px after hydration, on every route.
    */
   defaultNavCollapsed?: boolean;
 };
@@ -224,26 +224,23 @@ export function DashboardShell({
         Skip to main content
       </a>
 
+      {/*
+        One column on every route, never a different component per route:
+        swapping a nav for a chat column is what made the column jump on every
+        trip in and out of Chat (`nav-column.tsx` says how).
+      */}
       <div className="hidden lg:flex">
-        {navFace ? (
-          <ChatNavColumn
-            face={navFace.face}
-            onShowModules={navFace.showModules}
-            onShowChannels={navFace.showChannels}
-            channelsSlotRef={setChannelsSlot}
-            permissions={permissions}
-            isModuleEnabled={isModuleEnabled}
-            pathname={pathname}
-          />
-        ) : (
-          <AppNav
-            collapsed={navCollapsed}
-            onToggleCollapsed={toggleNavCollapsed}
-            permissions={permissions}
-            isModuleEnabled={isModuleEnabled}
-            pathname={pathname}
-          />
-        )}
+        <NavColumn
+          chatFace={navFace ? navFace.face : null}
+          onShowModules={showModules}
+          onShowChannels={showChannels}
+          channelsSlotRef={setChannelsSlot}
+          collapsed={navCollapsed}
+          onToggleCollapsed={toggleNavCollapsed}
+          permissions={permissions}
+          isModuleEnabled={isModuleEnabled}
+          pathname={pathname}
+        />
       </div>
 
       {/*
@@ -272,7 +269,7 @@ export function DashboardShell({
           left column and its composer pins to the bottom of the viewport
           instead of the bottom of a scrolling document. (Below `lg` chat's
           channel list is inline here too; from `lg` up it is the left column
-          itself, `chat-nav-column.tsx`.)
+          itself, `nav-column.tsx`.)
         */}
         <main
           id="main-content"
