@@ -138,6 +138,26 @@ export function inertName(name: string): string | null {
   return plain.length > 0 ? plain : null;
 }
 
+/**
+ * A user or role mention as Frapp writes one: `@` and the name with everything
+ * but letters, digits and marks removed, so `Tristan Hatton` reads
+ * `@TristanHatton`.
+ *
+ * That is the form the composer's own mention picker inserts
+ * (`mentionLabelFor`), and the only one a chat client draws as a single chip:
+ * the mention tokenizer (`@repo/validation`'s `MENTION_TOKEN`) stops at a
+ * space, so `@Tristan Hatton` chipped `@Tristan` and left `Hatton` as prose.
+ * What it keeps is inert by construction. A name that keeps nothing that can
+ * open a mention (a digit-led `21+`, say) is written as its inert name
+ * instead, readable though never chipped.
+ */
+export function mentionText(name: string): string | null {
+  const handle = name.normalize('NFC').replace(/[^\p{L}\p{N}\p{M}]/gu, '');
+  if (/^\p{L}/u.test(handle)) return `@${handle}`;
+  const inert = inertName(name);
+  return inert ? `@${inert}` : null;
+}
+
 function channelMention(
   channel: MentionedChannel | typeof PRIVATE_CHANNEL | null,
 ): string {
@@ -181,13 +201,11 @@ function replaceToken(
     match;
   if (userId !== undefined) {
     const raw = resolver.userName(userId);
-    const name = raw === null ? null : inertName(raw);
-    return name ? `@${name}` : UNKNOWN_USER_MENTION;
+    return (raw === null ? null : mentionText(raw)) ?? UNKNOWN_USER_MENTION;
   }
   if (roleId !== undefined) {
     const raw = resolver.roleName(roleId);
-    const name = raw === null ? null : inertName(raw);
-    return name ? `@${name}` : UNKNOWN_ROLE_MENTION;
+    return (raw === null ? null : mentionText(raw)) ?? UNKNOWN_ROLE_MENTION;
   }
   if (channelId !== undefined) {
     return channelMention(resolver.channel(channelId));
@@ -404,10 +422,13 @@ export function importChannelMentions(
 /**
  * What a role mention reads as, per Discord role id (#2818's mapping).
  *
- * A role mapped to a Frapp role reads as that role's current name, since that
- * is the role a reader can find in Frapp. One set to Ignore keeps its Discord
- * name: it is still the name of a group the chapter had. A mapped role since
- * deleted in Frapp falls back the same way. `@everyone`'s role id is the
+ * A role reads as its Discord name, what the author wrote and what everyone
+ * in the channel saw. *2026-11-06: changed from the mapped Frapp role's name.*
+ * That made an import read differently from Discord (`@Brothers your sober
+ * brothers` became `@Member your sober brothers`), and with several Discord
+ * roles mapped onto one Frapp role (three secretaries onto `Secretary`) it
+ * lost which one was meant. The mapped name is now only the fallback for an
+ * entry whose Discord name was not recorded. `@everyone`'s role id is the
  * guild's id, and reads as `everyone`.
  *
  * The mapping lists every role the admin was offered, which leaves out the
@@ -432,9 +453,9 @@ export function roleMentionNames(args: {
         ? null
         : entry.discord_role_name;
     const name =
+      discordName ??
       mapped ??
-      (entry.action === 'new' ? entry.new_role_name : null) ??
-      discordName;
+      (entry.action === 'new' ? entry.new_role_name : null);
     if (name) names.set(entry.discord_role_id, name);
   }
   if (args.guildId) names.set(args.guildId, 'everyone');
