@@ -50,18 +50,18 @@ export const stateMicrocopy = {
   },
   points: {
     loading: "Loading points ledger...",
-    emptyLeaderboardTitle: "No leaderboard entries",
-    emptyLeaderboardDescription:
-      "Point activity will populate after attendance, study, or admin adjustments.",
+    // Inline lines (one sentence each), not card titles: the board keeps its
+    // layout at zero. The board lists the roster, so it is empty only for a
+    // chapter with nobody on it, or an archived semester nobody earned in.
+    emptyLeaderboard: "Nobody has points in this period.",
+    everyoneAtZero:
+      "Everyone is tied at 0. The first points earned take the lead.",
     // A filtered board that matches nothing is not an empty board. Reusing the
-    // copy above would assert the chapter has had no point activity at all,
-    // which is a claim about the data rather than about the search (#1197).
-    noLeaderboardMatchesTitle: "No members match that search",
-    noLeaderboardMatchesDescription:
-      "Check the spelling, or clear the search to see the full leaderboard.",
-    emptyTransactionsTitle: "No transactions in this window",
-    emptyTransactionsDescription:
-      "Your attendance, study sessions, and adjustments will appear here.",
+    // copy above would assert something about the chapter's data rather than
+    // about the search (#1197).
+    noLeaderboardMatches: "No members match that search.",
+    emptyTransactions: "No points in this period yet.",
+    noTransactionMatches: "No transactions match these filters.",
     errorTitle: "Couldn't load the points ledger",
     errorDescription:
       "Standings and transactions are unavailable, so none are shown. Confirm your chapter access and retry.",

@@ -15,11 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { anyReadUncached } from "@/components/shared/async-states";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedOffline,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedOffline } from "@/components/shared/nested-states";
+import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import { SectionLabel } from "@/components/shared/section-label";
 import { PageActions } from "@/components/layout/page-actions";
 import { amountToneClassName } from "@/components/points/amount-tone";
@@ -136,13 +133,20 @@ export default function PointsPage() {
   // One projection drives the label and the rank, so neither can disagree with
   // what the row is.
   const leaderboardRows = useMemo(() => {
-    return leaderboard.map((entry, index) => {
+    return leaderboard.map((entry) => {
       // Rank belongs to the board, not to the filtered view. It used to be the
       // render index, which was survivable while the search only matched uuids
       // that nobody typed; naming the rows makes filtering an everyday action,
       // and a rank renumbered from #1 per search would misreport chapter
       // standing on the surface officers read it off.
-      const rank = index + 1;
+      //
+      // Equal totals share a rank (1, 1, 3), the way the mobile points card
+      // counts it: a new chapter's board is its whole roster at 0, and
+      // numbering that #1 to #40 would rank people who haven't started. The
+      // rows arrive by total descending, so a row's rank is one past the
+      // first row on its total.
+      const rank =
+        leaderboard.findIndex((other) => other.total === entry.total) + 1;
       // `null` for an unset name as well as a missing member: `display_name` is
       // `NOT NULL DEFAULT ''`, so `resolveDisplayName` treats '' as unresolved
       // rather than rendering a blank cell. Someone who has left the chapter is
@@ -472,21 +476,19 @@ export default function PointsPage() {
             </div>
           </div>
           {filteredLeaderboard.length === 0 ? (
-            // A search that matches nothing is not an empty board — saying
-            // "point activity will populate after..." there would assert
-            // something false about the chapter's data.
+            // A search that matches nothing is not an empty board, so it says
+            // so in one line and offers the way back, and the page stays put.
+            // The board itself is never empty while the roster loads into it:
+            // every current member is on it, at 0 until they earn points.
             leaderboardRows.length > 0 ? (
-              <NestedEmpty
-                title={stateMicrocopy.points.noLeaderboardMatchesTitle}
-                description={
-                  stateMicrocopy.points.noLeaderboardMatchesDescription
-                }
-              />
+              <InlineNote>
+                {stateMicrocopy.points.noLeaderboardMatches}{" "}
+                <InlineNoteAction onClick={() => setLeaderboardSearch("")}>
+                  Clear search
+                </InlineNoteAction>
+              </InlineNote>
             ) : (
-              <NestedEmpty
-                title={stateMicrocopy.points.emptyLeaderboardTitle}
-                description={stateMicrocopy.points.emptyLeaderboardDescription}
-              />
+              <InlineNote>{stateMicrocopy.points.emptyLeaderboard}</InlineNote>
             )
           ) : (
             // `role="list"` restated: a flex `<li>` loses its `list-item` box,
@@ -517,6 +519,14 @@ export default function PointsPage() {
               ))}
             </ul>
           )}
+          {/*
+            Zero is a standing, so a board where nobody has points yet is the
+            roster tied at 0 with one line on what moves it, not a card.
+          */}
+          {leaderboardRows.length > 0 &&
+          leaderboardRows.every((entry) => entry.total === 0) ? (
+            <InlineNote>{stateMicrocopy.points.everyoneAtZero}</InlineNote>
+          ) : null}
         </section>
 
         <section
@@ -602,10 +612,22 @@ export default function PointsPage() {
             </div>
           ) : null}
           {filteredTransactions.length === 0 ? (
-            <NestedEmpty
-              title={stateMicrocopy.points.emptyTransactionsTitle}
-              description={stateMicrocopy.points.emptyTransactionsDescription}
-            />
+            transactions.length > 0 ? (
+              <InlineNote>
+                {stateMicrocopy.points.noTransactionMatches}{" "}
+                <InlineNoteAction
+                  onClick={() => {
+                    setTransactionSearch("");
+                    setAmountFilter("all");
+                    setCategoryFilter("all");
+                  }}
+                >
+                  Clear filters
+                </InlineNoteAction>
+              </InlineNote>
+            ) : (
+              <InlineNote>{stateMicrocopy.points.emptyTransactions}</InlineNote>
+            )
           ) : (
             <>
               {/*

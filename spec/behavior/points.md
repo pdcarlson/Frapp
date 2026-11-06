@@ -53,7 +53,18 @@ When a user checks into an event:
 - Chapter-scoped. Shows rank, member name, and total points.
 - **Names are resolved client-side against the chapter roster**, not joined onto
   the leaderboard response: `GET /v1/points/leaderboard` aggregates
-  `point_transactions` and returns `{ user_id, total }` only. The web dashboard
+  `point_transactions` and returns `{ user_id, total }` only.
+- **Zero is a standing.** The board lists every current member who isn't an
+  alumnus, at `0` when they have no transaction in the window, so a new
+  chapter's board is its whole roster tied for first rather than nothing.
+  `PointsService.getLeaderboard` adds those rows to what
+  `get_points_leaderboard` returns (the roster from `members`, alumni resolved
+  by the Alumni role's `system_key`), in the same order: total descending, then
+  `user_id`. Alumni are left out unless points put them on the board, since
+  they can't earn points themselves ([`alumni.md`](alumni.md)). An
+  **archived semester** is not padded: today's roster says nothing about who
+  was in the chapter then, so that board is only the members whose points moved
+  in it (2026-11-06). The web dashboard
   resolves each row at render from the display roster, whose payload is owned by
   [`chat/README.md`](chat/README.md) — deliberately not the full member profile.
 - A row whose `user_id` does not resolve renders the shared `Member <first six
@@ -66,6 +77,8 @@ When a user checks into an event:
   unresolved row: it is a record officers read ids out of, not a name slot.
 - Rank is the member's position on the **whole** board for the selected window.
   Filtering the view — by name or by pasted user id — never renumbers it.
+  **Equal totals share a rank** (1, 1, 3), on web and on the mobile points
+  card alike, so a roster tied at 0 is everyone at `#1` (2026-11-06).
 - The sum happens **in Postgres** (`get_points_leaderboard`), not in the API
   process. Rows come back by total descending, **ties broken by `user_id`** — so
   two members on the same total hold the same relative order on every request,
@@ -97,7 +110,7 @@ When a user checks into an event:
 ## Edge Cases
 
 - Negative balances are allowed. The system does not block fines even if the balance would go negative.
-- If a member is removed from a chapter, their point history is preserved for audit purposes **and they keep their leaderboard row**. `getLeaderboard` aggregates `point_transactions` by chapter and does not join `members`, so removing someone does not silently move everyone ranked below them. They are no longer on the roster, so their row resolves no name and renders the `Member <first six hex>` label described under *Leaderboard*. They also can't be adjusted any more (*Admin Adjustments*). That includes a retry of an adjustment that committed before they left: the retry gets the 404 rather than the original row, which stays in the ledger.
+- If a member is removed from a chapter, their point history is preserved for audit purposes **and they keep their leaderboard row**. `get_points_leaderboard` aggregates `point_transactions` by chapter and does not join `members` (the roster only adds members at 0), so removing someone does not silently move everyone ranked below them. They are no longer on the roster, so their row resolves no name and renders the `Member <first six hex>` label described under *Leaderboard*. They also can't be adjusted any more (*Admin Adjustments*). That includes a retry of an adjustment that committed before they left: the retry gets the 404 rather than the original row, which stays in the ledger.
 - Points awarded for study sessions and events cannot be manually reversed by the recipient; only admins can create offsetting transactions.
 
 ## Chat Integration

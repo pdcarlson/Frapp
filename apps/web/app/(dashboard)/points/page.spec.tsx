@@ -476,14 +476,50 @@ describe("PointsPage success state", () => {
     expect(screen.queryByText("Library session")).not.toBeInTheDocument();
   });
 
-  it("renders empty states when the chapter has no point activity yet", () => {
+  it("says filters matched nothing, apart from a quiet period, and clears them", () => {
+    setQueries({
+      summary: {
+        data: {
+          balance: 4,
+          transactions: [
+            {
+              id: "txn-2",
+              amount: 4,
+              category: "STUDY",
+              description: "Library session",
+              created_at: "2026-08-02T12:00:00Z",
+            },
+          ],
+        },
+      },
+    });
+
+    render(<PointsPage />);
+    fireEvent.change(screen.getByLabelText(/filter transactions by amount/i), {
+      target: { value: "negative" },
+    });
+
+    expect(
+      screen.getByText(/No transactions match these filters/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("No points in this period yet."),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getByText("Library session")).toBeInTheDocument();
+  });
+
+  it("says in one line when a period has no activity, rather than a card", () => {
     setQueries({});
 
     render(<PointsPage />);
 
-    expect(screen.getByText("No leaderboard entries")).toBeInTheDocument();
     expect(
-      screen.getByText("No transactions in this window"),
+      screen.getByText("Nobody has points in this period."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("No points in this period yet."),
     ).toBeInTheDocument();
     expectNoFabricatedData();
   });
@@ -601,7 +637,7 @@ describe("PointsPage leaderboard naming (#1197)", () => {
     // the old unguarded id match this returned her row with nothing on screen
     // containing "f1".
     expect(
-      screen.getByText("No members match that search"),
+      screen.getByText(/No members match that search/),
     ).toBeInTheDocument();
   });
 
@@ -624,11 +660,63 @@ describe("PointsPage leaderboard naming (#1197)", () => {
     fireEvent.change(search(), { target: { value: "nobody" } });
 
     expect(
-      screen.getByText("No members match that search"),
+      screen.getByText(/No members match that search/),
     ).toBeInTheDocument();
     expect(
-      screen.queryByText("No leaderboard entries"),
+      screen.queryByText("Nobody has points in this period."),
     ).not.toBeInTheDocument();
+
+    // The way back is in the same line, and the page stays put.
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
+    expect(search()).toHaveValue("");
+  });
+
+  // A new chapter's board is its roster at 0, and #1 to #40 would rank
+  // people who haven't started.
+  it("gives equal totals the same rank, and the next total its board position", () => {
+    withLeaderboard(
+      [
+        { user_id: ALICE, total: 9 },
+        { user_id: BOB, total: 9 },
+        { user_id: CAROL, total: 4 },
+      ],
+      NAMED,
+    );
+
+    render(<PointsPage />);
+
+    expect(board().getAllByText("#1")).toHaveLength(2);
+    expect(board().getByText("#3")).toBeInTheDocument();
+    expect(board().queryByText("#2")).not.toBeInTheDocument();
+  });
+
+  it("shows a board where nobody has points as the roster tied at 0, with one line", () => {
+    withLeaderboard(
+      [
+        { user_id: ALICE, total: 0 },
+        { user_id: BOB, total: 0 },
+      ],
+      NAMED,
+    );
+
+    render(<PointsPage />);
+
+    expect(board().getAllByText("#1")).toHaveLength(2);
+    expect(board().getByText("Alice Chen")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Everyone is tied at 0. The first points earned take the lead.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("drops the tied-at-0 line once anyone has points", () => {
+    withLeaderboard(BOARD, NAMED);
+
+    render(<PointsPage />);
+
+    expect(screen.queryByText(/Everyone is tied at 0/)).not.toBeInTheDocument();
   });
 
   it("keeps the empty-board copy when the board really is empty", () => {
@@ -636,9 +724,11 @@ describe("PointsPage leaderboard naming (#1197)", () => {
 
     render(<PointsPage />);
 
-    expect(screen.getByText("No leaderboard entries")).toBeInTheDocument();
     expect(
-      screen.queryByText("No members match that search"),
+      screen.getByText("Nobody has points in this period."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/No members match that search/),
     ).not.toBeInTheDocument();
   });
 
