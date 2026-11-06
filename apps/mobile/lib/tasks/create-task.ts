@@ -16,7 +16,9 @@ import { localIsoDate, parseBareDateLocalNoon } from "@repo/formatting";
  *
  * ## Why the due date is presets and not a picker
  *
- * `apps/mobile` has no date-picker dependency, and `package.json` is frozen
+ * (2026-11-06: `@react-native-community/datetimepicker` is a dependency now,
+ * so the reason below is history; moving to it is #3597.)
+ * `apps/mobile` had no date-picker dependency, and `package.json` was frozen
  * under #937's hotspot protocol — adding one is an integrator PR that this slice
  * would then have to wait behind. Expo Go is the only run path
  * (`spec/ui/mobile/README.md`) and this app is on SDK 57, so a picker's Go
