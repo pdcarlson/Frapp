@@ -115,9 +115,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useActiveChapterId: () => chapterId,
   useCurrentUser: () => ({ isError: false, refetch: viewerRefetch }),
   useServiceEntries: (...args: unknown[]) => useServiceEntries(...args),
+  usePermissionList: () => permissions.list,
   useCreateServiceEntry: () => ({ mutate, isPending }),
   useRequestServiceProofUploadUrl: () => ({ mutateAsync: requestProofUrl }),
 }));
+
+/** The viewer's permissions; a member who logs hours unless a test says so. */
+const permissions = vi.hoisted(() => ({ list: ["service:log"] as string[] }));
 
 const requestProofUrl = vi.fn();
 const pickProofPhoto = vi.fn<() => Promise<unknown>>();
@@ -474,6 +478,22 @@ describe("Log service hours sheet", () => {
     act(() => logButton(tree).props.onPress());
     expect(present).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
+  });
+
+  it("isn't offered to a role that can't log hours", () => {
+    permissions.list = ["members:view"];
+    try {
+      const tree = render();
+      expect(
+        tree.root.findAll(
+          (node) =>
+            node.type === ("Pressable" as never) &&
+            node.props.accessibilityLabel === "Log service hours",
+        ),
+      ).toHaveLength(0);
+    } finally {
+      permissions.list = ["service:log"];
+    }
   });
 
   it("dims the screen behind it", () => {

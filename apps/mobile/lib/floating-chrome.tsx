@@ -21,6 +21,13 @@ export const FLOATING_TAB_BAR = {
   side: 14,
   /** Gap above the floating bar for the create button, and below content. */
   gap: 14,
+  /**
+   * The round glass + beside the bar on a tab screen, the bar's own height,
+   * and the gap between the two (owner pick 2026-11-06). The gap is also the
+   * space between the bar and the quick-actions panel above it.
+   */
+  actionButton: 62,
+  actionGap: 10,
 } as const;
 
 /**

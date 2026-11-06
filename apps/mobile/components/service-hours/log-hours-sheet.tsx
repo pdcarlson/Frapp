@@ -141,10 +141,15 @@ export interface LogHoursSheetProps {
    * comes back to the foreground.
    */
   now: Date;
+  /**
+   * The entry was filed. The quick actions say so, since the sheet may have
+   * been opened over a screen that shows no entries.
+   */
+  onLogged?: () => void;
 }
 
 export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
-  function LogHoursSheet({ now }, ref) {
+  function LogHoursSheet({ now, onLogged }, ref) {
     const closeSheet = useSheetClose(ref);
     const { tokens } = useFrappTheme();
     const { accent } = useChapterBranding();
@@ -345,6 +350,7 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
           // rules), felt once the entry is filed.
           successHaptic();
           clearEntry();
+          onLogged?.();
           // A sheet closed and reopened since is the member's new visit,
           // and the save doesn't close it under them.
           if (isSameVisit(sentFrom)) dismiss();
@@ -455,10 +461,7 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
           {/* The focus ring is the wrapper, as on s19: it tracks real focus,
               not "has text". */}
           <View
-            style={[
-              styles.ring,
-              descriptionFocused ? styles.ringActive : null,
-            ]}
+            style={[styles.ring, descriptionFocused ? styles.ringActive : null]}
           >
             <BottomSheetTextInput
               value={description}
@@ -487,7 +490,8 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
               const preset = presets.find(
                 (each) => String(each.daysAgo) === value,
               );
-              if (preset && !pending) setDateChoice(serviceDateChoiceOf(preset));
+              if (preset && !pending)
+                setDateChoice(serviceDateChoiceOf(preset));
             }}
             accessibilityLabel="Date of service"
           />

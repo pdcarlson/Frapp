@@ -124,20 +124,6 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useUpdateTaskStatus: () => ({ mutateAsync }),
 }));
 
-// The sheet has its own rendered spec; here it would only bring its own hooks.
-// It keeps the clock it was handed, which is what its chips read, and the
-// instance it is, which is what holds a kept draft.
-let sheetNow: Date | undefined;
-let sheetInstance: object | undefined;
-vi.mock("@/components/tasks/new-task-sheet", () => ({
-  NewTaskSheet: ({ now }: { now?: Date }) => {
-    sheetNow = now;
-    const [instance] = React.useState(() => ({}));
-    sheetInstance = instance;
-    return null;
-  },
-}));
-
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
@@ -369,52 +355,24 @@ describe("Task status toggle haptic", () => {
 describe("Tasks board clock", () => {
   it("re-reads its clock when the member comes back to the app on this tab", () => {
     // A board left open overnight: no navigation focus fires on the return,
-    // and the New task sheet's "Today" must mean the new day.
+    // and "Due today" must mean the new day.
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       vi.setSystemTime(new Date(2026, 8, 28, 22));
       const tree = render();
-      expect(sheetNow?.getDate()).toBe(28);
+      const rowNow = () => (row(tree).props.now as Date).getDate();
+      expect(rowNow()).toBe(28);
 
       vi.setSystemTime(new Date(2026, 8, 29, 8));
       act(() => appStateListener()("background"));
-      expect(sheetNow?.getDate()).toBe(28);
+      expect(rowNow()).toBe(28);
       act(() => appStateListener()("active"));
 
-      expect(sheetNow?.getDate()).toBe(29);
+      expect(rowNow()).toBe(29);
       act(() => tree.unmount());
     } finally {
       vi.useRealTimers();
     }
-  });
-});
-
-/**
- * The New task sheet is the host's per chapter: a kept draft's assignee is a
- * member of the chapter it was started in, and the API refuses one who isn't.
- * The Tasks tab stays mounted across a chapter switch, so only a new sheet
- * drops the draft.
- */
-describe("Tasks board's New task sheet across chapters", () => {
-  it("mounts a new sheet when the active chapter changes, and only then", () => {
-    const tree = render();
-    const first = sheetInstance;
-    const rerender = () =>
-      act(() =>
-        tree.update(
-          <FrappThemeProvider>
-            <TasksScreen />
-          </FrappThemeProvider>,
-        ),
-      );
-
-    rerender();
-    expect(sheetInstance).toBe(first);
-
-    chapterId = "chapter-2";
-    rerender();
-    expect(sheetInstance).not.toBe(first);
-    act(() => tree.unmount());
   });
 });
 

@@ -63,7 +63,8 @@ import { FrappThemeProvider, useFrappTheme } from "@/lib/theme";
  */
 
 /** Which boundary caught the error, as the `error_boundary` tag. */
-export type RouteErrorBoundaryKind = "root" | "app" | "tabs" | "screen";
+export type RouteErrorBoundaryKind =
+  "root" | "app" | "tabs" | "screen" | "sheet";
 
 /** Reports a caught render error, once per error object. */
 export const reportRouteError = createReportOnce<{
@@ -103,7 +104,9 @@ export function AppErrorScreen({
   error,
   retry,
   boundary,
-}: ErrorBoundaryProps & { boundary: Exclude<RouteErrorBoundaryKind, "screen"> }) {
+}: ErrorBoundaryProps & {
+  boundary: Exclude<RouteErrorBoundaryKind, "screen">;
+}) {
   const routePath = usePathname();
 
   useEffect(() => {
@@ -296,11 +299,18 @@ export class RouteErrorBoundary extends Component<
     });
   }
 
-  componentDidUpdate(prev: ScreenBoundaryProps, prevState: ScreenBoundaryState): void {
+  componentDidUpdate(
+    prev: ScreenBoundaryProps,
+    prevState: ScreenBoundaryState,
+  ): void {
     // Only a fallback that was already showing resets. When the new params are
     // what made the screen throw, this commit is the one that caught it, and
     // resetting now would render the failing screen straight back.
-    if (prevState.failed && this.state.failed && prev.resetKey !== this.props.resetKey) {
+    if (
+      prevState.failed &&
+      this.state.failed &&
+      prev.resetKey !== this.props.resetKey
+    ) {
       this.retry();
     }
   }
@@ -312,7 +322,10 @@ export class RouteErrorBoundary extends Component<
   render(): ReactNode {
     if (!this.state.failed) return this.props.children;
     return (
-      <ScreenErrorScreen showBack={this.props.showBack ?? false} retry={this.retry} />
+      <ScreenErrorScreen
+        showBack={this.props.showBack ?? false}
+        retry={this.retry}
+      />
     );
   }
 }
