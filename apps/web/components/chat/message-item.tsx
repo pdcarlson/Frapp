@@ -909,7 +909,9 @@ export function MessageItem({
               CHIP.base,
               CHIP.neutral,
               CHIP_HIT_AREA,
-              "gap-1 disabled:opacity-60",
+              // Wide enough for "Retrying…", so the label swap never
+              // nudges what sits beside it.
+              "min-w-[5.5rem] justify-center gap-1 disabled:opacity-60",
             )}
             onClick={() => {
               const replay = message._replay;

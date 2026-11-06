@@ -477,7 +477,7 @@ A member with no receipt for a channel has never opened it, so **every** message
 
 - **`kind = 'imported'` never counts.** An archive is history the chapter imported, not messages anyone sent them, and the rule above would otherwise hand every member a badge the size of the import that no amount of reading could clear. This is stated explicitly in `get_channel_unread_counts` rather than left to fall out of the nullable-sender comparison, which excluded it only as an artefact of `NULL <> uuid` being NULL.
 
-- **`#chapter-audit` entries never count** (owner decision, 2026-11-06: audit entries arrive silently). A `system_audit` row the audit mirror wrote, keyed `client_message_id = 'audit:<id>'` (`auditMirrorClientId`), is a log line, not a message to anyone, and it never pushes either ([`../notifications.md`](../notifications.md#chat-notification-preferences)). The server's other `system_audit` notices (a poll closing, an invite accepted, the chapter welcome) are addressed to members and still count.
+- **`#chapter-audit` entries never count** (owner decision, 2026-11-06: audit entries arrive silently). A `system_audit` row the audit mirror wrote, keyed `client_message_id = 'audit:<id>'` (`auditMirrorClientId`), is a log line, not a message to anyone. It never pushes either, whatever level the member set: `decidePush` refuses a mirror row ahead of every preference ([`../notifications.md`](../notifications.md#chat-notification-preferences)). The server's other `system_audit` notices (a poll closing, an invite accepted, the chapter welcome) are addressed to members and still count.
 
 Mention count is the subset of that same set which mentions the viewer.
 

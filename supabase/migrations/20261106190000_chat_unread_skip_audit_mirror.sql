@@ -4,8 +4,8 @@
 -- spec/behavior/chat/README.md § Read Receipts lists what never counts as
 -- unread. The audit mirror (`ChatBridgeWorkerService`, ADR-08) posts every
 -- member-visible `chapter_audit_log` row into `#chapter-audit` as a
--- `system_audit` message from the system sender. Push already skips the kind
--- (`push-rules.ts`), but `get_channel_unread_counts` counted it like any other
+-- `system_audit` message from the system sender. Push refuses a mirror row
+-- (`decidePush` in `push-rules.ts`), but `get_channel_unread_counts` counted it like any other
 -- message, so each settings save lit a badge on the channel row, its section
 -- header and the mobile app-icon badge.
 --
@@ -58,7 +58,7 @@ as $$
    and m.sender_id is distinct from p_user_id
    -- A `#chapter-audit` entry is not unread (2026-11-06): it is a log line the
    -- audit mirror writes, not a message to anyone, so it arrives silently, as
-   -- it already does for push. The mirror keys every entry
+   -- it does for push. The mirror keys every entry
    -- `client_message_id = 'audit:<audit id>'` (`auditMirrorClientId`); the
    -- server's other `system_audit` notices (a poll closing, an invite
    -- accepted, the welcome) carry no such key and still count.

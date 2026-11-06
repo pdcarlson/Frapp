@@ -15,6 +15,7 @@ import {
   groupReactions,
   MESSAGE_AVATAR_SIZE,
   messageActionsA11yProps,
+  OwnLineMarkers,
   ReactionRow,
 } from "./message-item";
 
@@ -83,19 +84,23 @@ export function SystemAuditLine({
         />
       </View>
       <View style={styles.column}>
-        <Text
-          style={styles.line}
+        {/* The actions ride an accessible View, never a bare Text
+            (`messageActionsA11yProps`). */}
+        <View
           accessible
           accessibilityLabel={`${actor ? `${actor} ` : ""}${phrase}${
             detail ? `: ${detail}` : ""
           }, ${time}`}
           {...a11y}
         >
-          {actor ? <Text style={styles.actor}>{actor} </Text> : null}
-          {phrase}
-          {detail ? ` · ${detail}` : null}
-          <Text style={styles.time}>{`  ${time}`}</Text>
-        </Text>
+          <Text style={styles.line}>
+            {actor ? <Text style={styles.actor}>{actor} </Text> : null}
+            {phrase}
+            {detail ? ` · ${detail}` : null}
+            <Text style={styles.time}>{`  ${time}`}</Text>
+          </Text>
+        </View>
+        <OwnLineMarkers message={message} />
         <ReactionRow
           reactions={groupReactions(message, viewerId)}
           messageId={message.id}

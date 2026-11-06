@@ -550,7 +550,10 @@ export function MessageItem({
     >
       {text ? (
         <View
-          accessible={"accessibilityActions" in bodyA11y}
+          // Accessible while pending too, so the hint below is heard: a
+          // pending row has no actions, and a hint on a view that is not an
+          // accessibility element is ignored.
+          accessible={"accessibilityActions" in bodyA11y || pending}
           // The gray body is the whole pending state on screen (§11 § What
           // rides the row); a screen reader hears it here instead.
           accessibilityHint={pending ? "Sending" : undefined}

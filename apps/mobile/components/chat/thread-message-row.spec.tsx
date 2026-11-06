@@ -1132,6 +1132,18 @@ describe("ThreadMessageRow — record cards (#3383)", () => {
     expect(text).toContain("permissions");
   });
 
+  it("returns one root with the day divider first, so an inverted list keeps it above the row", () => {
+    // An inverted FlatList lays each cell out `column-reverse`; sibling roots
+    // would draw the divider under the day's first message.
+    const json = renderRow(visible(message({ content: "hi" })), {
+      startsDay: true,
+    }).toJSON();
+    expect(Array.isArray(json)).toBe(false);
+    const first = (json as { children: { props: Record<string, unknown> }[] })
+      .children[0];
+    expect(first.props.accessibilityRole).toBe("header");
+  });
+
   it("draws an audit entry as a line with no author line", () => {
     const tree = renderRow(
       visible(

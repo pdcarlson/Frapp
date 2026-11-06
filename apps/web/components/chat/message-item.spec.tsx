@@ -169,6 +169,28 @@ describe("MessageItem system post avatar", () => {
     expect(screen.queryByText("00")).not.toBeInTheDocument();
   });
 
+  it("draws an audit entry as a line: shield in the gutter, no author line", () => {
+    const { container } = renderItem(
+      message({
+        sender_id: SYSTEM_SENDER_ID,
+        author_name: "Frapp",
+        kind: "system_audit",
+        content: "chapter_profile_updated",
+        client_message_id: "audit:a1",
+        payload: {
+          action: "chapter_profile_updated",
+          actor_user_id: OTHER,
+          diff: { accent_color: { from: "#000", to: "#fff" } },
+        },
+      }),
+    );
+
+    expect(container.querySelector("[data-system-avatar]")).toBeNull();
+    expect(screen.queryByText("Frapp")).not.toBeInTheDocument();
+    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
+    expect(container.textContent).toContain("updated the chapter profile");
+  });
+
   it("leaves a member's avatar alone", () => {
     const { container } = renderItem(message());
 

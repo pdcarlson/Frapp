@@ -126,7 +126,16 @@ function startsRun(
   if (message.reply_to_id) return true;
   // Audit lines stack: one under another draws tight, with no gap between
   // them, however far apart in time (each line carries its own time).
-  if (isAuditLine(message) && isAuditLine(prev.message)) return false;
+  // A deleted entry draws as the deleted placeholder, not a line, so it
+  // never joins a stack.
+  if (
+    !message.is_deleted &&
+    isAuditLine(message) &&
+    !prev.message.is_deleted &&
+    isAuditLine(prev.message)
+  ) {
+    return false;
+  }
   // A card is its own object in the channel; its author line says who ran it.
   // An audit line draws no author line, but still breaks the run around it,
   // so the message after it names its author again.

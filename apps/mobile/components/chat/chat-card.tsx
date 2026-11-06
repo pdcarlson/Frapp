@@ -18,7 +18,8 @@ import type { MessageLink } from "./message-markdown";
 
 /**
  * The frame every mobile chat card shares: the poll, event, task, points,
- * service hours, rush candidate, announcement and audit cards (#3185, #3383).
+ * service hours, rush candidate and announcement cards (#3185, #3383). An
+ * audit entry is a line, not a card (`system-audit-card.tsx`).
  *
  * `thread-message-row.tsx` puts a card inside `MessageRowFrame`, which draws
  * the reply quote, the avatar and the author line every row has. The frame
@@ -105,7 +106,13 @@ export function ChatCardShell({
         message._status === "pending" ? styles.cardPending : null,
       ]}
     >
-      <View accessible={hasActions} {...a11yActions}>
+      <View
+        accessible={hasActions || message._status === "pending"}
+        // The dimmed card is the whole pending state on screen; a screen
+        // reader hears it here.
+        accessibilityHint={message._status === "pending" ? "Sending" : undefined}
+        {...a11yActions}
+      >
         {header}
       </View>
       {children}
