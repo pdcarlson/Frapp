@@ -209,3 +209,126 @@ export function resolveMentions(
   }
   return resolved;
 }
+
+/**
+ * The text a mention picker inserts for a member: `display_name` with every
+ * character that isn't a Unicode letter, digit, or mark removed.
+ *
+ * Stripping *only* whitespace is not enough. `MENTION_TOKEN` allows a narrow
+ * set of mid-token punctuation (`'’.-_`) but **truncates the match** at the
+ * first character outside it: it does not reject the token, it silently
+ * shortens it. "Sam (VP)" stripped of spaces is `Sam(VP)`, which tokenizes as
+ * just `Sam`, and if another member is named exactly "Sam" the exact-name tier
+ * resolves to *that* member: a message that looks like it mentions "Sam (VP)"
+ * mentions the wrong person.
+ *
+ * Every character kept here is one the tokenizer always accepts through to the
+ * end, so the label round-trips intact, and it is `fold()`'s own character
+ * class, so it resolves through the "name without spaces" tier: the member
+ * picked is the member that resolves. What it cannot prevent is the resolver's
+ * accepted ambiguity, two members whose names fold to the same string, which
+ * fails closed (nobody mentioned, not the wrong person).
+ *
+ * Shared by both composers' pickers (web's tiptap suggestion, mobile's
+ * `ChatComposer`), so a member picked on either sends the same body.
+ */
+export function mentionLabelFor(displayName: string): string {
+  return displayName.replace(/[^\p{L}\p{N}\p{M}]/gu, "");
+}
+
+/** One member as a mention picker offers them. */
+export interface MentionSuggestion<T extends MentionCandidate> {
+  member: T;
+  /** What picking them inserts after the `@` (`mentionLabelFor`). */
+  label: string;
+}
+
+/**
+ * A name or query as the picker compares it: lower case, with the curly
+ * apostrophe read as the straight one. iOS swaps `'` for `’` as it is typed,
+ * so without this `@O'Br` from an iPhone would match no "O'Brien".
+ */
+function matchable(value: string): string {
+  return value.toLowerCase().replace(/’/g, "'");
+}
+
+/** Web's popup cap, and mobile's. */
+const MAX_MENTION_SUGGESTIONS = 8;
+
+/**
+ * The members a picker offers for `query` (the text typed after `@`), in
+ * roster order: those whose display name contains it, ignoring case.
+ *
+ * A member with no display name is left out, and so is one whose label opens
+ * on a digit: every token must open on a letter, so a label like `123Squad`
+ * would never be read as a mention at all (`spec/behavior/chat/README.md`
+ * § Mentions: "Autocomplete SHOULD NOT present a digit-led display name as
+ * reachable by typing").
+ */
+export function mentionSuggestions<T extends MentionCandidate>(
+  roster: readonly T[],
+  query: string,
+  limit: number = MAX_MENTION_SUGGESTIONS,
+): MentionSuggestion<T>[] {
+  const needle = matchable(query.trim());
+  const offered: MentionSuggestion<T>[] = [];
+  for (const member of roster) {
+    if (offered.length >= limit) break;
+    if (member.display_name.length === 0) continue;
+    const label = mentionLabelFor(member.display_name);
+    if (!/^\p{L}/u.test(label)) continue;
+    if (needle && !matchable(member.display_name).includes(needle)) continue;
+    offered.push({ member, label });
+  }
+  return offered;
+}
+
+/** The `@`-query a caret sits in: where its `@` is, and what follows it. */
+export interface ActiveMentionQuery {
+  /** Index of the `@`. */
+  start: number;
+  /** The text between the `@` and the caret. Empty right after typing `@`. */
+  query: string;
+  /**
+   * Index one past the whole handle, which runs on past the caret when the
+   * caret sits inside it. A pick replaces `start` to `end`.
+   */
+  end: number;
+}
+
+/**
+ * An `@` the tokenizer would accept, then nothing yet or a run that opens on a
+ * letter, up to the end of the string. Anchored at the end because it is run
+ * over the text *before the caret*, so a space typed after a name, or a caret
+ * moved out of it, closes the picker.
+ *
+ * The lookbehind and the opening letter are `MENTION_TOKEN`'s, so the picker
+ * opens only where the handle being typed could be read as a mention: not
+ * inside `email@example.com` or `@jane@`, and not on `@1` or `@.`. A bare `@`
+ * opens it too, since that is where every handle starts.
+ */
+const ACTIVE_MENTION =
+  /(?<![\p{L}\p{N}\p{M}_@])@((?:\p{L}[\p{L}\p{M}\p{N}_'’.-]*)?)$/u;
+
+/** The rest of a handle after the caret: what a token's body can hold. */
+const HANDLE_TAIL = /^[\p{L}\p{M}\p{N}_'’.-]*/u;
+
+/**
+ * The mention being typed at `caret`, or `null` when the caret is not in one.
+ *
+ * A plain text input has no editor plugin to say this (web's tiptap
+ * suggestion does), so mobile's composer asks here on every change of text or
+ * selection. The query never spans whitespace, as tiptap's default doesn't.
+ */
+export function activeMentionQuery(
+  text: string,
+  caret: number,
+): ActiveMentionQuery | null {
+  if (caret < 1 || caret > text.length) return null;
+  const match = ACTIVE_MENTION.exec(text.slice(0, caret));
+  if (!match) return null;
+  const query = match[1] ?? "";
+  if (query.length > MAX_TOKEN_LENGTH) return null;
+  const tail = query.length > 0 ? (HANDLE_TAIL.exec(text.slice(caret))?.[0] ?? "") : "";
+  return { start: match.index, query, end: caret + tail.length };
+}
