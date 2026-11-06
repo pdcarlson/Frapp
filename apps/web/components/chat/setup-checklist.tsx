@@ -3,25 +3,15 @@
 import Link from "next/link";
 import { Check, X } from "lucide-react";
 import {
+  HIDE_SETUP_CHECKLIST_LABEL,
+  SETUP_CHECKLIST_TITLE,
+  SETUP_CHECKLIST_WEB_PATH,
   useChapterSetupChecklist,
   type SetupChecklist,
-  type SetupChecklistKey,
 } from "@repo/hooks";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
 import { cn } from "@/lib/utils";
-
-/** Where each line's action lives on web. */
-export const SETUP_CHECKLIST_HREF: Record<SetupChecklistKey, string> = {
-  invite: "/members",
-  event: "/events",
-  "study-zone": "/geofences",
-  document: "/documents",
-  dues: "/billing",
-};
-
-export const SETUP_CHECKLIST_TITLE = "Set up your chapter";
-export const HIDE_SETUP_CHECKLIST_LABEL = "Hide the setup list";
 
 /**
  * The officer setup checklist at the top of the channel rail
@@ -76,7 +66,7 @@ export function SetupChecklistView({
         {checklist.lines.map((line) => (
           <li key={line.key}>
             <Link
-              href={SETUP_CHECKLIST_HREF[line.key]}
+              href={SETUP_CHECKLIST_WEB_PATH[line.key]}
               className={cn(
                 // The Row step (foundations.md §9): 32 with a 14px label on a
                 // mouse, 44 with a 16px one on touch.
@@ -89,8 +79,10 @@ export function SetupChecklistView({
                 aria-hidden="true"
                 className={cn(
                   "flex h-4 w-4 shrink-0 items-center justify-center rounded-full",
+                  // Done is the quietest thing on the list: a muted check,
+                  // never the accent (foundations.md, accent rule).
                   line.done
-                    ? "border border-accent-border bg-accent-subtle text-accent-text"
+                    ? "border border-border bg-card text-muted-foreground"
                     : "border border-border",
                 )}
               >

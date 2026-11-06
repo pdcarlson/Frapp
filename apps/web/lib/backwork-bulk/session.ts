@@ -16,6 +16,7 @@ import { finishUpload, sha256Hex } from "@/lib/backwork-bulk/finish";
 import type { BoxesByPage } from "@/lib/backwork-bulk/geometry";
 import type { PagePreview } from "@/lib/backwork-bulk/pdf";
 import { BulkUploadQueue } from "@/lib/backwork-bulk/queue";
+import { clearStagedBulkUpload } from "./handoff";
 
 /**
  * One bulk upload batch per chapter, kept for the life of the tab (#3499).
@@ -262,6 +263,9 @@ export function getBulkSession(userId: string, chapterId: string): BulkSession {
  * every one but the signed-in account's on an account change.
  */
 export function endBulkSessions({ except }: { except?: string | null } = {}): void {
+  // Staged files belong to whoever staged them, which the hand-off doesn't
+  // record, so any batch ending drops them.
+  clearStagedBulkUpload();
   for (const [key, session] of sessions) {
     if (except && session.userId === except) continue;
     session.end();

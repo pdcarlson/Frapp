@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   eligibleSetupLines,
+  SETUP_CHECKLIST_LINES,
+  SETUP_CHECKLIST_WEB_PATH,
   selectSetupChecklist,
   type SetupChecklistInput,
 } from "./setup-checklist";
@@ -135,5 +137,14 @@ describe("eligibleSetupLines", () => {
   it("is empty until permissions and modules have loaded", () => {
     expect(eligibleSetupLines(undefined, ALL_ON)).toEqual([]);
     expect(eligibleSetupLines(PRESIDENT, undefined)).toEqual([]);
+  });
+});
+
+describe("SETUP_CHECKLIST_WEB_PATH", () => {
+  it("names a web screen for every line, zones on the geofences tool", () => {
+    expect(Object.keys(SETUP_CHECKLIST_WEB_PATH).sort()).toEqual(
+      SETUP_CHECKLIST_LINES.map((line) => line.key).sort(),
+    );
+    expect(SETUP_CHECKLIST_WEB_PATH["study-zone"]).toBe("/geofences");
   });
 });
