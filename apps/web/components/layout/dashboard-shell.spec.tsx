@@ -58,6 +58,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
       isError: false,
     }),
     useMyPermissions: () => ({ data: { permissions: mockPermissions.value } }),
+    useHiddenUnsetFeatures: () => new Set(),
     useNotifications: () => ({ data: [] }),
     // What an ordinary member's config read looks like: `GET /chapters/:id/config`
     // needs `chapter-config:view`, so it errors and never yields data.
