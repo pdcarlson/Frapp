@@ -54,6 +54,32 @@ export interface ChapterMemberAccess {
   permissions: Set<string>;
   /** Smallest `display_order` among held live roles; `null` when none. */
   top_role_order: number | null;
+  /**
+   * The held live role that `top_role_order` belongs to (ties broken by name,
+   * then id, so the pick is stable), or `null` when none. Chat's member list
+   * groups readers under it.
+   */
+  top_role: { id: string; name: string } | null;
+}
+
+/**
+ * The highest of a member's roles: lowest `display_order` (as on the Roles
+ * page), ties broken by name, then id, so two calls agree.
+ */
+function topRole(roles: readonly Role[]): Role | null {
+  let best: Role | null = null;
+  for (const role of roles) {
+    if (
+      !best ||
+      role.display_order < best.display_order ||
+      (role.display_order === best.display_order &&
+        (role.name.localeCompare(best.name) < 0 ||
+          (role.name === best.name && role.id < best.id)))
+    ) {
+      best = role;
+    }
+  }
+  return best;
 }
 
 @Injectable()
@@ -684,15 +710,15 @@ export class RbacService {
       const liveRoles = roleIds
         .map((id) => roleById.get(id))
         .filter((role): role is Role => role !== undefined);
+      const top = topRole(liveRoles);
       return {
         user_id: userId,
         permissions: flattenPermissionSets(
           liveRoles.map((role) => role.permissions),
           customIds.map((id) => customRoleCapabilities.get(id)),
         ),
-        top_role_order: liveRoles.length
-          ? Math.min(...liveRoles.map((role) => role.display_order))
-          : null,
+        top_role_order: top?.display_order ?? null,
+        top_role: top ? { id: top.id, name: top.name } : null,
       };
     });
   }

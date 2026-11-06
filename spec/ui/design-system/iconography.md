@@ -372,6 +372,7 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Attach a file | `AttachGlyph` |
 | Add a reaction | `ReactionGlyph` |
 | Slash commands | `SlashCommandGlyph` |
+| Send a message: an up arrow, stroke only at 2.4 on the accent-filled round button, the web face of mobile's `↑` (2026-11-06) | `SendArrowGlyph` |
 | Announcement | `AnnouncementGlyph` |
 | `#chapter-audit` / audit row | `AuditGlyph` |
 | Private / role-gated channel | `LockGlyph` |

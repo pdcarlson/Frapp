@@ -48,7 +48,9 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
+import * as Clipboard from "expo-clipboard";
 import {
+  COPIED_LABEL,
   MessageActionsSheet,
   QUICK_REACTIONS,
   quickReactionLabel,
@@ -166,6 +168,7 @@ const SENT_AT = (() => {
 describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
   const OWN = {
     messageId: "m9",
+    copyText: null,
     canReply: true,
     canEdit: true,
     canDelete: true,
@@ -215,6 +218,7 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     const blockable = render({
       ...SOMEONE_ELSES,
       messageId: "m1",
+      copyText: null,
       blockUserId: BLOCKED,
       senderName: "Blake",
       senderInDirectory: true,
@@ -224,6 +228,35 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     });
     expect(text(blockable)).toContain("Block Blake");
     expect(chevrons(blockable)).toBe(1);
+  });
+
+  it("offers Copy text first, copies the body as written, then says Copied in place", async () => {
+    vi.useFakeTimers();
+    try {
+      const tree = render({ ...OWN, copyText: "see you at **8**" });
+      const labels = tree.root
+        .findAll(
+          (node) =>
+            typeof node.props.accessibilityLabel === "string" &&
+            typeof node.props.onPress === "function",
+        )
+        .map((node) => node.props.accessibilityLabel as string);
+      expect(labels.indexOf("Copy text")).toBeLessThan(labels.indexOf("Reply"));
+
+      pressByLabel(tree, "Copy text");
+      await flush();
+      expect(Clipboard.setStringAsync).toHaveBeenCalledWith("see you at **8**");
+      expect(hasRow(tree, COPIED_LABEL)).toBe(true);
+      expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
+        COPIED_LABEL,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("draws no Copy text for a card or a photo-only message", () => {
+    expect(hasRow(render(OWN), "Copy text")).toBe(false);
   });
 
   it("offers Reply, Edit and Delete on your own message, and never Report or Block", () => {
@@ -241,6 +274,7 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
       canReply: true,
       canDelete: true,
       messageId: "m1",
+      copyText: null,
       blockUserId: BLOCKED,
       senderName: "Blake",
       senderInDirectory: true,
@@ -306,6 +340,7 @@ describe("MessageActionsSheet — quick reactions", () => {
   const TARGET: MessageActionsTarget = {
     ...SOMEONE_ELSES,
     messageId: "m4",
+    copyText: null,
     blockUserId: null,
     senderName: "Blake",
     senderInDirectory: true,
@@ -401,6 +436,7 @@ describe("MessageActionsSheet — menu", () => {
     const tree = render({
       ...SOMEONE_ELSES,
       messageId: "m1",
+      copyText: null,
       blockUserId: BLOCKED,
       senderName: "Blake",
       senderInDirectory: true,
@@ -416,6 +452,7 @@ describe("MessageActionsSheet — menu", () => {
     const tree = render({
       ...SOMEONE_ELSES,
       messageId: "m1",
+      copyText: null,
       blockUserId: null,
       senderName: "Frapp",
       senderInDirectory: false,
@@ -432,6 +469,7 @@ describe("MessageActionsSheet — menu", () => {
     const tree = render({
       ...SOMEONE_ELSES,
       messageId: "m1",
+      copyText: null,
       blockUserId: BLOCKED,
       senderName: "Blake",
       senderInDirectory: true,
@@ -458,6 +496,7 @@ describe("MessageActionsSheet — menu", () => {
     const tree = render({
       ...SOMEONE_ELSES,
       messageId: "m1",
+      copyText: null,
       blockUserId: BLOCKED,
       senderName: "Blake",
       senderInDirectory: true,
@@ -478,6 +517,7 @@ describe("MessageActionsSheet — menu", () => {
       {
         ...SOMEONE_ELSES,
         messageId: "m1",
+        copyText: null,
         blockUserId: BLOCKED,
         senderName: null,
         senderInDirectory: false,
@@ -506,6 +546,7 @@ describe("MessageActionsSheet — report", () => {
   const target: MessageActionsTarget = {
     ...SOMEONE_ELSES,
     messageId: "m1",
+    copyText: null,
     blockUserId: BLOCKED,
     senderName: "Blake",
     senderInDirectory: true,
