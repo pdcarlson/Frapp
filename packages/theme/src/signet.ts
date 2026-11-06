@@ -169,8 +169,8 @@ const SIGNET_DARK: SignetTokens = {
       info: "#2F81F7",
       mention: "#E5484D",
       mentionForeground: "#FFFFFF",
-      mentionChip: "#4C3A1A",
-      mentionChipText: "#FAA81A",
+      mentionChip: "#2D2617",
+      mentionChipText: "#EED7A8",
     },
     gold: {
       house: "#EFB63B",

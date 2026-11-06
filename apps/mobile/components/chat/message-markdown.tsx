@@ -254,16 +254,17 @@ function Code({ children }: { children?: ReactNode }) {
 
 /**
  * `@Name` as the in-body mention chip: the fixed amber pair on the handle
- * alone, at weight 600, the rest of the row untouched. A nested `Text` takes a
+ * alone, at the weight of the run around it, the rest of the row untouched. A nested `Text` takes a
  * fill but not padding or a radius, so the chip is the tinted run itself,
  * where web pads it by a few pixels and rounds it by 5.
  */
 function Mention({ children }: { children?: ReactNode }) {
   const { styles, bold, italic } = useMarkdownContext();
-  const face = italic
-    ? italicFontFamilyFor(700)
-    : fontFamilyFor(bold ? 700 : 600);
-  return <Text style={[styles.mention, { fontFamily: face }]}>{children}</Text>;
+  return (
+    <Text style={[styles.mention, { fontFamily: faceFor(bold, italic) }]}>
+      {children}
+    </Text>
+  );
 }
 
 const COMPONENTS: Components = {

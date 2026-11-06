@@ -77,8 +77,8 @@ Status-only, never decorative. A semantic hue states a fact ("paid", "overdue");
 | `--destructive` | `#f85149` | Errors, overdue, destructive actions |
 | `--info` | `#2f81f7` | Informational status only — never a brand or accent color |
 | Mention/DM red | `#E5484D` | "You were addressed" — mention badges and DM indicators |
-| `--mention-chip` | `#4C3A1A` | Fill of the `@Name` chip *inside* a message body — recipe in [components.md](components.md) § In-body mention chip |
-| `--mention-chip-text` | `#FAA81A` | The handle drawn on that fill |
+| `--mention-chip` | `#2D2617` | Fill of the `@Name` chip *inside* a message body — recipe in [components.md](components.md) § In-body mention chip |
+| `--mention-chip-text` | `#EED7A8` | The handle drawn on that fill |
 | `--success-tint` | `rgba(63, 185, 80, 0.13)` | The success tint fill: `--success` at 13% alpha (below) |
 | `--warning-tint` | `rgba(229, 160, 0, 0.13)` | The warning tint fill, same recipe |
 | `--destructive-tint` | `rgba(248, 81, 73, 0.13)` | The danger tint fill, same recipe. Its text is `--destructive-text` |

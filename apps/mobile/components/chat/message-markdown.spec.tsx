@@ -132,7 +132,7 @@ const mentionRuns = (content: string) =>
     );
 
 describe("MessageMarkdown: the in-body mention chip", () => {
-  it("chips the handle alone, in the fixed amber pair at weight 600", () => {
+  it("chips the handle alone, in the fixed amber pair at body weight", () => {
     const [chip, ...rest] = mentionRuns("How are you doing @frapp");
     expect(rest).toHaveLength(0);
     expect(drawnText(chip!)).toBe("@frapp");
@@ -140,7 +140,7 @@ describe("MessageMarkdown: the in-body mention chip", () => {
       backgroundColor: signetDarkTokens.color.semantic.mentionChip,
       color: signetDarkTokens.color.semantic.mentionChipText,
     });
-    expect(fontOf(chip!)).toBe("Figtree_600SemiBold");
+    expect(fontOf(chip!)).toBe("Figtree_400Regular");
     expect(drawn("How are you doing @frapp")).toBe("How are you doing @frapp");
   });
 
@@ -166,9 +166,9 @@ describe("MessageMarkdown: the in-body mention chip", () => {
     expect(fontOf(chip!)).toBe("Figtree_700Bold");
   });
 
-  it("takes the bold italic face inside italic, the heaviest italic there is", () => {
+  it("takes the italic face inside italic", () => {
     const [chip] = mentionRuns("*hi @jane*");
-    expect(fontOf(chip!)).toBe("Figtree_700Bold_Italic");
+    expect(fontOf(chip!)).toBe("Figtree_400Regular_Italic");
   });
 });
 
