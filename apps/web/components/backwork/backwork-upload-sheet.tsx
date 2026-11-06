@@ -155,6 +155,14 @@ export function BackworkUploadSheet({
       setUploadError(uploadRejectionDescription(inspected.reason));
       return;
     }
+    // Required, unlike the other fields: a variant left blank could be an
+    // unmarked Student Copy, uploaded here unredacted (#3509).
+    if (!uploadDraft.document_variant) {
+      setUploadError(
+        "Pick a document variant first. A Student Copy is redacted before it uploads.",
+      );
+      return;
+    }
     if (uploadDraft.document_variant === STUDENT_COPY) {
       if (!isPdfFile(file)) {
         setUploadError(

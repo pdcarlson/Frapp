@@ -246,10 +246,15 @@ export function BackworkPage() {
 
   function sendToBulkUpload(collected: CollectedFiles) {
     if (collected.files.length === 0) {
+      const { skipped, unreadable = 0 } = collected;
       toast({
         title: "No PDFs added",
         description:
-          "Bulk upload takes PDFs. Use Upload for other file types.",
+          unreadable > 0
+            ? "Your device didn't let the browser read what you dropped. Try choosing the files instead."
+            : skipped > 0
+              ? "Bulk upload takes PDFs. Use Upload for other file types."
+              : "There were no files in what you dropped.",
       });
       return;
     }
@@ -648,6 +653,14 @@ export function BackworkPage() {
           onFiles={sendToBulkUpload}
           disabled={!gate.allowed}
           describedBy={gate.controlProps()["aria-describedby"]}
+          onRefusedDrop={() =>
+            toast({
+              title: "Couldn't add those files",
+              description: gate.isOffline
+                ? "You're offline. Reconnect, then try again."
+                : "This chapter can't upload right now. The notice above says why.",
+            })
+          }
         />
       </Can>
 

@@ -29,11 +29,14 @@ export function BulkDropZone({
   variant = "compact",
   disabled = false,
   describedBy,
+  onRefusedDrop,
 }: {
   onFiles: (collected: CollectedFiles) => void;
   variant?: "large" | "compact" | "strip";
   disabled?: boolean;
   describedBy?: string;
+  /** A drop while `disabled`, so the caller can say why nothing happened. */
+  onRefusedDrop?: () => void;
 }) {
   const [over, setOver] = useState(false);
   const filesInput = useRef<HTMLInputElement>(null);
@@ -47,7 +50,12 @@ export function BulkDropZone({
   function onDrop(event: React.DragEvent) {
     event.preventDefault();
     setOver(false);
-    if (disabled) return;
+    if (disabled) {
+      // Still a drop target (`onDragOver` cancels it) so the browser doesn't
+      // open the file in place of the page; the caller says why it's refused.
+      onRefusedDrop?.();
+      return;
+    }
     // `collectFromDrop` takes the entries before its first await, while the
     // browser still holds them (`collect-files.ts`).
     void collectFromDrop(event.dataTransfer.items).then(onFiles, () =>

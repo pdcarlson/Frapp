@@ -50,12 +50,11 @@ import { BulkDropZone } from "./drop-zone";
 import { BulkFieldsForm } from "./bulk-fields";
 import {
   EMPTY_FIELDS,
-  nextDocumentFields,
   type BulkFields,
 } from "@/lib/backwork-bulk/fields";
 import { mustFlatten } from "@/lib/backwork-bulk/finish";
 import {
-  peekStagedBulkUpload,
+  documentFields,
   takeStagedBulkUpload,
 } from "@/lib/backwork-bulk/handoff";
 import { getBulkSession, type Prepared, type Submission } from "@/lib/backwork-bulk/session";
@@ -148,20 +147,15 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
   const snapshot = useSyncExternalStore(queue.subscribe, queue.getSnapshot, queue.getSnapshot);
   const current = snapshot.items.find((it) => it.id === snapshot.currentId) ?? null;
 
-  // A Student Copy sent from the one-file sheet brings the fields typed
-  // there (`handoff.ts`). They seed the form only when nothing else in the
-  // batch is ahead of that file, since they describe it alone.
-  const [sticky, setSticky] = useState<BulkFields>(() => {
-    const fields = peekStagedBulkUpload()?.fields;
-    if (!fields || queue.getSnapshot().currentId) return EMPTY_FIELDS;
-    return { ...EMPTY_FIELDS, ...fields, title: "", assignment_number: "" };
-  });
+  const [sticky, setSticky] = useState<BulkFields>(EMPTY_FIELDS);
   const [fields, setFields] = useState<BulkFields>(EMPTY_FIELDS);
   const [boxes, setBoxes] = useState<BoxesByPage>({});
   const [formFor, setFormFor] = useState<string | null>(null);
   if (current && formFor !== current.id) {
     setFormFor(current.id);
-    setFields(nextDocumentFields(sticky, current.file.name));
+    // A Student Copy sent from the one-file sheet keeps what was typed there
+    // over the batch's sticky fields (`handoff.ts`).
+    setFields(documentFields(sticky, current.file));
     setBoxes({});
   }
 

@@ -163,6 +163,12 @@ const chapter = chapterSubscription(mockCurrentChapter);
 /** Closed-dialog state: the trigger is the only button named "Upload". */
 const uploadTrigger = () => screen.getByRole("button", { name: /^upload$/i });
 
+/** The sheet requires a variant (#3509); a Blank Copy uploads as-is. */
+async function pickVariant(name = "Blank Copy") {
+  await userEvent.click(screen.getByRole("combobox", { name: "Document variant" }));
+  await userEvent.click(screen.getByRole("option", { name }));
+}
+
 function resolvedResourcesQuery() {
   mockChapterId.value = "chap-1";
   resourcesQuery.data = [RESOURCE];
@@ -514,6 +520,7 @@ describe("BackworkPage subscription gating", () => {
     const scan = new File(["x"], "scan.pdf", { type: "application/pdf" });
     Object.defineProperty(scan, "size", { value: 60 * 1024 * 1024 });
     await user.upload(dialog.getByLabelText(/^file$/i), scan);
+    await pickVariant();
     await user.click(dialog.getByRole("button", { name: /^upload$/i }));
 
     await waitFor(() => expect(mockRequestUpload).toHaveBeenCalled());
@@ -651,6 +658,7 @@ describe("BackworkPage upload allowlist", () => {
       target: { files: [file] },
     });
 
+    await pickVariant();
     const submit = within(dialog).getByRole("button", { name: /^upload$/i });
     await waitFor(() => expect(submit).toBeEnabled());
     await userEvent.click(submit);
@@ -687,6 +695,7 @@ describe("BackworkPage upload allowlist", () => {
     fireEvent.change(within(dialog).getByLabelText(/^file$/i), {
       target: { files: [file] },
     });
+    await pickVariant();
     const submit = within(dialog).getByRole("button", { name: /^upload$/i });
     await waitFor(() => expect(submit).toBeEnabled());
     await userEvent.click(submit);
@@ -718,6 +727,7 @@ describe("BackworkPage upload allowlist", () => {
       target: { files: [file] },
     });
 
+    await pickVariant();
     const submit = within(dialog).getByRole("button", { name: /^upload$/i });
     await waitFor(() => expect(submit).toBeEnabled());
     await userEvent.click(submit);
@@ -790,6 +800,7 @@ describe("BackworkPage year and assignment-number guard (#2206)", () => {
         files: [new File(["%PDF"], "notes.pdf", { type: "application/pdf" })],
       },
     });
+    await pickVariant();
     fireEvent.submit(document.getElementById("backwork-upload-form")!);
 
     await waitFor(() =>
@@ -814,6 +825,7 @@ describe("BackworkPage year and assignment-number guard (#2206)", () => {
         files: [new File(["%PDF"], "notes.pdf", { type: "application/pdf" })],
       },
     });
+    await pickVariant();
     fireEvent.submit(document.getElementById("backwork-upload-form")!);
 
     await waitFor(() =>
@@ -836,6 +848,7 @@ describe("BackworkPage year and assignment-number guard (#2206)", () => {
         files: [new File(["%PDF"], "notes.pdf", { type: "application/pdf" })],
       },
     });
+    await pickVariant();
     const submit = within(dialog).getByRole("button", { name: /^upload$/i });
     await waitFor(() => expect(submit).toBeEnabled());
     await userEvent.click(submit);
@@ -1383,6 +1396,55 @@ describe("BackworkPage hand-off to bulk upload", () => {
     expect(await within(dialog).findByText(/Student Copy has to be a PDF/)).toBeInTheDocument();
     expect(mockPush).not.toHaveBeenCalled();
     expect(mockRequestUpload).not.toHaveBeenCalled();
+    expect(takeStagedBulkUpload()).toBeNull();
+  });
+
+  it("closes the sheet when it hands a Student Copy on", async () => {
+    render(<BackworkPage />);
+    await userEvent.click(uploadTrigger());
+    const dialog = screen.getByRole("dialog");
+    const file = new File(["%PDF-1.7"], "midterm.pdf", { type: "application/pdf" });
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), { target: { files: [file] } });
+    await chooseVariant(dialog, "Student Copy");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Redact and upload" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("won't upload with the variant left blank, since that could be an unmarked Student Copy", async () => {
+    render(<BackworkPage />);
+    await userEvent.click(uploadTrigger());
+    const dialog = screen.getByRole("dialog");
+    const file = new File(["%PDF-1.7"], "smithj.pdf", { type: "application/pdf" });
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), { target: { files: [file] } });
+    await userEvent.click(within(dialog).getByRole("button", { name: /^upload$/i }));
+
+    expect(await within(dialog).findByText(/Pick a document variant first/)).toBeInTheDocument();
+    expect(mockRequestUpload).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  function dropOn(target: HTMLElement, files: File[]) {
+    const items = files.map((file) => ({ kind: "file", getAsFile: () => file }));
+    fireEvent.drop(target, { dataTransfer: { items, files } });
+  }
+
+  it("hands PDFs dropped on the strip to bulk upload", async () => {
+    render(<BackworkPage />);
+    const pdf = new File(["%PDF"], "midterm.pdf", { type: "application/pdf" });
+    dropOn(screen.getByTestId("bulk-drop-zone"), [pdf]);
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/backwork/upload"));
+    expect(takeStagedBulkUpload()?.files).toEqual([pdf]);
+  });
+
+  it("refuses a drop on a disabled strip and says why", async () => {
+    chapter.pastDue();
+    render(<BackworkPage />);
+    const pdf = new File(["%PDF"], "midterm.pdf", { type: "application/pdf" });
+    dropOn(screen.getByTestId("bulk-drop-zone"), [pdf]);
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Couldn't add those files" }),
+    );
+    expect(mockPush).not.toHaveBeenCalled();
     expect(takeStagedBulkUpload()).toBeNull();
   });
 
