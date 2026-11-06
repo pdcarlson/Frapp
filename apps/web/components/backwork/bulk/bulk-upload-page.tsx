@@ -4,7 +4,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -13,7 +12,6 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
-  FolderOpen,
   Loader2,
   RotateCcw,
   Upload,
@@ -42,14 +40,13 @@ import { useAuthUserId } from "@/lib/auth/use-auth-user-id";
 import { useToast } from "@/lib/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
-  collectFromDrop,
-  collectFromList,
   type CollectedFiles,
 } from "@/lib/backwork-bulk/collect-files";
 import type { BoxesByPage } from "@/lib/backwork-bulk/geometry";
 import type { PagePreview } from "@/lib/backwork-bulk/pdf";
 import type { ItemStatus, QueueItem } from "@/lib/backwork-bulk/queue";
 import { PdfRedactor } from "./pdf-redactor";
+import { BulkDropZone } from "./drop-zone";
 import { BulkFieldsForm } from "./bulk-fields";
 import {
   EMPTY_FIELDS,
@@ -57,6 +54,10 @@ import {
   type BulkFields,
 } from "@/lib/backwork-bulk/fields";
 import { mustFlatten } from "@/lib/backwork-bulk/finish";
+import {
+  peekStagedBulkUpload,
+  takeStagedBulkUpload,
+} from "@/lib/backwork-bulk/handoff";
 import { getBulkSession, type Prepared, type Submission } from "@/lib/backwork-bulk/session";
 
 /**
@@ -147,7 +148,14 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
   const snapshot = useSyncExternalStore(queue.subscribe, queue.getSnapshot, queue.getSnapshot);
   const current = snapshot.items.find((it) => it.id === snapshot.currentId) ?? null;
 
-  const [sticky, setSticky] = useState<BulkFields>(EMPTY_FIELDS);
+  // A Student Copy sent from the one-file sheet brings the fields typed
+  // there (`handoff.ts`). They seed the form only when nothing else in the
+  // batch is ahead of that file, since they describe it alone.
+  const [sticky, setSticky] = useState<BulkFields>(() => {
+    const fields = peekStagedBulkUpload()?.fields;
+    if (!fields || queue.getSnapshot().currentId) return EMPTY_FIELDS;
+    return { ...EMPTY_FIELDS, ...fields, title: "", assignment_number: "" };
+  });
   const [fields, setFields] = useState<BulkFields>(EMPTY_FIELDS);
   const [boxes, setBoxes] = useState<BoxesByPage>({});
   const [formFor, setFormFor] = useState<string | null>(null);
@@ -190,6 +198,13 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
     },
     [queue, toast],
   );
+
+  // Files dropped or picked on `/backwork` (`handoff.ts`). Taken once, so a
+  // remount (Strict Mode, coming back later) doesn't queue them twice.
+  useEffect(() => {
+    const staged = takeStagedBulkUpload();
+    if (staged) addCollected(staged);
+  }, [addCollected]);
 
   const loadPreview = useCallback(
     async (page: number) => {
@@ -240,7 +255,7 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
       <SubscriptionNotice gate={gate} feature="uploading backwork" />
 
       {snapshot.items.length === 0 ? (
-        <DropZone onFiles={addCollected} large />
+        <BulkDropZone onFiles={addCollected} variant="large" />
       ) : (
         <div className="grid min-w-0 gap-4 lg:grid-cols-[240px_minmax(0,1fr)_320px]">
           <aside className="order-3 min-w-0 space-y-3 lg:order-1">
@@ -255,7 +270,7 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
               retryProps={gate.controlProps()}
               onRemove={(id) => queue.remove(id)}
             />
-            <DropZone onFiles={addCollected} />
+            <BulkDropZone onFiles={addCollected} />
             {counts.done > 0 ? (
               <Button type="button" variant="ghost" size="toolbar" onClick={() => queue.clearDone()}>
                 Clear uploaded
@@ -439,71 +454,3 @@ function QueueList({
   );
 }
 
-function DropZone({
-  onFiles,
-  large = false,
-}: {
-  onFiles: (collected: CollectedFiles) => void;
-  large?: boolean;
-}) {
-  const [over, setOver] = useState(false);
-  const filesInput = useRef<HTMLInputElement>(null);
-  const folderInput = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    // `webkitdirectory` isn't in React's attribute types.
-    folderInput.current?.setAttribute("webkitdirectory", "");
-  }, []);
-
-  function onDrop(event: React.DragEvent) {
-    event.preventDefault();
-    setOver(false);
-    void collectFromDrop(event.dataTransfer.items).then(onFiles, () =>
-      onFiles({ files: [], skipped: 0, unreadable: 1 }),
-    );
-  }
-
-  function onPick(event: React.ChangeEvent<HTMLInputElement>) {
-    if (event.target.files) onFiles(collectFromList(Array.from(event.target.files)));
-    event.target.value = "";
-  }
-
-  return (
-    <div
-      data-testid="bulk-drop-zone"
-      onDragOver={(event) => {
-        event.preventDefault();
-        setOver(true);
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={onDrop}
-      className={cn(
-        "flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed text-center transition-colors",
-        large ? "min-h-[360px] p-10" : "p-4",
-        over ? "border-accent-border bg-accent-subtle" : "border-input bg-surface-1",
-      )}
-    >
-      {large ? (
-        <>
-          <Upload className="h-8 w-8 text-muted-foreground" />
-          <p className="text-label font-semibold text-foreground">Drop PDFs or folders of PDFs</p>
-          <p className="max-w-sm text-caption text-muted-foreground">
-            Up to {MAX_BACKWORK_UPLOAD_LABEL} each. You&apos;ll redact and describe each one, and the next one loads while you work.
-          </p>
-        </>
-      ) : (
-        <p className="text-caption text-muted-foreground">Drop more here</p>
-      )}
-      <div className="flex flex-wrap justify-center gap-2">
-        <Button type="button" variant="secondary" size="toolbar" onClick={() => filesInput.current?.click()} className="gap-1.5">
-          <Upload className="h-4 w-4" /> Choose PDFs
-        </Button>
-        <Button type="button" variant="secondary" size="toolbar" onClick={() => folderInput.current?.click()} className="gap-1.5">
-          <FolderOpen className="h-4 w-4" /> Choose a folder
-        </Button>
-      </div>
-      <input ref={filesInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={onPick} data-testid="bulk-file-input" />
-      <input ref={folderInput} type="file" multiple hidden onChange={onPick} data-testid="bulk-folder-input" />
-    </div>
-  );
-}

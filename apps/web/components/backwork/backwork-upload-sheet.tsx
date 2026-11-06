@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactElement } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import {
   useConfirmBackworkUpload,
@@ -38,22 +39,42 @@ import {
   DOCUMENT_VARIANTS,
   MAX_BACKWORK_UPLOAD_BYTES,
   MAX_BACKWORK_UPLOAD_LABEL,
-  SEMESTERS,
   acceptAttribute,
   inspectUploadFile,
   readSignedUpload,
+  SEMESTERS,
 } from "@repo/validation";
+import { isPdfFile } from "@/lib/backwork-bulk/collect-files";
+import {
+  BACKWORK_YEAR_MIN,
+  confirmFields,
+  sha256Hex,
+} from "@/lib/backwork-bulk/finish";
+import type { BulkFields } from "@/lib/backwork-bulk/fields";
+import { stageBulkUpload } from "@/lib/backwork-bulk/handoff";
 
 /**
  * The one-file upload: any allowed type (Office, text, images, PDF) with its
  * metadata typed in by hand. Moved out of `backwork-page.tsx` unchanged in the
  * 2026-11-05 redesign; the toolbar's Upload button opens it.
  *
+ * A Student Copy never uploads from here (#3509): its original can carry a
+ * student's name, and only bulk upload flattens it on the device first
+ * (`finishUpload`). A Student Copy PDF is handed to bulk upload with the
+ * fields typed so far; any other file type is refused, since only a PDF can
+ * be flattened in the browser.
+ *
  * `children` is the trigger. The caller spreads `gate.controlProps()` on it.
  */
 
-/** The API's `@Min` on a Backwork resource's `year` (`backwork.dto.ts`). */
-const BACKWORK_YEAR_MIN = 1900;
+const STUDENT_COPY = "Student Copy";
+
+/** The draft's metadata, in the shape bulk upload and `confirmFields` read. */
+function draftFields(draft: BulkFields & { file: File | null }): BulkFields {
+  const { file, ...fields } = draft;
+  void file;
+  return fields;
+}
 
 /*
   Each string names the verdict, because it no longer has a toast title to do
@@ -69,15 +90,6 @@ function uploadRejectionDescription(reason: "type" | "size"): string {
   return "That file type is not allowed. Backwork accepts PDF, Office, text/CSV, and common images (no SVG).";
 }
 
-/** SHA-256 hex digest for the browser — matches the server's file_hash format. */
-async function sha256Hex(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const digest = await crypto.subtle.digest("SHA-256", buffer);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
 export function BackworkUploadSheet({
   gate,
   children,
@@ -86,6 +98,7 @@ export function BackworkUploadSheet({
   children: ReactElement;
 }) {
   const { toast } = useToast();
+  const router = useRouter();
   const uploadDialog = useGatedDialog(gate);
   const [uploadDraft, setUploadDraft] = useState<{
     title: string;
@@ -142,6 +155,18 @@ export function BackworkUploadSheet({
       setUploadError(uploadRejectionDescription(inspected.reason));
       return;
     }
+    if (uploadDraft.document_variant === STUDENT_COPY) {
+      if (!isPdfFile(file)) {
+        setUploadError(
+          "A Student Copy has to be a PDF, so names can be blacked out on your device before it uploads. Export or scan it as a PDF.",
+        );
+        return;
+      }
+      stageBulkUpload({ files: [file], skipped: 0, fields: draftFields(uploadDraft) });
+      uploadDialog.setOpen(false);
+      router.push("/backwork/upload");
+      return;
+    }
     setUploadError(null);
     const contentType = inspected.contentType;
     // The floors the API checks on confirm, checked here before the file
@@ -166,7 +191,7 @@ export function BackworkUploadSheet({
 
     setUploading(true);
     try {
-      const hash = await sha256Hex(file);
+      const hash = await sha256Hex(new Uint8Array(await file.arrayBuffer()));
       const signed = await requestUpload.mutateAsync({
         filename: file.name,
         content_type: contentType,
@@ -184,27 +209,9 @@ export function BackworkUploadSheet({
       await confirmUpload.mutateAsync({
         storage_path: storagePath,
         file_hash: hash,
-        title: uploadDraft.title.trim() || file.name,
-        department_code: uploadDraft.department_code.trim() || undefined,
-        course_number: uploadDraft.course_number.trim() || undefined,
-        professor_name: uploadDraft.professor_name.trim() || undefined,
-        year,
-        semester: uploadDraft.semester
-          ? (uploadDraft.semester as (typeof SEMESTERS)[number])
-          : undefined,
-        assignment_type: uploadDraft.assignment_type
-          ? (uploadDraft.assignment_type as (typeof ASSIGNMENT_TYPES)[number])
-          : undefined,
-        assignment_number: assignmentNumber,
-        document_variant: uploadDraft.document_variant
-          ? (uploadDraft.document_variant as (typeof DOCUMENT_VARIANTS)[number])
-          : undefined,
-        tags: uploadDraft.tags
-          ? uploadDraft.tags
-              .split(",")
-              .map((t) => t.trim())
-              .filter(Boolean)
-          : undefined,
+        // The same body bulk upload confirms with (`finish.ts`), so a DTO
+        // change can't reach one surface and miss the other.
+        ...confirmFields(draftFields(uploadDraft), file.name),
         is_redacted: false,
       });
       toast({
@@ -472,6 +479,12 @@ export function BackworkUploadSheet({
                     </Select>
                   </UploadField>
                 </div>
+                {uploadDraft.document_variant === STUDENT_COPY ? (
+                  <p id="bw-student-copy-note" className="text-caption text-muted">
+                    A Student Copy opens in bulk upload, where you black out
+                    names on your device before anything uploads.
+                  </p>
+                ) : null}
                 {/*
                     Carries an id and is referenced by the two fields it is
                     about. Field help that is only positioned near a control
@@ -526,7 +539,9 @@ export function BackworkUploadSheet({
                   {uploading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : null}
-                  Upload
+                  {uploadDraft.document_variant === STUDENT_COPY
+                    ? "Redact and upload"
+                    : "Upload"}
                 </Button>
               </UploadSheetFooter>
             </UploadSheetContent>

@@ -28,7 +28,9 @@ const {
   mockToast,
   mockOffline,
   resourcesQuery,
+  mockPush,
 } = vi.hoisted(() => ({
+  mockPush: vi.fn(),
   mockCurrentChapter: vi.fn(),
   mockRequestUpload: vi.fn().mockResolvedValue({}),
   mockConfirmUpload: vi.fn().mockResolvedValue({}),
@@ -149,7 +151,12 @@ vi.mock("@/lib/hooks/use-toast", () => ({
 
 vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: mockPush }),
+}));
+
 const { BackworkPage } = await import("./backwork-page");
+const { takeStagedBulkUpload } = await import("@/lib/backwork-bulk/handoff");
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
@@ -1325,5 +1332,90 @@ describe("BackworkPage library (2026-11-05 redesign)", () => {
         targetId: "dept-csci",
       }),
     );
+  });
+});
+
+describe("BackworkPage hand-off to bulk upload", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPermissions.value = ["backwork:upload", "backwork:admin"];
+    resolvedResourcesQuery();
+    chapter.active();
+    takeStagedBulkUpload();
+  });
+
+  async function chooseVariant(dialog: HTMLElement, name: string) {
+    await userEvent.click(within(dialog).getByRole("combobox", { name: "Document variant" }));
+    await userEvent.click(screen.getByRole("option", { name }));
+  }
+
+  it("sends a Student Copy PDF to bulk upload with its fields, never uploading the original (#3509)", async () => {
+    render(<BackworkPage />);
+    await userEvent.click(uploadTrigger());
+    const dialog = screen.getByRole("dialog");
+    const file = new File(["%PDF-1.7"], "smithj_midterm.pdf", { type: "application/pdf" });
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), { target: { files: [file] } });
+    await userEvent.type(within(dialog).getByLabelText(/course number/i), "2120");
+    await chooseVariant(dialog, "Student Copy");
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Redact and upload" }));
+
+    expect(mockPush).toHaveBeenCalledWith("/backwork/upload");
+    expect(mockRequestUpload).not.toHaveBeenCalled();
+    const staged = takeStagedBulkUpload();
+    expect(staged?.files).toEqual([file]);
+    expect(staged?.fields).toMatchObject({
+      course_number: "2120",
+      document_variant: "Student Copy",
+    });
+  });
+
+  it("refuses a Student Copy that isn't a PDF, since only a PDF can be redacted here", async () => {
+    render(<BackworkPage />);
+    await userEvent.click(uploadTrigger());
+    const dialog = screen.getByRole("dialog");
+    const file = new File(["png"], "scan.png", { type: "image/png" });
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), { target: { files: [file] } });
+    await chooseVariant(dialog, "Student Copy");
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Redact and upload" }));
+
+    expect(await within(dialog).findByText(/Student Copy has to be a PDF/)).toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockRequestUpload).not.toHaveBeenCalled();
+    expect(takeStagedBulkUpload()).toBeNull();
+  });
+
+  it("hands PDFs picked on the drop strip to bulk upload", async () => {
+    render(<BackworkPage />);
+    const pdf = new File(["%PDF"], "midterm.pdf", { type: "application/pdf" });
+    const doc = new File(["x"], "notes.docx", { type: "application/msword" });
+    fireEvent.change(screen.getByTestId("bulk-file-input"), { target: { files: [pdf, doc] } });
+
+    expect(mockPush).toHaveBeenCalledWith("/backwork/upload");
+    expect(takeStagedBulkUpload()).toMatchObject({ files: [pdf], skipped: 1 });
+  });
+
+  it("stays put and says why when nothing picked is a PDF", () => {
+    render(<BackworkPage />);
+    const doc = new File(["x"], "notes.docx", { type: "application/msword" });
+    fireEvent.change(screen.getByTestId("bulk-file-input"), { target: { files: [doc] } });
+
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockToast).toHaveBeenCalledWith(expect.objectContaining({ title: "No PDFs added" }));
+  });
+
+  it("disables the drop strip with the rest of the writes when the chapter can't upload", () => {
+    chapter.pastDue();
+    render(<BackworkPage />);
+    const choose = screen.getByRole("button", { name: /choose pdfs/i });
+    expect(choose).toBeDisabled();
+    expect(choose).toHaveAttribute("aria-describedby");
+  });
+
+  it("shows no drop strip to a member who can't upload", () => {
+    mockPermissions.value = [];
+    render(<BackworkPage />);
+    expect(screen.queryByTestId("bulk-drop-zone")).toBeNull();
   });
 });

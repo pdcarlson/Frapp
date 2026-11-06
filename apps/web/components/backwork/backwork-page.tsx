@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Check,
   ChevronDown,
@@ -55,6 +56,9 @@ import {
 import { BackworkTaxonomyDrawer } from "@/components/backwork/backwork-taxonomy-drawer";
 import { useBackworkTaxonomyActions } from "@/components/backwork/backwork-taxonomy-actions";
 import { BackworkUploadSheet } from "@/components/backwork/backwork-upload-sheet";
+import { BulkDropZone } from "@/components/backwork/bulk/drop-zone";
+import type { CollectedFiles } from "@/lib/backwork-bulk/collect-files";
+import { stageBulkUpload } from "@/lib/backwork-bulk/handoff";
 import { BackworkRowsSkeleton } from "@/components/backwork/backwork-skeleton";
 import {
   CopyLabel,
@@ -238,6 +242,20 @@ export function BackworkPage() {
   const isAdmin = can("backwork:admin", permissionsPayload?.permissions);
   const taxonomy = useBackworkTaxonomyActions(gate);
   const { confirm, confirmDialog } = useConfirmDialog();
+  const router = useRouter();
+
+  function sendToBulkUpload(collected: CollectedFiles) {
+    if (collected.files.length === 0) {
+      toast({
+        title: "No PDFs added",
+        description:
+          "Bulk upload takes PDFs. Use Upload for other file types.",
+      });
+      return;
+    }
+    stageBulkUpload(collected);
+    router.push("/backwork/upload");
+  }
 
   const rows = useMemo(
     () =>
@@ -617,6 +635,20 @@ export function BackworkPage() {
         offlineFallback={null}
       >
         <SubscriptionNotice gate={gate} feature="uploading or changing backwork" />
+      </Can>
+
+      {/*
+        The drop strip: PDFs dropped or picked here go to bulk upload, where
+        each is described and, for a Student Copy, blacked out on the device
+        before it uploads (`handoff.ts`).
+      */}
+      <Can permission="backwork:upload">
+        <BulkDropZone
+          variant="strip"
+          onFiles={sendToBulkUpload}
+          disabled={!gate.allowed}
+          describedBy={gate.controlProps()["aria-describedby"]}
+        />
       </Can>
 
       {truncated ? (
