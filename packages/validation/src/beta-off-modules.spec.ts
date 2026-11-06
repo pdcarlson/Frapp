@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { BETA_OFF_MODULES, isBetaOffModule } from "./beta-off-modules";
-import { isModuleEnabled } from "./index";
+import {
+  defaultNotificationCategoryState,
+  isModuleEnabled,
+  NOTIFICATION_CATEGORIES,
+  shownNotificationCategories,
+} from "./index";
 import { selectOpsNudge } from "./ops-nudges";
 
 describe("BETA_OFF_MODULES", () => {
@@ -39,5 +44,15 @@ describe.each(BETA_OFF_MODULES)("beta-off module %s", (key) => {
 describe("selectOpsNudge while dues is beta-off", () => {
   it("moves on to the next module in priority order", () => {
     expect(selectOpsNudge({ dues: false, events: false })?.key).toBe("events");
+  });
+});
+
+describe("notification switches while dues is beta-off", () => {
+  it("draws no Billing switch, and keeps the catalog whole", () => {
+    expect(shownNotificationCategories().map((c) => c.key)).not.toContain(
+      "billing",
+    );
+    expect(NOTIFICATION_CATEGORIES.map((c) => c.key)).toContain("billing");
+    expect(defaultNotificationCategoryState().billing).toBe(true);
   });
 });

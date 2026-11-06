@@ -19,9 +19,9 @@ import {
   isNotificationCategoryKey,
   MAJOR_MAX_LENGTH,
   normalizeTimeZoneInput,
-  NOTIFICATION_CATEGORIES,
   PROFILE_ALUMNI_SECTION,
   PROFILE_FIELD_COPY,
+  shownNotificationCategories,
   rowsToNotificationCategoryState,
   showsAfterGraduation,
   type NotificationCategoryKey,
@@ -798,7 +798,7 @@ export function ProfilePanel() {
           {categoriesState ?? (
             <div className="space-y-4">
               <ul className={denseListClassName}>
-                {NOTIFICATION_CATEGORIES.map((category) => {
+                {shownNotificationCategories().map((category) => {
                   const switchId = `notification-category-${category.key}`;
                   const descriptionId = `${switchId}-description`;
                   return (
