@@ -322,6 +322,13 @@ export type ListRowProps = {
   /** Renders the label in the destructive hue. Does not itself confirm anything. */
   destructive?: boolean;
   /**
+   * The row does its thing in place (Reply, Delete, Block, Sign out) rather
+   * than opening another screen or sheet, so it draws no chevron. A chevron
+   * promises somewhere to go, and on an action row it promises wrong
+   * (`spec/ui/design-system/components.md` § Chrome weight).
+   */
+  action?: boolean;
+  /**
    * The row can't be used now: the label greys out and the chevron goes. For a
    * row that is unavailable, not for one that is working (`busy`).
    */
@@ -354,6 +361,7 @@ export function ListRow({
   accessibilityHint,
   accessibilityValue,
   destructive = false,
+  action = false,
   disabled = false,
   busy = false,
   variant = "default",
@@ -394,7 +402,7 @@ export function ListRow({
           color={tokens.color.text.muted}
           style={styles.trailingSlot}
         />
-      ) : onPress && !disabled ? (
+      ) : onPress && !disabled && !action ? (
         <Text style={styles.chevron}>›</Text>
       ) : null}
     </View>

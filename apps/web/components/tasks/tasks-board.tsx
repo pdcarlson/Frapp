@@ -42,7 +42,6 @@ import {
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { SectionLabel } from "@/components/shared/section-label";
-import { TasksGlyph } from "@/components/events/chapter-ops-glyphs";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import { PageActions } from "@/components/layout/page-actions";
@@ -389,10 +388,7 @@ export function TasksBoard() {
               {...createDialog.contentProps}
             >
               <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <TasksGlyph className="h-4 w-4" />
-                  Create a task
-                </DialogTitle>
+                <DialogTitle>Create a task</DialogTitle>
               </DialogHeader>
               <form
                 onSubmit={submitDraft}
