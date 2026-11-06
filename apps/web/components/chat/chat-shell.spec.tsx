@@ -259,15 +259,21 @@ vi.mock("@repo/hooks", async () => ({
     .importActual<typeof import("@repo/hooks")>("@repo/hooks")
     .then(
       ({
+        HIDE_SETUP_CHECKLIST_LABEL,
         landingChannelId,
         lastChannelStorageKey,
         resolveAuthorName,
+        SETUP_CHECKLIST_TITLE,
+        SETUP_CHECKLIST_WEB_PATH,
         sidebarMutedChannelIds,
         sidebarUnreadCounts,
       }) => ({
+        HIDE_SETUP_CHECKLIST_LABEL,
         landingChannelId,
         lastChannelStorageKey,
         resolveAuthorName,
+        SETUP_CHECKLIST_TITLE,
+        SETUP_CHECKLIST_WEB_PATH,
         sidebarMutedChannelIds,
         sidebarUnreadCounts,
       }),

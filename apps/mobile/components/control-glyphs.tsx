@@ -9,8 +9,9 @@ import { Frame, paint } from "@/components/more/more-glyphs";
  * and `paint`, so a change to the recipe reaches them too.
  *
  * One file, so every dismiss on mobile is the same ×: the network banner, the
- * thread's error banner, the composer's chips, the image viewer and the
- * service-hours proof row all draw {@link CloseGlyph}.
+ * thread's error banner, the composer's chips, the image viewer, the
+ * service-hours proof row and Chat home's setup-checklist hide all draw
+ * {@link CloseGlyph}.
  *
  * 20px by default, §2's size for an icon button. The image viewer passes 24.
  * Decorative: the control that holds the glyph carries the label.
