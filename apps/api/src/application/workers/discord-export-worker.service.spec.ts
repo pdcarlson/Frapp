@@ -3,6 +3,7 @@ import {
   COPY_BATCH_MAX_ITEMS,
   DiscordExportWorkerService,
   EXPORT_PAGE_SIZE,
+  MEMBER_READS_RENEW_AFTER_MS,
 } from './discord-export-worker.service';
 import {
   MAX_ARCHIVE_CHAPTER_BYTES,
@@ -16,6 +17,7 @@ import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-conn
 import {
   DISCORD_BOT_GATEWAY,
   DiscordImportStoppedError,
+  type DiscordGuildMemberProfile,
 } from '#domain/adapters/discord.interface';
 import {
   ARCHIVE_MEDIA_COPIER,
@@ -235,6 +237,15 @@ async function build(
       pageIndex += 1;
       return page;
     }),
+    // Nobody is a member unless a test says so, so names fall back to the
+    // account, as they did before members were read.
+    fetchGuildMember: jest.fn(
+      async (
+        _guildId: string,
+        _userId: string,
+      ): Promise<DiscordGuildMemberProfile | null> => null,
+    ),
+    fetchUserAvatar: jest.fn(async (): Promise<string | null> => null),
     // The pre-flight's read (#2317). On by default, so a test about anything
     // else reaches the walk.
     fetchApplication: jest.fn(async () => ({
@@ -578,7 +589,7 @@ describe('DiscordExportWorkerService — walking a channel', () => {
       mentionContext: batch.mentionContext,
     });
     expect(row?.content).toBe(
-      `@Nirav Banerji @Brothers see [#general](/chat?channel=${SIGNET_CHANNEL})`,
+      `@NiravBanerji @Brothers see [#general](/chat?channel=${SIGNET_CHANNEL})`,
     );
   });
 
@@ -1084,6 +1095,207 @@ describe('DiscordExportWorkerService — threads inherit their parent', () => {
       expect.objectContaining({ id: 'mapping-parent' }),
       expect.anything(),
     );
+  });
+});
+
+describe('DiscordExportWorkerService — people as the server shows them', () => {
+  const HASH = 'a'.repeat(32);
+  const GUILD_HASH = 'b'.repeat(32);
+
+  /** A member read that knows `profiles` and nobody else. */
+  function members(
+    profiles: Record<string, Partial<DiscordGuildMemberProfile>>,
+  ) {
+    return async (_guildId: string, userId: string) =>
+      profiles[userId]
+        ? {
+            userId,
+            nick: null,
+            guildAvatar: null,
+            globalName: null,
+            username: null,
+            avatar: null,
+            ...profiles[userId],
+          }
+        : null;
+  }
+
+  const sober = () =>
+    apiMessage('9', {
+      content: '<@&750151182395244584> your sober brothers <@42> <@43>',
+      author: {
+        id: '2',
+        username: 'pinstripe_',
+        global_name: 'Pinstripe',
+        avatar: HASH,
+      },
+      mentions: [
+        { id: '42', username: 'tristo123', global_name: null },
+        { id: '43', username: 'jest', global_name: 'Jèst' },
+      ],
+    });
+
+  /** A full page, so the walk reads the next one too. */
+  const fullPage = () => [
+    sober(),
+    ...Array.from({ length: EXPORT_PAGE_SIZE - 1 }, (_, i) =>
+      apiMessage(`p${i}`),
+    ),
+  ];
+
+  async function importedRow(harness: Harness, args = runArgs(harness)) {
+    await harness.worker.runSlice(args);
+    const batch = jest.mocked(args.importBatch).mock.calls[0][0] as {
+      messages: DiscordExportMessage[];
+      mentionContext: ImportMentionContext;
+      mediaByRelativePath: Map<string, DiscordImportFile>;
+    };
+    return {
+      message: batch.messages[0],
+      row: toImportedMessage({
+        message: batch.messages[0],
+        channelId: SIGNET_CHANNEL,
+        importId: IMPORT_ID,
+        // What the real batch writer resolves through: only what landed.
+        resolveAssetPath: (key) =>
+          batch.mediaByRelativePath.get(key)?.storage_path ?? null,
+        resolveReplyTarget: () => null,
+        attachmentCount: 0,
+        mentionContext: batch.mentionContext,
+      }),
+    };
+  }
+
+  it('names the author and the people they mention by their server nickname', async () => {
+    const harness = await build({ pages: [[sober()]] });
+    harness.bot.fetchGuildMember.mockImplementation(
+      members({
+        '2': { nick: 'Moiz Steenhuis' },
+        '42': { nick: 'Tristan Hatton' },
+        '43': { nick: 'Thomas Doherty' },
+      }),
+    );
+    const { row } = await importedRow(harness);
+
+    expect(row?.author_name).toBe('Moiz Steenhuis');
+    expect(row?.content).toBe(
+      '@Brothers your sober brothers @TristanHatton @ThomasDoherty',
+    );
+    expect(harness.bot.fetchGuildMember).toHaveBeenCalledWith(GUILD, '2');
+  });
+
+  it('falls back to the account name for someone who left the server', async () => {
+    const harness = await build({ pages: [[sober()]] });
+    const { row } = await importedRow(harness);
+
+    expect(row?.author_name).toBe('Pinstripe');
+    expect(row?.content).toBe('@Brothers your sober brothers @tristo123 @Jèst');
+  });
+
+  it('keeps importing, by account name, when a member read fails', async () => {
+    const harness = await build({ pages: [[sober()]] });
+    harness.bot.fetchGuildMember.mockRejectedValue(new Error('503'));
+    const { row } = await importedRow(harness);
+
+    expect(row?.author_name).toBe('Pinstripe');
+  });
+
+  it('reads each member once, not once per page or slice', async () => {
+    const harness = await build({
+      pages: [
+        [sober(), ...Array.from({ length: 99 }, (_, i) => apiMessage(`p${i}`))],
+        [sober()],
+      ],
+    });
+    await harness.worker.runSlice(runArgs(harness));
+    const reads = harness.bot.fetchGuildMember.mock.calls.map(
+      ([, userId]) => userId,
+    );
+    expect(reads.sort()).toEqual(['2', '42', '43']);
+  });
+
+  it("copies the author's avatar into the archive and points the message at it", async () => {
+    const harness = await build({ pages: [[sober()]] });
+    const { message, row } = await importedRow(harness);
+
+    const key = `avatars/2/${HASH}.png`;
+    expect(message.author?.avatarUrl).toBe(key);
+    const stored = harness.files.find((file) => file.relative_path === key);
+    expect(stored?.uploaded_at).not.toBeNull();
+    expect(row?.author_avatar_path).toBe(stored?.storage_path);
+    const [items] = harness.copier.copy.mock.calls[0];
+    expect(items).toEqual([
+      expect.objectContaining({
+        url: `https://cdn.discordapp.com/avatars/2/${HASH}.png?size=128`,
+        contentType: 'image/png',
+        path: expect.stringContaining(`/media/`),
+      }),
+    ]);
+  });
+
+  it("prefers the member's server avatar to their account's", async () => {
+    const harness = await build({ pages: [[sober()]] });
+    harness.bot.fetchGuildMember.mockImplementation(
+      members({ '2': { guildAvatar: GUILD_HASH } }),
+    );
+    const { row } = await importedRow(harness);
+
+    const [items] = harness.copier.copy.mock.calls[0];
+    expect(items[0].url).toBe(
+      `https://cdn.discordapp.com/guilds/${GUILD}/users/2/avatars/${GUILD_HASH}.png?size=128`,
+    );
+    // The row points at the copy it made, not at the account avatar's key.
+    expect(row?.author_avatar_path).toBe(items[0].path);
+  });
+
+  it('copies an avatar once per import, and an expired one silently and only once', async () => {
+    const harness = await build({ pages: [fullPage(), [sober()]] });
+    harness.copier.copy.mockImplementation(async (items) =>
+      items.map((item) => ({ path: item.path, status: 'gone' as const })),
+    );
+    const args = runArgs(harness);
+    const result = await harness.worker.runSlice(args);
+
+    expect(harness.copier.copy).toHaveBeenCalledTimes(1);
+    expect(result.totals.warnings).toEqual([]);
+    expect(result.totals.attachmentsSkipped).toBe(0);
+  });
+
+  it('tries an avatar again on a later page after a failure that may pass', async () => {
+    const harness = await build({ pages: [fullPage(), [sober()]] });
+    harness.copier.copy
+      .mockImplementationOnce(async (items) =>
+        items.map((item) => ({
+          path: item.path,
+          status: 'failed' as const,
+          reason: 'Storage answered 503.',
+        })),
+      )
+      .mockImplementation(async (items) =>
+        items.map((item) => ({ path: item.path, status: 'stored' as const })),
+      );
+    const result = await harness.worker.runSlice(runArgs(harness));
+
+    expect(harness.copier.copy).toHaveBeenCalledTimes(2);
+    expect(result.totals.warnings).toEqual([]);
+  });
+
+  it('renews the lease after slow member reads, before the first copy', async () => {
+    const harness = await build({ pages: [[sober()]] });
+    let clock = Date.now();
+    const now = jest.spyOn(Date, 'now').mockImplementation(() => clock);
+    harness.bot.fetchGuildMember.mockImplementation(async () => {
+      clock += MEMBER_READS_RENEW_AFTER_MS;
+      return null;
+    });
+    const args = runArgs(harness, { deadline: clock + 600_000 });
+    jest.mocked(args.checkpoint).mockResolvedValueOnce(false);
+    const result = await harness.worker.runSlice(args);
+    now.mockRestore();
+
+    expect(result.finished).toBe(false);
+    expect(harness.copier.copy).not.toHaveBeenCalled();
+    expect(args.importBatch).not.toHaveBeenCalled();
   });
 });
 

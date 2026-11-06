@@ -60,12 +60,13 @@ export const CHIP = {
  * Not `CHIP.base` either, and not by oversight: that recipe is a 26px control
  * with a 44px touch floor, and this is a run of words inside a sentence. It
  * takes inline geometry — a tight radius off the §8 chip band, padding that
- * keeps the line box intact, and the body weight lifted one step so the handle
- * reads as a handle when the chip's fill is the subtler half of the pair.
+ * keeps the line box intact, and the body's own weight: the tone sets the
+ * handle apart, not boldness (muted 2026-11-06, `components.md` § In-body
+ * mention chip).
  */
 export const MENTION_CHIP = [
   "rounded-[5px] px-1 py-px",
-  "bg-mention-chip font-semibold text-mention-chip-text",
+  "bg-mention-chip text-mention-chip-text",
 ].join(" ");
 
 /**

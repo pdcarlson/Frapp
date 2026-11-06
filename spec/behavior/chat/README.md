@@ -498,7 +498,9 @@ Resolution is tiered and fails closed — exact user id, exact display name, nam
 
 None of these are bugs to fix; they fall out of the tiering and the tokenizer rules above, and a client's job is to design around them rather than assume every display name is reachable by every input.
 
-**Web composer autocomplete.** `apps/web/components/chat/composer.tsx` wires `@tiptap/extension-mention` to the chapter roster (`useChapterRoster`), popping a filtered member list on `@` (`apps/web/components/chat/mention-list.tsx`, `apps/web/components/chat/mention-suggestion.ts`). It designs around the three limits above rather than reaching for a client-side reimplementation of the resolver: selecting a member inserts the display name reduced to letters, digits, and marks (`mentionLabelFor`) — not just whitespace stripped, because the tokenizer *truncates* (not rejects) a token at its first disallowed character, and a label that kept e.g. `(`/`,`/`&` could shorten in transit to something that happens to exactly match a *different* member's name. Stripping to the tokenizer's always-safe character class lines up with the resolver's "name without spaces" tier (both reduce to the same folded form) so the exact member picked is the exact member that resolves — never a same-named lookalike, a truncated fragment, or a surname-only/first-word-only match. A digit-led display name is excluded from the popup's candidates entirely (`opensOnLetter`), since no token built from one could ever be recognized by the tokenizer. The composer sends plain text — `editor.getText()` — so nothing about this affordance changes the wire contract: a member typing a mention by hand and one picked from the popup produce indistinguishable message bodies, and resolution stays exactly where §Mentions above says it must, server-side at send time.
+**Web composer autocomplete.** `apps/web/components/chat/composer.tsx` wires `@tiptap/extension-mention` to the chapter roster (`useChapterRoster`), popping a filtered member list on `@` (`apps/web/components/chat/mention-list.tsx`, `apps/web/components/chat/mention-suggestion.ts`). It designs around the three limits above rather than reaching for a client-side reimplementation of the resolver: selecting a member inserts the display name reduced to letters, digits, and marks (`mentionLabelFor`, shared from `@repo/validation` since 2026-11-06) — not just whitespace stripped, because the tokenizer *truncates* (not rejects) a token at its first disallowed character, and a label that kept e.g. `(`/`,`/`&` could shorten in transit to something that happens to exactly match a *different* member's name. Stripping to the tokenizer's always-safe character class lines up with the resolver's "name without spaces" tier (both reduce to the same folded form) so the exact member picked is the exact member that resolves — never a same-named lookalike, a truncated fragment, or a surname-only/first-word-only match. A digit-led display name is excluded from the popup's candidates entirely (`mentionSuggestions` in `@repo/validation`, which also picks and orders the candidates), since no token built from one could ever be recognized by the tokenizer. The composer sends plain text — `editor.getText()` — so nothing about this affordance changes the wire contract: a member typing a mention by hand and one picked from the popup produce indistinguishable message bodies, and resolution stays exactly where §Mentions above says it must, server-side at send time.
+
+**Mobile composer autocomplete** (2026-11-06). `apps/mobile/components/chat/chat-composer.tsx` opens a member list above its input when the caret sits in an `@`-handle, from the same chapter roster. The candidates and the inserted label are web's, shared from `@repo/validation` (`mentionSuggestions`, `mentionLabelFor`), so both clients offer the same members for the same text and a pick sends the same body. A plain `TextInput` has no editor plugin to say where a handle is, so `activeMentionQuery` reads it off the text before the caret, with the tokenizer's own lookbehind and opening letter: the list opens on a bare `@` and on a handle that could be read as a mention, and not inside an email address or on `@1`. A pick replaces the whole handle, past the caret too, since a picked mention is plain text that a caret can land inside. The filter reads iOS's curly apostrophe as a straight one, so `@O’Br` typed on an iPhone still finds "O'Brien". Like web's, it sends plain text, so the wire contract above is unchanged.
 
 Two properties of *how* the roster is read are load-bearing, because both are easy to undo without any test noticing:
 
@@ -1088,17 +1090,26 @@ What follows is the behaviour the archive has once it is in.
   that a delete also clears. The rewrite is `rewriteDiscordMentions`
   (`apps/api/src/domain/utils/discord-mentions.ts`), run by the mapper both
   import paths share:
-  - a user (`<@id>`, `<@!id>`) reads `@` plus the name the message's own
-    mentioned-user entry carries. On the bot path that is their Discord display
-    name, which can differ from the server nickname their own messages are
-    labelled with: Discord's API returns no nickname for a mentioned user, and
-    taking one from whatever the import happened to have read already named the
-    same person two ways. An upload's entry is DiscordChatExporter's, which
-    carries the nickname;
-  - a role (`<@&id>`) reads `@` plus the mapped Frapp role's current name, or its
-    Discord name when it was set to Ignore; `@everyone`'s role reads
-    `@everyone`. An upload has no role mapping, so there it reads
-    `@unknown-role`;
+  - a user (`<@id>`, `<@!id>`) reads `@` plus the name the server showed them
+    by: their server nickname, else their Discord display name, else their
+    username. On the bot path the importer reads each author and mentioned
+    user as a member of the server (`GET /guilds/{id}/members/{user}`, which
+    needs no privileged intent), because Discord's messages name people only
+    by their account; someone who has left the server reads by their account
+    name, as Discord shows them. Their own messages are labelled from the same
+    read, so a person reads the same in both places. An upload's entry is
+    DiscordChatExporter's, which carries the nickname;
+  - a role (`<@&id>`) reads `@` plus its Discord name. *2026-11-06: changed
+    from the mapped Frapp role's name*, which made `@Brothers` read
+    `@Member` and could not say which of several Discord roles mapped onto
+    one Frapp role was meant. The Frapp name is used only when the mapping
+    recorded no Discord name. `@everyone`'s role reads `@everyone`. An upload
+    has no role mapping, so there it reads `@unknown-role`;
+  - a user or role name is written the way the composer's mention picker
+    writes one, with everything but letters, digits and marks removed
+    (`@TristanHatton`), so a client draws it as one mention chip: the mention
+    tokenizer stops at a space. A name that would not start with a letter that
+    way is written as its plain name instead;
   - a channel (`<#id>`) reads `#name`, linked to the Frapp channel its messages
     landed in (`/chat?channel=<id>`). A thread links to its parent's channel.
     On the bot path a new channel of the import is made as soon as a page
@@ -1127,15 +1138,18 @@ What follows is the behaviour the archive has once it is in.
   - a token inside inline code or a fenced block, or escaped with a backslash,
     stays as written, as Discord shows it;
   - a name is inserted as plain text, since it is someone else's words inside
-    another member's message: brackets, angle brackets, backslashes, backticks,
-    asterisks, underscores at a word's edge and bidirectional controls are
-    dropped from it. So a nickname cannot make a disguised link, restyle the
-    words around it, or reorder them. A nickname that is itself a URL stays
-    one, and mobile links it, showing the address it opens.
+    another member's message. A user or role name keeps only its letters,
+    digits and marks (above), so it cannot make a link at all. A channel name,
+    and a user or role name written in full because it does not start with a
+    letter, has brackets, angle brackets, backslashes, backticks, asterisks,
+    underscores at a word's edge and bidirectional controls dropped. So a name
+    cannot make a disguised link, restyle the words around it, or reorder
+    them. A full name that is itself a URL stays one, and mobile links it,
+    showing the address it opens.
 
-  The web mention chip marks `@` plus one word, so a name with a space is only
-  partly marked, and the `@unknown-*` placeholders are marked too, as they are
-  in a member's own message.
+  The web mention chip marks `@` plus one word, which is why names are written
+  without their spaces (above). The `@unknown-*` placeholders are marked too,
+  as they are in a member's own message.
 
   An upload has little to do: DiscordChatExporter's JSON already renders tokens
   as text unless it was run with `--markdown false`. For an import that ran
@@ -1148,6 +1162,18 @@ What follows is the behaviour the archive has once it is in.
   messages, since the mentioned-user lists were never kept: someone mentioned
   who never posted reads `@unknown-user`, and an upload's users read as their
   Discord username.
+
+  A bot import written before the importer read members (2026-11-06) named
+  people by their account and roles by their Frapp mapping.
+  `apps/api/src/backfill-discord-import-people.ts` reads each of its authors
+  from the server and rewrites their `author_name`, copies their avatar, and
+  rewrites the mention text the old importer wrote for them and for each role
+  to what it writes now. It works from text, since no token is left, so it
+  reaches only people who posted in the import, and finds a role only under
+  its Frapp role's current name. It leaves a name two people or roles shared
+  (several Discord roles mapped onto one Frapp role) as it was, and an old name
+  that is someone else's new one, which is also what makes a second run change
+  nothing. Run after `backfill-discord-mention-tokens.ts` when both apply.
 
 - **Moderating an archived message is not live.** The Realtime exclusion is a
   row rule, not an operation rule, so a soft-delete, pin or edit of an imported
@@ -1240,8 +1266,11 @@ on their imported messages in that chapter are theirs.
   a rendered Discord user mention can link from; a chapter-wide map would hand
   every member the Discord id of someone whose messages they cannot read, or
   who linked before anything was imported.
-- **Not in scope here:** Discord avatars for authors nobody has linked (bot
-  imports store none, and mobile draws none).
+- **Imported authors keep their Discord avatar.** The bot path copies each
+  author's server avatar, else their account's, into the import's archive
+  beside its attachments, once per import, as a 128px PNG. A default avatar,
+  or one Discord no longer serves, leaves initials. Mobile still draws none
+  for authors nobody has linked.
 
 ## Message Kinds and Actions
 

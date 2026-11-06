@@ -130,7 +130,7 @@ describe('nameStoredTokens', () => {
       lookups(),
     );
     expect(updates).toEqual([
-      { id: 'm1', content: '@Brothers ping @Nirav Banerji and @unknown-user' },
+      { id: 'm1', content: '@Brothers ping @NiravBanerji and @unknown-user' },
     ]);
   });
 
