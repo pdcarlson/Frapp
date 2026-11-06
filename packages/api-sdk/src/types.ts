@@ -3873,6 +3873,8 @@ export interface components {
              * @enum {string|null}
              */
             default_notification_level?: "all" | "mentions" | "off" | null;
+            /** @description Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. Refused as `true` on a DM or group DM. */
+            is_default?: boolean;
         };
         CreateDmDto: {
             /** @description The other member user ID */

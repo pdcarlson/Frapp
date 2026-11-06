@@ -390,3 +390,47 @@ describe('SupabaseChatChannelRepository — a failed read throws', () => {
     ).rejects.toBeInstanceOf(SupabaseQueryError);
   });
 });
+
+describe('SupabaseChatChannelRepository — setDefault', () => {
+  function clientWithRpc(answer: { data: unknown; error: unknown }) {
+    const rpc = jest.fn(() => Promise.resolve(answer));
+    return { rpc, client: { rpc } as unknown as FrappSupabaseClient };
+  }
+
+  it('scopes the swap to the chapter it was given', async () => {
+    // The RPC unsets the old default chapter-wide, so the chapter id is what
+    // keeps one officer's change inside their own chapter.
+    const { rpc, client } = clientWithRpc({
+      data: [{ id: 'channel-1', is_default: true }],
+      error: null,
+    });
+    const repo = new SupabaseChatChannelRepository(client);
+
+    const row = await repo.setDefault('channel-1', 'chapter-1');
+
+    expect(rpc).toHaveBeenCalledWith('set_chat_channel_default', {
+      p_channel_id: 'channel-1',
+      p_chapter_id: 'chapter-1',
+    });
+    expect(row).toMatchObject({ id: 'channel-1', is_default: true });
+  });
+
+  it('answers null when no row matched (another chapter, or a DM)', async () => {
+    const { client } = clientWithRpc({ data: [], error: null });
+    const repo = new SupabaseChatChannelRepository(client);
+
+    await expect(repo.setDefault('channel-1', 'chapter-1')).resolves.toBeNull();
+  });
+
+  it('throws a failed swap', async () => {
+    const { client } = clientWithRpc({
+      data: null,
+      error: { code: '08006', message: 'connection reset' },
+    });
+    const repo = new SupabaseChatChannelRepository(client);
+
+    await expect(
+      repo.setDefault('channel-1', 'chapter-1'),
+    ).rejects.toBeInstanceOf(SupabaseQueryError);
+  });
+});

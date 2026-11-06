@@ -127,6 +127,13 @@ export interface ChatChannel {
    * default to `all` regardless.
    */
   default_notification_level: ChatNotificationLevel | null;
+  /**
+   * The chapter's default channel: where Chat opens for a member whose device
+   * has no last channel, ahead of `#general`. At most one per chapter (a
+   * partial unique index), set by an officer who can manage channels, and
+   * never a DM or group DM. `spec/behavior/chat/README.md` § Where Chat opens.
+   */
+  is_default: boolean;
 }
 
 /**

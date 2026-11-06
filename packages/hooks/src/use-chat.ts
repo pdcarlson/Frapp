@@ -313,6 +313,11 @@ export function useUpdateChannel() {
          * the built-in default; `undefined` leaves it untouched.
          */
         default_notification_level?: ChatNotificationLevel | null;
+        /**
+         * Make this the chapter's default channel (`true`), moving it off any
+         * other, or leave the chapter with none (`false` on the current one).
+         */
+        is_default?: boolean;
       };
     }) => {
       const { data, error } = await client.PATCH("/v1/channels/{id}", {

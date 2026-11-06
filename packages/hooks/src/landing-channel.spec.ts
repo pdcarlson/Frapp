@@ -51,6 +51,28 @@ describe("landingChannelId", () => {
   });
 });
 
+describe("landingChannelId and the chapter default", () => {
+  const channels = [
+    { id: "g", name: "general" },
+    { id: "a", name: "announcements", is_default: true },
+    { id: "r", name: "random" },
+  ];
+
+  it("opens the chapter default ahead of #general when there is no last channel", () => {
+    expect(landingChannelId(channels)).toBe("a");
+    expect(landingChannelId(channels, "gone")).toBe("a");
+  });
+
+  it("still lets the member's last channel win", () => {
+    expect(landingChannelId(channels, "r")).toBe("r");
+  });
+
+  it("falls back to #general when the default is not visible to the member", () => {
+    // A private or role-gated default is absent from this member's list.
+    expect(landingChannelId(channels.filter((c) => c.id !== "a"))).toBe("g");
+  });
+});
+
 describe("lastChannelLandingId", () => {
   it("has no fallback", () => {
     const channels = [{ id: "g", name: "general" }];
