@@ -62,7 +62,7 @@ export default function Welcome() {
       // Non-fatal — the next session re-offers s03 if the write never landed.
     }
     await queryClient.invalidateQueries({ queryKey: ["chapters"] });
-    router.replace("/(tabs)");
+    router.replace("/");
   }
 
   if (status === "unauthenticated") {

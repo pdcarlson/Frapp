@@ -68,7 +68,7 @@ import { screenText } from "@/test/screen-text";
  * `RenderingFlatList`, so the rows render inside the screen's tree, under the
  * provider the screen wraps the list in.
  *
- * It renders `app/(tabs)/chat-thread.tsx` but lives here: a spec under `app/`
+ * It renders `app/(app)/chat-thread.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -312,7 +312,7 @@ vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
 let params: { channelId?: string } = { channelId: CHANNEL };
 vi.mocked(expoRouter.useLocalSearchParams).mockImplementation(() => params);
 
-import ChatThreadScreen from "@/app/(tabs)/chat-thread";
+import ChatThreadScreen from "@/app/(app)/chat-thread";
 
 const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
 

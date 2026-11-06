@@ -19,7 +19,7 @@ import { screenText } from "@/test/screen-text";
  *
  * This pins that all three move on the shared ticking clock.
  *
- * It renders `app/(tabs)/more.tsx` but lives here: a spec under `app/` ships
+ * It renders `app/(app)/(tabs)/more.tsx` but lives here: a spec under `app/` ships
  * as a route module (`lib/routes.spec.ts`).
  */
 
@@ -55,7 +55,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
 }));
 
-import MoreScreen from "@/app/(tabs)/more";
+import MoreScreen from "@/app/(app)/(tabs)/more";
 import { ListRow, ListSection } from "@/components/list-section";
 import { signetDarkTokens } from "@repo/theme/signet";
 

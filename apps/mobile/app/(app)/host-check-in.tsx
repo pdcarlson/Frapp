@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
+import { useScreenBelow } from "@/lib/back-target";
 import QRCode from "react-native-qrcode-svg";
 import {
   countCheckedIn,
@@ -63,9 +64,9 @@ import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## Live only while it is on screen
  *
- * `host-check-in` is a `Tabs.Screen`, which stays mounted after the officer
- * leaves. The code and the count are asked for only while this screen has
- * focus, so a screen nobody is looking at doesn't keep minting codes and
+ * The screen can stay mounted while the officer is elsewhere (the app in the
+ * background, or a screen pushed over it). The code and the count are asked
+ * for only while this screen has focus, so a screen nobody is looking at doesn't keep minting codes and
  * reading the roster for the rest of the session.
  *
  * That leaves a cached code behind, and an officer who comes back minutes
@@ -168,6 +169,7 @@ export default function HostCheckInScreen() {
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens, accent);
   const router = useRouter();
+  const below = useScreenBelow();
 
   const params = useLocalSearchParams<{ eventId?: string | string[] }>();
   const eventId = Array.isArray(params.eventId)
@@ -255,12 +257,11 @@ export default function HostCheckInScreen() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="End hosting and go back"
-          // A fixed destination, by the rule `components/back-row.tsx` states:
-          // this is a hidden tab, so `router.back()` follows the tab
-          // navigator's default `backBehavior` ("firstRoute") to Chat home.
-          // More, because its Host check-in row is the one way in; "End"
-          // names no place, so it goes back where the officer started.
-          onPress={() => router.navigate("/more")}
+          // Pops back where the officer started, as the edge swipe and
+          // Android's back do (`spec/ui/mobile/navigation.md` § Going back);
+          // More, whose Host check-in row is the one way in, when nothing is
+          // under it. "End" names no place, so it needs no label from it.
+          onPress={() => (below ? below.goBack() : router.navigate("/more"))}
           style={({ pressed }) => [styles.end, pressed ? styles.pressed : null]}
         >
           <Text style={styles.endText}>✕ End</Text>

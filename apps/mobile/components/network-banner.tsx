@@ -34,7 +34,7 @@ import { IconButton } from "@/components/icon-button";
  *
  * ## Why the chat thread still has its own pill
  *
- * `app/(tabs)/chat-thread.tsx` shows a connection pill driven by the realtime
+ * `app/(app)/chat-thread.tsx` shows a connection pill driven by the realtime
  * transport, which answers a different question: this banner says whether the
  * *API* is reachable, the pill says whether *live updates* are flowing.
  * "Real-time updates paused. Polling for new messages." is a working degraded

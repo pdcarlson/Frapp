@@ -17,7 +17,7 @@ import { describe, expect, it } from "vitest";
 const APP_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "app");
 
 const SCREENS = [
-  "(tabs)/chat-thread.tsx",
+  "(app)/chat-thread.tsx",
   "(auth)/sign-in.tsx",
   "(auth)/join.tsx",
   "(auth)/create-chapter.tsx",

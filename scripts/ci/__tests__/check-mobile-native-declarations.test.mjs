@@ -166,8 +166,8 @@ test("a purpose string whose feature is gone fails", () => {
   assert.deepEqual(
     problems,
     [
-      "NSCameraUsageDescription: apps/mobile/app/(tabs)/check-in.tsx no longer calls useCameraPermissions. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy",
-      "android.permission.CAMERA: apps/mobile/app/(tabs)/check-in.tsx no longer calls useCameraPermissions. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy",
+      "NSCameraUsageDescription: apps/mobile/app/(app)/check-in.tsx no longer calls useCameraPermissions. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy",
+      "android.permission.CAMERA: apps/mobile/app/(app)/check-in.tsx no longer calls useCameraPermissions. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy",
     ],
   );
 });
@@ -704,7 +704,7 @@ function fixture({
     mkdirSync(dirname(join(root, rel)), { recursive: true });
     writeFileSync(join(root, rel), text);
   };
-  put("apps/mobile/app/(tabs)/check-in.tsx", checkIn);
+  put("apps/mobile/app/(app)/check-in.tsx", checkIn);
   put("apps/mobile/lib/location.ts", "requestForegroundPermissionsAsync();");
   put("apps/mobile/lib/chat/attachment-upload.ts", "requestMediaLibraryPermissionsAsync();");
   const podDirs = {};

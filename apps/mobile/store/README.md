@@ -347,7 +347,7 @@ Members get one place for the things that used to live in six group chats: chapt
 > *2026-11-04 ([#3023](https://github.com/pdcarlson/Frapp/issues/3023)):* that subtitle
 > ("Tracked sessions inside your chapter's study zones.") is gone. The clause still holds on
 > what the tab does: a session starts only inside one of the chapter's study zones, picked
-> from the tab's zone sheet (`app/(tabs)/study.tsx`, `components/study/zone-picker-sheet.tsx`).
+> from the tab's zone sheet (`app/(app)/study.tsx`, `components/study/zone-picker-sheet.tsx`).
 
 Officers get what they need on their feet: take attendance at the door with a QR code, assign a task to any member, and post an announcement every member gets. Setting the chapter up — roles and permissions, dues and who has paid, service-hour approvals, channels and points — is on the web dashboard.
 
@@ -356,7 +356,7 @@ Officers get what they need on their feet: take attendance at the door with a QR
 >
 > | Old claim | Verdict | Evidence |
 > | --- | --- | --- |
-> | take attendance by QR code | **ships on iOS** | `app/(tabs)/host-check-in.tsx`, reached from the "Host check-in" tile in `more.tsx` and gated `events:update` |
+> | take attendance by QR code | **ships on iOS** | `app/(app)/host-check-in.tsx`, reached from the "Host check-in" tile in `more.tsx` and gated `events:update` |
 > | post to the right channel | **partly ships — kept, reworded** | An officer holding `announcements:post` gets a live composer in the read-only `#announcements` channel, and that send fans an URGENT push chapter-wide: `chat-thread.tsx` `canSend={canSend && channelCanPost}` off the server's `can_post`. But **creating or organising channels is web-only** (`useCreateChannel`'s only consumer is `apps/web/components/chat-admin/`), so "the right channel" overclaimed. Now "post an announcement every member gets" |
 > | invite members with a link | **partial — dropped** | `useCreateInvite` has exactly one consumer in `apps/mobile`, the one-time founding wizard (`app/(auth)/create-chapter.tsx`), reachable only while the account belongs to **zero** chapters. An officer of an existing chapter has no invite affordance, the role is hardcoded `Member`, and the link points at the web app. Invites are already covered honestly by the invite-only paragraph below |
 > | assign roles and permissions | **web only** | `components/directory/member-detail-sheet.tsx` renders a read-only `Role` value row; no mutation is imported. The editor is `apps/web/components/roles/` |
@@ -386,7 +386,7 @@ Features
 > iOS binary (Guideline 2.3).** "direct messages" → "direct messages your chapter has
 > started": a member can read and reply in an existing DM, but **nothing in the iOS app
 > can start one** — the DIRECT section is hidden entirely when the list is empty
-> (`app/(tabs)/index.tsx`), and the one mobile call of `useGetOrCreateDm` (before #2773,
+> (`app/(app)/(tabs)/index.tsx`), and the one mobile call of `useGetOrCreateDm` (before #2773,
 > below) reopens a DM the member hid, from the Hidden conversations group: it passes the other member of a
 > DM row the list already returned, so `findDm` matches the existing pair rather than
 > creating one. *(Corrected 2026-09-25, #2303: this used to say the hook's only consumer
@@ -452,7 +452,7 @@ states what a reviewer will actually be shown.
 - Members join a chapter by invite. **Give App Review an email and password for a seeded account that is already a member of a chapter — never an invite token.** Put them in the Sign-In Required fields, not prose. Invites cannot work here: `prepareInviteData` hardcodes `expiresAt.setHours(+24)` and `redeem` throws `GoneException` on `used_at` or on a past `expires_at`, with no override parameter anywhere — so a token is dead before a first review answers and certainly dead on a re-review. (Corrected 2026-09-21; this bullet used to hand over a token, and every earlier note about "minting one whose expiry outlasts review" was describing something the API cannot do.)
 - The account signs in as the president of a fictional demo chapter. On first sign-in the app asks the account to agree to the Terms of Service and Privacy Policy, which forbid objectionable content and abusive users; tick the box and continue. Worth trying: Chat (the chapter's channels, the officer composer in #announcements, and a direct message from the chapter's treasurer), Events, Tasks (including New task), and under More: Documents (open one), Directory, Service hours, Study hours, and Profile for points. Study hours lists past sessions; a new one starts only inside one of the chapter's study zones, and the demo chapter's zones are on its campus in Ohio, so elsewhere the app will say the device is outside a zone. These parts of running a chapter are on the web dashboard, not in this app: roles and permissions, dues and who has paid, service-hour approvals, channels, points, and study zones.
   > **Submitter note, not for the paste (2026-09-23, #2308).** Every screen named above
-  > was checked against the binary (tabs in `app/(tabs)/_layout.tsx`, More in
+  > was checked against the binary (tabs in `app/(app)/(tabs)/_layout.tsx`, More in
   > `more.tsx`, the announcements composer and New task per § Description's verdicts)
   > and against the `--reviewer` seed: each one has the reviewer's own rows, since
   > Service hours, Study hours and Dues show the viewer's history only. **Dues is left
@@ -478,7 +478,7 @@ states what a reviewer will actually be shown.
   > worth keeping: the code does not behave the way "no card payments" makes it sound.
   >
   > **A reviewer with an open invoice sees a *disabled* Pay button, not a missing one.**
-  > `app/(tabs)/dues.tsx` gates the control's *existence* on there being an open invoice
+  > `app/(app)/dues.tsx` gates the control's *existence* on there being an open invoice
   > (`payLabel={target ? "Pay now" : null}`) and only its *enablement* on the key
   > (`disabledReason`); `components/dues/balance-card.tsx` then
   > renders "Pay now" at half opacity, captioned "Card payments aren't switched on for

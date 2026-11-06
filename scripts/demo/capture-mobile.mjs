@@ -268,7 +268,7 @@ const APP_SCREENS = [
     // Deliberately not the `/ask` route. Ask is a sheet hosted by Chat home and
     // Events behind the ✦ pill, never a screen of its own
     // (`spec/ui/mobile/navigation.md` § Global entries outside the tab bar);
-    // `app/(tabs)/ask.tsx` exists only to back a frozen `Tabs.Screen`
+    // `app/(app)/ask.tsx` exists only to back a frozen `Tabs.Screen`
     // registration and says so in its own header comment. Shooting the route photographs a deliberately bare shell — the
     // pill on s04 is where a member actually opens this.
     route: "/",

@@ -134,7 +134,7 @@ constraints web habits most often break:
   isolation modules (`@/lib/payments/stripe`, `@/lib/notifications/push`, `@/lib/keyboard`,
   `@/lib/apple-auth`), which check the runtime and degrade. ESLint `no-restricted-imports` rejects
   a direct import.
-- Seven files are frozen: `app/_layout.tsx`, `app/(tabs)/_layout.tsx`, `lib/theme.tsx`,
+- Seven files are frozen: `app/_layout.tsx`, `app/(app)/(tabs)/_layout.tsx`, `lib/theme.tsx`,
   `components/screen-shell.tsx`, `lib/href.ts`, `package.json`, `app.json`. Every planned route
   is already registered hidden (`href: null`) with a stub file, so building a screen means filling
   in the stub. A change that needs one of the seven (a dependency, including an internal `@repo/*`

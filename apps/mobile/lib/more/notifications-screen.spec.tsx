@@ -32,7 +32,7 @@ import { screenText } from "@/test/screen-text";
  * `new Date()` read once would leave an 11:47 PM row under TODAY at 12:10 AM.
  * This pins that the split moves on the shared ticking clock.
  *
- * It renders `app/(tabs)/notifications.tsx` but lives here: a spec under
+ * It renders `app/(app)/notifications.tsx` but lives here: a spec under
  * `app/` ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -76,7 +76,7 @@ import { NotificationsGlyph } from "@/components/more/more-glyphs";
 import { EmptyState } from "@/components/state-block";
 import NotificationsScreen, {
   NotificationListRow,
-} from "@/app/(tabs)/notifications";
+} from "@/app/(app)/notifications";
 
 /**
  * Unmounted in `afterEach`, not at the end of each test: the shared clock is

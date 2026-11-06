@@ -39,7 +39,7 @@ import { TaskCard } from "./task-card";
  * One s05 row, after the block list has been applied (`applyBlockList` in
  * `@repo/chat-core/blocks`). Held rows never reach here.
  *
- * Split out of `app/(tabs)/chat-thread.tsx` so the choice between tombstone,
+ * Split out of `app/(app)/chat-thread.tsx` so the choice between tombstone,
  * card and message is testable: everything under `app/` ships as a route
  * module, so a spec cannot sit beside the screen (`routes.spec.ts` fails on
  * one), and the list's `FlatList` stand-in never calls `renderItem` in tests.

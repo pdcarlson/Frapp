@@ -58,7 +58,7 @@ export function connectionBannerCopy(state: ConnectionState): string | null {
  * It must not be applied to the chat composer: `sendMessage` enqueues to the
  * outbox and returns before touching the network, so gating it would defeat the
  * queue built to make composing-while-offline work (see the comment above the
- * composer in `app/(tabs)/chat-thread.tsx`). Surfaces with a queue label; the
+ * composer in `app/(app)/chat-thread.tsx`). Surfaces with a queue label; the
  * rest disable. `spec/ui/resilience/connection-state.md` records the split.
  */
 export function writeBlockedReason(state: ConnectionState): string | null {

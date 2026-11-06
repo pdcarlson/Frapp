@@ -610,7 +610,7 @@ export function AuthSessionProvider({
     // way out of it.
     //
     // This lives here rather than in the screens because there are three
-    // sign-out paths (`(tabs)/preferences.tsx`, `(auth)/chapter-picker.tsx`,
+    // sign-out paths (`(app)/preferences.tsx`, `(auth)/chapter-picker.tsx`,
     // `(auth)/join.tsx`) and each had to remember the clear for itself; the
     // picker's landed only after the leak was noticed a second time. Owning it
     // at the single point every path already funnels through is what stops a

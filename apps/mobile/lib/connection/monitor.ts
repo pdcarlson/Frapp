@@ -143,7 +143,7 @@ const defaultDeps: MonitorDeps = {
  * `background` only. `inactive` is iOS Control Center, the app switcher and a
  * notification-shade pull: the app is still running and its network is not
  * blocked, so those readings stay trustworthy. `query-connectivity.ts` and
- * `app/(tabs)/study.tsx` draw the same line.
+ * `app/(app)/study.tsx` draw the same line.
  */
 function isBackground(state: AppStateStatus | null | undefined): boolean {
   return state === "background";

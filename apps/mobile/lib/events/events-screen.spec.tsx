@@ -11,7 +11,7 @@ import { expectRoundedRipple } from "@/test/pressable-row";
 import { screenText } from "@/test/screen-text";
 
 /**
- * s06, rendered. It renders `app/(tabs)/events.tsx` but lives here: a spec
+ * s06, rendered. It renders `app/(app)/(tabs)/events.tsx` but lives here: a spec
  * under `app/` ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -50,7 +50,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 vi.mock("@/lib/ask/flag", () => ({ isAskAvailable: () => false }));
 
-import EventsScreen from "@/app/(tabs)/events";
+import EventsScreen from "@/app/(app)/(tabs)/events";
 
 const mounted: ReactTestRenderer[] = [];
 

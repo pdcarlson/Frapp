@@ -27,6 +27,7 @@ import {
   RouteErrorBoundary,
   SCREEN_ERROR_COPY,
   screenErrorLayout,
+  stackScreenLayout,
 } from "./route-error";
 
 /**
@@ -244,25 +245,28 @@ describe("when a screen's boundary tries again", () => {
     params: object | undefined,
     Bomb: () => React.ReactElement,
     navigation = fakeNavigation(),
-    options: { tabBarStyle?: { display: "none" } } = {},
+    navigator: "tabs" | "stack" = "tabs",
   ) {
-    return screenErrorLayout({
+    const props = {
       route: { name: "event-details", params },
       navigation,
-      options,
       children: <Bomb />,
-    });
+    };
+    return navigator === "stack"
+      ? stackScreenLayout(props)
+      : screenErrorLayout(props);
   }
 
-  it("draws the back row only on a screen whose options hide the tab bar", () => {
+  it("draws the back row on a pushed screen and none on a tab", () => {
+    // A pushed screen covers the tab bar; a tab has the bar as its way out.
     const { Bomb } = makeBomb();
-    const hidden = renderInTheme(
-      layout(undefined, Bomb, fakeNavigation(), { tabBarStyle: { display: "none" } }),
+    const pushed = renderInTheme(
+      layout(undefined, Bomb, fakeNavigation(), "stack"),
     );
-    const shown = renderInTheme(layout(undefined, Bomb));
+    const tab = renderInTheme(layout(undefined, Bomb));
 
-    expect(buttonLabels(hidden)).toEqual([BACK_LABEL, SCREEN_ERROR_COPY.retry]);
-    expect(buttonLabels(shown)).toEqual([SCREEN_ERROR_COPY.retry]);
+    expect(buttonLabels(pushed)).toEqual([BACK_LABEL, SCREEN_ERROR_COPY.retry]);
+    expect(buttonLabels(tab)).toEqual([SCREEN_ERROR_COPY.retry]);
   });
 
   it("clears a fallback when the screen is opened for something else", () => {
@@ -409,7 +413,7 @@ describe("the layouts mount the boundaries", () => {
   });
 
   it("the tab layout exports one and wraps every screen in its own", () => {
-    const tabs = source("(tabs)/_layout.tsx");
+    const tabs = source("(app)/(tabs)/_layout.tsx");
     expect(tabs).toMatch(
       /^export function ErrorBoundary\([^)]*\)\s*\{\s*return <AppErrorScreen \{\.\.\.props\} boundary="tabs" \/>;/m,
     );

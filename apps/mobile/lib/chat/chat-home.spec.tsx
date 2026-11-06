@@ -213,7 +213,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => branding.current,
 }));
 
-import ChatHomeScreen from "@/app/(tabs)/index";
+import ChatHomeScreen from "@/app/(app)/(tabs)/index";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   resetChatLaunchForTests,

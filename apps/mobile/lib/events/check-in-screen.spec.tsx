@@ -36,7 +36,7 @@ import { requireForegroundFix } from "@/lib/location";
  * that the scanner was off. Reverting the catch to a plain `error` status
  * kept those green; it turns this suite red.
  *
- * It renders `app/(tabs)/check-in.tsx` but lives here: a spec under `app/`
+ * It renders `app/(app)/check-in.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -151,7 +151,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
 
-import CheckInScreen from "@/app/(tabs)/check-in";
+import CheckInScreen from "@/app/(app)/check-in";
 
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
 const refocus = (expoRouter as unknown as { __refocus: () => void })

@@ -182,7 +182,7 @@ describe("s03 welcome, screen rules (#3352)", () => {
     expect(completeOnboarding).toHaveBeenCalledWith({
       has_completed_onboarding: true,
     });
-    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
   });
 
   it("draws the primer inside the scroll, so Go to chat stays the one pinned control", async () => {

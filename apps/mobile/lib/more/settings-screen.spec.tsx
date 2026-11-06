@@ -16,7 +16,7 @@ import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
 
 /**
- * s16 Settings, rendered. It renders `app/(tabs)/preferences.tsx` but lives
+ * s16 Settings, rendered. It renders `app/(app)/preferences.tsx` but lives
  * here: a spec under `app/` ships as a route module (`lib/routes.spec.ts`).
  *
  * Everything below the screen is stubbed at its own seam: the preference
@@ -116,7 +116,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import SettingsScreen from "@/app/(tabs)/preferences";
+import SettingsScreen from "@/app/(app)/preferences";
 
 const mounted: ReactTestRenderer[] = [];
 

@@ -86,9 +86,9 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import ChatHomeScreen from "@/app/(tabs)/index";
-import EventsScreen from "@/app/(tabs)/events";
-import AskScreen from "@/app/(tabs)/ask";
+import ChatHomeScreen from "@/app/(app)/(tabs)/index";
+import EventsScreen from "@/app/(app)/(tabs)/events";
+import AskScreen from "@/app/(app)/ask";
 
 type Node = ReactTestRenderer["root"];
 

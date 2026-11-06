@@ -33,7 +33,7 @@ import {
  * "try again" copy. The module gate (`@RequireModule('hours')`, #2718) is the
  * other refusal retrying can't win, and gets the same treatment.
  *
- * It renders `app/(tabs)/service-hours.tsx`, and through it the sheet in
+ * It renders `app/(app)/service-hours.tsx`, and through it the sheet in
  * `components/service-hours/log-hours-sheet.tsx`, but lives here: a spec under
  * `app/` ships as a route module (`lib/routes.spec.ts`).
  */
@@ -145,7 +145,7 @@ vi.mock("@/lib/haptics", () => ({
   successHaptic: () => successHaptic(),
 }));
 
-import ServiceHoursScreen from "@/app/(tabs)/service-hours";
+import ServiceHoursScreen from "@/app/(app)/service-hours";
 
 /** Stands in for gorhom's modal instance, so a spec can see `dismiss()`. */
 const dismiss = vi.fn();

@@ -113,7 +113,7 @@ export function MessageAttachments({
   async function open(id: string, url: string) {
     // One at a time: iOS rejects a second presentation while one is showing,
     // which is a rejection worth not provoking rather than reporting. Same
-    // guard `app/(tabs)/documents.tsx` uses for the same reason.
+    // guard `app/(app)/documents.tsx` uses for the same reason.
     if (openingId) return;
     setOpenFailed(false);
     setOpeningId(id);

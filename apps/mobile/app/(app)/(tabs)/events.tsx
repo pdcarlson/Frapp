@@ -151,7 +151,7 @@ export default function EventsScreen() {
       title="Events"
       refresh={refresh}
       headerAction={
-        // No pill in a build without Ask (#2259) — see `app/(tabs)/index.tsx`.
+        // No pill in a build without Ask (#2259) — see `app/(app)/(tabs)/index.tsx`.
         isAskAvailable() ? (
           <AskPill onPress={() => askSheetRef.current?.present()} />
         ) : undefined

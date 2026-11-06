@@ -283,7 +283,7 @@ export default function CreateChapter() {
   }
 
   function finish() {
-    router.replace("/(tabs)");
+    router.replace("/");
   }
 
   // Android back steps back through setup, and once the chapter exists it

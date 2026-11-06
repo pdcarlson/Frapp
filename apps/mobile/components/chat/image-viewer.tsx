@@ -27,6 +27,7 @@ import { isViewableImage } from "@repo/chat-core/attachments";
 import { useMessageAttachments } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { useBackToClose, useFocusOnOpen, type FocusTarget } from "@/lib/overlay";
+import { useHoldSwipeBack } from "@/lib/back-target";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import {
   UNZOOMED,
@@ -160,8 +161,10 @@ export function useImageViewer(): ImageViewerState {
   );
 
   // The viewer covers the thread, so Android's back button has to close it
-  // rather than pop the navigator underneath.
+  // rather than pop the navigator underneath, and the iOS edge swipe holds
+  // while it is up: a drag on the photo pans it, never the thread away.
   useBackToClose(target !== null, close);
+  useHoldSwipeBack(target !== null);
 
   return { target, open, close, show };
 }

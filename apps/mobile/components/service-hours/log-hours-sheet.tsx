@@ -55,7 +55,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * s20 — the "Log service hours" sheet (`canvas-screens.dc.html`, `id="s20"`),
- * hosted by `app/(tabs)/service-hours.tsx`.
+ * hosted by `app/(app)/service-hours.tsx`.
  *
  * Built on the same chrome as s19's New task sheet (`sheet-scaffold.tsx`):
  * grabber, title/Cancel row, scrim, the accent-ringed field and the 50px CTA,

@@ -58,7 +58,7 @@ import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * `isAskAvailable()` is false by default (`lib/ask/flag.ts`), and when it is
  * this renders nothing. The hosts mount it unconditionally and gate only the
- * ✦ pill in their header, and `app/(tabs)/ask.tsx` redirects. It used to open
+ * ✦ pill in their header, and `app/(app)/ask.tsx` redirects. It used to open
  * anyway and say "Ask isn't switched on for this build yet"; that was reversed
  * on 2026-09-22 (#2259), and `spec/ui/mobile/navigation.md` § Global entries
  * has why. The gate lives here rather than at each host because this is the
@@ -432,7 +432,7 @@ function createStyles(tokens: SignetTokens) {
       height: 40,
       // TODO-DESIGN: Canvas draws radius 11; `navItem` is 10 and is the nearest
       // role in the locked radius map (foundations.md § Radius) — the same
-      // deviation `app/(tabs)/tasks.tsx` carries for its header action.
+      // deviation `app/(app)/(tabs)/tasks.tsx` carries for its header action.
       borderRadius: tokens.radius.navItem,
       alignItems: "center",
       justifyContent: "center",

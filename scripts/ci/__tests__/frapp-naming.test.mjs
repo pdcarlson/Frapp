@@ -300,7 +300,7 @@ export const SITE_ROSTERS = [
       /merchantDisplayName:\s*chapterName \?\?/.test(source),
     sites: [
       "apps/mobile/app.json",
-      "apps/mobile/app/(tabs)/dues.tsx",
+      "apps/mobile/app/(app)/dues.tsx",
       "apps/mobile/lib/notifications/push.ts",
       "apps/mobile/lib/payments/stripe.ts",
     ],
@@ -658,7 +658,7 @@ export const PINS = [
     has: ["export function pushUnavailableReason", "installed Frapp build"],
   },
   {
-    file: "apps/mobile/app/(tabs)/dues.tsx",
+    file: "apps/mobile/app/(app)/dues.tsx",
     why: "the PaymentSheet merchant default",
     has: [/merchantDisplayName:\s*chapterName \?\? "Frapp"/],
     lacks: [/merchantDisplayName:\s*chapterName \?\? "Signet"/],
@@ -774,7 +774,7 @@ export function pinProblems(pin, source) {
 // and the mobile walk still catches a Signet in any of them.
 
 export const SETTINGS_SITES = ["apps/mobile/lib/study/location-settings-path.ts"];
-export const SETTINGS_CALLERS = ["apps/mobile/app/(tabs)/study.tsx", "apps/mobile/components/study/location-primer-sheet.tsx"];
+export const SETTINGS_CALLERS = ["apps/mobile/app/(app)/study.tsx", "apps/mobile/components/study/location-primer-sheet.tsx"];
 export const SETTINGS_HELPER = { name: "locationSettingsPath", from: "@/lib/study/location-settings-path" };
 
 /** Stands for expo.name in a form's steps. */
@@ -940,7 +940,7 @@ test("the table keeps its floors and roots", () => {
   assert.equal(pinned("apps/landing/app/layout.tsx")[0].exactly, 3);
   assert.equal(pinned("apps/landing/app/page.tsx")[0].exactly, 2);
   assert.deepEqual(SETTINGS_SITES, ["apps/mobile/lib/study/location-settings-path.ts"]);
-  assert.deepEqual(SETTINGS_CALLERS, ["apps/mobile/app/(tabs)/study.tsx", "apps/mobile/components/study/location-primer-sheet.tsx"]);
+  assert.deepEqual(SETTINGS_CALLERS, ["apps/mobile/app/(app)/study.tsx", "apps/mobile/components/study/location-primer-sheet.tsx"]);
   assert.deepEqual(
     SETTINGS_FORMS.map((form) => settingsFormText(form, "Frapp")),
     ["Settings → Frapp → Location", "Settings → Apps → Frapp → Location", "Settings → Apps → Frapp → Permissions → Location"],

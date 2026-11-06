@@ -48,16 +48,18 @@ vi.mock("react-native-safe-area-context", () => ({
   }),
 }));
 
-import TabLayout from "@/app/(tabs)/_layout";
+import TabLayout from "@/app/(app)/(tabs)/_layout";
+import AppLayout, { unstable_settings } from "@/app/(app)/_layout";
+import { stackScreenLayout } from "@/components/route-error";
 
 type Node = ReactTestRenderer["root"];
 
-function render(): ReactTestRenderer {
+function render(Layout: () => React.ReactNode = TabLayout): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <TabLayout />
+        <Layout />
       </FrappThemeProvider>,
     );
   });
@@ -65,8 +67,8 @@ function render(): ReactTestRenderer {
 }
 
 /**
- * `vitest.setup.ts` renders `Tabs` and `Tabs.Screen` as host nodes named for
- * what they stand in for; the casts are the ones
+ * `vitest.setup.ts` renders `Tabs`, `Stack` and their `.Screen`s as host
+ * nodes named for what they stand in for; the casts are the ones
  * `lib/onboarding/join-screen.spec.tsx` explains.
  */
 function hosts(root: Node, name: string): Node[] {
@@ -96,12 +98,11 @@ function resolved(
 
 describe("Android back", () => {
   /**
-   * Every pushed screen is a hidden tab, and the tab router's default
-   * (`firstRoute`) sent back from any of them to Chat home, so back from an
-   * event opened on Events landed on Chat. History sends it to the screen the
-   * member came from.
+   * On a tab, the tab router's default (`firstRoute`) sends back straight to
+   * Chat home. History sends it to the tab the member came from. Pushed
+   * screens sit on the stack above and pop first (below).
    */
-  it("returns to the screen the member came from", () => {
+  it("returns to the tab the member came from", () => {
     const [tabs] = hosts(render().root, "Tabs");
     expect(tabs.props.backBehavior).toBe("history");
   });
@@ -119,9 +120,8 @@ describe("tab layout (#2485)", () => {
     const tree = render();
 
     const screens = hosts(tree.root, "Tabs.Screen");
-    // The four tabs and every hidden route: an empty list would pass the
-    // check below vacuously.
-    expect(screens.length).toBeGreaterThan(4);
+    // The four tabs: an empty list would pass the check below vacuously.
+    expect(screens).toHaveLength(4);
     for (const screen of screens) {
       const options = resolved(screen.props.options, screen.props.name);
       expect(options, screen.props.name).not.toHaveProperty("headerShown");
@@ -182,71 +182,73 @@ describe("tab bar inset (#3344)", () => {
 });
 
 /**
- * A conversation and the two check-in screens take the whole window, as the
- * board draws s05, s18 and s22: the thread's composer sits on the bottom
- * inset, and the scanner and host QR have no tabs under them. Every other
- * route keeps the bar.
+ * Every screen outside the four tabs is pushed on a native stack over them
+ * (`app/(app)/_layout.tsx`), so the iOS edge swipe and Android's back pop it
+ * (`spec/ui/mobile/navigation.md` § Going back). They used to be hidden tabs,
+ * and a tab switch has no back gesture: nothing but the Chat home tab could be
+ * reached from a thread without the drawn `‹`.
  */
-describe("full-window screens", () => {
-  const FULL_WINDOW = ["chat-thread", "check-in", "host-check-in"];
-
-  function optionsByName(): Map<string, Record<string, unknown>> {
-    const tree = render();
-    return new Map(
-      hosts(tree.root, "Tabs.Screen").map((screen) => [
-        screen.props.name as string,
-        resolved(screen.props.options, screen.props.name),
-      ]),
-    );
+describe("app stack", () => {
+  function stack() {
+    const tree = render(AppLayout);
+    const [navigator] = hosts(tree.root, "Stack");
+    return { navigator: navigator!, screens: hosts(tree.root, "Stack.Screen") };
   }
 
-  it("hides the tab bar on the thread, the scanner and the host QR", () => {
-    const options = optionsByName();
+  it("pushes every screen but the tabs over them, with no header", () => {
+    const { navigator, screens } = stack();
+    expect(resolved(navigator.props.screenOptions).headerShown).toBe(false);
+    expect(screens[0]!.props.name).toBe("(tabs)");
+    // routes.spec.ts holds that every pushed route file is registered.
+    expect(screens.length).toBeGreaterThan(10);
+  });
 
-    for (const name of FULL_WINDOW) {
-      expect(options.get(name)?.tabBarStyle, name).toEqual({
-        display: "none",
-      });
+  it("leaves the back gesture on for every screen", () => {
+    const { navigator, screens } = stack();
+    expect(resolved(navigator.props.screenOptions)).not.toHaveProperty(
+      "gestureEnabled",
+    );
+    for (const screen of screens) {
+      const options = resolved(screen.props.options, screen.props.name);
+      expect(options, screen.props.name).not.toHaveProperty("gestureEnabled");
+      expect(options, screen.props.name).not.toHaveProperty("headerShown");
+      expect(options, screen.props.name).not.toHaveProperty("header");
     }
   });
 
-  it("keeps it on every other route", () => {
-    const options = optionsByName();
-    const [tabs] = hosts(render().root, "Tabs");
+  it("puts the tabs under a screen opened by link", () => {
+    // A cold `frapp://event-details` or a notification tap still has Chat
+    // home under it, so its swipe and its back capsule land somewhere.
+    expect(unstable_settings.anchor).toBe("(tabs)");
+  });
 
-    // Hidden for the whole navigator would hide it everywhere.
-    expect(resolved(tabs.props.screenOptions).tabBarStyle).not.toHaveProperty(
-      "display",
-    );
-    expect(options.size).toBeGreaterThan(FULL_WINDOW.length + 4);
-    for (const [name, screen] of options) {
-      if (FULL_WINDOW.includes(name)) continue;
-      expect(screen, name).not.toHaveProperty("tabBarStyle");
-    }
+  it("puts each pushed screen in its own error boundary", () => {
+    expect(stack().navigator.props.screenLayout).toBe(stackScreenLayout);
   });
 
   /**
-   * With no bar under it, each screen sits on the window's bottom edge, so it
-   * must take the bottom safe-area inset itself or its composer, manual code
-   * field or QR footer lands under the home indicator or Android's navigation
-   * buttons. A render here draws no route, so this reads the route's source.
+   * A pushed screen covers the tab bar and sits on the window's bottom edge,
+   * so it must take the bottom safe-area inset itself (ScreenShell does) or
+   * its composer, manual code field or QR footer lands under the home
+   * indicator or Android's navigation buttons. A render here draws no route,
+   * so this reads each route's source.
    */
-  it("has each of them take the bottom safe-area inset itself", () => {
-    const here = dirname(fileURLToPath(import.meta.url));
+  it("has each pushed screen take the bottom safe-area inset", () => {
+    const appGroup = join(dirname(fileURLToPath(import.meta.url)), "..", "app", "(app)");
+    const pushed = stack()
+      .screens.map((screen) => screen.props.name as string)
+      // `ask` only redirects to Chat home.
+      .filter((name) => name !== "(tabs)" && name !== "ask");
 
-    for (const name of FULL_WINDOW) {
-      const source = readFileSync(
-        join(here, "..", "app", "(tabs)", `${name}.tsx`),
-        "utf8",
-      );
+    for (const name of pushed) {
+      const source = readFileSync(join(appGroup, `${name}.tsx`), "utf8");
       const edges = [...source.matchAll(/edges=\{\[([^\]]*)\]\}/g)].map(
         (match) => match[1],
       );
-      expect(edges.length, name).toBeGreaterThan(0);
-      expect(
-        edges.some((list) => list.includes('"bottom"')),
-        name,
-      ).toBe(true);
+      const takesInset =
+        /<ScreenShell\b/.test(source) ||
+        edges.some((list) => list!.includes('"bottom"'));
+      expect(takesInset, name).toBe(true);
     }
   });
 });

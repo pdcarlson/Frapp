@@ -7,7 +7,7 @@
  *
  * ## Why this is a hook, and why `components/app-runtime.tsx` mounts it high
  *
- * `app/_layout.tsx` is one of the seven frozen hotspot files
+ * `app/_layout.tsx` is one of the eight frozen hotspot files
  * (`spec/ui/mobile/navigation.md` § Hotspot freeze), so the shape here follows
  * `lib/chat/use-chat-runtime.ts`: module singletons plus a once-per-process
  * boot, called from a hook rather than a provider.
@@ -16,9 +16,9 @@
  * from how chat wires itself, for two reasons that are specific to push:
  *
  * - **Tab screens mount lazily.** A tap that deep-links straight to
- *   `/chat-thread` need never mount `(tabs)/index.tsx`, so a runtime hosted
+ *   `/chat-thread` need never mount `(app)/(tabs)/index.tsx`, so a runtime hosted
  *   there would miss the very cold-start read it exists to perform.
- * - `(tabs)/index.tsx` deliberately does *not* call `useChatRuntime()`, because
+ * - `(app)/(tabs)/index.tsx` deliberately does *not* call `useChatRuntime()`, because
  *   that would reconfigure the realtime manager from a list screen. Hanging a
  *   second app-wide runtime off it would repeat exactly that mistake.
  *
@@ -63,7 +63,7 @@ import {
 } from "@repo/hooks";
 import { useAuthSession } from "../auth-session";
 import { useIsApiAuthenticated } from "../use-is-api-authenticated";
-import { asRoute } from "../href";
+import { asRoute, openHref } from "../href";
 import {
   addNotificationResponseListener,
   addPushTokenListener,
@@ -207,11 +207,11 @@ export function usePushRuntime(): void {
     const { target, notificationId } = pendingTap;
     setPendingTap(null);
     if (notificationId) markReadRef.current.mutate(notificationId);
-    // The same fallback check `app/(tabs)/notifications.tsx` makes: an
+    // The same fallback check `app/(app)/notifications.tsx` makes: an
     // unrecognized payload resolves to the notification list, and pushing that
     // from a tap that arrived *as* a notification stacks the list on itself.
     if (target.pathname !== NOTIFICATION_FALLBACK_PATHNAME || target.params) {
-      router.push(asRoute(notificationHref(target)));
+      openHref(router, asRoute(notificationHref(target)));
     }
   }, [pendingTap, status, isChapterResolving, isAuthenticated, router]);
 

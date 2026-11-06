@@ -56,7 +56,7 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  * ## Rows open a member detail sheet, not a route
  *
  * Canvas draws a chevron on each row, and a new route file is not an option:
- * `app/(tabs)/_layout.tsx` is frozen, and a `Tabs.Screen` needs a backing
+ * `app/(app)/(tabs)/_layout.tsx` is frozen, and a `Tabs.Screen` needs a backing
  * file. `MemberDetailSheet` reaches the same fields
  * `spec/behavior/members.md`'s detail view specifies (name, email, role,
  * joined date) via a `@gorhom/bottom-sheet`, the pattern `new-task-sheet.tsx`

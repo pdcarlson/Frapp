@@ -19,7 +19,7 @@ import { screenText, textHeadings } from "@/test/screen-text";
  * The tab navigator's header used to name this screen, and its title was the
  * heading a screen reader found. No screen has that header now, so the title
  * the screen draws itself has to be the heading. It renders
- * `app/(tabs)/host-check-in.tsx` but lives here: a spec under `app/` ships as
+ * `app/(app)/host-check-in.tsx` but lives here: a spec under `app/` ships as
  * a route module (`lib/routes.spec.ts`).
  */
 
@@ -72,7 +72,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 vi.mock("react-native-qrcode-svg", () => ({ default: "QRCode" }));
 
-import HostCheckInScreen from "@/app/(tabs)/host-check-in";
+import HostCheckInScreen from "@/app/(app)/host-check-in";
 
 const { __refocus: refocus, __blur: blur } = expoRouter as unknown as {
   __refocus: () => void;

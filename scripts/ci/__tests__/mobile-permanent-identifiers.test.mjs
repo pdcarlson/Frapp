@@ -97,7 +97,7 @@ const APP_JSON = "apps/mobile/app.json";
 const APP_CONFIG = "apps/mobile/app.config.js";
 const EAS_JSON = "apps/mobile/eas.json";
 const MOBILE_PACKAGE_JSON = "apps/mobile/package.json";
-const EVENT_DETAILS = "apps/mobile/app/(tabs)/event-details.tsx";
+const EVENT_DETAILS = "apps/mobile/app/(app)/event-details.tsx";
 
 export const SCHEME = "frapp";
 export const SLUG = "frapp";

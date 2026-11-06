@@ -60,7 +60,7 @@
  * Notifications card — which is what #564 closed. Anything that renders these
  * switches maps this array; nothing hand-writes a second list of keys. Web
  * draws each as a switch with its label and `description`; mobile s16 draws
- * the label only (`apps/mobile/app/(tabs)/preferences.tsx` says why).
+ * the label only (`apps/mobile/app/(app)/preferences.tsx` says why).
  */
 
 /** One member-facing category: a switch's key, label and hint. */

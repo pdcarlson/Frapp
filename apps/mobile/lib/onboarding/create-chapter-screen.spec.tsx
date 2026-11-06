@@ -312,7 +312,7 @@ describe("chapter setup — step order", () => {
     expect(allText(root)).toContain("tok123");
 
     await press(root, "Go to chat");
-    expect(useRouter().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(useRouter().replace).toHaveBeenCalledWith("/");
   });
 
   it("draws its ‹ Back row in house gold, not the chapter's accent", async () => {
@@ -742,7 +742,7 @@ describe("chapter setup — new chapter not active", () => {
 
     await press(root, "Continue");
     expect(control(root, "Create invite link")).toBeUndefined();
-    expect(useRouter().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(useRouter().replace).toHaveBeenCalledWith("/");
     expect(createInvite).not.toHaveBeenCalled();
   });
 });
@@ -769,7 +769,7 @@ describe("chapter setup — push primer for the founder", () => {
     await press(root, "Continue");
     expect(title(root)).toBe(SETUP_TITLES.primer);
     await press(root, "Not now");
-    expect(useRouter().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(useRouter().replace).toHaveBeenCalledWith("/");
     expect(control(root, "Create invite link")).toBeUndefined();
   });
 
@@ -843,7 +843,7 @@ describe("chapter setup — invite", () => {
     expect(allText(root)).not.toContain("land in #general");
 
     await press(root, "Skip for now");
-    expect(useRouter().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(useRouter().replace).toHaveBeenCalledWith("/");
   });
 
   it("turns the gold button into Share invite once a link exists", async () => {

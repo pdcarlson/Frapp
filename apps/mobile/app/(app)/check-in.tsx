@@ -23,6 +23,7 @@ import {
   useLocalSearchParams,
   useRouter,
 } from "expo-router";
+import { useScreenBelow } from "@/lib/back-target";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import Svg, { Path } from "react-native-svg";
@@ -80,10 +81,10 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## The camera runs only while the screen is focused
  *
- * `check-in` is a `Tabs.Screen`, which stays mounted after the member leaves.
- * A `CameraView` left mounted keeps the camera session (and the torch) on
- * behind whatever screen the member went to, so it is drawn only while this
- * screen has focus.
+ * The screen stays mounted under anything pushed over it, and while the app
+ * is in the background. A `CameraView` left mounted keeps the camera session
+ * (and the torch) on behind whatever the member went to, so it is drawn only
+ * while this screen has focus.
  */
 
 /**
@@ -155,6 +156,7 @@ export default function CheckInScreen() {
   const { accent, accentPrimary, accentOnPrimary } = useChapterBranding();
   const styles = createStyles(tokens, accent);
   const router = useRouter();
+  const below = useScreenBelow();
 
   const params = useLocalSearchParams<{ eventId?: string | string[] }>();
   const eventId = Array.isArray(params.eventId)
@@ -260,9 +262,11 @@ export default function CheckInScreen() {
   /**
    * A refusal must not outlive the visit that produced it.
    *
-   * `check-in` is a `Tabs.Screen` with `href: null`, pushed with an `eventId`
-   * param — so it stays mounted after the member leaves and the same instance is
-   * reused for the next event. Unlike `error`, `blocked` disarms both the
+   * `check-in` is pushed with an `eventId` param, and an instance can be handed
+   * new params in place (a `frapp://` link opened over it) rather than
+   * remounted, so state from one event can meet the next. It used to be a tab
+   * that stayed mounted for the whole session, which is where the bug below
+   * came from; the reset stays for the in-place case. Unlike `error`, `blocked` disarms both the
    * camera decoder and the manual field, so without this reset a member
    * refused at one event would find the scanner silently dead at the next one,
    * weeks later, under copy naming a chapter state that has since been fixed.
@@ -513,14 +517,16 @@ export default function CheckInScreen() {
   /**
    * Where ✕ and "Back to event" go: the event's detail, whose Scan QR button
    * is the one way into this screen in the app, or Events when there is no
-   * event. A fixed destination rather than `router.back()`, by the rule
-   * `components/back-row.tsx` states: this is a hidden tab, so `back()` follows
-   * the tab navigator's default `backBehavior` ("firstRoute") to Chat home,
-   * and a `frapp://` link can open it with nothing behind it. Android's back
-   * button keeps the history behaviour.
+   * event. When that detail is the screen under this one, they pop to it, as
+   * the edge swipe and Android's back do (`spec/ui/mobile/navigation.md`
+   * § Going back). Anything else under it (a `frapp://` link opened over the
+   * tabs) gets the fixed destination, so "Back to event" still lands on the
+   * event.
    */
   const leaveTo = (toEventId: string) => {
-    if (toEventId) {
+    if (below?.name === "event-details") {
+      below.goBack();
+    } else if (toEventId) {
       router.navigate({
         pathname: "/event-details",
         params: { id: toEventId },
