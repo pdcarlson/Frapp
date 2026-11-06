@@ -32,7 +32,7 @@ export const contentType = "image/png";
  * **1. The crest is the inline path, not `app/opengraph-emblem.png`.** That
  * raster is `signet-emblem-B-1024.png`, which is colour type 2: RGB with no
  * alpha channel at all, an opaque `#1A1A1A` field with the crest on it. It suited
- * a `#1A1A1A` stage, where the field was invisible. On `#131211` the same file
+ * a `#1A1A1A` stage, where the field was invisible. On the darker `--background` the same file
  * paints a visibly lighter square behind the mark, which is why the stage move
  * and the crest move are one change rather than two. The path here is the same
  * geometry the page inlines, from the same module, so the card and the page's
@@ -91,7 +91,7 @@ export default async function OpenGraphImage() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#131211", // --background, the page stage
+        backgroundColor: "#0A0A0A", // --background, the page stage
         fontFamily: "Figtree",
       }}
     >
@@ -106,7 +106,7 @@ export default async function OpenGraphImage() {
           fontWeight: 700,
           letterSpacing: "-0.02em", // the marketing hero role's tracking
           lineHeight: 1,
-          color: "#EDEAE3", // --foreground
+          color: "#EBEBEB", // --foreground
         }}
       >
         Frapp
@@ -118,7 +118,7 @@ export default async function OpenGraphImage() {
           fontSize: 34,
           fontWeight: 400,
           lineHeight: 1.3,
-          color: "#A9A399", // --muted-foreground
+          color: "#A3A3A3", // --muted-foreground
         }}
       >
         Ask your chapter anything.

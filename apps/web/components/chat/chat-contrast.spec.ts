@@ -286,9 +286,11 @@ describe("semantic text on its own 13% tint", () => {
     }
 
     // The measurement that forced the lift, kept so a "simplification" back to
-    // `text-destructive` fails here rather than in review.
+    // `text-destructive` fails here rather than in review. (neutral ladder,
+    // 2026-11-05: the darker `--card` lets the unlifted hue clear there (4.60),
+    // so this measures the raised step where it still misses, `--popover`, 4.26.)
     expect(
-      ratio(SEMANTIC.destructive, statusTint("destructive", SURFACE.card)),
+      ratio(SEMANTIC.destructive, statusTint("destructive", SURFACE.popover)),
     ).toBeLessThan(AA_TEXT);
   });
 

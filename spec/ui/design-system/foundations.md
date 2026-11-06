@@ -19,14 +19,22 @@ Fixed for every chapter — only the accent varies per tenant.
 
 | Token | Value | Role |
 |-------|-------|------|
-| `--background` | `#131211` | App background, base of the ladder |
-| `--surface-1` | `#1A1A1A` | Raised surface — nav bars, input fills, other-party chat context |
-| `--card` | `#211E1A` | Cards and list rows |
-| `--popover` | `#2A2621` | Elevated surface — sheets, popovers, menus (the "elevated" step) |
+| `--background` | `#0A0A0A` | App background, base of the ladder |
+| `--surface-1` | `#111111` | Raised surface — nav bars, input fills, other-party chat context |
+| `--card` | `#171717` | Cards and list rows |
+| `--popover` | `#1E1E1E` | Elevated surface — sheets, popovers, menus (the "elevated" step) |
 
-Rationale: a warm charcoal ladder deliberately lifted off a pure `#0a0a0a` floor so the warmth reads on real screens. Each step is visibly lighter than the one below it, which is what carries elevation (§10).
+Rationale: a pure neutral graphite ladder with no hue in any step, so nothing on a surface competes with the chapter's accent and every chapter's accent sits on it the same way. Each step is an even notch lighter than the one below it (OKLCH lightness 0.145 / 0.178 / 0.205 / 0.235), which is what carries elevation (§10). `--card-hover` (`#2C2C2C`, `--popover` lifted 6% toward white) and the skeleton highlight (`#2B2B2B`) sit above the ladder and are neutral for the same reason.
 
-**The ladder was re-pitched for the web greenfield** ([#2143](https://github.com/pdcarlson/Frapp/issues/2143)). It previously ran `#0E0D0B` / `#171512` / `#1E1B17` / `#26221C`. Two things moved with it, and both are deliberate:
+**The ladder went dark and neutral on 2026-11-05, at the owner's request.** The owner found the warm yellowish surfaces did not fit the darker, simpler look the app had moved to. The old ladder was `#131211` / `#1A1A1A` / `#211E1A` / `#2A2621`, and it was uneven twice over: the base and `--surface-1` were neutral while `--card` and `--popover` leaned brown, and `--card` sat barely above `--surface-1`. The owner picked the neutral option over a faintly blue "ink" ladder at the same lightness. Before and after: <https://claude.ai/artifact/7hhDN6nptq1B5EmzGWDdUV>. What moved with it:
+
+- **Text contrast only rose.** Body text on `--popover` went from 12.5:1 to 14.0:1, and `--muted` on `--popover` from 3.1:1 to 3.5:1.
+- **The accent engine's ladder and generator background moved too**, so its version went to 2 and stored palettes are recomputed ([`accent-engine.md`](accent-engine.md) §4). The house seed paints the same fill; `accent-subtle` moved one 8-bit step (`#282314` to `#272213`). Some dark directory seeds lift differently on the darker surfaces: `#003087` no longer needs a lift, and `#1F4E79` and `#800000` now get one.
+- **`--surface-1` is no longer the mark's field.** The mark keeps `#1A1A1A` ([`../brand-identity.md`](../brand-identity.md) §2), so the 404 and error pages, which draw the opaque crest raster, moved from `--surface-1` to `--card` (`#171717`, 1.03:1 off the field) to keep the tile edge from showing.
+
+**Before that, the ladder was re-pitched for the web greenfield** ([#2143](https://github.com/pdcarlson/Frapp/issues/2143)). The history below is kept as it was written.
+
+It previously ran `#0E0D0B` / `#171512` / `#1E1B17` / `#26221C`. Two things moved with it, and both are deliberate:
 
 - `--surface-1` is now `#1A1A1A`, stated at the time as the **mark's own field** ([`../brand-identity.md`](../brand-identity.md) §2), so locked emblem B would sit flush on the raised surface instead of on a warmer neighbour. **That rationale did not survive measurement at the time:** the committed mark's field measured `#151515` and its gold `#DDA220`, so `#1A1A1A` was close to but not the mark's field, and the emblem did not sit flush. [#2153](https://github.com/pdcarlson/Frapp/issues/2153) closed the gap by re-exporting the mark at the spec'd pair rather than by moving this rung, so the rationale now holds and the value never changed — see [`../web-dashboard/tokens.md`](../web-dashboard/tokens.md) L-08 for the measurements and the history.
 - Every step is lighter than before, which lowers contrast for light text by 0.142 to 0.681 points. **Three pairs crossed** below the 4.5:1 gate in [`README.md`](README.md) §6 as a result, and are handled in §5: `--destructive` on `--popover` (4.717 → 4.482), `--info` on `--card` (4.577 → 4.429), and `--mention` on `--surface-1` (4.656 → 4.447).
@@ -49,12 +57,12 @@ Borders MUST be low-opacity white. Fixed-hex border colors are banned: an opaque
 
 | Token | Value | Role |
 |-------|-------|------|
-| `--foreground` | `#EDEAE3` | Primary text |
-| `--muted-foreground` | `#A9A399` | Secondary text |
-| `--muted` | `#78716A` | Muted text — placeholders, timestamps, metadata |
-| `--disabled` | `#57534C` | Disabled text |
+| `--foreground` | `#EBEBEB` | Primary text |
+| `--muted-foreground` | `#A3A3A3` | Secondary text |
+| `--muted` | `#737373` | Muted text — placeholders, timestamps, metadata |
+| `--disabled` | `#525252` | Disabled text |
 
-Token names follow panel 4h (ShadCN-style); panel 4a labels the same values text / secondary / muted. All four are warm-tinted to match the surface ladder — pure grays look dirty on warm charcoal.
+Token names follow panel 4h (ShadCN-style); panel 4a labels the same values text / secondary / muted. All four are neutral, matching the surface ladder: cream text on the graphite ladder reads yellow. Until 2026-11-05 they were warm-tinted (`#EDEAE3` / `#A9A399` / `#78716A` / `#57534C`) to match the warm ladder (§2).
 
 ---
 
@@ -84,17 +92,17 @@ Status-only, never decorative. A semantic hue states a fact ("paid", "overdue");
   - Three alternatives were weighed and rejected. **An opaque literal** (the recipe resolved over `--card`, as `--mention-chip` does) gives one contrast figure on every surface, but one fill can't stay distinct from every ladder step: the danger tint came out 1.06:1 against `--popover`, so a destructive button in a dialog lost its edge. `--mention-chip` can be a literal because it always sits in a message body; a status tint sits anywhere. **A `color-mix()` token** (`color-mix(in oklab, var(--destructive) 13%, transparent)`) avoids restating the hue, but below the floor it degrades to no fill at all, which leaves the borderless tints (the destructive button, the error icon tile) with no shape. **Keeping the alpha utility and documenting the band** would leave text invisible on a stated floor rather than degrading it.
   - **A tint over something other than a ladder step takes an opaque base.** The tint is 87% see-through, so it is only as legible as what is under it. The destructive toast floats over page content, so it paints `--popover` as its background colour and the tint over it as a one-colour gradient image. Anything inside it that paints its own tint hover repaints that base too, rather than stacking 20% on the toast's 13%, which measures 3.94:1 over `--popover`.
   - **Danger text on the danger tint is always `--destructive-text`.** Solid `--destructive` measures 3.82–4.85:1 on its tint across the ladder. `apps/web`'s `status-tint-call-sites.spec.ts` fails on a `bg-<semantic>/<alpha>` fill anywhere in the Next surfaces and on unlifted danger text over the tint, and `status-tint-contrast.spec.ts` measures every shipped pair on every step, reading the alpha from the tokens. The tokens are CSS-only: `signetDarkTokens` is what `apps/mobile` reads, and React Native has no `color-mix` fallback to avoid.
-- **A lifted text tone is not a second semantic.** [`components.md`](components.md) §5 lets an implementation raise the *text* tone of a semantic for AA while the hue stays fixed; the solid token remains the fill and the border. The greenfield ladder (§2) made two of these load-bearing rather than optional, because solid `--destructive` and solid `--info` now fall under 4.5:1 on the surfaces their badges sit on:
+- **A lifted text tone is not a second semantic.** [`components.md`](components.md) §5 lets an implementation raise the *text* tone of a semantic for AA while the hue stays fixed; the solid token remains the fill and the border. The greenfield ladder (§2) made two of these load-bearing, because solid `--destructive` and solid `--info` fell under 4.5:1 on the surfaces their badges sat on. On the neutral ladder (2026-11-05) the plain-surface miss is down to solid `--info` on `--popover`, but both lifts stay: the danger tint still needs its lift (below), and one rule for "hue as text" is simpler than a per-surface one. Measured on the neutral ladder, greenfield figures in brackets:
 
   | Text token | Value | Lifts | Measured on `--card` / `--popover` |
   |---|---|---|---|
-  | `--destructive-text` | `#FF7B72` | `--destructive` (4.95 / 4.48 solid) | 6.58 / 5.96 |
-  | `--info-text` | `#4C93F8` | `--info` (4.43 / 4.01 solid) | 5.40 / 4.89 |
+  | `--destructive-text` | `#FF7B72` | `--destructive` (5.35 / 4.97 solid; was 4.95 / 4.48) | 7.11 / 6.61 (was 6.58 / 5.96) |
+  | `--info-text` | `#4C93F8` | `--info` (4.78 / 4.45 solid; was 4.43 / 4.01) | 5.84 / 5.43 (was 5.40 / 4.89) |
 
   Neither is a new semantic. `--info-text` is CSS-only (`packages/theme/src/signet.css`). `--destructive-text` is also `signetDarkTokens.color.semantic.destructiveText`, so mobile's `StatusChip` can draw danger text on its tint at the same lift (added 2026-11-05). Use the lifted token wherever the hue is **text**, and the solid wherever it is a fill or a border.
 
-  **The two lifts do not have the same reach, and `--info-text` does not cover every case.** On plain surfaces both clear throughout. On the §5 *tint* recipe (13% of the hue as fill, the hue as text) `--destructive-text` measures 4.80–6.12:1 across the four steps and clears, but `--info-text` measures 4.08–5.16:1 and **fails on a `--popover`-seated tint (4.08)**. An info badge inside a dialog, sheet or menu therefore needs a further lift or a solid fill; the token as specified does not reach it. No surface renders `--info` today, so nothing is broken by this — but the first consumer must not assume the twin is sufficient.
-- **Mention red did not get a lifted tone, and the reason matters.** `#E5484D` now measures 4.45:1 on `--surface-1` and below that on `--card` and `--popover`, so it is under the text floor on every step except `--background`. It is exempt from the lift above because it is not drawn as text: it is a badge fill carrying white text (the separate, tracked 3.91:1 miss above) and an avatar dot, and a dot is non-text UI held to §6's 3:1 floor, which it clears on every step. A future surface that renders mention red **as text** needs a lifted tone first; it does not have one today — which is why the in-body mention chip takes its own amber pair rather than this red.
+  **On the tint recipe both lifts now clear on every step.** On the §5 *tint* recipe (13% of the hue as fill, the hue as text) the neutral ladder measures `--destructive-text` at 5.67–6.96:1 and `--info-text` at 4.66–5.74:1 across the four steps, so both clear, with `--info-text` on a `--popover`-seated tint the thinnest margin (4.66). On the greenfield ladder `--info-text` failed there (4.08) and an info badge in a dialog needed a further lift; that is no longer true (2026-11-05). Solid `--destructive` on its own tint still misses on `--popover` (4.26), which is why danger text on a tint is always the lift.
+- **Mention red did not get a lifted tone, and the reason matters.** On the neutral ladder `#E5484D` measures 5.06 / 4.82 / 4.58 / 4.26:1 from `--background` to `--popover`, so it is under the text floor on `--popover` only (on the greenfield ladder it missed on every step except `--background`). It is exempt from the lift above because it is not drawn as text: it is a badge fill carrying white text (the separate, tracked 3.91:1 miss above) and an avatar dot, and a dot is non-text UI held to §6's 3:1 floor, which it clears on every step. A future surface that renders mention red **as text** needs a lifted tone first; it does not have one today — which is why the in-body mention chip takes its own amber pair rather than this red.
 - **The in-body mention chip is a second fixed family, not a lift of the red.** `--mention-chip` / `--mention-chip-text` are their own hue rather than a lifted `#E5484D`, so they sit in the table above rather than in the lift table below, and they are locked out of the accent engine exactly as the red and the gold family are (`packages/theme/src/signet.css.spec.ts`'s `FIXED` list). Both are CSS-only, like the two lifts: `signetDarkTokens` is what `apps/mobile` reads, and no mobile screen draws an in-body mention yet. The pair's fill is **opaque** where this section's tint recipe would use 13% alpha, so one contrast figure covers the row at rest and hovered (it was first argued from the per-chapter `--primary` self bubble, which the compact chat layout removed on 2026-09-29); the geometry, the reasoning and the guards are owned by [components.md](components.md) § In-body mention chip.
 
 ---
@@ -120,7 +128,7 @@ The accent is a signal, so it goes only where a member has to act or notice. The
 
 - Names (your own included), labels, eyebrows, card kind labels and metadata: `--foreground`, `--muted-foreground` or `--muted`.
 - Icons that label a row, a card or a field, and icon-only controls: `--muted-foreground` (`--muted` for a glyph that sits beside its own text label, as on mobile's More hub and Up next strip), `--foreground` on hover.
-- Hover, pressed and keyboard-highlight fills, in menus, tables, lists and rails alike: `--card-hover`, never an accent tint. It is the one step above the whole surface ladder, so it reads on `--popover` (1.199:1) where the ladder's own ~1.1:1 steps do not ([`components.md`](components.md) §2).
+- Hover, pressed and keyboard-highlight fills, in menus, tables, lists and rails alike: `--card-hover`, never an accent tint. It is the one step above the whole surface ladder, so it reads on `--popover` (1.194:1) where the ladder's own ~1.1:1 steps do not ([`components.md`](components.md) §2).
 - Numbers and stats (points, hours, counts, timers): `--foreground`.
 - Spinners: a neutral text step, `--muted` on mobile as every mobile spinner already is.
 - Done states (a completed task, a past event): a muted fill or check, never the accent; finished work is the quietest thing on a list.

@@ -145,27 +145,34 @@ const oklch = (hex: string) => {
  * pinning them is that a generator or colour-library upgrade that moves any of
  * them shows up here first.
  *
- * `before` is the fill the seed painted unlifted. For nine of the ten it fell
- * under 3:1 on `--popover` (#2541); `#003087`'s `#1C6CFE` cleared at 3.31:1,
- * and it is here for its hover alone, `#1F63DE` at 2.79:1 (#2586). `#000000`,
- * `#003087`, `#472B62`, `#4B0082` and `#4B1A7E` paint the generator's own step
- * 9 (`getStep9Colors` swaps it in for a seed near the dark step 1), so what was
- * lifted is that fill, not the seed.
+ * `before` is the fill the seed painted unlifted. For nine of the eleven it
+ * fell under 3:1 on `--popover` (#2541); `#000000`'s `#6E6E6E` and
+ * `#472B62`'s `#8758B4` clear at 3.27:1 and 3.24:1, and they are here for
+ * their hovers alone, both 2.69:1 (#2586). `#000000`, `#472B62`, `#4B0082`
+ * and `#4B1A7E` paint the generator's own step 9 (`getStep9Colors` swaps it in
+ * for a seed near the dark step 1), so what was lifted is that fill, not the
+ * seed.
+ *
+ * The neutral ladder (2026-11-05) moved this set. `#003087`'s scale now clears
+ * on the darker surfaces and left it; `#1F4E79` and `#800000` joined, because
+ * on the darker `--background` the generator stops swapping in its own step 9
+ * for them and paints the dark seed itself.
  */
 const LIFTED_FILLS: Record<
   string,
   { before: string; after: string; hover: string }
 > = {
   "#000000": { before: "#6E6E6E", after: "#828282", hover: "#767676" },
-  "#003087": { before: "#1C6CFE", after: "#2D7BFF", hover: "#1E6DF0" },
   "#006400": { before: "#006400", after: "#41943C", hover: "#33872E" },
+  "#1F4E79": { before: "#1F4E79", after: "#5585B3", hover: "#4978A5" },
   "#472B62": { before: "#8758B4", after: "#9B6CCA", hover: "#8E5FBC" },
-  "#4B0082": { before: "#901FED", after: "#AD51FF", hover: "#A042F1" },
+  "#4B0082": { before: "#901FED", after: "#A13BFF", hover: "#9427F0" },
   "#4B1A7E": { before: "#8939DE", after: "#A358FC", hover: "#974AEE" },
+  "#800000": { before: "#800000", after: "#D25B4C", hover: "#C44E40" },
   "#8B0000": { before: "#8B0000", after: "#D75748", hover: "#C84A3C" },
   "#8B4513": { before: "#8B4513", after: "#B96F41", hover: "#AB6234" },
-  "#BF0A30": { before: "#BF0A30", after: "#E94351", hover: "#DA3345" },
-  "#CC0000": { before: "#CC0000", after: "#EF3B2D", hover: "#E0291D" },
+  "#BF0A30": { before: "#BF0A30", after: "#D83144", hover: "#B54046" },
+  "#CC0000": { before: "#CC0000", after: "#E12B1F", hover: "#D11109" },
 };
 
 describe("deriveSignetPalette", () => {
@@ -291,8 +298,9 @@ describe("deriveSignetPalette", () => {
         );
       }
       // And a hover under the floor fails on its own, beside a fill that
-      // clears: `#003087`'s unlifted scale, the case #2586 added.
-      const navy = unlifted("#003087");
+      // clears: black's unlifted scale (`#6E6E6E` / `#616161`), the case #2586
+      // added. Its hover clears 3:1 on the two darkest steps only.
+      const navy = unlifted("#000000");
       const navyChecks = signetFillChecks({
         "--signet-accent-primary": navy.fill,
         "--signet-accent-hover": navy.hover,
@@ -301,7 +309,10 @@ describe("deriveSignetPalette", () => {
         navyChecks
           .filter((check) => !check.passes)
           .map((check) => `${check.role} ${check.against}`),
-      ).toEqual(["--signet-accent-hover --popover"]);
+      ).toEqual([
+        "--signet-accent-hover --card",
+        "--signet-accent-hover --popover",
+      ]);
     });
 
     it("judges each lift candidate by the fill the generator paints", () => {
@@ -435,7 +446,7 @@ describe("deriveSignetPalette", () => {
         expect(primary, seed).toBe(after);
         expect(palette["--signet-accent-hover"], seed).toBe(hover);
         // `before` is what the seed painted unlifted, and that scale failed:
-        // its fill, or (for `#003087`) only its hover.
+        // its fill, or (for `#000000` and `#472B62`) only its hover.
         const unliftedScale = unlifted(seed);
         expect(unliftedScale.fill, seed).toBe(before);
         expect(
@@ -462,7 +473,13 @@ describe("deriveSignetPalette", () => {
         if (keptChromaFits) {
           expect(Math.abs(now.c - was.c), `${seed} chroma`).toBeLessThan(0.003);
           if (was.c > 0.01) {
-            expect(Math.abs(now.h - was.h), `${seed} hue`).toBeLessThan(0.5);
+            // `#1F4E79`'s lift (2026-11-05) lands 0.62 degrees off from 8-bit
+            // rounding alone, so it alone gets 1 degree; every other seed
+            // stays held to 0.5.
+            const hueTolerance = seed === "#1F4E79" ? 1 : 0.5;
+            expect(Math.abs(now.h - was.h), `${seed} hue`).toBeLessThan(
+              hueTolerance,
+            );
           }
         } else {
           expect(now.c, `${seed} chroma`).toBeLessThan(was.c);
@@ -498,7 +515,8 @@ describe("deriveSignetPalette", () => {
     // The house seed is the case that must not regress: Radix picks a custom
     // dark tone that beats both black and white, so `onPrimaryFor` leaves it
     // alone rather than substituting. On the greenfield seed `#DDB844` over the
-    // `#131211` background that is `#292109` at 8.37:1; on the previous
+    // `#131211` background that was `#292109` at 8.37:1, and the neutral
+    // `#0A0A0A` background (2026-11-05) leaves it unchanged; on the previous
     // `#F2B72E` over `#0E0D0B` it was `#2B2009` at 8.82:1. The assertion is the
     // value, but the property under test is that a legible generator choice
     // survives — a substituted `#000000` or `#FFFFFF` here is the regression.
@@ -596,6 +614,7 @@ describe("deriveSignetPalette", () => {
  */
 const ENGINE_FINGERPRINTS: Readonly<Record<number, string>> = {
   1: "7a88bfcb9c0c79372b194d0ea6136042f25e115990ffd41b7067f17a020d7f4e",
+  2: "93b7e168eb5148ea62bf538a47ef22bb90dda9986347a90ae7967a59bb519d58",
 };
 
 /**

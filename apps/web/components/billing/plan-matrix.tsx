@@ -103,7 +103,7 @@ const PAID_MODULES = MODULE_CATALOG.filter(
  * semantic hue — a red dash would read as something having gone wrong — and it
  * is not `--disabled` either, which the first cut of this file used on
  * foundations §5's "present but not available" reading. That token is
- * `#57534C`, which measures **2.45:1** on `--background` and 2.28:1 on
+ * `#525252`, which measures **2.53:1** on `--background` and 2.42:1 on
  * `--surface-1`, under the 4.5:1 text minimum `design-system/README.md` §6
  * sets as a release gate. WCAG's inactive-control exemption does not cover it:
  * this is informational content, not a disabled control. `--muted-foreground`
