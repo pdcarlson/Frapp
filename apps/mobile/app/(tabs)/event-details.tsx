@@ -10,7 +10,9 @@ import { SheetPrimaryButton } from "@/components/sheet-scaffold";
 import {
   EmptyState,
   ErrorState,
-  SkeletonLines,
+  SkeletonBlock,
+  SkeletonRegion,
+  SkeletonText,
 } from "@/components/state-block";
 import { AccentChip, StatusChip } from "@/components/status-chip";
 import { exportEventToCalendar } from "@/lib/calendar-export";
@@ -126,7 +128,7 @@ export default function EventDetailsScreen() {
   if (eventQuery.isPending) {
     return (
       <ScreenShell back={BACK_TO_EVENTS} title="Event">
-        <SkeletonLines lines={3} />
+        <EventDetailSkeleton />
       </ScreenShell>
     );
   }
@@ -311,6 +313,47 @@ function CheckInCard({
   );
 }
 
+/**
+ * The screen's loading state, on the loaded screen's own styles: the check-in
+ * card's frame and header line, and the Add to calendar button, whose label is
+ * fixed and so renders as itself (components.md §10). The badge row and the
+ * DETAILS and INTERNAL NOTES sections are left out: each draws only when the
+ * event carries one, and a placeholder for one would leave a gap, and move the
+ * button, when it doesn't land.
+ *
+ * Exported so `components/screen-skeletons.spec.tsx` can pin its shape.
+ */
+export function EventDetailSkeleton() {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const { caption, label } = tokens.typography.role;
+
+  return (
+    <SkeletonRegion label="Loading event" style={styles.skeletonStack}>
+      <View style={styles.checkInCard}>
+        <View style={styles.checkInHeader}>
+          <SkeletonBlock
+            width={tokens.spacing.sm}
+            height={tokens.spacing.sm}
+            radius={tokens.spacing.xs}
+          />
+          <View style={styles.checkInTitleSkeleton}>
+            <SkeletonText role={label} width="55%" />
+          </View>
+          <SkeletonText
+            role={caption}
+            width={tokens.spacing["3xl"] + tokens.spacing.lg}
+          />
+        </View>
+      </View>
+
+      <View style={styles.secondaryButton}>
+        <Text style={styles.secondaryButtonText}>Add to calendar</Text>
+      </View>
+    </SkeletonRegion>
+  );
+}
+
 /** DETAILS and INTERNAL NOTES share this shape; only the label and body differ. */
 function DetailSection({
   label,
@@ -331,6 +374,10 @@ function DetailSection({
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    // `ScreenShell`'s gap, which spaces the loaded screen's blocks.
+    skeletonStack: {
+      gap: tokens.spacing.md,
+    },
     badgeRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -361,6 +408,10 @@ function createStyles(tokens: SignetTokens) {
       flex: 1,
       color: tokens.color.text.foreground,
       ...typeRole(tokens.typography.role.label),
+    },
+    // The title's flex, so the trailing caption sits where it lands.
+    checkInTitleSkeleton: {
+      flex: 1,
     },
     checkInMeta: {
       color: tokens.color.text.mutedForeground,

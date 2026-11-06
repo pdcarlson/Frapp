@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
+import { SkeletonText } from "@/components/state-block";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -54,6 +55,32 @@ export function ChoiceRow({
       </View>
       {trailing ?? <Text style={styles.chevron}>›</Text>}
     </Pressable>
+  );
+}
+
+/** Title widths, cycled, so the placeholder rows don't read as a grid. */
+const SKELETON_TITLE_WIDTHS = ["56%", "42%", "50%"] as const;
+
+/**
+ * A {@link ChoiceRow} that hasn't loaded, on the row's own styles: the card,
+ * the title and body lines. Placed inside a `SkeletonRegion`
+ * (`components/state-block.tsx`).
+ */
+export function ChoiceRowSkeleton({ index = 0 }: { index?: number }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const { body, title } = tokens.typography.role;
+
+  return (
+    <View style={styles.row}>
+      <View style={styles.copy}>
+        <SkeletonText
+          role={title}
+          width={SKELETON_TITLE_WIDTHS[index % SKELETON_TITLE_WIDTHS.length]!}
+        />
+        <SkeletonText role={body} width="36%" />
+      </View>
+    </View>
   );
 }
 

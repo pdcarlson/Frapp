@@ -4,6 +4,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { AccentChip } from "@/components/status-chip";
+import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 import {
   formatDoneSubtitle,
   formatDueSubtitle,
@@ -167,6 +168,35 @@ export function TaskRow({
     >
       {body}
     </PressableRow>
+  );
+}
+
+/** Title widths, cycled, so the placeholder rows don't read as a grid. */
+const SKELETON_TITLE_WIDTHS = ["58%", "44%", "52%"] as const;
+
+/**
+ * A {@link TaskRow} that hasn't loaded, on the row's own styles: the row and
+ * its hairline (none on a section's first row), a block in the checkbox's
+ * square, the title and due lines, and a chip where the points land. Placed
+ * inside a `SkeletonRegion` (`components/state-block.tsx`).
+ */
+export function TaskRowSkeleton({ index = 0 }: { index?: number }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const { caption, label } = tokens.typography.role;
+
+  return (
+    <View style={[styles.row, index === 0 ? null : styles.rowDivider]}>
+      <SkeletonBlock width={tokens.spacing.xl} height={tokens.spacing.xl} />
+      <View style={styles.body}>
+        <SkeletonText
+          role={label}
+          width={SKELETON_TITLE_WIDTHS[index % SKELETON_TITLE_WIDTHS.length]!}
+        />
+        <SkeletonText role={caption} width="32%" />
+      </View>
+      <SkeletonBlock width={tokens.spacing["3xl"]} height={tokens.spacing.xl} />
+    </View>
   );
 }
 
