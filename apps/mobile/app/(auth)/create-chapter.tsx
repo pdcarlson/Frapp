@@ -199,6 +199,8 @@ export default function CreateChapter() {
   // False while the accent's custom field holds a half-typed hex, which would
   // otherwise submit the last whole color it held instead.
   const [accentValid, setAccentValid] = useState(true);
+  // Create pressed over a half-typed hex: the picker's hint shows at once.
+  const [accentSubmitTried, setAccentSubmitTried] = useState(false);
   // Whether the new chapter became the active one. The logo and invite
   // routes act on the active chapter, so without it they can't run.
   const [activated, setActivated] = useState(false);
@@ -220,7 +222,9 @@ export default function CreateChapter() {
   const displayName =
     identity.shortName.trim() || identity.name.trim() || "Your chapter";
   const canConfirm = chapterIdentityIsValid(identity) && archetype !== null;
-  const canSubmit = canConfirm && acceptedLegal && accentValid;
+  // Not gated on `accentValid`: Create stays pressable over a half-typed hex
+  // so the press can say why (`submitChapter`, the picker's `showError`).
+  const canSubmit = canConfirm && acceptedLegal;
   const lettersHidden = lettersHiddenBy(matchedOrgName, identity);
 
   function applyDirectoryMatch(row: ChapterDirectoryResult) {
@@ -292,6 +296,10 @@ export default function CreateChapter() {
   useBackToClose(created, finish);
 
   async function submitChapter() {
+    if (!accentValid) {
+      setAccentSubmitTried(true);
+      return;
+    }
     if (!canSubmit || submitting || archetype === null) return;
     setError(null);
     try {
@@ -573,6 +581,7 @@ export default function CreateChapter() {
                       setIdentity((prev) => ({ ...prev, colorAccent: hex }))
                     }
                     onValidityChange={setAccentValid}
+                    showError={accentSubmitTried}
                     orgColors={orgColorsFor(identity.name)}
                     // House gold on purpose, as setup's other fields are
                     // (`OnboardingTextInput`): the chapter doesn't exist yet,
@@ -1075,7 +1084,7 @@ function ConfirmStep({
         label="Founded"
         value={identity.foundedYear}
         onChangeText={(value) => set("foundedYear", value)}
-        placeholder="1948"
+        placeholder="e.g. 1948"
         keyboardType="number-pad"
         // A year.
         maxLength={4}

@@ -5,6 +5,7 @@ import {
 } from "@repo/validation";
 import {
   connectionBannerCopy,
+  connectionPillLabel,
   deriveConnectionState,
   DEGRADED_THRESHOLD,
   writeBlockedReason,
@@ -72,6 +73,14 @@ describe("connectionBannerCopy", () => {
     expect(connectionBannerCopy("OFFLINE")).not.toMatch(
       /[\u{1F300}-\u{1FAFF}⚡]/u,
     );
+  });
+});
+
+describe("connectionPillLabel", () => {
+  it("draws the banner sentence's first clause, and nothing when online", () => {
+    expect(connectionPillLabel("ONLINE")).toBeNull();
+    expect(connectionPillLabel("DEGRADED")).toBe("Slow connection");
+    expect(connectionPillLabel("OFFLINE")).toBe("Offline");
   });
 });
 
