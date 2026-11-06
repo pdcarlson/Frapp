@@ -374,15 +374,6 @@ const ROWS: [string, Kind, () => Promise<Node>][] = [
     QUIET,
     async () => control(await setupInvite(), "Skip for now"),
   ],
-  [
-    "setup: Create another link",
-    QUIET,
-    async () => {
-      const root = await setupInvite();
-      await press(root, "Create invite link");
-      return control(root, "Create another link");
-    },
-  ],
   // The update-required gate, which renders the onboarding primary.
   [
     "gate: Update Frapp",
