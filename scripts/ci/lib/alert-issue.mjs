@@ -160,6 +160,18 @@ export function withAgentNote(body, repo) {
   );
 }
 
+/**
+ * The first line of an alert body that starts with `prefix`, or null. A
+ * watchdog that records machine-readable state in a hidden marker line reads
+ * it back with this. A body edited in GitHub's web UI comes back with CRLF
+ * line endings, so the line's trailing `\r` is dropped.
+ */
+export function markerLine(body, prefix) {
+  if (typeof body !== "string") return null;
+  const line = body.split("\n").find((candidate) => candidate.startsWith(prefix));
+  return line === undefined ? null : line.trimEnd();
+}
+
 // The footer `withAgentNote` appends, whatever its link said when written.
 // A body edited in GitHub's web UI comes back with CRLF line endings.
 const AGENT_NOTE = /\r?\n\r?\n---\r?\n_Agents: triage and report on this alert\.[^\r\n]*_\s*$/;
