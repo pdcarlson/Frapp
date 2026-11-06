@@ -35,7 +35,7 @@ type ScreenShellProps = {
   backAction?: ReactNode;
   /**
    * The screen's one create action, drawn as the floating glass "+" above the
-   * tab bar (`FloatingCreateButton`): Tasks, Service hours, Documents.
+   * tab bar (`FloatingCreateButton`): Tasks, Events, Service hours, Documents.
    */
   createAction?: CreateAction;
   /**
