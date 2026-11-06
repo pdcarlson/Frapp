@@ -230,7 +230,7 @@ describe('toImportedMessage', () => {
         }),
         { mentionContext: context },
       );
-      expect(upload?.content).toBe('@Nirav B');
+      expect(upload?.content).toBe('@NiravB');
 
       // The bot path's REST mention carries the display name and no nickname.
       const bot = mapMessage(
