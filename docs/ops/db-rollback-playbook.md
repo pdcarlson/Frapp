@@ -1498,8 +1498,10 @@ After any rollback event:
 * **Also revert `supabase/config.toml`** if you are rolling back the whole slice:
   the global local-stack `[storage] file_size_limit` was raised from `26214400`
   to `104857600`. Leaving it raised is harmless — every member-upload bucket is
-  still pinned to 25 MB by its own `allowed_mime_types`/`file_size_limit` columns
-  and by `MAX_UPLOAD_BYTES` in `@repo/validation`.
+  still pinned by its own `allowed_mime_types`/`file_size_limit` columns and by
+  `@repo/validation`: 25 MB (`MAX_UPLOAD_BYTES`), except `backwork` at 50 MB
+  (`MAX_BACKWORK_UPLOAD_BYTES`, #3499). Lowering the global cap below 50 MB
+  would cut backwork short, so don't.
 * **Lighter option**: to stop new writes without deleting anything, forward-revert
   the API's use of it and leave the bucket in place. An unused private bucket costs storage for what
   is in it and nothing else.
@@ -2765,6 +2767,18 @@ To remove the columns, drop them in a later forward migration once the reverted 
 alter table public.chat_message_reports
   drop column if exists evidence_released_at,
   drop column if exists reported_attachments;
+```
+
+## Rollback the backwork 50 MB limit (20261105230000)
+
+* **Migration**: `20261105230000_backwork_bucket_50mb.sql`
+
+One column on one bucket: `backwork`'s `file_size_limit` goes from 26214400 to 52428800 (#3499). No object or row changed.
+
+**Revert the code forward and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With the code reverted and the bucket still at 50 MB, the API refuses anything over 25 MB at URL issuance, but only when the client sends `size_bytes`, which is optional; the single-file sheet never sent it. So a client that omits it can store a 25 to 50 MB object until the column is lowered. If that matters, lower it in the forward migration below. Objects already stored between 25 and 50 MB stay readable either way. To lower the column anyway, do it in a later forward migration, not by hand:
+
+```sql
+update storage.buckets set file_size_limit = 26214400 where id = 'backwork';
 ```
 
 ## Rollback one DM per pair (20260930231000)

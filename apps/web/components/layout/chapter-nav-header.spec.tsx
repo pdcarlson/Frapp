@@ -62,6 +62,11 @@ vi.mock("@/lib/stores/chapter-store", () => ({
   ) => selector({ activeChapterId }),
 }));
 
+const bulkDropNotice = vi.fn((): string | null => null);
+vi.mock("@/lib/backwork-bulk/session", () => ({
+  bulkDropNotice: () => bulkDropNotice(),
+}));
+
 import { ChapterNavHeader } from "./chapter-nav-header";
 
 function membership(id: string, name: string, university = "Test University") {
@@ -89,6 +94,7 @@ describe("ChapterNavHeader", () => {
   beforeEach(() => {
     selectChapter.mockClear();
     selectChapter.mockResolvedValue(true);
+    bulkDropNotice.mockReturnValue(null);
     assign.mockClear();
     toast.mockClear();
     activeChapterId = "chap-1";
@@ -268,6 +274,34 @@ describe("ChapterNavHeader", () => {
     // subscriptions are keyed to the outgoing chapter, and the current route
     // may itself be chapter-scoped.
     await waitFor(() => expect(assign).toHaveBeenCalledWith("/"));
+  });
+
+  it("asks before a switch drops Bulk upload documents, and stays put on Cancel", async () => {
+    bulkDropNotice.mockReturnValue(
+      "Bulk upload has 2 documents that aren't uploaded yet. Switching chapters drops them.",
+    );
+    chaptersQuery.current = {
+      data: [
+        membership("chap-1", "Alpha Chapter"),
+        membership("chap-2", "Beta Chapter"),
+      ],
+      isSuccess: true,
+    };
+    render(<ChapterNavHeader collapsed={false} />);
+
+    openMenu();
+    fireEvent.click(await screen.findByText("Beta Chapter"));
+    expect(await screen.findByRole("dialog")).toHaveTextContent(
+      "Switching chapters drops them.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(selectChapter).not.toHaveBeenCalled();
+
+    openMenu();
+    fireEvent.click(await screen.findByText("Beta Chapter"));
+    fireEvent.click(await screen.findByRole("button", { name: "Switch chapters" }));
+    await waitFor(() => expect(selectChapter).toHaveBeenCalledWith("chap-2"));
   });
 
   it("does not re-select the chapter the user is already in", async () => {

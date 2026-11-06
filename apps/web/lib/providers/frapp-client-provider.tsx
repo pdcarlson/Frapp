@@ -10,6 +10,7 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useClaimChapterSync } from "@/lib/auth/use-claim-chapter-sync";
 import { wipeFirstChunkCache } from "@/lib/chat/first-chunk-wipe";
 import { clearCachedAccent } from "@/lib/theme/accent-cache";
+import { endBulkSessions } from "@/lib/backwork-bulk/session";
 
 /**
  * First value and same-value updates must not clear: those are hydrate /
@@ -41,6 +42,10 @@ import { clearCachedAccent } from "@/lib/theme/accent-cache";
  * merely unread. Its module needs no bundle carve-out of its own: it is a
  * cookie, so the clear is three lines of string handling with no dependency
  * behind it.
+ *
+ * Bulk backwork upload batches (`lib/backwork-bulk/session.ts`) live outside
+ * React for the life of the tab. They end themselves the moment the chapter
+ * store moves; the uid effect below ends the ones another account left.
  */
 function dropCacheWhenIdentityChanges(
   previousRef: { current: string | null | undefined },
@@ -128,7 +133,11 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
    * clear exists to drop. First uid (`null` → A) is a sign-in, not a swap.
    */
   useEffect(() => {
+    const previous = previousAuthUserId.current;
     dropCacheWhenIdentityChanges(previousAuthUserId, authUserId, queryClient);
+    // Every batch but the new account's: the page may already have made one
+    // for it in this commit, and that one stays.
+    if (previous && previous !== authUserId) endBulkSessions({ except: authUserId });
   }, [authUserId, queryClient]);
 
   return (

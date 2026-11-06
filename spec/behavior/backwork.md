@@ -40,11 +40,15 @@ Uploads accumulate junk departments and professors — typos, duplicate spelling
 
 Unique constraint on (chapter_id, file_hash). If the exact same file (by hash) has already been uploaded to the chapter, the API returns 409 Conflict with a reference to the existing resource.
 
+A flattened file is hashed as uploaded, after flattening (§ PDF Redaction). The PDF assembly adds nothing that varies (no timestamps or IDs), but the page images come from the browser's renderer and JPEG encoder, which differ between browsers and devices. So the same PDF flattened twice on the same browser is usually caught; the same PDF flattened on two different browsers, or boxed differently, is a different file and is not, and a flattened copy never matches an earlier as-is upload of the same original. Bulk upload also skips a file already in the same batch, by the original's hash.
+
 ## Storage
 
 Files are stored in Supabase Storage under `chapters/{chapter_id}/backwork/{resource_id}/{filename}`. The upload-URL step generates this chapter-scoped path server-side. On confirm, the API rejects any `storage_path` that does not start with `chapters/{chapter_id}/backwork/` (the caller's active chapter) so a client cannot register metadata that points outside its own chapter folder. Signed download URLs are only issued for resources already scoped to the active chapter.
 
 As with chapter documents, the signed URL comes back on `GET /v1/backwork/{id}` under the key **`downloadUrl`**, and clients read it through `selectDownloadUrl` in `@repo/hooks` rather than naming a spelling at the call site — see [`chapter-docs.md`](./chapter-docs.md) § Storage for why (#1040).
+
+Backwork's size ceiling is its own: **50 MB per file** (`MAX_BACKWORK_UPLOAD_BYTES`), above the 25 MB every other member upload keeps, because scanned exams run large (#3487). The `backwork` bucket's `file_size_limit` mirrors it.
 
 The file-type allowlist is the `document` kind in `@repo/validation`, shared with chapter documents and chat — including `image/gif` and legacy Office (`.doc` / `.xls` / `.ppt`). Membership and the rationale: [`content-validation.md`](../../docs/security/content-validation.md) § Validations Required.
 
@@ -57,17 +61,20 @@ The file-type allowlist is the `document` kind in `@repo/validation`, shared wit
 - **Every row deletes for `backwork:admin`** through `DELETE /v1/backwork/:id`, behind a confirm. Rename, merge and delete on a row are paid-ops writes and are disabled on a lapsed chapter, like upload.
 - **Dashboard `/backwork`:** `useBackworkResources` is `enabled: !!chapterId`. With no chapter selected the page shows "No chapter selected", never a loading state. The resource list gates its loading skeleton on `isLoading` or `fetchStatus === "paused"` (offline, no data), and also waits for the department and professor reads its rows join on; a disabled TanStack Query v5 stays `isPending` with `fetchStatus: "idle"` and must not be treated as in-flight or as an empty library.
 
-## PDF Redaction (Phase: v2)
+## PDF Redaction
 
-When uploading a Student Copy, the user can optionally redact personal information:
+Redaction ships with web bulk upload (`/backwork/upload`, #3499). PDFs only; the single-file upload sheet on `/backwork` still uploads as-is.
 
-1. The in-app viewer renders the PDF page-by-page.
-2. The user drags and resizes opaque black rectangles over areas to redact (name, student ID, handwriting, etc.).
-3. On confirm, the app **rasterizes** each page to a flat image with the redaction boxes baked in. This is effectively a screenshot — the underlying text and PDF metadata are destroyed.
-4. The rasterized version is what gets uploaded and stored. The original PDF is never sent to the server.
-5. The storage record is flagged as `is_redacted: true`.
+1. The person drops PDFs, or folders of PDFs, and works through them one at a time. The next two documents load in the background while they work on the current one, and finished ones flatten and upload behind them, so moving to the next document never waits. The batch lasts as long as the browser tab: leaving the page doesn't cancel what was already submitted, it keeps uploading, and coming back to Bulk upload shows the same list, so a failure (shown as a toast while the page is closed) can be retried from its row without redacting again. While anything in the batch isn't uploaded yet, the browser asks before the tab closes or reloads. A batch belongs to one account and one chapter. A chapter switch, a sign-out, or another account signing in ends it: nothing more from it is uploaded or shown, so it is never filed in the wrong chapter or under, or seen by, the next account. The chapter switcher and Sign out ask first when that would drop documents not uploaded yet.
+2. The editor renders each page. The person drags opaque black boxes over a name, student ID, or handwriting, and can move, resize, delete, undo, or copy one page's boxes to every page.
+3. A person reviews every document before it uploads. Nothing is submitted without them.
+4. A **Student Copy is always flattened**, and so is any document with a box on it. Flattening happens on the person's device: each page is rendered to an image with the boxes burned in, and a new PDF is built from those images, with no metadata and no form fields. Only the flattened file is uploaded; the original's bytes never leave the browser, and the stored file is named after the confirmed title rather than the original filename (which for a Student Copy is often the student's name). The title starts as the filename, so the person checks it. A Blank Copy or Answer Key with no boxes uploads as the original file.
+5. Text outside the boxes is kept as an invisible, searchable layer over the image. Any text item that touches a box (within 2 points) is dropped whole, so a box that clips part of a name drops the whole name. Text the rendered page doesn't show is dropped too: before the boxes go on, the middle of each text item's area is checked for ink, so text under an earlier tool's black bar or a covering image, white-on-white text, and text off the page never reach the layer. Rotated text and text on rotated pages is filtered the same way but not redrawn.
+6. The storage record is flagged `is_redacted: true` whenever the file was flattened.
 
-**Rationale:** Overlaying black boxes on an existing PDF does not prevent text selection of the underlying content. Rasterization ensures true redaction.
+**Rationale:** Overlaying black boxes on an existing PDF does not prevent text selection of the underlying content. Rendering to images ensures true redaction; the rebuilt text layer comes only from text the boxes don't touch, so search keeps working without carrying a redacted word.
+
+**Limits:** The ink check looks for contrast, so hidden text over a busy background (a photo, a pattern) still reads as visible and is kept; it is only as hidden as the page made it. Very faint visible text (a light watermark) can read as invisible and drop out of search. A scanned page has no text to keep, so it stays image-only.
 
 ## AI Metadata Extraction (Phase: v3+)
 

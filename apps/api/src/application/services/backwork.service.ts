@@ -9,7 +9,8 @@ import {
   isAllowedUploadExtension,
   isAllowedUploadMime,
   isWithinUploadSizeLimit,
-  MAX_UPLOAD_LABEL,
+  MAX_BACKWORK_UPLOAD_BYTES,
+  MAX_BACKWORK_UPLOAD_LABEL,
 } from '@repo/validation';
 import {
   BACKWORK_RESOURCE_REPOSITORY,
@@ -94,10 +95,10 @@ export class BackworkService {
 
     if (
       input.sizeBytes !== undefined &&
-      !isWithinUploadSizeLimit(input.sizeBytes)
+      !isWithinUploadSizeLimit(input.sizeBytes, MAX_BACKWORK_UPLOAD_BYTES)
     ) {
       throw new BadRequestException(
-        `File exceeds the ${MAX_UPLOAD_LABEL} upload limit`,
+        `File exceeds the ${MAX_BACKWORK_UPLOAD_LABEL} upload limit`,
       );
     }
 
