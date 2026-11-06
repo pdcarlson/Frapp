@@ -8,9 +8,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
-  Copy,
   Loader2,
-  Mail,
   PencilLine,
 } from "lucide-react";
 import {
@@ -34,8 +32,6 @@ import {
 import {
   DIRECTORY_MIN_QUERY_LENGTH,
   useChapterDirectorySearch,
-  useCreateInvite,
-  useEmailInvites,
   useOnboardChapter,
   useUploadChapterLogo,
   type ChapterDirectoryResult,
@@ -43,9 +39,7 @@ import {
 } from "@repo/hooks";
 import {
   CHAPTER_SHORT_NAME_MAX_LENGTH,
-  EmailInviteSchema,
   acceptAttribute,
-  dedupeEmails,
   resolveChapterMark,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -53,7 +47,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AccentSwatches } from "@/components/settings/accent-swatches";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { CrestTile } from "@/components/layout/crest-tile";
 import {
   Command,
@@ -70,7 +63,7 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { useSelectChapter } from "@/lib/auth/select-chapter";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
-import { buildJoinUrl } from "@/lib/invite-link";
+import { InviteComposer } from "@/components/members/invite-composer";
 import { inspectLogoFile } from "@/lib/chapter-logo";
 import { FERPA_URL } from "@/lib/legal-links";
 import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
@@ -113,8 +106,6 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
 
   const onboardChapter = useOnboardChapter();
   const uploadLogo = useUploadChapterLogo();
-  const createInvite = useCreateInvite();
-  const emailInvites = useEmailInvites();
 
   const [step, setStep] = useState<WizardStep>("find");
   const [rawQuery, setRawQuery] = useState("");
@@ -132,15 +123,10 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   // The logo waits in the browser until the chapter exists: the logo routes
   // are chapter-scoped, so nothing can be uploaded before the create lands.
   const [logo, setLogo] = useState<ChapterLogoUpload | null>(null);
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  // Whether an invite went out on the invite step, by email or a copied
+  // link: the footer then reads Finish rather than Skip for now.
+  const [invited, setInvited] = useState(false);
   const [acceptedLegal, setAcceptedLegal] = useState(false);
-  const [emailInput, setEmailInput] = useState("");
-  const [emailStatus, setEmailStatus] = useState<"idle" | "sending" | "sent">(
-    "idle",
-  );
-  const [emailFailures, setEmailFailures] = useState<string[]>([]);
-  const [emailSentCount, setEmailSentCount] = useState(0);
 
   const searchQuery = useChapterDirectorySearch(debouncedQuery, {
     enabled: step === "find",
@@ -268,101 +254,6 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
     }
   }
 
-  async function generateInviteLink() {
-    try {
-      const invite = await createInvite.mutateAsync({ role: INVITE_ROLE });
-      const token =
-        invite && typeof invite === "object" && "token" in invite
-          ? ((invite as { token?: string }).token ?? null)
-          : null;
-      if (!token) throw new Error("Invite did not return a token.");
-      const origin =
-        typeof window !== "undefined" ? window.location.origin : "";
-      setInviteLink(buildJoinUrl(origin, token));
-    } catch (error) {
-      toast({
-        title: "Unable to create invite link",
-        description: getErrorMessage(
-          error,
-          "You can invite members later from Members.",
-        ),
-        variant: "destructive",
-      });
-    }
-  }
-
-  async function copyInviteLink() {
-    if (!inviteLink) return;
-    try {
-      await navigator.clipboard.writeText(inviteLink);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast({
-        title: "Copy failed",
-        description: "Select the link and copy it manually.",
-        variant: "destructive",
-      });
-    }
-  }
-
-  function parseEmailInput(value: string): string[] {
-    // Comma- or newline-separated, matching the placeholder copy.
-    // `dedupeEmails` is the same de-dup the server runs in
-    // `InviteService.createWithEmails`, shared via @repo/validation so the
-    // two runtimes' notion of "how many unique addresses" can't drift apart.
-    return dedupeEmails(value.split(/[,\n]/));
-  }
-
-  async function sendEmailInvites() {
-    const emails = parseEmailInput(emailInput);
-    if (emails.length === 0) return;
-
-    const parsed = EmailInviteSchema.safeParse({ role: INVITE_ROLE, emails });
-    if (!parsed.success) {
-      toast({
-        title: "Check the email addresses",
-        description:
-          "One or more addresses look invalid, or the list has more than 50.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setEmailStatus("sending");
-    try {
-      const result = await emailInvites.mutateAsync({
-        role: INVITE_ROLE,
-        emails,
-      });
-      const failed =
-        result && typeof result === "object" && "failed" in result
-          ? ((result as { failed?: string[] }).failed ?? [])
-          : [];
-      const invites =
-        result && typeof result === "object" && "invites" in result
-          ? ((result as { invites?: unknown[] }).invites ?? [])
-          : [];
-      setEmailFailures(failed);
-      setEmailSentCount(invites.length - failed.length);
-      setEmailStatus("sent");
-      setEmailInput("");
-      if (failed.length === 0 && invites.length > 0) {
-        toast({
-          title: "Invites sent",
-          description: `Emailed ${invites.length} invite${invites.length === 1 ? "" : "s"}.`,
-        });
-      }
-    } catch (error) {
-      setEmailStatus("idle");
-      toast({
-        title: "Unable to send invites",
-        description: getErrorMessage(error, "Please try again in a moment."),
-        variant: "destructive",
-      });
-    }
-  }
-
   function finish() {
     onComplete();
     router.replace(POST_CREATE_PATH);
@@ -449,19 +340,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
               ) : null}
 
               {step === "invite" ? (
-                <InviteStep
-                  inviteLink={inviteLink}
-                  copied={copied}
-                  isGenerating={createInvite.isPending}
-                  onGenerate={generateInviteLink}
-                  onCopy={copyInviteLink}
-                  emailInput={emailInput}
-                  onEmailInputChange={setEmailInput}
-                  emailStatus={emailStatus}
-                  emailFailures={emailFailures}
-                  emailSentCount={emailSentCount}
-                  onSendEmails={sendEmailInvites}
-                />
+                <InviteStep onInvited={() => setInvited(true)} />
               ) : null}
             </main>
 
@@ -502,7 +381,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
 
               {step === "invite" ? (
                 <Button onClick={finish}>
-                  {inviteLink || emailSentCount > 0 ? "Finish" : "Skip for now"}
+                  {invited ? "Finish" : "Skip for now"}
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               ) : null}
@@ -937,148 +816,17 @@ function IdentityStep({
   );
 }
 
-function InviteStep({
-  inviteLink,
-  copied,
-  isGenerating,
-  onGenerate,
-  onCopy,
-  emailInput,
-  onEmailInputChange,
-  emailStatus,
-  emailFailures,
-  emailSentCount,
-  onSendEmails,
-}: {
-  inviteLink: string | null;
-  copied: boolean;
-  isGenerating: boolean;
-  onGenerate: () => void;
-  onCopy: () => void;
-  emailInput: string;
-  onEmailInputChange: (value: string) => void;
-  emailStatus: "idle" | "sending" | "sent";
-  emailFailures: string[];
-  emailSentCount: number;
-  onSendEmails: () => void;
-}) {
+function InviteStep({ onInvited }: { onInvited: () => void }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Share a join link so your chapter can hop into{" "}
-        <span className="font-medium text-foreground">#general</span>. This step
-        is optional. You can always invite members later.
+        Invite your chapter so they can hop into{" "}
+        <span className="font-medium text-foreground">#general</span>. You can
+        always invite more from Members.
       </p>
-
-      {inviteLink ? (
-        <div className="space-y-2 rounded-lg border border-border p-4">
-          <Label htmlFor="wiz-invite-link">Your chapter invite link</Label>
-          <div className="flex items-center gap-2">
-            {/* foundations §7 names invite tokens in the reserved mono list. */}
-            <Input
-              id="wiz-invite-link"
-              readOnly
-              className="font-mono"
-              value={inviteLink}
-            />
-            <Button
-              variant="secondary"
-              onClick={onCopy}
-              aria-label="Copy invite link"
-            >
-              {copied ? (
-                <Check className="h-4 w-4" />
-              ) : (
-                <Copy className="h-4 w-4" />
-              )}
-              {copied ? "Copied" : "Copy"}
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Anyone with this link can join as a member. Revoke it anytime from
-            Members.
-          </p>
-        </div>
-      ) : null}
-
-      <div className="space-y-2 rounded-lg border border-border p-4">
-        <Label htmlFor="wiz-invite-emails">Or invite by email</Label>
-        <Textarea
-          id="wiz-invite-emails"
-          placeholder="name@example.com, another@example.com"
-          value={emailInput}
-          onChange={(event) => onEmailInputChange(event.target.value)}
-          disabled={emailStatus === "sending"}
-        />
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">
-            Separate addresses with commas or new lines. Up to 50 at a time.
-          </p>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={onSendEmails}
-            disabled={
-              emailStatus === "sending" || emailInput.trim().length === 0
-            }
-          >
-            {emailStatus === "sending" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Mail className="h-4 w-4" />
-            )}
-            Send invites
-          </Button>
-        </div>
-
-        {emailStatus === "sent" &&
-        emailFailures.length === 0 &&
-        emailSentCount > 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Sent {emailSentCount} invite{emailSentCount === 1 ? "" : "s"}.
-          </p>
-        ) : null}
-
-        {emailFailures.length > 0 ? (
-          <div className="rounded-md border border-border p-3 text-sm">
-            <p className="font-semibold text-destructive-text">
-              {emailFailures.length} invite
-              {emailFailures.length === 1 ? "" : "s"} could not be emailed
-            </p>
-            <p className="mt-1 text-muted-foreground">
-              Their invite links were still created. Share the link above, or
-              retry these addresses.
-            </p>
-            <ul className="mt-2 max-h-32 space-y-0.5 overflow-y-auto text-xs text-muted-foreground">
-              {emailFailures.slice(0, 20).map((email) => (
-                <li key={email}>{email}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </div>
-
-      <p className="text-xs text-muted-foreground">
-        Frapp collects pseudonymous usage analytics (on by default) to fix bugs
-        and improve the product. It never collects message content. You can turn
-        it off anytime in Settings → Privacy.
-      </p>
-
-      {!inviteLink ? (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border p-6 text-center">
-          <p className="text-sm text-muted-foreground">
-            Generate a one-tap invite link to drop in your group chat.
-          </p>
-          <Button onClick={onGenerate} disabled={isGenerating}>
-            {isGenerating ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <ArrowRight className="h-4 w-4" />
-            )}
-            Generate invite link
-          </Button>
-        </div>
-      ) : null}
+      {/* The Members panel's composer, so both say the same thing. New
+          members join as Member; the panel lets an officer pick. */}
+      <InviteComposer role={INVITE_ROLE} onInvited={onInvited} />
     </div>
   );
 }

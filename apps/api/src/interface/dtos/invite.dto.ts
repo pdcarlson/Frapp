@@ -12,6 +12,11 @@ import {
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { LEGAL_ACCEPTANCE_LABEL } from '@repo/validation';
+import type {
+  BulkEmailInviteResult,
+  InviteListItem,
+  InviteStatus,
+} from '../../application/services/invite.service';
 import type { InvitePreview } from '../../application/services/invite.service';
 
 /**
@@ -125,4 +130,71 @@ export class InvitePreviewResponseDto implements InvitePreview {
 
   @ApiProperty()
   expires_at: string;
+}
+
+const INVITE_STATUSES: InviteStatus[] = [
+  'pending',
+  'joined',
+  'expired',
+  'revoked',
+];
+
+/** One row of `GET /v1/invites` (`InviteListItem`, #3607). */
+export class InviteListItemDto implements InviteListItem {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({
+    description:
+      'The single-use token. Clients build the join link from it; they never show it.',
+  })
+  token: string;
+
+  @ApiProperty({ description: 'The role name joining grants' })
+  role: string;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'The address the invite was emailed to, or null for a share-link invite',
+  })
+  email: string | null;
+
+  @ApiProperty({
+    enum: INVITE_STATUSES,
+    enumName: 'InviteStatus',
+    description:
+      'pending: still joinable. joined: someone joined with it. expired: unused past expires_at. revoked: an officer revoked it.',
+  })
+  status: InviteStatus;
+
+  @ApiProperty()
+  expires_at: string;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'Set when it was used, and also when it was revoked',
+  })
+  used_at: string | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  revoked_at: string | null;
+
+  @ApiProperty()
+  created_at: string;
+}
+
+/** `POST /v1/invites/email`'s answer (`BulkEmailInviteResult`). */
+export class BulkEmailInviteResponseDto implements BulkEmailInviteResult {
+  @ApiProperty({ type: InviteListItemDto, isArray: true })
+  invites: InviteListItemDto[];
+
+  @ApiProperty({
+    type: [String],
+    description:
+      'Addresses whose invite was created but whose email did not send. Their invites still work as links.',
+  })
+  failed: string[];
 }

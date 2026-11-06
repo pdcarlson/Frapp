@@ -8,7 +8,12 @@ export interface IInviteRepository {
   findByChapter(chapterId: string): Promise<Invite[]>;
   create(data: Partial<Invite>): Promise<Invite>;
   createMany(data: Partial<Invite>[]): Promise<Invite[]>;
-  markUsed(id: string): Promise<void>;
+  /**
+   * Revoke: set `revoked_at` and `used_at` together, only while `used_at` is
+   * still null. Returns whether a row was revoked; false means it was redeemed
+   * (or revoked) first.
+   */
+  markRevoked(id: string): Promise<boolean>;
   /**
    * Conditional claim: set `used_at` only when it is still null. Returns the
    * timestamp written, or `null` if another writer already claimed the row.
@@ -18,7 +23,7 @@ export interface IInviteRepository {
    * Inverse of {@link markUsedAtomically}: clear `used_at` only when it still
    * equals `claimedAt` (this redeem's claim). Used when membership insert
    * fails after the claim so the token is not burned (#1863). A concurrent
-   * `markUsed` (revoke) overwrites the timestamp and is left intact. Callers
+   * `markRevoked` cannot land on a claimed row, so it is never undone here. Callers
    * must not invoke this when a membership row already exists for the
    * redeeming user — that path is a committed insert whose HTTP response
    * dropped, and releasing would reopen the token. Returns whether a row

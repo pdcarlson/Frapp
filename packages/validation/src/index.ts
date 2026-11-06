@@ -121,6 +121,17 @@ export const EmailInviteSchema = z.object({
   emails: z.array(z.string().email()).min(1).max(50),
 });
 
+const inviteEmailSchema = z.string().email();
+
+/**
+ * Whether `value` is an address `POST /v1/invites/email` accepts: the same
+ * check as `EmailInviteSchema`'s entries, so the web chip field marks exactly
+ * the addresses the server would refuse.
+ */
+export function isInviteEmail(value: string): boolean {
+  return inviteEmailSchema.safeParse(value.trim()).success;
+}
+
 /**
  * Case-insensitively de-dupes email addresses, preserving the first-seen
  * casing to send to. Shared between the API (`InviteService.createWithEmails`)

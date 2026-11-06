@@ -65,15 +65,24 @@ export class SupabaseInviteRepository implements IInviteRepository {
     return data;
   }
 
-  async markUsed(id: string): Promise<void> {
+  async markRevoked(id: string): Promise<boolean> {
+    // `used_at` too, so every path that refuses a used token refuses a revoked
+    // one without learning about `revoked_at`. Conditional on `used_at` still
+    // being null: a token redeemed between the service's read and this write
+    // stays Joined rather than being relabelled Revoked.
+    const now = new Date().toISOString();
     const patch: TablesUpdate<'invites'> = {
-      used_at: new Date().toISOString(),
+      used_at: now,
+      revoked_at: now,
     };
-    const { error } = await this.supabase
+    const { data, error } = await this.supabase
       .from('invites')
       .update(patch)
-      .eq('id', id);
+      .eq('id', id)
+      .is('used_at', null)
+      .select('id');
     if (error) throw new SupabaseQueryError(error);
+    return Array.isArray(data) && data.length > 0;
   }
 
   async markUsedAtomically(id: string): Promise<string | null> {

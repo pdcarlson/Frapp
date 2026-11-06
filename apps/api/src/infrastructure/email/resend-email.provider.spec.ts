@@ -44,6 +44,30 @@ describe('ResendEmailProvider', () => {
     expect(body.html).toContain(params.joinUrl);
   });
 
+  it('names the chapter and who sent it when both are known, escaped in the HTML', async () => {
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    const provider = new ResendEmailProvider({
+      apiKey: 're_test',
+      fromAddress: 'Frapp <invites@mail.frapp.live>',
+    });
+
+    await provider.sendInviteEmail({
+      ...params,
+      chapterName: 'Phi Gamma Delta Tau Nu',
+      inviterName: 'Paul <Carlson>',
+    });
+
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as any).body);
+    expect(body.subject).toBe(
+      'Paul <Carlson> invited you to join Phi Gamma Delta Tau Nu on Frapp',
+    );
+    expect(body.html).toContain('Paul &lt;Carlson&gt; invited you');
+    expect(body.html).not.toContain('<Carlson>');
+    expect(body.text).toContain('as Member');
+  });
+
   it('reports failure on a non-2xx response without throwing', async () => {
     jest
       .spyOn(global, 'fetch')

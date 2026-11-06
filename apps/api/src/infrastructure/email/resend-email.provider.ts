@@ -13,16 +13,31 @@ export interface ResendProviderOptions {
 
 const RESEND_API_URL = 'https://api.resend.com/emails';
 
-function inviteEmailHtml(joinUrl: string, role: string): string {
+/**
+ * "Paul Carlson invited you to join Phi Gamma Delta Tau Nu on Frapp", with
+ * either name left out when it is unknown. Exported for its spec.
+ */
+export function inviteHeadline(params: SendInviteEmailParams): string {
+  const chapter = params.chapterName?.trim() || 'a chapter';
+  const inviter = params.inviterName?.trim();
+  return inviter
+    ? `${inviter} invited you to join ${chapter} on Frapp`
+    : `You're invited to join ${chapter} on Frapp`;
+}
+
+function inviteEmailHtml(params: SendInviteEmailParams): string {
+  const { joinUrl, role } = params;
   return (
-    `<p>You've been invited to join a chapter on Frapp as <strong>${escapeHtml(role)}</strong>.</p>` +
+    `<p>${escapeHtml(inviteHeadline(params))}.</p>` +
+    `<p>You'll join as <strong>${escapeHtml(role)}</strong>. The link works once and expires in 24 hours.</p>` +
     `<p><a href="${joinUrl}">Accept the invite</a></p>` +
     `<p>Or copy this link into your browser:<br>${joinUrl}</p>`
   );
 }
 
-function inviteEmailText(joinUrl: string, role: string): string {
-  return `You've been invited to join a chapter on Frapp as ${role}.\n\nAccept the invite: ${joinUrl}`;
+function inviteEmailText(params: SendInviteEmailParams): string {
+  const { joinUrl, role } = params;
+  return `${inviteHeadline(params)}.\n\nYou'll join as ${role}. The link works once and expires in 24 hours.\n\nAccept the invite: ${joinUrl}`;
 }
 
 function escapeHtml(value: string): string {
@@ -68,9 +83,9 @@ export class ResendEmailProvider implements IEmailProvider {
         body: JSON.stringify({
           from: this.fromAddress,
           to: params.to,
-          subject: "You're invited to join a chapter on Frapp",
-          html: inviteEmailHtml(params.joinUrl, params.role),
-          text: inviteEmailText(params.joinUrl, params.role),
+          subject: inviteHeadline(params),
+          html: inviteEmailHtml(params),
+          text: inviteEmailText(params),
         }),
         signal: controller.signal,
       });
