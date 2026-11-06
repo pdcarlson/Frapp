@@ -1,7 +1,6 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import {
   isAuthApiError,
-  isAuthError,
   isAuthRetryableFetchError,
 } from '@supabase/supabase-js';
 
@@ -31,19 +30,17 @@ export function lookupUnavailable(
 /**
  * Whether `supabase.auth.getUser` failed without judging the token: the
  * request never got an answer (`AuthRetryableFetchError`, which auth-js
- * throws for a dropped connection and any 5xx), Auth answered 5xx or 429, or
- * its answer could not be read (`AuthUnknownError`).
+ * throws for a dropped connection and for 500-504 and 520-530), or Auth
+ * answered with any other 5xx or a 429.
  *
  * An allowlist of outage signals, not "anything but a 4xx", on purpose:
  * every other `AuthError` keeps the 401, including the ones auth-js builds
- * itself, such as a missing session. A new error class the list does not name
- * stays a 401, which is the old behavior, rather than turning into a 503
- * nobody chose.
+ * itself, such as a missing session, and `AuthUnknownError`, whose unreadable
+ * body comes with a non-5xx status and so says nothing about an outage. A new
+ * error class the list does not name stays a 401, which is the old behavior,
+ * rather than turning into a 503 nobody chose.
  */
 export function isAuthOutage(error: unknown): boolean {
   if (isAuthRetryableFetchError(error)) return true;
-  if (isAuthApiError(error)) {
-    return error.status >= 500 || error.status === 429;
-  }
-  return isAuthError(error) && error.name === 'AuthUnknownError';
+  return isAuthApiError(error) && (error.status >= 500 || error.status === 429);
 }

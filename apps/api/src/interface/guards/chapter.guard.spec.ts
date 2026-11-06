@@ -23,7 +23,7 @@ describe('ChapterGuard', () => {
   let mockFrom: jest.Mock;
 
   const buildRequest = (overrides: Record<string, unknown> = {}) => ({
-    headers: { 'x-chapter-id': 'chapter-1' },
+    headers: { 'x-chapter-id': '11111111-1111-4111-8111-111111111111' },
     method: 'GET',
     supabaseUser: { id: 'auth-123' },
     jwtClaims: undefined as unknown,
@@ -144,8 +144,10 @@ describe('ChapterGuard', () => {
       mockSupabaseChain({ appUser: { id: 'user-1' } });
       const ctx = mockExecutionContext(
         buildRequest({
-          headers: { 'x-chapter-id': 'chapter-header' },
-          jwtClaims: { active_chapter_id: 'chapter-jwt' },
+          headers: { 'x-chapter-id': 'abcdef00-0000-4000-8000-0000000000aa' },
+          jwtClaims: {
+            active_chapter_id: 'bcdef000-0000-4000-8000-0000000000bb',
+          },
         }),
       );
 
@@ -163,19 +165,21 @@ describe('ChapterGuard', () => {
       });
       const request = buildRequest({
         headers: {},
-        jwtClaims: { active_chapter_id: 'chapter-jwt' },
+        jwtClaims: {
+          active_chapter_id: 'bcdef000-0000-4000-8000-0000000000bb',
+        },
       });
 
       await expect(
         guard.canActivate(mockExecutionContext(request)),
       ).resolves.toBe(true);
-      expect(request.chapterId).toBe('chapter-jwt');
+      expect(request.chapterId).toBe('bcdef000-0000-4000-8000-0000000000bb');
     });
 
     it('auto-resolves a single-chapter user carrying no context at all', async () => {
       mockSupabaseChain({
         appUser: { id: 'user-1' },
-        memberships: [membership('chapter-sole')],
+        memberships: [membership('dddddddd-0000-4000-8000-000000000004')],
         chapter: { subscription_status: 'active' },
       });
       const request = buildRequest({ headers: {} });
@@ -183,13 +187,16 @@ describe('ChapterGuard', () => {
       await expect(
         guard.canActivate(mockExecutionContext(request)),
       ).resolves.toBe(true);
-      expect(request.chapterId).toBe('chapter-sole');
+      expect(request.chapterId).toBe('dddddddd-0000-4000-8000-000000000004');
     });
 
     it('requires explicit context from a multi-chapter user (chapter.context.required)', async () => {
       mockSupabaseChain({
         appUser: { id: 'user-1' },
-        memberships: [membership('chapter-a'), membership('chapter-b')],
+        memberships: [
+          membership('aaaaaaaa-0000-4000-8000-000000000001'),
+          membership('bbbbbbbb-0000-4000-8000-000000000002'),
+        ],
       });
       const ctx = mockExecutionContext(buildRequest({ headers: {} }));
 
@@ -212,13 +219,35 @@ describe('ChapterGuard', () => {
     it('rejects a chapter the caller is not a member of (chapter.context.invalid)', async () => {
       mockSupabaseChain({ appUser: { id: 'user-1' }, member: null });
       const ctx = mockExecutionContext(
-        buildRequest({ headers: { 'x-chapter-id': 'chapter-foreign' } }),
+        buildRequest({
+          headers: { 'x-chapter-id': 'ffffffff-0000-4000-8000-000000000003' },
+        }),
       );
 
       await expect(guard.canActivate(ctx)).rejects.toMatchObject({
         response: { code: 'chapter.context.invalid' },
         status: 403,
       });
+    });
+
+    // #3143: Postgres answers a malformed uuid comparison with an error, which
+    // the lookup now reports as a 503. A chapter id that is not a uuid names
+    // no chapter, so it is refused before any lookup runs.
+    it('refuses a chapter id that is not a uuid as chapter.context.invalid, before any lookup', async () => {
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        member: { id: 'member-1', role_ids: [] },
+        chapter: { subscription_status: 'active' },
+      });
+      const ctx = mockExecutionContext(
+        buildRequest({ headers: { 'x-chapter-id': 'not-a-chapter' } }),
+      );
+
+      await expect(guard.canActivate(ctx)).rejects.toMatchObject({
+        response: { code: 'chapter.context.invalid' },
+        status: 403,
+      });
+      expect(mockFrom).not.toHaveBeenCalledWith('members');
     });
 
     it('still accepts the header when the token predates the claim', async () => {
@@ -228,14 +257,14 @@ describe('ChapterGuard', () => {
         chapter: { subscription_status: 'active' },
       });
       const request = buildRequest({
-        headers: { 'x-chapter-id': 'chapter-header' },
+        headers: { 'x-chapter-id': 'abcdef00-0000-4000-8000-0000000000aa' },
         jwtClaims: undefined,
       });
 
       await expect(
         guard.canActivate(mockExecutionContext(request)),
       ).resolves.toBe(true);
-      expect(request.chapterId).toBe('chapter-header');
+      expect(request.chapterId).toBe('abcdef00-0000-4000-8000-0000000000aa');
     });
 
     // #688: Postgres `uuid` comparison is case-insensitive (an uppercase
@@ -250,14 +279,14 @@ describe('ChapterGuard', () => {
         chapter: { subscription_status: 'active' },
       });
       const request = buildRequest({
-        headers: { 'x-chapter-id': 'CHAPTER-HEADER' },
+        headers: { 'x-chapter-id': 'ABCDEF00-0000-4000-8000-0000000000AA' },
         jwtClaims: undefined,
       });
 
       await expect(
         guard.canActivate(mockExecutionContext(request)),
       ).resolves.toBe(true);
-      expect(request.chapterId).toBe('chapter-header');
+      expect(request.chapterId).toBe('abcdef00-0000-4000-8000-0000000000aa');
     });
 
     it('lowercases an uppercase JWT active_chapter_id claim before setting request.chapterId', async () => {
@@ -268,13 +297,15 @@ describe('ChapterGuard', () => {
       });
       const request = buildRequest({
         headers: {},
-        jwtClaims: { active_chapter_id: 'CHAPTER-JWT' },
+        jwtClaims: {
+          active_chapter_id: 'BCDEF000-0000-4000-8000-0000000000BB',
+        },
       });
 
       await expect(
         guard.canActivate(mockExecutionContext(request)),
       ).resolves.toBe(true);
-      expect(request.chapterId).toBe('chapter-jwt');
+      expect(request.chapterId).toBe('bcdef000-0000-4000-8000-0000000000bb');
     });
 
     it('treats a header and JWT claim that agree only up to case as a match, not a mismatch', async () => {
@@ -284,22 +315,26 @@ describe('ChapterGuard', () => {
         chapter: { subscription_status: 'active' },
       });
       const request = buildRequest({
-        headers: { 'x-chapter-id': 'Chapter-Same' },
-        jwtClaims: { active_chapter_id: 'chapter-same' },
+        headers: { 'x-chapter-id': 'CdEf0000-0000-4000-8000-0000000000Cc' },
+        jwtClaims: {
+          active_chapter_id: 'cdef0000-0000-4000-8000-0000000000cc',
+        },
       });
 
       await expect(
         guard.canActivate(mockExecutionContext(request)),
       ).resolves.toBe(true);
-      expect(request.chapterId).toBe('chapter-same');
+      expect(request.chapterId).toBe('cdef0000-0000-4000-8000-0000000000cc');
     });
 
     it('still rejects a header and JWT claim that disagree beyond case (chapter.context.mismatch)', async () => {
       mockSupabaseChain({ appUser: { id: 'user-1' } });
       const ctx = mockExecutionContext(
         buildRequest({
-          headers: { 'x-chapter-id': 'CHAPTER-HEADER' },
-          jwtClaims: { active_chapter_id: 'chapter-jwt' },
+          headers: { 'x-chapter-id': 'ABCDEF00-0000-4000-8000-0000000000AA' },
+          jwtClaims: {
+            active_chapter_id: 'bcdef000-0000-4000-8000-0000000000bb',
+          },
         }),
       );
 
@@ -354,7 +389,7 @@ describe('ChapterGuard', () => {
     expect(result).toBe(true);
     expect(request.appUser).toEqual(appUser);
     expect(request.member).toEqual(member);
-    expect(request.chapterId).toBe('chapter-1');
+    expect(request.chapterId).toBe('11111111-1111-4111-8111-111111111111');
     expect(request.subscriptionStatus).toBe('active');
   });
 

@@ -370,45 +370,48 @@ describe('PermissionsGuard', () => {
       expect(await guard.canActivate(ctx)).toBe(true);
     });
 
-    it('surfaces a failed lookup as a server error, never a permission denial', async () => {
-      // A transient DB failure must not read as "no rows" and produce a
-      // terminal 403 — that would present an outage as an authorization state.
-      mockPermissionMetadata({ handlerRequire: ['events:create'] });
-      mockFrom.mockImplementation((table: string) => {
-        const chain: Record<string, unknown> = {
-          select: jest.fn(() => chain),
-          in: jest.fn(() => chain),
-          eq: jest.fn(() => chain),
-          then: (
-            resolve: (result: {
-              data: unknown[] | null;
-              error: { message: string } | null;
-            }) => unknown,
-          ) =>
-            resolve(
-              table === 'chapter_custom_roles'
-                ? { data: null, error: { message: 'connection reset' } }
-                : { data: [], error: null },
-            ),
-        };
-        return chain;
-      });
+    it.each([
+      ['roles', { role_ids: ['role-1'], custom_role_ids: [] }],
+      ['chapter_custom_roles', { role_ids: [], custom_role_ids: ['custom-1'] }],
+    ])(
+      'surfaces a failed %s lookup as a server error, never a permission denial',
+      async (failing, member) => {
+        // A transient DB failure must not read as "no rows" and produce a
+        // terminal 403 — that would present an outage as an authorization state.
+        mockPermissionMetadata({ handlerRequire: ['events:create'] });
+        mockFrom.mockImplementation((table: string) => {
+          const chain: Record<string, unknown> = {
+            select: jest.fn(() => chain),
+            in: jest.fn(() => chain),
+            eq: jest.fn(() => chain),
+            then: (
+              resolve: (result: {
+                data: unknown[] | null;
+                error: { message: string } | null;
+              }) => unknown,
+            ) =>
+              resolve(
+                table === failing
+                  ? { data: null, error: { message: 'connection reset' } }
+                  : { data: [], error: null },
+              ),
+          };
+          return chain;
+        });
 
-      const ctx = mockExecutionContext({
-        role_ids: [],
-        custom_role_ids: ['custom-1'],
-      });
+        const ctx = mockExecutionContext(member);
 
-      const thrown: unknown = await guard
-        .canActivate(ctx)
-        .catch((error: unknown) => error);
-      expect(thrown).toBeInstanceOf(ServiceUnavailableException);
-      // The query error travels as the cause, so Sentry gets what failed
-      // (#1264); the client body stays generic, and a 503 is retried (#3143).
-      expect((thrown as Error).cause).toBeInstanceOf(SupabaseQueryError);
-      expect((thrown as Error).cause).toMatchObject({
-        message: 'connection reset',
-      });
-    });
+        const thrown: unknown = await guard
+          .canActivate(ctx)
+          .catch((error: unknown) => error);
+        expect(thrown).toBeInstanceOf(ServiceUnavailableException);
+        // The query error travels as the cause, so Sentry gets what failed
+        // (#1264); the client body stays generic, and a 503 is retried (#3143).
+        expect((thrown as Error).cause).toBeInstanceOf(SupabaseQueryError);
+        expect((thrown as Error).cause).toMatchObject({
+          message: 'connection reset',
+        });
+      },
+    );
   });
 });

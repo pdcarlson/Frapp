@@ -150,10 +150,6 @@ describe('SupabaseAuthGuard', () => {
         'Auth rate limiting',
         new AuthApiError('Too many', 429, 'over_request_rate_limit'),
       ],
-      [
-        'an unreadable answer',
-        new AuthUnknownError('Unexpected token <', null),
-      ],
     ])(
       'answers 503 for %s, with the error as its cause',
       async (_label, error) => {
@@ -174,6 +170,10 @@ describe('SupabaseAuthGuard', () => {
         new AuthApiError('User not found', 404, 'user_not_found'),
       ],
       ['an error auth-js builds itself', new AuthSessionMissingError()],
+      [
+        'an unreadable non-5xx answer',
+        new AuthUnknownError('Unexpected token <', null),
+      ],
     ])('keeps 401 for %s', async (_label, error) => {
       mockGetUser.mockResolvedValue({ data: { user: null }, error });
       await expect(guard.canActivate(bearer())).rejects.toThrow(

@@ -38,6 +38,9 @@ import { lookupUnavailable } from './guard-lookup';
  */
 const LOOKUP_FAILED = 'Could not verify your chapter membership right now';
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 @Injectable()
@@ -163,6 +166,16 @@ export class ChapterGuard implements CanActivate {
 
     const explicit = jwtChapterId ?? headerChapterId;
     if (explicit) {
+      // A chapter id that is not a uuid names no chapter, so it is refused as
+      // one the caller is not a member of. Checked here because Postgres
+      // answers a malformed uuid comparison with an error (22P02), not zero
+      // rows, which the membership lookup would now report as a 503 (#3143).
+      if (!UUID_PATTERN.test(explicit)) {
+        throw new ForbiddenException({
+          code: 'chapter.context.invalid',
+          message: 'You are not a member of the requested chapter.',
+        });
+      }
       // #688: Postgres `uuid` comparison is case-insensitive, so an
       // uppercase-cased header/claim is authorized normally — but storage
       // prefix math (profileFolderPrefix, backwork/chapter-document/chat
