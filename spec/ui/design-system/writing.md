@@ -416,7 +416,7 @@ bind every one of them, and both are the point rather than style:
 
 | Surface | Description |
 |---|---|
-| New event (sheet on s06) | `Your chapter's subscription isn't active, so new events can't be saved. An officer can sort this out for the chapter.` |
+| New event (sheet from the tab bar's +) | `Your chapter's subscription isn't active, so new events can't be saved. An officer can sort this out for the chapter.` |
 | New task (s19) | `Your chapter's subscription isn't active, so new tasks can't be saved. An officer can sort this out for the chapter.` |
 | Task status (s08 toggle, chat task card) | `Your chapter's subscription isn't active, so task updates can't be saved. An officer can sort this out for the chapter.` Shown on the board, and on a mobile chat task card for Start, Mark complete, Confirm and Reject (one copy for both, `taskStatusGateRefusal` in `apps/mobile/lib/tasks/status-refusal.ts`). On either, the controls stay withdrawn until the member comes back to the screen or to the app ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
 | Event check-in | `Your chapter's subscription isn't active, so check-in isn't available. An officer can sort this out for the chapter.` |
@@ -446,7 +446,7 @@ the state with `pollsGateOf` in `@repo/chat-core/polls`.
 
 | Surface | Description |
 |---|---|
-| New event (sheet on s06) | `Events are turned off for your chapter right now, so new events can't be saved. An officer can turn events back on.` |
+| New event (sheet from the tab bar's +) | `Events are turned off for your chapter right now, so new events can't be saved. An officer can turn events back on.` |
 | New task (s19) | `Tasks are turned off for your chapter right now, so new tasks can't be saved. An officer can turn tasks back on.` |
 | Task status (s08 toggle, chat task card) | `Tasks are turned off for your chapter right now, so task updates can't be saved. An officer can turn tasks back on.` Shown on the board and on a mobile chat task card, and withdrawn for as long, like the subscription row for the same writes ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
 | Event check-in | `Check-in is turned off for your chapter right now. An officer can turn events back on.` |
