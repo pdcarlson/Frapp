@@ -1,5 +1,6 @@
 import { ReactRenderer } from "@tiptap/react";
 import type { SuggestionOptions } from "@tiptap/suggestion";
+import { mentionSuggestions } from "@repo/validation";
 import {
   MentionList,
   type MentionListHandle,
@@ -13,80 +14,23 @@ export interface MentionRosterEntry {
   avatar_url: string | null;
 }
 
-const MAX_SUGGESTIONS = 8;
-
 /**
- * The mention node's serialized text label: `display_name` with every
- * character that isn't a Unicode letter, digit, or mark removed.
- *
- * Mentions resolve **server-side**, from plain `@token` text parsed out of
- * the message body (`packages/validation/src/mentions.ts` —
- * `resolveMentions`/`extractMentionTokens`), never from a client-supplied id.
- *
- * Stripping *only* whitespace is not enough, and was a real bug caught in
- * review: the tokenizer's `MENTION_TOKEN` pattern allows a narrow set of
- * mid-token punctuation (`'’.-_`) but **truncates the match** at the first
- * character outside it — it does not reject the token, it silently shortens
- * it. A display name like "Sam (VP)" would strip to the label `Sam(VP)`;
- * `@Sam(VP)` tokenizes as just `Sam`, and if another member is exactly named
- * "Sam", the resolver's tier-2 exact-name match resolves to *that* member
- * instead — a message that looks like it mentions "Sam (VP)" silently
- * mentions the wrong person.
- *
- * Stripping to alphanumerics-and-marks only avoids this class of bug
- * entirely: every character kept is one `MENTION_TOKEN` always accepts
- * through to the end (never truncates on), so the result token-round-trips
- * intact. It also matches `mentions.ts`'s own `fold()` transform (same
- * character class, case aside), so it resolves via the resolver's "name
- * without spaces" tier the way this popup is built to guarantee — the exact
- * member picked is the exact member that resolves, not a same-named
- * lookalike or a truncated fragment (mirrored by `Mention`'s default
- * `renderText`, which serializes `@` + this label — see `composer.tsx`).
- *
- * This does not, and cannot, prevent the resolver's own accepted ambiguity
- * case — two members whose names fold to the identical string — which
- * `spec/behavior/chat/README.md`'s §Mentions already documents as failing
- * closed (nobody mentioned, not the wrong person).
+ * The roster as this popup offers it. Which members, in what order, and the
+ * label each inserts are `mentionSuggestions`'s (`@repo/validation`), shared
+ * with mobile's composer so a member picked on either client sends the same
+ * body; `mentionLabelFor` there says why the label is the display name reduced
+ * to letters, digits and marks.
  */
-export function mentionLabelFor(displayName: string): string {
-  return displayName.replace(/[^\p{L}\p{N}\p{M}]/gu, "");
-}
-
-/**
- * Every mention token must open on a Unicode letter
- * (`packages/validation/src/mentions.ts`'s `MENTION_TOKEN`), so a label
- * computed from a digit-led display name (e.g. "123 Squad" -> "123Squad")
- * would never be recognized as a mention at all — the server wouldn't even
- * see it as a candidate token to resolve, let alone resolve it. Per
- * `spec/behavior/chat/README.md`'s explicit note for anyone building a
- * mention affordance: "Autocomplete SHOULD NOT present a digit-led display
- * name as reachable by typing." Excluded here rather than left to silently
- * insert a mention that can never work.
- */
-function opensOnLetter(label: string): boolean {
-  return /^\p{L}/u.test(label);
-}
-
 function filterRoster(
   roster: readonly MentionRosterEntry[],
   query: string,
 ): MentionSuggestionItem[] {
-  const needle = query.trim().toLowerCase();
-  const candidates = roster
-    .filter((member) => member.display_name.length > 0)
-    .map((member) => ({
-      id: member.user_id,
-      label: mentionLabelFor(member.display_name),
-      displayName: member.display_name,
-      avatarUrl: member.avatar_url,
-    }))
-    .filter((item) => opensOnLetter(item.label));
-  const matches = needle
-    ? candidates.filter((item) =>
-        item.displayName.toLowerCase().includes(needle),
-      )
-    : candidates;
-  return matches.slice(0, MAX_SUGGESTIONS);
+  return mentionSuggestions(roster, query).map(({ member, label }) => ({
+    id: member.user_id,
+    label,
+    displayName: member.display_name,
+    avatarUrl: member.avatar_url,
+  }));
 }
 
 /**

@@ -615,12 +615,20 @@ export type {
 // since mentions override a per-channel mute in the push rules and a
 // client-supplied list would be forgeable.
 export {
+  activeMentionQuery,
   extractMentionTokens,
   findMentionSpans,
   matchMentionCandidate,
+  mentionLabelFor,
+  mentionSuggestions,
   resolveMentions,
 } from "./mentions";
-export type { MentionCandidate, MentionSpan } from "./mentions";
+export type {
+  ActiveMentionQuery,
+  MentionCandidate,
+  MentionSpan,
+  MentionSuggestion,
+} from "./mentions";
 
 // ── Time zones (issue #687) ──────────────────────────────────────────────────
 export {
