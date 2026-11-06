@@ -1,3 +1,5 @@
+import { isBetaOffModule } from "./beta-off-modules";
+
 /**
  * The member-facing notification categories, shared so every surface offers the
  * same switches under the same names.
@@ -113,7 +115,11 @@ export const NOTIFICATION_CATEGORIES = [
     // URGENT bypasses the preference gate, so this switch now governs only the
     // routine invoice and dues traffic it advertises. No second server-side
     // category is needed.
-    description: "Invoices created, dues coming due, and payments received.",
+    // While dues is beta-off no invoice or dues reminder is sent, so the
+    // description names only what still arrives.
+    description: isBetaOffModule("dues")
+      ? "Subscription and payment updates."
+      : "Invoices created, dues coming due, and payments received.",
     defaultEnabled: true,
   },
   {
