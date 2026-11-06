@@ -1,6 +1,5 @@
 import {
   createNoPseudonymScrubHooks,
-  DEFAULT_TRACES_SAMPLE_RATE,
   SENTRY_ERROR_SAMPLE_RATE,
   SENTRY_REPLAY_ENABLED,
 } from "@repo/observability";
@@ -121,10 +120,16 @@ function environment(): string {
  * EAS, and an `EXPO_PUBLIC_*` value is inlined at build time anyway, so a
  * variable here would buy no tuning that editing this line does not.
  *
- * The literal is {@link DEFAULT_TRACES_SAMPLE_RATE} so it cannot be `NaN`.
- * API and web parse their env through the same package (#2040).
+ * Every trace, for the beta (2026-11-06). One chapter's phones send so few
+ * that the shared `DEFAULT_TRACES_SAMPLE_RATE` of `0.1` kept about nine
+ * spans of a whole afternoon's testing, too few to say where a screen is slow.
+ * A literal `1`, so it cannot be `NaN`. Lower it back to
+ * `DEFAULT_TRACES_SAMPLE_RATE` before a second chapter joins (#3580). The API
+ * inherits this decision for the requests mobile starts, so its mobile-driven
+ * traces are kept at the same rate (`spec/behavior/observability.md`
+ * § Sampling).
  */
-const TRACES_SAMPLE_RATE = DEFAULT_TRACES_SAMPLE_RATE;
+const TRACES_SAMPLE_RATE = 1;
 
 export type MobileSentryReleaseExtras = {
   /** `bundleId@version+nativeBuildNumber`. Never a git SHA. */

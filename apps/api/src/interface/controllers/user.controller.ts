@@ -27,6 +27,7 @@ import { ChapterGuard } from '../guards/chapter.guard';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import { FreeTier } from '../decorators/subscription.decorator';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
+import { FeatureEvent } from '../decorators/feature-event.decorator';
 import {
   CurrentUser,
   CurrentChapterId,
@@ -172,6 +173,7 @@ export class UserController {
   // 200, not 201: it updates the caller's profile and returns it.
   @HttpCode(HttpStatus.OK)
   @UseGuards(ChapterGuard)
+  @FeatureEvent('profile-photo-updated')
   @ApiOperation({
     summary: 'Confirm a profile photo upload and make it the current photo',
     description:
