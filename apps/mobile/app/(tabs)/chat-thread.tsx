@@ -65,7 +65,7 @@ import { ThreadMessageRow } from "@/components/chat/thread-message-row";
 import { ThreadSkeleton } from "@/components/chat/thread-skeleton";
 import { threadLayout } from "@/lib/chat/thread-layout";
 import { ErrorState } from "@/components/state-block";
-import { CloseGlyph } from "@/components/control-glyphs";
+import { BackGlyph, CloseGlyph } from "@/components/control-glyphs";
 import { IconButton } from "@/components/icon-button";
 import { pickAndUploadPhoto } from "@/lib/chat/attachment-upload";
 import {
@@ -110,10 +110,7 @@ import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
 import { selectionHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import {
-  type ChapterBranding,
-  useChapterBranding,
-} from "@/lib/chapter-branding";
+import { useChapterBranding } from "@/lib/chapter-branding";
 
 /** One object for the list's life: the native prop is diffed by identity. */
 const MAINTAIN_POSITION = {
@@ -159,7 +156,7 @@ const TYPING_LINE_BLANK = "\u00a0";
 export default function ChatThreadScreen() {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
-  const styles = createStyles(tokens, brand);
+  const styles = createStyles(tokens);
   const router = useRouter();
 
   // Params arrive as `string | string[]`; a repeated query key would otherwise
@@ -949,7 +946,7 @@ export default function ChatThreadScreen() {
               onPress={() => router.push("/")}
               style={({ pressed }) => (pressed ? styles.pressed : null)}
             >
-              <Text style={styles.backChevron}>‹</Text>
+              <BackGlyph color={brand.accent} />
             </Pressable>
             {/*
               The description sits under the name on a phone: web's one-line
@@ -1307,7 +1304,7 @@ export default function ChatThreadScreen() {
   );
 }
 
-function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     safeArea: {
       flex: 1,
@@ -1331,11 +1328,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       paddingBottom: tokens.spacing.md,
       borderBottomWidth: 1,
       borderBottomColor: tokens.color.border.hairline,
-    },
-    backChevron: {
-      ...typeRole(tokens.typography.role.title),
-      color: brand.accent,
-      minWidth: tokens.spacing.md,
     },
     headerText: {
       flex: 1,
