@@ -255,7 +255,7 @@ export function ChannelMappingStep({
       const row = document.getElementById(rowId(channelId));
       row?.scrollIntoView({ behavior: "smooth", block: "center" });
       row
-        ?.querySelector<HTMLElement>("input, select, button")
+        ?.querySelector<HTMLElement>("input, button")
         ?.focus({ preventScroll: true });
     });
   }
@@ -264,8 +264,7 @@ export function ChannelMappingStep({
     readable,
     choices,
     readersOf,
-    (visibility, permissions) =>
-      bulk(readable, withVisibility(visibility, permissions, readersOf)),
+    (patch) => bulk(readable, patch),
   );
   const offersDiscord = readable.some((channel) => readersOf(channel));
   const { together } = useMemo(
@@ -564,8 +563,7 @@ function CategoryGroup({
     group.channels,
     choices,
     readersOf,
-    (visibility, permissions) =>
-      onBulk(withVisibility(visibility, permissions, readersOf)),
+    onBulk,
   );
   const permissionProps = {
     catalog,
@@ -697,19 +695,40 @@ function PrivacyBadge({ channel }: { channel: StagedChannel }) {
   return label ? <Badge variant="outline">{label}</Badge> : null;
 }
 
+type ChannelPatch = (
+  current: ChannelChoice,
+  channel: StagedChannel,
+) => ChannelChoice;
+
 /**
- * A bulk patch setting who can read every new channel it reaches. "Same as
- * Discord" reaches only the channels it is on offer for, and leaves the rest
- * as they were.
+ * A bulk patch setting who can read every new channel it reaches.
+ *
+ * "Same as Discord" means what Discord did: a private channel whose readers
+ * the scan named takes their roles, a channel that was public takes the
+ * whole chapter, and one whose privacy is unknown is left for its row.
+ * `keepRestricted` leaves a channel already restricted on its own
+ * permissions, so picking Restricted never wipes what a row set by hand.
  */
 function withVisibility(
   visibility: Visibility,
   permissions: ReadonlySet<string>,
   readersOf: ReadersOf,
-) {
-  return (current: ChannelChoice, channel: StagedChannel): ChannelChoice => {
+  keepRestricted = false,
+): ChannelPatch {
+  return (current, channel) => {
     if (current.action !== "create_new") return current;
-    if (visibility === "discord" && !readersOf(channel)) return current;
+    if (visibility === "discord" && !readersOf(channel)) {
+      return channel.privateInDiscord === false
+        ? { ...current, visibility: "chapter", requiredPermissions: undefined }
+        : current;
+    }
+    if (
+      visibility === "restricted" &&
+      keepRestricted &&
+      current.visibility === "restricted"
+    ) {
+      return current;
+    }
     return {
       ...current,
       visibility,
@@ -737,19 +756,25 @@ interface BulkVisibility {
  * a pick visibly sticks, and a row or a category changed by hand turns it to
  * Mixed. Restricted applies at once and opens a permission grid that applies
  * on every tick; until one is ticked, Needs attention lists the channels.
+ * Picking Restricted keeps a channel already restricted on its own
+ * permissions; a tick in the grid sets every channel to what it shows.
  * The grid stays shut for a restriction made elsewhere (a row has its own,
- * and "Permissions" beside the control opens this one), and closes once the
- * channels stop being restricted.
+ * and "Permissions" beside the control opens this one), and closes, for
+ * good, once the channels stop being restricted.
  */
 function useBulkVisibility(
   targets: readonly StagedChannel[],
   choices: Record<string, ChannelChoice>,
   readersOf: ReadersOf,
-  apply: (visibility: Visibility, permissions: ReadonlySet<string>) => void,
+  apply: (patch: ChannelPatch) => void,
 ): BulkVisibility {
   const [picked, setPicked] = useState(false);
   const permissions = sharedRestriction(targets, choices);
   const state = bulkVisibilityState(targets, choices, readersOf);
+  // Another control can take the channels off Restricted and back; this
+  // grid reopens only on a pick of its own. (Adjusting state while
+  // rendering, React's pattern for state derived from a change.)
+  if (picked && state !== "restricted") setPicked(false);
   return {
     state,
     restricting: picked && state === "restricted",
@@ -758,17 +783,17 @@ function useBulkVisibility(
     choose(value) {
       if (value === "chapter" || value === "discord") {
         setPicked(false);
-        apply(value, new Set());
+        apply(withVisibility(value, new Set(), readersOf));
       } else if (value === "restricted") {
         setPicked(true);
-        apply("restricted", permissions);
+        apply(withVisibility("restricted", permissions, readersOf, true));
       }
     },
     toggle(permission) {
       const next = new Set(permissions);
       if (next.has(permission)) next.delete(permission);
       else next.add(permission);
-      apply("restricted", next);
+      apply(withVisibility("restricted", next, readersOf));
     },
   };
 }
@@ -828,10 +853,9 @@ function BulkVisibilitySelect({
       ) : null}
       <Select
         // Mixed and unset are states, never choices: the trigger shows them,
-        // the list offers only answers.
-        value={
-          state && state !== "mixed" && state !== "unset" ? state : undefined
-        }
+        // the list offers only answers. Always controlled, "" for the
+        // placeholder: given undefined, Radix shows its last pick instead.
+        value={state && state !== "mixed" && state !== "unset" ? state : ""}
         onValueChange={bulk.choose}
         disabled={state === null}
       >
@@ -1022,11 +1046,10 @@ function ChannelRow({
               Who can read it
             </Label>
             <Select
-              // A key per answered state: Radix keeps showing the last value
-              // when it goes back to undefined, which "Same as Discord" with
-              // no mapped role does.
-              key={shownVisibility ?? "unanswered"}
-              value={shownVisibility}
+              // Always controlled, "" for the placeholder: given undefined,
+              // Radix keeps showing the last value, which "Same as Discord"
+              // with no mapped role would leave on screen.
+              value={shownVisibility ?? ""}
               onValueChange={(value) => {
                 onPatch({
                   visibility:

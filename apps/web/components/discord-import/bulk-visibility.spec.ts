@@ -66,4 +66,17 @@ describe("bulkVisibilityState", () => {
       ),
     ).toBe("mixed");
   });
+
+  it("reads Mixed when Same as Discord has none of its readers mapped", () => {
+    // Every reader role set to Skip: the row reads Choose…, so the bulk
+    // control must not claim Same as Discord is applied.
+    const unmapped = () => ({ roles: [], ignored: ["Cabinet"] });
+    expect(
+      bulkVisibilityState(
+        [pub, priv],
+        { pub: create("chapter"), priv: create("discord") },
+        (target) => (target.channelId === "priv" ? unmapped() : null),
+      ),
+    ).toBe("mixed");
+  });
 });

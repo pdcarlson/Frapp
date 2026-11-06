@@ -22,9 +22,12 @@ import {
 import { cn } from "@/lib/utils";
 import { FOCUS_RING } from "@/components/ui/focus";
 import {
+  compactControlClassName,
+  dashboardCheckboxHitAreaClassName,
   dashboardTableCheckboxClassName,
   dashboardToolbarHeightClassName,
 } from "@/components/shared/table-controls";
+import { IconButton } from "@/components/ui/icon-button";
 import type { StagedRole } from "./upload-step";
 import type {
   FrappRole,
@@ -61,7 +64,7 @@ type PileKey = "access" | "matched" | "none";
  *
  * - **Open private channels**: no match, and the role could read at least one
  *   private channel. These decide who reads what, so the pile starts open,
- *   most channels first.
+ *   most channels first, with Create all and Skip all.
  * - **Match your roles**: a same-name or close match. Folded, with the close
  *   matches counted, since "Recording Secretary" → Secretary is a guess.
  * - **Open no private channel**: no match and nothing gated. Folded, with
@@ -337,8 +340,15 @@ function Pile({
 }) {
   const [opened, setOpened] = useState<boolean | null>(null);
   const [all, setAll] = useState(false);
-  const open = opened ?? (defaultOpen || forceOpen);
-  const shown = all ? roles : roles.slice(0, PILE_LIMIT);
+  // A problem keeps the pile open and its row on screen, past the limit too:
+  // Continue waits on it, and a hidden reason is no reason.
+  const open = forceOpen || (opened ?? defaultOpen);
+  const shown = all
+    ? roles
+    : roles.filter(
+        (role, index) =>
+          index < PILE_LIMIT || rowProps(role).problems.length > 0,
+      );
   const bodyId = `role-pile-${pileKey}`;
 
   return (
@@ -392,7 +402,7 @@ function Pile({
               <RoleRow key={role.roleId} {...rowProps(role)} />
             ))}
           </ul>
-          {roles.length > PILE_LIMIT ? (
+          {all || shown.length < roles.length ? (
             <button
               type="button"
               onClick={() => setAll(!all)}
@@ -401,7 +411,7 @@ function Pile({
                 FOCUS_RING,
               )}
             >
-              {all ? "Show fewer" : `Show ${roles.length - PILE_LIMIT} more`}
+              {all ? "Show fewer" : `Show ${roles.length - shown.length} more`}
             </button>
           ) : null}
         </div>
@@ -457,14 +467,16 @@ function RoleRow({
       )}
     >
       <div className="flex items-center gap-3">
-        <input
-          type="checkbox"
-          className={dashboardTableCheckboxClassName}
-          checked={selected}
-          disabled={disabled}
-          onChange={onSelect}
-          aria-label={`Select ${role.roleName}`}
-        />
+        <label className={dashboardCheckboxHitAreaClassName}>
+          <input
+            type="checkbox"
+            className={dashboardTableCheckboxClassName}
+            checked={selected}
+            disabled={disabled}
+            onChange={onSelect}
+            aria-label={`Select ${role.roleName}`}
+          />
+        </label>
         <div className="flex min-w-0 flex-1 items-center gap-2 text-sm">
           <span id={`${id}-name`} className="truncate font-medium">
             {role.roleName}
@@ -480,21 +492,22 @@ function RoleRow({
             </span>
           ) : null}
           {choice.action === "new" && !disabled ? (
-            <button
+            <IconButton
               type="button"
               onClick={() => setRenaming(!renaming)}
-              aria-label={`Rename the new role for ${role.roleName}`}
+              label={`Rename the new role for ${role.roleName}`}
               aria-expanded={showName}
               className={cn(
-                "shrink-0 rounded p-1 text-muted-foreground hover:bg-card-hover hover:text-foreground",
-                // Out of the way until the row is pointed at; always there on touch.
+                compactControlClassName,
+                "shrink-0 text-muted-foreground",
+                // Out of the way until the row is hovered or focused; never
+                // hidden from touch, where there is no hover (as RowMenu).
                 !showName &&
-                  "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
-                FOCUS_RING,
+                  "opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100",
               )}
             >
               <Pencil className="h-3.5 w-3.5" aria-hidden />
-            </button>
+            </IconButton>
           ) : null}
         </div>
         <ReadsMeter reads={reads} max={maxReads} />

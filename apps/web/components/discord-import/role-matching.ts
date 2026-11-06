@@ -69,11 +69,17 @@ function words(name: string): string[] {
  * Member", "Cabinet Member") for a suffix to be safe: a wrong guess there
  * opens an exec channel to everyone.
  */
-const CLOSE_MATCHES: Record<string, { aliases: string[]; whole?: true }> = {
-  VICE_PRESIDENT: { aliases: ["vice president", "vp", "vice pres"] },
-  PRESIDENT: { aliases: ["president", "pres"] },
-  TREASURER: { aliases: ["treasurer"] },
-  SECRETARY: { aliases: ["secretary"] },
+const CLOSE_MATCHES: Record<
+  string,
+  { aliases: string[]; whole?: true; officer?: true }
+> = {
+  VICE_PRESIDENT: {
+    aliases: ["vice president", "vp", "vice pres"],
+    officer: true,
+  },
+  PRESIDENT: { aliases: ["president", "pres"], officer: true },
+  TREASURER: { aliases: ["treasurer"], officer: true },
+  SECRETARY: { aliases: ["secretary"], officer: true },
   NEW_MEMBER: {
     aliases: [
       "new member",
@@ -102,8 +108,11 @@ const CLOSE_MATCHES: Record<string, { aliases: string[]; whole?: true }> = {
 };
 
 /**
- * First words that make a title someone other than the officer it ends with.
- * Only close matches check them: a chapter that has a role literally named
+ * Words that, anywhere before an officer title, make it someone other than
+ * the sitting officer: "Immediate Past President", "Incoming Treasurer",
+ * "Fall 2025 PC President" and "New Member President" (a pledge class's own
+ * officer). Only close matches to an officer role check them, so "Class of
+ * 2020 Alumni" is still Alumni, and a chapter that has a role literally named
  * "Past President" still matches it by name.
  */
 const NOT_THE_OFFICER = new Set([
@@ -112,9 +121,14 @@ const NOT_THE_OFFICER = new Set([
   "ex",
   "old",
   "outgoing",
+  "incoming",
+  "elect",
+  "immediate",
   "pc",
   "pledge",
   "class",
+  "new",
+  "nm",
   "assistant",
   "asst",
   "deputy",
@@ -143,12 +157,10 @@ export function matchFrappRole(
   if (same) return { role: same, kind: "same-name" };
 
   const name = words(discordName);
-  // A past, pledge-class or assistant title names someone who is not the
-  // officer: "Past Treasurer" and "PC President" (a pledge class's own
-  // president) must not read the officer's channels.
-  if (NOT_THE_OFFICER.has(name[0] ?? "") && name.length > 1) return null;
   let best: { role: FrappRole; length: number } | null = null;
-  for (const [systemKey, { aliases, whole }] of Object.entries(CLOSE_MATCHES)) {
+  for (const [systemKey, { aliases, whole, officer }] of Object.entries(
+    CLOSE_MATCHES,
+  )) {
     const role = frappRoles.find(
       (candidate) => candidate.system_key === systemKey,
     );
@@ -157,6 +169,16 @@ export function matchFrappRole(
       const aliasWords = words(alias);
       if (whole && aliasWords.length !== name.length) continue;
       if (!endsWith(name, aliasWords)) continue;
+      // A past, incoming, pledge-class or assistant title names someone who
+      // is not the officer, and must not read the officer's channels.
+      if (
+        officer &&
+        name
+          .slice(0, name.length - aliasWords.length)
+          .some((word) => NOT_THE_OFFICER.has(word))
+      ) {
+        continue;
+      }
       if (!best || aliasWords.length > best.length) {
         best = { role, length: aliasWords.length };
       }
@@ -170,8 +192,8 @@ export function matchFrappRole(
  * named after it. Owner's decision on #2855, replacing #2818's "Ignore unless
  * it could read a private channel": a role classifies people (a class year, a
  * committee) even when it gates nothing, and the admin sets any role they
- * don't want to Ignore. A viewer who cannot manage roles starts everything at
- * Ignore, the only mapping the API will take from them.
+ * don't want to Skip. A viewer who cannot manage roles starts everything at
+ * Skip, the only mapping the API will take from them.
  */
 export function defaultRoleChoice(
   role: StagedRole,
@@ -252,7 +274,7 @@ export function roleIssues(
 export interface SameAsDiscordReaders {
   /** Frapp roles, a new one marked; empty when none of its readers is mapped. */
   roles: string[];
-  /** Discord roles that could read it but are set to Ignore. */
+  /** Discord roles that could read it but are set to Skip. */
   ignored: string[];
 }
 

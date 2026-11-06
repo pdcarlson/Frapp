@@ -41,7 +41,6 @@ import {
 import { RoleMappingStep, type RoleStepLock } from "./role-mapping-step";
 import {
   defaultRoleChoice,
-  matchFrappRole,
   privateReads,
   roleIssues,
   sameAsDiscordReaders,
@@ -370,7 +369,7 @@ export function ImportWizard({
   }, [acknowledged, source, importId, createImport, scan, toast]);
 
   // The role step's answers: what the admin changed, over each role's
-  // default. A viewer who cannot manage roles keeps every role on Ignore,
+  // default. A viewer who cannot manage roles keeps every role on Skip,
   // the only mapping the API takes from them.
   const frappRoles = useMemo<FrappRole[]>(
     () =>
@@ -391,8 +390,8 @@ export function ImportWizard({
     [frappRolesQuery.data],
   );
   // Mapping a role needs both the permission and the chapter's roles to map
-  // it to. Without either, every role stays on Ignore and the step says why:
-  // an all-Ignore mapping is still a valid one, so a viewer who cannot read
+  // it to. Without either, every role stays on Skip and the step says why:
+  // an all-Skip mapping is still a valid one, so a viewer who cannot read
   // the roles list (it needs members:view) can still finish the import.
   const holdsRolesManage = can("roles:manage", myPermissions.data?.permissions);
   // Each "could not load" lock applies only when there is no answer at all:
@@ -410,7 +409,7 @@ export function ImportWizard({
             }
           : null;
   // One predicate for what the step shows and what it saves: whenever the
-  // step says every role stays on Ignore, every role does.
+  // step says every role stays on Skip, every role does.
   const canManageRoles =
     rolesLock === null &&
     holdsRolesManage &&
@@ -437,14 +436,19 @@ export function ImportWizard({
   }, [staged, roleEdits, frappRoles, canManageRoles]);
   // What each role matched before any edit, which sorts it into its pile on
   // the role step and keeps it there while it is being changed.
+  // The same default the choices start from, so a viewer held on Skip sees
+  // no "Match your roles" pile of matches that are not being applied.
   const startingRoleMatches = useMemo(() => {
     const matches: Record<string, MatchKind> = {};
     for (const role of staged?.roles ?? []) {
-      matches[role.roleId] =
-        matchFrappRole(role.roleName, frappRoles)?.kind ?? null;
+      matches[role.roleId] = defaultRoleChoice(
+        role,
+        frappRoles,
+        canManageRoles,
+      ).kind;
     }
     return matches;
-  }, [staged, frappRoles]);
+  }, [staged, frappRoles, canManageRoles]);
   const roleProblems = useMemo(
     () =>
       roleIssues(
@@ -771,7 +775,9 @@ export function ImportWizard({
           <ReviewStep
             staged={staged}
             serverName={
-              staged.guildName ?? botConnection.data?.guild_name ?? null
+              staged.guildName ??
+              (source === "bot" ? botConnection.data?.guild_name : null) ??
+              null
             }
             source={source ?? "upload"}
             channelChoices={channelChoices}

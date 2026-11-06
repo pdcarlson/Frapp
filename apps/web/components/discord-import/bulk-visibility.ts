@@ -15,7 +15,8 @@ import type { SameAsDiscordReaders } from "./role-matching";
  * is whole-chapter.
  *
  * A channel with no answer yet makes it Mixed (or Choose… when none is
- * answered). Showing the others' shared answer instead would make picking
+ * answered), and so does Same as Discord on a channel none of whose readers
+ * is mapped. Showing the others' shared answer instead would make picking
  * that same answer do nothing, since a select only reports a change.
  */
 export type BulkVisibilityState =
@@ -32,9 +33,16 @@ export function bulkVisibilityState(
   if (creating.length === 0) return null;
   const answered = creating.flatMap((channel) => {
     const visibility = choices[channel.channelId]?.visibility;
-    return visibility === undefined
-      ? []
-      : [{ visibility, knowsReaders: !!readersOf(channel) }];
+    const readers = readersOf(channel);
+    // Same as Discord with none of its readers mapped gates on nothing, so
+    // it is unanswered here exactly as its row and Needs attention say.
+    if (
+      visibility === undefined ||
+      (visibility === "discord" && (readers?.roles.length ?? 0) === 0)
+    ) {
+      return [];
+    }
+    return [{ visibility, knowsReaders: !!readers }];
   });
   if (answered.length === 0) return "unset";
   if (answered.length < creating.length) return "mixed";

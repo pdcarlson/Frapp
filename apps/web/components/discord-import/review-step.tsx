@@ -167,9 +167,12 @@ export function ReviewStep({
             ? serverName
               ? `${serverName}, read by the Frapp bot.`
               : "Read by the Frapp bot."
-            : `${staged.exportCount} export${staged.exportCount === 1 ? "" : "s"} and ${staged.mediaCount} media file${staged.mediaCount === 1 ? "" : "s"}.`,
-          "It runs in the background, and you get a notification when it finishes.",
-        ].join(" ")}
+            : `${serverName ? `${serverName}: ` : ""}${staged.exportCount} export${staged.exportCount === 1 ? "" : "s"} and ${staged.mediaCount} media file${staged.mediaCount === 1 ? "" : "s"}.`,
+          "It runs in the background, so you can leave this page: its progress is on the Discord import page, and you get a notification when it finishes.",
+          source === "bot" ? "A large server takes a while." : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
       </p>
 
       {/*
@@ -293,7 +296,7 @@ export function ReviewStep({
       {sidebarGroups.length > 0 ? (
         <SummarySection
           title={`${sidebarGroups.length} sidebar categor${sidebarGroups.length === 1 ? "y" : "ies"}`}
-          meta="Existing categories with the same name are reused"
+          meta="Same-name ones are reused; deleting the import removes new ones once empty"
         >
           <ChipList names={sidebarGroups} />
         </SummarySection>
@@ -319,14 +322,14 @@ export function ReviewStep({
 
       <p className="text-xs text-muted-foreground">
         Nobody is added to a role: do that in Settings → Roles afterwards.
-        Imported messages are read-only and never notify anyone. You can delete
-        the whole import later.
+        Imported messages are read-only, never notify anyone, and never count as
+        unread. You can delete the whole import later.
       </p>
     </div>
   );
 }
 
-/** "12 private" or "3 merged, 2 restricted": only what differs from plain. */
+/** "12 private · 3 merged": only what differs from plain. */
 function importingMeta(
   channels: StagedChannel[],
   choices: Record<string, ChannelChoice>,
@@ -489,8 +492,9 @@ function ChipList({ names }: { names: string[] }) {
       limit={24}
       list={(shown) => (
         <ul className="flex flex-wrap gap-1.5">
-          {shown.map((name) => (
-            <li key={name}>
+          {shown.map((name, index) => (
+            // Discord allows one name in two categories (#general twice).
+            <li key={`${index}:${name}`}>
               <Badge variant="outline">{name}</Badge>
             </li>
           ))}

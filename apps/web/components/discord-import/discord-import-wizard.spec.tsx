@@ -185,7 +185,11 @@ import { ImportWizard } from "./import-wizard";
 import { SourceStep } from "./source-step";
 import { ConnectStep } from "./connect-step";
 import { ChannelMappingStep } from "./channel-mapping-step";
-import { defaultChoices, mappingIssues } from "./mapping-issues";
+import {
+  defaultChoices,
+  mappingIssues,
+  type ChannelChoice,
+} from "./mapping-issues";
 import { RoleMappingStep } from "./role-mapping-step";
 import { ReviewStep } from "./review-step";
 import { parseExportPreamble, toExportRelativePath } from "./export-preamble";
@@ -1401,9 +1405,9 @@ describe("ImportWizard — the bot path", () => {
       ).toBe(true);
     });
 
-    it("still lets the import go on, every role on Ignore, when the chapter's roles cannot be loaded", async () => {
+    it("still lets the import go on, every role on Skip, when the chapter's roles cannot be loaded", async () => {
       // GET /v1/roles needs members:view, which channels:manage does not
-      // imply; an all-Ignore mapping needs no roles to map to.
+      // imply; an all-Skip mapping needs no roles to map to.
       rolesFail.value = true;
       scanWithRoles();
       renderAtConsent();
@@ -1419,7 +1423,7 @@ describe("ImportWizard — the bot path", () => {
       expect(roles.every((role) => role.action === "ignore")).toBe(true);
     });
 
-    it("holds every role on Ignore, and saves exactly that, when the viewer's permissions cannot be loaded", async () => {
+    it("holds every role on Skip, and saves exactly that, when the viewer's permissions cannot be loaded", async () => {
       permissionsFail.value = "error";
       scanWithRoles();
       renderAtConsent();
@@ -1446,7 +1450,7 @@ describe("ImportWizard — the bot path", () => {
       expect(becomes("treasurer")).toHaveTextContent("Treasurer");
     });
 
-    it("keeps every role on Ignore for a viewer who cannot manage roles", async () => {
+    it("keeps every role on Skip for a viewer who cannot manage roles", async () => {
       myPermissions.value = ["channels:manage"];
       scanWithRoles();
       renderAtConsent();
@@ -1827,6 +1831,95 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
     expect(server()).toHaveTextContent("Mixed");
   });
 
+  it("goes back to Mixed after a pick made from Mixed, once a channel differs", async () => {
+    const onChange = vi.fn();
+    const props = {
+      channels,
+      onChange,
+      knowsPrivacy: true,
+      readersOf: () => null,
+    };
+    const restrictOne = (choices: Record<string, ChannelChoice>) => ({
+      ...choices,
+      "1": {
+        ...choices["1"]!,
+        visibility: "restricted" as const,
+        requiredPermissions: ["members:view"],
+      },
+    });
+    const mixed = restrictOne(defaultChoices(channels));
+    const { rerender } = render(
+      <ChannelMappingStep
+        {...props}
+        choices={mixed}
+        issues={mappingIssues(channels, mixed, [], () => null)}
+      />,
+    );
+    const server = () =>
+      screen.getByLabelText("Who can read every new channel");
+    expect(server()).toHaveTextContent("Mixed");
+
+    await choose(server(), "Whole chapter");
+    const picked = onChange.mock.calls.at(-1)![0] as Record<
+      string,
+      ChannelChoice
+    >;
+    rerender(
+      <ChannelMappingStep
+        {...props}
+        choices={picked}
+        issues={mappingIssues(channels, picked, [], () => null)}
+      />,
+    );
+    expect(server()).toHaveTextContent("Whole chapter");
+
+    const again = restrictOne(picked);
+    rerender(
+      <ChannelMappingStep
+        {...props}
+        choices={again}
+        issues={mappingIssues(channels, again, [], () => null)}
+      />,
+    );
+    expect(server()).toHaveTextContent("Mixed");
+  });
+
+  it("keeps a channel's own permissions when the server picks Restricted", async () => {
+    const onChange = vi.fn();
+    const choices = {
+      ...defaultChoices(channels),
+      "1": {
+        ...defaultChoices(channels)["1"]!,
+        visibility: "restricted" as const,
+        requiredPermissions: ["billing:manage"],
+      },
+    };
+    render(
+      <ChannelMappingStep
+        channels={channels}
+        onChange={onChange}
+        knowsPrivacy
+        readersOf={() => null}
+        choices={choices}
+        issues={mappingIssues(channels, choices, [], () => null)}
+      />,
+    );
+    await choose(
+      screen.getByLabelText("Who can read every new channel"),
+      "Restricted",
+    );
+    const next = onChange.mock.calls.at(-1)![0] as Record<
+      string,
+      ChannelChoice
+    >;
+    expect(next["1"]!.requiredPermissions).toEqual(["billing:manage"]);
+    for (const [id, choice] of Object.entries(next)) {
+      if (choice.action === "create_new") {
+        expect([id, choice.visibility]).toEqual([id, "restricted"]);
+      }
+    }
+  });
+
   it("skips a whole category in one click, and nothing outside it", () => {
     const { onChange } = renderStep();
     const skipButtons = screen.getAllByRole("button", { name: "Skip all" });
@@ -2013,6 +2106,77 @@ describe("RoleMappingStep — Discord roles become Frapp roles (#2818)", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps a role in its pile while it is changed", () => {
+    render(
+      <RoleMappingStep
+        roles={[
+          { roleId: "r1", roleName: "Treasurer" },
+          { roleId: "r2", roleName: "Cabinet" },
+        ]}
+        choices={{
+          // Was matched to Treasurer; the admin has just set it to Skip.
+          r1: { action: "ignore" },
+          r2: { action: "new", name: "Cabinet" },
+        }}
+        matches={{}}
+        startingMatches={{ r1: "same-name" }}
+        privateReads={new Map([["r2", 3]])}
+        frappRoles={frappRoles}
+        issues={[]}
+        lock={null}
+        onChange={() => {}}
+      />,
+    );
+    const pile = screen.getByRole("button", { name: /^Match your roles/ });
+    fireEvent.click(pile);
+    const body = document.getElementById(pile.getAttribute("aria-controls")!)!;
+    expect(
+      within(body).getByRole("combobox", { name: "Treasurer becomes" }),
+    ).toHaveTextContent("Skip");
+  });
+
+  it("opens a pile on a problem and shows its row, past the limit too", () => {
+    const many = Array.from({ length: 20 }, (_, index) => ({
+      roleId: `r${index}`,
+      roleName: `Role ${index}`,
+    }));
+    render(
+      <RoleMappingStep
+        roles={many}
+        choices={Object.fromEntries(
+          many.map((role) => [
+            role.roleId,
+            { action: "new" as const, name: role.roleName },
+          ]),
+        )}
+        matches={{}}
+        privateReads={new Map()}
+        frappRoles={frappRoles}
+        issues={[
+          { roleId: "r19", message: "A role named Role 19 already exists." },
+        ]}
+        lock={null}
+        onChange={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /^Open no private channel/ }),
+    ).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.getByRole("combobox", { name: "Role 19 becomes" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("A role named Role 19 already exists."),
+    ).toBeInTheDocument();
+    // The rest of the overflow stays folded.
+    expect(
+      screen.queryByRole("combobox", { name: "Role 18 becomes" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Show 4 more" }),
+    ).toBeInTheDocument();
+  });
+
   it("acts on every ticked role at once, and on a whole pile", () => {
     const onChange = vi.fn();
     render(
@@ -2071,7 +2235,7 @@ describe("RoleMappingStep — Discord roles become Frapp roles (#2818)", () => {
     ]);
   });
 
-  it("locks every role on Ignore, and says why, for a viewer who cannot manage roles", () => {
+  it("locks every role on Skip, and says why, for a viewer who cannot manage roles", () => {
     render(
       <RoleMappingStep
         roles={[{ roleId: "r1", roleName: "Exec" }]}
@@ -2095,7 +2259,7 @@ describe("RoleMappingStep — Discord roles become Frapp roles (#2818)", () => {
 });
 
 describe("RoleMappingStep — when roles cannot be loaded (#2818)", () => {
-  it("holds every role on Ignore, says why, and offers a retry", () => {
+  it("holds every role on Skip, says why, and offers a retry", () => {
     const retry = vi.fn();
     render(
       <RoleMappingStep
@@ -2134,6 +2298,12 @@ describe("ReviewStep — a summary you can scan", () => {
     { channelId: "4", channelName: "links", category: null },
     { channelId: "5", channelName: "vault", category: null, readable: false },
     { channelId: "6", channelName: "old-news", category: null },
+    {
+      channelId: "7",
+      channelName: "exec",
+      category: null,
+      privateInDiscord: true,
+    },
   ];
   const roles = Array.from({ length: 30 }, (_, index) => ({
     roleId: `r${index}`,
@@ -2174,6 +2344,12 @@ describe("ReviewStep — a summary you can scan", () => {
           },
           "5": { action: "skip" },
           "6": { action: "skip" },
+          // Private in Discord, opened to everyone: the one note that warns.
+          "7": {
+            action: "create_new",
+            newName: "exec",
+            visibility: "chapter",
+          },
         }}
         roles={roles}
         roleChoices={Object.fromEntries(
@@ -2191,12 +2367,13 @@ describe("ReviewStep — a summary you can scan", () => {
 
     // Importing is open, one line per channel, a note only where it differs.
     const importing = screen.getByRole("button", {
-      name: /^Importing 4 channels/,
+      name: /^Importing 5 channels/,
     });
     expect(importing).toHaveAttribute("aria-expanded", "true");
     expect(importing).toHaveTextContent("1 private · 1 merged");
     expect(screen.getByText("into #general")).toBeInTheDocument();
     expect(screen.getByText("from #links")).toBeInTheDocument();
+    expect(screen.getByText("whole chapter")).toBeInTheDocument();
     expect(screen.queryByText(/same as Discord/)).toBeNull();
 
     // Skipped and roles are counts until opened.
