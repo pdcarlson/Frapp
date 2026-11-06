@@ -399,10 +399,10 @@ recipe for the points glyphs and search. The glyphs live in
 [`apps/web/components/members/directory-glyphs.tsx`](../../../apps/web/components/members/directory-glyphs.tsx)
 and [`apps/web/components/points/points-glyphs.tsx`](../../../apps/web/components/points/points-glyphs.tsx),
 both re-exporting the shell's silhouettes rather than redrawing them. Rendered at 20px in card titles,
-16px in table cells, and 14–16px as a badge companion (§2). Never before a dialog or sheet title
-as decoration that repeats the button just pressed ([`components.md`](components.md#chrome-weight)
-§ Chrome weight, 2026-11-05). A mark that names the surface is not that: the onboarding tutorial's
-per-slide glyphs (§6.2.7) and the ✦ on s17's "Ask Frapp" (components.md §11) stay.
+16px in table cells, and 14–16px as a badge companion (§2). Never before the title of a dialog, panel
+or sheet as decoration that repeats the button just pressed ([`components.md`](components.md#chrome-weight)
+§ Chrome weight and § Surface size, 2026-11-05). A mark that names the surface is not that: the
+onboarding tutorial's per-slide glyphs (§6.2.7) and the ✦ on s17's "Ask Frapp" (components.md §11) stay.
 Inside a `Button` they render at 16 whatever the call site asks for, because
 `buttonVariants` pins `[&_svg]:size-4` — which is also what keeps the required
 375px floor gate unaffected by a glyph swap.
@@ -418,6 +418,7 @@ where an import points.
 | Semantic intent | Glyph | Home |
 | --- | --- | --- |
 | Invite a member | `InviteGlyph` (the nav set's `invite`, Phosphor `user-plus`, §1.1) | `directory-glyphs.tsx` |
+| Member record | none: the member panel's title is the member's name ([`components.md` § Surface size](components.md#surface-size)) | |
 | Role access | `RolesGlyph` | re-export, shell |
 | Directory / ledger search | `SearchGlyph` | re-export, shell |
 | Adjust points | `AdjustGlyph` | `points-glyphs.tsx` |
@@ -477,7 +478,7 @@ before their dialog titles, which went in 2026-11-05 (§ Chrome weight in
 
 | Semantic intent | Glyph |
 |---|---|
-| An event | `EventsGlyph` (re-export) |
+| An event (its panel titles carry none, [`components.md` § Surface size](components.md#surface-size)) | `EventsGlyph` (re-export) |
 | An event's schedule row | `ScheduleGlyph` |
 | A location, a study zone, a session's zone | `StudyZonesGlyph` (re-export) |
 | Role targeting on an event | `RolesGlyph` (re-export) |
