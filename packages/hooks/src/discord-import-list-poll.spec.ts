@@ -5,15 +5,18 @@ import {
 } from "./use-discord-import";
 
 describe("discordImportListPollMs", () => {
-  it("polls the list while an import on it is being deleted, so Clear appears without a reload", () => {
-    expect(
-      discordImportListPollMs([{ status: "completed" }, { status: "purging" }]),
-    ).toBe(DISCORD_IMPORT_POLL_MS);
-  });
+  it.each(["ready", "running", "purging"])(
+    "polls the list while an import on it is %s",
+    (status) => {
+      expect(discordImportListPollMs([{ status: "purged" }, { status }])).toBe(
+        DISCORD_IMPORT_POLL_MS,
+      );
+    },
+  );
 
-  it("does not poll otherwise; the detail poll follows the watched import", () => {
+  it("does not poll once nothing on it moves", () => {
     expect(
-      discordImportListPollMs([{ status: "running" }, { status: "purged" }]),
+      discordImportListPollMs([{ status: "completed" }, { status: "purged" }]),
     ).toBe(false);
     expect(discordImportListPollMs([])).toBe(false);
     expect(discordImportListPollMs(undefined)).toBe(false);

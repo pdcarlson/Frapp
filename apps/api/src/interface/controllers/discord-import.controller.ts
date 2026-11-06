@@ -89,7 +89,7 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Start a Discord archive import',
     description:
-      'Requires the consent acknowledgement. Returns the import to upload an export against.',
+      "Requires the consent acknowledgement. Returns the import to upload an export against. 409 while another of the chapter's imports still holds what it brought in (queued, running, completed, failed, cancelled or deleting): a chapter has one import at a time, so delete it first.",
   })
   @ApiCreatedResponse({ type: DiscordImportResponseDto })
   // `source` as the server resolved it (`upload` when omitted); never the
@@ -137,7 +137,7 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Import detail and progress',
     description:
-      "Poll this while an import is running. An upload's progress is `imported_messages` / `total_messages`; its total grows a part at a time, as each export part is opened. A bot import's total grows with every page it reads from Discord, so its progress is `channels_done` / `channels_total`: the channel and thread rows being imported, and how many of those are finished (imported, or skipped because Discord no longer showed them to the bot). Both are null for an upload, and for a bot import that is not queued, running, failed or cancelled. While an import is being deleted (`purging`), `purged_messages` counts the messages deleted so far, out of `imported_messages`; the count can stop short of that total, so `purged` is what says the deletion finished.",
+      "Poll this while an import is running. An upload's progress is `imported_messages` / `total_messages`; its total grows a part at a time, as each export part is opened. A bot import's total grows with every page it reads from Discord, so its progress is `channels_done` / `channels_total`: the channel and thread rows being imported, and how many of those are finished (imported, or skipped because Discord no longer showed them to the bot). Both are null for an upload, and for a bot import that is not queued, running, completed, failed or cancelled. While an import is being deleted (`purging`), `purged_messages` counts the messages deleted so far, out of `imported_messages`; the count can stop short of that total, so `purged` is what says the deletion finished.",
   })
   @ApiOkResponse({ type: DiscordImportWithProgressResponseDto })
   async get(
@@ -309,7 +309,7 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Queue the import',
     description:
-      'The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818). A bot import may carry a date cutoff, `messages_after` (#2858); the body is optional.',
+      "The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818). A bot import may carry a date cutoff, `messages_after` (#2858); the body is optional. 409 while another of the chapter's imports still holds what it brought in, as on create.",
   })
   // Optional: every client before #2858 starts with no body at all.
   @ApiBody({ type: StartDiscordImportDto, required: false })

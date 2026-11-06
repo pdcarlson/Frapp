@@ -70,6 +70,9 @@ describe("GIF drift regression", () => {
     expect(isAllowedUploadExtension("document", "notes.gif")).toBe(true);
     expect(isAllowedUploadExtension("document", ".gif")).toBe(true);
     expect(contentTypeByExtension("document").gif).toBe("image/gif");
+    // An extension named like an Object.prototype key is not a type.
+    expect(contentTypeByExtension("archive")["constructor"]).toBeUndefined();
+    expect(contentTypeByExtension("archive")["__proto__"]).toBeUndefined();
     expect(acceptAttribute("document").split(",")).toContain(".gif");
   });
 

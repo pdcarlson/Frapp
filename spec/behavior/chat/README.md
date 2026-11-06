@@ -529,13 +529,17 @@ chooses one at `/discord-import`; everything after the choice is identical.
 **An import may leave out old history (#2858).** *2026-09-29, owner's
 decision: a chapter need not import years it does not want, and every message
 left out is media not copied, stored or paid for.* A bot import's review step
-takes an optional **Import messages from** date, empty by default, meaning all
-history. The day starts at the admin's own midnight. The worker reads each
+asks **How far back should we go?** before anything else, with one-tap
+choices: Everything (the default, meaning all history), Last 4 years, Last 2
+years, Last year, or Pick a date, which opens an **Import messages from** date
+box. A preset counts back from today. The day starts at the admin's own
+midnight. *2026-11-05, owner's request: the date box sat at the bottom of the
+step and was easy to miss.* The worker reads each
 channel newest first and ends it at the first older message, so nothing older
 is read past that page, copied or stored. The date is fixed once the import
 starts: a restart keeps it, and changing it is refused, because the channels
 already done and the ones still to go would follow different rules. The
-import's row says "Messages since" the date, since a partial import must say
+import's page says "messages since" the date, since a partial import must say
 so. An upload has no such field, because its media is already uploaded by
 then. Its range is set when exporting, with DiscordChatExporter's own
 `--after <date>`, which the upload step suggests; the API refuses a cutoff on
@@ -545,22 +549,57 @@ an upload.
 keeps working if Discord ever throttles or refuses one shared bot across every
 chapter, and it is the only path for a chapter that cannot install apps in its
 own server. Either way a background job writes the rows, the admin sees
-per-import progress, and can delete the whole import afterwards. A bot import's
+its progress, and can delete the whole import afterwards. A bot import's
 progress is counted in channels and threads, a channel Discord no longer shows
 the bot counting as done: its message total is only known once Discord has been
 read, so a message count would read full from the first page (#2816). An upload's
 is counted in messages. Neither reads 100% until the import has completed.
 
-**Watching an import (#2857).** Watch, on a bot import that is queued or
-running, opens it channel by channel: how many channels and threads are done,
+**One import per chapter (2026-11-06).** *Owner's decision (the import
+redesign): a chapter moves off Discord once, so `/discord-import` is built
+around its one import rather than a list of jobs.* The API refuses to create
+or start an import (409, `Your chapter already has a Discord import. Delete it
+before starting another.`) while another of the chapter's imports is queued,
+running, finished, failed, stopped or being deleted: anything that holds, or
+may still hold, messages. A draft holds nothing and is not counted, and once
+an import is deleted the chapter may import again. Two creates racing each
+other can both pass the check; it guards the ordinary path, not a
+deliberate race. The page shows that one import in the state it is in:
+
+- **Nothing imported yet:** what comes over (messages, threads and forum
+  posts, files, reaction counts, categories if the admin wants them, private
+  channels kept private) and what stays behind (DMs, voice, and who holds
+  which role), with the two ways in as the wizard's first step. Picking one
+  opens the wizard past it. An abandoned draft reads as nothing imported, but
+  an upload's draft can hold its export, counted against the chapter's
+  archive space, so the newest one is named with a Delete. The import last
+  deleted is named in one line until the admin dismisses it.
+- **Importing:** the messages counted in so far, channels and threads done
+  out of the total, the percent, and Stop import. The admin can leave: when
+  the import completes or fails, the admin who set it up (`created_by`) is
+  notified, if they still hold `channels:manage` in the chapter. One the
+  admin stopped sends nothing. The notice itself is in
+  [`../notifications.md`](../notifications.md#notification-triggers-complete-list).
+- **Finished, or stopped part-way:** the messages and files that came over,
+  and the channels and threads (all it read once completed, the ones it got
+  through otherwise); Open chat, once it completed; Resume import, on one
+  that failed, which starts it again from where it stopped (#2947);
+  what didn't come over, grouped by reason in plain words, from the last 50
+  warnings the import keeps; and Delete import. A deletion that failed
+  part-way also leaves the import `failed`, and is titled as a failed
+  deletion, with no Resume.
+- **Deleting:** the messages counted down (below).
+
+**Watching an import (#2857).** See every channel, on a bot import that is
+queued or running, opens it channel by channel: how many channels and threads are done,
 importing, waiting, failed or gone from Discord; the one importing now with its
 message count so far; the last few finished; and the failures with their
 reasons (at most 20 named), each linking to the Frapp channel it lands in once
 there is one. A channel the import fails on is marked failed with the reason,
-and a restart resumes it (through the API only today, #2947). The same panel is Details on a finished bot import,
+and a restart resumes it (Resume import on the page, for a failed import; #2947 tracks what a restart still gets wrong after a remap). The same panel opens on a finished bot import,
 read once when the import stops rather than polled, and there a channel still
-marked importing is where the import stopped. Hide closes the panel and keeps
-the row's own progress live. Imported messages never arrive live in an open
+marked importing is where the import stopped. Hide channels closes the panel
+and keeps the import's own progress live. Imported messages never arrive live in an open
 chat, so the panel says that opening a channel shows what has landed so far.
 An upload has no such panel: it works through export parts, and its channel
 rows record neither their order nor a part it had to skip, so its progress
@@ -662,13 +701,12 @@ channel that reports a different one fails the import rather than being skipped.
   qualifier: starting a *second* import of the same export into a *different*
   channel imports the history again, by design — that is an operator choosing to
   put it somewhere else, not a duplicate. Re-running the wizard from the start
-  therefore does not deduplicate against an earlier import; delete the first one
-  instead.
+  therefore does not deduplicate against an earlier import, which is one reason
+  a chapter holds one import at a time: delete the first one instead.
 - **Deleting an import is not the same as clearing it.** Delete purges what the
   import brought in and keeps the job row as the record that it happened.
   Clear takes that record off the chapter's list, and is offered only once the
-  import has been deleted (#2817): the list is where Delete lives, so an import
-  that still holds what it brought in stays on it.
+  import has been deleted (#2817), as Dismiss on the line that names it.
 - **Where it lands is the operator's choice, per channel, starting from a safe
   default.** Every channel the bot can read starts as a *new* Frapp channel
   with its Discord name, or as a merge into a like-named one (below), so a
