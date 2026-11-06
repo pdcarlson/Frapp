@@ -324,8 +324,8 @@ theme control.
 
 **Every family has now departed**, so this section records a finished
 migration rather than a live one: chat (§6.2.2), Directory & Finance —
-members, alumni, billing and points (§6.2.3) — Chapter Ops — events, tasks,
-study hours, service hours and study zones (§6.2.4) — Resources & Reporting —
+members, alumni, billing and points (§6.2.3) — Chapter Ops — events, study
+hours and study zones (§6.2.4) — Resources & Reporting —
 documents, backwork, polls and reports (§6.2.5) — Settings & Roles, which
 ships no family file and says why (§6.2.6) — and Profile & pre-auth (§6.2.7).
 
@@ -398,7 +398,11 @@ glyphs: the nav set (§1.1) for the re-exports and `InviteGlyph`, the §1 stroke
 recipe for the points glyphs and search. The glyphs live in
 [`apps/web/components/members/directory-glyphs.tsx`](../../../apps/web/components/members/directory-glyphs.tsx)
 and [`apps/web/components/points/points-glyphs.tsx`](../../../apps/web/components/points/points-glyphs.tsx),
-both re-exporting the shell's silhouettes rather than redrawing them. Rendered at 20px in card titles (never the title of a dialog, panel or sheet, [`components.md` § Surface size](components.md#surface-size); four dialogs still carry one until #3519), 16px in table cells, and 14–16px as a badge companion (§2).
+both re-exporting the shell's silhouettes rather than redrawing them. Rendered at 20px in card titles,
+16px in table cells, and 14–16px as a badge companion (§2). Never before the title of a dialog, panel
+or sheet as decoration that repeats the button just pressed ([`components.md`](components.md#chrome-weight)
+§ Chrome weight and § Surface size, 2026-11-05). A mark that names the surface is not that: the
+onboarding tutorial's per-slide glyphs (§6.2.7) and the ✦ on s17's "Ask Frapp" (components.md §11) stay.
 Inside a `Button` they render at 16 whatever the call site asks for, because
 `buttonVariants` pins `[&_svg]:size-4` — which is also what keeps the required
 375px floor gate unaffected by a glyph swap.
@@ -462,13 +466,15 @@ four and is corrected here rather than left drifting):
 
 ### 6.2.4 Chapter Ops (Signet duotone)
 
-Since the #920 Chapter Ops slice these five families draw Signet glyphs, all
-from the nav set (§1.1) except the stroke-recipe search glyph. The glyphs live
-in
+Since the #920 Chapter Ops slice these families draw Signet glyphs, all from
+the nav set (§1.1) except the stroke-recipe search glyph. The glyphs live in
 [`apps/web/components/events/chapter-ops-glyphs.tsx`](../../../apps/web/components/events/chapter-ops-glyphs.tsx),
-one file for five screens rather than five files, because the five share their
-intents rather than partitioning them — the map pin marks an event's location,
-a running session's zone and a zone row alike.
+one file for the events, study hours and study zones screens rather than one
+each, because they share their intents rather than partitioning them — the map
+pin marks an event's location, a running session's zone and a zone row alike.
+Tasks and service hours were in the family too; their only glyphs were the ones
+before their dialog titles, which went in 2026-11-05 (§ Chrome weight in
+[`components.md`](components.md#chrome-weight)), so they draw none from it now.
 
 | Semantic intent | Glyph |
 |---|---|
@@ -479,10 +485,8 @@ a running session's zone and a zone row alike.
 | The attendance roster | `DirectoryGlyph` (re-export) |
 | An event's point value | `PointsGlyph` (re-export) |
 | Search, in the events toolbar | `SearchGlyph` (re-export) |
-| A task (the create dialog's title glyph goes in #3519) | `TasksGlyph` (re-export) |
-| A service entry (the log dialog's title glyph goes in #3519) | `ServiceGlyph` (re-export) |
 
-Eight of the nine are re-exports from
+Six of the seven are re-exports from
 [`apps/web/components/layout/nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx),
 which is the rule §1 rule 1 already sets and the Directory family already
 follows: a second copy of the same path data is the drift the rule exists to
@@ -496,7 +500,8 @@ points — and the events table drew its role-targeting and recurrence markers a
 12px, under §2's 14–16 badge-companion floor.
 
 - **Control furniture**, unchanged from §6.2.2's rule: `Loader2`,
-  `AlertCircle`, `AlertTriangle`, `Trash2`, `Pencil`, `Plus` and `Save`. This family has
+  `AlertCircle`, `AlertTriangle`, `Trash2`, `Pencil`, `Plus`, `Save`, and the
+  event detail sheet's `CalendarPlus` (Add to calendar). This family has
   more of the second kind than any other — every pair naming a *control's own
   action* rather than a domain object stays Lucide: `Play`/`Pause`/`Square` on
   the study timer, `Eye`/`EyeOff` on its tracking state, `Power`/`PowerOff` on

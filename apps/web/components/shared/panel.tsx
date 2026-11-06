@@ -66,24 +66,37 @@ PanelContent.displayName = "PanelContent";
  * The title wraps rather than truncating: it is often a record's name (an
  * event can be 255 characters), and the panel shows it nowhere else. `pr-14`
  * clears the close button.
+ *
+ * `actions` are the record's own icon controls (`IconButton`s), drawn in the
+ * row beside the close rather than as a toolbar opening the body
+ * (components.md § Chrome weight). Their box is the title's first line, 26px,
+ * so at either pointer size (36px under a mouse, 44px under a finger) they
+ * centre on that line and on the close button however far the title wraps.
  */
 export function PanelHeader({
   children,
+  actions,
   className,
 }: {
   children: React.ReactNode;
+  actions?: React.ReactNode;
   className?: string;
 }) {
   return (
     <div
       className={cn(
-        "flex min-h-14 shrink-0 items-center py-[15px] pl-5 pr-14",
+        "flex min-h-14 shrink-0 items-center gap-2 py-[15px] pl-5 pr-14",
         className,
       )}
     >
       <SheetTitle className="min-w-0 flex-1 break-words text-lg font-bold leading-[26px]">
         {children}
       </SheetTitle>
+      {actions ? (
+        <div className="flex h-[26px] shrink-0 items-center self-start">
+          {actions}
+        </div>
+      ) : null}
     </div>
   );
 }

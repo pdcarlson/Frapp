@@ -17,6 +17,8 @@ import {
   SheetPrimaryButton,
   SheetScrim,
   useSheetBackgroundStyle,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -56,6 +58,7 @@ export const AccentSheet = forwardRef<BottomSheetModal>(function AccentSheet(
   _props,
   ref,
 ) {
+  const closeSheet = useSheetClose(ref);
   const backgroundStyle = useSheetBackgroundStyle();
 
   return (
@@ -67,11 +70,9 @@ export const AccentSheet = forwardRef<BottomSheetModal>(function AccentSheet(
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}
     >
+      <SheetBackToClose onClose={closeSheet} />
       <AccentSheetBody
-        onDone={() => {
-          if (typeof ref === "function" || !ref?.current) return;
-          ref.current.dismiss();
-        }}
+        onDone={closeSheet}
       />
     </BottomSheetModal>
   );
@@ -88,7 +89,10 @@ function AccentSheetBody({ onDone }: { onDone: () => void }) {
   // chapter's real accent.
   if (!chapter.data) {
     return (
-      <BottomSheetView style={styles.body}>
+      <BottomSheetView
+        style={styles.body}
+        onAccessibilityEscape={onDone}
+      >
         <SheetHeader title="Chapter accent" onCancel={onDone} />
         {chapter.isError ? (
           <Text style={styles.error}>
@@ -137,7 +141,10 @@ function AccentSheetForm({
   }
 
   return (
-    <BottomSheetView style={styles.body}>
+    <BottomSheetView
+      style={styles.body}
+      onAccessibilityEscape={onDone}
+    >
       <SheetHeader title="Chapter accent" onCancel={onDone} />
       {/* The one line the picker can't show: Settings is otherwise a screen
           of personal preferences, and this save repaints every member's app. */}

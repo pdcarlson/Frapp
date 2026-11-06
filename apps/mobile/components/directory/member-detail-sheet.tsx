@@ -29,6 +29,8 @@ import {
   TallSheetHeader,
   useSheetBackgroundStyle,
   useTallSheetProps,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 import {
   resolveCustomRoleNames,
@@ -100,6 +102,7 @@ export const MemberDetailSheet = forwardRef<
   MemberDetailSheetProps
 >(function MemberDetailSheet({ member, onDismiss }, ref) {
   const userId = member?.userId ?? null;
+  const closeSheet = useSheetClose(ref);
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
@@ -181,11 +184,6 @@ export const MemberDetailSheet = forwardRef<
     openUserIdRef.current = userId;
   }, [userId]);
 
-  function dismiss() {
-    if (typeof ref === "function" || !ref?.current) return;
-    ref.current.dismiss();
-  }
-
   async function startDm(memberUserId: string, name: string) {
     if (dmInFlightRef.current.has(memberUserId)) return;
     dmInFlightRef.current.add(memberUserId);
@@ -196,7 +194,7 @@ export const MemberDetailSheet = forwardRef<
       );
       if (openUserIdRef.current !== memberUserId) return;
       if (!channelId) throw new Error("No channel id returned");
-      dismiss();
+      closeSheet();
       router.push({ pathname: "/chat-thread", params: { channelId } });
     } catch {
       if (openUserIdRef.current !== memberUserId) return;
@@ -216,7 +214,9 @@ export const MemberDetailSheet = forwardRef<
       backdropComponent={SheetScrim}
       onDismiss={onDismiss}
     >
+      <SheetBackToClose onClose={closeSheet} />
       <BottomSheetScrollView
+        onAccessibilityEscape={closeSheet}
         style={styles.scroll}
         contentContainerStyle={styles.body}
         // The X stays pinned while a long profile scrolls under it: at full
@@ -224,7 +224,7 @@ export const MemberDetailSheet = forwardRef<
         stickyHeaderIndices={[0]}
       >
         <View style={styles.stickyHeader}>
-          <TallSheetHeader onClose={dismiss} />
+          <TallSheetHeader onClose={closeSheet} />
         </View>
 
         {memberQuery.isPending ? (
@@ -341,6 +341,7 @@ export const MemberDetailSheet = forwardRef<
                   <ListRow
                     label={`Unblock ${blockTarget.displayName}`}
                     description={UNBLOCK_ROW_DESCRIPTION}
+                    action
                     disabled={blockActions.isPending}
                     onPress={() =>
                       confirmUnblockMember({
@@ -353,6 +354,7 @@ export const MemberDetailSheet = forwardRef<
                   <ListRow
                     label={`Block ${blockTarget.displayName}`}
                     description={BLOCK_ROW_DESCRIPTION}
+                    action
                     destructive
                     disabled={blockActions.isPending}
                     onPress={() =>
