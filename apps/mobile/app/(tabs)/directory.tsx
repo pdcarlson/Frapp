@@ -17,7 +17,11 @@ import {
   SkeletonRegion,
   SkeletonText,
 } from "@/components/state-block";
-import { BACK_TO_MORE, BackRow } from "@/components/back-row";
+import {
+  BACK_TO_MORE,
+  PinnedBackRow,
+  pinnedBackClearance,
+} from "@/components/back-row";
 import { Chip, FilterChips, SearchField } from "@/components/filter-chips";
 import { gutterBleed, usePressFeedback } from "@/components/list-section";
 import { DirectoryGlyph } from "@/components/more/more-glyphs";
@@ -34,6 +38,7 @@ import {
   selectDirectoryRows,
 } from "@/lib/more/directory";
 import { records, str } from "@/lib/more/narrow";
+import { useTabBarClearance } from "@/lib/floating-chrome";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -71,6 +76,7 @@ type Tab = "actives" | "alumni";
 export default function DirectoryScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const tabBarClearance = useTabBarClearance();
   const chapterId = useActiveChapterId();
   const detailSheetRef = useRef<BottomSheetModal>(null);
   const [selected, setSelected] = useState<DirectoryRow | null>(null);
@@ -162,15 +168,10 @@ export default function DirectoryScreen() {
   );
 
   const header = (
-    <View style={styles.header}>
-      {/* One block, so the header's gap doesn't widen the space under the
-          back row past the shell's (`components/screen-shell.tsx`). */}
-      <View>
-        <BackRow {...BACK_TO_MORE} />
-        <Text accessibilityRole="header" style={styles.title}>
-          Directory
-        </Text>
-      </View>
+    <View style={[styles.header, { paddingTop: pinnedBackClearance(tokens) }]}>
+      <Text accessibilityRole="header" style={styles.title}>
+        Directory
+      </Text>
 
       <SearchField
         value={query}
@@ -294,42 +295,51 @@ export default function DirectoryScreen() {
       style={styles.safeArea}
       edges={["top", "left", "right", "bottom"]}
     >
-      <FlatList
-        data={rows}
-        keyExtractor={(row) => row.userId}
-        ListHeaderComponent={header}
-        ListEmptyComponent={
-          // The skeleton stands in for the rows themselves, so it takes no
-          // inset: the empty and error cards do.
-          !!chapterId && activeQuery.isPending ? (
-            <MemberListSkeleton
-              label={
-                // A search looks across both lists and hides the tabs, so it
-                // names neither tab's list.
-                isSearching
-                  ? "Searching chapter members"
-                  : tab === "alumni"
-                    ? "Loading alumni directory"
-                    : "Loading chapter members"
-              }
+      {/* Pinned, as every screen's back capsule is (`ScreenShell`), inside an
+          unpadded View so it sits where the content starts. */}
+      <View style={styles.listFrame}>
+        <PinnedBackRow back={BACK_TO_MORE} />
+        <FlatList
+          data={rows}
+          keyExtractor={(row) => row.userId}
+          ListHeaderComponent={header}
+          ListEmptyComponent={
+            // The skeleton stands in for the rows themselves, so it takes no
+            // inset: the empty and error cards do.
+            !!chapterId && activeQuery.isPending ? (
+              <MemberListSkeleton
+                label={
+                  // A search looks across both lists and hides the tabs, so it
+                  // names neither tab's list.
+                  isSearching
+                    ? "Searching chapter members"
+                    : tab === "alumni"
+                      ? "Loading alumni directory"
+                      : "Loading chapter members"
+                }
+              />
+            ) : (
+              <View style={styles.emptyWrap}>{renderBody()}</View>
+            )
+          }
+          renderItem={({ item }) => (
+            <MemberRow
+              row={item}
+              onPress={() => {
+                setSelected(item);
+                detailSheetRef.current?.present();
+              }}
             />
-          ) : (
-            <View style={styles.emptyWrap}>{renderBody()}</View>
-          )
-        }
-        renderItem={({ item }) => (
-          <MemberRow
-            row={item}
-            onPress={() => {
-              setSelected(item);
-              detailSheetRef.current?.present();
-            }}
-          />
-        )}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        refreshControl={<ThemedRefreshControl refresh={refresh} />}
-      />
+          )}
+          contentContainerStyle={[
+            styles.content,
+            // Clear of the floating tab bar (`lib/floating-chrome.tsx`).
+            { paddingBottom: tokens.spacing.xl + tabBarClearance },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={<ThemedRefreshControl refresh={refresh} />}
+        />
+      </View>
       <MemberDetailSheet
         ref={detailSheetRef}
         member={selected}
@@ -450,6 +460,9 @@ const AVATAR_SIZE = 40;
 function createStyles(tokens: SignetTokens) {
   const avatarSize = AVATAR_SIZE;
   return StyleSheet.create({
+    listFrame: {
+      flex: 1,
+    },
     safeArea: {
       flex: 1,
       backgroundColor: tokens.color.surface.background,

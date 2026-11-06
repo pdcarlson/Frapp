@@ -132,13 +132,12 @@ describe("tab layout (#2485)", () => {
 });
 
 /**
- * #3344 — the bar reserves the bottom inset.
+ * #3344 — the bar clears the bottom inset.
  *
  * Android draws the app edge to edge, so the swipe bar sits over the bottom of
- * the window. The bar sets a fixed `height`, which replaces the inset React
- * Navigation would add, so on the first store build the Events and Tasks
- * labels sat under the swipe bar. The bar has to add the inset itself, below
- * its drawn 62pt row.
+ * the window; on the first store build the Events and Tasks labels sat under
+ * it. Since the floating glass bar (owner pick 2026-11-05) the bar keeps its
+ * drawn 62pt and floats above the inset by its own `bottom` offset.
  */
 describe("tab bar inset (#3344)", () => {
   function barStyle(): Record<string, unknown> {
@@ -150,22 +149,35 @@ describe("tab bar inset (#3344)", () => {
     >;
   }
 
-  it("grows by the bottom inset and pads its row above it", () => {
-    device.bottomInset = 24;
+  it("floats the 62pt capsule above the inset, tucked 8pt into it", () => {
+    device.bottomInset = 34;
     try {
       const style = barStyle();
-      expect(style.height).toBe(62 + 24);
+      expect(style.position).toBe("absolute");
+      expect(style.height).toBe(62);
       expect(style.paddingTop).toBe(6);
-      expect(style.paddingBottom).toBe(6 + 24);
+      expect(style.paddingBottom).toBe(6);
+      // Tucked 8pt into the iPhone home indicator's 34pt inset.
+      expect(style.bottom).toBe(34 - 8);
+      expect(style.borderRadius).toBe(31);
+      expect(style.left).toBe(14);
+      expect(style.right).toBe(14);
     } finally {
       device.bottomInset = 0;
     }
   });
 
-  it("keeps the drawn 62pt bar where there is no inset", () => {
+  it("keeps 12pt off the edge where there is no inset", () => {
     const style = barStyle();
     expect(style.height).toBe(62);
-    expect(style.paddingBottom).toBe(6);
+    expect(style.bottom).toBe(12);
+  });
+
+  it("draws no shadow or glow, only glass", () => {
+    const style = barStyle();
+    expect(style.elevation).toBe(0);
+    expect(style.shadowOpacity).toBe(0);
+    expect(style.backgroundColor).toBe("transparent");
   });
 });
 

@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { backArrowColor } from "@/test/back-row";
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -1346,11 +1347,9 @@ describe("join screen — polish", () => {
 
     const back = labelled(tree.root, "Back to the choices");
     const text = back?.findByType("Text" as never);
-    expect(text?.props.children).toBe("‹ Back");
+    expect(text?.props.children).toBe("Back");
     // `gold.askText`: `(auth)` has no chapter accent to follow.
-    expect(text?.props.style).toEqual(
-      expect.objectContaining({ color: "#F4CB63" }),
-    );
+    expect(backArrowColor(back!)).toBe("#F4CB63");
 
     typeToken(tree.root, "invite-token-9");
     continueToConfirm(tree.root);

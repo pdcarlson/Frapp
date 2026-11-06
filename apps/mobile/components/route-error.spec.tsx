@@ -414,6 +414,12 @@ describe("the layouts mount the boundaries", () => {
       /^export function ErrorBoundary\([^)]*\)\s*\{\s*return <AppErrorScreen \{\.\.\.props\} boundary="tabs" \/>;/m,
     );
     // Anchored to a line of its own, so a commented-out prop fails here.
-    expect(tabs).toMatch(/^\s*screenLayout=\{screenErrorLayout\}\s*$/m);
+    expect(tabs).toMatch(/^\s*screenLayout=\{floatingScreenLayout\}\s*$/m);
+    // And that layout still wraps every screen in `screenErrorLayout`.
+    const chrome = readFileSync(
+      path.resolve(__dirname, "../lib/floating-chrome.tsx"),
+      "utf8",
+    );
+    expect(chrome).toMatch(/^\s*\{screenErrorLayout\(props\)\}\s*$/m);
   });
 });

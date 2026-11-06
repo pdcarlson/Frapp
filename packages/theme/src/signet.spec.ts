@@ -352,7 +352,7 @@ describe("Signet scales match foundations.md", () => {
     expect(Object.values(signetDarkTokens.spacing)).toEqual(steps);
 
     // "Touch targets MUST be ≥ 44px. Buttons run 44–48px tall. Tab bar items
-    // are 56px tall."
+    // are 50px tall, inside the 62px floating bar."
     const [minimum] = numbers(body.match(/≥\s*(\d+)px/)?.[0] ?? "");
     const buttons = numbers(body.match(/Buttons run ([\d–-]+)px/)?.[1] ?? "");
     const [tabBar] = numbers(body.match(/Tab bar items are (\d+)px/)?.[1] ?? "");

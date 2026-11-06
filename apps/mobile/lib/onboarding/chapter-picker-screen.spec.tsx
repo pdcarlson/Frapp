@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { backArrowColor } from "@/test/back-row";
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -162,12 +163,10 @@ describe("chapter picker, opened from More", () => {
     const back = moreRow(tree.root)!;
     const column = tree.root.findByType("ScrollView" as never);
 
-    expect(drawnText(back)).toBe("‹ More");
+    expect(drawnText(back)).toBe("More");
     // House gold (`gold.askText`), not the chapter's accent, as all of
     // `(auth)` is.
-    expect(flatStyle(back.findByType("Text" as never).props.style).color).toBe(
-      signetDarkTokens.color.gold.askText,
-    );
+    expect(backArrowColor(back)).toBe(signetDarkTokens.color.gold.askText);
     // At the top of the column, where every screen opened from More puts its
     // row and title, rather than floating above a centred list.
     expect(
