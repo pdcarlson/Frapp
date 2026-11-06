@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import { isSafeHref } from "@repo/chat-core/links";
 import {
-  MESSAGE_MARKDOWN_ELEMENTS,
+  MESSAGE_RENDER_ELEMENTS,
   layOutMessageBody,
   remarkDepthCap,
   remarkMentionChips,
@@ -15,17 +15,8 @@ import {
 import { MENTION_CHIP } from "../chip";
 import { cn } from "@/lib/utils";
 
-/**
- * `spec/behavior/chat/README.md`'s "Text formatting" set, shared with mobile
- * (`MESSAGE_MARKDOWN_ELEMENTS` says what it holds and why), plus `mark`.
- *
- * `mark` is **not** part of that authored set: no CommonMark syntax produces
- * one and raw HTML is never parsed, so the only thing that can emit a `mark`
- * here is `remarkMentionChips` below. Leaving it off the list would unwrap
- * every mention chip back to plain text — the allowlist is applied after the
- * plugins run, not to the source.
- */
-const ALLOWED_ELEMENTS = [...MESSAGE_MARKDOWN_ELEMENTS, "mark"];
+/** The formatting set plus the mention chip (`MESSAGE_RENDER_ELEMENTS`). */
+const ALLOWED_ELEMENTS = MESSAGE_RENDER_ELEMENTS;
 const ALLOWED: ReadonlySet<string> = new Set(ALLOWED_ELEMENTS);
 
 /**

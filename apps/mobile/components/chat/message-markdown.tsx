@@ -18,7 +18,7 @@ import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import { isOpenableHref } from "@repo/chat-core/links";
 import {
-  MESSAGE_MARKDOWN_ELEMENTS,
+  MESSAGE_RENDER_ELEMENTS,
   isElement,
   layOutMessageBody,
   remarkBareUrls,
@@ -113,12 +113,8 @@ function collectLinks(root: HastNode): MessageLink[] {
 
 type TextFlowResult = Omit<ParsedMessageMarkdown, "body">;
 
-/**
- * The shared authored set plus `mark`, which only `remarkMentionChips` emits:
- * no CommonMark syntax makes one and raw HTML is never parsed. Left off, the
- * allowlist would unwrap every mention chip back to plain text, as on web.
- */
-const ALLOWED_ELEMENTS: readonly string[] = [...MESSAGE_MARKDOWN_ELEMENTS, "mark"];
+/** The formatting set plus the mention chip (`MESSAGE_RENDER_ELEMENTS`). */
+const ALLOWED_ELEMENTS = MESSAGE_RENDER_ELEMENTS;
 const ALLOWED: ReadonlySet<string> = new Set(ALLOWED_ELEMENTS);
 
 /**

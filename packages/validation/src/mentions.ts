@@ -243,6 +243,15 @@ export interface MentionSuggestion<T extends MentionCandidate> {
   label: string;
 }
 
+/**
+ * A name or query as the picker compares it: lower case, with the curly
+ * apostrophe read as the straight one. iOS swaps `'` for `’` as it is typed,
+ * so without this `@O'Br` from an iPhone would match no "O'Brien".
+ */
+function matchable(value: string): string {
+  return value.toLowerCase().replace(/’/g, "'");
+}
+
 /** Web's popup cap, and mobile's. */
 const MAX_MENTION_SUGGESTIONS = 8;
 
@@ -261,14 +270,14 @@ export function mentionSuggestions<T extends MentionCandidate>(
   query: string,
   limit: number = MAX_MENTION_SUGGESTIONS,
 ): MentionSuggestion<T>[] {
-  const needle = query.trim().toLowerCase();
+  const needle = matchable(query.trim());
   const offered: MentionSuggestion<T>[] = [];
   for (const member of roster) {
     if (offered.length >= limit) break;
     if (member.display_name.length === 0) continue;
     const label = mentionLabelFor(member.display_name);
     if (!/^\p{L}/u.test(label)) continue;
-    if (needle && !member.display_name.toLowerCase().includes(needle)) continue;
+    if (needle && !matchable(member.display_name).includes(needle)) continue;
     offered.push({ member, label });
   }
   return offered;
@@ -280,19 +289,29 @@ export interface ActiveMentionQuery {
   start: number;
   /** The text between the `@` and the caret. Empty right after typing `@`. */
   query: string;
+  /**
+   * Index one past the whole handle, which runs on past the caret when the
+   * caret sits inside it. A pick replaces `start` to `end`.
+   */
+  end: number;
 }
 
 /**
- * An `@` the tokenizer would accept, then a run of what a display name's
- * label can hold, up to the end of the string. Anchored at the end because it
- * is run over the text *before the caret*, so a space typed after a name, or
- * a caret moved out of it, closes the picker.
+ * An `@` the tokenizer would accept, then nothing yet or a run that opens on a
+ * letter, up to the end of the string. Anchored at the end because it is run
+ * over the text *before the caret*, so a space typed after a name, or a caret
+ * moved out of it, closes the picker.
  *
- * The lookbehind is `MENTION_TOKEN`'s, so the picker opens exactly where a
- * typed handle would be read as a mention, and not inside `email@example.com`
- * or `@jane@`.
+ * The lookbehind and the opening letter are `MENTION_TOKEN`'s, so the picker
+ * opens only where the handle being typed could be read as a mention: not
+ * inside `email@example.com` or `@jane@`, and not on `@1` or `@.`. A bare `@`
+ * opens it too, since that is where every handle starts.
  */
-const ACTIVE_MENTION = /(?<![\p{L}\p{N}\p{M}_@])@([\p{L}\p{M}\p{N}_'’.-]*)$/u;
+const ACTIVE_MENTION =
+  /(?<![\p{L}\p{N}\p{M}_@])@((?:\p{L}[\p{L}\p{M}\p{N}_'’.-]*)?)$/u;
+
+/** The rest of a handle after the caret: what a token's body can hold. */
+const HANDLE_TAIL = /^[\p{L}\p{M}\p{N}_'’.-]*/u;
 
 /**
  * The mention being typed at `caret`, or `null` when the caret is not in one.
@@ -310,5 +329,6 @@ export function activeMentionQuery(
   if (!match) return null;
   const query = match[1] ?? "";
   if (query.length > MAX_TOKEN_LENGTH) return null;
-  return { start: match.index, query };
+  const tail = query.length > 0 ? (HANDLE_TAIL.exec(text.slice(caret))?.[0] ?? "") : "";
+  return { start: match.index, query, end: caret + tail.length };
 }

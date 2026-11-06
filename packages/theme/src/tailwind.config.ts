@@ -207,10 +207,10 @@ const config: Partial<Config> = {
          * `mention-foreground` is the unread DM badge, and `chip` /
          * `chip-text` is the in-body treatment, which is deliberately NOT
          * the mention red (§5 — red as text inside a bubble is the case that
-         * pair exists for). All four are CSS-only tokens: `signetDarkTokens`
-         * is what `apps/mobile` reads, and mobile draws no in-body mention
-         * highlight, but mobile does not consume this preset — only the two
-         * Next surfaces do, and since #2367 both draw the chip.
+         * pair exists for). All four are also in `signetDarkTokens`, which
+         * is what `apps/mobile` reads (the chip pair since mobile started
+         * drawing it, 2026-11-06). Mobile does not consume this preset; the
+         * two Next surfaces do, and since #2367 both draw the chip.
          */
         mention: {
           DEFAULT: colorVar("--mention"),

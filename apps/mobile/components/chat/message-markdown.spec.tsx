@@ -165,6 +165,11 @@ describe("MessageMarkdown: the in-body mention chip", () => {
     const [chip] = mentionRuns("**hi @jane**");
     expect(fontOf(chip!)).toBe("Figtree_700Bold");
   });
+
+  it("takes the bold italic face inside italic, the heaviest italic there is", () => {
+    const [chip] = mentionRuns("*hi @jane*");
+    expect(fontOf(chip!)).toBe("Figtree_700Bold_Italic");
+  });
 });
 
 describe("MessageMarkdown: lines, laid out as web's body shows them", () => {

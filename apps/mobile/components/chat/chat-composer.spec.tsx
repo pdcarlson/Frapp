@@ -361,6 +361,29 @@ describe("ChatComposer @-mention picker", () => {
     expect(props.onChangeText).toHaveBeenCalledWith("hi @PaulCarlson ");
   });
 
+  it("closes on blur", () => {
+    const { tree } = typed("@pa");
+    act(() => tree.root.findByType("TextInput" as never).props.onBlur?.());
+    expect(offered(tree)).toEqual([]);
+  });
+
+  it("stays closed while a range is selected", () => {
+    const { tree } = typed("@pa");
+    act(() =>
+      tree.root.findByType("TextInput" as never).props.onSelectionChange?.({
+        nativeEvent: { selection: { start: 0, end: 3 } },
+      }),
+    );
+    expect(offered(tree)).toEqual([]);
+  });
+
+  it("replaces the whole handle when the caret sits inside one", () => {
+    // `@PaulCarlson tomorrow`, caret after `@Pa`: the tail must go too.
+    const { tree, props } = typed("@PaulCarlson tomorrow", 3);
+    act(() => byLabel(tree, "Mention Pat O'Brien")!.props.onPress());
+    expect(props.onChangeText).toHaveBeenCalledWith("@PatOBrien tomorrow");
+  });
+
   it("keeps text after the caret, reusing a space already there", () => {
     const { tree, props } = typed("@sa how are you", 3);
     act(() => byLabel(tree, "Mention Sam (VP)")!.props.onPress());

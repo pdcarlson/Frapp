@@ -24,7 +24,7 @@
  * to recurse through. That is deliberate rather than a crash caught somewhere.
  * It is also the honest rendering: a body nested that deep carries no
  * formatting a reader could follow, and showing the source says what was sent.
- * On web, mention chips still paint, because `remarkMentionChips` tokenizes
+ * Mention chips still paint, on web and mobile alike, because `remarkMentionChips` tokenizes
  * the raw body and walks `text` nodes, and this leaves exactly one. That one node also
  * holds any code span or link label, so a handle written inside backticks is
  * chipped here although a normally rendered message leaves it plain. The chip

@@ -362,6 +362,32 @@ describe("mentionSuggestions", () => {
     expect(ids).not.toContain("digit");
   });
 
+  it("caps the matches, not the rows it reads", () => {
+    const roster = [
+      ...Array.from({ length: 20 }, (_, i) => ({
+        user_id: `u${i}`,
+        display_name: `Member ${i}`,
+      })),
+      { user_id: "zoe", display_name: "Zoe Park" },
+    ];
+    expect(mentionSuggestions(roster, "zoe").map((s) => s.member.user_id)).toEqual([
+      "zoe",
+    ]);
+  });
+
+  it("reads iOS's curly apostrophe as the straight one, both ways", () => {
+    const roster = [
+      { user_id: "straight", display_name: "Sean O'Brien" },
+      { user_id: "curly", display_name: "Pat O’Neil" },
+    ];
+    expect(mentionSuggestions(roster, "o’br").map((s) => s.member.user_id)).toEqual([
+      "straight",
+    ]);
+    expect(mentionSuggestions(roster, "o'ne").map((s) => s.member.user_id)).toEqual([
+      "curly",
+    ]);
+  });
+
   it("caps the list", () => {
     const many = Array.from({ length: 12 }, (_, i) => ({
       user_id: `u${i}`,
@@ -380,14 +406,19 @@ describe("mentionSuggestions", () => {
 
 describe("activeMentionQuery", () => {
   it("opens on a bare `@` at the caret", () => {
-    expect(activeMentionQuery("@", 1)).toEqual({ start: 0, query: "" });
-    expect(activeMentionQuery("hi @", 4)).toEqual({ start: 3, query: "" });
+    expect(activeMentionQuery("@", 1)).toEqual({ start: 0, query: "", end: 1 });
+    expect(activeMentionQuery("hi @", 4)).toEqual({ start: 3, query: "", end: 4 });
   });
 
   it("reads the text between the `@` and the caret", () => {
-    expect(activeMentionQuery("hi @pa", 6)).toEqual({ start: 3, query: "pa" });
-    // Caret mid-word: only what is before it counts.
-    expect(activeMentionQuery("hi @paul", 6)).toEqual({ start: 3, query: "pa" });
+    expect(activeMentionQuery("hi @pa", 6)).toEqual({ start: 3, query: "pa", end: 6 });
+    // Caret mid-word: only what is before it is the query, but the handle
+    // runs on to its end, so a pick replaces all of it.
+    expect(activeMentionQuery("hi @paul now", 6)).toEqual({
+      start: 3,
+      query: "pa",
+      end: 8,
+    });
   });
 
   it("closes once a space follows the name", () => {
@@ -397,6 +428,9 @@ describe("activeMentionQuery", () => {
   it("does not open where the tokenizer would not read a mention", () => {
     expect(activeMentionQuery("mail paul@example", 17)).toBeNull();
     expect(activeMentionQuery("@jane@b", 7)).toBeNull();
+    // A token opens on a letter, so `@1` and `@.` are never mentions.
+    expect(activeMentionQuery("@1", 2)).toBeNull();
+    expect(activeMentionQuery("@.", 2)).toBeNull();
   });
 
   it("is null for a caret outside the text", () => {

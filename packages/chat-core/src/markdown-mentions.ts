@@ -8,6 +8,12 @@ import { extractMentionTokens, findMentionSpans } from "@repo/validation";
  * drawing the chip: web had it alone before, and a second copy is how the two
  * clients would come to disagree about which runs are mentions.
  *
+ * One gap remains, and it is web's to close: mobile links a bare URL before
+ * this runs (`remarkBareUrls`), and a link label is opaque here, so
+ * `https://youtube.com/@MrBeast` chips `@MrBeast` on web and not on mobile.
+ * The API reads that token and notifies, so web's chip is the true one; the
+ * two converge when web links bare URLs too (#2862).
+ *
  * **Why a remark plugin and not a pass over the rendered React tree.** The
  * alternative — recursing through `react-markdown`'s children and splitting the
  * strings it hands back — has to clone arbitrary elements to reach the text

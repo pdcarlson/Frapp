@@ -336,13 +336,22 @@ function useMentionPicker(
 
   const pick = (label: string) => {
     if (!active) return;
-    const after = value.slice(at);
+    // The whole handle goes, the part after the caret too: a caret dropped
+    // into a finished `@JaneDoe` reopens the list, and keeping its tail would
+    // write `@JaneDoe Doe`.
+    const after = value.slice(active.end);
     // One space after the handle, reusing one already there, as web's does.
-    const inserted = `@${label}${after.startsWith(" ") ? "" : " "}`;
+    const spaced = after.startsWith(" ");
+    const inserted = `@${label}${spaced ? "" : " "}`;
     const next = value.slice(0, active.start) + inserted + after;
-    const nextCaret = active.start + inserted.length + (after.startsWith(" ") ? 1 : 0);
-    pendingCaret.current = nextCaret;
+    const nextCaret = active.start + inserted.length + (spaced ? 1 : 0);
     setCaret(nextCaret);
+    if (next === value) {
+      // Nothing to send to the input, so no render will run the effect.
+      inputRef.current?.setSelection?.(nextCaret, nextCaret);
+      return;
+    }
+    pendingCaret.current = nextCaret;
     onChangeText(next);
   };
 
