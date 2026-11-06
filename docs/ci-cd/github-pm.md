@@ -17,7 +17,7 @@ GitHub Issues is the source of truth for planning and work status.
 ```
 GitHub Issues (canonical: planning, status, Triage intake)
    ▲ Claude Code (web, interactive `/next` path) via the GitHub MCP
-   ▲ Claude Code Routines (live scheduled path)
+   ▲ Claude scheduled tasks (live scheduled path)
    ▲ PRs close work natively (Fixes #N on merge)
 ```
 
@@ -62,7 +62,7 @@ GitHub Issues (canonical: planning, status, Triage intake)
 | Actor | Reaches GitHub Issues via | Notes |
 | --- | --- | --- |
 | **Claude Code** (web) | **GitHub MCP** (`mcp__github__issue_write` / `issue_read` / `list_issues` / `search_issues` / `add_issue_comment` / `sub_issue_write`) | **The only sanctioned path for tracker work — reads and writes alike.** The MCP is auditable, and writes through it are lossless. Shell access to `api.github.com` depends on the route: the direct one returns 200 from GitHub, and what the proxied one passes varies (rule and measurements: [`agent-infra.md` → The `api.github.com` route rule](agent-infra.md#the-apigithubcom-route-rule)). **That direct route is never a substitute for the MCP.** If the MCP is unavailable, tracker work **stops and reports** — no `gh`, no REST, no scratch file. REST is sanctioned only *alongside* a working MCP: a verification read of an issue's raw `body` when you need to see what the MCP's read mangled, plus the provider-*settings* paths the MCP exposes no tool for. Never to create, edit, label, close or comment. Procedure and measurements: [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body). `gh` is not installed. No fallback tracker. |
-| **Claude Code Routines** (scheduled, live) | The **same GitHub MCP** — routine sessions run in the same web environment | If the MCP is unavailable at fire time, the routine stops and reports (Docs Upkeep and Hygiene Scan excepted — they write a PR, not issues, and push the branch and report its name when the MCP is down). See [`routines.md`](routines.md). |
+| **Claude scheduled tasks** (scheduled, live) | The **same GitHub MCP** — routine sessions run in the same web environment | If the MCP is unavailable at fire time, the routine stops and reports (Weekly Upkeep excepted — it writes a PR, not issues, and push the branch and report its name when the MCP is down). See [`routines.md`](routines.md). |
 | **CI / scripts** | `GITHUB_TOKEN` / `GITHUB_PAT` — tracker writes inside GitHub Actions only | The PAT works in Actions and on laptops. Corrected 2026-09-02: it is not dead in a cloud sandbox either — it works on the direct route, and a 403 on the proxied route says nothing about it ([`agent-infra.md` → The `api.github.com` route rule](agent-infra.md#the-apigithubcom-route-rule)). That is a read channel, not a licence to do tracker work outside the MCP. **Branch protection, from an agent session: run `npm run configure:branch-protection:verify` (read-only) and nothing else.** Never the bare `npm run configure:branch-protection` — with no flags it is a **LIVE `PUT`** of the whole protection payload (`scripts/configure-branch-protection.mjs` prints `Mode: LIVE`). Never `npm run configure:branch-protection --dry-run` **without the `--` separator** — npm swallows the flag (reproduced on npm 10.9.7), the script sees zero args, and it **applies**. *Applying* stays a human step with an admin PAT — policy, not lack of capability. PAT policy: [`agent-infra.md`](agent-infra.md). |
 
 ---
@@ -218,7 +218,8 @@ Everything an agent files (follow-ups from `/next`, curator suggestions, PR-foll
   harvester embeds `` `agent-suggestion: v1 fp=pr-followup/<slug> pr=#<N>` ``; human-action
   blockers (filed by *any* session, see below) embed
   `` `agent-suggestion: v1 fp=human/<slug> source=<...>` `` (namespaces partition lifecycle
-  ownership — PR Follow-ups owns both `pr-followup/` and `human/`). The `fp=` grammar is unchanged,
+  ownership — PR Follow-ups owns both `pr-followup/` and `human/`); Beta Watch embeds
+  `` `agent-suggestion: v1 fp=beta-watch/<source>/<id>` `` and owns `beta-watch/`. The `fp=` grammar is unchanged,
   so existing dedup queries keep working, and **legacy comment-form markers remain valid** — they
   are stored, and readable again as of 2026-09-05 — but a missing marker still means "unknown",
   never "absent", because that reading survives the next flip and a re-file does not. Ad-hoc

@@ -305,6 +305,8 @@ Owner rule, 2026-11-06, on web and mobile alike: **something in flight is a quie
 
 ### Empty
 
+**One line, not a card, where a list keeps its layout** (2026-11-06, the [empty-states plan](https://github.com/pdcarlson/Frapp/issues/3429)): a search or filter that matched nothing, a period with no activity, and a board where everyone is at 0 render as a single muted line where the rows would be, with the way back (Clear search, Clear filters) as a `link`-variant run of text in it. Web: `InlineNote` and `InlineNoteAction` (`apps/web/components/shared/inline-note.tsx`); `/points` is the first surface on it. The card below stays for the screens not yet moved, and for errors and offline.
+
 Standard card chrome (card fill, neutral hairline), centered stack:
 
 | Slot | Spec |
