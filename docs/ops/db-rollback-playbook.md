@@ -2797,6 +2797,45 @@ drop index if exists public.chat_channels_one_default_per_chapter;
 alter table public.chat_channels drop column if exists is_default;
 ```
 
+## Rollback chapter directory search (20261106200000)
+
+* **Migration**: `20261106200000_chapter_directory_search.sql`
+
+One column added (`chapter_directory.aliases`), one generated column swapped (`search_vector` and its GIN index out, `search_text` in), two functions (`chapter_directory_search_text`, `search_chapter_directory`), and `pg_trgm` in `extensions` if it wasn't there. No row's data changed.
+
+**Revert the code forward and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)) only together with a forward migration that puts `search_vector` back, because the reverted API reads it:
+
+```sql
+alter table public.chapter_directory
+  add column if not exists search_vector tsvector
+  generated always as (
+    to_tsvector('english',
+      coalesce(org_name, '') || ' ' || coalesce(org_letters, '') || ' ' ||
+      coalesce(chapter_designation, '') || ' ' || coalesce(university, '') || ' ' ||
+      coalesce(university_short, ''))
+  ) stored;
+create index if not exists idx_chapter_directory_search
+  on public.chapter_directory using gin (search_vector);
+```
+
+Leave `aliases`, `search_text` and the functions in place; nothing old reads them. Leave `pg_trgm`, which backwork search also uses.
+
+## Rollback chapter directory Wikipedia rows (20261106200100)
+
+* **Migration**: `20261106200100_chapter_directory_wikipedia_rows.sql`
+
+Rows only, in `chapter_directory`, which only the onboarding wizard reads. No schema change.
+
+**Keep the migration file and fix forward.** A wrong row is fixed in the CSV (or in `scripts/chapter-directory/school-names.mjs` for a school's names) and shipped as a new load migration; the loader updates rows in place by their natural key, so ids, and any chapter's link to its row, survive. To empty the Wikipedia rows instead, in a forward migration, sparing any a chapter links to:
+
+```sql
+delete from public.chapter_directory d
+where d.source = 'wikipedia'
+  and not exists (select 1 from public.chapters c where c.directory_id = d.id);
+```
+
+The 50 hand-written rows it deleted are not worth restoring; they named chapters that don't exist.
+
 ## Rollback backwork search wider (20261106190000)
 
 * **Migration**: `20261106190000_backwork_search_wider.sql`

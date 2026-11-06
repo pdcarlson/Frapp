@@ -69,6 +69,7 @@ export const EXPECTED_HEADER = Object.freeze([
   "default_colors",
   "website",
   "source",
+  "aliases",
 ]);
 
 /**
@@ -246,6 +247,7 @@ export function loadSeed(repoRoot) {
       default_colors,
       website,
       source,
+      aliases,
     ] = cells;
 
     // NOT NULL columns per the migration. Empty string is absence, not a value.
@@ -334,7 +336,17 @@ export function loadSeed(repoRoot) {
       default_colors: colors,
       website: website.trim() === "" ? null : website,
       source,
+      // Other names a search should find this row by (the school's short name,
+      // the organization's nickname): `|`-separated in the file, never shown.
+      aliases: aliases
+        .split("|")
+        .map((a) => a.trim())
+        .filter(Boolean),
     };
+
+    if (row.aliases.some((a) => a.length > 120)) {
+      at("aliases", "an alias is over 120 characters; is a separator missing?");
+    }
 
     const key = rowKey(row);
     if (seen.has(key)) {

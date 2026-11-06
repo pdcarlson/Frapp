@@ -17,7 +17,8 @@ try {
   const loadSql = execFileSync(
     process.execPath,
     [join(process.cwd(), "scripts", "load-chapter-directory.mjs")],
-    { encoding: "utf8", cwd: process.cwd() },
+    // The Wikipedia seed's SQL is megabytes; the 1 MB default threw ENOBUFS.
+    { encoding: "utf8", cwd: process.cwd(), maxBuffer: 64 * 1024 * 1024 },
   );
 
   const idsOf = async () => {
@@ -51,8 +52,52 @@ try {
     )
   ).rows[0].n;
 
+  // Search (20261106200000_chapter_directory_search.sql), against the real
+  // seed: the cases that sent Paul to the manual form on 2026-11-06.
+  const search = async (q, limit = 20) =>
+    (
+      await db.query(
+        `select org_name, chapter_designation, university
+         from public.search_chapter_directory($1, null, $2)`,
+        [q, limit],
+      )
+    ).rows;
+  const isTauNu = (r) =>
+    r.org_name === "Phi Gamma Delta" &&
+    r.chapter_designation === "Tau Nu" &&
+    r.university === "Rensselaer Polytechnic Institute";
+  // Every chapter at the school, so Tau Nu's place in the alphabet can't hide it.
+  const byFullSchool = await search("Rensselaer", 50);
+  const byAliases = await search("fiji rpi");
+  const byPrefix = await search("phi gamma del");
+  const byTypo = await search("phi gamma delta renselaer");
+  const byNothing = await search("   ");
+
+  // A row the loader owns that the seed no longer lists is pruned; the
+  // hand-written first seed's "Pi Tau" at RPI was one.
+  await db.exec(`
+    insert into public.chapter_directory
+      (org_letters, org_name, archetype, chapter_designation, university, university_short, source)
+    values ('ΦΓΔ', 'Phi Gamma Delta', 'ifc', 'Pi Tau', 'RPI', 'RPI', 'seed');
+  `);
+  await db.exec(loadSql);
+  const stale = (
+    await db.query(
+      `select count(*)::int as n from public.chapter_directory where chapter_designation = 'Pi Tau' and university = 'RPI'`,
+    )
+  ).rows[0].n;
+
   const checks = [
     [firstCount > 0, `seed loads rows (got ${firstCount})`],
+    [byFullSchool.some(isTauNu), `"Rensselaer" finds Tau Nu at RPI (${byFullSchool.length} rows)`],
+    [byAliases[0] && isTauNu(byAliases[0]), `"fiji rpi" puts Tau Nu first`],
+    [
+      byPrefix.length > 0 && byPrefix.every((r) => r.org_name === "Phi Gamma Delta"),
+      `"phi gamma del" finds only Phi Gamma Delta chapters as typed (${byPrefix.length} rows)`,
+    ],
+    [byTypo[0] && isTauNu(byTypo[0]), `"phi gamma delta renselaer" forgives the typo`],
+    [byNothing.length === 0, `a blank query finds nothing (${byNothing.length} rows)`],
+    [stale === 0, "a stale unlinked seed row is pruned on load"],
     [
       secondCount === firstCount,
       `re-running is idempotent (${firstCount} → ${secondCount} rows)`,

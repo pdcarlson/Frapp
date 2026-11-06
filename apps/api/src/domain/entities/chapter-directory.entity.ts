@@ -30,23 +30,28 @@ export interface ChapterDirectoryEntry {
    */
   default_colors: Record<string, unknown>;
   website: string | null;
-  /** Provenance tag for the row, e.g. `nic_2024`, `seed`, `manual`. */
+  /**
+   * Provenance tag for the row: `wikipedia` for rows built from Wikipedia's
+   * chapter lists (`supabase/seed/chapter_directory.sources.json` records the
+   * revisions), `seed` for the hand-written first seed, else whoever curated it.
+   */
   source: string;
+  /**
+   * Other names a search should find the row by: the school's short name and
+   * nicknames ("RPI"), the organization's ("FIJI"). Searched, never shown.
+   */
+  aliases: string[];
   created_at: string;
   /**
-   * `GENERATED ALWAYS … STORED` tsvector over the identity columns, backing
-   * the onboarding autocomplete. No caller selects it (nobody wants the raw
-   * lexemes) and it can never be written, but it is declared so this
-   * interface describes the table as it actually is: `.eq`/`.order` are
-   * checked against `keyof Row`, so an undeclared column is a compile error
-   * at those call sites.
-   *
-   * Note this does *not* check `SupabaseChapterDirectoryRepository.search`, the one
-   * place that names the column: `textSearch` carries a permissive
-   * `(column: string, …)` overload alongside the `keyof Row` one, so that
-   * call site resolves to the untyped overload either way.
+   * `GENERATED ALWAYS … STORED`: the normalized text
+   * `search_chapter_directory` matches against
+   * (20261106200000_chapter_directory_search.sql). No caller selects it and
+   * it can never be written, but it is declared so this interface describes
+   * the table as it actually is: `.eq`/`.order` are checked against
+   * `keyof Row`, so an undeclared column is a compile error at those call
+   * sites.
    */
-  search_vector: string;
+  search_text: string;
 }
 
 export type ChapterDirectoryRequestStatus = 'pending' | 'imported' | 'rejected';

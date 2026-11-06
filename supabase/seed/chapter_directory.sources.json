@@ -1,0 +1,799 @@
+{
+  "built": "2026-11-06",
+  "builder": "scripts/chapter-directory/build-from-wikipedia.mjs",
+  "rows": 13128,
+  "organizations": [
+    {
+      "org": "Alpha Chi Omega",
+      "article": "List of Alpha Chi Omega chapters",
+      "revision": 1361255168,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1361255168",
+      "active_chapters": 145
+    },
+    {
+      "org": "Alpha Chi Rho",
+      "article": "List of Alpha Chi Rho chapters",
+      "revision": 1368466919,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1368466919",
+      "active_chapters": 34
+    },
+    {
+      "org": "Alpha Chi Sigma",
+      "article": "List of Alpha Chi Sigma chapters",
+      "revision": 1383763473,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383763473",
+      "active_chapters": 53
+    },
+    {
+      "org": "Alpha Delta Phi",
+      "article": "List of Alpha Delta Phi Fraternity chapters",
+      "revision": 1377731014,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1377731014",
+      "active_chapters": 28
+    },
+    {
+      "org": "Alpha Delta Pi",
+      "article": "List of Alpha Delta Pi chapters",
+      "revision": 1375040459,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1375040459",
+      "active_chapters": 150
+    },
+    {
+      "org": "Alpha Epsilon Phi",
+      "article": "List of Alpha Epsilon Phi chapters",
+      "revision": 1364504067,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1364504067",
+      "active_chapters": 44
+    },
+    {
+      "org": "Alpha Epsilon Pi",
+      "article": "List of Alpha Epsilon Pi chapters",
+      "revision": 1383763623,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383763623",
+      "active_chapters": 140
+    },
+    {
+      "org": "Alpha Gamma Delta",
+      "article": "List of Alpha Gamma Delta chapters",
+      "revision": 1379645068,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1379645068",
+      "active_chapters": 120
+    },
+    {
+      "org": "Alpha Gamma Rho",
+      "article": "List of Alpha Gamma Rho chapters",
+      "revision": 1366689258,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1366689258",
+      "active_chapters": 72
+    },
+    {
+      "org": "Alpha Kappa Alpha",
+      "article": "List of Alpha Kappa Alpha chapters",
+      "revision": 1383642142,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383642142",
+      "active_chapters": 402
+    },
+    {
+      "org": "Alpha Kappa Lambda",
+      "article": "List of Alpha Kappa Lambda chapters",
+      "revision": 1345777362,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1345777362",
+      "active_chapters": 22
+    },
+    {
+      "org": "Alpha Kappa Psi",
+      "article": "List of Alpha Kappa Psi chapters",
+      "revision": 1379046597,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1379046597",
+      "active_chapters": 213
+    },
+    {
+      "org": "Alpha Omicron Pi",
+      "article": "List of Alpha Omicron Pi chapters",
+      "revision": 1380657224,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380657224",
+      "active_chapters": 130
+    },
+    {
+      "org": "Alpha Phi",
+      "article": "List of Alpha Phi chapters",
+      "revision": 1381229016,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1381229016",
+      "active_chapters": 176
+    },
+    {
+      "org": "Alpha Phi Alpha",
+      "article": "List of Alpha Phi Alpha chapters",
+      "revision": 1383392352,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383392352",
+      "active_chapters": 363
+    },
+    {
+      "org": "Alpha Phi Delta",
+      "article": "List of Alpha Phi Delta chapters",
+      "revision": 1356075032,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1356075032",
+      "active_chapters": 36
+    },
+    {
+      "org": "Alpha Sigma Alpha",
+      "article": "List of Alpha Sigma Alpha chapters",
+      "revision": 1379774005,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1379774005",
+      "active_chapters": 90
+    },
+    {
+      "org": "Alpha Sigma Phi",
+      "article": "List of Alpha Sigma Phi chapters",
+      "revision": 1382762893,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1382762893",
+      "active_chapters": 168
+    },
+    {
+      "org": "Alpha Sigma Tau",
+      "article": "List of Alpha Sigma Tau chapters",
+      "revision": 1380987948,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380987948",
+      "active_chapters": 74
+    },
+    {
+      "org": "Alpha Tau Omega",
+      "article": "List of Alpha Tau Omega chapters",
+      "revision": 1383906416,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383906416",
+      "active_chapters": 126
+    },
+    {
+      "org": "Alpha Xi Delta",
+      "article": "List of Alpha Xi Delta chapters",
+      "revision": 1344838135,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1344838135",
+      "active_chapters": 124
+    },
+    {
+      "org": "Beta Theta Pi",
+      "article": "List of Beta Theta Pi chapters",
+      "revision": 1383769935,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383769935",
+      "active_chapters": 138
+    },
+    {
+      "org": "Beta Upsilon Chi",
+      "article": "List of Beta Upsilon Chi chapters",
+      "revision": 1353939708,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1353939708",
+      "active_chapters": 36
+    },
+    {
+      "org": "Chi Omega",
+      "article": "List of Chi Omega chapters",
+      "revision": 1346546129,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1346546129",
+      "active_chapters": 181
+    },
+    {
+      "org": "Chi Phi",
+      "article": "List of Chi Phi chapters",
+      "revision": 1381689743,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1381689743",
+      "active_chapters": 54
+    },
+    {
+      "org": "Chi Psi",
+      "article": "List of Chi Psi chapters",
+      "revision": 1380223791,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380223791",
+      "active_chapters": 34
+    },
+    {
+      "org": "Delta Chi",
+      "article": "List of Delta Chi chapters",
+      "revision": 1380223881,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380223881",
+      "active_chapters": 113
+    },
+    {
+      "org": "Delta Delta Delta",
+      "article": "List of Delta Delta Delta chapters",
+      "revision": 1344708026,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1344708026",
+      "active_chapters": 137
+    },
+    {
+      "org": "Delta Gamma",
+      "article": "List of Delta Gamma chapters",
+      "revision": 1346546204,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1346546204",
+      "active_chapters": 148
+    },
+    {
+      "org": "Delta Kappa Epsilon",
+      "article": "List of Delta Kappa Epsilon chapters",
+      "revision": 1379815109,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1379815109",
+      "active_chapters": 72
+    },
+    {
+      "org": "Delta Lambda Phi",
+      "article": "List of Delta Lambda Phi chapters",
+      "revision": 1374318222,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1374318222",
+      "active_chapters": 13
+    },
+    {
+      "org": "Delta Phi Epsilon",
+      "article": "List of Delta Phi Epsilon (social) chapters",
+      "revision": 1365642307,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1365642307",
+      "active_chapters": 109
+    },
+    {
+      "org": "Delta Sigma Phi",
+      "article": "List of Delta Sigma Phi chapters",
+      "revision": 1382243698,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1382243698",
+      "active_chapters": 104
+    },
+    {
+      "org": "Delta Sigma Pi",
+      "article": "List of Delta Sigma Pi chapters",
+      "revision": 1382441150,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1382441150",
+      "active_chapters": 220
+    },
+    {
+      "org": "Delta Sigma Theta",
+      "article": "List of Delta Sigma Theta collegiate chapters",
+      "revision": 1383776669,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383776669",
+      "active_chapters": 547
+    },
+    {
+      "org": "Delta Tau Delta",
+      "article": "List of Delta Tau Delta chapters",
+      "revision": 1381694498,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1381694498",
+      "active_chapters": 130
+    },
+    {
+      "org": "Delta Upsilon",
+      "article": "List of Delta Upsilon chapters",
+      "revision": 1380499542,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380499542",
+      "active_chapters": 66
+    },
+    {
+      "org": "Delta Zeta",
+      "article": "List of Delta Zeta chapters",
+      "revision": 1380502780,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380502780",
+      "active_chapters": 164
+    },
+    {
+      "org": "Gamma Phi Beta",
+      "article": "List of Gamma Phi Beta chapters",
+      "revision": 1379646030,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1379646030",
+      "active_chapters": 133
+    },
+    {
+      "org": "Iota Phi Theta",
+      "article": "List of Iota Phi Theta chapters",
+      "revision": 1383897295,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383897295",
+      "active_chapters": 129
+    },
+    {
+      "org": "Kappa Alpha Order",
+      "article": "List of Kappa Alpha Order chapters",
+      "revision": 1350363730,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1350363730",
+      "active_chapters": 118
+    },
+    {
+      "org": "Kappa Alpha Psi",
+      "article": "List of Kappa Alpha Psi chapters",
+      "revision": 1383772702,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383772702",
+      "active_chapters": 443
+    },
+    {
+      "org": "Kappa Alpha Theta",
+      "article": "List of Kappa Alpha Theta chapters",
+      "revision": 1379645908,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1379645908",
+      "active_chapters": 142
+    },
+    {
+      "org": "Kappa Delta",
+      "article": "List of Kappa Delta chapters",
+      "revision": 1358759914,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1358759914",
+      "active_chapters": 168
+    },
+    {
+      "org": "Kappa Delta Phi",
+      "article": "List of Kappa Delta Phi (fraternity) chapters",
+      "revision": 1345689271,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1345689271",
+      "active_chapters": 9
+    },
+    {
+      "org": "Kappa Delta Rho",
+      "article": "List of Kappa Delta Rho chapters",
+      "revision": 1380224576,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380224576",
+      "active_chapters": 33
+    },
+    {
+      "org": "Kappa Kappa Gamma",
+      "article": "List of Kappa Kappa Gamma chapters",
+      "revision": 1380338514,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380338514",
+      "active_chapters": 146
+    },
+    {
+      "org": "Kappa Sigma",
+      "article": "List of Kappa Sigma chapters",
+      "revision": 1377587474,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1377587474",
+      "active_chapters": 286
+    },
+    {
+      "org": "Lambda Chi Alpha",
+      "article": "List of Lambda Chi Alpha chapters",
+      "revision": 1380158576,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380158576",
+      "active_chapters": 175
+    },
+    {
+      "org": "Lambda Phi Epsilon",
+      "article": "List of Lambda Phi Epsilon chapters",
+      "revision": 1356127411,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1356127411",
+      "active_chapters": 26
+    },
+    {
+      "org": "Lambda Sigma Upsilon",
+      "article": "List of Lambda Sigma Upsilon chapters",
+      "revision": 1383343255,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383343255",
+      "active_chapters": 55
+    },
+    {
+      "org": "Lambda Theta Alpha",
+      "article": "List of Lambda Theta Alpha chapters",
+      "revision": 1376263962,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1376263962",
+      "active_chapters": 126
+    },
+    {
+      "org": "Lambda Theta Phi",
+      "article": "List of Lambda Theta Phi chapters",
+      "revision": 1364299891,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1364299891",
+      "active_chapters": 90
+    },
+    {
+      "org": "Lambda Upsilon Lambda",
+      "article": "List of Lambda Upsilon Lambda chapters",
+      "revision": 1380268156,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380268156",
+      "active_chapters": 83
+    },
+    {
+      "org": "Omega Delta Phi",
+      "article": "List of Omega Delta Phi chapters",
+      "revision": 1378723274,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1378723274",
+      "active_chapters": 67
+    },
+    {
+      "org": "Omega Psi Phi",
+      "article": "List of Omega Psi Phi chapters",
+      "revision": 1380657156,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380657156",
+      "active_chapters": 369
+    },
+    {
+      "org": "Phi Beta Kappa",
+      "article": "List of Phi Beta Kappa chapters",
+      "revision": 1383651287,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383651287",
+      "active_chapters": 290
+    },
+    {
+      "org": "Phi Beta Sigma",
+      "article": "List of Phi Beta Sigma chapters",
+      "revision": 1381505363,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1381505363",
+      "active_chapters": 334
+    },
+    {
+      "org": "Phi Delta Theta",
+      "article": "List of Phi Delta Theta chapters",
+      "revision": 1383825491,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383825491",
+      "active_chapters": 196,
+      "tables_not_read": [
+        "Provinces: Province / Abbreviation / Areas served"
+      ]
+    },
+    {
+      "org": "Phi Gamma Delta",
+      "article": "List of Phi Gamma Delta chapters",
+      "revision": 1379642784,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1379642784",
+      "active_chapters": 138
+    },
+    {
+      "org": "Phi Iota Alpha",
+      "article": "List of Phi Iota Alpha chapters",
+      "revision": 1372485981,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1372485981",
+      "active_chapters": 42
+    },
+    {
+      "org": "Phi Kappa Psi",
+      "article": "List of Phi Kappa Psi chapters",
+      "revision": 1380987916,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380987916",
+      "active_chapters": 94
+    },
+    {
+      "org": "Phi Kappa Sigma",
+      "article": "List of Phi Kappa Sigma chapters",
+      "revision": 1379639566,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1379639566",
+      "active_chapters": 36
+    },
+    {
+      "org": "Phi Kappa Tau",
+      "article": "List of Phi Kappa Tau chapters",
+      "revision": 1380224427,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380224427",
+      "active_chapters": 74
+    },
+    {
+      "org": "Phi Kappa Theta",
+      "article": "List of Phi Kappa Theta chapters",
+      "revision": 1381696673,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1381696673",
+      "active_chapters": 30
+    },
+    {
+      "org": "Phi Mu",
+      "article": "List of Phi Mu chapters",
+      "revision": 1346546275,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1346546275",
+      "active_chapters": 130
+    },
+    {
+      "org": "Phi Mu Delta",
+      "article": "List of Phi Mu Delta chapters",
+      "revision": 1382277331,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1382277331",
+      "active_chapters": 10
+    },
+    {
+      "org": "Phi Sigma Kappa",
+      "article": "List of Phi Sigma Kappa chapters",
+      "revision": 1363648691,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1363648691",
+      "active_chapters": 67
+    },
+    {
+      "org": "Phi Sigma Sigma",
+      "article": "List of Phi Sigma Sigma chapters",
+      "revision": 1380928044,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380928044",
+      "active_chapters": 86
+    },
+    {
+      "org": "Pi Beta Phi",
+      "article": "List of Pi Beta Phi chapters",
+      "revision": 1383113917,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383113917",
+      "active_chapters": 130,
+      "tables_not_read": [
+        "I.C. Sorosis chapters: Original name / New name / Charter date and range / Institution / City or county / State or ; province / Country / Status / "
+      ]
+    },
+    {
+      "org": "Pi Kappa Alpha",
+      "article": "List of Pi Kappa Alpha chapters",
+      "revision": 1381272085,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1381272085",
+      "active_chapters": 206
+    },
+    {
+      "org": "Pi Kappa Phi",
+      "article": "List of Pi Kappa Phi chapters",
+      "revision": 1383828282,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383828282",
+      "active_chapters": 164
+    },
+    {
+      "org": "Pi Lambda Phi",
+      "article": "List of Pi Lambda Phi chapters",
+      "revision": 1382422045,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1382422045",
+      "active_chapters": 32
+    },
+    {
+      "org": "Pi Tau Sigma",
+      "article": "List of Pi Tau Sigma chapters",
+      "revision": 1379825312,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1379825312",
+      "active_chapters": 171
+    },
+    {
+      "org": "Psi Upsilon",
+      "article": "List of Psi Upsilon chapters",
+      "revision": 1380693248,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380693248",
+      "active_chapters": 26
+    },
+    {
+      "org": "Sigma Alpha Epsilon",
+      "article": "List of Sigma Alpha Epsilon chapters",
+      "revision": 1378620670,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1378620670",
+      "active_chapters": 229
+    },
+    {
+      "org": "Sigma Alpha Mu",
+      "article": "List of Sigma Alpha Mu chapters",
+      "revision": 1380047451,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380047451",
+      "active_chapters": 47
+    },
+    {
+      "org": "Sigma Chi",
+      "article": "List of Sigma Chi chapters",
+      "revision": 1380338423,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380338423",
+      "active_chapters": 233
+    },
+    {
+      "org": "Sigma Delta Tau",
+      "article": "List of Sigma Delta Tau chapters",
+      "revision": 1357342369,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1357342369",
+      "active_chapters": 59
+    },
+    {
+      "org": "Sigma Gamma Rho",
+      "article": "List of Sigma Gamma Rho chapters",
+      "revision": 1379824624,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1379824624",
+      "active_chapters": 411
+    },
+    {
+      "org": "Sigma Kappa",
+      "article": "List of Sigma Kappa chapters",
+      "revision": 1379809776,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1379809776",
+      "active_chapters": 117
+    },
+    {
+      "org": "Sigma Lambda Beta",
+      "article": "List of Sigma Lambda Beta chapters",
+      "revision": 1379939106,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1379939106",
+      "active_chapters": 92
+    },
+    {
+      "org": "Sigma Nu",
+      "article": "List of Sigma Nu chapters",
+      "revision": 1383466071,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383466071",
+      "active_chapters": 158
+    },
+    {
+      "org": "Sigma Phi Delta",
+      "article": "List of Sigma Phi Delta chapters",
+      "revision": 1382425008,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1382425008",
+      "active_chapters": 19
+    },
+    {
+      "org": "Sigma Phi Epsilon",
+      "article": "List of Sigma Phi Epsilon chapters",
+      "revision": 1383749282,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383749282",
+      "active_chapters": 192
+    },
+    {
+      "org": "Sigma Pi",
+      "article": "List of Sigma Pi chapters",
+      "revision": 1382512908,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1382512908",
+      "active_chapters": 94
+    },
+    {
+      "org": "Sigma Sigma Sigma",
+      "article": "List of Sigma Sigma Sigma chapters",
+      "revision": 1382926322,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1382926322",
+      "active_chapters": 97
+    },
+    {
+      "org": "Sigma Tau Gamma",
+      "article": "List of Sigma Tau Gamma chapters",
+      "revision": 1381744670,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1381744670",
+      "active_chapters": 62
+    },
+    {
+      "org": "Tau Beta Pi",
+      "article": "List of Tau Beta Pi chapters",
+      "revision": 1382762622,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1382762622",
+      "active_chapters": 255
+    },
+    {
+      "org": "Tau Delta Phi",
+      "article": "List of Tau Delta Phi chapters",
+      "revision": 1380657309,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380657309",
+      "active_chapters": 5
+    },
+    {
+      "org": "Tau Epsilon Phi",
+      "article": "List of Tau Epsilon Phi chapters",
+      "revision": 1362694226,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1362694226",
+      "active_chapters": 19
+    },
+    {
+      "org": "Tau Kappa Epsilon",
+      "article": "List of Tau Kappa Epsilon chapters",
+      "revision": 1381581534,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1381581534",
+      "active_chapters": 191
+    },
+    {
+      "org": "Theta Chi",
+      "article": "List of Theta Chi chapters",
+      "revision": 1379032190,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1379032190",
+      "active_chapters": 158
+    },
+    {
+      "org": "Theta Phi Alpha",
+      "article": "List of Theta Phi Alpha chapters",
+      "revision": 1382514150,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1382514150",
+      "active_chapters": 49
+    },
+    {
+      "org": "Theta Tau",
+      "article": "List of Theta Tau chapters",
+      "revision": 1383293548,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383293548",
+      "active_chapters": 85
+    },
+    {
+      "org": "Theta Xi",
+      "article": "List of Theta Xi chapters",
+      "revision": 1345525156,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1345525156",
+      "active_chapters": 50
+    },
+    {
+      "org": "Zeta Beta Tau",
+      "article": "List of Zeta Beta Tau chapters",
+      "revision": 1380090620,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380090620",
+      "active_chapters": 80
+    },
+    {
+      "org": "Zeta Phi Beta",
+      "article": "List of Zeta Phi Beta chapters",
+      "revision": 1383653942,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383653942",
+      "active_chapters": 363
+    },
+    {
+      "org": "Zeta Psi",
+      "article": "List of Zeta Psi chapters",
+      "revision": 1349709203,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1349709203",
+      "active_chapters": 62
+    },
+    {
+      "org": "Zeta Tau Alpha",
+      "article": "List of Zeta Tau Alpha chapters",
+      "revision": 1370262272,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1370262272",
+      "active_chapters": 171
+    }
+  ],
+  "skipped": [
+    {
+      "org": "Acacia",
+      "reason": "no Greek letters"
+    },
+    {
+      "org": "Alpha Delta Gamma",
+      "reason": "no chapter-list article"
+    },
+    {
+      "org": "Alpha Gamma Sigma",
+      "reason": "no chapter-list article"
+    },
+    {
+      "org": "Alpha Kappa Delta Phi",
+      "reason": "no chapter-list article"
+    },
+    {
+      "org": "Beta Chi Theta",
+      "reason": "no chapter-list article"
+    },
+    {
+      "org": "Beta Sigma Psi",
+      "reason": "no chapter-list article"
+    },
+    {
+      "org": "Delta Epsilon Psi",
+      "reason": "no chapter-list article"
+    },
+    {
+      "org": "Delta Phi",
+      "reason": "no chapter-list article"
+    },
+    {
+      "org": "Delta Psi",
+      "reason": "no chapter-list article"
+    },
+    {
+      "org": "FarmHouse",
+      "reason": "no Greek letters"
+    },
+    {
+      "org": "Iota Nu Delta",
+      "reason": "no chapter-list article"
+    },
+    {
+      "org": "Kappa Alpha Society",
+      "reason": "no chapter-list article"
+    },
+    {
+      "org": "Lambda Alpha Upsilon",
+      "reason": "no chapter-list article"
+    },
+    {
+      "org": "Nu Alpha Kappa",
+      "reason": "no chapter-list article"
+    },
+    {
+      "org": "Phi Lambda Chi",
+      "reason": "no chapter-list article"
+    },
+    {
+      "org": "Phi Sigma Phi",
+      "reason": "no chapter-list article"
+    },
+    {
+      "org": "Sigma Beta Rho",
+      "reason": "no chapter-list article"
+    },
+    {
+      "org": "Sigma Phi",
+      "reason": "no chapter-list article"
+    },
+    {
+      "org": "Tau Phi Sigma",
+      "reason": "no chapter-list article"
+    },
+    {
+      "org": "Theta Delta Chi",
+      "reason": "no chapter-list article"
+    },
+    {
+      "org": "Triangle",
+      "reason": "no Greek letters"
+    }
+  ]
+}

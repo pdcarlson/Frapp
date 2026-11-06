@@ -41,9 +41,22 @@ university, founding year, brand colors. It is populated from
 `supabase/seed/chapter_directory.csv`:
 
 ```bash
+npm run build:chapter-directory        # rebuild the CSV from Wikipedia (needs en.wikipedia.org; behind a proxy, NODE_USE_ENV_PROXY=1)
 npm run check:chapter-directory-seed   # validate the CSV (no database needed)
 npm run load:chapter-directory         # print the load SQL to stdout
 ```
+
+The CSV is generated, not hand-written (#232). `scripts/chapter-directory/build-from-wikipedia.mjs`
+reads the member lists of the NIC, NPC and NPHC plus a few other organizations,
+then each organization's "List of … chapters" article, and keeps the chapters the
+list marks active at a named school. Each school is its full name (the school's
+article title, "Rensselaer Polytechnic Institute"), with its short name and
+nicknames in `aliases` (`scripts/chapter-directory/school-names.mjs`; adding a
+school there is the fix when a search by its common name misses).
+`supabase/seed/chapter_directory.sources.json` records the revision of every
+article each row came from, and which organizations were skipped and why. The
+first seed, 50 rows written by hand in 2026-05, named chapters that don't exist
+("Pi Tau" of Phi Gamma Delta at RPI); the Wikipedia load prunes those.
 
 Both `scripts/cloud-sandbox-up.sh` and `scripts/local-dev-setup.sh` run the load
 automatically after migrations apply, via `frapp_load_chapter_directory` in
@@ -62,8 +75,10 @@ Three things about it are load-bearing:
   entry on each bootstrap. The generated SQL updates in place and inserts only
   what is missing. It is not `ON CONFLICT` because there is no unique constraint
   on the natural key — the only unique index is the random uuid primary key.
-- **Updates are scoped to `source = 'seed'`.** A row curated by hand or arriving
-  from another source is never overwritten by a re-run.
+- **Updates are scoped to the loader's own sources (`seed`, `wikipedia`).** A row
+  curated by hand or arriving from another source is never overwritten by a re-run.
+  An owned row the CSV no longer lists is deleted, but only when no chapter links
+  to it; a linked one stays.
 - **Colors must be canonical `#RRGGBB`.** `npm run check:chapter-directory-seed` runs
   in CI as the `chapter-directory-seed` job, because a malformed hex does not fail —
   the accent engine substitutes the [house seed](../../spec/ui/design-system/accent-engine.md#3-default-seed), so the chapter gets a
@@ -86,7 +101,7 @@ Three things about it are load-bearing:
   Deployed `chapter_directory` rows written before #1225 may still carry an inert
   `dark`, and **nothing prunes them automatically**. The load SQL replaces
   `default_colors` wholesale, but only for rows the seed owns — its `update` is scoped
-  `and d.source = 'seed'`, so a hand-curated or `nic_2024` row keeps its values (the
+  to `source in ('seed', 'wikipedia')`, so a hand-curated or `nic_2024` row keeps its values (the
   `insert` half matches on the natural key without `source`, so such a row is not
   duplicated either). And that SQL only runs where someone applies it: the command
   above prints to stdout, the local bootstrap scripts pipe it in, and neither the

@@ -195,6 +195,10 @@ export interface Database {
        * department, professor and tags, with trigram typo tolerance, ranked
        * word matches first. One chapter only; at most 50 rows.
        */
+      search_chapter_directory: {
+        Args: { p_query: string; p_university?: string | null; p_limit?: number };
+        Returns: ChapterDirectoryEntry[];
+      };
       search_backwork_resources: {
         Args: { p_chapter_id: string; p_query: string; p_limit?: number };
         Returns: BackworkResource[];

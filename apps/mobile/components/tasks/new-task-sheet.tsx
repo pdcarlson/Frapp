@@ -13,7 +13,7 @@ import {
   useCreateTask,
   useViewerUserId,
 } from "@repo/hooks";
-import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
+import { avatarRadius, fieldTypeRole, typeRole, useFrappTheme } from "@/lib/theme";
 import {
   useChapterBranding,
   type ChapterBranding,
@@ -594,7 +594,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     pointsInput: {
       flex: 1,
-      ...typeRole(tokens.typography.role.body),
+      ...fieldTypeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },
     assigneeRow: {

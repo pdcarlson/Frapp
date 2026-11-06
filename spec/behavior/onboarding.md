@@ -42,8 +42,8 @@ This file covers the in-app onboarding behavior: the first-officer wizard, invit
 
 `GET /chapter-directory/search?q=...&university=...` returns up to 20 matching directory entries, used by the onboarding autocomplete wizard.
 
-- `q`: free-text query against org name, letters, designation, and university (full-text via tsvector).
-- `university`: filters by `university_short` (case-insensitive prefix/contains).
+- `q`: matched against the organization's name and letters, the chapter's designation, the school's full name and short name, and the row's `aliases` (other names people type: "RPI", "Rensselaer", "FIJI"). Every word of the query must start a word of the row, so a half-typed last word still matches ("phi gamma del"); a word of four or more letters that starts nothing may instead be a close misspelling ("renselaer"). Rows that matched every word as typed rank first, then rows whose organization or school starts with the whole query, then closeness, then organization, school and chapter name. A blank query returns nothing. `search_chapter_directory` in `20261106200000_chapter_directory_search.sql`.
+- `university`: filters by a case-insensitive substring of `university_short` or `university`.
 - Response rows: `{ id, org_letters, org_name, archetype, chapter_designation, university, university_short, founded_year, default_colors, website }`.
 
 ## Onboarding Tutorial

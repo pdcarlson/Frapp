@@ -46,7 +46,7 @@ import {
   pushUnavailableReason,
 } from "@/lib/notifications/push";
 import type { PushPermissionStatus } from "@/lib/notifications/push-types";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { fieldTypeRole, typeRole, useFrappTheme } from "@/lib/theme";
 import {
   type QuietHoursWindow,
   useNotificationPreferencesSync,
@@ -792,7 +792,7 @@ function createStyles(tokens: SignetTokens) {
       paddingHorizontal: tokens.spacing.md,
       paddingVertical: tokens.spacing.sm,
       minHeight: tokens.touch.minimum,
-      ...typeRole(tokens.typography.role.body),
+      ...fieldTypeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },
     quietHoursHintError: {
