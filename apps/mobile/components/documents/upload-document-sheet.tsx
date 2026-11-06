@@ -22,6 +22,8 @@ import {
   SheetScrim,
   useSheetBackgroundStyle,
   useSheetVisit,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 import type { PickedImage } from "@/lib/chat/attachment-upload";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -103,6 +105,7 @@ export const UploadDocumentSheet = forwardRef<
     onUploaded?: (title: string) => void;
   }
 >(function UploadDocumentSheet({ folders, initialFolder, onUploaded }, ref) {
+  const closeSheet = useSheetClose(ref);
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens, accent);
@@ -271,7 +274,8 @@ export const UploadDocumentSheet = forwardRef<
       onAnimate={onAnimate}
       onDismiss={closed}
     >
-      <BottomSheetView style={styles.body}>
+      <SheetBackToClose onClose={closeSheet} />
+      <BottomSheetView onAccessibilityEscape={closeSheet} style={styles.body}>
         <SheetHeader
           title="Upload document"
           onCancel={cancel}

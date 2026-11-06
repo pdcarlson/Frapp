@@ -90,6 +90,32 @@ describe("ListRow — press feedback", () => {
   });
 });
 
+describe("ListRow — chevron", () => {
+  function chevrons(props: ListRowProps) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <ListRow {...props} />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree.root.findAll(
+      (node) => (node.type as unknown) === "Text" && node.props.children === "›",
+    ).length;
+  }
+
+  it("draws one on a row that opens somewhere", () => {
+    expect(chevrons({ label: "Documents", onPress: vi.fn() })).toBe(1);
+  });
+
+  it("draws none on a row that acts in place (components.md § Chrome weight)", () => {
+    expect(
+      chevrons({ label: "Sign out", destructive: true, action: true, onPress: vi.fn() }),
+    ).toBe(0);
+  });
+});
+
 describe("ListRow — busy", () => {
   function renderRow(props: ListRowProps) {
     let tree!: ReactTestRenderer;

@@ -36,6 +36,8 @@ import {
   SheetPrimaryButton,
   SheetScrim,
   useSheetBackgroundStyle,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -200,6 +202,8 @@ export const MessageActionsSheet = forwardRef<
   const backgroundStyle = useSheetBackgroundStyle();
   const menuRef = useRef<BottomSheetModal>(null);
   const reportRef = useRef<BottomSheetModal>(null);
+  const closeMenu = useSheetClose(menuRef);
+  const closeReport = useSheetClose(reportRef);
 
   useImperativeHandle(
     ref,
@@ -347,11 +351,13 @@ export const MessageActionsSheet = forwardRef<
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
       >
-        <BottomSheetView style={styles.body}>
-          <SheetHeader
-            title="Message"
-            onCancel={() => menuRef.current?.dismiss()}
-          />
+        <SheetBackToClose onClose={closeMenu} />
+        <BottomSheetView onAccessibilityEscape={closeMenu} style={styles.body}>
+          {/* No title and no Cancel: this is a menu of actions, not a form.
+              The line naming the message is its heading, and the grabber,
+              the scrim, Android back and VoiceOver's escape close it
+              (components.md § Chrome weight). Its rows act in place, so they
+              carry no chevron. */}
           {target ? (
             <Text style={styles.sentLine} numberOfLines={1}>
               {`${target.senderLabel} · ${sentAtLabel(target.sentAt)}`}
@@ -388,14 +394,23 @@ export const MessageActionsSheet = forwardRef<
           {target?.canReply || target?.canEdit || target?.canDelete ? (
             <ListSection>
               {target.canReply ? (
-                <ListRow label="Reply" onPress={() => handOff(onReply)} />
+                <ListRow
+                  label="Reply"
+                  action
+                  onPress={() => handOff(onReply)}
+                />
               ) : null}
               {target.canEdit ? (
-                <ListRow label="Edit message" onPress={() => handOff(onEdit)} />
+                <ListRow
+                  label="Edit message"
+                  action
+                  onPress={() => handOff(onEdit)}
+                />
               ) : null}
               {target.canDelete ? (
                 <ListRow
                   label="Delete message"
+                  action
                   destructive
                   onPress={() => handOff(onDelete)}
                 />
@@ -413,6 +428,7 @@ export const MessageActionsSheet = forwardRef<
                 <ListRow
                   label={`Block ${senderLabel}`}
                   description={BLOCK_ROW_DESCRIPTION}
+                  action
                   destructive
                   onPress={() => startBlock("menu")}
                 />
@@ -433,7 +449,9 @@ export const MessageActionsSheet = forwardRef<
         backdropComponent={SheetScrim}
         onDismiss={resetReport}
       >
+        <SheetBackToClose onClose={closeReport} />
         <BottomSheetScrollView
+          onAccessibilityEscape={closeReport}
           contentContainerStyle={styles.body}
           keyboardShouldPersistTaps="handled"
         >
@@ -445,8 +463,6 @@ export const MessageActionsSheet = forwardRef<
                     ? REPORT_ALREADY_TITLE
                     : REPORT_SENT_TITLE
                 }
-                onCancel={() => reportRef.current?.dismiss()}
-                cancelLabel="Done"
               />
               <Text style={styles.bodyText} accessibilityLiveRegion="polite">
                 {outcome === "already" ? REPORT_ALREADY_BODY : REPORT_SENT_BODY}
@@ -456,6 +472,7 @@ export const MessageActionsSheet = forwardRef<
                   <ListRow
                     label={`Block ${senderLabel}`}
                     description={BLOCK_ROW_DESCRIPTION}
+                    action
                     destructive
                     onPress={() => startBlock("report")}
                   />

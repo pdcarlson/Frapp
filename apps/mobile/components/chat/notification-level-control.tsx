@@ -227,7 +227,14 @@ export function NotificationLevelMenu({
   if (!menu.visible) return null;
 
   return (
-    <View accessibilityViewIsModal style={styles.fill}>
+    // No Cancel row (components.md § Chrome weight): a tap outside, Android
+    // back (`useBackToClose`) and VoiceOver's escape gesture close it, and a
+    // pick closes it too.
+    <View
+      accessibilityViewIsModal
+      onAccessibilityEscape={menu.close}
+      style={styles.fill}
+    >
       <Pressable
         testID="notification-level-backdrop"
         accessible={false}
@@ -242,7 +249,7 @@ export function NotificationLevelMenu({
         <Text ref={titleRef} style={styles.menuTitle}>
           Notify me about
         </Text>
-        {NOTIFICATION_LEVEL_OPTIONS.map((option) => {
+        {NOTIFICATION_LEVEL_OPTIONS.map((option, index) => {
           const selected = option.level === menu.level;
           return (
             <Pressable
@@ -257,6 +264,7 @@ export function NotificationLevelMenu({
               }}
               style={({ pressed }) => [
                 styles.option,
+                index > 0 ? styles.optionDivided : null,
                 pressed ? styles.pressed : null,
               ]}
             >
@@ -280,17 +288,6 @@ export function NotificationLevelMenu({
             </Pressable>
           );
         })}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Cancel"
-          onPress={menu.close}
-          style={({ pressed }) => [
-            styles.cancel,
-            pressed ? styles.pressed : null,
-          ]}
-        >
-          <Text style={styles.cancelLabel}>Cancel</Text>
-        </Pressable>
       </View>
     </View>
   );
@@ -328,23 +325,27 @@ function createStyles(tokens: SignetTokens) {
       borderColor: tokens.color.border.hairline,
       borderRadius: tokens.radius.control,
     },
+    // A quiet caption in sentence case, with no rule under it: the menu's
+    // name, not a boxed header.
     menuTitle: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
-      textTransform: "uppercase",
       paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.md,
-      borderBottomWidth: 1,
-      borderBottomColor: tokens.color.border.hairline,
+      paddingTop: tokens.spacing.md,
+      paddingBottom: tokens.spacing.xs,
     },
     option: {
       flexDirection: "row",
       alignItems: "center",
       paddingHorizontal: tokens.spacing.md,
       paddingVertical: tokens.spacing.md,
-      borderBottomWidth: 1,
-      borderBottomColor: tokens.color.border.hairline,
       gap: tokens.spacing.md,
+    },
+    // Hairlines between the levels only, not under the last: with no Cancel
+    // row below it, a closing rule would underline the menu's own edge.
+    optionDivided: {
+      borderTopWidth: 1,
+      borderTopColor: tokens.color.border.hairline,
     },
     optionText: {
       flex: 1,
@@ -360,16 +361,6 @@ function createStyles(tokens: SignetTokens) {
     },
     optionDescription: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    cancel: {
-      minHeight: 44,
-      alignItems: "center",
-      justifyContent: "center",
-      paddingHorizontal: tokens.spacing.md,
-    },
-    cancelLabel: {
-      ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.mutedForeground,
     },
   });
