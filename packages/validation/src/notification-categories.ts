@@ -91,8 +91,7 @@ export const NOTIFICATION_CATEGORIES = [
     // tri-state in `chat_notification_preferences` (ADR-06) that the push
     // worker resolves *after* this gate, so turning this off silences chat
     // regardless of what those say.
-    description:
-      "Mentions, direct messages, and new messages in your channels.",
+    description: "Mentions, direct messages, and new messages in your channels.",
     defaultEnabled: true,
   },
   {
