@@ -31,21 +31,53 @@ let events: unknown[] = [];
 let sessions: unknown[] | undefined;
 let invoices: unknown[] = [];
 let notifications: unknown[] = [];
+let hiddenFeatures = new Set<string>();
+/** True while `/v1/users/me/permissions` hasn't answered. */
+let permissionsLoading = false;
+const hiddenFeatureCalls: unknown[][] = [];
+let chapterModules: Record<string, boolean> = {};
+const invoiceReadOptions: ({ enabled?: boolean } | undefined)[] = [];
+
+// `@repo/validation`'s beta list, emptied so these specs draw More as a
+// chapter with dues on sees it. The beta's own case, dues off, sets
+// `betaOff.keys`.
+const betaOff = vi.hoisted(() => ({ keys: [] as string[] }));
+vi.mock("@repo/validation/beta-off-modules", () => ({
+  get BETA_OFF_MODULES() {
+    return betaOff.keys;
+  },
+  isBetaOffModule: (key: string) => betaOff.keys.includes(key),
+}));
+afterEach(() => {
+  betaOff.keys = [];
+});
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useListChapters: () => ({ isSuccess: true, data: [{ id: "chapter-1" }] }),
   usePermissionList: () => permissions,
+  useMyPermissions: () => ({
+    data: permissionsLoading ? undefined : { permissions },
+  }),
+  // The rule itself is pinned in `@repo/hooks` (`unset-features.spec.tsx`).
+  useHiddenUnsetFeatures: (...args: unknown[]) => {
+    hiddenFeatureCalls.push(args);
+    return hiddenFeatures;
+  },
   useNotifications: () => ({ data: notifications }),
   useEvents: () => ({ data: events }),
   useViewerUserId: () => "user-1",
   useStudySessions: () => ({ data: sessions }),
-  useInvoices: () => ({ data: invoices }),
+  useInvoices: (_userId?: string, options?: { enabled?: boolean }) => {
+    invoiceReadOptions.push(options);
+    return { data: invoices };
+  },
   useCurrentUser: () => ({ data: { display_name: "Paul Carlson" } }),
   useMyPoints: () => ({ data: { balance: 1240, transactions: [] } }),
   useCurrentChapter: () => ({
     data: {
       name: "FIJI Tau Nu",
+      enabled_modules: chapterModules,
       theme_palette: {
         "--signet-accent-text": "#7FB2FF",
         "--signet-accent-primary": "#2D7BFF",
@@ -283,6 +315,77 @@ describe("More hub anatomy (#1048)", () => {
       ["Settings", "Switch chapter"],
       ["Host check-in"],
     ]);
+  });
+
+  it("drops the Dues row while dues is beta-off", () => {
+    betaOff.keys = ["dues"];
+    const labels = render()
+      .root.findAllByType(ListRow)
+      .map((row) => row.props.label);
+    expect(labels).not.toContain("Dues");
+    expect(labels).toContain("Documents");
+  });
+
+  // A member must still be able to pay an invoice the chapter already sent.
+  it("keeps the Dues row for a chapter that switched dues off itself", () => {
+    chapterModules = { dues: false };
+    try {
+      const labels = render()
+        .root.findAllByType(ListRow)
+        .map((row) => row.props.label);
+      expect(labels).toContain("Dues");
+    } finally {
+      chapterModules = {};
+    }
+  });
+
+  it("reads no invoices while dues is beta-off", () => {
+    betaOff.keys = ["dues"];
+    render();
+    expect(invoiceReadOptions.at(-1)).toEqual({ enabled: false });
+  });
+
+  it("drops Study hours and Documents while nobody has set them up for this member", () => {
+    hiddenFeatures = new Set(["study", "documents"]);
+    try {
+      const labels = render()
+        .root.findAllByType(ListRow)
+        .map((row) => row.props.label);
+      expect(labels).not.toContain("Study hours");
+      expect(labels).not.toContain("Documents");
+      expect(labels).toContain("Service hours");
+      expect(labels).toContain("Directory");
+    } finally {
+      hiddenFeatures = new Set();
+    }
+  });
+
+  it("asks the setup gate with the real permissions and the chapter's modules", () => {
+    permissions = ["members:view"];
+    try {
+      render();
+      const [perms, gate] = hiddenFeatureCalls.at(-1) as [
+        string[],
+        ((key: string) => boolean) | undefined,
+      ];
+      expect(perms).toEqual(["members:view"]);
+      // A module `enabled_modules` leaves out is on.
+      expect(gate?.("geofences")).toBe(true);
+    } finally {
+      permissions = [];
+    }
+  });
+
+  // `usePermissionList` says `[]` while loading, which would read as a member
+  // who holds nothing and hide an officer's rows for a beat.
+  it("tells the setup gate permissions are still loading, not empty", () => {
+    permissionsLoading = true;
+    try {
+      render();
+      expect(hiddenFeatureCalls.at(-1)?.[0]).toBeUndefined();
+    } finally {
+      permissionsLoading = false;
+    }
   });
 
   // foundations.md §6 "Where the accent goes" (2026-11-05): an icon that

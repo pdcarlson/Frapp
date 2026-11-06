@@ -7,6 +7,9 @@ import {
   ROLE_NAME_MAX_LENGTH,
   YEAR_MAX,
 } from "./field-limits";
+import { isBetaOffModule } from "./beta-off-modules";
+
+export { BETA_OFF_MODULES, isBetaOffModule } from "./beta-off-modules";
 
 // ── Legal / compliance ───────────────────────────────────────────────────────
 // The policy version itself is the API's (`apps/api/src/domain/constants/
@@ -401,7 +404,8 @@ export const PatchChapterConfigSchema = z.object({
  *
  * A module is enabled unless the chapter explicitly turned it off. Absence is
  * not disablement — a chapter created before a module existed has no key for
- * it, and must not be locked out of something it never disabled.
+ * it, and must not be locked out of something it never disabled. The one
+ * exception is a `BETA_OFF_MODULES` key, which is off for every chapter.
  *
  * @param enabledModules the chapter's `enabled_modules` map, if loaded
  * @param key a `MODULE_CATALOG` key, e.g. `"events"`
@@ -410,6 +414,7 @@ export function isModuleEnabled(
   enabledModules: Record<string, boolean> | null | undefined,
   key: string,
 ): boolean {
+  if (isBetaOffModule(key)) return false;
   return enabledModules?.[key] !== false;
 }
 
@@ -636,6 +641,7 @@ export {
 // how two surfaces come to disagree about what a member's switches say.
 export {
   NOTIFICATION_CATEGORIES,
+  shownNotificationCategories,
   isNotificationCategoryKey,
   defaultNotificationCategoryState,
   rowsToNotificationCategoryState,

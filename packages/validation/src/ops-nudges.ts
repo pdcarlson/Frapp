@@ -1,3 +1,5 @@
+import { isBetaOffModule } from "./beta-off-modules";
+
 /**
  * The ops-module setup nudges, shared so the surface that renders them and the
  * endpoint that records their dismissal agree on one closed set of keys
@@ -128,7 +130,11 @@ export function selectOpsNudge(
   return (
     OPS_NUDGE_MODULES.find(
       (module) =>
-        enabledModules[module.key] === false && !dismissedKeys.has(module.key),
+        enabledModules[module.key] === false &&
+        // A beta-off module can't be turned on, so a nudge to enable it
+        // would lead nowhere.
+        !isBetaOffModule(module.key) &&
+        !dismissedKeys.has(module.key),
     ) ?? null
   );
 }

@@ -57,6 +57,7 @@ import {
   MAX_UPLOAD_LABEL,
   acceptAttribute,
   inspectUploadFile,
+  isBetaOffModule,
   readSignedUpload,
 } from "@repo/validation";
 import { EmojiPicker } from "./emoji-picker";
@@ -609,6 +610,14 @@ export function slashModuleRefusal(
   if (isModuleEnabled(moduleKey)) return null;
   const label =
     MODULE_CATALOG.find((entry) => entry.key === moduleKey)?.label ?? moduleKey;
+  // No chapter switched a beta-off module off, and Settings → Modules has no
+  // switch for it, so the usual advice would send an officer looking for one.
+  if (isBetaOffModule(moduleKey)) {
+    return {
+      title: `/${token} is turned off`,
+      description: `${label} is off for every chapter during the beta.`,
+    };
+  }
   return {
     title: `/${token} is turned off`,
     description: `Your chapter has switched off ${label}. An officer can turn it back on in Settings → Modules.`,

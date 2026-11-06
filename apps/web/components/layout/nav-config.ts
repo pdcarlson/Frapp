@@ -13,6 +13,8 @@ import {
   TasksGlyph,
   type NavGlyphComponent,
 } from "@/components/layout/nav-glyphs";
+import type { UnsetFeatureKey } from "@repo/hooks";
+import { isBetaOffModule } from "@repo/validation";
 import {
   SETTINGS_ENTRY_PERMISSIONS,
   SETTINGS_TOOL_ROUTES,
@@ -68,8 +70,17 @@ import {
  *   chapter (`lib/hooks/use-chapter-module-gate.ts`), not the officer-only
  *   config read.
  *
+ * Setup gating:
+ * - `hiddenUntilSetUp` — a feature that is on but that nobody has set up yet
+ *   hides, since its page could only say so (`useHiddenUnsetFeatures` in
+ *   `@repo/hooks`; `spec/product/modules.md` § Not-set-up features).
+ *   Documents with nothing in it hides from a viewer who can't upload; Study
+ *   hours with no active zone hides from everyone, because zones are made in
+ *   the Study zones tool, not on its page. Nothing hides while permissions,
+ *   modules or the list are still loading, or after the list's read fails.
+ *
  * Section gating is derived, never declared: a section renders only when at
- * least one of its items survives both gates (`isNavItemVisible` in
+ * least one of its items survives every gate (`isNavItemVisible` in
  * `protected-nav-item.tsx`), so a heading never announces an empty group.
  */
 
@@ -87,6 +98,11 @@ export type NavItem = {
   description?: string;
   /** `enabled_modules` key that gates this item; omit for always-on items. */
   module?: string;
+  /**
+   * Hide from a member until an officer sets the feature up (see "Setup
+   * gating" above). Omit for a feature that works with nothing in it.
+   */
+  hiddenUntilSetUp?: UnsetFeatureKey;
   /**
    * Other routes that live under this row. While one of them is open the row
    * reads as the current section (`aria-current="true"`), so a page reached
@@ -166,6 +182,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         href: "/study",
         description: "Start a tracked study session inside a study zone.",
         module: "hours",
+        hiddenUntilSetUp: "study",
       },
       {
         id: "service",
@@ -197,6 +214,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         href: "/documents",
         description: "Chapter files and organizational documents.",
         module: "documents",
+        hiddenUntilSetUp: "documents",
       },
       {
         id: "backwork",
@@ -205,6 +223,11 @@ export const DASHBOARD_NAV: NavSection[] = [
         href: "/backwork",
         description: "Academic library with rich filters.",
         module: "backwork",
+        // The library's read is guarded on either at controller level, so a
+        // viewer with neither (Alumni, a Treasurer-only officer) would open
+        // a page that can only fail. Members hold `backwork:upload`, and an
+        // empty library is theirs to start, so it has no setup gate.
+        requireAnyOf: ["backwork:upload", "backwork:admin"],
       },
     ],
   },
@@ -241,7 +264,10 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Billing",
         icon: BillingGlyph,
         href: "/billing",
-        description: "Subscription, Stripe portal, member invoices, dues.",
+        // Hover text, read once: a beta-off dues has no invoices to name.
+        description: isBetaOffModule("dues")
+          ? "Subscription and Stripe portal."
+          : "Subscription, Stripe portal, member invoices, dues.",
         requirePermission: "billing:view",
       },
       {
