@@ -454,7 +454,12 @@ describe("TasksBoard point reward guard (#2206)", () => {
   async function openCreate() {
     render(<TasksBoard />);
     await userEvent.click(trigger());
-    return screen.getByLabelText(/^points \(optional\)$/i);
+    // Points wait behind More options, which says what it holds while closed.
+    const more = screen.getByRole("button", { name: /more options/i });
+    expect(more).toHaveTextContent("0 pts · No description");
+    expect(screen.queryByLabelText(/^points$/i)).toBeNull();
+    await userEvent.click(more);
+    return screen.getByLabelText(/^points$/i);
   }
 
   it("keeps the last whole number through a negative or a decimal", async () => {

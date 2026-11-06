@@ -176,6 +176,10 @@ Track 36×22px with an 18px thumb to a fine pointer (the board's `4c` toggle) an
 
 *(Added 2026-11-06, from the owner's iOS testing of quiet hours and mobile event times.)* A time or date a member picks is never a typed field and never a home-grown wheel. On mobile it is the platform's own picker, `@react-native-community/datetimepicker`, inside a grouped list row: on iOS the **compact** picker is the row's trailing control (a small pill that opens the wheel in place, `themeVariant="dark"`, `accentColor` the chapter accent), and on Android the row shows the formatted value and a tap opens the system dialog, which saves on OK. On web it is the browser's own input at the Field step: `type="time"` for a time of day (quiet hours), `type="datetime-local"` where a date and time travel together (the event editor). A setting whose times only matter while it is on (quiet hours) shows them only while its switch is on, so the screen carries no controls that govern nothing. A picker reports every position the wheel passes, so a value saved straight to the server is saved once the wheel rests, not on each change. First user: s16's quiet hours (`apps/mobile/components/settings/quiet-hours-section.tsx`).
 
+### Segmented control
+
+*(Added 2026-11-06, for attendance by role.)* Two or three answers side by side, the held one lit, so the current answer never hides behind a menu: a 1px `border-input` track on `surface-1`, padding 2, each segment 32px to a mouse and 44 on touch, the held one in the accent's subtle tint with accent text, the rest muted. It is a radio group to assistive tech (`radiogroup` / `radio`, checked on the held one). Use it for a short closed set the member switches between often; a longer set is a list or a menu. Mobile: `apps/mobile/components/segmented.tsx`; web: `SegmentedChoice` in `apps/web/components/events/attendance-editor.tsx`. First users: the Who's coming default and each role row.
+
 ## 5. Badges and chips
 
 The Chip step ([foundations.md](foundations.md) §9): height 24px on every pointer (26–28 until 2026-11-05), radius 8–10, padding-x 8, text 12.5px / 600. On touch a chip that is a control carries the 44px hit area through padding or `hitSlop`, not a taller fill. Mobile's filter chips draw 32 (s13 draws 34).
@@ -282,6 +286,10 @@ Rules that go with it:
 Not covered here: the Find dialog, whose size and scrolling result list §7's app bar table owns (its Find row), and the upload sheet, board `1j`'s drawn dialog.
 
 Not on this yet: the notifications drawer and the backwork category drawer and merge dialog keep their own widths (#3517); three mobile sheets are still fixed boxes closed with a word, two of which (Edit profile and the report step) scroll their primary button away with the body (#3519).
+
+### More options
+
+*(Added 2026-11-06, owner: nobody wants every option at once on create.)* A create form shows the fields every item needs and keeps the rest behind one row. Closed, the row reads "More options" over a one-line summary of what those fields hold now ("10 pts · Required for Officers · Every week"), so nothing set there is hidden; open, it reads "Fewer options" and the fields follow it. On mobile a validation error in a hidden field opens it. The web event editor opens with it open on an edit, since the officer came to change something. Mobile: `MoreOptionsRow` in `apps/mobile/components/events/new-event-sheet.tsx`; web: `apps/web/components/ui/more-options-toggle.tsx`. Users: New event (both), Create a task (web).
 
 ### Bottom sheet (mobile)
 

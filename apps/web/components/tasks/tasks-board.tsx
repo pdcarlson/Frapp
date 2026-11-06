@@ -36,6 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { MoreOptionsToggle } from "@/components/ui/more-options-toggle";
 import {
   NestedEmpty,
   NestedError,
@@ -154,6 +155,13 @@ export function TasksBoard() {
     due_date: "",
     point_reward: "",
   });
+  // Description and points wait behind More options (owner, 2026-11-06:
+  // nobody wants every option at once on create).
+  const [showMore, setShowMore] = useState(false);
+  const moreSummary = [
+    `${draft.point_reward.trim() === "" ? 0 : draft.point_reward} pts`,
+    draft.description.trim() ? "Has a description" : "No description",
+  ].join(" · ");
 
   const columns = useMemo(() => {
     const grouped = new Map<TaskStatus, Task[]>();
@@ -196,6 +204,7 @@ export function TasksBoard() {
         due_date: "",
         point_reward: "",
       });
+      setShowMore(false);
     } catch (error) {
       toast({
         title: "Couldn't create task",
@@ -409,20 +418,6 @@ export function TasksBoard() {
                     required
                   />
                 </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="task-description">Description</Label>
-                  <Textarea
-                    id="task-description"
-                    rows={3}
-                    value={draft.description}
-                    onChange={(event) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        description: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="grid gap-1">
                     <Label htmlFor="task-assignee">Assignee</Label>
@@ -463,20 +458,44 @@ export function TasksBoard() {
                     />
                   </div>
                 </div>
-                <div className="grid gap-1 sm:max-w-xs">
-                  <Label htmlFor="task-points">Points (optional)</Label>
-                  <Input
-                    id="task-points"
-                    type="number"
-                    min={0}
-                    value={draft.point_reward}
-                    onChange={(event) => {
-                      const next = guardIntDraft(event.target.value);
-                      if (next === undefined) return;
-                      setDraft((prev) => ({ ...prev, point_reward: next }));
-                    }}
-                  />
-                </div>
+                <MoreOptionsToggle
+                  open={showMore}
+                  onToggle={() => setShowMore((open) => !open)}
+                  summary={moreSummary}
+                  controls="task-more-options"
+                />
+                {showMore ? (
+                  <div id="task-more-options" className="grid gap-4">
+                    <div className="grid gap-1 sm:max-w-xs">
+                      <Label htmlFor="task-points">Points</Label>
+                      <Input
+                        id="task-points"
+                        type="number"
+                        min={0}
+                        value={draft.point_reward}
+                        onChange={(event) => {
+                          const next = guardIntDraft(event.target.value);
+                          if (next === undefined) return;
+                          setDraft((prev) => ({ ...prev, point_reward: next }));
+                        }}
+                      />
+                    </div>
+                    <div className="grid gap-1">
+                      <Label htmlFor="task-description">Description</Label>
+                      <Textarea
+                        id="task-description"
+                        rows={3}
+                        value={draft.description}
+                        onChange={(event) =>
+                          setDraft((prev) => ({
+                            ...prev,
+                            description: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                ) : null}
               </form>
               <DialogFooter>
                 {/*

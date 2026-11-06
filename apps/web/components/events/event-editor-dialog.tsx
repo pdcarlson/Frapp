@@ -16,6 +16,7 @@ import {
   StudyZonesGlyph,
 } from "@/components/events/chapter-ops-glyphs";
 import { AttendanceEditor } from "@/components/events/attendance-editor";
+import { MoreOptionsToggle } from "@/components/ui/more-options-toggle";
 import { useCreateEvent, useRoles, useUpdateEvent } from "@repo/hooks";
 import {
   RECURRENCE_REPEAT_LABELS,
@@ -618,30 +619,12 @@ export function EventEditorDialog({
               one row, which says what it holds while closed (owner,
               2026-11-06: nobody wants every option at once on create).
             */}
-            <button
-              type="button"
-              aria-expanded={showMore}
-              aria-controls="event-more-options"
-              onClick={() => setShowMore((open) => !open)}
-              className="flex min-h-11 w-full items-center gap-3 rounded-md px-1 text-left transition-colors hover:bg-card-hover"
-            >
-              <span className="grid min-w-0 flex-1">
-                <span className="text-sm font-semibold text-muted-foreground">
-                  {showMore ? "Fewer options" : "More options"}
-                </span>
-                {showMore ? null : (
-                  <span className="truncate text-caption text-muted-foreground">
-                    {moreSummary}
-                  </span>
-                )}
-              </span>
-              <ChevronDown
-                className={cn(
-                  "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-                  showMore && "rotate-180",
-                )}
-              />
-            </button>
+            <MoreOptionsToggle
+              open={showMore}
+              onToggle={() => setShowMore((open) => !open)}
+              summary={moreSummary}
+              controls="event-more-options"
+            />
 
             {showMore ? (
               <div id="event-more-options" className="grid gap-4">
