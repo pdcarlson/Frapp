@@ -1,7 +1,11 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useIsFocused, useLocalSearchParams } from "expo-router";
-import { useActiveChapterId, useMyPermissions } from "@repo/hooks";
+import {
+  useActiveChapterId,
+  useCurrentChapter,
+  useMyPermissions,
+} from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
 import {
@@ -34,7 +38,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * The same share-first flow as setup's last step (owner pick 2026-11-06,
  * `useInviteShares`): one Share invite button mints a fresh single-use link
  * and opens the share sheet with it, and the links shared on this visit are
- * listed, each Not used yet or Joined. No token is ever drawn. Inside a
+ * listed, each Not used yet or Joined. The list is this visit's: leaving the
+ * screen, or switching chapter, starts it over. No token is ever drawn. Inside a
  * chapter the button and the link tile take the chapter accent, where setup's
  * take house gold (`spec/behavior/branding.md`).
  *
@@ -49,13 +54,37 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * says which one opened it, so the back capsule names where it goes.
  */
 export default function InviteScreen() {
+  const chapterId = useActiveChapterId();
+  const focused = useIsFocused();
+  // A tab screen stays mounted through a chapter switch and between visits,
+  // so the body is keyed on both: a link shared, or a sheet backed out of, in
+  // chapter A never goes out under chapter B's name, and each visit starts
+  // its Shared list fresh (dues.tsx keys its body on the chapter the same
+  // way). A visit ends when the screen loses focus.
+  const [visit, setVisit] = useState(0);
+  const wasFocused = useRef(focused);
+  useEffect(() => {
+    if (wasFocused.current && !focused) setVisit((n) => n + 1);
+    wasFocused.current = focused;
+  }, [focused]);
+  return (
+    <InviteBody
+      key={`${chapterId ?? "no-chapter"}:${visit}`}
+      focused={focused}
+    />
+  );
+}
+
+function InviteBody({ focused }: { focused: boolean }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const { from } = useLocalSearchParams<{ from?: string }>();
   const back = backTargetFor(from);
   const chapterId = useActiveChapterId();
   const branding = useChapterBranding();
-  const focused = useIsFocused();
+  // The share line names the chapter. Share waits for its name rather than
+  // sending a placeholder to someone who doesn't know the chapter yet.
+  const shareName = useCurrentChapter().data?.name?.trim() || null;
 
   const permissionsQuery = useMyPermissions();
   const permissionsKnown = permissionsQuery.data !== undefined;
@@ -68,7 +97,7 @@ export default function InviteScreen() {
   const invite = useInviteShares({
     // Watches shared links for Joined only while the screen is in front.
     active: focused && canInvite,
-    chapterName: branding.chapterName ?? "our chapter",
+    chapterName: shareName ?? "",
     onError: setError,
   });
 
@@ -140,7 +169,7 @@ export default function InviteScreen() {
                 accent={branding.accentPrimary}
                 onAccent={branding.accentOnPrimary}
                 accessibilityHint="Makes a new link and opens the share sheet."
-                disabled={invite.busy}
+                disabled={invite.busy || !shareName}
                 busy={invite.busy}
                 onPress={() => {
                   void invite.share();

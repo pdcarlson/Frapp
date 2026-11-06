@@ -23,7 +23,11 @@ import { inviteTokenOf, webJoinUrl } from "./invite-link";
  * so a link that someone redeems reads Joined.
  */
 
-/** The role a setup invite grants: the chapter's default, by name. */
+/**
+ * The role a setup invite grants, by name: the seeded Member role
+ * (`spec/behavior/onboarding.md`). Not the chapter's configured default,
+ * which the Invite members screen gets by naming no role.
+ */
 export const INVITE_ROLE = "Member";
 
 /** How often the step re-reads the chapter's invites to mark a link Joined. */

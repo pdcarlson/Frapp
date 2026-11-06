@@ -3,6 +3,7 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { Share } from "react-native";
+import * as expoRouter from "expo-router";
 import { useLocalSearchParams } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
@@ -19,14 +20,19 @@ const state = vi.hoisted(() => ({
   permissions: undefined as string[] | undefined,
   permissionsError: false,
   chapterId: "c-1" as string | undefined,
+  chapter: { name: "FIJI Tau Nu" } as { name: string } | undefined,
 }));
+const { __refocus: refocus, __blur: blur } = expoRouter as unknown as {
+  __refocus: () => void;
+  __blur: () => void;
+};
 const createInvite = vi.fn();
 let invitesOptions: { enabled?: boolean; refetchInterval?: number } | undefined;
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => state.chapterId,
-  useCurrentChapter: () => ({ data: undefined }),
+  useCurrentChapter: () => ({ data: state.chapter }),
   useMyPermissions: () => ({
     data: state.permissions ? { permissions: state.permissions } : undefined,
     isError: state.permissionsError,
@@ -48,7 +54,6 @@ vi.mock("@/lib/chapter-branding", async (importOriginal) => {
     ...actual,
     useChapterBranding: () => ({
       ...actual.useChapterBranding(),
-      chapterName: "FIJI Tau Nu",
       accent: "#CB9FFF",
       accentPrimary: "#7B3FE4",
       accentOnPrimary: "#FFFFFF",
@@ -85,6 +90,7 @@ beforeEach(() => {
   state.permissions = ["members:invite"];
   state.permissionsError = false;
   state.chapterId = "c-1";
+  state.chapter = { name: "FIJI Tau Nu" };
   createInvite.mockReset().mockResolvedValue({ token: "tok123" });
   invitesOptions = undefined;
   vi.mocked(Share.share)
@@ -111,10 +117,73 @@ describe("Invite members", () => {
     tree.unmount();
   });
 
+  it("holds Share until the chapter's name has loaded", () => {
+    state.chapter = undefined;
+    const tree = render();
+    expect(shareButton(tree)[0].props.disabled).toBe(true);
+    tree.unmount();
+  });
+
+  it("starts the Shared list over on a new visit", async () => {
+    const tree = render();
+    await act(async () => shareButton(tree)[0].props.onPress());
+    expect(screenText(tree)).toContain("Link 1");
+    act(() => blur());
+    act(() => refocus());
+    expect(screenText(tree)).not.toContain("Link 1");
+    tree.unmount();
+  });
+
+  it("never sends a link kept in one chapter under another's name", async () => {
+    // iOS: the sheet is closed without sending, so the link is kept.
+    vi.mocked(Share.share).mockResolvedValueOnce({
+      action: "dismissedAction",
+    });
+    const tree = render();
+    await act(async () => shareButton(tree)[0].props.onPress());
+    expect(createInvite).toHaveBeenCalledTimes(1);
+
+    state.chapterId = "c-2";
+    state.chapter = { name: "Sigma Chi Beta" };
+    createInvite.mockResolvedValueOnce({ token: "tok-b" });
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <InviteScreen />
+        </FrappThemeProvider>,
+      ),
+    );
+    await act(async () => shareButton(tree)[0].props.onPress());
+    expect(createInvite).toHaveBeenCalledTimes(2);
+    const [content] = vi.mocked(Share.share).mock.calls[1];
+    expect(content.message).toContain("Join Sigma Chi Beta on Frapp");
+    expect(content.message).toContain("tok-b");
+    expect(content.message).not.toContain("tok123");
+    tree.unmount();
+  });
+
   it("paints the button in the chapter accent, not house gold", () => {
     const tree = render();
     const style = shareButton(tree)[0].props.style({ pressed: false });
     expect(style).toContainEqual({ backgroundColor: "#7B3FE4" });
+    tree.unmount();
+  });
+
+  it("paints the link tile in the chapter accent too", () => {
+    const tree = render();
+    const tile = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        Array.isArray(node.props.style) &&
+        node.props.style.some(
+          (style: { backgroundColor?: string } | null) =>
+            style?.backgroundColor === "#2A1F3D",
+        ),
+    );
+    expect(tile.props.style).toContainEqual({
+      backgroundColor: "#2A1F3D",
+      borderColor: "#5B3F8F",
+    });
     tree.unmount();
   });
 

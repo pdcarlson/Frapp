@@ -1068,14 +1068,14 @@ Mobile's first-officer setup, `(auth)/create-chapter.tsx` (#3351). Titles are `S
 
 ### Invite members (mobile)
 
-`(tabs)/invite.tsx`, setup's invite step inside the chapter (2026-11-06; [`navigation.md` § Inviting members](../mobile/navigation.md#inviting-members)). The body, the card, the `Shared` list and both failure sentences are the setup Invite rows' above, word for word; the share message names the chapter the same way.
+`(tabs)/invite.tsx`, setup's invite step inside the chapter (2026-11-06; [`navigation.md` § Inviting members](../mobile/navigation.md#inviting-members)). The body, the card, the `Shared` list and both failure sentences are the setup Invite rows' above, word for word; the share message reads `Join <chapter name> on Frapp`, and Share waits until the chapter's name has loaded rather than send a placeholder.
 
 | State | Title | Copy |
 |---|---|---|
 | Can invite | `Invite members` | Setup's line, card and list. The primary is `Share invite` with the platform's share mark, in the chapter accent. Its screen-reader hint: `Makes a new link and opens the share sheet.` |
 | Can't invite | `Invite members` | Empty state `Ask an officer for a link` + `Your role can't send invites. An officer who can will send each person their own link.` No button. |
 | Role didn't load | `Invite members` | Error state `Couldn't load your role` + `Whether you can send invites depends on it, so it has to load first.`, with `Try again`. |
-| Doors | — | More's row and the Directory's + read `Invite members`; the quick action reads `Invite`. Each door's hint: `Opens invite links to share with new members.` |
+| Doors | — | More's row and the Directory's + read `Invite members`; the quick action reads `Invite`; Chat home's checklist line keeps its own `Invite members`. The first three carry the hint `Opens invite links to share with new members.`; the checklist line, like its other in-app lines, carries none. |
 
 ### Chapter picker (mobile)
 
