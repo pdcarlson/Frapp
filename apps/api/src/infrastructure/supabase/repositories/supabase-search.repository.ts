@@ -86,14 +86,17 @@ export class SupabaseSearchRepository implements ISearchRepository {
   ) {}
 
   /**
-   * Backwork search over the generated `search_vector` (title + course_number),
-   * backed by `idx_backwork_resources_search`
-   * (20260829002000_search_vectors_backwork_events_members.sql).
+   * Backwork search through `search_backwork_resources`
+   * (20261106190000_backwork_search_wider.sql): title, course, department,
+   * professor and tags, ranked, with trigram typo tolerance (#585). It joins
+   * the department and professor at query time, which a generated column
+   * can't, so it is a function rather than `.textSearch('search_vector')`.
+   * The function parses the query with `websearch_to_tsquery('english', …)`,
+   * the same parse as `TEXT_SEARCH`, so the raw query still travels as one
+   * opaque argument and is never spliced into a filter.
    *
-   * It used to be `.or(title.ilike.%q%, course_number.ilike.%q%)` — two
-   * leading-wildcard scans no index can serve. The vector covers exactly those
-   * two columns, so the result set is unchanged apart from the stemming trade
-   * documented in the migration and in `spec/behavior/search.md`.
+   * The explicit `select` keeps the generated tsvector out of the response,
+   * as for every other source.
    */
   async searchBackwork(
     chapterId: string,
@@ -101,11 +104,12 @@ export class SupabaseSearchRepository implements ISearchRepository {
     limit: number,
   ): Promise<BackworkResource[]> {
     const { data, error } = (await this.supabase
-      .from('backwork_resources')
-      .select(BACKWORK_SEARCH_COLUMNS)
-      .eq('chapter_id', chapterId)
-      .textSearch('search_vector', query, TEXT_SEARCH)
-      .limit(limit)) as QueryResult<BackworkResource>;
+      .rpc('search_backwork_resources', {
+        p_chapter_id: chapterId,
+        p_query: query,
+        p_limit: limit,
+      })
+      .select(BACKWORK_SEARCH_COLUMNS)) as QueryResult<BackworkResource>;
     if (error) throw new SupabaseQueryError(error);
     return data ?? [];
   }
