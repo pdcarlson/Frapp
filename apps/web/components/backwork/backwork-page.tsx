@@ -801,7 +801,7 @@ export function BackworkPage() {
           <NestedError
             sole
             title="Couldn't load backwork"
-            description="Confirm your chapter access and retry."
+            description="Check your connection and retry."
             onRetry={() => {
               void resourcesQuery.refetch();
               void departmentsQuery.refetch();

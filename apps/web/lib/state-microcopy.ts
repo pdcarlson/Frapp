@@ -27,7 +27,7 @@ export const stateMicrocopy = {
     offlineTitle: "Members unavailable offline",
     offlineDescription: "Reconnect to load the roster.",
     errorTitle: "Couldn't load members",
-    errorDescription: "Confirm your chapter access and retry.",
+    errorDescription: "Check your connection and retry.",
     supportErrorTitle: "Couldn't load roles and points",
     supportErrorDescription: "Filtering, sorting and assignment need both.",
   },
@@ -46,7 +46,7 @@ export const stateMicrocopy = {
     offlineDescription:
       "Reconnect to load event schedules and attendance updates.",
     errorTitle: "Couldn't load chapter events",
-    errorDescription: "Confirm your chapter access and retry.",
+    errorDescription: "Check your connection and retry.",
   },
   points: {
     loading: "Loading points ledger...",
@@ -66,7 +66,7 @@ export const stateMicrocopy = {
     noTransactionMatches: "No transactions match these filters.",
     errorTitle: "Couldn't load the points ledger",
     errorDescription:
-      "Standings and transactions are unavailable, so none are shown. Confirm your chapter access and retry.",
+      "Standings and transactions are unavailable, so none are shown. Check your connection and retry.",
   },
   billing: {
     loading: "Loading billing overview...",

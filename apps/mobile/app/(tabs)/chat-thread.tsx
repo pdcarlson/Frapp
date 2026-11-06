@@ -1031,7 +1031,7 @@ export default function ChatThreadScreen() {
             <View style={styles.stateBlock}>
               <ErrorState
                 title="Couldn't load messages"
-                body="Confirm your chapter access and retry."
+                body="Check your connection and retry."
                 onRetry={reload}
                 isRetrying={isReloading}
               />

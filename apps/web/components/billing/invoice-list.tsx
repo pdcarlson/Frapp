@@ -705,7 +705,7 @@ export function InvoiceList({ id }: { id?: string }) {
         <NestedError
           sole
           title="Couldn't load invoices"
-          description="Confirm your chapter access and retry."
+          description="Check your connection and retry."
           onRetry={() => void invoicesQuery.refetch()}
         />
       ) : filtered.length === 0 ? (

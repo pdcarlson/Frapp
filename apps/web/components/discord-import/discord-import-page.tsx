@@ -272,7 +272,7 @@ function DiscordImportView({
       <NestedError
         sole
         title="Couldn't load the import"
-        description="Confirm your chapter access and retry."
+        description="Check your connection and retry."
         onRetry={() => void imports.refetch()}
       />
     );

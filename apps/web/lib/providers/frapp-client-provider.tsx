@@ -11,6 +11,7 @@ import { useClaimChapterSync } from "@/lib/auth/use-claim-chapter-sync";
 import { wipeFirstChunkCache } from "@/lib/chat/first-chunk-wipe";
 import { clearCachedAccent } from "@/lib/theme/accent-cache";
 import { endBulkSessions } from "@/lib/backwork-bulk/session";
+import { handleRejectedSession } from "@/lib/auth/rejected-session";
 
 /**
  * First value and same-value updates must not clear: those are hydrate /
@@ -83,6 +84,10 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
           return data.session?.access_token ?? null;
         },
         getChapterId: () => activeChapterId,
+        // A 401 means the API no longer accepts this session (an account
+        // deleted elsewhere, most often). One sign-out owns that outcome for
+        // every screen: `lib/auth/rejected-session.ts`.
+        onUnauthorized: () => void handleRejectedSession(),
       }),
     [activeChapterId],
   );

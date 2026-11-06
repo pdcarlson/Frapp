@@ -477,7 +477,7 @@ export function PollsPage() {
           <NestedError
             sole
             title="Couldn't load polls"
-            description="Confirm your chapter access and retry."
+            description="Check your connection and retry."
             onRetry={() => void pollsQuery.refetch()}
           />
         ) : polls.length === 0 ? (

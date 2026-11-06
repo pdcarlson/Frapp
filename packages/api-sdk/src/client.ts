@@ -14,6 +14,19 @@ export interface FrappClientConfig {
    * served. Mobile native builds set it; web and Expo Go leave it unset.
    */
   clientVersion?: string;
+  /**
+   * Called when the API answers a request that carried a bearer token with a
+   * 401: the API no longer accepts this session. The usual cause is an
+   * account deleted on another device, whose Supabase access token stays
+   * valid until it expires while `SupabaseAuthGuard` refuses every call.
+   *
+   * The SDK only reports it. The app decides whether the session is really
+   * over (it asks Supabase Auth) and signs out, so one place owns that
+   * outcome instead of every screen rendering its own failure for it.
+   * A 401 for a request sent without a token is not reported: that one is
+   * the caller's missing sign-in, not a session the API turned down.
+   */
+  onUnauthorized?: () => void;
 }
 
 export const REQUEST_ID_HEADER = "x-request-id";
@@ -102,6 +115,16 @@ export const createFrappClient = (config: FrappClientConfig) => {
       ensureRequestIdHeader(request.headers);
 
       return request;
+    },
+    onResponse({ request, response }) {
+      if (
+        response.status === 401 &&
+        config.onUnauthorized &&
+        request.headers.has('Authorization')
+      ) {
+        config.onUnauthorized();
+      }
+      return undefined;
     },
   };
 

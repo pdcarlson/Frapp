@@ -362,7 +362,7 @@ describe("ChatAdminPage — the channel structure's states", () => {
       screen.getByRole("heading", { name: "Couldn't load channels" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("Confirm your chapter access and retry."),
+      screen.getByText("Check your connection and retry."),
     ).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });

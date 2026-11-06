@@ -76,7 +76,7 @@ Example:
 
 `Unable to load members. This view requires an authenticated chapter context. Sign in and retry.`
 
-Copy never shows a permission key such as `roles:manage`. A permission-denied line names what the role can't do (`Your role can't manage roles.`) and who can change that; an error that may be an access problem says `Confirm your chapter access and retry.`; a toast with no server message says `Try again in a moment.` Where a screen has to name a permission, it uses the words in [`permission-labels.ts`](../../../apps/web/lib/permission-labels.ts) (2026-11-05).
+Copy never shows a permission key such as `roles:manage`. A permission-denied line names what the role can't do (`Your role can't manage roles.`) and who can change that; a screen's load error says `Check your connection and retry.` and never guesses at access, because access is answered once, above every screen: a session the API refuses signs the member out to `/sign-in` with one notice (`You've been signed out`), and a member whose roles grant nothing lands on `/no-access` (2026-11-06); a toast with no server message says `Try again in a moment.` Where a screen has to name a permission, it uses the words in [`permission-labels.ts`](../../../apps/web/lib/permission-labels.ts) (2026-11-05).
 
 ## 3a. Form copy
 
@@ -200,7 +200,7 @@ The API's throttler sets this sentence (`THROTTLED_MESSAGE`, `custom-throttler.g
 | Empty | `No actives yet` | `Actives appear here once they join.` |
 | No results (filters) | `No actives match the filters` | `Clear a filter to see more.` |
 | No results (search) | `No match for “<query>”` | `Check the spelling, or widen the filters.` |
-| Error | `Couldn't load members` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load members` | `Check your connection and retry.` |
 | Error (roles and points) | `Couldn't load roles and points` | `Filtering, sorting and assignment need both.` |
 | Offline | `Members unavailable offline` | `Reconnect to load the roster.` |
 
@@ -221,7 +221,7 @@ Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assem
 | Empty | `No events yet` | `Create your first chapter event to unlock attendance and point automation.` |
 | Empty (filtered) | `No events match the filters` | `Clear a filter to see more.` |
 | Empty (search) | `No match for “{query}”` | `Check the spelling, or widen the filters.` |
-| Error | `Couldn't load chapter events` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load chapter events` | `Check your connection and retry.` |
 | Offline | `Events workspace unavailable offline` | `Reconnect to load event schedules and attendance updates.` |
 
 `No events yet` shows only when the chapter has no events at all. Under a filter that hides every event (the default Upcoming, once every event is past), the page says the filters matched nothing instead (2026-11-05).
@@ -232,7 +232,7 @@ Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assem
 |---|---|---|
 | Loading | — | `Loading attendance...` |
 | Empty | `No attendance records yet` | `Once members check in, or you record attendance manually, they'll show up here.` |
-| Error | `Attendance unavailable` | `Couldn't load attendance for this event. Confirm your chapter access and retry.` |
+| Error | `Attendance unavailable` | `Couldn't load attendance for this event. Check your connection and retry.` |
 
 ### Points (dashboard)
 
@@ -244,7 +244,7 @@ Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assem
 | Leaderboard search matched nothing | — | `No members match that search.` then a **Clear search** link (one line) |
 | Empty transactions | — | `No points in this period yet.` (one line) |
 | Transaction filters matched nothing | — | `No transactions match these filters.` then a **Clear filters** link (one line) |
-| Error | `Couldn't load the points ledger` | `Standings and transactions are unavailable, so none are shown. Confirm your chapter access and retry.` |
+| Error | `Couldn't load the points ledger` | `Standings and transactions are unavailable, so none are shown. Check your connection and retry.` |
 | Offline | `Points ledger unavailable offline` | `Reconnect to refresh leaderboard standings and transaction history.` |
 
 The board lists the whole roster, at 0 until a member earns points ([`points.md` § Leaderboard](../../behavior/points.md#leaderboard)), so a new chapter sees its members tied for first with the one line above rather than a card. The empty and no-match states are single lines (`InlineNote`, `apps/web/components/shared/inline-note.tsx`) where the rows would be, not cards; error and offline keep theirs (2026-11-06).
@@ -256,7 +256,7 @@ The board lists the whole roster, at 0 until a member earns points ([`points.md`
 | Loading | — | `Loading audit transactions...` |
 | Empty (flagged only) | `No flagged transactions in this window` | `Single adjustments of \|amount\| ≥ {threshold} are flagged here automatically.`, or `Large single adjustments are flagged here automatically.` when the chapter's threshold can't be read |
 | Empty (filtered) | `No transactions match this filter` | `Try relaxing the category or member filter.` |
-| Error | `Audit unavailable` | `Couldn't load chapter transactions. Confirm your chapter access and retry.` |
+| Error | `Audit unavailable` | `Couldn't load chapter transactions. Check your connection and retry.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can view the chapter's transaction log.` |
 | Permission denied | `Audit` (the section label) | `Your role can't see every transaction.` |
 
@@ -266,7 +266,7 @@ The board lists the whole roster, at 0 until a member earns points ([`points.md`
 |---|---|---|
 | Loading | — | `Loading roles and permissions...` |
 | Empty | `No roles yet` | `Chapters always start with default system roles. Refresh to reload or create a new custom role.` |
-| Error | `Couldn't load roles` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load roles` | `Check your connection and retry.` |
 | Permission denied | — | `Your role can't manage roles. Ask your chapter president for access.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage roles.` |
 | Offline | `Roles unavailable offline` | `Reconnect to load the chapter's roles and edit their permissions.` |
@@ -283,7 +283,7 @@ The confirmation rows below and under Roles & Permissions are the five `window.c
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading chapter settings...` |
-| Error | `Couldn't load chapter settings` | `Confirm your chapter access and retry. Changes you make here update every surface in the dashboard.` |
+| Error | `Couldn't load chapter settings` | `Check your connection and retry. Changes you make here update every surface in the dashboard.` |
 | No chapter | `Chapter settings` | `Select an active chapter to edit its branding, semester state, or billing configuration.` |
 | Semester empty | `No archived semesters yet` | `After you run your first rollover, the history appears here.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can start a new semester.` |
@@ -307,7 +307,7 @@ The **Accent server contrast disclosure** row is independent of every row above 
 |---|---|---|
 | Loading | — | `Loading chapter tasks...` |
 | Empty | `No tasks yet` | `Admins can create the first chapter task to assign ownership and award points.` |
-| Error | `Couldn't load tasks` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load tasks` | `Check your connection and retry.` |
 | Offline | `Tasks unavailable offline` | `Reconnect to load the chapter board and move tasks through it.` |
 
 ### Service Hours (dashboard)
@@ -317,7 +317,7 @@ The **Accent server contrast disclosure** row is independent of every row above 
 | Loading | — | `Loading service entries...` |
 | Empty queue | `No pending entries` | `Approved or rejected entries appear under History.` |
 | Empty history | `No service activity yet` | `Log your first service entry to build up chapter service hours.` |
-| Error | `Couldn't load service entries` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load service entries` | `Check your connection and retry.` |
 | Offline | `Service hours unavailable offline` | `Reconnect to log hours and review the approval queue.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can review submitted hours.` |
 
@@ -331,7 +331,7 @@ The **Accent server contrast disclosure** row is independent of every row above 
 | Empty (search, inside a folder) | `No documents match that search` | `No match in this folder. Try "All files" to search the whole library.` |
 | Empty (search, all files), mobile s12 | `No matches` | `No document title matches “{query}”.` |
 | Empty (search, inside a folder), mobile s12 | `No matches` | `Nothing in {folder} matches “{query}”.` Mobile's search stays inside the picked folder chip, so the line names the folder it searched |
-| Error | `Couldn't load documents` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load documents` | `Check your connection and retry.` |
 | Offline | `Documents unavailable offline` | `Reconnect to browse the chapter library and download files.` |
 | Offline (search active) | `Search needs a connection` | `Clear the search to browse the documents already on this device.` |
 | Folder list failed (inline, under the rail) | — | `Couldn't load the folder list, so these are read from the documents shown. Empty folders and folder management are unavailable until it loads.` |
@@ -365,7 +365,7 @@ Three of these exist to keep one state from impersonating another:
 | Idle | `No report generated yet` | `Generate a report to see a preview here.` |
 | Loading | — | `Generating report...` |
 | Empty filter | `Report returned no rows` | `The filters matched nothing in the active chapter.` |
-| Error | `Couldn't generate <kind> report` | the API's own message, or `Confirm your chapter access and retry.` |
+| Error | `Couldn't generate <kind> report` | the API's own message, or `Check your connection and retry.` |
 | Truncated | `Incomplete report` (badge) | `<cap summary> This preview and the CSV built from it are not a complete record of the chapter.` |
 | Permission denied | — | `Your role can't export chapter data. Ask your chapter president for access.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can export chapter data.` |
@@ -382,7 +382,7 @@ Three of these exist to keep one state from impersonating another:
 | Empty (no files at all) | `No backwork yet` | `Upload the first exam, homework or study guide to start the library.` |
 | Empty (search or filters match nothing) | `No files match` | `Try fewer words, or clear a filter.` Action: `Clear search and filters` |
 | Truncated (the list hit the server's 1,000-row cap, #3525) | — | `Showing the newest 1,000 files. Search and filters look only at these for now.` |
-| Error | `Couldn't load backwork` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load backwork` | `Check your connection and retry.` |
 | Offline | `Backwork unavailable offline` | `Reconnect to browse the coursework archive and download a resource.` |
 
 ### Study session (dashboard)
@@ -392,7 +392,7 @@ Three of these exist to keep one state from impersonating another:
 | Loading | — | `Loading study zones...` |
 | Empty zones | `No active study zones` | `Ask an officer who manages study zones to add one.` |
 | Empty history | `No sessions logged yet` | `Start a tracked session inside a study zone to start earning study points.` |
-| Error | `Couldn't load study data` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load study data` | `Check your connection and retry.` |
 | Offline | `Study hours unavailable offline` | `Reconnect to start a session. Tracking needs a live location check.` |
 | Paused (tab hidden) | `Paused (tab hidden)` (badge) | Surfaced live while the timer is paused by the Page Visibility API. |
 
@@ -463,7 +463,7 @@ the state with `pollsGateOf` in `@repo/chat-core/polls`.
 The member's study screen has states the dashboard's *Study session* rows
 above don't cover (a session running on a phone, a pause, the location check,
 a refused write), and its error rows say which read failed rather than the
-dashboard's "Confirm your chapter access and retry".
+dashboard's "Check your connection and retry".
 Per §"Do not rewrite equivalent state text ad hoc per screen unless the
 workflow intent is materially different", the member surface gets its own rows
 rather than inline strings. Where a state is the same for both, the row says
@@ -499,7 +499,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 |---|---|---|
 | Loading | — | `Loading study zones...` |
 | Empty | `No study zones yet` | `Create your first zone to let members start tracked study sessions for points.` |
-| Error | `Couldn't load study zones` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load study zones` | `Check your connection and retry.` |
 | Offline | `Study zones unavailable offline` | `Reconnect to draw a zone or change its reward rate.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage study zones.` |
 | Permission denied | — | `Your role can't manage study zones. Ask your chapter president for access.` |
@@ -510,7 +510,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 |---|---|---|
 | Loading | — | `Loading chapter polls...` |
 | Empty | `No polls match this view` | `Create a poll inside a chat channel and it will appear here. Loosen the filters if you're expecting results.` |
-| Error | `Couldn't load polls` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load polls` | `Check your connection and retry.` |
 | Offline | `Polls unavailable offline` | `Reconnect to load the chapter's polls and cast a vote.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can see the chapter's polls.` |
 | Permission denied | `Polls` (the page title) | `Your role can't see every poll. You can still vote in chat.` |
@@ -535,7 +535,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | No channels | `No channels yet` | `Onboarding seeds them. Ask an admin.` It names no channel: which ones a new chapter gets is [`chat/README.md` § Channels](../../behavior/chat/README.md#channels). |
 | Channel start (both clients, `@repo/hooks/channel-start`; an empty channel draws it just above the composer, and a channel with history draws it above its oldest message) | `Welcome to #<name>`; a DM's is the other member's name | `This is the start of #<name>.`, or `This is the start of the private #<name> channel.` for a private one (a role-gated channel takes the plain line, since who reads it depends on its permissions and the seeded `#alumni` is open to every member), `This is the start of your conversation with <name>.` for a DM and `This is the start of your group conversation.` for a group DM; then the channel's own description, when it has one. Web officers (`channels:manage`) get `Edit channel`, or `Add a description` when it is blank, opening Chat admin on that channel |
 | Channel header (web: `# <name> • <description>` on one line, the description muted and truncated; mobile: the description on a muted line under the name) | — | The channel's own description. The four default channels start with `The whole chapter. Plans, questions, whatever's going on.` (#general), `News from officers. Everyone gets notified.` (#announcements), `Officer changes to dues, roles and settings, posted automatically.` (#chapter-audit) and `Alumni and actives keeping in touch.` (#alumni), from `DEFAULT_CHANNELS` |
-| Error | `Couldn't load channels` / `Couldn't load messages` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load channels` / `Couldn't load messages` | `Check your connection and retry.` |
 | Read-only channel | — | `This channel is read-only for your role.` (mobile still quotes the permission key, [#3422](https://github.com/pdcarlson/Frapp/issues/3422)) |
 | Alumni-restricted channel | — | `Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.` |
 | Archived conversation (mobile only: a Group DM everyone else left, #348; web's channel list leaves archived channels out) | — | `This conversation is archived because everyone else left. You can still read it.` |
@@ -578,12 +578,12 @@ The channel structure below the report queue on `/chat-admin`. Its states stand 
 | Loading (pins) | — | `Loading pins...` |
 | Empty (pins) | `Nothing pinned` | `Officers can pin key messages from the channel timeline.` |
 | Stale (pins) | — | `Couldn't refresh the pins. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded pins stay) |
-| Error (pins) | `Couldn't load pins` | `Confirm your chapter access and retry.` (never `Nothing pinned`: a failed read is not an empty list) |
+| Error (pins) | `Couldn't load pins` | `Check your connection and retry.` (never `Nothing pinned`: a failed read is not an empty list) |
 | Offline (pins) | `Pins unavailable offline` | `Reconnect to load this channel's pins.` (whether the read paused or failed while offline) |
 | Loading (permission grid) | — | `Loading permissions…` |
 | Unavailable (permission grid) | — | `Couldn't load the permission list, which needs a role that can see the full directory. Your current selections are unaffected.` (nothing loaded; a failed refresh keeps the loaded grid) |
 | Offline (permission grid) | — | `Can't load the permission list while offline. Existing selections are unaffected; reconnect to change them.` |
-| Error | `Couldn't load channels` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load channels` | `Check your connection and retry.` |
 | Stale | — | `Couldn't refresh the channels. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded channels and categories stay) |
 | Offline | `Channels unavailable offline` | `Reconnect to manage channels, categories and pins.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage chat channels.` |
@@ -602,7 +602,7 @@ The officer report queue ([`../../behavior/chat/README.md`](../../behavior/chat/
 | Loading | — | `Loading reports...` |
 | Empty (Open) | `No open reports` | `When a member reports a message, it lands here for officers to review.` |
 | Empty (Reviewed / Actioned / Dismissed) | `No reviewed reports` · `No actioned reports` · `No dismissed reports` | `Reports marked reviewed are kept here.` · `Reports whose message was removed are kept here.` · `Reports you dismiss are kept here.` |
-| Error | `Couldn't load reports` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load reports` | `Check your connection and retry.` |
 | Stale | — | `Couldn't refresh the reports. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded reports stay, and so does an empty tab, which says it too) |
 | No chapter | `No chapter selected` | `Pick an active chapter to review its reports.` |
 | Offline | `Reports unavailable offline` | `Reconnect to review reported messages.` |
@@ -648,7 +648,7 @@ Implementation: `apps/web/components/chat-admin/chat-report-copy.ts`.
 | Finish notification | `Discord import finished` · `Discord import stopped` (failed) | `<n> messages from <server> are now in Frapp chat.` (`1 message … is`; without a server name, `from` and the name are left out) · `The import from <server> stopped on an error. Open the Discord import page to see why.` |
 | One import (API, 409) | — | `Your chapter already has a Discord import. Delete it before starting another.` |
 | Cutoff (wizard, review step) | `How far back should we go?` | `Older messages and their files are never read or stored. You can't change this once the import starts.` Choices: `Everything` · `Last 4 years` · `Last 2 years` · `Last year` · `Pick a date` (opens `Import messages from`). Under them: `Your server was made in <Mon YYYY>.` (bot path, read from the server's id), then `Messages before <Mon D, YYYY> are left out.` or `The server's whole history comes over.` Problems: `Pick a date, or choose Everything.` · `Enter a whole date, or choose Everything.` · `Pick a date in the past, or choose Everything.` |
-| Error | `Couldn't load the import` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load the import` | `Check your connection and retry.` |
 | Stale | — | `Couldn't refresh the import. This is the last update that loaded.` · `Try again` (a background refresh failed; the import as it last loaded, and its meter, stay) |
 | Offline | `Import unavailable offline` | `Reconnect to load your chapter's Discord import.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can import Discord history.` |
@@ -684,7 +684,7 @@ Implementation: the page's read states inline in `apps/web/components/discord-im
 |---|---|---|
 | Loading | — | `Loading billing overview...` |
 | Empty | `No invoices yet` | `Create your first invoice to start chapter dues collection.` |
-| Error | `Couldn't load invoices` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load invoices` | `Check your connection and retry.` |
 | Empty (filtered) | `No invoices match this filter` | `Try a different status, or clear the filter to see every invoice.` |
 | Loading (plan panel) | — | `Loading plan...` |
 | Offline | `Billing unavailable offline` | `Reconnect to sync subscription status and invoice balances.` |
@@ -921,14 +921,14 @@ no reason and no way back.
 | Empty | `No alumni yet` | `Graduated members appear here.` |
 | No results (filters) | `No alumni match the filters` | `Clear a field to see more.` |
 | No results (filters), mobile s13 | `No alumni match the filters` | `Clear a filter to see more.` The fields sit behind a chip named Filters there, so the line names that |
-| Error | `Couldn't load alumni` | `Check your chapter access.` |
+| Error | `Couldn't load alumni` | `Check your connection and retry.` |
 | Offline | `Alumni unavailable offline` | `Reconnect to load alumni records.` |
 | No chapter selected | `No chapter selected` | `Pick a chapter to browse alumni.` |
 
 Rewritten by the same lane and on the same rule as the Members table above; the reasoning is not repeated here. Two things specific to this half:
 
 - **The no-chapter state changed shape, not just wording.** It was the one state on this route rendered as a bare `<Card>` with a title and a sentence rather than through the §10 state family, and on a page the lane left with no cards it would have been the only card on the screen. It is an `EmptyState` now, so its title names the condition (`No chapter selected`) rather than the screen (`Alumni directory`).
-- **The error description dropped a true sentence on purpose.** "Alumni visibility respects the same permission checks as the member directory" is a fact about the API, offered to a member who is looking at a failure they cannot diagnose. `Check your chapter access.` is the half they can act on.
+- **The error description dropped a true sentence on purpose.** "Alumni visibility respects the same permission checks as the member directory" is a fact about the API, offered to a member who is looking at a failure they cannot diagnose. `Check your connection and retry.` is the half they can act on; access itself is answered above the screen (§ copy rules, 2026-11-06).
 
 ### Profile (dashboard)
 

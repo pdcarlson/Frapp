@@ -1,0 +1,45 @@
+import { describe, expect, it } from "vitest";
+import { AuthApiError, AuthRetryableFetchError } from "@supabase/supabase-js";
+import { isSessionOver } from "./rejected-session";
+
+const user = { id: "u1" };
+
+describe("isSessionOver", () => {
+  it("keeps a session Auth still recognises", () => {
+    expect(isSessionOver({ data: { user }, error: null })).toBe(false);
+  });
+
+  it("ends a session whose user no longer exists", () => {
+    const error = new AuthApiError(
+      "User from sub claim in JWT does not exist",
+      403,
+      "user_not_found",
+    );
+    expect(isSessionOver({ data: { user: null }, error })).toBe(true);
+  });
+
+  it("ends a session Auth answers with no user", () => {
+    expect(isSessionOver({ data: { user: null }, error: null })).toBe(true);
+  });
+
+  it("does not treat an Auth outage as a verdict", () => {
+    expect(
+      isSessionOver({
+        data: { user: null },
+        error: new AuthRetryableFetchError("fetch failed", 0),
+      }),
+    ).toBe(false);
+    expect(
+      isSessionOver({
+        data: { user: null },
+        error: new AuthApiError("down", 503, undefined),
+      }),
+    ).toBe(false);
+    expect(
+      isSessionOver({
+        data: { user: null },
+        error: new AuthApiError("slow down", 429, undefined),
+      }),
+    ).toBe(false);
+  });
+});

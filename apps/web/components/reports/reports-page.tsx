@@ -501,7 +501,7 @@ export function ReportsPage() {
       // so an `instanceof Error` check never reached the server's message.
       const description = getErrorMessage(
         error,
-        "Confirm your chapter access and retry.",
+        "Check your connection and retry.",
       );
       // Both, deliberately: the toast reports the moment, and the panel keeps
       // saying so after the toast dismisses. A failed run that leaves the idle
@@ -584,7 +584,7 @@ export function ReportsPage() {
         title: `Couldn't export ${reportLabel[kind].toLowerCase()} PDF`,
         description: getErrorMessage(
           error,
-          "Confirm your chapter access and retry.",
+          "Check your connection and retry.",
         ),
         variant: "destructive",
       });

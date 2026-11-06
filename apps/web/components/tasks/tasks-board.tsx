@@ -357,7 +357,7 @@ export function TasksBoard() {
         <NestedError
           sole
           title="Couldn't load tasks"
-          description="Confirm your chapter access and retry."
+          description="Check your connection and retry."
           onRetry={() => void tasksQuery.refetch()}
         />
       </div>

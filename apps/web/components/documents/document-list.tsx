@@ -130,7 +130,7 @@ export function DocumentList({
           <NestedError
             sole
             title="Couldn't load documents"
-            description="Confirm your chapter access and retry."
+            description="Check your connection and retry."
             onRetry={onRetry}
           />
         ) : listState === "empty" ? (

@@ -624,7 +624,7 @@ export function GeofencesAdminPage() {
             <NestedError
               sole
               title="Couldn't load study zones"
-              description="Confirm your chapter access and retry."
+              description="Check your connection and retry."
               onRetry={() => void geofencesQuery.refetch()}
             />
           ) : geofences.length === 0 ? (

@@ -442,7 +442,7 @@ export function ServiceHoursPage() {
       <>
         <ErrorState
           title="Couldn't load service entries"
-          description="Confirm your chapter access and retry."
+          description="Check your connection and retry."
           onRetry={() => void entriesQuery.refetch()}
         />
       </>

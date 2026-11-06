@@ -244,7 +244,7 @@ function SettingsPageContent() {
     stateBanner = (
       <ErrorState
         title="Couldn't load chapter settings"
-        description="Confirm your chapter access and retry. Changes here update every surface in the dashboard."
+        description="Check your connection and retry. Changes here update every surface in the dashboard."
         onRetry={() => void chapterQuery.refetch()}
       />
     );

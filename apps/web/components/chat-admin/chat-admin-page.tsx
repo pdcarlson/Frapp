@@ -598,7 +598,7 @@ function ChatAdminBody({
       <NestedError
         sole
         title="Couldn't load channels"
-        description="Confirm your chapter access and retry."
+        description="Check your connection and retry."
         onRetry={retryQueries}
       />
     );
@@ -1068,7 +1068,7 @@ function ChatAdminBody({
                     ) : pinsQuery.isError && pinsQuery.data === undefined ? (
                       <NestedError
                         title="Couldn't load pins"
-                        description="Confirm your chapter access and retry."
+                        description="Check your connection and retry."
                         onRetry={() => void pinsQuery.refetch()}
                       />
                     ) : pins.length === 0 ? (

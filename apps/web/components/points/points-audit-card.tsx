@@ -296,7 +296,7 @@ export function PointsAuditCard() {
             {transactionsQuery.isError ? (
               <NestedError
                 title="Audit unavailable"
-                description="Couldn't load chapter transactions. Confirm your chapter access and retry."
+                description="Couldn't load chapter transactions. Check your connection and retry."
                 onRetry={() => void transactionsQuery.refetch()}
               />
             ) : rows.length === 0 ? (

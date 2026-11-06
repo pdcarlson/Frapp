@@ -795,7 +795,7 @@ export const MessageTimeline = forwardRef<
         // The canonical string from `writing.md` §7, not `loadError.message`.
         // A raw fetch rejection ("Failed to fetch") is not copy, and the doc
         // that owns this table already answers the question a member has.
-        description="Confirm your chapter access and retry."
+        description="Check your connection and retry."
         onRetry={onRetryLoad}
       />
     );

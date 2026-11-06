@@ -2045,7 +2045,7 @@ export function ChatShell({
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
             <ErrorState
               title="Couldn't load channels"
-              description="Check your chapter access."
+              description="Check your connection and retry."
               onRetry={() => void channelsQuery.refetch()}
             />
           </div>

@@ -407,7 +407,7 @@ export function RolesAndPermissionsPage() {
     body = (
       <ErrorState
         title="Couldn't load roles"
-        description="Confirm your chapter access and retry."
+        description="Check your connection and retry."
         onRetry={retryQueries}
       />
     );

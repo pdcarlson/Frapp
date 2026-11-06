@@ -548,7 +548,7 @@ export function StudyPage() {
       <>
         <ErrorState
           title="Couldn't load study data"
-          description="Confirm your chapter access and retry."
+          description="Check your connection and retry."
           onRetry={() => {
             void geofencesQuery.refetch();
             void sessionsQuery.refetch();

@@ -270,7 +270,7 @@ export function AlumniDirectory() {
         <NestedError
           sole
           title="Couldn't load alumni"
-          description="Check your chapter access."
+          description="Check your connection and retry."
           onRetry={() => void query.refetch()}
         />
       ) : alumni.length === 0 ? (

@@ -249,7 +249,7 @@ describe("ReportsPage preview states", () => {
       await screen.findByText("The start date must come before the end date."),
     ).toBeInTheDocument();
     expect(
-      screen.queryByText("Confirm your chapter access and retry."),
+      screen.queryByText("Check your connection and retry."),
     ).not.toBeInTheDocument();
   });
 
