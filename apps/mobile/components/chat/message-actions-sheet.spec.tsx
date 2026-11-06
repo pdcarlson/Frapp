@@ -55,11 +55,11 @@ import {
   type MessageActionsSheetHandle,
   type MessageActionsTarget,
 } from "./message-actions-sheet";
+import { BLOCK_ROW_DESCRIPTION } from "@/lib/chat/block-actions";
 import {
   BLOCK_NOT_A_MEMBER_BODY,
-  BLOCK_ROW_DESCRIPTION,
   blockConfirmBody,
-} from "@/lib/chat/block-actions";
+} from "@repo/chat-core/block-copy";
 import {
   REPORT_ALREADY_BODY,
   REPORT_FAILED_BODY,
@@ -67,7 +67,7 @@ import {
   REPORT_SENT_BODY,
   REPORT_SENT_TITLE,
   REPORT_UNAVAILABLE_BODY,
-} from "@/lib/chat/report-reasons";
+} from "@repo/chat-core/report-copy";
 
 const BLOCKED = "22222222-2222-4222-8222-222222222222";
 
@@ -444,7 +444,7 @@ describe("MessageActionsSheet — menu", () => {
     expect(Alert.alert).toHaveBeenCalledTimes(1);
     const [title, body, buttons] = vi.mocked(Alert.alert).mock.calls[0]!;
     expect(title).toBe("Block Blake?");
-    expect(body).toBe(blockConfirmBody(true));
+    expect(body).toBe(blockConfirmBody(true, "in Settings"));
     expect(body).toMatch(/won't be told/);
     expect(blockActions.block).not.toHaveBeenCalled();
 

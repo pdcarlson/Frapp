@@ -27,6 +27,7 @@ import {
   type ThreadRow,
 } from "@repo/chat-core/blocks";
 import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
+import type { MemberLookup } from "@repo/chat-core/message-actions";
 import type { ThreadBlockList } from "@/lib/chat/use-thread-block-list";
 import { resolveAuthorAvatar, useAuthorAvatars } from "@repo/hooks";
 import { dayDividerLabel, decorateThread } from "@repo/chat-core/grouping";
@@ -372,6 +373,10 @@ export interface MessageTimelineProps {
   bookmarkedMessageIds?: Set<string>;
   onToggleBookmark?: (messageId: string, next: boolean) => void;
   canManageChannel?: boolean;
+  /** A row's Report and Block (#2687); see `MessageItemProps`. */
+  onReport?: (message: ChatMessage) => void;
+  onBlock?: (message: ChatMessage) => void;
+  isMember?: MemberLookup;
   /**
    * Older history (#1571). The timeline asks for the next page when the member
    * reaches the top of what is loaded, while `hasOlder` says there may be one.
@@ -435,6 +440,9 @@ export const MessageTimeline = forwardRef<
     bookmarkedMessageIds,
     onToggleBookmark,
     canManageChannel,
+    onReport,
+    onBlock,
+    isMember,
     hasOlder = false,
     isLoadingOlder = false,
     olderError = false,
@@ -941,6 +949,9 @@ export const MessageTimeline = forwardRef<
                   isBookmarked={bookmarkedMessageIds?.has(entry.message.id)}
                   onToggleBookmark={onToggleBookmark}
                   canManageChannel={canManageChannel}
+                  onReport={onReport}
+                  onBlock={onBlock}
+                  isMember={isMember}
                   isTapRevealed={tapRevealed.isRevealed(entry.message)}
                   onToggleTapReveal={() => tapRevealed.toggle(entry.message)}
                 />
