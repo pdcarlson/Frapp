@@ -231,6 +231,16 @@ export function takeLastNotificationResponse(): PushNotificationResponse | null 
   return response;
 }
 
+/**
+ * Whether a tap launched the app and is still waiting to be taken. Read
+ * without clearing, so chat home can stand aside for it however the effects
+ * that take it happen to be ordered (`lib/chat/last-channel.ts`).
+ */
+export function hasLaunchNotificationTap(): boolean {
+  const mod = localOnlyModule();
+  return mod ? mod.getLastNotificationResponse() !== null : false;
+}
+
 export function addNotificationResponseListener(
   listener: (response: PushNotificationResponse) => void,
 ): PushSubscription | null {
