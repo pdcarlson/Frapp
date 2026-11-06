@@ -765,8 +765,7 @@ export function ReportsPage() {
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-muted-foreground">
-                PDF export is generated server-side; its download link is valid
-                for one hour.
+                A PDF download link works for one hour.
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 {/*
@@ -836,7 +835,7 @@ export function ReportsPage() {
             <p className="text-sm text-muted-foreground">
               {truncation?.truncated
                 ? `${truncationSummary(truncation)} This preview and the CSV built from it are not a complete record of the chapter.`
-                : "First 25 rows of the generated report. The CSV download contains every returned row."}
+                : "First 25 rows of the generated report. The CSV has every row."}
             </p>
             <div>
               {/*

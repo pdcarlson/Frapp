@@ -663,8 +663,8 @@ export function RolesAndPermissionsPage() {
               Transfer presidency
             </CardTitle>
             <CardDescription>
-              Move the President role to another member. Only the current
-              president can initiate this. The API rejects anyone else.
+              Hand the President role to another member. Only the current
+              president can do this.
             </CardDescription>
           </CardHeader>
           <CardContent>
