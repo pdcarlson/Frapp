@@ -14,6 +14,7 @@ import {
   DST_SHIFT_MS,
   WORKFLOW_FILE,
   buildAlertIssueBody,
+  describeRoutine,
   dueFire,
   evaluateHeartbeat,
   lastScheduledFire,
@@ -97,21 +98,21 @@ describe("the schedule", () => {
       lastScheduledFire(bySlug["weekly-upkeep"], NOW),
       Date.parse("2026-11-12T03:07:00Z"),
     );
-    // Board Sweep is Monday 11:07 UTC; from Tuesday 2026-12-01 that is 2026-11-30.
+    // Board Sweep is Monday 01:07 UTC; from Tuesday 2026-12-01 that is 2026-11-30.
     assert.equal(
       lastScheduledFire(
         bySlug["board-sweep"],
         Date.parse("2026-12-01T00:00:00Z"),
       ),
-      Date.parse("2026-11-30T11:07:00Z"),
+      Date.parse("2026-11-30T01:07:00Z"),
     );
-    // Board Sweep on its own Monday: before 11:07 it is the previous week's.
+    // Board Sweep on its own Monday: before 01:07 it is the previous week's.
     assert.equal(
       lastScheduledFire(
         bySlug["board-sweep"],
-        Date.parse("2026-11-16T11:00:00Z"),
+        Date.parse("2026-11-16T01:00:00Z"),
       ),
-      Date.parse("2026-11-09T11:07:00Z"),
+      Date.parse("2026-11-09T01:07:00Z"),
     );
   });
 
@@ -125,14 +126,39 @@ describe("the schedule", () => {
     assert.equal(dueFire(beta, NOW), Date.parse("2026-11-18T12:07:00Z"));
   });
 
-  it("mirrors the routines' schedules as EDT-time UTC (routines.md § Settings)", () => {
+  it("mirrors routines.md § Settings: each CRON_TZ schedule as its EDT-time UTC", () => {
+    const doc = readFileSync(ROUTINES_DOC, "utf8");
+    const row = doc.split("\n").find((line) => line.startsWith("| Schedule |"));
+    assert.ok(row, "routines.md § Settings has a Schedule row");
+    for (const routine of ROUTINES) {
+      const match = row.match(
+        new RegExp(
+          `${routine.name} \`CRON_TZ=America/New_York (\\d+) (\\d+) \\* \\* (\\*|\\d)\``,
+        ),
+      );
+      assert.ok(match, `${routine.name} has a CRON_TZ schedule in routines.md`);
+      const [, minute, hour, weekday] = match;
+      // EDT is UTC-4: add four hours, and a day when that crosses midnight.
+      const utcHour = Number(hour) + 4;
+      const nextDay = utcHour >= 24;
+      assert.equal(routine.minute, Number(minute), routine.slug);
+      assert.equal(routine.hour, utcHour % 24, routine.slug);
+      assert.equal(
+        routine.weekday,
+        weekday === "*" ? undefined : (Number(weekday) + (nextDay ? 1 : 0)) % 7,
+        routine.slug,
+      );
+    }
+  });
+
+  it("pins the routines' schedules as EDT-time UTC", () => {
     const cron = ({ minute, hour, weekday }) =>
       `${minute} ${hour} * * ${weekday ?? "*"}`;
     assert.deepEqual(
       Object.fromEntries(ROUTINES.map((r) => [r.slug, cron(r)])),
       {
         "beta-watch": "7 12 * * *",
-        "board-sweep": "7 11 * * 1",
+        "board-sweep": "7 1 * * 1",
         "weekly-upkeep": "7 3 * * 4",
       },
     );
@@ -363,7 +389,7 @@ describe("evaluateHeartbeat", () => {
   });
 
   it("judges no fire from before the routine's own scheduled task existed", () => {
-    // Monday 2026-11-09 19:20, the watch long running: the Board Sweep's 11:07
+    // Monday 2026-11-09 19:20, the watch long running: the Board Sweep's 01:07
     // fire that day is judged, while Weekly Upkeep's latest due fire
     // (Thursday 2026-11-05) predates the tasks' creation on 2026-11-06.
     const now = Date.parse("2026-11-09T19:20:00Z");
@@ -377,6 +403,14 @@ describe("evaluateHeartbeat", () => {
     });
     for (const routine of ROUTINES)
       assert.ok(Number.isFinite(routine.since), routine.slug);
+    const upkeep = evaluate([], { now }).routines.find(
+      (r) => r.slug === "weekly-upkeep",
+    );
+    assert.match(describeRoutine(upkeep), /predates its scheduled task/);
+    const early = evaluate([], { now, judgeFrom: now - HOUR }).routines.find(
+      (r) => r.slug === "weekly-upkeep",
+    );
+    assert.match(describeRoutine(early), /predates this watch/);
   });
 });
 

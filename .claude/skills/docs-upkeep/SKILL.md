@@ -1,12 +1,12 @@
 ---
 name: docs-upkeep
 description: >
-  Run the docs phase of the Weekly Upkeep routine (even ISO weeks): sweep a rotating fifth of the docs corpus, verify its
+  Run the docs phase of the Weekly Upkeep routine (alternate weeks): sweep a rotating fifth of the docs corpus, verify its
   claims against code and providers, and fix what is wrong in a single docs-only PR. Use when the
   Weekly Upkeep routine picks it, or when asked to sweep, audit, or refresh the docs.
 ---
 
-# Docs Upkeep (the even-week phase of Weekly Upkeep)
+# Docs Upkeep (a phase of Weekly Upkeep)
 
 Docs decay quietly: a reader finds a wrong claim by acting on it. This routine sweeps this week's
 slice of the corpus, checks its claims against the code and providers, and fixes what is wrong in

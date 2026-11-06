@@ -43,9 +43,10 @@ Start with the marker-count guard in
 Then list the open `suggestion` issues and give each exactly one action, grounded in current code
 and `spec/`. Three groups are different:
 
-- Skip issues whose marker starts `fp=pr-followup/` or `fp=human/` entirely. The weekly
-  [`pr-followups`](../pr-followups/SKILL.md) routine owns them, and a human action can't be
-  proven done from code.
+- Skip issues whose marker starts `fp=pr-followup/` or `fp=human/` entirely. The
+  [`pr-followups`](../pr-followups/SKILL.md) phase owns them, and a human action can't be
+  proven done from code. Skip `fp=beta-watch/` too: [`beta-watch`](../beta-watch/SKILL.md) owns
+  them, and a crash or tester report can't be proven fixed from a code read either.
 - `scope:production` issues are held by owner decision (the roster's `scope:production` entry in
   routines.md), not aging. Never mark them `stale`, raise their priority for age, or file
   duplicates of them.
@@ -274,7 +275,8 @@ judgment-laden drift gets a `suggestion` (`area:docs`, usually `depth:standard`)
 
 This runs unattended. Work through maintenance and discovery without stopping to summarize or
 offer options, and put any status note in the same message as your next tool call. End the run
-when every in-scope suggestion has its action and discovery has used or declined its budget, or
+when every in-scope suggestion (in the Board Sweep, every one in this run's slice) has its
+action and discovery has used or declined its budget, or
 when nothing more can move (the GitHub MCP is unavailable, or the marker-count guard failed and
 body writes are off). This phase posts no run record of its own: the
 [`board-sweep`](../board-sweep/SKILL.md) record covers it, and a guard that turned body writes off

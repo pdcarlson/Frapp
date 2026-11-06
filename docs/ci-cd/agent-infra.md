@@ -940,9 +940,13 @@ Also verified: an "always allow" click in one session/surface does not propagate
 containers — only rules committed to `.claude/settings.json` travel with the repo, and even those
 are bounded by the ceiling rule above.
 
-The in-session trigger family (`send_later` / `create_trigger` / `list_triggers` …) is a
-**dead end for unattended use on the cloud surface — do not build an unattended flow on it.** In a
-session the owner was attending (2026-09-22), `list_triggers`, `create_trigger` and `update_trigger`
+The in-session trigger family (`send_later` / `create_trigger` / `list_triggers` …): **don't
+build an unattended flow on `send_later`**, which asks the owner each time. **Corrected
+2026-11-06:** `create_trigger` *is* now the scheduled path. Called from a Frapp project thread's
+session without `create_new_session_on_fire`, it makes a task bound to that session, so each fire
+resumes it with its repository and connectors, and the three routines run that way
+([`routines.md`](routines.md), ADR-16 amendment 11). The rest of this section is the earlier
+record. In a session the owner was attending (2026-09-22), `list_triggers`, `create_trigger` and `update_trigger`
 worked within the limits below; the rest of the family wasn't tried. See [`routines.md`](routines.md). Not an account-side
 Routines gate (disproven 2026-08-08: the owner's Routines page was healthy and scheduled Routines
 fired normally) and not a permissions-file miss (three spellings were allowlisted, and the family is
@@ -956,8 +960,9 @@ still disqualifying for unattended runs, but for a different reason: it stops an
 attending: all three worked, so the earlier `-32003` reports no longer hold for them. `create_trigger`
 created Docs Upkeep with no repository and no connectors attached, and `update_trigger` refuses a
 Routine created in the UI ("Agents can only update routines they created"). Whether any of them
-prompted the owner wasn't recorded; an agent can't observe prompts. None of this makes the family
-usable for unattended runs.
+prompted the owner wasn't recorded; an agent can't observe prompts. The no-repository result was
+a task created to start fresh sessions; a session-bound task (2026-11-06) carries its session's
+instead.
 
 ## Agent dev stack (cloud sessions)
 

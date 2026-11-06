@@ -1,7 +1,7 @@
 ---
 name: weekly-upkeep
 description: >
-  Run the Weekly Upkeep routine (3 of 3): once a week, alternating by ISO week, either sweep a
+  Run the Weekly Upkeep routine (3 of 3): once a week, alternating weeks, either sweep a
   slice of the docs (docs-upkeep) or fix one hygiene theme in the code (hygiene-scan), opening at
   most one PR and never a second while one is open. Use when the scheduled "Weekly Upkeep" routine
   fires.
@@ -17,15 +17,18 @@ this skill owns which one runs, the open-PR rule, and the record.
 ## This week's job
 
 ```sh
-V=$(date -u +%V); echo $(( 10#$V % 2 ))
+echo $(( $(date -u +%s) / 604800 % 2 ))
 ```
 
-- `0` (even ISO week): follow [`docs-upkeep`](../docs-upkeep/SKILL.md).
-- `1` (odd ISO week): follow [`hygiene-scan`](../hygiene-scan/SKILL.md).
+- `1`: follow [`docs-upkeep`](../docs-upkeep/SKILL.md).
+- `0`: follow [`hygiene-scan`](../hygiene-scan/SKILL.md).
 
-`-u` keeps a manual re-run on the scheduled answer, and `10#` stops `08` and `09` parsing as octal.
-Both skills derive their slice from the calendar, and stepping two weeks (or 14 days) still walks
-every one of their five groups.
+That is whole weeks since the Unix epoch, which start on Thursday 00:00 UTC, just before the
+scheduled fire (Wednesday 23:07 ET is Thursday in UTC). It counts straight through New Year, where
+ISO week numbers don't: 2026 has a week 53, so ISO-week parity would run the same phase twice in a
+row. A manual run before Thursday 00:00 UTC lands in the previous week and gets the other phase.
+Both skills derive their own slice from the calendar, and stepping 14 days still walks every one
+of their five groups (docs-upkeep's New Year skew aside).
 
 ## One upkeep PR at a time
 
@@ -36,7 +39,9 @@ do the phase's read-only part (the docs phase lists what it would fix; the hygie
 lenses and writes its ledger) and end. This is the rule `hygiene-scan` §0.5 already applies to
 itself, now covering both.
 
-Inside the phase its skill wins, except that the phase posts no run record of its own.
+Inside the phase its skill wins, with two exceptions that this skill owns: the one-upkeep-PR rule
+above (neither phase's own check sees the other kind's PR), and the phase posts no run record of
+its own.
 
 ## Telling the owner
 

@@ -1,7 +1,7 @@
 ---
 name: hygiene-scan
 description: >
-  Run the hygiene phase of the Weekly Upkeep routine (odd ISO weeks): ground in the repo's engineering standards and gates, read
+  Run the hygiene phase of the Weekly Upkeep routine (alternate weeks): ground in the repo's engineering standards and gates, read
   a calendar-derived slice of the codebase whole (legacy patterns, grandfathered violations,
   orphaned code, not just the recent diff), fix one bounded, verified hygiene theme in a
   product-code PR a human merges, and file or ledger the rest. Use when the Weekly Upkeep
@@ -9,7 +9,7 @@ description: >
   report it.
 ---
 
-# Hygiene Scan (the odd-week phase of Weekly Upkeep)
+# Hygiene Scan (a phase of Weekly Upkeep)
 
 This is the one unattended routine that edits product code. Filed hygiene ages behind feature work,
 and nothing else consolidates, so each run fixes one theme itself. A run is done when at most one

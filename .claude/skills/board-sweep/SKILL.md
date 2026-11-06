@@ -22,12 +22,19 @@ The order matters: each phase files what the next one sorts.
 
 1. **PR follow-ups**: follow [`pr-followups`](../pr-followups/SKILL.md) (audit, harvest, publish
    the Human Action List).
-2. **Curate**: follow [`issue-curator`](../issue-curator/SKILL.md). Maintenance takes at most
-   about 30 `suggestion` issues per run, oldest-touched first; discovery keeps its budget.
+2. **Curate**: follow [`issue-curator`](../issue-curator/SKILL.md).
 3. **Triage**: follow [`issue-triage`](../issue-triage/SKILL.md), Pass A (the inbox, including
-   what phases 1 and 2 just filed) and Pass B (a Backlog batch of about 50).
+   what phases 1 and 2 just filed) and Pass B (its Backlog batch).
 
-Inside a phase, its skill wins, with three exceptions that this skill owns:
+Inside a phase, its skill wins, with four exceptions that this skill owns:
+
+- **A curator maintenance cap.** The curator's maintenance pass takes one slice of the open
+  `suggestion` issues per run, about 30 of them, chosen without state: sort the in-scope issues
+  by number, split them into `n = ceil(count / 30)` consecutive groups, and take group
+  `$(( $(date -u +%s) / 604800 % n ))`. Weeks walk every group, including issues the curator
+  leaves untouched, which an oldest-touched order would revisit forever. Discovery keeps its own
+  budget. Without the cap, maintenance alone can use up the run (the
+  2026-10-23 Curator run stopped part way through about 213), and triage never runs.
 
 - **One run record.** A phase posts no run record of its own; the record at the end of this run
   covers all three.

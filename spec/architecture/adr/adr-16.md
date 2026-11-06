@@ -269,7 +269,7 @@ nothing. The owner is also short on weekly usage.
 2. **Board Sweep** (weekly): PR Follow-ups, the Curator and Triage run as three phases of one
    session, in that order, with one run record and one post that carries only decisions waiting on
    the owner.
-3. **Weekly Upkeep** (weekly): Docs Upkeep in even ISO weeks and Hygiene Scan in odd ones, with
+3. **Weekly Upkeep** (weekly): Docs Upkeep and Hygiene Scan in alternate weeks, with
    at most one upkeep PR open at a time.
 
 They are created by an agent as scheduled tasks bound to a Frapp project thread, not in the
