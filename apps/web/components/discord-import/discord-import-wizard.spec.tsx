@@ -184,6 +184,7 @@ vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 import { ImportWizard } from "./import-wizard";
 import { SourceStep } from "./source-step";
 import { ConnectStep } from "./connect-step";
+import { DISCORD_NOTICE } from "./consent-step";
 import { ChannelMappingStep } from "./channel-mapping-step";
 import {
   defaultChoices,
@@ -350,6 +351,30 @@ describe("ImportWizard — the consent gate", () => {
     chooseUploadPath();
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(createImport).not.toHaveBeenCalled();
+  });
+
+  it("hands the officer the notice to post, and copying it is not consent", async () => {
+    // The step used to describe a notice and leave the officer to write it.
+    // Copying is the means, not the answer: the box still gates Continue.
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    render(<ImportWizard onStarted={() => {}} onCancel={() => {}} />);
+    chooseUploadPath();
+
+    expect(screen.getByText(DISCORD_NOTICE)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Copy message" }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(DISCORD_NOTICE));
+    expect(
+      await screen.findByRole("button", { name: "Message copied" }),
+    ).toBeInTheDocument();
+    expect(
+      (screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
   });
 
   it("gates the BOT path on the same acknowledgement", async () => {
