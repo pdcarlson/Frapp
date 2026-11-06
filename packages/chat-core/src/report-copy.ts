@@ -1,12 +1,20 @@
 import { statusOf } from "@repo/api-sdk";
-import { CHAT_REPORT_REASONS, type ChatReportReason } from "@repo/hooks";
+import type { components } from "@repo/api-sdk/types";
 
 /**
- * Member-facing labels for the reasons `POST /v1/chat/reports` accepts.
+ * What a member reporting a message is told, on web and mobile alike (#2687).
+ * The officers' queue labels the same reasons more tersely
+ * (`CHAT_REPORT_REASON_LABEL` in web chat-admin), deliberately apart.
+ */
+
+type ChatReportReason = components["schemas"]["CreateChatReportDto"]["reason"];
+
+/**
+ * Member-facing labels for the reasons `POST /v1/chat/reports` accepts, in the
+ * order a picker shows them: most specific first, "Something else" last.
  *
- * A `Record` over the SDK's union, so a reason the API adds is a compile error
- * here rather than a picker row with no label. The order is the hook's
- * `CHAT_REPORT_REASONS`, most specific first and "Something else" last.
+ * A `Record` over the SDK's union, so a reason the API adds (or drops) is a
+ * compile error here rather than a picker that cannot file it.
  */
 export const REPORT_REASON_LABELS: Record<ChatReportReason, string> = {
   harassment: "Harassment or bullying",
@@ -18,10 +26,14 @@ export const REPORT_REASON_LABELS: Record<ChatReportReason, string> = {
   other: "Something else",
 };
 
-export const REPORT_REASON_OPTIONS = CHAT_REPORT_REASONS.map((reason) => ({
-  reason,
-  label: REPORT_REASON_LABELS[reason],
-}));
+/** The report form's title and prompt, and its submit control. */
+export const REPORT_FORM_TITLE = "Report message";
+export const REPORT_FORM_PROMPT = "Why are you reporting it?";
+export const REPORT_SEND_LABEL = "Send report";
+
+export const REPORT_REASON_OPTIONS = (
+  Object.keys(REPORT_REASON_LABELS) as ChatReportReason[]
+).map((reason) => ({ reason, label: REPORT_REASON_LABELS[reason] }));
 
 /**
  * Where a report goes, stated as far as it is true in every channel type. The

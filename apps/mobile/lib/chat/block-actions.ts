@@ -1,11 +1,15 @@
 import { useCallback } from "react";
 import { Alert } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import { serverMessageOf, statusOf } from "@repo/api-sdk";
 import {
   BLOCK_FAILURE_BODY,
+  BLOCK_NOT_A_MEMBER_BODY,
   UNBLOCK_CONFIRM_BODY,
   UNNAMED_MEMBER,
+  blockConfirmBody,
+  blockConfirmTitle,
+  blockFailedTitle,
+  isMemberNotFound,
   unblockConfirmTitle,
   unblockFailedTitle,
 } from "@repo/chat-core/block-copy";
@@ -21,32 +25,10 @@ import { useBlockMember, useFrappClient, useUnblockMember } from "@repo/hooks";
  * below say only what is true of this client today, and nothing about the
  * blocked member finding out: blocking is silent by contract. A block is
  * scoped to one chapter and a member can belong to several, so the copy says
- * "this chapter" wherever it says what a block hides. Copy web says too (the
- * unblock confirmation, a failure) lives in `@repo/chat-core/block-copy`; what
- * is here names Block, which only mobile offers.
+ * "this chapter" wherever it says what a block hides. The confirmations and
+ * failures are web's too and live in `@repo/chat-core/block-copy` (#2687);
+ * what is here is the native alert flow and the sheet rows' descriptions.
  */
-
-/**
- * The block confirmation's body.
- *
- * `inDirectory` is whether the roster lists them. Only then is "they stay in
- * the directory" a true statement: a sender the roster has not loaded, or no
- * longer lists, may not be in it at all.
- */
-export function blockConfirmBody(inDirectory: boolean): string {
-  return (
-    "Their messages in this chapter's chat will be hidden from you. " +
-    "They won't be told, and they can still post where you both are. " +
-    (inDirectory
-      ? "Poll votes still count, and they stay in the directory. "
-      : "Poll votes still count. ") +
-    "You can unblock them anytime in Settings."
-  );
-}
-
-/** `POST /v1/chat/blocks` answers 404 (`Member not found`) for a non-member. */
-export const BLOCK_NOT_A_MEMBER_BODY =
-  "This member is no longer in your chapter, so there's nothing to block.";
 
 /**
  * The second line under a Block / Unblock row, on every surface that draws one
@@ -57,22 +39,6 @@ export const BLOCK_ROW_DESCRIPTION =
   "Hides their messages from you in this chapter's chat. They aren't told.";
 export const UNBLOCK_ROW_DESCRIPTION =
   "Their messages in this chapter's chat show again.";
-
-/**
- * Whether a failed block is the API's "not a member of this chapter" answer:
- * a 404 whose message is `Member not found` (`ChatBlockService.block`). Any
- * other 404 — a route this build expects but the server does not serve, say —
- * is an ordinary failure, not evidence the member left.
- */
-export function isMemberNotFound(error: unknown): boolean {
-  return (
-    statusOf(error) === 404 && serverMessageOf(error) === "Member not found"
-  );
-}
-
-export function blockConfirmTitle(name: string): string {
-  return `Block ${name}?`;
-}
 
 export interface BlockActions {
   /** Resolves once the server confirmed and the caches were told. Rejects on failure. */
@@ -154,38 +120,42 @@ export function confirmBlockMember({
   onDone,
   onNotAMember,
 }: ConfirmBlockOptions & {
-  /** Whether the roster lists them — see {@link blockConfirmBody}. */
+  /** Whether the roster lists them — see `blockConfirmBody`. */
   inDirectory: boolean;
   /**
    * The API said they are not a member of this chapter
-   * ({@link isMemberNotFound}) — the one positive evidence a member left, which
+   * (`isMemberNotFound`) — the one positive evidence a member left, which
    * a caller can remember so it stops offering Block for them.
    */
   onNotAMember?: () => void;
 }): void {
   const label = name ?? UNNAMED_MEMBER;
-  Alert.alert(blockConfirmTitle(label), blockConfirmBody(inDirectory), [
-    { text: "Cancel", style: "cancel" },
-    {
-      text: "Block",
-      style: "destructive",
-      onPress: () => {
-        void (async () => {
-          try {
-            await run();
-            onDone?.();
-          } catch (error) {
-            const notAMember = isMemberNotFound(error);
-            Alert.alert(
-              `Couldn't block ${label}`,
-              notAMember ? BLOCK_NOT_A_MEMBER_BODY : BLOCK_FAILURE_BODY,
-            );
-            if (notAMember) onNotAMember?.();
-          }
-        })();
+  Alert.alert(
+    blockConfirmTitle(label),
+    blockConfirmBody(inDirectory, "in Settings"),
+    [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Block",
+        style: "destructive",
+        onPress: () => {
+          void (async () => {
+            try {
+              await run();
+              onDone?.();
+            } catch (error) {
+              const notAMember = isMemberNotFound(error);
+              Alert.alert(
+                blockFailedTitle(label),
+                notAMember ? BLOCK_NOT_A_MEMBER_BODY : BLOCK_FAILURE_BODY,
+              );
+              if (notAMember) onNotAMember?.();
+            }
+          })();
+        },
       },
-    },
-  ]);
+    ],
+  );
 }
 
 /**

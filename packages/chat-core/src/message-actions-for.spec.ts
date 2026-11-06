@@ -1,23 +1,21 @@
 import { describe, expect, it } from "vitest";
-import {
-  mergeServerRow,
-  emptyCache,
-  selectMessages,
-} from "@repo/chat-core/cache";
-import type { ChatMessage, RawChatMessage } from "@repo/chat-core/types";
+import { mergeServerRow, emptyCache, selectMessages } from "./cache";
+import type { ChatMessage, RawChatMessage } from "./types";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
 import {
   canOpenMessageActions,
+  departedIn,
   messageActionsFor,
+  noDepartedMembers,
+  withDeparted,
   rosterMembership,
   type MemberLookup,
   type MessageActionsContext,
-} from "./blocks";
+} from "./message-actions";
 
-// The classifier these actions sit beside moved to `@repo/chat-core/blocks`
-// with its spec (#2313), and the Reply/Edit/Delete rules are chat-core's
-// `message-actions` (#2775). What is pinned here is how the mobile sheet
-// combines them with Report and Block, which web does not offer.
+// How the message actions combine Reply, Edit and Delete with Report and
+// Block. Mobile's sheet reads `messageActionsFor` (#2257); web's action bar
+// reads the `canReportMessage` and `canBlockSender` it composes (#2687).
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
 const BLOCKED = "22222222-2222-4222-8222-222222222222";
@@ -227,5 +225,24 @@ describe("rosterMembership", () => {
         departed,
       )(BLOCKED),
     ).toBe(true);
+  });
+});
+
+describe("DepartedMembers", () => {
+  it("withholds Block only from a sender proven departed, in that chapter", () => {
+    let departed = noDepartedMembers("chapter-a");
+    departed = withDeparted(departed, "chapter-a", BLOCKED);
+    const isMember = rosterMembership(
+      { byId: {}, isPending: false, isError: false },
+      departedIn(departed, "chapter-a"),
+    );
+    expect(isMember(BLOCKED)).toBe(false);
+    // An unlisted sender is unknown, not departed, and keeps Block.
+    expect(isMember(VIEWER)).toBeNull();
+    // Another chapter starts with no one departed.
+    expect(departedIn(departed, "chapter-b").size).toBe(0);
+    expect(withDeparted(departed, "chapter-b", VIEWER).ids.has(BLOCKED)).toBe(
+      false,
+    );
   });
 });
