@@ -9,8 +9,9 @@
 -- always listed "title, department, course, professor, tags", and the web Find
 -- dialog now shows Backwork hits, so a member who types a professor's name or
 -- a tag found nothing. This adds `search_backwork_resources`, which matches
--- all of them and, when no word matches exactly, falls back to trigram
--- similarity, so "homewrk" still finds "Homework".
+-- all of them and also matches by trigram similarity, so "homewrk" still
+-- finds "Homework"; a row that matches only that way ranks after every row
+-- that matches a word.
 --
 -- WHY A FUNCTION AND NOT A WIDER GENERATED COLUMN
 --
@@ -40,7 +41,10 @@
 -- Word matches first, by `ts_rank_cd` over a weighted document (title A;
 -- course and department B; professor and tags C), then typo matches by
 -- similarity, then newest. A query that is only stopwords ("the") has no
--- tsquery and falls through to similarity alone.
+-- tsquery and falls through to similarity alone. A query that only excludes
+-- ("-homework") finds nothing: `querytree` reduces it to 'T', and left alone
+-- its tsquery would match every row in the chapter while the similarity
+-- would match the very word it excludes.
 
 create schema if not exists extensions;
 create extension if not exists pg_trgm with schema extensions;
@@ -109,6 +113,7 @@ as $$
       extensions.word_similarity(q.raw, s.hay) as sim
     from scored s, q
     where q.raw <> ''
+      and not (numnode(q.ts) > 0 and querytree(q.ts) = 'T')
   )
   select r.*
   from matched m

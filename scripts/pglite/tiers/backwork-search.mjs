@@ -11,7 +11,8 @@ import { db, miss } from "../harness.mjs";
 //     by the course written together ("cogs2120"), not only by title;
 //   - a typo still finds the word it was meant to be ("homewrk");
 //   - nothing comes from another chapter, even a better match;
-//   - an unrelated word and an empty query find nothing.
+//   - an unrelated word, an exclusion-only query and an empty query find
+//     nothing.
 //
 // Everything runs inside one transaction and is rolled back.
 console.log("\n=== Functional: backwork search over every field (#585) ===");
@@ -92,6 +93,11 @@ console.log("\n=== Functional: backwork search over every field (#585) ===");
       "a near-miss that isn't a typo of any word finds nothing",
       (await search(A, "zoology")).length === 0,
       await search(A, "zoology"),
+    );
+    check(
+      "an exclusion-only query finds nothing",
+      (await search(A, "-homework")).length === 0,
+      await search(A, "-homework"),
     );
     check(
       "an empty query finds nothing",
