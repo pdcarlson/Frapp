@@ -10,7 +10,7 @@ import type {
   SystemAuditPayload,
 } from "@repo/chat-core/cards";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
-import { FrappThemeProvider, MONO_FONT_FAMILY } from "@/lib/theme";
+import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText } from "@/test/screen-text";
 
 /**
@@ -60,7 +60,7 @@ import { AnnouncementCard } from "./announcement-card";
 import { AuditGlyph, PointsGlyph } from "./card-glyphs";
 import { HoursCard } from "./hours-card";
 import { PointsCard } from "./points-card";
-import { SystemAuditCard } from "./system-audit-card";
+import { SystemAuditLine } from "./system-audit-card";
 
 const tokens = signetDarkTokens;
 
@@ -324,53 +324,61 @@ describe("AnnouncementCard", () => {
   });
 });
 
-describe("SystemAuditCard", () => {
+describe("SystemAuditLine", () => {
   const AUDIT: SystemAuditPayload = {
-    action: "role_updated",
+    action: "chapter_profile_updated",
     actor_user_id: OFFICER,
-    diff: { permissions: { added: ["tasks:manage"], removed: [] }, name: {} },
+    diff: { accent_color: { from: "#C9A56F", to: "#7A2B8C" } },
   };
   const nameFor = (id: string) => (id === OFFICER ? "Alice" : null);
-  const render = (payload: SystemAuditPayload) =>
-    mount(
-      <SystemAuditCard
-        {...frame("system_audit", payload)}
+  const render = (payload: SystemAuditPayload) => {
+    const { message: row, onReact, onUnreact, onOpenActions } = frame(
+      "system_audit",
+      payload,
+    );
+    return mount(
+      <SystemAuditLine
+        message={row}
         payload={payload}
+        viewerId={OWNER}
         nameFor={nameFor}
+        startsRun
+        onReact={onReact}
+        onUnreact={onUnreact}
+        onOpenActions={onOpenActions}
       />,
     );
+  };
 
-  it("draws the action in mono, the actor by name, and the changed fields", () => {
-    const tree = render(AUDIT);
-    expect(flatStyle(textNode(tree, "role_updated").props.style).fontFamily).toBe(
-      MONO_FONT_FAMILY,
-    );
-    expect(allText(tree)).toContain("by Alice");
-    expect(allText(tree)).toContain("Changed: permissions, name");
+  it("reads as a sentence: the actor, the action in words, the fields it touched", () => {
+    const text = allText(render(AUDIT));
+    expect(text).toContain("Alice ");
+    expect(text).toContain("updated the chapter profile");
+    expect(text).toContain(" · accent color");
+    // Never the raw key, and no card chrome: no eyebrow, no mono.
+    expect(text).not.toContain("chapter_profile_updated");
+    expect(text).not.toContain("Audit");
   });
 
   it("names the system actor Frapp and an unknown member by the fallback", () => {
     expect(allText(render({ ...AUDIT, actor_user_id: SYSTEM_SENDER_ID }))).toContain(
-      "by Frapp",
+      "Frapp ",
     );
     expect(
       allText(render({ ...AUDIT, actor_user_id: "9f8e7d6c-0000" })),
-    ).toContain("by Member 9f8e7d");
+    ).toContain("Member 9f8e7d");
   });
 
-  it("draws no actor for a system-originated row, and says when nothing changed", () => {
+  it("draws no actor for a system-originated row, and no detail when nothing changed", () => {
     const text = allText(render({ ...AUDIT, actor_user_id: null, diff: {} }));
-    expect(text).not.toContain("by ");
-    expect(text).toContain("No field changes recorded");
+    expect(text).not.toContain("Alice");
+    expect(text).not.toContain(" · ");
   });
 
-  it("keeps the eyebrow off the chapter accent, glyph and label alike", () => {
-    const tree = render(AUDIT);
-    expect(flatStyle(textNode(tree, "Audit").props.style).color).toBe(
-      tokens.color.text.mutedForeground,
-    );
-    const glyph = tree.root.findByType(AuditGlyph);
+  it("draws the shield in the muted tone, never the chapter accent", () => {
+    const glyph = render(AUDIT).root.findByType(AuditGlyph);
     expect(glyph.props.focused).toBe(false);
-    expect(glyph.props.muted).toBe(tokens.color.text.mutedForeground);
+    expect(glyph.props.muted).toBe(tokens.color.text.muted);
+    expect(glyph.props.accent).toBe(tokens.color.text.muted);
   });
 });

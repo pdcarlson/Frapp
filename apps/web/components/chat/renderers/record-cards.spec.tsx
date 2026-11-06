@@ -106,14 +106,16 @@ describe("SystemAuditCard", () => {
   };
   const nameFor = (id: string) => (id === "officer-1" ? "Alice" : null);
 
-  it("names the actor from the roster, never by an id prefix", () => {
-    render(
+  it("reads as one line: the actor by name, the action in words, the fields", () => {
+    const { container } = render(
       <SystemAuditCard message={message("system_audit", AUDIT)} nameFor={nameFor} />,
     );
-    expect(screen.getByText("role_updated")).toHaveClass("font-mono");
-    expect(screen.getByText("by Alice")).not.toHaveClass("font-mono");
+    expect(screen.getByText(/^Alice/)).toHaveClass("text-foreground");
+    expect(container.textContent).toContain("edited a role · permissions, name");
+    // Never the key, never mono, never an officer id prefix.
+    expect(container.textContent).not.toContain("role_updated");
+    expect(container.querySelector(".font-mono")).toBeNull();
     expect(screen.queryByText(/officer/)).not.toBeInTheDocument();
-    expect(screen.getByText("Changed: permissions, name")).toBeInTheDocument();
   });
 
   it("names the system Frapp and an unknown member by the fallback", () => {
@@ -126,7 +128,7 @@ describe("SystemAuditCard", () => {
         nameFor={nameFor}
       />,
     );
-    expect(screen.getByText("by Frapp")).toBeInTheDocument();
+    expect(screen.getByText(/^Frapp/)).toBeInTheDocument();
     unmount();
     render(
       <SystemAuditCard
@@ -137,10 +139,10 @@ describe("SystemAuditCard", () => {
         nameFor={nameFor}
       />,
     );
-    expect(screen.getByText("by Member 9f8e7d")).toBeInTheDocument();
+    expect(screen.getByText(/^Member 9f8e7d/)).toBeInTheDocument();
   });
 
-  it("says when nothing changed, and draws no actor for a system row", () => {
+  it("draws no detail when nothing changed, and no actor for a system row", () => {
     const { container } = render(
       <SystemAuditCard
         message={message("system_audit", {
@@ -150,8 +152,8 @@ describe("SystemAuditCard", () => {
         nameFor={nameFor}
       />,
     );
-    expect(screen.getByText("No field changes recorded")).toBeInTheDocument();
-    expect(container.textContent).not.toContain("by ");
+    expect(container.textContent).toMatch(/^updated chapter settings/);
+    expect(container.textContent).not.toContain(" · ");
   });
 
   it("draws a server notice with no payload as its sentence, in the body face", () => {
