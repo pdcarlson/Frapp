@@ -50,10 +50,10 @@ Colors below are given by **token role** (`accent-N` per [accent-engine.md](acce
 
 - **Semantic colors are status-only** (success `#3fb950`, warning `#e5a000`, danger `#f85149`, info `#2f81f7`) — never decorative.
 - **No component references the chapter hex.** Every accent role resolves through the generated scale ([accent-engine.md](accent-engine.md) §1; §8 says which roles are contrast-gated).
-- Undrawn primitives (select, radio, dropdown menu, popover) MUST compose from the same tokens: elevated `#1E1E1E` fill, hairline border, radius 12, `accent-8` ring. A row inside a menu or select is the Row step, 32px with a 14px label to a fine pointer, and 44px with a 16px label to a coarse one (added 2026-11-05: at 44/16 everywhere, a two-item chapter menu stood taller than the sidebar block it opens from, which the owner called out).
+- Undrawn primitives (select, radio, dropdown menu, popover) MUST compose from the same tokens: elevated `#2A2621` fill, hairline border, radius 12, `accent-8` ring. A row inside a menu or select is the Row step, 32px with a 14px label to a fine pointer, and 44px with a 16px label to a coarse one (added 2026-11-05: at 44/16 everywhere, a two-item chapter menu stood taller than the sidebar block it opens from, which the owner called out).
 - **A hairline's alpha is not a free parameter.** `--border` is `rgba(255,255,255,.08)` and a diluted `border-border/70` composites to 1.169:1 on `--card` against the token's 1.253:1. Neither clears §6's 3:1 non-text floor and at this ladder neither can, which is exactly why the remaining margin is not available to spend: once elevation is ~1.12:1 the hairline is the only edge there is. Five Chapter Ops row lists had invented that value; [README.md](README.md) §3 rule 4 already bans one-offing a token value at the call site, and this is what it costs.
 - **The chat thread is `--background`, and a card in it is `--card`.** The web dashboard's chat panes are `--background` for the thread and `--surface-1` for the rails, and a hovered message row fills `--surface-1` (§11). A card posted into the thread (poll, task, event) is `--card` with a hairline, and there **the hairline is load-bearing**: one ladder step is ~1.12:1 and the composited hairline reaches ~1.4:1, both under the 3:1 non-text floor, so a card that drops its border is delineated by 1.12:1 and effectively has no edge. *(Corrected 2026-09-29: this rule was written for the incoming chat bubble, which painted `--card` with a hairline, so wrapping the thread in a card made the bubble `#211E1A` on `#211E1A`. The compact layout ([#2873](https://github.com/pdcarlson/Frapp/issues/2873)) removed the bubble; the reasoning carries over to the cards.)*
-- **A highlighted row inside one of those primitives takes `--card-hover`, never a surface step and never the accent tint** (changed 2026-11-05, owner's call; [foundations.md](foundations.md) §6, "Where the accent goes"). The elevated fill above is the *top* of the surface ladder ([foundations.md](foundations.md) §2), so there is no ladder step above it to highlight with. The ShadCN scaffold's `--accent` held that same `#2A2621`, so a menu that highlighted with it painted the hovered row in its own background. It and `--secondary` (an alias of `--card`) are deleted ([#3036](https://github.com/pdcarlson/Frapp/issues/3036)), along with their `-foreground` pairs and the Tailwind `secondary` and `accent` colour keys. [`apps/web/components/shared/elevation-call-sites.spec.ts`](../../../apps/web/components/shared/elevation-call-sites.spec.ts) still bans both names across the two Next apps, because with the variables gone `hover:bg-accent` compiles to nothing, which is the silent no-colour failure of [#1145](https://github.com/pdcarlson/Frapp/issues/1145). It scans each spelling its fixtures list (utilities, `var()` reads, Tailwind shorthands, config keys, `theme()`). A rest fill names its ladder step instead, and a hover takes a state above it. `--card-hover` is that state: it sits above every ladder step (1.194:1 on `--popover`, 1.284:1 on `--card`, §3), so hover and keyboard highlight inside menus, command palettes, selects, tables and lists all take it, with `--foreground` text. Until 2026-11-05 they took the §5 accent-tint recipe (`accent-3` fill, `accent-11` text), which separated by hue rather than luminance and lit every hovered row in the chapter color.
+- **A highlighted row inside one of those primitives takes `--card-hover`, never a surface step and never the accent tint** (changed 2026-11-05, owner's call; [foundations.md](foundations.md) §6, "Where the accent goes"). The elevated fill above is the *top* of the surface ladder ([foundations.md](foundations.md) §2), so there is no ladder step above it to highlight with. The ShadCN scaffold's `--accent` held that same `#2A2621`, so a menu that highlighted with it painted the hovered row in its own background. It and `--secondary` (an alias of `--card`) are deleted ([#3036](https://github.com/pdcarlson/Frapp/issues/3036)), along with their `-foreground` pairs and the Tailwind `secondary` and `accent` colour keys. [`apps/web/components/shared/elevation-call-sites.spec.ts`](../../../apps/web/components/shared/elevation-call-sites.spec.ts) still bans both names across the two Next apps, because with the variables gone `hover:bg-accent` compiles to nothing, which is the silent no-colour failure of [#1145](https://github.com/pdcarlson/Frapp/issues/1145). It scans each spelling its fixtures list (utilities, `var()` reads, Tailwind shorthands, config keys, `theme()`). A rest fill names its ladder step instead, and a hover takes a state above it. `--card-hover` is that state: it sits above every ladder step (1.199:1 on `--popover`, 1.324:1 on `--card`, §3), so hover and keyboard highlight inside menus, command palettes, selects, tables and lists all take it, with `--foreground` text. Until 2026-11-05 they took the §5 accent-tint recipe (`accent-3` fill, `accent-11` text), which separated by hue rather than luminance and lit every hovered row in the chapter color.
   - **A selected row is not told apart by its fill.** No fill on this ladder clears the 3:1 non-text floor, the accent tint included (measured 2026-10-01, it sat 1.008–1.107:1 from `--card` across the seeded chapters, straddling the neutral step's 1.105:1 with 17 of 19 seeds at or below it), so a state that carries *information* rather than pointer feedback was always redundant with something that is not a fill. A selected table or list row takes `--popover`, one step under the hover so a button inside it still lifts; its checked checkbox (accent, a control the member switched on) and the "N selected" bar above the table (`--popover`, `--foreground` text) carry the selection. The neutral fill's contrast and the call sites that use it are pinned in [`apps/web/components/shared/table-contrast.spec.ts`](../../../apps/web/components/shared/table-contrast.spec.ts). The open item of a list-and-detail rail (the folder you are in, the role you are editing) is different: it is where the member is, so it keeps `accent-4` plus `accent-11` text ([foundations.md](foundations.md) §6, item 6), and its neighbours hover neutral.
 
 ## 3. Buttons
@@ -63,7 +63,7 @@ Colors below are given by **token role** (`accent-N` per [accent-engine.md](acce
 | Variant | Fill | Border | Text | Weight |
 | ------- | ---- | ------ | ---- | ------ |
 | Primary | `accent-9` | none | `accent-contrast` | 700 |
-| Secondary | card `#171717` | 1px `rgba(255,255,255,.14)` | `#EBEBEB` | 600 |
+| Secondary | card `#211E1A` | 1px `rgba(255,255,255,.14)` | `#EDEAE3` | 600 |
 | Tinted | `accent-3` | 1px `accent-7` | `accent-11` | 700 |
 | Ghost | transparent | none | `--muted-foreground` | 600 |
 | Destructive | `--destructive-tint` (danger @ 13%) | none | `#f85149` | 700 |
@@ -74,13 +74,13 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 
 | Variant | Hover | Pressed | Disabled (all variants) |
 | ------- | ----- | ------- | ----------------------- |
-| Primary | fill `accent-10` | fill `accent-10` + 8% black overlay | fill card `#171717`, border `rgba(255,255,255,.08)`, text `#525252` |
-| Secondary | fill `--card-hover` (`#2C2C2C`) | as hover | 〃 |
+| Primary | fill `accent-10` | fill `accent-10` + 8% black overlay | fill card `#211E1A`, border `rgba(255,255,255,.08)`, text `#57534C` |
+| Secondary | fill `--card-hover` (`#37332E`) | as hover | 〃 |
 | Tinted | fill `accent-4` (one step above its rest fill) | as hover | 〃 |
 | Ghost | fill `--card-hover`, text `--foreground` | as hover | 〃 |
 | Destructive | `--destructive-tint-hover` (danger @ 20%) | as hover | 〃 |
 
-- **Secondary's hover sits above the ladder, not on it** (corrected 2026-10-01, [#1220](https://github.com/pdcarlson/Frapp/issues/1220)). It was the elevated step, which is `--popover`, so a Secondary button inside a dialog or sheet hovered to its container's own colour: 1.000:1, no feedback at all. `--card-hover` is `--popover` lifted 6% toward white. Being above every step, it reads as a state wherever the button sits: 1.194:1 on `--popover`, 1.284:1 on `--card` (the rest fill), 1.418:1 on `--background`. It's an opaque literal, so it has no `color-mix` floor. It's neutral, so it holds on the error surfaces §10 bars the chapter accent from. It's a state (hover, highlight), never a resting surface. Any card-filled control takes it (the web notification drawer's read rows do). A row that is transparent over a menu, table or list takes it too (§2, since 2026-11-05), and a hovered selected row lifts to it. Measured in [`apps/web/components/shared/elevation-contrast.spec.ts`](../../../apps/web/components/shared/elevation-contrast.spec.ts), which also derives the value from `--popover`.
+- **Secondary's hover sits above the ladder, not on it** (corrected 2026-10-01, [#1220](https://github.com/pdcarlson/Frapp/issues/1220)). It was the elevated step, which is `--popover`, so a Secondary button inside a dialog or sheet hovered to its container's own colour: 1.000:1, no feedback at all. `--card-hover` is `--popover` lifted 6% toward white. Being above every step, it reads as a state wherever the button sits: 1.199:1 on `--popover`, 1.324:1 on `--card` (the rest fill), 1.493:1 on `--background`. It's an opaque literal, so it has no `color-mix` floor. It's neutral, so it holds on the error surfaces §10 bars the chapter accent from. It's a state (hover, highlight), never a resting surface. Any card-filled control takes it (the web notification drawer's read rows do). A row that is transparent over a menu, table or list takes it too (§2, since 2026-11-05), and a hovered selected row lifts to it. Measured in [`apps/web/components/shared/elevation-contrast.spec.ts`](../../../apps/web/components/shared/elevation-contrast.spec.ts), which also derives the value from `--popover`.
 - **Loading:** the button disables, keeps its width, and shows a spinner in place of (or before) the label. Double-submit locking per [resilience](../resilience/README.md).
 - Hover states are pointer-only; mobile uses pressed feedback.
 - **Primary's pressed fill is momentary, never a state.** In every palette written since [#2586](https://github.com/pdcarlson/Frapp/issues/2586) ([accent-engine.md](accent-engine.md) §4 covers stored ones) the engine holds `accent-9` and `accent-10` to 3:1 on every ladder step, and the label to 4.5:1 on both. It does not hold the pressed overlay, where on a dark chapter the fill can sit under 3:1 and the label under 4.5:1 ([accent-engine.md](accent-engine.md) §8, [#2604](https://github.com/pdcarlson/Frapp/issues/2604)). A control that stays on (toggled, selected, voted) paints `accent-9`, never the pressed shade.
@@ -129,12 +129,12 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 
 | State | Fill | Border | Text |
 | ----- | ---- | ------ | ---- |
-| Rest | surface `#111111` | 1px `rgba(255,255,255,.14)` | value `#EBEBEB`, placeholder `#737373` |
-| Focus | surface `#111111` | 1px `accent-11` + 3px ring `accent-8` @ ~25% (§2) | caret 2px `accent-9` |
-| Error | surface `#111111` | 1px `#f85149` + 3px ring danger @ ~25% | caption 12.5 `#f85149` below |
-| Disabled | surface `#111111` | 1px `rgba(255,255,255,.08)` | `#525252` |
+| Rest | surface `#1A1A1A` | 1px `rgba(255,255,255,.14)` | value `#EDEAE3`, placeholder `#78716A` |
+| Focus | surface `#1A1A1A` | 1px `accent-11` + 3px ring `accent-8` @ ~25% (§2) | caret 2px `accent-9` |
+| Error | surface `#1A1A1A` | 1px `#f85149` + 3px ring danger @ ~25% | caption 12.5 `#f85149` below |
+| Disabled | surface `#1A1A1A` | 1px `rgba(255,255,255,.08)` | `#57534C` |
 
-The Field step: 40px to a fine pointer and 44px on touch, padding-x 12 at both, radius 12 (corrected 2026-11-05 from 48px and padding-x 14 everywhere, with §3's button heights, for the same reason). A multi-line field (`Textarea`) takes the same padding and grows. A web sheet's fields sit one step down, at Small. The value stays 16px at either height, the body floor ([foundations.md](foundations.md) §7). The fill SHOULD sit one layer below the input's container (surface inside cards/sheets; bg `#0A0A0A` inside the surface-level app bar). The web top bar's Find field is the named exception: it shares the bar's surface (§7). *(Exception added 2026-11-05.)*
+The Field step: 40px to a fine pointer and 44px on touch, padding-x 12 at both, radius 12 (corrected 2026-11-05 from 48px and padding-x 14 everywhere, with §3's button heights, for the same reason). A multi-line field (`Textarea`) takes the same padding and grows. A web sheet's fields sit one step down, at Small. The value stays 16px at either height, the body floor ([foundations.md](foundations.md) §7). The fill SHOULD sit one layer below the input's container (surface inside cards/sheets; bg `#131211` inside the surface-level app bar). The web top bar's Find field is the named exception: it shares the bar's surface (§7). *(Exception added 2026-11-05.)*
 
 **Floating label (web sign-in and sign-up).** The pre-auth forms put the label inside the field, where it reads at body size and moves up to caption size on focus, input or autofill, and they draw no placeholder (`apps/web/components/auth/floating-field.tsx`). The field is 52px rather than 48 so the floated 12px label and the 16px value both clear the edge on the grid. It exists so those two forms fit a laptop window without scrolling (`spec/ui/web-dashboard/README.md` § Responsive contract); every other form keeps the label above a 48px field. *(Exception added 2026-11-05.)*
 
@@ -146,7 +146,7 @@ In the Error state the caption MUST be wired to the field, not merely placed und
 
 ### Toggle
 
-Track 36×22px with an 18px thumb to a fine pointer (the board's `4c` toggle) and 50×30px with a 24px thumb on touch (two sizes since 2026-11-05, settling [#3057](https://github.com/pdcarlson/Frapp/issues/3057); 50×30 everywhere before), full-round — one of the two sanctioned pills (the other is the §12 meter; [foundations.md](foundations.md) §8 holds the list). On: track `accent-9`, thumb `accent-contrast`, right. Off: track elevated `#1E1E1E` with 1px `rgba(255,255,255,.14)` border, thumb `#737373`, left.
+Track 36×22px with an 18px thumb to a fine pointer (the board's `4c` toggle) and 50×30px with a 24px thumb on touch (two sizes since 2026-11-05, settling [#3057](https://github.com/pdcarlson/Frapp/issues/3057); 50×30 everywhere before), full-round — one of the two sanctioned pills (the other is the §12 meter; [foundations.md](foundations.md) §8 holds the list). On: track `accent-9`, thumb `accent-contrast`, right. Off: track elevated `#2A2621` with 1px `rgba(255,255,255,.14)` border, thumb `#78716A`, left.
 
 ## 5. Badges and chips
 
@@ -155,8 +155,8 @@ The Chip step ([foundations.md](foundations.md) §9): height 24px on every point
 | Kind | Fill | Border | Text | Use |
 | ---- | ---- | ------ | ---- | --- |
 | Accent | `accent-3` | 1px `accent-7` | `accent-11` | accent-worthy stats: points, active filters |
-| Neutral | `rgba(255,255,255,.14)` | none | `#EBEBEB` | counts and unread markers ([foundations.md](foundations.md) §5) |
-| Hairline | transparent | 1px `rgba(255,255,255,.08)` | `#A3A3A3` | quiet metadata that must not read as a status |
+| Neutral | `rgba(255,255,255,.14)` | none | `#EDEAE3` | counts and unread markers ([foundations.md](foundations.md) §5) |
+| Hairline | transparent | 1px `rgba(255,255,255,.08)` | `#A9A399` | quiet metadata that must not read as a status |
 | Semantic | `--*-tint`: the status color @ 13%, as a token rather than an alpha utility ([foundations.md](foundations.md) §5) | none | status color | Paid / Overdue / status only — never decorative |
 | Mention / DM | mention/DM red | none | white | unread mentions and DMs only |
 
@@ -172,8 +172,8 @@ The Chip step ([foundations.md](foundations.md) §9): height 24px on every point
 Underline style only — no segmented pill controls.
 
 - Row: 1px bottom hairline `rgba(255,255,255,.08)`; items gap 22px. An item is the Small step: 36px to a fine pointer, 44 on touch, set by a min-height so a caller's padding cannot push it past its row.
-- Active: 15px / 600 `#EBEBEB` (web: 14), 2px bottom underline `accent-9`.
-- Inactive: 15px / 400 `#737373` (web: 14); hover lifts text to `#A3A3A3`.
+- Active: 15px / 600 `#EDEAE3` (web: 14), 2px bottom underline `accent-9`.
+- Inactive: 15px / 400 `#78716A` (web: 14); hover lifts text to `#A9A399`.
 - On touch surfaces the item hit area MUST be ≥ 44px tall.
 
 ## 7. Navigation items (web)
@@ -187,7 +187,7 @@ Composition of the sidebar and app bar belongs to [web-dashboard/README.md](../w
 Height 34px, radius 10, padding-x 10, icon 18px per the duotone recipe ([iconography.md](iconography.md)), gap 10, 2px between rows. Label 14px. (Was 40 / 12 / 17 / 14.5px.)
 
 - Active: fill `accent-3`, text + icon `accent-11`, 14px / 600.
-- Inactive: transparent, text + icon `#A3A3A3`, 14px / 400; hover fill card `#171717`.
+- Inactive: transparent, text + icon `#A9A399`, 14px / 400; hover fill card `#211E1A`.
 
 **No left accent bar.** The board offers a gold active bar only as an unadopted "spice" treatment (`4f` A) and prices it at 56px of nav height. The active state is the tinted fill and the weight bump, nothing else.
 
@@ -199,7 +199,7 @@ Height 34px, radius 10, padding-x 10, icon 18px per the duotone recipe ([iconogr
 
 **Web geometry moved with the greenfield shell** ([#2141](https://github.com/pdcarlson/Frapp/issues/2141)), transcribed from the framework board (`1b`). Mobile is unchanged.
 
-Container: height 48px (was 58), surface `#111111`, 1px hairline, no radius — the bar is flush to the viewport edges. Contents:
+Container: height 48px (was 58), surface `#1A1A1A`, 1px hairline, no radius — the bar is flush to the viewport edges. Contents:
 
 | Element | Spec |
 | ------- | ---- |
@@ -216,8 +216,8 @@ There is no ⌘K. Cmd/Ctrl+F opens the Find dialog without being advertised: the
 
 ## 8. Cards
 
-- Fill card `#171717`, 1px border `rgba(255,255,255,.08)`, radius 16 (14 for dense/small cards), padding 16.
-- Title 16.5px / 700 `#EBEBEB`; metadata line 14.5px `#A3A3A3`; a trailing badge (§5) MAY sit in the title row.
+- Fill card `#211E1A`, 1px border `rgba(255,255,255,.08)`, radius 16 (14 for dense/small cards), padding 16.
+- Title 16.5px / 700 `#EDEAE3`; metadata line 14.5px `#A9A399`; a trailing badge (§5) MAY sit in the title row.
 - Action rows use Inline buttons (§3), gap 8, 13px above.
 - Cards never carry shadows; a raised card is a lighter surface ([foundations.md](foundations.md)).
 
@@ -249,9 +249,9 @@ Not on this yet: the notifications drawer and the backwork category drawer and m
 
 ### Bottom sheet (mobile)
 
-- Fill elevated `#1E1E1E`; top corners radius 20, bottom square; 1px hairline on top/sides, no bottom border.
+- Fill elevated `#2A2621`; top corners radius 20, bottom square; 1px hairline on top/sides, no bottom border.
 - Grabber: 40×4.5px, full-round, `rgba(255,255,255,.18)`, centered, 10px from the top edge, 14px above the header.
-- Header row: title 19px / 700 `#EBEBEB`, "Cancel" text control 14.5px `#737373` right-aligned — **where the reference draws one**. s19, s20, s21 and s23 do; **s17 does not**: its header is the ✦ glyph + "Ask Frapp" in gold with a trailing caption where Cancel would sit, and the grabber plus the scrim are the dismissal. Reference wins, so a Cancel MUST NOT be added there.
+- Header row: title 19px / 700 `#EDEAE3`, "Cancel" text control 14.5px `#78716A` right-aligned — **where the reference draws one**. s19, s20, s21 and s23 do; **s17 does not**: its header is the ✦ glyph + "Ask Frapp" in gold with a trailing caption where Cancel would sit, and the grabber plus the scrim are the dismissal. Reference wins, so a Cancel MUST NOT be added there.
 - Scrim: `rgba(0,0,0,.55)` behind a presented sheet, fading in at the first detent and gone at dismissal. Mobile mechanics (`BottomSheetBackdrop`, snap points, sheet-aware scrollables): [patterns.md](../mobile/patterns.md).
 - Body: standard controls (§3–§4) at their touch sizes, padding-x 18. A web sheet (the upload sheet) takes the Small step for its fields and footer buttons.
 - Primary action: full-width Primary button at the Primary step, 48px, pinned last (the board draws 50; rounded onto the scale 2026-11-05).
@@ -259,7 +259,7 @@ Not on this yet: the notifications drawer and the backwork category drawer and m
 
 ### Dialogs (web)
 
-Elevated `#1E1E1E` fill, radius 20 (sheet family), 1px hairline. **`window.confirm` is banned** — destructive confirmation is always a dialog (web) or sheet (mobile) pairing a Destructive button with a Secondary cancel.
+Elevated `#2A2621` fill, radius 20 (sheet family), 1px hairline. **`window.confirm` is banned** — destructive confirmation is always a dialog (web) or sheet (mobile) pairing a Destructive button with a Secondary cancel.
 
 Web implementation: [`apps/web/components/shared/confirm-dialog.tsx`](../../../apps/web/components/shared/confirm-dialog.tsx). Two rules it carries, both learned by converting six call sites at once:
 
@@ -272,10 +272,10 @@ This section specs the **anatomy** of the three visual variants — one family, 
 
 ### Skeleton (loading)
 
-- **Content-shaped:** the skeleton mirrors the layout it becomes — same blocks, same radii. No spinner-in-a-box. That includes the surface: a flush page's skeleton is flush too, with no card fill or border box the loaded page does not draw. Text the screen already knows renders as itself, not as a bar: on web the route title is the top bar's and stays up through the load, so a page skeleton draws none, and it draws action-row placeholders only for controls every member sees (a placeholder for a permission-gated button draws a row that then vanishes). Web (2026-11-05): every dashboard route ships a `loading.tsx` drawn from [`apps/web/components/shared/page-skeletons.tsx`](../../../apps/web/components/shared/page-skeletons.tsx), and the same component is the page's first-load branch, so navigation and the in-flight query show one picture; `page-skeletons.spec.tsx` fails a new route that ships without one, and fails a new use of the generic loading states outside its shrinking allowlist.
-- **Caption:** a mirrored skeleton names nothing on screen; its "Loading …" caption is one `role="status"` line for assistive tech only, kept apart from the blocks so any real content the skeleton renders is not marked busy. The visible caption belongs to the generic `LoadingState`, which can't say by its shape what is loading, and which is now left only on regions inside a loaded page (an attendance list, an audit card) not yet given their own skeleton. Those regions are not § Surface size panels.
-- Shimmer: linear gradient 90°, elevated `#1E1E1E` at 25%/75% and highlight `#2B2B2B` at 50%; background-size 260px; sweep 1.4s linear infinite, phase-shared across blocks. The highlight moved from `#38312A` with the greenfield shell ([#2141](https://github.com/pdcarlson/Frapp/issues/2141)) to match the framework board, and to the neutral `#2B2B2B` with the 2026-11-05 neutral ladder ([foundations.md](foundations.md) §2), pitched at 1.18:1 on `--popover` to keep the sweep's pre-greenfield amplitude. **Mobile does not draw the shimmer yet** (2026-11-05 correction): it has no gradient primitive, so `apps/mobile/components/state-block.tsx` pulses a skeleton's blocks together as a stand-in (one opacity animation per skeleton, so the blocks stay in phase), holds it still under reduced motion (followed as the setting changes) and while the skeleton's screen is out of view, and carries a `TODO-DESIGN:` naming these values. `apps/mobile/components/card-list-skeleton.tsx` (a card over a list, s10 and s11) draws its own blocks and stays static until [#3453](https://github.com/pdcarlson/Frapp/issues/3453) moves it onto `SkeletonBlock`. When it does draw the sweep it will carry them by hand rather than reading `--skeleton-highlight`, so the two drift unless both move together. The amplitude cost that change carries is measured in [`../web-dashboard/tokens.md`](../web-dashboard/tokens.md) L-01.
-- Shapes: text lines 13px tall, radius 6, varied widths (~45–70%); avatars stay circles; control-sized blocks 44px, radius 12.
+- **Content-shaped:** the skeleton mirrors the layout it becomes — same blocks, same radii. No spinner-in-a-box. That includes the surface: a flush page's skeleton is flush too, with no card fill or border box the loaded page does not draw. Text the screen already knows renders as itself, not as a bar: on web the route title is the top bar's and stays up through the load, so a page skeleton draws none, and it draws action-row placeholders only for controls every member sees (a placeholder for a permission-gated button draws a row that then vanishes). Web (2026-11-05): every dashboard route ships a `loading.tsx` drawn from [`apps/web/components/shared/page-skeletons.tsx`](../../../apps/web/components/shared/page-skeletons.tsx), and the same component is the page's first-load branch, so navigation and the in-flight query show one picture; `page-skeletons.spec.tsx` fails a new route that ships without one, and fails a new use of the generic loading states outside its shrinking allowlist. Mobile (2026-11-05): each screen draws its own skeleton inside one `SkeletonRegion` (one busy node named for what loads, one pulse), from the same styles its loaded rows use, with `SkeletonText` lines sized to the text they become (Figtree's 1.2em line box, a bar at its 0.7em cap height) so a placeholder row is as tall as the real one. The chat list and thread skeletons are the exception for now: they still draw fixed-height bars, which predate `SkeletonText`. A row or card component owns its placeholder beside it (`ListRowSkeleton`, `HistoryRowsSkeleton`, `TaskRowSkeleton`, `ChoiceRowSkeleton`, `StartCardSkeleton`, `BalanceCardSkeleton`); a caption the data decides is a `SectionHeaderSkeleton` bar, a fixed one renders as itself. `apps/mobile/components/screen-skeletons.spec.tsx` pins the line boxes and row frames, and fails a new `SkeletonLines` (the generic card of bars) outside its shrinking allowlist or a spinner over a "Loading…" caption.
+- **Caption:** a mirrored skeleton names nothing on screen; its "Loading …" caption is one `role="status"` line for assistive tech only, kept apart from the blocks so any real content the skeleton renders is not marked busy. On mobile the caption is the region's accessible name (`SkeletonRegion`'s `label`), and the region is one node, so fixed text drawn inside it (Profile's Details caption) is not read until the content lands; React Native has no live status line to keep apart. The visible caption belongs to the generic `LoadingState`, which can't say by its shape what is loading, and which is now left only on regions inside a loaded page (an attendance list, an audit card) not yet given their own skeleton. Those regions are not § Surface size panels.
+- Shimmer: linear gradient 90°, elevated `#1E1E1E` at 25%/75% and highlight `#2B2B2B` at 50%; background-size 260px; sweep 1.4s linear infinite, phase-shared across blocks. The highlight moved from `#38312A` with the greenfield shell ([#2141](https://github.com/pdcarlson/Frapp/issues/2141)) to match the framework board, and to the neutral `#2B2B2B` with the 2026-11-05 neutral ladder ([foundations.md](foundations.md) §2), pitched at 1.18:1 on `--popover` to keep the sweep's pre-greenfield amplitude. **Mobile does not draw the shimmer yet** (2026-11-05 correction): it has no gradient primitive, so `apps/mobile/components/state-block.tsx` pulses a skeleton's blocks together as a stand-in (one opacity animation per skeleton, so the blocks stay in phase), holds it still under reduced motion (followed as the setting changes) and while the skeleton's screen is out of view, and carries a `TODO-DESIGN:` naming these values. Every mobile skeleton shape is a `SkeletonBlock` inside one `SkeletonPulse` (`card-list-skeleton.tsx` moved onto it with [#3453](https://github.com/pdcarlson/Frapp/issues/3453), and the chat thread's `thread-skeleton.tsx` and host check-in's QR placeholder with it), so the sweep lands there once. When it does draw the sweep it will carry them by hand rather than reading `--skeleton-highlight`, so the two drift unless both move together. The amplitude cost that change carries is measured in [`../web-dashboard/tokens.md`](../web-dashboard/tokens.md) L-01.
+- Shapes: text lines 13px tall, radius 6, varied widths (~45–70%); avatars stay circles; control-sized blocks 44px, radius 12. On mobile a text line is sized to the text it becomes instead (the `SkeletonText` line box above), because a fixed 13px bar made every placeholder row a different height from its real one; radius 6 has no token there and `chip` (8) stands in, with a `TODO-DESIGN:`.
 - Skeletons are neutral only — never accent, never semantic.
 - Show on first load only; background refetches keep stale content in place ([resilience](../resilience/README.md)).
 
@@ -286,8 +286,8 @@ Standard card chrome (card fill, neutral hairline), centered stack:
 | Slot | Spec |
 | ---- | ---- |
 | Icon tile | 44px, radius 14, fill `accent-3`, feature glyph in `accent-11` ([iconography.md](iconography.md)) |
-| Title | 16.5px / 700 `#EBEBEB`, 12px below tile; a state inside a list or panel under its own heading may leave it out ([writing.md](writing.md) §4) |
-| Body (optional) | one line, 14.5px `#A3A3A3`, max-width ~220px; only when it says something the title doesn't ([writing.md](writing.md) §4, amended 2026-11-05) |
+| Title | 16.5px / 700 `#EDEAE3`, 12px below tile; a state inside a list or panel under its own heading may leave it out ([writing.md](writing.md) §4) |
+| Body (optional) | one line, 14.5px `#A9A399`, max-width ~220px; only when it says something the title doesn't ([writing.md](writing.md) §4, amended 2026-11-05) |
 | CTA (optional) | Tinted button, 44px, radius 12, 14px below |
 
 Empty is inviting, never alarming: accent + neutral only, no semantic color, no blame in copy ([writing.md](writing.md)).
@@ -300,8 +300,8 @@ Same anatomy as empty, recolored semantic:
 | ---- | ---- |
 | Card border | 1px `rgba(248,81,73,.28)` — the sanctioned semantic border |
 | Icon tile | 44px, radius 14, fill `--destructive-tint` (danger @ 13%), "!" glyph `#f85149` |
-| Title | 16.5px / 700 `#EBEBEB` (what failed) |
-| Body | 14.5px `#A3A3A3` (actionable hint) |
+| Title | 16.5px / 700 `#EDEAE3` (what failed) |
+| Body | 14.5px `#A9A399` (actionable hint) |
 | Action | Secondary button, 44px, radius 12 — wiring per [resilience](../resilience/README.md). Labelled `Retry` unless the surface's remedy is genuinely something else: [#2175](https://github.com/pdcarlson/Frapp/issues/2175)'s degraded segment says `Reload` for a stale chunk, because `React.lazy` memoises the rejection for the life of the document, so only replacing the document revives the control that failed (not because retrying does nothing — see writing.md §7). It stays **one** button either way — this family differs in colour rather than in shape, so a second action beside it is the defect, not a second label. `ErrorState`'s `actionLabel` carries this; the strings are [writing.md](writing.md) §7's |
 
 Error surfaces MUST NOT use the chapter accent. Field-level validation errors use the input error state (§4), not this surface.
@@ -429,15 +429,15 @@ The one deliberately distinct surface in the system, and the only one that **nev
 
 | Slot | Spec |
 | ---- | ---- |
-| Container | radius 20, surface `#111111`, 1px border `rgba(239,182,59,.35)` (house gold @ 35%), padding 16 |
-| Header | ✦ glyph + "Ask Frapp" 13px / 700 `#F4CB63`, trailing caption 12.5px `#737373` |
-| Answer | 16px / 24px `#EBEBEB`; the answer's key figure bolded in `#F4CB63`, any secondary emphasis bold in `#EBEBEB` |
+| Container | radius 20, surface `#1A1A1A`, 1px border `rgba(239,182,59,.35)` (house gold @ 35%), padding 16 |
+| Header | ✦ glyph + "Ask Frapp" 13px / 700 `#F4CB63`, trailing caption 12.5px `#78716A` |
+| Answer | 16px / 24px `#EDEAE3`; the answer's key figure bolded in `#F4CB63`, any secondary emphasis bold in `#EDEAE3` |
 | Sources | wrapping chip row, gap 7, 12px above; chips per §5 geometry (height 27–28, radius 9), fill `#251E0E`, 1px `#6B5619`, text 12.5px / 600 `#F4CB63`, leading duotone source glyph ([iconography.md](iconography.md)) |
-| Footer | caption 12.5px `#737373` |
+| Footer | caption 12.5px `#78716A` |
 
 - **Never retints — the card is always house gold** (`#EFB63B` family, [brand-identity.md](../brand-identity.md)), never the chapter accent. Panel 4e retints live across four chapter seeds and the bubbles follow the accent while this card stays gold; its caption states the rule outright. In a house-gold chapter the card is indistinguishable from the accent tint family, which is exactly the intent — the answer surface speaks in Signet's voice, not the chapter's.
 - **Source chips are the citation UI.** Each cited source renders as one tappable chip (document, minutes, or channel), opening the source in-app; hit area ≥ 44px (§2). The citation contract itself — every answer cites, citations arrive as structured spans the UI renders as links, low confidence refuses rather than fabricates — is owned by [ai.md](../../behavior/ai.md) and MUST NOT be restated in UI specs. Header and footer copy: [writing.md](writing.md).
-- **Nested variant.** Presented inside the Ask sheet (s17), the answer block steps down to card `#171717` at radius 16 — one ladder step below the sheet it sits in — and the ✦ header moves up to the sheet header. Sheet chrome, grabber, and dismissal are §9.
+- **Nested variant.** Presented inside the Ask sheet (s17), the answer block steps down to card `#211E1A` at radius 16 — one ladder step below the sheet it sits in — and the ✦ header moves up to the sheet header. Sheet chrome, grabber, and dismissal are §9.
 - **✦ Ask mark (claimed here).** The four-pointed sparkle ✦ is the mark of the Ask/AI affordance: a text glyph, not a duotone icon, so it is exempt from the [iconography.md](iconography.md) recipe. It renders in house gold `#F4CB63` at 15–16px in the card and Ask-sheet headers, and leads the Ask entry (§7) and the mobile Ask pill ([navigation.md](../mobile/navigation.md)). It MUST NOT mark anything that is not an Ask/AI entry point or answer.
 - **The entry control is gold too — this line used to say otherwise and was wrong.** The reference draws the ✦ Ask pill on s04 and s06 in the same pinned house-gold tints as the answer card (`#251E0E` fill, `#6B5619` border, `#F4CB63` text at 36px height, radius 10 — see `canvas-screens.dc.html` s04/s06), not as an accent Tinted button, and `apps/mobile/components/chat/ask-pill.tsx` ships those tokens. The web top-nav entry is drawn the same way (`signet-design-system.dc.html`, TOP NAV panel), so §7 has been corrected too: the Ask entry takes the Tinted *geometry* and the house-gold paint. The reference wins on visuals ([`../README.md`](../README.md)); the whole Ask affordance, entry and answer alike, speaks in Signet's voice rather than the chapter's.
 - **The pinned house-gold tints are named tokens.** They are the house-gold instance of the accent tint family, but this card holds them regardless of the chapter seed, so they cannot be spelled `accent-3/7/11`. They live in the `gold` group of `packages/theme/src/signet.ts`, named for the surface that owns them rather than for scale steps: `gold.askFill` (`#251E0E`), `gold.askBorder` (`#6B5619`), `gold.askText` (`#F4CB63`), alongside `gold.house` (`#EFB63B`) and `gold.onHouse` (`#2C2000`). The literal hexes in the table above are those tokens' values; implementations MUST use the token names.

@@ -16,7 +16,12 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
-import { EmptyState, ErrorState } from "@/components/state-block";
+import {
+  EmptyState,
+  ErrorState,
+  SkeletonBlock,
+  SkeletonRegion,
+} from "@/components/state-block";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { CHECK_IN_TOKEN_WINDOW_MS } from "@/lib/events/check-in-code";
 import { formatCountdown } from "@/lib/events/format";
@@ -368,19 +373,16 @@ export default function HostCheckInScreen() {
                 ) : null}
               </>
             ) : (
-              // Loading: a blank card where the code will be, so the screen
-              // doesn't jump when it lands (components.md §10, content-shaped).
-              <View
-                accessibilityRole="progressbar"
-                accessibilityLabel="Loading"
-                style={[
-                  styles.qrPlaceholder,
-                  {
-                    width: qrSize + 2 * tokens.spacing.lg,
-                    height: qrSize + 2 * tokens.spacing.lg,
-                  },
-                ]}
-              />
+              // Loading: a block the size of the code's white card, so the
+              // screen doesn't jump when it lands (components.md §10,
+              // content-shaped), pulsing with every other skeleton.
+              <SkeletonRegion label="Loading check-in code">
+                <SkeletonBlock
+                  width={qrSize + 2 * tokens.spacing.lg}
+                  height={qrSize + 2 * tokens.spacing.lg}
+                  radius={tokens.radius.cardLarge}
+                />
+              </SkeletonRegion>
             )}
           </View>
 
@@ -441,10 +443,6 @@ function createStyles(tokens: SignetTokens, accent: string) {
       padding: tokens.spacing.lg,
       alignItems: "center",
       justifyContent: "center",
-    },
-    qrPlaceholder: {
-      borderRadius: tokens.radius.cardLarge,
-      backgroundColor: tokens.color.surface.popover,
     },
     rotatesRow: {
       flexDirection: "row",
