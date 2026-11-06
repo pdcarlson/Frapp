@@ -37,7 +37,7 @@ date — is welcome; inventing a date to turn the gate green is not.
 - **Checks**: After `db push`, `select column_name, is_nullable from information_schema.columns where table_name = 'invites' and column_name in ('email', 'revoked_at');` returns both, `YES`. An emailed invite's row then carries its address.
 - **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API never names the columns, so it is unaffected. The newer API against an unmigrated database fails every invite create (share links included, since every insert names `email`) and every revoke on the unknown column, so don't deploy the API first. `add column if not exists` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-invite-email-and-revoked-at-20261106220000) § Rollback invite email and revoked_at.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-invite-email-and-revoked_at-20261106220000) § Rollback invite email and revoked_at.
 
 ## 2026-11-06: A member's major
 
