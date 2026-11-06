@@ -16,6 +16,7 @@ import {
   useDeleteAccount,
   useGeofences,
   usePermissionList,
+  useFieldReveal,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
@@ -251,7 +252,8 @@ function QuietHoursCard({
   // server's — so running our own resolvability check over it produces a
   // confident false negative (`Europe/Kyiv` on a build that knows only
   // `Europe/Kiev`). That would strand the member twice over: `commitDraft`
-  // reverts on every blur, so they could not edit their times at all, and the
+  // saves nothing while the draft is invalid, so they could not edit their
+  // times at all, and the
   // only way out — retyping a zone this device knows — would overwrite their
   // correct zone on every other device. Structural checks still apply, because
   // blank and over-length are wrong on any device.
@@ -261,15 +263,23 @@ function QuietHoursCard({
     trimmedTz.length > 0 &&
     trimmedTz.length <= MAX_TIME_ZONE_LENGTH &&
     (!tzEdited || isSupportedTimeZone(trimmedTz));
-  const timesAreValid =
-    isValidTimeInput(draft.start.trim()) && isValidTimeInput(draft.end.trim());
-  const draftIsValid = timesAreValid && tzIsValid;
+  const startIsValid = isValidTimeInput(draft.start.trim());
+  const endIsValid = isValidTimeInput(draft.end.trim());
+  const draftIsValid = startIsValid && endIsValid && tzIsValid;
 
-  const commitDraft = () => {
-    if (!draftIsValid) {
-      setDraft(quietHoursWindow);
-      return;
-    }
+  // A problem shows once the member leaves the field, never on the "2" on its
+  // way to "22:00" (components.md § Text input, "When an error shows").
+  const reveal = useFieldReveal<"start" | "end" | "tz">();
+  const timeProblem =
+    (!startIsValid && reveal.shows("start")) ||
+    (!endIsValid && reveal.shows("end"));
+  const tzProblem = !tzIsValid && reveal.shows("tz");
+
+  // An invalid draft is kept, not reverted, so the line below can say what
+  // to fix. It saves on the blur that leaves all three valid.
+  const commitDraft = (field: "start" | "end" | "tz") => {
+    reveal.blur(field);
+    if (!draftIsValid) return;
     onWindowChange({
       start: draft.start.trim(),
       end: draft.end.trim(),
@@ -309,7 +319,7 @@ function QuietHoursCard({
             onChangeText={(value) =>
               setDraft((current) => ({ ...current, start: value }))
             }
-            onBlur={commitDraft}
+            onBlur={() => commitDraft("start")}
             editable={windowEditable}
             placeholder="22:00"
             placeholderTextColor={tokens.color.text.muted}
@@ -327,7 +337,7 @@ function QuietHoursCard({
             onChangeText={(value) =>
               setDraft((current) => ({ ...current, end: value }))
             }
-            onBlur={commitDraft}
+            onBlur={() => commitDraft("end")}
             editable={windowEditable}
             placeholder="08:00"
             placeholderTextColor={tokens.color.text.muted}
@@ -347,7 +357,7 @@ function QuietHoursCard({
           onChangeText={(value) =>
             setDraft((current) => ({ ...current, tz: value }))
           }
-          onBlur={commitDraft}
+          onBlur={() => commitDraft("tz")}
           editable={windowEditable}
           placeholder="America/New_York"
           placeholderTextColor={tokens.color.text.muted}
@@ -361,13 +371,13 @@ function QuietHoursCard({
       {/* Only a problem earns a line here. The steady-state sentences
           ("Applies to this account on every device.", "Saved for when you
           turn quiet hours back on.") narrated how the card works. */}
-      {draftIsValid ? null : (
-        <Text style={styles.quietHoursHintError}>
-          {!timesAreValid
+      {timeProblem || tzProblem ? (
+        <Text accessibilityRole="alert" style={styles.quietHoursHintError}>
+          {timeProblem
             ? "Use 24-hour HH:mm times (e.g. 21:00)."
             : "Enter a timezone name like America/Chicago."}
         </Text>
-      )}
+      ) : null}
     </View>
   );
 }

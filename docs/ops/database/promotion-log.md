@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-06: A member's major
+
+### 20261106190000_users_major.sql
+
+- **Purpose**: Adds a nullable `users.major text`, the member's own major, edited on web `/profile` and the mobile Edit profile sheet through `PATCH /v1/users/me` (capped at 100 characters by `UpdateUserDto`) and read back on `GET /v1/users/me` and the member reads. Redefines `anonymize_user` in full from `20260929230000_discord_author_links.sql` with one added line, `major = null`, so account deletion clears it with the rest of the profile. The behaviour is in [`spec/behavior/members.md`](../../../spec/behavior/members.md#profiles) § Profiles. No backfill; no row is rewritten.
+- **Checks**: After `db push`, `select column_name, is_nullable from information_schema.columns where table_name = 'users' and column_name = 'major';` returns one row with `YES`, and `select pg_get_functiondef('public.anonymize_user(uuid, boolean)'::regprocedure) like '%major = null%';` returns `true`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never selects or writes the column (`select('*')` reads it but no DTO passes it on). The newer API against an unmigrated database fails any `PATCH /v1/users/me` that carries `major` (PostgREST refuses the unknown column), so don't deploy the API first. `add column if not exists` and `create or replace` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-users-major-20261106190000) § Rollback users major.
+
 ## 2026-11-06: A Discord import's progress per category
 
 ### 20261106170000_discord_import_category_progress.sql

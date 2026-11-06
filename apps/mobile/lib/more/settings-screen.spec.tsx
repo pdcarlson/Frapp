@@ -272,9 +272,15 @@ describe("Settings copy", () => {
         (node.type as unknown) === "TextInput" &&
         node.props.accessibilityLabel === "Quiet hours start time",
     );
+    act(() => start.props.onChangeText("2"));
+    // Mid-typing is not a mistake: nothing shows until the field is left.
+    expect(screenText(tree)).not.toContain("Use 24-hour HH:mm times");
     act(() => start.props.onChangeText("25:99"));
+    act(() => start.props.onBlur());
 
     expect(screenText(tree)).toContain("Use 24-hour HH:mm times (e.g. 21:00).");
+    // Kept, so the member can fix what they typed rather than start over.
+    expect(start.props.value).toBe("25:99");
     expect(screenText(tree)).not.toContain("Enter a timezone name");
   });
 
@@ -289,6 +295,7 @@ describe("Settings copy", () => {
     );
     // A UTC offset, which every runtime rejects (`isUtcOffset`).
     act(() => tz.props.onChangeText("-05:00"));
+    act(() => tz.props.onBlur());
 
     expect(screenText(tree)).toContain(
       "Enter a timezone name like America/Chicago.",

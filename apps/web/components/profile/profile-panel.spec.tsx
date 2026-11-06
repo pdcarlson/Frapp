@@ -466,7 +466,7 @@ describe("ProfilePanel — offline, then loading, then error, then the screen", 
     mocks.settingsQuery.data = { quiet_hours_start: "22:00" };
     render(<ProfilePanel />);
 
-    expect(screen.getByLabelText("Display name")).toBeInTheDocument();
+    expect(screen.getByLabelText("Name")).toBeInTheDocument();
     expect(
       screen.queryByText(/your profile is unavailable offline/i),
     ).not.toBeInTheDocument();
@@ -510,7 +510,7 @@ describe("ProfilePanel — offline, then loading, then error, then the screen", 
     // dependency array — the exact regression this test names — leaves it
     // green.
     const { rerender } = render(<ProfilePanel />);
-    const name = screen.getByLabelText("Display name");
+    const name = screen.getByLabelText("Name");
     await userEvent.clear(name);
     await userEvent.type(name, "Half-typed name");
 
@@ -527,7 +527,7 @@ describe("ProfilePanel — offline, then loading, then error, then the screen", 
 
   it("keeps an unsaved edit when a photo change refetches the profile (#732)", async () => {
     const { rerender } = render(<ProfilePanel />);
-    const name = screen.getByLabelText("Display name");
+    const name = screen.getByLabelText("Name");
     await userEvent.clear(name);
     await userEvent.type(name, "Half-typed name");
 

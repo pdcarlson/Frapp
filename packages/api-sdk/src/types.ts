@@ -3285,6 +3285,8 @@ export interface components {
             display_name?: string;
             bio?: string;
             graduation_year?: number | null;
+            /** @description Free text, like "Mechanical Engineering". An empty string clears it. */
+            major?: string;
             current_city?: string;
             current_company?: string;
         };
@@ -3689,6 +3691,7 @@ export interface components {
             avatar_url: string | null;
             bio: string | null;
             graduation_year: number | null;
+            major: string | null;
             current_city: string | null;
             current_company: string | null;
             email: string;

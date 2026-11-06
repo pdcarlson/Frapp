@@ -32,6 +32,7 @@ const PROFILE: ViewerProfile = {
   initials: "AR",
   email: "alex@example.test",
   graduationYear: 2027,
+  major: null,
   currentCity: "Troy, NY",
   currentCompany: null,
   bio: null,
@@ -147,6 +148,7 @@ describe("EditProfileSheet (#3387)", () => {
     const tree = render();
 
     expect(input(tree, "Name").props.value).toBe("Alex Rivera");
+    expect(input(tree, "Major").props.value).toBe("");
     expect(input(tree, "Graduation year").props.value).toBe("2027");
     expect(input(tree, "City").props.value).toBe("Troy, NY");
     expect(input(tree, "Company").props.value).toBe("");
@@ -203,24 +205,62 @@ describe("EditProfileSheet (#3387)", () => {
     expect(saveButton(tree).props.disabled).toBe(true);
   });
 
-  it("refuses a blank name inline and sends nothing", () => {
+  it("refuses a blank name once Save is pressed, and sends nothing", () => {
     const tree = render();
 
     type(tree, "Name", "  ");
-    expect(screenText(tree)).toContain("Your name can't be empty.");
-    expect(saveButton(tree).props.disabled).toBe(true);
+    // Still being typed: no error yet (components.md, "When an error shows").
+    expect(screenText(tree)).not.toContain("Your name can't be empty.");
     act(() => {
       saveButton(tree).props.onPress();
     });
+    expect(screenText(tree)).toContain("Your name can't be empty.");
     expect(mutate).not.toHaveBeenCalled();
+  });
+
+  // The reported bug: "2" on the way to "2027" turned the field red.
+  it("waits for the member to leave the year before refusing it", () => {
+    const tree = render();
+
+    type(tree, "Graduation year", "2");
+    type(tree, "Graduation year", "20");
+    expect(screenText(tree)).not.toContain("Use a year between");
+    // The last style slot is the invalid border.
+    expect(input(tree, "Graduation year").props.style.at(-1)).toBeNull();
+
+    act(() => {
+      input(tree, "Graduation year").props.onBlur();
+    });
+    expect(screenText(tree)).toContain("Use a year between");
+
+    // From here it follows the value, so the fix clears it at once.
+    type(tree, "Graduation year", "2028");
+    expect(screenText(tree)).not.toContain("Use a year between");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    expect(mutate.mock.calls[0]![0]).toEqual({ graduation_year: 2028 });
   });
 
   it("refuses a graduation year the API would reject", () => {
     const tree = render();
 
     type(tree, "Graduation year", "1850");
-    expect(screenText(tree)).toContain("Graduation year is a year between");
-    expect(saveButton(tree).props.disabled).toBe(true);
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    expect(screenText(tree)).toContain("Use a year between");
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("sends a major", () => {
+    const tree = render();
+
+    type(tree, "Major", " Economics ");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    expect(mutate.mock.calls[0]![0]).toEqual({ major: "Economics" });
   });
 
   it("keeps the draft and says so when a save fails", () => {
@@ -318,6 +358,10 @@ describe("EditProfileSheet (#3387)", () => {
     expect(input(tree, "Name").props.value).toBe("");
     expect(screenText(tree)).not.toContain("Your name can't be empty.");
     type(tree, "Company", "Acme");
+    expect(screenText(tree)).not.toContain("Your name can't be empty.");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
     expect(screenText(tree)).toContain("Your name can't be empty.");
   });
 
@@ -384,6 +428,9 @@ describe("EditProfileSheet (#3387)", () => {
 
     type(tree, "Name", "");
     type(tree, "Company", "Acme");
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
     expect(screenText(tree)).toContain("Your name can't be empty.");
     act(() => {
       modal(tree).props.onDismiss();

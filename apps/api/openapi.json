@@ -10644,6 +10644,11 @@
             "type": "number",
             "nullable": true
           },
+          "major": {
+            "type": "string",
+            "description": "Free text, like \"Mechanical Engineering\". An empty string clears it.",
+            "maxLength": 100
+          },
           "current_city": {
             "type": "string"
           },
@@ -11849,6 +11854,10 @@
             "type": "number",
             "nullable": true
           },
+          "major": {
+            "type": "string",
+            "nullable": true
+          },
           "current_city": {
             "type": "string",
             "nullable": true
@@ -11885,6 +11894,7 @@
           "avatar_url",
           "bio",
           "graduation_year",
+          "major",
           "current_city",
           "current_company",
           "email",

@@ -12,6 +12,7 @@ import {
   normalizeAccentInput,
   type AccentSwatch,
 } from "@repo/hooks/chapter-identity";
+import { useFieldReveal } from "@repo/hooks/field-reveal";
 import { SignetTokens } from "@repo/theme/signet";
 import { sheetFieldStyles } from "@/components/sheet-scaffold";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
@@ -90,6 +91,9 @@ export function AccentPicker({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens, focusColor);
   const [hexFocused, setHexFocused] = useState(false);
+  // "#4" is on its way to "#4F2683": the hint waits for the member to leave
+  // the field (components.md § Text input, "When an error shows").
+  const reveal = useFieldReveal<"hex">();
 
   // A preset the organization already offers is shown once, under the
   // organization, so one color is never two radios in the same group.
@@ -225,7 +229,10 @@ export function AccentPicker({
               // it then saves the second tap that tap was asking for.
               autoFocus
               onFocus={() => setHexFocused(true)}
-              onBlur={() => setHexFocused(false)}
+              onBlur={() => {
+                setHexFocused(false);
+                reveal.blur("hex");
+              }}
               style={[
                 styles.input,
                 styles.inputFlex,
@@ -233,7 +240,7 @@ export function AccentPicker({
               ]}
             />
           </View>
-          {draftInvalid ? (
+          {draftInvalid && reveal.shows("hex") ? (
             <Text style={styles.helperText}>
               Enter six hex digits, like #4F2683.
             </Text>

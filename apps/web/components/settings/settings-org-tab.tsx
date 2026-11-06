@@ -15,6 +15,7 @@ import {
   latestFoundedYear,
   parseFoundedYear,
 } from "@repo/hooks/chapter-identity";
+import { useFieldReveal } from "@repo/hooks/field-reveal";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -175,6 +176,11 @@ export function SettingsOrgTab({
   const foundedCleared = foundedTrimmed === "" && branding.founded_at != null;
   const foundedValid =
     (foundedTrimmed === "" && !foundedCleared) || foundedNum !== undefined;
+  // "1" on its way to "1901" is not a mistake: the error waits for the member
+  // to leave the field or press Save (components.md § Text input, "When an
+  // error shows").
+  const reveal = useFieldReveal<"founded">();
+  const foundedError = !foundedValid && reveal.shows("founded");
 
   function saveProfile(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -187,7 +193,10 @@ export function SettingsOrgTab({
 
   function saveIdentity(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!foundedValid) return;
+    if (!foundedValid) {
+      reveal.submit();
+      return;
+    }
     const brandingDiff: Branding = {};
     // The config PATCH deep-merges, so an omitted key keeps its stored value
     // and a field an officer emptied would silently come back. Sending "" for
@@ -378,10 +387,12 @@ export function SettingsOrgTab({
                   value={foundedYear}
                   onChange={(event) => setFoundedYear(event.target.value)}
                   placeholder="1901"
-                  aria-invalid={!foundedValid}
+                  onBlur={() => reveal.blur("founded")}
+                  aria-invalid={foundedError}
+                  aria-describedby={foundedError ? "founded-year-error" : undefined}
                 />
-                {!foundedValid ? (
-                  <p className="text-xs text-destructive">
+                {foundedError ? (
+                  <p id="founded-year-error" className="text-xs text-destructive">
                     {foundedCleared
                       ? "A founded year can't be removed once saved. "
                       : null}
@@ -396,7 +407,7 @@ export function SettingsOrgTab({
             {manageHint ?? <span />}
             <Button
               type="submit"
-              disabled={!canManage || savingConfig || !foundedValid}
+              disabled={!canManage || savingConfig}
             >
               {savingConfig ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

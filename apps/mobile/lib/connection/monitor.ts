@@ -40,7 +40,7 @@
  *   also counted as a failure. So the monitor now ignores link events and probe
  *   results while the app is in the background, and on return to the
  *   foreground re-reads the link and probes at once. That first probe gets one
- *   retry (`WAKE_RETRY_MS`) before a failure counts, because the first request
+ *   retry (`CONFIRM_RETRY_MS`) before a failure counts, because the first request
  *   after a long Doze can time out while the radio wakes.
  * - **A link drop waits `LINK_DOWN_GRACE_MS`, then asks `/health`.** A Wi-Fi
  *   network that re-associates on wake, or a Wi-Fi to cellular handoff,
@@ -84,12 +84,16 @@ export const HEALTH_TIMEOUT_MS = 5_000;
  */
 export const LINK_DOWN_GRACE_MS = 3_000;
 /**
- * The first probe after the app returns to the foreground gets one retry
- * after this long before its failure counts. The first request after a long
- * Doze can time out while the radio or Wi-Fi power-save wakes, and one
- * failure is enough to show "Slow connection".
+ * A failed probe that would be the first strike, or the first probe after the
+ * app returns to the foreground, gets one retry after this long before its
+ * failure counts. One failure is enough to show "Slow connection", and one
+ * failure is what a passing blip looks like: the first request after a long
+ * Doze timing out while the radio wakes, a cold start on a phone still
+ * bringing its network up, an elevator. A real outage fails the retry too and
+ * reaches the banner 2s later (2026-11-06, a false "Slow connection" on iOS
+ * 0.9.2 over an Edit profile sheet).
  */
-export const WAKE_RETRY_MS = 2_000;
+export const CONFIRM_RETRY_MS = 2_000;
 
 export function healthUrl(): string | null {
   const apiUrl = process.env.EXPO_PUBLIC_API_URL;
@@ -296,7 +300,7 @@ export function createConnectionMonitor(
     wakeRetry = null;
   }
 
-  async function probeOnce({ afterWake = false } = {}) {
+  async function probeOnce({ afterWake = false, retried = false } = {}) {
     if (!started || suspended) return;
     // Wait for the link-drop verdict: a probe now would fail for a reason the
     // drop already explains and count it against the API.
@@ -339,13 +343,17 @@ export function createConnectionMonitor(
     if (reachable) {
       consecutiveFailures = 0;
       linkOffline = false;
-    } else if (afterWake && !linkOffline) {
-      // Not counted yet: one retry first (see `WAKE_RETRY_MS`).
+    } else if (
+      !retried &&
+      !linkOffline &&
+      (afterWake || consecutiveFailures === 0)
+    ) {
+      // Not counted yet: one retry first (see `CONFIRM_RETRY_MS`).
       cancelWakeRetry();
       wakeRetry = deps.setTimeout(() => {
         wakeRetry = null;
-        void probeOnce();
-      }, WAKE_RETRY_MS);
+        void probeOnce({ retried: true });
+      }, CONFIRM_RETRY_MS);
       return;
     } else {
       // With the link down this changes nothing on screen: only a reachable

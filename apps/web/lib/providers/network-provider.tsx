@@ -16,6 +16,10 @@ import {
   type ConnectionState,
 } from "@repo/validation";
 
+
+/** How long a first failed `/health` probe waits for its one retry. */
+export const CONFIRM_RETRY_MS = 2_000;
+
 export type { ConnectionState };
 
 interface NetworkContextValue {
@@ -82,14 +86,23 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
   );
   const [failureCount, setFailureCount] = useState(0);
   const probeGenerationRef = useRef(0);
+  // Mirrors `failureCount` for the probe, which must not re-create on it.
+  const failuresRef = useRef(0);
+  const confirmRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The retry calls the probe through this, since a callback can't name
+  // itself before it exists.
+  const probeRef = useRef<((retried?: boolean) => Promise<void>) | null>(
+    null,
+  );
 
-  const probeOnce = useCallback(async () => {
+  const probeOnce = useCallback(async (retried = false) => {
     if (!navigator.onLine) {
       return;
     }
 
     const healthCheckUrl = getHealthCheckUrl();
     if (!healthCheckUrl) {
+      failuresRef.current = 0;
       setFailureCount(0);
       return;
     }
@@ -113,9 +126,10 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (healthProbeIsReachable(res)) {
+          failuresRef.current = 0;
           setFailureCount(0);
         } else {
-          setFailureCount((prev) => prev + 1);
+          fail();
         }
       } finally {
         clearTimeout(timeout);
@@ -124,9 +138,30 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
       if (generation !== probeGenerationRef.current) {
         return;
       }
-      setFailureCount((prev) => prev + 1);
+      fail();
+    }
+
+    // A first strike is retried once, 2s later, before it counts: one failed
+    // probe is what a blip looks like, and it is enough to show "Slow
+    // connection" (`CONFIRM_RETRY_MS` in the mobile monitor, which does the
+    // same; spec/ui/resilience/connection-state.md).
+    function fail() {
+      if (!retried && failuresRef.current === 0) {
+        if (confirmRetryRef.current) clearTimeout(confirmRetryRef.current);
+        confirmRetryRef.current = setTimeout(() => {
+          confirmRetryRef.current = null;
+          void probeRef.current?.(true);
+        }, CONFIRM_RETRY_MS);
+        return;
+      }
+      failuresRef.current += 1;
+      setFailureCount(failuresRef.current);
     }
   }, []);
+
+  useEffect(() => {
+    probeRef.current = probeOnce;
+  }, [probeOnce]);
 
   useEffect(() => {
     // Probe on mount, not only on the first interval tick. Without this a
@@ -146,6 +181,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
       clearInterval(interval);
+      if (confirmRetryRef.current) clearTimeout(confirmRetryRef.current);
     };
   }, [probeOnce]);
 

@@ -5,7 +5,12 @@ import {
   BottomSheetScrollView,
   BottomSheetTextInput,
 } from "@gorhom/bottom-sheet";
-import { useUpdateUser } from "@repo/hooks";
+import { useFieldReveal, useUpdateUser } from "@repo/hooks";
+import {
+  MAJOR_MAX_LENGTH,
+  PROFILE_ALUMNI_SECTION,
+  PROFILE_FIELD_COPY,
+} from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   SheetGrabber,
@@ -34,8 +39,8 @@ import type { ViewerProfile } from "@/lib/more/profile";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * s15's Edit sheet (#3387): the member's name, bio, graduation year, city and
- * company, saved through `PATCH /v1/users/me`. The photo stays on the screen
+ * s15's Edit sheet (#3387): the member's name, major, graduation year, bio,
+ * city and company, saved through `PATCH /v1/users/me`. The photo stays on the screen
  * itself (`components/profile/profile-photo.tsx`), where it already edits.
  *
  * The rules (what is sent, what is refused) live in `lib/more/edit-profile.ts`.
@@ -71,13 +76,21 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## A fixed detent, not dynamic sizing
  *
- * Five fields and a bio that grows as it is typed, under a keyboard, don't fit
+ * Six fields and a bio that grows as it is typed, under a keyboard, don't fit
  * every phone. The body scrolls, so it takes a fixed detent with a
  * `BottomSheetScrollView` as the sheet's direct child, which is the
  * combination `spec/ui/mobile/patterns.md` § Bottom sheets requires of a
  * scrollable sheet.
  */
 const SNAP_POINTS = ["88%"];
+
+const copy = PROFILE_FIELD_COPY;
+
+/**
+ * The graduation year's width beside Major: four digits at the body size plus
+ * the field's padding, rounded up to the grid (foundations §9).
+ */
+const YEAR_FIELD_WIDTH = 96;
 
 /** Matches the web profile form's bio field, which draws three lines. */
 const BIO_LINES = 3;
@@ -97,6 +110,10 @@ export const EditProfileSheet = forwardRef<
   const [edits, setEdits] = useState<ProfileEdits | null>(null);
   const [submitFailed, setSubmitFailed] = useState(false);
   const [focused, setFocused] = useState<ProfileDraftField | null>(null);
+  // When a refusal shows: once the member leaves the field or presses Save,
+  // never on the keystroke that is still on its way to a valid value
+  // (`useFieldReveal`, components.md § Text input, "When an error shows").
+  const reveal = useFieldReveal<ProfileDraftField>();
 
   // The profile the edits were typed against. When a refetch moves it, the
   // edits re-base in the same render (React's "adjust state on a prop
@@ -111,22 +128,29 @@ export const EditProfileSheet = forwardRef<
   const shown: ProfileDraft = { ...original, ...typed };
 
   const result = profilePatch(original, shown);
-  // A refusal is shown only once the member has typed: the sheet must not
-  // open on an error for a profile the server already holds.
+  // A refusal exists only once the member has typed (the sheet must not open
+  // on an error for a profile the server already holds), and shows only once
+  // `reveal` says so.
   const refusal = typed !== null && !result.ok ? result : null;
-  const canSave =
-    result.ok && hasChanges(result.patch) && !updateUser.isPending;
+  const shownRefusal =
+    refusal !== null && reveal.shows(refusal.field) ? refusal : null;
+  // Save stays pressable while a field is refused, so pressing it can say
+  // why rather than sit there greyed out with the error still hidden.
+  const dirty = result.ok ? hasChanges(result.patch) : true;
+  const canSave = dirty && !updateUser.isPending;
 
   const edit = (field: ProfileDraftField) => (value: string) => {
     setSubmitFailed(false);
     setEdits((latest) => applyEdit(latest, original, field, value));
   };
 
+  const resetReveal = reveal.reset;
   const reset = useCallback(() => {
     setEdits(null);
     setSubmitFailed(false);
     setFocused(null);
-  }, []);
+    resetReveal();
+  }, [resetReveal]);
 
   // A save can settle after the sheet has closed: see `useSheetVisit`.
   const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
@@ -153,7 +177,12 @@ export const EditProfileSheet = forwardRef<
   const save = () => {
     // `canSave` and `sending`, not only the button's `disabled`, stand
     // between a save in flight and a second PATCH.
-    if (!result.ok || !canSave || sending.current) return;
+    if (!canSave || sending.current) return;
+    if (!result.ok) {
+      // Shows the refusal; nothing is sent.
+      reveal.submit();
+      return;
+    }
     sending.current = true;
     setSubmitFailed(false);
     const sentFrom = visit();
@@ -185,9 +214,22 @@ export const EditProfileSheet = forwardRef<
       keyboardType?: "number-pad";
       autoCapitalize?: "words" | "sentences";
       maxLength?: number;
+      /** What a screen reader announces, when the label is abbreviated. */
+      accessibleLabel?: string;
+      /** A field sharing a row: its share of the width. */
+      grow?: boolean;
     },
   ) => (
-    <View style={styles.fieldGroup}>
+    <View
+      style={[
+        styles.fieldGroup,
+        options.grow === undefined
+          ? null
+          : options.grow
+            ? styles.fieldGrow
+            : styles.fieldNarrow,
+      ]}
+    >
       <Text style={styles.label}>{label}</Text>
       <BottomSheetTextInput
         value={shown[name]}
@@ -196,12 +238,13 @@ export const EditProfileSheet = forwardRef<
         // was pressed, and anything typed after it would be dropped unsent.
         editable={!updateUser.isPending}
         onFocus={() => setFocused(name)}
-        onBlur={() =>
-          setFocused((current) => (current === name ? null : current))
-        }
+        onBlur={() => {
+          setFocused((current) => (current === name ? null : current));
+          reveal.blur(name);
+        }}
         placeholder={options.placeholder}
         placeholderTextColor={tokens.color.text.muted}
-        accessibilityLabel={label}
+        accessibilityLabel={options.accessibleLabel ?? label}
         keyboardType={options.keyboardType}
         autoCapitalize={options.autoCapitalize}
         maxLength={options.maxLength}
@@ -212,12 +255,12 @@ export const EditProfileSheet = forwardRef<
           styles.field,
           options.multiline ? styles.fieldMultiline : null,
           focused === name ? styles.fieldFocused : null,
-          refusal?.field === name ? styles.fieldInvalid : null,
+          shownRefusal?.field === name ? styles.fieldInvalid : null,
         ]}
       />
-      {refusal?.field === name ? (
+      {shownRefusal?.field === name ? (
         <Text accessibilityRole="alert" style={styles.error}>
-          {refusal.message}
+          {shownRefusal.message}
         </Text>
       ) : null}
     </View>
@@ -243,26 +286,43 @@ export const EditProfileSheet = forwardRef<
       >
         <SheetHeader title="Edit profile" onCancel={cancel} />
 
-        {field("displayName", "Name", {
-          placeholder: "Your full name",
+        {field("displayName", copy.displayName.label, {
+          placeholder: copy.displayName.placeholder,
           autoCapitalize: "words",
         })}
-        {field("bio", "Bio", {
-          placeholder: "Major, year, anything brothers should know.",
+        <View style={styles.row}>
+          {field("major", copy.major.label, {
+            placeholder: copy.major.placeholder,
+            autoCapitalize: "words",
+            maxLength: MAJOR_MAX_LENGTH,
+            grow: true,
+          })}
+          {field("graduationYear", copy.graduationYear.label, {
+            accessibleLabel: copy.graduationYear.accessibleLabel,
+            placeholder: copy.graduationYear.placeholder,
+            keyboardType: "number-pad",
+            maxLength: 4,
+            grow: false,
+          })}
+        </View>
+        {field("bio", copy.bio.label, {
+          placeholder: copy.bio.placeholder,
           multiline: true,
           autoCapitalize: "sentences",
         })}
-        {field("graduationYear", "Graduation year", {
-          placeholder: "2027",
-          keyboardType: "number-pad",
-          maxLength: 4,
-        })}
-        {field("city", "City", {
-          placeholder: "Optional, for the alumni directory",
+
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionTitle}>
+            {PROFILE_ALUMNI_SECTION.title}
+          </Text>
+          <Text style={styles.sectionHint}>{PROFILE_ALUMNI_SECTION.hint}</Text>
+        </View>
+        {field("city", copy.city.label, {
+          placeholder: copy.city.placeholder,
           autoCapitalize: "words",
         })}
-        {field("company", "Company", {
-          placeholder: "Optional, for the alumni directory",
+        {field("company", copy.company.label, {
+          placeholder: copy.company.placeholder,
           autoCapitalize: "words",
         })}
 
@@ -276,7 +336,7 @@ export const EditProfileSheet = forwardRef<
           label={updateUser.isPending ? "Saving…" : "Save"}
           onPress={save}
           disabled={!canSave}
-          accessibilityHint={refusal?.message}
+          accessibilityHint={shownRefusal?.message}
           accent={accent}
           onAccent={tokens.color.gold.onHouse}
         />
@@ -288,13 +348,37 @@ export const EditProfileSheet = forwardRef<
 function createStyles(tokens: SignetTokens, accent: string) {
   const fieldStyles = sheetFieldStyles(tokens, accent);
   return StyleSheet.create({
+    // foundations §9's rhythm: 8 between a label and its field, 16 between
+    // fields, 24 before a new section (the section head's top margin).
     body: {
       paddingHorizontal: tokens.spacing.lg,
       paddingBottom: tokens.spacing.xl,
-      gap: tokens.spacing.md,
+      gap: tokens.spacing.lg,
     },
     fieldGroup: {
+      gap: tokens.spacing.sm,
+    },
+    row: {
+      flexDirection: "row",
+      gap: tokens.spacing.md,
+    },
+    fieldGrow: {
+      flex: 1,
+    },
+    fieldNarrow: {
+      width: YEAR_FIELD_WIDTH,
+    },
+    sectionHead: {
+      marginTop: tokens.spacing.sm,
       gap: tokens.spacing.xs,
+    },
+    sectionTitle: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
+    },
+    sectionHint: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
     },
     label: {
       ...typeRole(tokens.typography.role.label),
