@@ -124,8 +124,10 @@ function environment(): string {
  * that the shared `DEFAULT_TRACES_SAMPLE_RATE` of `0.1` kept about nine
  * spans of a whole afternoon's testing, too few to say where a screen is slow.
  * A literal `1`, so it cannot be `NaN`. Lower it back to
- * `DEFAULT_TRACES_SAMPLE_RATE` before a second chapter joins (#3580); the
- * span volume is in `spec/behavior/observability.md` § Sampling.
+ * `DEFAULT_TRACES_SAMPLE_RATE` before a second chapter joins (#3580). The API
+ * inherits this decision for the requests mobile starts, so its mobile-driven
+ * traces are kept at the same rate (`spec/behavior/observability.md`
+ * § Sampling).
  */
 const TRACES_SAMPLE_RATE = 1;
 

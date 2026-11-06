@@ -11,7 +11,11 @@
  * and {@link formatSampleRateWarning} is what callers log at boot.
  */
 
-/** Documented default for Sentry traces. Mobile uses this as a literal. */
+/**
+ * Documented default for Sentry traces. Mobile hardcodes its own rate in
+ * `apps/mobile/lib/sentry/options.ts` (`1` during the beta, back to this before
+ * a second chapter joins, #3580).
+ */
 export const DEFAULT_TRACES_SAMPLE_RATE = 0.1;
 
 export type SampleRateParseReason =

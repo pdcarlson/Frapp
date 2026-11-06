@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AppState,
   Linking,
@@ -39,7 +39,6 @@ import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { shouldShowDonationCta } from "@/lib/more/donation";
 import { LEGAL_LINKS } from "@/lib/more/legal";
-import { AnalyticsContext } from "@/lib/analytics-provider";
 import { acceptPrimer } from "@/lib/notifications/primer";
 import {
   PUSH_PROMPT_ANSWERED_EVENT,
@@ -52,6 +51,7 @@ import {
 } from "@/lib/notifications/push";
 import type { PushPermissionStatus } from "@/lib/notifications/push-types";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useLatestTrack } from "@/lib/use-latest-track";
 import {
   type QuietHoursWindow,
   useNotificationPreferencesSync,
@@ -436,7 +436,8 @@ export default function PreferencesScreen() {
         : String(blockList.ids.size);
 
   const pushReason = pushUnavailableReason();
-  const track = useContext(AnalyticsContext);
+  // Read after the OS prompt closes (`useLatestTrack`).
+  const track = useLatestTrack();
   // One tap at a time: a second tap while the OS prompt is up would queue a
   // second prompt, or open the settings app over it.
   const pushTapInFlight = useRef(false);
@@ -467,7 +468,7 @@ export default function PreferencesScreen() {
         // A prompt the OS failed to show reads as not granted; the re-read
         // below reports whatever is true either way.
         const granted = await acceptPrimer();
-        track?.(
+        track(
           PUSH_PROMPT_ANSWERED_EVENT,
           pushPromptAnsweredProperties(
             granted ? "allowed" : "denied",

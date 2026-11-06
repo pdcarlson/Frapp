@@ -608,7 +608,8 @@ describe("Settings push switch", () => {
       canAskAgain: true,
       status: "denied",
     });
-    const tree = render();
+    const track = vi.fn();
+    const tree = render(track);
     await settle();
 
     expect(pushSwitch(tree).props.value).toBe(false);
@@ -623,6 +624,8 @@ describe("Settings push switch", () => {
     expect(state.requestPushPermission).not.toHaveBeenCalled();
     expect(primerWrites()).toEqual([]);
     expect(state.openSettings).toHaveBeenCalledTimes(1);
+    // Opening the OS settings answers no prompt.
+    expect(track).not.toHaveBeenCalled();
   });
 
   it("reads off on Android when the app's channel is switched off, though the permission is granted", async () => {

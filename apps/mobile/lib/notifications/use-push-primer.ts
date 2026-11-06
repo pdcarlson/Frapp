@@ -1,5 +1,4 @@
-import { useCallback, useContext, useEffect, useState } from "react";
-import { AnalyticsContext } from "@/lib/analytics-provider";
+import { useCallback, useEffect, useState } from "react";
 import { getPushPermission, isPushAvailable } from "@/lib/notifications/push";
 import {
   acceptPrimer,
@@ -12,6 +11,7 @@ import {
   PUSH_PROMPT_ANSWERED_EVENT,
   pushPromptAnsweredProperties,
 } from "@/lib/notifications/push-analytics";
+import { useLatestTrack } from "@/lib/use-latest-track";
 
 /**
  * The C7 push primer's state for a screen that hosts the card: s03 for a
@@ -33,7 +33,9 @@ export function usePushPrimer() {
     null,
   );
   const [isRequesting, setIsRequesting] = useState(false);
-  const track = useContext(AnalyticsContext);
+  // Read after the OS prompt closes, by which time the chapter's opt-out
+  // answer may have replaced the `track` this tap started with.
+  const track = useLatestTrack();
 
   useEffect(() => {
     let live = true;
@@ -75,7 +77,7 @@ export function usePushPrimer() {
     try {
       const granted = await acceptPrimer(() => setDecision("accepted"));
       setPermissionGranted(granted);
-      track?.(
+      track(
         PUSH_PROMPT_ANSWERED_EVENT,
         pushPromptAnsweredProperties(granted ? "allowed" : "denied", "primer"),
       );
@@ -90,7 +92,7 @@ export function usePushPrimer() {
   const notNow = useCallback(async (): Promise<void> => {
     await recordPrimerDecision("declined");
     setDecision("declined");
-    track?.(
+    track(
       PUSH_PROMPT_ANSWERED_EVENT,
       pushPromptAnsweredProperties("not_now", "primer"),
     );
