@@ -5,7 +5,8 @@ import { createPortal } from "react-dom";
 import { MembersGlyph } from "./chat-glyphs";
 import { ChannelMemberList } from "./channel-member-list";
 import { channelDescription } from "@repo/hooks/channel-start";
-import { ChannelMark, ChannelStart } from "./channel-start";
+import { ChannelHeaderTitle } from "./channel-header-title";
+import { ChannelStart } from "./channel-start";
 import { EmptyState, ErrorState } from "@/components/shared/async-states";
 import {
   canHideConversation,
@@ -1825,50 +1826,11 @@ export function ChatShell({
               <ChevronLeft className="h-5 w-5" />
             </Button>
           ) : null}
-          <div className="flex min-w-0 flex-1 items-baseline gap-2">
-            {/*
-              `h2`, under the top bar's `<h1>Chat</h1>` (`top-bar.tsx`). It was
-              the route's `h1` while no title sat above it (#2141 to
-              2026-11-05). Styling is explicit, so the tag is visually free.
-            */}
-            {/*
-              `min-w-0`, and deliberately NOT `shrink-0`: the `truncate` on the
-              name below only bites if this flex item is allowed to shrink below
-              its content. With `shrink-0` a long channel name simply overflows
-              and paints under the `⋯` trigger beside it.
-            */}
-            <h2 className="flex min-w-0 items-center gap-2 text-label font-bold text-foreground">
-              {activeChannel ? (
-                <>
-                  <ChannelMark
-                    channel={activeChannel}
-                    className="h-4 w-4 shrink-0 text-muted-foreground"
-                  />
-                  <span className="truncate">{activeChannelName}</span>
-                </>
-              ) : (
-                "Pick a channel"
-              )}
-            </h2>
-            {/*
-              "# name • description", the description muted and cut off on
-              one line (owner's reference, 2026-11-05). The dot is decoration:
-              the name is the heading and the description its own paragraph.
-            */}
-            {activeChannelDescription ? (
-              <>
-                <span
-                  aria-hidden="true"
-                  className="shrink-0 text-caption text-muted-foreground"
-                >
-                  •
-                </span>
-                <p className="min-w-0 truncate text-caption text-muted-foreground">
-                  {activeChannelDescription}
-                </p>
-              </>
-            ) : null}
-          </div>
+          <ChannelHeaderTitle
+            channel={activeChannel}
+            name={activeChannelName}
+            description={activeChannelDescription}
+          />
           <div className="flex shrink-0 items-center gap-2">
             <ReconnectPill status={channel.connection} />
             {showMemberList ? (

@@ -1,8 +1,8 @@
 import { type ReactNode, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
-import Svg, { Path } from "react-native-svg";
 import { SignetTokens } from "@repo/theme/signet";
+import { BackGlyph } from "@/components/control-glyphs";
 import { GlassSurface } from "@/components/glass-surface";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -164,18 +164,7 @@ function BackRowView({
           ]}
         >
           <View style={styles.content}>
-            <Svg
-              width={18}
-              height={18}
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke={color}
-              strokeWidth={2.2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <Path d="m14.5 6-6 6 6 6" />
-            </Svg>
+            <BackGlyph color={color} size={18} />
             <Text style={styles.text}>{label}</Text>
           </View>
         </GlassSurface>
