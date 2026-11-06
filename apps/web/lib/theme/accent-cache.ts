@@ -29,7 +29,7 @@
  *    house default — it would shorten the flash, not remove it. The repo has
  *    already made this exact call once and written down why:
  *    `components/layout/nav-collapse.ts` keeps the nav's collapsed state in a
- *    cookie precisely because "the server would render 220px, the client would
+ *    cookie precisely because "the server would render 240px, the client would
  *    correct to 56px after hydration, and every route would open with a visible
  *    jump". Swap the widths for colours and it is this defect. A cookie is
  *    readable by the `(dashboard)` layout, which is already an async server
