@@ -38,8 +38,12 @@ import { lookupUnavailable } from './guard-lookup';
  */
 const LOOKUP_FAILED = 'Could not verify your chapter membership right now';
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// A `RegExp` rather than a literal: `subscription-refusal-parity.test.mjs`
+// scans this file and cannot read regex literals.
+const UUID_PATTERN = new RegExp(
+  '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+  'i',
+);
 
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
