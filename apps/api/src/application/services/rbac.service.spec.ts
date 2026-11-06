@@ -1854,4 +1854,88 @@ describe('RbacService', () => {
       expect(result).toEqual([]);
     });
   });
+
+  describe('getChapterMemberAccess', () => {
+    const role = (
+      id: string,
+      display_order: number,
+      permissions: string[] = [],
+      chapter_id = 'ch-1',
+    ): Role =>
+      roleFixture({
+        id,
+        chapter_id,
+        name: `role-${id}`,
+        permissions,
+        display_order,
+      });
+
+    it('ranks each member by their highest live role, null when they hold none', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        role('role-president', 0, ['*']),
+        role('role-officer', 2, [SystemPermissions.CHANNELS_MANAGE]),
+        role('role-member', 5),
+      ]);
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        memberFixture({
+          id: 'm-1',
+          user_id: 'user-officer',
+          role_ids: ['role-member', 'role-officer'],
+        }),
+        memberFixture({ id: 'm-2', user_id: 'user-none', role_ids: [] }),
+      ]);
+
+      const result = await service.getChapterMemberAccess('ch-1');
+
+      expect(result).toEqual([
+        {
+          user_id: 'user-officer',
+          permissions: new Set([SystemPermissions.CHANNELS_MANAGE]),
+          top_role_order: 2,
+        },
+        { user_id: 'user-none', permissions: new Set(), top_role_order: null },
+      ]);
+    });
+
+    it('ignores a role from another chapter, for rank and permissions alike', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        role('role-foreign', 0, ['*'], 'ch-other'),
+      ]);
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        memberFixture({ user_id: 'user-1', role_ids: ['role-foreign'] }),
+      ]);
+
+      const [entry] = await service.getChapterMemberAccess('ch-1');
+
+      expect(entry).toEqual({
+        user_id: 'user-1',
+        permissions: new Set(),
+        top_role_order: null,
+      });
+    });
+
+    it('unions a user with two membership rows into one entry', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        role('role-a', 3, [SystemPermissions.MEMBERS_VIEW]),
+        role('role-b', 1, [SystemPermissions.CHANNELS_MANAGE]),
+      ]);
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        memberFixture({ id: 'm-1', user_id: 'user-1', role_ids: ['role-a'] }),
+        memberFixture({ id: 'm-2', user_id: 'user-1', role_ids: ['role-b'] }),
+      ]);
+
+      const result = await service.getChapterMemberAccess('ch-1');
+
+      expect(result).toEqual([
+        {
+          user_id: 'user-1',
+          permissions: new Set([
+            SystemPermissions.MEMBERS_VIEW,
+            SystemPermissions.CHANNELS_MANAGE,
+          ]),
+          top_role_order: 1,
+        },
+      ]);
+    });
+  });
 });

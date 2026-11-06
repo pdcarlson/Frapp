@@ -93,6 +93,31 @@ export function usePinnedMessages(channelId: string) {
   });
 }
 
+/**
+ * Everyone who can read a channel, with their top role rank (#3536). Ids and
+ * ranks only: the member list joins names, avatars and role colors from
+ * {@link useMemberDisplayNames}'s roster and presence from the chapter
+ * presence socket, both of which Chat already holds.
+ */
+export function useChannelMembers(
+  channelId: string | null | undefined,
+  options?: { enabled?: boolean },
+) {
+  const client = useFrappClient();
+  return useQuery({
+    queryKey: ["channels", channelId, "members"],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/channels/{id}/members", {
+        params: { path: { id: channelId as string } },
+      });
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 60_000,
+    enabled: !!channelId && (options?.enabled ?? true),
+  });
+}
+
 export function useCategories() {
   const client = useFrappClient();
   return useQuery({

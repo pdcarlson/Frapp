@@ -235,6 +235,14 @@ vi.mock("./use-unblock-flow", () => ({
   }),
 }));
 
+// The member list owns its own reads and has its own spec; here it is only a
+// column the shell decides to show.
+vi.mock("./channel-member-list", () => ({
+  ChannelMemberList: ({ channelId }: { channelId: string }) => (
+    <div data-testid="channel-member-list" data-channel-id={channelId} />
+  ),
+}));
+
 vi.mock("@repo/hooks", async () => ({
   // The shared helpers run for real, so the shell's use of them is under test.
   ...(await vi
@@ -3685,5 +3693,81 @@ describe("ChatShell opens on the last channel", () => {
     } finally {
       chapterStoreState.value = "chapter-1";
     }
+  });
+});
+
+/** The member list column and sheet (#3536). */
+describe("ChatShell member list", () => {
+  const realMatchMedia = window.matchMedia;
+
+  function stubWide(matches: boolean) {
+    window.matchMedia = ((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+  }
+
+  afterEach(() => {
+    window.matchMedia = realMatchMedia;
+    document.cookie = "frapp_chat_members_hidden=; Max-Age=0; Path=/";
+  });
+
+  it("shows the column for the open channel by default, and hides it from the header", () => {
+    stubWide(true);
+    render(<ChatShell />);
+
+    const column = screen.getByRole("complementary", { name: "Members" });
+    expect(within(column).getByTestId("channel-member-list")).toHaveAttribute(
+      "data-channel-id",
+      "chan-general",
+    );
+
+    const toggle = screen.getByRole("button", { name: "Hide members" });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(toggle);
+
+    expect(
+      screen.queryByRole("complementary", { name: "Members" }),
+    ).not.toBeInTheDocument();
+    expect(document.cookie).toContain("frapp_chat_members_hidden=1");
+    expect(
+      screen.getByRole("button", { name: "Show members" }),
+    ).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("starts hidden when the route read the remembered choice", () => {
+    stubWide(true);
+    render(<ChatShell defaultMembersHidden />);
+
+    expect(
+      screen.queryByRole("complementary", { name: "Members" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show members" }));
+    expect(
+      screen.getByRole("complementary", { name: "Members" }),
+    ).toBeInTheDocument();
+    expect(document.cookie).toContain("frapp_chat_members_hidden=0");
+  });
+
+  it("opens a sheet below 1280px instead, without touching the remembered choice", () => {
+    stubWide(false);
+    render(<ChatShell />);
+
+    const toggle = screen.getByRole("button", { name: "Show members" });
+    expect(toggle).not.toHaveAttribute("aria-pressed");
+    fireEvent.click(toggle);
+
+    const sheet = screen.getByRole("dialog", { name: "Members" });
+    expect(within(sheet).getByTestId("channel-member-list")).toHaveAttribute(
+      "data-channel-id",
+      "chan-general",
+    );
+    expect(document.cookie).not.toContain("frapp_chat_members_hidden");
   });
 });

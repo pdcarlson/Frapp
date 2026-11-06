@@ -257,6 +257,11 @@ adding that filter would make the bookmark vanish, the opposite of this rule.
 - A sender broadcasts at most once every 3 seconds while typing. A typist expires 4 seconds after their last broadcast, and the indicator catches up on the next sweep of expired typists, which runs every 1.5 seconds, so it clears 4 to 5.5 seconds after that broadcast (`packages/chat-core/src/realtime-manager.ts`).
 - The viewer's own typing never counts, including typing from another of the viewer's devices, whose broadcasts do arrive.
 
+**Member list** (web, [#3536](https://github.com/pdcarlson/Frapp/issues/3536)):
+
+- Beside a channel, the list shows everyone who can read it, by the same rule that admits a read: the whole chapter for a public channel, the holders of a required permission (or the wildcard) for a role-gated one, and `member_ids` for a private channel or group DM. A 1:1 DM shows no list. Only a member who can read the channel can ask for its list (`GET /v1/channels/{id}/members`).
+- Grouped Online, then Idle, then Offline, from the chapter presence topic below. Within a group, members sort by their highest role's rank (lower `display_order` first, no role last), then by name. Names take the member's role color, as in the timeline. Until presence has resolved, the list is one ungrouped "Members" group rather than calling everyone Offline.
+
 **Online/offline presence:**
 
 - Member online status is tracked via Supabase Realtime Presence.
@@ -269,7 +274,7 @@ adding that filter would make the bookmark vanish, the opposite of this rule.
 | Topic | Scope | Read by |
 | --- | --- | --- |
 | `chat:channel:<channelId>` | Who has *this channel* open | The push worker, via service role, to suppress pushes to members already looking (ADR-10) |
-| `presence:chapter:<chapterId>` | Who is present in the *chapter* at all | The web Directory |
+| `presence:chapter:<chapterId>` | Who is present in the *chapter* at all | The web Directory, and Chat's member list |
 
 The chat topic's channel config and its `{ userId, ts }` payload are a cross-service contract pinned by `packages/chat-core/src/presence-contract.spec.ts`. Re-keying it or widening its payload silently disables push suppression, so a surface needing chapter-wide presence takes the second topic rather than extending the first.
 

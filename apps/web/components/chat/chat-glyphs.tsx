@@ -24,6 +24,7 @@ import { Svg, detail, fillProps, stroke } from "@/components/ui/duotone";
 import type { DuotoneGlyphProps } from "@/components/ui/duotone";
 
 export {
+  DirectoryGlyph as MembersGlyph,
   EventsGlyph,
   PointsGlyph,
   SearchGlyph,
