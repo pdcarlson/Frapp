@@ -1,13 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  Ban,
-  Flag,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
-} from "lucide-react";
+import { Ban, Flag, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
@@ -370,8 +364,9 @@ export function MessageItem({
    * or a save fires there is no Edit button to focus; the effect runs once it
    * has remounted.
    *
-   * The keyboard gate is not fussiness. The cluster is revealed by
-   * `group-focus-within/message`, so focusing Edit *pins it open* — and a
+   * The keyboard gate is not fussiness. The cluster is revealed by a
+   * `:focus-visible` in the row, and a programmatic focus right after a
+   * keyboard event can match it, so focusing Edit can *pin it open* — and a
    * member who dismissed the editor with the mouse has their pointer somewhere
    * else entirely and would be left with four controls painted over that
    * message until focus happened to move again. `event.detail === 0` is how a
@@ -385,6 +380,8 @@ export function MessageItem({
    * cannot be done from the `catch`, where the field is still disabled; it
    * re-enables only on the render `finally` schedules.
    */
+  // The pointer that started the latest press on the row, for `handleRowTap`.
+  const lastPointerType = useRef<string | null>(null);
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
   const editFieldRef = useRef<HTMLTextAreaElement | null>(null);
   const restoreFocusOnExit = useRef(false);
@@ -457,8 +454,8 @@ export function MessageItem({
   }
 
   /*
-   * Tap-to-reveal, for the pointer the hover/focus-within reveal below cannot
-   * reach (#1193). `onClick`, not `onTouchStart` or a press handler: a native
+   * Tap-to-reveal, for the pointer the hover/focus reveal below cannot reach
+   * (#1193). `onClick`, not `onTouchStart` or a press handler: a native
    * click already fires only on a tap the browser did not treat as a scroll
    * or a drag, which is the "must not fire on an accidental scroll-touch"
    * acceptance criterion for free.
@@ -492,6 +489,12 @@ export function MessageItem({
    */
   function handleRowTap(event: React.MouseEvent<HTMLDivElement>) {
     if (!showActions || isEditing) return;
+    // A mouse has hover, which already reveals the bar and hides it again on
+    // the way out. A mouse click toggling the tap state pinned the bar and
+    // the row's lift on screen until another row was clicked (owner report
+    // 2026-11-06), so only a touch or a pen toggles it. An engine that reports
+    // no pointer type keeps the old behavior.
+    if (lastPointerType.current === "mouse") return;
     if (
       event.target instanceof Element &&
       event.target.closest(
@@ -662,28 +665,34 @@ export function MessageItem({
   );
 
   /*
-   * The action bar: icons over the row's top-right corner (`components.md` §11
-   * § Per-message actions).
+   * The action bar: icons centred on the row's top edge, ending at the right
+   * edge of what the message actually draws (`components.md` §11 § Per-message
+   * actions).
    *
    * It stays mounted and fades, rather than mounting on a JS `hovered` flag: a
-   * keyboard user reaches it through `focus-within` (a mounted-on-hover version
-   * was mouse-only), and the row stops re-rendering on every mouse crossing in
-   * a virtualized list.
+   * keyboard user reaches it through focus (a mounted-on-hover version was
+   * mouse-only), and the row stops re-rendering on every mouse crossing in a
+   * virtualized list.
    *
    * - **`opacity-0` is not hidden.** It removes neither hit-testing nor layout,
-   *   so without `pointer-events-none` a tap over the corner posts a reaction
-   *   the member never saw a control for — and on touch, where `:hover` never
-   *   fires, that corner is *all* they can hit. The pointer gate is lifted by
-   *   the same variants that lift the opacity.
-   * - **It reserves no height.** It is `absolute`, centred on the row's top
-   *   edge, so it floats over the gap above the row and the top of the text.
-   *   Its fill is opaque so the text under it does not show through.
+   *   so without `pointer-events-none` a tap over it posts a reaction the
+   *   member never saw a control for — and on touch, where `:hover` never
+   *   fires, that is *all* they can hit. The pointer gate is lifted by the same
+   *   variants that lift the opacity.
+   * - **It reserves no height.** It rides a zero-height sticky track (below),
+   *   so it floats over the gap above the row and the top of the text. Its fill
+   *   is opaque so the text under it does not show through.
+   * - **Keyboard focus, not any focus.** It is revealed by a `:focus-visible`
+   *   inside the row, not `:focus-within`. A mouse click on a control in the
+   *   row (a quick reaction, Save, an image preview, which the viewer hands
+   *   focus back to on close) leaves focus there without a ring, and under
+   *   `:focus-within` that pinned the bar and the row's lift on screen after
+   *   the pointer had left, until something else took focus.
+   * - **Open menus hold it.** The More menu and the emoji picker are portalled
+   *   out of the row, so neither hover nor focus covers them; an expanded
+   *   trigger keeps the bar its menu hangs from on screen.
    *
-   * A full-width row has a fixed corner to pin to, which is why this is one
-   * `absolute` box. The bubble it replaced had a variable edge, and the cluster
-   * needed a zero-height `rtl` flex track to follow it.
-   *
-   * `:hover`/`:focus-within` reach nothing on a coarse pointer (#1193), so
+   * `:hover`/`:focus-visible` reach nothing on a coarse pointer (#1193), so
    * `isTapRevealed` is the third way in, driven by `handleRowTap`.
    */
   const actions =
@@ -697,17 +706,21 @@ export function MessageItem({
         role="group"
         aria-label="Message actions"
         className={cn(
-          "absolute right-4 top-0 z-10 flex -translate-y-1/2 items-center gap-0.5",
+          // Centred on the row's top edge: up half its own height, and up
+          // again by the row's top padding, since the track it rides starts
+          // where the content does.
+          "flex -translate-y-[calc(50%+var(--row-pt))] items-center gap-0.5",
           // Wraps rather than spilling past the row's left edge: on a coarse
           // pointer every icon is 44px, and nine of them (your own message) are
           // wider than a 375px thread, where the scroller would clip the first.
-          "max-w-[calc(100%-2rem)] flex-wrap justify-end",
+          "max-w-full flex-wrap justify-end",
           "rounded-[10px] border border-border bg-card p-0.5",
           "transition-opacity",
           "group-hover/message:pointer-events-auto group-hover/message:opacity-100",
-          "group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100",
+          "group-has-[:focus-visible]/message:pointer-events-auto group-has-[:focus-visible]/message:opacity-100",
+          "has-[[aria-expanded=true]]:pointer-events-auto has-[[aria-expanded=true]]:opacity-100",
           // Coarse-pointer path: a tap on the row sets `isTapRevealed`, since
-          // `:hover`/`:focus-within` never fire there. Kept as a JS-driven
+          // `:hover`/`:focus-visible` never fire there. Kept as a JS-driven
           // class rather than a `pointer-coarse:` variant so the same row also
           // works from a stylus or a mouse click, and so "tapping elsewhere
           // dismisses this" (the parent list's single `tapRevealedId`) has
@@ -944,166 +957,218 @@ export function MessageItem({
         "group/message relative px-5 pb-0.5",
         // An audit stack's first line sits 8 below the row above: a log line
         // is not a new speaker, so it takes less than a run's 16.
-        auditLine ? (showHeader ? "pt-2" : "pt-0.5") : showHeader ? "pt-4" : "pt-0.5",
+        // `--row-pt` repeats the padding for the action bar, which is
+        // centred on the row's top edge from a track that starts below it.
+        auditLine
+          ? showHeader
+            ? "pt-2 [--row-pt:0.5rem]"
+            : "pt-0.5 [--row-pt:0.125rem]"
+          : showHeader
+            ? "pt-4 [--row-pt:1rem]"
+            : "pt-0.5 [--row-pt:0.125rem]",
         // Delineation without a bubble (§11): the whole row lifts one surface
         // step under a pointer, with keyboard focus inside it, or once tapped.
         // Pointer feedback, not information, so the ~1.1:1 step is enough.
-        "hover:bg-surface-1 focus-within:bg-surface-1",
+        // `:focus-visible`, not `:focus-within`: a mouse click on a control
+        // in the row leaves focus there, and must not hold the lift on after
+        // the pointer has gone (the action bar's note below).
+        "hover:bg-surface-1 has-[:focus-visible]:bg-surface-1",
         isTapRevealed && "bg-surface-1",
       )}
       data-status={message._status}
       data-run={showHeader ? "start" : "follow"}
+      onPointerDown={(event) => {
+        lastPointerType.current = event.pointerType;
+      }}
       onClick={handleRowTap}
     >
-      {replyQuote}
-      <div className="flex gap-3">
-        {/* The 32px gutter, held open on every row of a run. */}
-        <div className="w-8 shrink-0">
-          {auditLine ? (
-            <div className="flex h-5 items-center justify-center">
-              <AuditGlyph className="h-3.5 w-3.5 text-muted" />
-            </div>
-          ) : showHeader ? (
-            <Avatar
-              className="h-8 w-8"
-              aria-hidden="true"
-              data-system-avatar={isSystemPost || undefined}
-              style={
-                isSystemPost ? { backgroundColor: CREST_FIELD } : undefined
-              }
-            >
-              {avatarSrc ? <AvatarImage src={avatarSrc} alt="" /> : null}
-              {/*
+      {/*
+        The message's extent: as wide as what it draws (`w-fit`), so the action
+        bar ends over the message rather than at the far side of a wide pane
+        (owner report 2026-11-06). A grid, so the bar can share the content's
+        cell without adding height, and in its second column, so it never
+        starts over the avatar gutter: on a short message it reaches right
+        from the text's left edge. The bar's own width counts toward the
+        extent; nothing paints the extent, so the extra width is invisible.
+        Full width while editing, where the field takes the column's width.
+      */}
+      <div
+        data-slot="message-extent"
+        className={cn(
+          "grid max-w-full grid-cols-[2.75rem_auto]",
+          isEditing ? "w-full" : "w-fit",
+        )}
+      >
+        <div className="col-span-2 col-start-1 row-start-1 min-w-0">
+          {replyQuote}
+          <div className="flex gap-3">
+            {/* The 32px gutter, held open on every row of a run. */}
+            <div className="w-8 shrink-0">
+              {auditLine ? (
+                <div className="flex h-5 items-center justify-center">
+                  <AuditGlyph className="h-3.5 w-3.5 text-muted" />
+                </div>
+              ) : showHeader ? (
+                <Avatar
+                  className="h-8 w-8"
+                  aria-hidden="true"
+                  data-system-avatar={isSystemPost || undefined}
+                  style={
+                    isSystemPost ? { backgroundColor: CREST_FIELD } : undefined
+                  }
+                >
+                  {avatarSrc ? <AvatarImage src={avatarSrc} alt="" /> : null}
+                  {/*
                 Radix draws the fallback until the image loads, and for good if
                 it fails. A system post's fallback is the crest's own field with
                 no text, never a letter tile: its name resolves to "Frapp"
                 (#3347), so initials would draw an "F" where the crest goes.
               */}
-              <AvatarFallback
-                style={
-                  isSystemPost ? { backgroundColor: CREST_FIELD } : undefined
-                }
-              >
-                {isSystemPost
-                  ? null
-                  : authorName
-                    ? initials(authorName)
-                    : authorInitialsFallback(message)}
-              </AvatarFallback>
-            </Avatar>
-          ) : (
-            /*
+                  <AvatarFallback
+                    style={
+                      isSystemPost
+                        ? { backgroundColor: CREST_FIELD }
+                        : undefined
+                    }
+                  >
+                    {isSystemPost
+                      ? null
+                      : authorName
+                        ? initials(authorName)
+                        : authorInitialsFallback(message)}
+                  </AvatarFallback>
+                </Avatar>
+              ) : (
+                /*
               A follow-on's own time, revealed with the row. Opacity rather than
               `visibility`, so a screen reader still hears when each message in
               a run was sent; hours and minutes only while the run's author
               line above already says AM or PM (the gutter is 32px wide), and
               the full time once the run has crossed noon.
             */
-            <time
-              dateTime={message.created_at}
-              data-slot="gutter-time"
-              className={cn(
-                // A flex box ending at the gutter's right edge, so a time wider
-                // than 32px ("12:02 PM", once a run crosses noon) overflows to
-                // the left into the row's 20px padding rather than over the
-                // text; `text-right` alone does not, since an overflowing line
-                // is start-aligned.
-                "flex justify-end whitespace-nowrap text-caption leading-[25px] text-muted-foreground",
-                "opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100",
-                isTapRevealed && "opacity-100",
+                <time
+                  dateTime={message.created_at}
+                  data-slot="gutter-time"
+                  className={cn(
+                    // A flex box ending at the gutter's right edge, so a time wider
+                    // than 32px ("12:02 PM", once a run crosses noon) overflows to
+                    // the left into the row's 20px padding rather than over the
+                    // text; `text-right` alone does not, since an overflowing line
+                    // is start-aligned.
+                    "flex justify-end whitespace-nowrap text-caption leading-[25px] text-muted-foreground",
+                    "opacity-0 group-hover/message:opacity-100 group-has-[:focus-visible]/message:opacity-100",
+                    isTapRevealed && "opacity-100",
+                  )}
+                >
+                  {formatTimeOfDayShort(message.created_at, runStartedAt)}
+                </time>
               )}
-            >
-              {formatTimeOfDayShort(message.created_at, runStartedAt)}
-            </time>
-          )}
-        </div>
-        <div className="flex min-w-0 flex-1 flex-col">
-          {drawsHeader ? (
-            <div
-              data-slot="author-line"
-              className="flex min-w-0 items-baseline gap-2 leading-5"
-            >
-              <span
-                className="truncate text-sm font-semibold text-foreground"
-                // A literal from the role palette, which is contrast-checked
-                // against these surfaces (`@repo/validation` role-colors).
-                style={authorColor ? { color: authorColor } : undefined}
-              >
-                {authorLabel}
-              </span>
-              <time
-                dateTime={message.created_at}
-                className="shrink-0 text-caption leading-5 text-muted-foreground"
-              >
-                {formatTimeOfDay(message.created_at)}
-              </time>
             </div>
-          ) : null}
-          {isEditing ? editForm : body}
-          {attachments}
-          {trailingOnOwnLine && trailing && !isEditing ? (
-            <div className="mt-1 leading-5 [&>span]:ml-0">{trailing}</div>
-          ) : null}
-          {reactions}
-          {/*
+            <div className="flex min-w-0 flex-1 flex-col">
+              {drawsHeader ? (
+                <div
+                  data-slot="author-line"
+                  className="flex min-w-0 items-baseline gap-2 leading-5"
+                >
+                  <span
+                    className="truncate text-sm font-semibold text-foreground"
+                    // A literal from the role palette, which is contrast-checked
+                    // against these surfaces (`@repo/validation` role-colors).
+                    style={authorColor ? { color: authorColor } : undefined}
+                  >
+                    {authorLabel}
+                  </span>
+                  <time
+                    dateTime={message.created_at}
+                    className="shrink-0 text-caption leading-5 text-muted-foreground"
+                  >
+                    {formatTimeOfDay(message.created_at)}
+                  </time>
+                </div>
+              ) : null}
+              {isEditing ? editForm : body}
+              {attachments}
+              {trailingOnOwnLine && trailing && !isEditing ? (
+                <div className="mt-1 leading-5 [&>span]:ml-0">{trailing}</div>
+              ) : null}
+              {reactions}
+              {/*
             The delivery state, under the body. Only this line is a live region,
             and it is mounted empty until it has something to say: a region
             mounted populated would read every row's status aloud on each
             virtualized scroll.
           */}
-          <div role="status" aria-live="polite" aria-atomic="true">
-            {/*
+              <div role="status" aria-live="polite" aria-atomic="true">
+                {/*
               Pending draws nothing here: the body is already gray, which is
               the whole pending state on screen, so a send never adds a line
               and takes it away again (§11 § What rides the row, owner
               decision 2026-11-06). A screen reader still hears it.
             */}
-            {isPending ? <span className="sr-only">Sending</span> : null}
-            {isUnconfirmed ? (
-              <p className="mt-0.5 text-caption text-muted-foreground">
-                {message._error ?? "Not confirmed"}
-              </p>
-            ) : null}
-            {isRecorded ? (
-              <p className="mt-0.5 text-caption text-muted-foreground">
-                {message._error ??
-                  "Recorded, but the chat card didn't post. Don't run this command again."}
-              </p>
-            ) : null}
-            {isFailed ? (
-              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-caption text-destructive-text">
-                <span>{message._error ?? "Send failed"}</span>
-                {onRetry ? (
-                  <button
-                    type="button"
-                    className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA)}
-                    onClick={() => onRetry(message.client_message_id)}
-                  >
-                    Retry
-                  </button>
+                {isPending ? <span className="sr-only">Sending</span> : null}
+                {isUnconfirmed ? (
+                  <p className="mt-0.5 text-caption text-muted-foreground">
+                    {message._error ?? "Not confirmed"}
+                  </p>
                 ) : null}
-                {onDiscard ? (
-                  <button
-                    type="button"
-                    className={cn(
-                      CHIP.base,
-                      CHIP.neutral,
-                      CHIP_HIT_AREA,
-                      "gap-1",
-                    )}
-                    onClick={() => onDiscard(message.client_message_id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    Discard
-                  </button>
+                {isRecorded ? (
+                  <p className="mt-0.5 text-caption text-muted-foreground">
+                    {message._error ??
+                      "Recorded, but the chat card didn't post. Don't run this command again."}
+                  </p>
+                ) : null}
+                {isFailed ? (
+                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-caption text-destructive-text">
+                    <span>{message._error ?? "Send failed"}</span>
+                    {onRetry ? (
+                      <button
+                        type="button"
+                        className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA)}
+                        onClick={() => onRetry(message.client_message_id)}
+                      >
+                        Retry
+                      </button>
+                    ) : null}
+                    {onDiscard ? (
+                      <button
+                        type="button"
+                        className={cn(
+                          CHIP.base,
+                          CHIP.neutral,
+                          CHIP_HIT_AREA,
+                          "gap-1",
+                        )}
+                        onClick={() => onDiscard(message.client_message_id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                        Discard
+                      </button>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
-            ) : null}
+              {unconfirmedFooter}
+            </div>
           </div>
-          {unconfirmedFooter}
         </div>
+        {actions ? (
+          /*
+          The bar's zero-height track, sticky inside the message's cell. At
+          rest it sits on the content's top edge, and the bar centres itself on
+          the row's. Once the row's top scrolls under the top of the timeline,
+          the track holds the bar fully on screen for as long as any of the
+          message is, so a tall message (an image, a long import) keeps its
+          actions in reach rather than clipping them at the pane's edge. The
+          offset is the bar's half height plus a margin, past `--row-pt`.
+        */
+          <div
+            data-slot="action-track"
+            className="sticky top-[calc(var(--row-pt)+1.5rem)] z-10 col-start-2 row-start-1 h-0 min-w-0 self-start justify-self-end"
+          >
+            {actions}
+          </div>
+        ) : null}
       </div>
-      {actions}
     </div>
   );
 }

@@ -358,7 +358,7 @@ describe("MessageItem compact layout (#2873)", () => {
     const bar = container.querySelector('[aria-label="Message actions"]')!;
     const tokens = bar.className.split(/\s+/);
     expect(tokens).toContain("flex-wrap");
-    expect(tokens).toContain("max-w-[calc(100%-2rem)]");
+    expect(tokens).toContain("max-w-full");
   });
 
   it("draws no gutter time on the row that starts a run", () => {
@@ -427,31 +427,92 @@ describe("MessageItem action bar", () => {
     return found;
   }
 
-  it("pins to the row's top-right corner and reserves no height", () => {
+  it("ends over the message, centred on the row's top edge, and reserves no height", () => {
     for (const sender of [VIEWER, OTHER]) {
       const { container, unmount } = renderItem(message({ sender_id: sender }));
       const className = bar(container).className;
+      const track = bar(container).parentElement!;
+      const extent = track.parentElement!;
 
-      expect(className, sender).toContain("absolute");
-      expect(className, sender).toContain("right-4");
-      expect(className, sender).toContain("top-0");
-      expect(className, sender).toContain("-translate-y-1/2");
+      // The bar rides a zero-height sticky track in the message's own cell,
+      // and the cell is as wide as the message draws: the bar ends over the
+      // message rather than at the far side of a wide pane (2026-11-06).
+      expect(track.dataset.slot, sender).toBe("action-track");
+      expect(track.className.split(/\s+/), sender).toEqual(
+        expect.arrayContaining([
+          "sticky",
+          "h-0",
+          "justify-self-end",
+          "col-start-2",
+        ]),
+      );
+      expect(extent.dataset.slot, sender).toBe("message-extent");
+      expect(extent.className.split(/\s+/), sender).toContain("w-fit");
+      // Centred on the row's top edge, past the row's own top padding.
+      expect(className, sender).toContain(
+        "-translate-y-[calc(50%+var(--row-pt))]",
+      );
       // Opaque, because it overlaps the text it floats over.
       expect(className, sender).toContain("bg-card");
-      expect(bar(container).parentElement?.getAttribute("role")).toBe(
-        "listitem",
-      );
       unmount();
     }
   });
 
+  it("names the row's top padding for the bar to centre on", () => {
+    const lead = renderItem(message());
+    expect(
+      lead.container.querySelector('[role="listitem"]')?.className,
+    ).toContain("[--row-pt:1rem]");
+    lead.unmount();
+
+    const follow = renderItemWithProps({ showHeader: false });
+    expect(
+      follow.container.querySelector('[role="listitem"]')?.className,
+    ).toContain("[--row-pt:0.125rem]");
+  });
+
+  it("takes the full width while editing", async () => {
+    const user = userEvent.setup();
+    const { container } = renderItemWithProps({
+      message: message({ sender_id: VIEWER }),
+      onEdit: vi.fn(),
+    });
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const extent = container.querySelector<HTMLElement>(
+      '[data-slot="message-extent"]',
+    )!;
+    expect(extent.className.split(/\s+/)).toContain("w-full");
+    expect(extent.className.split(/\s+/)).not.toContain("w-fit");
+  });
+
   it("comes after the message in reading order", () => {
     const { container } = renderItem(message());
-    const row = container.querySelector('[role="listitem"]')!;
+    const extent = container.querySelector('[data-slot="message-extent"]')!;
 
-    // Last in the row, so a screen reader and the tab sequence reach the
-    // message before the controls that act on it.
-    expect(row.lastElementChild).toBe(bar(container));
+    // Last in the message's cell, so a screen reader and the tab sequence
+    // reach the message before the controls that act on it.
+    expect(extent.lastElementChild).toBe(bar(container).parentElement);
+  });
+
+  it("is revealed by keyboard focus, not by any focus a click leaves behind", () => {
+    // `:focus-within` pinned the bar and the row's lift on screen after a
+    // mouse click on a quick reaction, Save or an image preview, until
+    // something else took focus (owner report 2026-11-06).
+    const { container } = renderItemWithProps();
+    const row = container.querySelector('[role="listitem"]')!;
+    const rowTokens = row.className.split(/\s+/);
+    const barTokens = bar(container).className.split(/\s+/);
+
+    expect(rowTokens).toContain("has-[:focus-visible]:bg-surface-1");
+    expect(barTokens).toContain(
+      "group-has-[:focus-visible]/message:opacity-100",
+    );
+    for (const token of [...rowTokens, ...barTokens]) {
+      expect(token).not.toMatch(/focus-within/);
+    }
+    // A portalled menu takes focus and the pointer out of the row; its open
+    // trigger holds the bar it hangs from.
+    expect(barTokens).toContain("has-[[aria-expanded=true]]:opacity-100");
   });
 
   it("names every icon, and draws no word on any of them", () => {
@@ -531,9 +592,24 @@ describe("MessageItem tap-to-reveal (#1193)", () => {
       </div>,
     );
 
-    await user.click(screen.getByRole("listitem"));
+    await user.pointer({
+      keys: "[TouchA]",
+      target: screen.getByRole("listitem"),
+    });
 
     expect(onToggleTapReveal).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not pin the cluster on a mouse click, which hover already covers", async () => {
+    // A mouse click used to toggle the tap state, which held the bar and the
+    // row's lift on screen until another row was clicked (2026-11-06).
+    const user = userEvent.setup();
+    const onToggleTapReveal = vi.fn();
+    renderItemWithProps({ onToggleTapReveal });
+
+    await user.click(screen.getByRole("listitem"));
+
+    expect(onToggleTapReveal).not.toHaveBeenCalled();
   });
 
   it("does not toggle for a message with no actions to reveal (unconfirmed)", async () => {
@@ -557,7 +633,10 @@ describe("MessageItem tap-to-reveal (#1193)", () => {
       </div>,
     );
 
-    await user.click(screen.getByRole("listitem"));
+    await user.pointer({
+      keys: "[TouchA]",
+      target: screen.getByRole("listitem"),
+    });
 
     expect(onToggleTapReveal).not.toHaveBeenCalled();
   });
