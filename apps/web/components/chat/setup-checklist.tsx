@@ -79,8 +79,10 @@ export function SetupChecklistView({
                 aria-hidden="true"
                 className={cn(
                   "flex h-4 w-4 shrink-0 items-center justify-center rounded-full",
+                  // Done is the quietest thing on the list: a muted check,
+                  // never the accent (foundations.md, accent rule).
                   line.done
-                    ? "border border-accent-border bg-accent-subtle text-accent-text"
+                    ? "border border-border bg-card text-muted-foreground"
                     : "border border-border",
                 )}
               >

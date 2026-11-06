@@ -47,9 +47,11 @@ const {
   channelsState,
   refetches,
   setupChecklist,
+  setupChecklistOptions,
 } = vi.hoisted(() => ({
   // The officer setup checklist's state (#3535's hook), null for a member.
   setupChecklist: { value: null as unknown },
+  setupChecklistOptions: { value: undefined as unknown },
   channelsData: { value: [] as unknown[] },
   categoriesData: { value: [] as unknown },
   unreadData: {
@@ -102,6 +104,7 @@ const {
   // Each read's refetch but the channels' (in `channelsState`), so a pull is
   // observable (#3385).
   refetches: {
+    setup: vi.fn(),
     categories: vi.fn(),
     unread: vi.fn(),
     events: vi.fn(),
@@ -185,10 +188,14 @@ vi.mock("@repo/hooks", async () => {
       ...query(unreadData.value, refetches.unread),
       isError: queryErrors.unread,
     }),
-    useChapterSetupChecklist: () => ({
-      checklist: setupChecklist.value,
-      hide: vi.fn(),
-    }),
+    useChapterSetupChecklist: (options?: { omit?: readonly string[] }) => {
+      setupChecklistOptions.value = options;
+      return {
+        checklist: setupChecklist.value,
+        hide: vi.fn(),
+        refetch: refetches.setup,
+      };
+    },
     HIDE_SETUP_CHECKLIST_LABEL: actual.HIDE_SETUP_CHECKLIST_LABEL,
     SETUP_CHECKLIST_TITLE: actual.SETUP_CHECKLIST_TITLE,
     SETUP_CHECKLIST_WEB_PATH: actual.SETUP_CHECKLIST_WEB_PATH,
@@ -232,6 +239,8 @@ import {
 import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
 import { SearchGlyph } from "@/components/search-glyph";
 import { SetupChecklistView } from "@/components/chat/setup-checklist";
+import { UpNextStrip } from "@/components/chat/up-next-strip";
+import { ScreenShell } from "@/components/screen-shell";
 import {
   EmptyState,
   EmptyStateAction,
@@ -1156,11 +1165,36 @@ describe("Chat home setup checklist (spec/product/modules.md § Setup checklist)
     lines: [{ key: "event", label: "Schedule the first event", done: false }],
   };
 
-  it("draws the officer's list above the channels once they load", () => {
+  it("draws the officer's list under UP NEXT and above the channels", () => {
     setupChecklist.value = ONE_LINE;
     const tree = render();
 
-    expect(tree.root.findAllByType(SetupChecklistView)).toHaveLength(1);
+    const order = tree.root
+      .findAll(
+        (node) =>
+          node.type === UpNextStrip ||
+          node.type === SetupChecklistView ||
+          node.type === ChannelRow,
+      )
+      .map((node) => node.type);
+    expect(order.slice(0, 3)).toEqual([
+      UpNextStrip,
+      SetupChecklistView,
+      ChannelRow,
+    ]);
+  });
+
+  it("asks the shared hook to leave dues off the phone", () => {
+    render();
+    expect(setupChecklistOptions.value).toEqual({ omit: ["dues"] });
+  });
+
+  it("re-reads the checklist's lists on a pull", async () => {
+    const tree = render();
+    await act(async () => {
+      await tree.root.findByType(ScreenShell).props.refresh();
+    });
+    expect(refetches.setup).toHaveBeenCalled();
   });
 
   it("draws nothing for a member, and nothing over the skeleton", () => {
@@ -1168,6 +1202,12 @@ describe("Chat home setup checklist (spec/product/modules.md § Setup checklist)
 
     setupChecklist.value = ONE_LINE;
     channelsState.value = { ...channelsState.value, isPending: true };
+    expect(render().root.findAllByType(SetupChecklistView)).toHaveLength(0);
+  });
+
+  it("draws nothing over the channels' error", () => {
+    setupChecklist.value = ONE_LINE;
+    channelsState.value = { ...channelsState.value, isError: true };
     expect(render().root.findAllByType(SetupChecklistView)).toHaveLength(0);
   });
 });

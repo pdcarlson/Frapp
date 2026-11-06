@@ -135,16 +135,30 @@ export interface SetupChecklistInput {
   dismissed: readonly string[] | undefined;
   /** Items per line; undefined while that line's list loads. */
   counts: Partial<Record<SetupChecklistKey, number | undefined>>;
+  /** Lines this client never draws, whatever the viewer may do. */
+  omit?: readonly SetupChecklistKey[];
+}
+
+export interface SetupChecklistOptions {
+  /**
+   * Lines this client never draws, and never reads a list for. Mobile leaves
+   * out dues: its web page is where the Frapp plan is bought, which the app
+   * must not link to, and counting it would cache the chapter's whole invoice
+   * ledger on a treasurer's phone.
+   */
+  omit?: readonly SetupChecklistKey[];
 }
 
 /** The lines this viewer can act on, before any list has loaded. */
 export function eligibleSetupLines(
   permissions: readonly string[] | undefined,
   enabledModules: Record<string, boolean> | null | undefined,
+  omit: readonly SetupChecklistKey[] = [],
 ): SetupChecklistKey[] {
   if (!permissions || !enabledModules) return [];
   return SETUP_CHECKLIST_LINES.filter(
     (line) =>
+      !omit.includes(line.key) &&
       canAll(line.permissions, permissions) &&
       (line.module === null || isModuleEnabled(enabledModules, line.module)),
   ).map((line) => line.key);
@@ -157,10 +171,12 @@ export function eligibleSetupLines(
 export function selectSetupChecklist(
   input: SetupChecklistInput,
 ): SetupChecklist | null {
-  const { permissions, enabledModules, dismissed, counts } = input;
+  const { permissions, enabledModules, dismissed, counts, omit } = input;
   if (!permissions || !enabledModules || !dismissed) return null;
   if (dismissed.includes(SETUP_CHECKLIST_DISMISS_KEY)) return null;
-  const eligible = new Set(eligibleSetupLines(permissions, enabledModules));
+  const eligible = new Set(
+    eligibleSetupLines(permissions, enabledModules, omit),
+  );
   const lines: SetupChecklistLine[] = [];
   for (const line of SETUP_CHECKLIST_LINES) {
     if (!eligible.has(line.key)) continue;
@@ -195,10 +211,18 @@ function sumOf(...counts: (number | undefined)[]): number | undefined {
  * so a member, or an officer who hid it, costs nothing beyond the reads every
  * screen already makes.
  */
-export function useChapterSetupChecklist(): {
+export function useChapterSetupChecklist(
+  options: SetupChecklistOptions = {},
+): {
   checklist: SetupChecklist | null;
   hide: () => void;
+  /**
+   * Re-reads every list the checklist counts, for a screen's pull to refresh
+   * and for a client that sent the officer to do a step elsewhere.
+   */
+  refetch: () => Promise<unknown>;
 } {
+  const { omit } = options;
   const activeChapterId = useActiveChapterId();
   const { data: permissionsPayload } = useMyPermissions();
   const permissions = permissionsPayload?.permissions as
@@ -232,7 +256,7 @@ export function useChapterSetupChecklist(): {
   const shown =
     dismissed !== undefined && !dismissed.includes(SETUP_CHECKLIST_DISMISS_KEY);
   const eligible = new Set(
-    shown ? eligibleSetupLines(permissions, enabledModules) : [],
+    shown ? eligibleSetupLines(permissions, enabledModules, omit) : [],
   );
   // The display roster, which chat already holds, not the full profiles.
   const roster = useChapterRoster();
@@ -254,7 +278,23 @@ export function useChapterSetupChecklist(): {
       document: lengthOf(documents.data),
       dues: lengthOf(invoices.data),
     },
+    omit,
   });
+
+  // Only the reads that are on: a disabled query's refetch would fire it.
+  const reads = [
+    [roster, eligible.has("invite")],
+    [invites, eligible.has("invite")],
+    [events, eligible.has("event")],
+    [zones, eligible.has("study-zone")],
+    [documents, eligible.has("document")],
+    [invoices, eligible.has("dues")],
+  ] as const;
+  function refetch() {
+    return Promise.all(
+      reads.filter(([, on]) => on).map(([query]) => query.refetch()),
+    );
+  }
 
   function hide() {
     // Hidden at once; the server write is what keeps it hidden next time. A
@@ -270,5 +310,5 @@ export function useChapterSetupChecklist(): {
     );
   }
 
-  return { checklist, hide };
+  return { checklist, hide, refetch };
 }

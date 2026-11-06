@@ -25,6 +25,7 @@ import {
   useActiveChapterId,
   useGetOrCreateDm,
   useChannels,
+  useChapterSetupChecklist,
   useChapterRoster,
   useCurrentUser,
   useNotifications,
@@ -59,7 +60,10 @@ import {
   EmptyStateAction,
   ErrorState,
 } from "@/components/state-block";
-import { SetupChecklistSection } from "@/components/chat/setup-checklist";
+import {
+  MOBILE_SETUP_CHECKLIST_OMIT,
+  SetupChecklistView,
+} from "@/components/chat/setup-checklist";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
 import { isAskAvailable } from "@/lib/ask/flag";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -177,7 +181,13 @@ export default function ChatHomeScreen() {
   const rosterQuery = useChapterRoster();
   const viewerQuery = useCurrentUser();
   const inboxQuery = useNotifications();
+  // The officer setup checklist. Held here, not in its view, so the pull below
+  // re-reads the lists it counts.
+  const setup = useChapterSetupChecklist({
+    omit: MOBILE_SETUP_CHECKLIST_OMIT,
+  });
   const refresh = useRefetchAll([
+    { refetch: setup.refetch },
     viewerQuery,
     inboxQuery,
     channelsQuery,
@@ -346,8 +356,12 @@ export default function ChatHomeScreen() {
         draws it above its channel list. Only once channels have loaded, so it
         never sits on top of the skeleton or the error.
       */}
-      {!channelsQuery.isPending && !channelsQuery.isError ? (
-        <SetupChecklistSection />
+      {setup.checklist && !channelsQuery.isPending && !channelsQuery.isError ? (
+        <SetupChecklistView
+          checklist={setup.checklist}
+          onHide={setup.hide}
+          onReturnFromWeb={() => void setup.refetch()}
+        />
       ) : null}
 
       {/*
