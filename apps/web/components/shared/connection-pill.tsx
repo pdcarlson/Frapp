@@ -6,6 +6,11 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING_ALWAYS } from "@/components/ui/focus";
 import { CONNECTION_PILL_ATTR } from "@/components/shared/connection-pill-focus";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 /**
  * The one connection indicator (`spec/ui/resilience/connection-state.md`
@@ -13,7 +18,8 @@ import { CONNECTION_PILL_ATTR } from "@/components/shared/connection-pill-focus"
  *
  * A small pill: a dot in the state's color and a short label ("Offline",
  * "Slow connection", "Reconnecting…", "Live updates paused"). The whole
- * sentence is its accessible name and its hover title. What it says comes
+ * sentence is its accessible name and its hover title, and a click or tap
+ * opens it in a popover, which is how a touch screen with no hover reads it. What it says comes
  * from `connectionIndicator` in `@repo/validation`, which folds the app's
  * connection state and the open chat's realtime transport into one answer.
  *
@@ -32,9 +38,13 @@ import { CONNECTION_PILL_ATTR } from "@/components/shared/connection-pill-focus"
  * `top-bar`: in the dashboard's top bar, before the notifications bell. It
  * floated below the bar until 2026-11-06 (#2244), which kept it out of the
  * layout but put it over the first row of every page, chat's channel header
- * included. In the bar it covers nothing. From `lg` the right cell is
- * `flex-1` and `justify-end`, so the pill grows into empty space and moves
- * nothing. Below `sm` it draws the dot alone.
+ * included. In the bar it covers nothing. It draws its label only from `xl`,
+ * where the right cell (`flex-1`, `justify-end`) has room for it beside the
+ * bell, Ask and the avatar: at 1024px a chat-width bar gives that cell about
+ * 245px, too little for a 130px label too. Below `xl` it draws the dot alone,
+ * in a 28px slot the top bar keeps whether or not there is anything to say,
+ * so a state that flaps never resizes the find field or the title. The
+ * sentence is a click or tap away at every width.
  *
  * `floating`: mounted by the root layout for the routes with no bar (sign-in,
  * onboarding), a fixed pill at the top of the viewport that takes no pointer.
@@ -43,7 +53,7 @@ import { CONNECTION_PILL_ATTR } from "@/components/shared/connection-pill-focus"
  * once and only one is in the accessibility tree.
  *
  * No dismiss control any more: the pill covers nothing in the bar, and the
- * floating one lets every tap through.
+ * floating one lets every tap outside the pill through.
  */
 export function ConnectionPill({
   placement = "floating",
@@ -56,38 +66,53 @@ export function ConnectionPill({
   if (!indicator) return null;
 
   const pill = (
-    <div
-      {...{ [CONNECTION_PILL_ATTR]: "" }}
-      tabIndex={-1}
-      // Announced, not merely drawn: a member using a screen reader needs to
-      // know a write is about to fail as much as a sighted one does.
-      role="alert"
-      aria-live="polite"
-      title={indicator.description}
-      className={cn(
-        "flex h-7 max-w-full shrink-0 items-center gap-2 rounded-full border border-border bg-popover px-2.5 text-caption text-foreground animate-slide-down",
-        FOCUS_RING_ALWAYS,
-        placement === "top-bar" && "max-sm:w-7 max-sm:justify-center max-sm:px-0",
-      )}
-    >
-      <span
-        aria-hidden="true"
-        className={cn(
-          "h-2 w-2 shrink-0 rounded-full",
-          indicator.tone === "danger" ? "bg-destructive" : "bg-warning",
-        )}
-      />
-      <span
-        aria-hidden="true"
-        className={cn(
-          "truncate font-medium",
-          placement === "top-bar" && "max-sm:hidden",
-        )}
-      >
-        {indicator.label}
+    <>
+      {/*
+        The announcement. Its own node, so the control below can be a real
+        button: a member using a screen reader needs to know a write is about
+        to fail as much as a sighted one does.
+      */}
+      <span role="alert" aria-live="polite" className="sr-only">
+        {indicator.description}
       </span>
-      <span className="sr-only">{indicator.description}</span>
-    </div>
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            {...{ [CONNECTION_PILL_ATTR]: "" }}
+            aria-label={indicator.description}
+            title={indicator.description}
+            className={cn(
+              "pointer-events-auto flex h-7 max-w-full shrink-0 items-center gap-2 rounded-full border border-border bg-popover px-2.5 text-caption text-foreground animate-slide-down hover:bg-card",
+              FOCUS_RING_ALWAYS,
+              placement === "top-bar" &&
+                "max-xl:w-7 max-xl:justify-center max-xl:px-0",
+            )}
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                "h-2 w-2 shrink-0 rounded-full",
+                indicator.tone === "danger" ? "bg-destructive" : "bg-warning",
+              )}
+            />
+            <span
+              aria-hidden="true"
+              className={cn(
+                "truncate font-medium",
+                placement === "top-bar" && "max-xl:hidden",
+              )}
+            >
+              {indicator.label}
+            </span>
+          </button>
+        </PopoverTrigger>
+        {/* The sentence, a tap away on a touch screen with no hover title. */}
+        <PopoverContent align="end" className="w-64">
+          <p className="text-caption text-foreground">{indicator.description}</p>
+        </PopoverContent>
+      </Popover>
+    </>
   );
 
   if (placement === "top-bar") return pill;

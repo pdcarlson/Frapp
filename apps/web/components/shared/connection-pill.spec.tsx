@@ -1,4 +1,5 @@
 import { act, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import {
   resetOpenChatTransportForTests,
@@ -48,26 +49,36 @@ describe("ConnectionPill", () => {
     mockNetwork("OFFLINE");
     render(<ConnectionPill placement="top-bar" />);
 
-    const pill = screen.getByRole("alert");
+    const pill = screen.getByRole("button", {
+      name: "You're offline. Showing cached data.",
+    });
     expect(pill).toHaveAttribute(CONNECTION_PILL_ATTR);
-    expect(pill).toHaveAttribute("tabindex", "-1");
     expect(pill).toHaveAttribute(
       "title",
       "You're offline. Showing cached data.",
     );
-    // The drawn label is short; the sentence is for a screen reader. The
-    // queue promise is absent: no chat is open, and nothing else queues.
+    // The drawn label is short; the sentence is announced. The queue promise
+    // is absent: no chat is open, and nothing else queues.
     expect(screen.getByText("Offline")).toHaveAttribute("aria-hidden", "true");
-    expect(pill).toHaveTextContent("You're offline. Showing cached data.");
-    expect(pill).not.toHaveTextContent(/reconnect/i);
+    const announced = screen.getByRole("alert");
+    expect(announced).toHaveTextContent("You're offline. Showing cached data.");
+    expect(announced).not.toHaveTextContent(/reconnect/i);
   });
 
   it("says Slow connection when DEGRADED", () => {
     mockNetwork("DEGRADED");
     render(<ConnectionPill placement="top-bar" />);
     expect(screen.getByText("Slow connection")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveAttribute(
-      "title",
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Slow connection. Some features may be delayed.",
+    );
+  });
+
+  it("opens the sentence on a click, for touch screens with no hover title", async () => {
+    mockNetwork("DEGRADED");
+    render(<ConnectionPill placement="top-bar" />);
+    await userEvent.click(screen.getByRole("button"));
+    expect(screen.getByRole("dialog")).toHaveTextContent(
       "Slow connection. Some features may be delayed.",
     );
   });
@@ -113,8 +124,7 @@ describe("ConnectionPill", () => {
         </>,
       );
       expect(screen.getByText("Live updates paused")).toBeInTheDocument();
-      expect(screen.getByRole("alert")).toHaveAttribute(
-        "title",
+      expect(screen.getByRole("alert")).toHaveTextContent(
         "Real-time updates paused. Polling for new messages.",
       );
     });
@@ -150,8 +160,9 @@ describe("ConnectionPill", () => {
   it("sits in the flow of the top bar, with no dismiss control", () => {
     mockNetwork("OFFLINE");
     const { container } = render(<ConnectionPill placement="top-bar" />);
-    expect(container.firstElementChild).toBe(screen.getByRole("alert"));
-    expect(container.firstElementChild?.className).not.toMatch(/\bfixed\b/);
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(container.innerHTML).not.toMatch(/\bfixed\b/);
+    // The pill itself is the only control: it opens the sentence.
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /dismiss/i })).toBeNull();
   });
 });

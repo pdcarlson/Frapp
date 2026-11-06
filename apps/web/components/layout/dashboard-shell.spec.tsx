@@ -72,6 +72,21 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   };
 });
 
+// ONLINE unless a test says otherwise, as the real provider defaults.
+const network = vi.hoisted(() => ({
+  state: "ONLINE" as "ONLINE" | "DEGRADED" | "OFFLINE",
+}));
+vi.mock("@/lib/providers/network-provider", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useNetwork: () => ({
+    state: network.state,
+    isOnline: network.state === "ONLINE",
+    isDegraded: network.state === "DEGRADED",
+    isOffline: network.state === "OFFLINE",
+    linkOnline: network.state !== "OFFLINE",
+    probeOnce: async () => {},
+  }),
+}));
 vi.mock("@/lib/auth/select-chapter", () => ({
   useSelectChapter: () => vi.fn(),
 }));
@@ -101,7 +116,10 @@ vi.mock("@/components/layout/dashboard-notification-drawer", () => ({
 
 import { DashboardShell } from "./dashboard-shell";
 import { useNavFace } from "./nav-face";
-import { DASHBOARD_SHELL_ATTR } from "@/components/shared/connection-pill-focus";
+import {
+  CONNECTION_PILL_ATTR,
+  DASHBOARD_SHELL_ATTR,
+} from "@/components/shared/connection-pill-focus";
 
 afterEach(() => {
   mockPathname.value = "/events";
@@ -334,11 +352,12 @@ describe("DashboardShell", () => {
     ).toHaveAttribute("href", "#main-content");
   });
 
-  it("takes the full viewport and marks itself for the connection banner", () => {
-    // The connection banner floats over the page (#2244), so the shell makes
-    // no room for it. It used to subtract `--offline-banner-height`, which is
+  it("takes the full viewport and marks itself for the connection pill", () => {
+    // The connection pill takes no row of its own, so the shell makes no room
+    // for it. The shell used to subtract `--offline-banner-height`, which is
     // what moved the whole shell down every time the app left ONLINE. The
-    // attribute is how the banner knows to float below the top bar.
+    // attribute is how the root layout's floating pill knows to stand down
+    // while the top bar carries one.
     const { container } = render(
       <DashboardShell>
         <p>route content</p>
@@ -351,10 +370,20 @@ describe("DashboardShell", () => {
     expect(root?.className).not.toContain("h-screen");
     expect(root?.className).not.toContain("offline-banner-height");
     expect(root).toHaveAttribute(DASHBOARD_SHELL_ATTR);
-    // The banner floats at `top-14`: this bar's 48px plus an 8px gap. A
-    // taller bar would put the pill over the bar's own controls, so the
-    // height it counts on is pinned here, beside the attribute it keys on.
-    expect(screen.getByRole("banner")).toHaveClass("h-12");
+  });
+
+  it("carries the connection pill in the top bar", () => {
+    network.state = "OFFLINE";
+    render(
+      <DashboardShell>
+        <p>route content</p>
+      </DashboardShell>,
+    );
+    const bar = screen.getByRole("banner");
+    expect(
+      within(bar).getByRole("button", { name: /You're offline/ }),
+    ).toHaveAttribute(CONNECTION_PILL_ATTR);
+    network.state = "ONLINE";
   });
 
   /*

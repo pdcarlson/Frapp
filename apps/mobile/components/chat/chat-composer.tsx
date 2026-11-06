@@ -92,7 +92,8 @@ export interface ChatComposerProps {
    * Set when attaching is unavailable right now — offline, or no post
    * permission. It **gates the control and nothing else**: the member-facing
    * explanation belongs in `disabledHint`, which is the composer's one hint
-   * slot, so the caller folds the reason in there. Rendering it here as well
+   * slot, so the caller folds the reason in there. Offline is the exception:
+   * the app-wide connection pill says it, so the caller passes no hint. Rendering it here as well
    * produced two hints for one composer, and the offline pair contradicted
    * each other. The control stays visible and disabled rather than vanishing —
    * a control that disappears reads as a missing feature.

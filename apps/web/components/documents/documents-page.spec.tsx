@@ -1254,7 +1254,7 @@ describe("DocumentsPage offline write gating", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
-    expect(screen.getByRole("alert")).toHaveFocus();
+    expect(screen.getByRole("button", { name: /You're offline/ })).toHaveFocus();
     expect(document.body).not.toHaveFocus();
   });
 });

@@ -20,7 +20,8 @@ One implementation per concern; don't fork another:
 | Topic attach/release | `packages/chat-core/src/topic-registry.ts` (`releaseTopic`); import it as `@repo/chat-core/topic-registry` from web or mobile |
 | Realtime + polling fallback | `packages/chat-core/src/realtime-manager.ts` |
 | Web subscriptions (`useRealtimeTable`) | `apps/web/lib/realtime/supabase-realtime.ts`, which queues attach/release per topic |
-| Mobile connection banner / write gating | `apps/mobile/lib/connection/` |
+| Connection indicator copy (both surfaces) | `connectionIndicator` in `packages/validation/src/connection-state.ts`; the open chat reports its transport through `useReportOpenChatTransport` (`packages/hooks/src/open-chat-transport.ts`) |
+| Mobile connection state / write gating | `apps/mobile/lib/connection/` |
 | Chat outbox network port | Mobile: `createMonitorNetworkState(connectionMonitor)`. Web: chat-core `NetworkState`. |
 | API worker subscriptions (chat push, audit mirror) | `apps/api/src/application/workers/worker-subscription.ts`: `WorkerSubscription` reopens after `CLOSED` and reports outages, and `releaseChannel` is the API's `releaseTopic`. `realtime-js-contract.spec.ts` beside it pins what it assumes about realtime-js. |
 
@@ -74,8 +75,10 @@ out. Copy: *"Real-time updates paused. Polling for new messages."* On reconnect,
 known timestamp, merge, and dedupe by ID; polling reuses that fetch. Constants:
 `POLL_DEGRADE_AFTER_MS` / `POLL_INTERVAL_MS` in `realtime-manager.ts`.
 
-The in-thread pill reports transport; the global banner reports API reachability. The pill drops
-only its offline branch when the banner already says offline.
+One indicator per screen: a chat never draws its own transport pill. It reports its transport to the
+app-wide connection pill, which says the app's state when that isn't ONLINE and the transport's only
+when it is ([`connection-state.md` § One indicator](../../../spec/ui/resilience/connection-state.md#one-indicator)).
+On mobile the thread reports only while focused, since the tab screen stays mounted.
 
 ## 6. Never lose a message; never fake success
 

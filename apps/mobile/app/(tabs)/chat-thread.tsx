@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import {
+  useFocusEffect,
+  useIsFocused,
+  useLocalSearchParams,
+  useRouter,
+} from "expo-router";
 import {
   Alert,
   FlatList,
@@ -870,7 +875,13 @@ export default function ChatThreadScreen() {
   // this thread's realtime transport is doing, folded with the app's own
   // connection state, so the thread draws no connection band of its own
   // (`spec/ui/resilience/connection-state.md` § One indicator).
-  useReportOpenChatTransport(channelId ? connection : null);
+  //
+  // Only while focused: this tab screen stays mounted after the member
+  // leaves it, and a hidden thread's transport must not reach the pill on
+  // Events or More, where "messages you send go out when you reconnect"
+  // would promise a queue that isn't there.
+  const threadFocused = useIsFocused();
+  useReportOpenChatTransport(channelId && threadFocused ? connection : null);
 
   return (
     // Every edge: the tab layout draws no navigator header (#2485), so the
@@ -1210,10 +1221,11 @@ export default function ChatThreadScreen() {
             // so unlike the composer itself, the attach control does have to go
             // dark offline. It stays visible and states why rather than
             // disappearing.
-            // Gates the control only; the member-facing reason rides the single
-            // `disabledHint` above rather than competing with it for the one
-            // hint slot. Two hints for one composer is how the offline case
-            // ended up promising delivery for a photo that would not be sent.
+            // Gates the control only. Offline, the member-facing reason is the
+            // connection pill's sentence ("Photos and files need a
+            // connection."), not a composer line, so the screen says offline
+            // once (`connection-state.md` § One indicator). Other reasons ride
+            // the single `disabledHint` above.
             attachDisabledReason={
               !channelCanPost
                 ? "You can't post in this channel."

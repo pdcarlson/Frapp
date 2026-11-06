@@ -257,11 +257,18 @@ Indicator behavior:
   (`apps/web/components/shared/connection-pill.tsx`). It floated just below the bar
   from #2244 until 2026-11-06, which kept it out of the layout but put it over the
   first row of every page, chat's channel header included. In the bar it covers
-  nothing, and from `lg` the right cell's `flex-1` absorbs it without moving the find
-  field. Below `sm` it draws the dot alone. Routes with no bar (sign-in, onboarding)
+  nothing. It draws its label from `xl`, where the right cell has room for it; below
+  `xl` it draws the dot alone, in a 28px slot the bar keeps whether or not there is
+  anything to say, so a state that flaps never resizes the find field or the title. A
+  click or tap opens the sentence in a popover at every width, which is how a touch
+  screen with no hover title reads it. Routes with no bar (sign-in, onboarding)
   float the same pill at the top of the viewport, taking no pointer; that one hides
   itself whenever the dashboard shell is mounted, so only one is ever drawn or in the
   accessibility tree. No dismiss control on web: the pill covers nothing.
+- **A chat reports only while it is the screen in front.** Web's chat unmounts on a
+  route change. Mobile's thread is a tab screen that stays mounted after the member
+  leaves it, so it reports while focused and clears on blur; otherwise Events would
+  inherit a hidden thread's "messages you send go out when you reconnect".
 - **Mobile: floating at the top of the window**, over the header. It is mounted above the
   navigator in `app/_layout.tsx`, not below each screen's header, because a global
   indicator belongs above every screen and moving it under each header would mean

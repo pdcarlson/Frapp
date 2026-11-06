@@ -38,8 +38,9 @@ import type { PageTitle } from "@/components/layout/page-title";
  * **The connection pill lives here** (2026-11-06), first in the right
  * cluster. It used to float just below the bar, over the first row of every
  * page, where it covered chat's channel header. In the bar it covers nothing,
- * and from `lg` the right cell's `flex-1` absorbs it without moving the find
- * field (`components/shared/connection-pill.tsx`).
+ * and it never resizes the find field: below `xl` it sits in a fixed slot as a
+ * dot, and from `xl` the right cell's `flex-1` absorbs its label
+ * (`components/shared/connection-pill.tsx`).
  *
  * Not `sticky`. The column this bar heads never scrolls (`<main>` does), so
  * there is nothing to stick to (#1746). No `z-index` either: a positioned,
@@ -117,7 +118,15 @@ export function TopBar({
       <FindBar className="min-w-0 flex-1 basis-0 sm:max-w-[520px]" />
 
       <div className="flex shrink-0 items-center justify-end gap-1.5 lg:min-w-0 lg:flex-1">
-        <ConnectionPill placement="top-bar" />
+        {/*
+          A fixed 28px slot below `xl`, so a pill coming or going never
+          resizes the find field: below `lg` this cell is `shrink-0`, and
+          between `lg` and `xl` it has no room for the label. From `xl` the
+          slot grows to the label inside the cell's `flex-1`.
+        */}
+        <div className="flex w-7 shrink-0 justify-end xl:w-auto">
+          <ConnectionPill placement="top-bar" />
+        </div>
         <button
           type="button"
           onClick={onOpenNotifications}

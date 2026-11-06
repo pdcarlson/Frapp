@@ -440,7 +440,7 @@ describe("useGatedDialog", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("moves focus to the offline banner when a dialog closes while OFFLINE", async () => {
+  it("moves focus to the connection pill when a dialog closes while OFFLINE", async () => {
     // Finding 2: the trigger is now disabled, so Radix's restore is a no-op
     // and focus would fall to <body> unless onCloseAutoFocus preempts it.
     chapter.active();
@@ -456,7 +456,7 @@ describe("useGatedDialog", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
-    expect(screen.getByRole("alert")).toHaveFocus();
+    expect(screen.getByRole("button", { name: /You're offline/ })).toHaveFocus();
     expect(document.body).not.toHaveFocus();
   });
 });

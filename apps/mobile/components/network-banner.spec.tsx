@@ -122,3 +122,55 @@ describe("NetworkBanner (one connection indicator)", () => {
     expect(screenText(tree)).toContain("Live updates paused");
   });
 });
+
+describe("NetworkBanner dismissal and the opened sentence", () => {
+  const dismiss = (tree: ReactTestRenderer) =>
+    tree.root
+      .find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityLabel === "Dismiss",
+      )
+      .props.onPress();
+
+  it("stays dismissed for what it said, and shows again when it says something new", () => {
+    connection.state = "OFFLINE";
+    const tree = render(<NetworkBanner />);
+    act(() => dismiss(tree));
+    expect(tree.toJSON()).toBeNull();
+
+    // Same state, new sentence: a chat opened, so the queue's promise is news.
+    act(() => {
+      tree.update(
+        <FrappThemeProvider>
+          <OpenChat status="offline" />
+          <NetworkBanner />
+        </FrappThemeProvider>,
+      );
+    });
+    expect(screenText(tree)).toContain("Offline");
+  });
+
+  it("comes back after 30s if what it says hasn't changed", () => {
+    vi.useFakeTimers();
+    try {
+      connection.state = "DEGRADED";
+      const tree = render(<NetworkBanner />);
+      act(() => dismiss(tree));
+      expect(tree.toJSON()).toBeNull();
+      act(() => vi.advanceTimersByTime(30_000));
+      expect(screenText(tree)).toContain("Slow connection");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("closes the opened sentence on a second tap", () => {
+    connection.state = "DEGRADED";
+    const tree = render(<NetworkBanner />);
+    act(() => pillLabel(tree).props.onPress());
+    expect(screenText(tree)).toContain("Some features may be delayed.");
+    act(() => pillLabel(tree).props.onPress());
+    expect(screenText(tree)).not.toContain("Some features may be delayed.");
+  });
+});

@@ -471,8 +471,10 @@ interface ComposerBaseProps {
   slashCommandsStatus?: ChapterModuleGateStatus;
   onRetrySlashCommands?: () => void;
   /**
-   * Realtime is down. The composer stays **live** and says so — it does not
-   * disable.
+   * Realtime is down. The composer stays **live** — it does not disable —
+   * and refuses only the queueless slash commands. It draws no offline line
+   * of its own: the top bar's connection pill says it, with the queue's
+   * promise, while a chat is open (`connection-state.md` § One indicator).
    *
    * This used to be `disabled`, and it was a defect: `sendMessage` writes the
    * row to the Dexie outbox and returns *before* it touches the network
