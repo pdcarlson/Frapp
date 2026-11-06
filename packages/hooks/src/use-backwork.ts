@@ -122,7 +122,7 @@ export function useRequestBackworkUploadUrl() {
   const client = useFrappClient();
   return useMutation({
     // `size_bytes` lets the API refuse an oversized file before the PUT
-    // (its 50 MB backwork ceiling) rather than storage refusing it after.
+    // (its 100 MB backwork ceiling) rather than storage refusing it after.
     mutationFn: async (body: {
       filename: string;
       content_type: string;

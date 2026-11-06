@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-06: Backwork accepts files up to 100 MB
+
+### 20261106153000_backwork_bucket_100mb.sql
+
+- **Purpose**: Raises `storage.buckets.file_size_limit` on `backwork` from 52428800 (50 MB) to 104857600 (100 MB), matching `MAX_BACKWORK_UPLOAD_BYTES` in `@repo/validation`. The owner set it to the hosted projects' global storage limit, 100 MB (confirmed in the dashboard on 2026-11-06). Every other member-upload bucket keeps 25 MB. The rule is in [`spec/behavior/backwork.md`](../../../spec/behavior/backwork.md#storage) § Storage. No object or row is touched.
+- **Checks**: Before `db push`, `select file_size_limit from storage.buckets where id = 'backwork';` returns 52428800 once `20261105230000` has run (26214400 if it has not, since both ride the same push). After it, the same query returns 104857600.
+- **Promoter notes**: Order doesn't matter much. An API that allows 100 MB against an unmigrated bucket refuses a 50 to 100 MB file at the PUT instead of at URL issuance; an older API against the migrated bucket refuses it at issuance. The hosted global storage upload limit must stay at least 100 MB, or it wins over the bucket column. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-backwork-100-mb-limit-20261106153000) § Rollback the backwork 100 MB limit.
+
 ## 2026-11-06: A chapter can pick the channel Chat opens on
 
 ### 20261106010000_chat_channels_is_default.sql
