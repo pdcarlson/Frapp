@@ -79,9 +79,6 @@ function RootLayoutContent() {
         See `components/app-runtime.tsx`.
       */}
       <AppRuntime />
-      {/* Reads the connection monitor directly now, rather than being handed a
-          second, independent reading of `expo-network` from here. */}
-      <NetworkBanner />
       {/* Signet is dark-only, so the status bar is statically light-on-dark. */}
       <StatusBar style="light" />
       <Stack>
@@ -130,6 +127,13 @@ function RootLayout() {
                       <BottomSheetModalProvider>
                         <RootLayoutContent />
                       </BottomSheetModalProvider>
+                      {/*
+                        After the sheet provider, whose portal host paints
+                        every open sheet and scrim, so the floating connection
+                        pill draws over those too
+                        (`components/network-banner.tsx`).
+                      */}
+                      <NetworkBanner />
                     </ClientPolicyGate>
                   </KeyboardProviderGuarded>
                 </AnalyticsProvider>

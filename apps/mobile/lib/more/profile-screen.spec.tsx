@@ -231,6 +231,7 @@ describe("Profile stat cards and Details", () => {
     const rows = tree.root.findAllByType(ListRow);
     expect(rows.map((row) => row.props.label)).toEqual([
       "Email",
+      "Major",
       "Graduation",
       "City",
       "Company",

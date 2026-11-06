@@ -142,6 +142,34 @@ describe("AccentPicker", () => {
     expect(field().props.value).toBe("");
   });
 
+  it("holds the hex hint until the field is left or the caller tries to save", () => {
+    const hint = "Enter six hex digits, like #4F2683.";
+    const text = (tree: ReactTestRenderer) =>
+      tree.root
+        .findAll((node) => node.type === ("Text" as unknown))
+        .map((node) => node.props.children)
+        .join(" ");
+    const field = (tree: ReactTestRenderer) =>
+      tree.root.find(
+        (node) =>
+          node.type === ("TextInput" as unknown) &&
+          node.props.accessibilityLabel === "Custom color hex",
+      );
+
+    const { tree } = render();
+    act(() => byLabel(tree, "Custom color").props.onPress());
+    act(() => field(tree).props.onChangeText("#4f26"));
+    // "#4f26" is on its way to "#4f2683": no hint yet.
+    expect(text(tree)).not.toContain(hint);
+    act(() => field(tree).props.onBlur());
+    expect(text(tree)).toContain(hint);
+
+    const saved = render({ showError: true });
+    act(() => byLabel(saved.tree, "Custom color").props.onPress());
+    act(() => field(saved.tree).props.onChangeText("#4f26"));
+    expect(text(saved.tree)).toContain(hint);
+  });
+
   it("is valid again once a swatch is tapped over a half-typed hex", () => {
     const onValidityChange = vi.fn();
     const { tree, onChange } = render({ onValidityChange });

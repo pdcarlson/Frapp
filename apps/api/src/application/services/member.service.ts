@@ -53,6 +53,7 @@ export interface MemberProfile {
   avatar_url: string | null;
   bio: string | null;
   graduation_year: number | null;
+  major: string | null;
   current_city: string | null;
   current_company: string | null;
   email: string;
@@ -743,6 +744,7 @@ export class MemberService {
       avatar_url: user.avatar_url,
       bio: user.bio,
       graduation_year: user.graduation_year,
+      major: user.major,
       current_city: user.current_city,
       current_company: user.current_company,
       email: user.email,

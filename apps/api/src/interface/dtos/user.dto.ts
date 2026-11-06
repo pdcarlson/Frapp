@@ -14,6 +14,7 @@ import {
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
   LEGAL_ACCEPTANCE_LABEL,
+  MAJOR_MAX_LENGTH,
 } from '@repo/validation';
 
 export class MyPermissionsDto {
@@ -142,6 +143,16 @@ export class UpdateUserDto {
   @Min(GRADUATION_YEAR_MIN)
   @Max(GRADUATION_YEAR_MAX)
   graduation_year?: number | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Free text, like "Mechanical Engineering". An empty string clears it.',
+    maxLength: MAJOR_MAX_LENGTH,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAJOR_MAX_LENGTH)
+  major?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

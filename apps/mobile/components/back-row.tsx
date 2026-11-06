@@ -249,9 +249,10 @@ function createStyles(tokens: SignetTokens) {
  * It reads no insets. An absolute child ignores its parent's padding, so a
  * `SafeAreaView` parent would put it under the notch, and adding
  * `useSafeAreaInsets().top` by hand double-counts whenever something above
- * the screen (the offline banner) has already taken the inset and the native
- * safe area pads 0. Inside an unpadded View within the safe area, it sits
- * where the content starts whatever pushed it there.
+ * the screen has already taken the inset and the native safe area pads 0.
+ * Inside an unpadded View within the safe area, it sits where the content
+ * starts whatever pushed it there. (The connection pill no longer pushes
+ * anything: it floats over the screen, `components/network-banner.tsx`.)
  */
 export function PinnedBackRow({
   back,
