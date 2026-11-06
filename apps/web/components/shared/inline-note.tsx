@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
+import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
@@ -28,9 +28,9 @@ export function InlineNote({
 }
 
 /**
- * The way back out of an {@link InlineNote}, such as Clear search. A run of
- * text in the sentence, in the text's own tone rather than the accent, which
- * belongs to a page's primary action (foundations §6).
+ * The way back out of an {@link InlineNote}, such as Clear search: a link in
+ * running text, so Button's `link` variant and its accent (foundations §6,
+ * "Where the accent goes"), sized to the sentence rather than to a control.
  */
 export function InlineNoteAction({
   className,
@@ -41,8 +41,8 @@ export function InlineNoteAction({
     <button
       type={type}
       className={cn(
-        "rounded-sm font-semibold text-foreground underline underline-offset-4 hover:no-underline",
-        FOCUS_RING_OFFSET,
+        buttonVariants({ variant: "link" }),
+        "inline h-auto p-0 align-baseline text-sm",
         className,
       )}
       {...props}

@@ -53,6 +53,8 @@ export const stateMicrocopy = {
     // Inline lines (one sentence each), not card titles: the board keeps its
     // layout at zero. The board lists the roster, so it is empty only for a
     // chapter with nobody on it, or an archived semester nobody earned in.
+    // `everyoneAtZero` is for a live period only (the page doesn't draw it
+    // for an archived one, which is closed).
     emptyLeaderboard: "Nobody has points in this period.",
     everyoneAtZero:
       "Everyone is tied at 0. The first points earned take the lead.",

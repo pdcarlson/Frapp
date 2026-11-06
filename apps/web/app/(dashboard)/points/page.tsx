@@ -523,7 +523,13 @@ export default function PointsPage() {
             Zero is a standing, so a board where nobody has points yet is the
             roster tied at 0 with one line on what moves it, not a card.
           */}
-          {leaderboardRows.length > 0 &&
+          {/*
+            Live periods only: an archived semester is closed, and a board of
+            members who netted to 0 there has no "first points" to come. Not
+            under a search either, where it would describe rows not on screen.
+          */}
+          {!semesterArchiveId &&
+          filteredLeaderboard.length > 0 &&
           leaderboardRows.every((entry) => entry.total === 0) ? (
             <InlineNote>{stateMicrocopy.points.everyoneAtZero}</InlineNote>
           ) : null}

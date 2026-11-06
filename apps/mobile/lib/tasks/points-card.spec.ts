@@ -16,16 +16,6 @@ describe("selectPointsSummary", () => {
     expect(selectPointsSummary({ balance: 0 })).toEqual({ balance: 0 });
   });
 
-  // The board lists the roster at 0, so a new chapter is everyone tied first.
-  it("ranks a whole roster at 0 as tied for first", () => {
-    const fresh = [
-      { user_id: "a", total: 0 },
-      { user_id: ME, total: 0 },
-      { user_id: "c", total: 0 },
-    ];
-    expect(selectHouseRank(fresh, ME)).toEqual({ rank: 1, of: 3 });
-  });
-
   it("returns null for anything it cannot read", () => {
     for (const value of [null, undefined, {}, [], "x", { balance: "1240" }]) {
       expect(selectPointsSummary(value)).toBeNull();
@@ -38,6 +28,16 @@ describe("selectPointsSummary", () => {
 });
 
 describe("selectHouseRank", () => {
+  // The board lists the roster at 0, so a new chapter is everyone tied first.
+  it("ranks a whole roster at 0 as tied for first", () => {
+    const fresh = [
+      { user_id: "a", total: 0 },
+      { user_id: ME, total: 0 },
+      { user_id: "c", total: 0 },
+    ];
+    expect(selectHouseRank(fresh, ME)).toEqual({ rank: 1, of: 3 });
+  });
+
   const board = [
     { user_id: "a", total: 2000 },
     { user_id: "b", total: 1500 },

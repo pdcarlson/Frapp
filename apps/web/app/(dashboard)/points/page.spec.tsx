@@ -495,6 +495,13 @@ describe("PointsPage success state", () => {
     });
 
     render(<PointsPage />);
+    fireEvent.change(screen.getByPlaceholderText("Search transactions"), {
+      target: { value: "library" },
+    });
+    fireEvent.change(
+      screen.getByLabelText(/filter transactions by category/i),
+      { target: { value: "ACADEMIC" } },
+    );
     fireEvent.change(screen.getByLabelText(/filter transactions by amount/i), {
       target: { value: "negative" },
     });
@@ -508,6 +515,13 @@ describe("PointsPage success state", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(screen.getByText("Library session")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Search transactions")).toHaveValue("");
+    expect(
+      screen.getByLabelText(/filter transactions by category/i),
+    ).toHaveValue("all");
+    expect(screen.getByLabelText(/filter transactions by amount/i)).toHaveValue(
+      "all",
+    );
   });
 
   it("says in one line when a period has no activity, rather than a card", () => {
@@ -711,8 +725,41 @@ describe("PointsPage leaderboard naming (#1197)", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the tied-at-0 line out of a search miss and an archived semester", () => {
+    const tied = [
+      { user_id: ALICE, total: 0 },
+      { user_id: BOB, total: 0 },
+    ];
+    setQueries({
+      leaderboard: { data: tied },
+      roster: { names: NAMED },
+      semesters: { data: [{ id: "sa-1", label: "Fall 2025" }] },
+    });
+
+    render(<PointsPage />);
+    fireEvent.change(search(), { target: { value: "nobody" } });
+    expect(screen.queryByText(/Everyone is tied at 0/)).not.toBeInTheDocument();
+
+    fireEvent.change(search(), { target: { value: "" } });
+    expect(screen.getByText(/Everyone is tied at 0/)).toBeInTheDocument();
+
+    // A closed period has no first points to come.
+    fireEvent.change(screen.getByLabelText(/view an archived semester/i), {
+      target: { value: "sa-1" },
+    });
+    expect(screen.queryByText(/Everyone is tied at 0/)).not.toBeInTheDocument();
+  });
+
+  // The usual board: one member has points, the rest of the roster is at 0.
   it("drops the tied-at-0 line once anyone has points", () => {
-    withLeaderboard(BOARD, NAMED);
+    withLeaderboard(
+      [
+        { user_id: ALICE, total: 5 },
+        { user_id: BOB, total: 0 },
+        { user_id: CAROL, total: 0 },
+      ],
+      NAMED,
+    );
 
     render(<PointsPage />);
 
