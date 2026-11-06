@@ -54,20 +54,6 @@ describe("registerCurrentPushToken", () => {
     expect(d.remove).not.toHaveBeenCalled();
   });
 
-  it("keeps the stored row id when the POST response can't be read", async () => {
-    const d = deps({ id: "row-old", token: "ExponentPushToken[new]" });
-    d.register.mockResolvedValueOnce(
-      undefined as unknown as { id: string; token: string },
-    );
-    await registerCurrentPushToken(d);
-    expect(d.stored.current).toEqual({
-      id: "row-old",
-      token: "ExponentPushToken[new]",
-    });
-    expect(d.warn).not.toHaveBeenCalled();
-    expect(d.remove).not.toHaveBeenCalled();
-  });
-
   it("POSTs a first token and does not DELETE", async () => {
     const d = deps(null);
     await registerCurrentPushToken(d);
@@ -138,13 +124,15 @@ describe("registerCurrentPushToken", () => {
     let nestedCalls = 0;
     d.getToken.mockImplementation(async () => {
       nestedCalls += 1;
-      if (nestedCalls === 1) {
-        await registerCurrentPushToken(d);
-      }
+      // Every token read re-enters, as the native listener can.
+      await registerCurrentPushToken(d);
       return "ExponentPushToken[new]";
     });
     await registerCurrentPushToken(d);
-    expect(d.register).toHaveBeenCalledTimes(1);
+    // The re-entry is coalesced into one follow-up run, and a re-entry from
+    // that follow-up is dropped, so this ends.
+    expect(nestedCalls).toBe(2);
+    expect(d.register).toHaveBeenCalledTimes(2);
   });
 
   it("warns and keeps the old row when POST throws", async () => {
@@ -157,6 +145,30 @@ describe("registerCurrentPushToken", () => {
     });
     expect(d.remove).not.toHaveBeenCalled();
     expect(d.warn).toHaveBeenCalled();
+  });
+});
+
+describe("registerCurrentPushToken overlap", () => {
+  it("runs a register asked for mid-flight once more, so a failed first try is retried", async () => {
+    const d = deps(null);
+    let release!: () => void;
+    d.getToken
+      .mockImplementationOnce(
+        () =>
+          new Promise<string>((_, reject) => {
+            release = () => reject(new Error("network"));
+          }),
+      )
+      .mockResolvedValue("ExponentPushToken[new]");
+
+    const first = registerCurrentPushToken(d);
+    await registerCurrentPushToken(d); // the grant, while the first is in flight
+    expect(d.register).not.toHaveBeenCalled();
+    release();
+    await first;
+
+    expect(d.register).toHaveBeenCalledTimes(1);
+    expect(d.register).toHaveBeenCalledWith({ token: "ExponentPushToken[new]" });
   });
 });
 

@@ -285,7 +285,16 @@ export function usePushRuntime(): void {
       if (!isPushAvailable()) return;
       void registerCurrentPushToken({
         ...tokenLifecycleDeps,
-        isCancelled: () => cancelled,
+        // Also cancelled by a sign-out that lands mid-register, so a POST that
+        // resolves after `deregisterStoredPushToken` cleared storage cannot
+        // write its row back.
+        isCancelled: () => {
+          const now = authRef.current;
+          return (
+            cancelled ||
+            !sessionOwnsPushRegistration(now.isAuthenticated, now.status)
+          );
+        },
       });
     };
     const subscription = addPushTokenListener(reregister);

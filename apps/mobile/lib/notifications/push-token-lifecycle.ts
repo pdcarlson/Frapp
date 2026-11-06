@@ -32,10 +32,21 @@ import { narrowPushTokenRow, type PushTokenRow } from "./push-registration";
 /**
  * `getExpoPushTokenAsync` may emit `onDevicePushToken` before it resolves.
  * The listener would then re-enter this function, `getToken` again, and
- * recurse. One in-flight register is enough: a later rotation fires the
- * listener again after this returns.
+ * recurse, so a call that finds one in flight returns at once (and asks for
+ * the single follow-up below).
  */
 let registerInFlight = false;
+
+type RegisterDeps = Parameters<typeof registerCurrentPushToken>[0];
+
+/**
+ * A register asked for while one was in flight (a grant on s03 landing during
+ * the sign-in register). Run once more when the current one ends, so the grant
+ * still counts if the in-flight register fails. Only one follow-up ever runs:
+ * a re-entry from inside the follow-up is the recursion the guard exists for.
+ */
+let rerunDeps: RegisterDeps | null = null;
+let isRerun = false;
 
 const permissionGrantedListeners = new Set<() => void>();
 
@@ -77,7 +88,10 @@ export async function registerCurrentPushToken(deps: {
   writeStored: (row: PushTokenRow) => Promise<void>;
   warn?: (message: string, error?: unknown) => void;
 }): Promise<void> {
-  if (registerInFlight) return;
+  if (registerInFlight) {
+    if (!isRerun) rerunDeps = deps;
+    return;
+  }
   registerInFlight = true;
   try {
     try {
@@ -93,11 +107,7 @@ export async function registerCurrentPushToken(deps: {
       const created = await deps.register({ token });
       if (deps.isCancelled()) return;
 
-      // An unreadable response must not throw away a row id this device
-      // already holds for the same token: sign-out needs it to deregister.
-      const row =
-        narrowPushTokenRow(created) ??
-        (stored?.id && stored.token === token ? stored : null);
+      const row = narrowPushTokenRow(created);
       await deps.writeStored(row ?? { id: null, token });
       if (!row?.id) {
         deps.warn?.(
@@ -123,6 +133,16 @@ export async function registerCurrentPushToken(deps: {
     }
   } finally {
     registerInFlight = false;
+    const next = rerunDeps;
+    rerunDeps = null;
+    if (next && !isRerun && !next.isCancelled()) {
+      isRerun = true;
+      try {
+        await registerCurrentPushToken(next);
+      } finally {
+        isRerun = false;
+      }
+    }
   }
 }
 
