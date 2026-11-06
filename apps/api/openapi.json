@@ -6447,6 +6447,54 @@
         ]
       }
     },
+    "/v1/backwork/download-urls": {
+      "get": {
+        "operationId": "BackworkController_downloadUrls_v1",
+        "parameters": [
+          {
+            "name": "ids",
+            "required": true,
+            "in": "query",
+            "description": "Comma-separated resource ids to sign, at most 50",
+            "schema": {
+              "example": "3f0c1d9e-0000-4000-8000-000000000001,3f0c1d9e-0000-4000-8000-000000000002",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackworkDownloadUrlsResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Signed download links for several resources, for a zip",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
     "/v1/backwork/departments": {
       "get": {
         "operationId": "BackworkController_listDepartments_v1",
@@ -13922,6 +13970,38 @@
         "required": [
           "storage_path",
           "file_hash"
+        ]
+      },
+      "BackworkDownloadUrlDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "download_url": {
+            "type": "string",
+            "description": "Short-lived signed URL that downloads the file"
+          }
+        },
+        "required": [
+          "id",
+          "download_url"
+        ]
+      },
+      "BackworkDownloadUrlsResponseDto": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "description": "In the order asked. An id not in this chapter, or that could not be signed, is left out.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BackworkDownloadUrlDto"
+            }
+          }
+        },
+        "required": [
+          "files"
         ]
       },
       "UpdateDepartmentDto": {

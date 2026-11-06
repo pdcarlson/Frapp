@@ -1923,6 +1923,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/backwork/download-urls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Signed download links for several resources, for a zip */
+        get: operations["BackworkController_downloadUrls_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/backwork/departments": {
         parameters: {
             query?: never;
@@ -4388,6 +4405,16 @@ export interface components {
             tags?: string[];
             /** @default false */
             is_redacted: boolean;
+        };
+        BackworkDownloadUrlDto: {
+            /** Format: uuid */
+            id: string;
+            /** @description Short-lived signed URL that downloads the file */
+            download_url: string;
+        };
+        BackworkDownloadUrlsResponseDto: {
+            /** @description In the order asked. An id not in this chapter, or that could not be signed, is left out. */
+            files: components["schemas"]["BackworkDownloadUrlDto"][];
         };
         UpdateDepartmentDto: {
             /** @description Full department name */
@@ -9528,6 +9555,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_downloadUrls_v1: {
+        parameters: {
+            query: {
+                /** @description Comma-separated resource ids to sign, at most 50 */
+                ids: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackworkDownloadUrlsResponseDto"];
+                };
             };
             /** @description Error */
             default: {
