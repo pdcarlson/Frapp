@@ -43,6 +43,20 @@ export type ConnectionState = "ONLINE" | "DEGRADED" | "OFFLINE";
  */
 export const DEGRADED_THRESHOLD = 3;
 
+/**
+ * A failed probe that would be the first strike (or, on mobile, the first
+ * probe after the app returns to the foreground) gets one retry after this
+ * long before its failure counts. One failure is enough to show "Slow
+ * connection", and one failure is what a passing blip looks like: the first
+ * request after a long Doze timing out while the radio wakes, a cold start on
+ * a phone still bringing its network up, an elevator. A real outage fails the
+ * retry too and reaches the banner 2s later (2026-11-06, a false "Slow
+ * connection" on iOS 0.9.2 over an Edit profile sheet). A reachable probe in
+ * between cancels the retry, and a second failure while one is pending waits
+ * for it rather than counting.
+ */
+export const CONFIRM_RETRY_MS = 2_000;
+
 export interface ConnectionInput {
   /** No link: `!navigator.onLine` on web, `isConnected === false` on mobile. */
   linkOffline: boolean;

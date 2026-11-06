@@ -25,6 +25,7 @@ describe("selectViewerProfile", () => {
       initials: "PC",
       email: "pdcarlson@rpi.edu",
       graduationYear: 2027,
+      major: null,
       currentCity: "Troy",
       currentCompany: null,
       // `''` is absent, not a value — `bio` is nullable and both mean "unset".
