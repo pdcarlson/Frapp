@@ -1,3 +1,5 @@
+import { GRADUATION_YEAR_MIN } from "./field-limits";
+
 /**
  * The member profile form's labels and placeholders, shared by web `/profile`
  * and the mobile Edit profile sheet so the two can't drift apart.
@@ -31,3 +33,27 @@ export const PROFILE_ALUMNI_SECTION = {
   title: "After graduation",
   hint: "Shown in the alumni directory.",
 } as const;
+
+/**
+ * Whether a profile form shows the after-graduation fields (City, Company).
+ * An undergrad doesn't see them: they appear from the graduation year itself
+ * on, so a year still ahead, or none entered yet, hides them (Paul,
+ * 2026-11-06). A field that already holds a value always shows, so a member
+ * can still see what the directory holds and clear it.
+ */
+export function showsAfterGraduation(
+  profile: {
+    graduationYear: number | null;
+    city?: string | null;
+    company?: string | null;
+  },
+  now: Date = new Date(),
+): boolean {
+  if (profile.city?.trim() || profile.company?.trim()) return true;
+  // A year short of the range is one still being typed ("202"), not entered.
+  return (
+    profile.graduationYear !== null &&
+    profile.graduationYear >= GRADUATION_YEAR_MIN &&
+    profile.graduationYear <= now.getFullYear()
+  );
+}

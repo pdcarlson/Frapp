@@ -111,7 +111,7 @@ opening a browser.
 **The copy above lost its leading ⚡ / 📡.** Those predate Signet's iconography
 rule, which governs glyphs on these surfaces and does not admit emoji
 ([`design-system/iconography.md`](../design-system/iconography.md)), and the semantic
-tint already carries the severity they stood in for. The strings are otherwise
+color (the band's tint, now the pill's dot) already carries the severity they stood in for. The strings are otherwise
 verbatim and mobile ships them exactly. `apps/web` shipped a **third** variant until
 #1707 — `"You're offline. Showing cached data. Changes will sync when you reconnect."`
 — and now ships the string above, because the trailing clause became false rather
@@ -224,16 +224,20 @@ Banner behavior:
   each header would mean editing the frozen `apps/mobile/components/screen-shell.tsx`
   ([`mobile/navigation.md`](../mobile/navigation.md) § Hotspot freeze). **Since
   2026-11-06 mobile floats too:** a compact pill (32 tall, popover surface, a dot in
-  the state's color, the copy in caption) drawn just under the status bar over
+  the state's color, a short label in caption) drawn just under the status bar over
   whatever screen or sheet is open, so it takes no layout space and nothing moves when
-  it comes or goes. It used to be a full-width tinted band in flow, which pushed every
-  screen, an open sheet included, down by a line. Only the pill takes touches.
+  it comes or goes. It is mounted after the sheet provider in `app/_layout.tsx`, whose
+  portal host paints every open sheet and scrim, which is what puts it over a sheet.
+  It draws "Slow connection" or "Offline" rather than the sentence above, so it fits
+  between a header's back capsule and its right-hand controls; the sentence is its
+  accessible name ([`writing.md`](../design-system/writing.md) § Connection banner).
+  It used to be a full-width tinted band in flow, which pushed every screen, an open
+  sheet included, down by a line. Only the pill takes touches.
 - 200ms slide-down animation. **Mobile ships the 200ms as an opacity transition, not a
-  translate** — the duration is the spec's, the motion is not. It runs on the JS driver
-  (opacity here animates alongside a non-transform property), which is the right trade for
-  something that fires once per connectivity change rather than once per frame of a
-  gesture. Recorded as drift rather than smuggled: nothing about the placement forces a
-  fade, so a later pass may make it a real slide.
+  translate** — the duration is the spec's, the motion is not. Opacity alone runs on the
+  native driver (it shared the JS driver with a height collapse until the pill stopped
+  taking layout, 2026-11-06). Recorded as drift rather than smuggled: nothing about the
+  placement forces a fade, so a later pass may make it a real slide.
 - Auto-dismisses when state improves
 - User can manually dismiss (it reappears if state hasn't changed after 30s). Web
   shows it again at once on any change of state, since the dismissal was of the state

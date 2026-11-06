@@ -10,6 +10,7 @@ import {
   MAJOR_MAX_LENGTH,
   PROFILE_ALUMNI_SECTION,
   PROFILE_FIELD_COPY,
+  showsAfterGraduation,
 } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import {
@@ -40,7 +41,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * s15's Edit sheet (#3387): the member's name, major, graduation year, bio,
- * city and company, saved through `PATCH /v1/users/me`. The photo stays on the screen
+ * and, from their graduation year on, city and company (`showsAfterGraduation`
+ * in @repo/validation), saved through `PATCH /v1/users/me`. The photo stays on the screen
  * itself (`components/profile/profile-photo.tsx`), where it already edits.
  *
  * The rules (what is sent, what is refused) live in `lib/more/edit-profile.ts`.
@@ -134,9 +136,20 @@ export const EditProfileSheet = forwardRef<
   const refusal = typed !== null && !result.ok ? result : null;
   const shownRefusal =
     refusal !== null && reveal.shows(refusal.field) ? refusal : null;
-  // Save stays pressable while a field is refused, so pressing it can say
-  // why rather than sit there greyed out with the error still hidden.
-  const dirty = result.ok ? hasChanges(result.patch) : true;
+  // Save stays pressable while a typed field is refused, so pressing it can
+  // say why rather than sit there greyed out with the error still hidden. With
+  // nothing typed there is nothing to save, even over a stored value the
+  // form would refuse (a blank name), so Save is off.
+  const dirty = typed !== null && (result.ok ? hasChanges(result.patch) : true);
+  // City and Company wait for the graduation year (`showsAfterGraduation`):
+  // the year as typed, and the stored City and Company, so clearing one
+  // doesn't hide the field mid-edit.
+  const yearShown = shown.graduationYear.trim();
+  const afterGraduation = showsAfterGraduation({
+    graduationYear: /^\d+$/.test(yearShown) ? Number(yearShown) : null,
+    city: original.city,
+    company: original.company,
+  });
   const canSave = dirty && !updateUser.isPending;
 
   const edit = (field: ProfileDraftField) => (value: string) => {
@@ -258,13 +271,22 @@ export const EditProfileSheet = forwardRef<
           shownRefusal?.field === name ? styles.fieldInvalid : null,
         ]}
       />
-      {shownRefusal?.field === name ? (
+      {/* A field sharing a row says what's wrong under the whole row
+          (`rowError`), not inside its own narrow column. */}
+      {shownRefusal?.field === name && options.grow === undefined ? (
         <Text accessibilityRole="alert" style={styles.error}>
           {shownRefusal.message}
         </Text>
       ) : null}
     </View>
   );
+
+  const rowError = (fields: ProfileDraftField[]) =>
+    shownRefusal !== null && fields.includes(shownRefusal.field) ? (
+      <Text accessibilityRole="alert" style={styles.error}>
+        {shownRefusal.message}
+      </Text>
+    ) : null;
 
   return (
     <BottomSheetModal
@@ -305,26 +327,33 @@ export const EditProfileSheet = forwardRef<
             grow: false,
           })}
         </View>
+        {rowError(["major", "graduationYear"])}
         {field("bio", copy.bio.label, {
           placeholder: copy.bio.placeholder,
           multiline: true,
           autoCapitalize: "sentences",
         })}
 
-        <View style={styles.sectionHead}>
-          <Text style={styles.sectionTitle}>
-            {PROFILE_ALUMNI_SECTION.title}
-          </Text>
-          <Text style={styles.sectionHint}>{PROFILE_ALUMNI_SECTION.hint}</Text>
-        </View>
-        {field("city", copy.city.label, {
-          placeholder: copy.city.placeholder,
-          autoCapitalize: "words",
-        })}
-        {field("company", copy.company.label, {
-          placeholder: copy.company.placeholder,
-          autoCapitalize: "words",
-        })}
+        {afterGraduation ? (
+          <>
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionTitle}>
+                {PROFILE_ALUMNI_SECTION.title}
+              </Text>
+              <Text style={styles.sectionHint}>
+                {PROFILE_ALUMNI_SECTION.hint}
+              </Text>
+            </View>
+            {field("city", copy.city.label, {
+              placeholder: copy.city.placeholder,
+              autoCapitalize: "words",
+            })}
+            {field("company", copy.company.label, {
+              placeholder: copy.company.placeholder,
+              autoCapitalize: "words",
+            })}
+          </>
+        ) : null}
 
         {submitFailed ? (
           <Text accessibilityRole="alert" style={styles.error}>
@@ -360,7 +389,7 @@ function createStyles(tokens: SignetTokens, accent: string) {
     },
     row: {
       flexDirection: "row",
-      gap: tokens.spacing.md,
+      gap: tokens.spacing.lg,
     },
     fieldGrow: {
       flex: 1,

@@ -1166,3 +1166,50 @@ describe("ProfilePanel — graduation year guard (#2206)", () => {
     ).toBeNull();
   });
 });
+
+describe("ProfilePanel — profile details (2026-11-06 form fixes)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetQueries();
+  });
+
+  it("sends the major the member typed", async () => {
+    render(<ProfilePanel />);
+
+    await userEvent.type(screen.getByLabelText("Major"), "Economics");
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+
+    await waitFor(() => {
+      expect(mocks.updateUser.mutateAsync).toHaveBeenCalled();
+    });
+    expect(mocks.updateUser.mutateAsync.mock.calls[0]![0]).toMatchObject({
+      major: "Economics",
+    });
+  });
+
+  // Paul, 2026-11-06: an undergrad has no after-graduation city or company.
+  it("hides City and Company until the graduation year arrives", async () => {
+    mocks.userQuery.data = { ...mocks.userQuery.data, graduation_year: 2099 };
+    render(<ProfilePanel />);
+
+    expect(screen.queryByText("After graduation")).toBeNull();
+    expect(screen.queryByLabelText("City")).toBeNull();
+
+    const year = screen.getByLabelText("Graduation year");
+    await userEvent.clear(year);
+    await userEvent.type(year, "2020");
+    expect(screen.getByText("After graduation")).toBeTruthy();
+    expect(screen.getByLabelText("City")).toBeTruthy();
+  });
+
+  it("keeps City showing for an undergrad who already has one", () => {
+    mocks.userQuery.data = {
+      ...mocks.userQuery.data,
+      graduation_year: 2099,
+      current_city: "Troy, NY",
+    };
+    render(<ProfilePanel />);
+
+    expect(screen.getByDisplayValue("Troy, NY")).toBeTruthy();
+  });
+});

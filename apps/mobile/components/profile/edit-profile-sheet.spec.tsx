@@ -211,6 +211,9 @@ describe("EditProfileSheet (#3387)", () => {
     type(tree, "Name", "  ");
     // Still being typed: no error yet (components.md, "When an error shows").
     expect(screenText(tree)).not.toContain("Your name can't be empty.");
+    // And Save stays pressable, so pressing it can say why: a greyed Save
+    // over an error the member can't see yet is a dead end.
+    expect(saveButton(tree).props.disabled).toBe(false);
     act(() => {
       saveButton(tree).props.onPress();
     });
@@ -352,6 +355,57 @@ describe("EditProfileSheet (#3387)", () => {
 
   // `display_name` defaults to '' and reads back as unset, so a member who
   // never set a name opens Edit on a blank Name field.
+  it("keeps Save off over a stored blank name until something is typed", () => {
+    const tree = render({ ...PROFILE, displayName: null });
+
+    expect(saveButton(tree).props.disabled).toBe(true);
+  });
+
+  it("says what's wrong with the year under the whole row, not in its column", () => {
+    const tree = render();
+
+    type(tree, "Graduation year", "20");
+    act(() => {
+      input(tree, "Graduation year").props.onBlur();
+    });
+    const alert = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        node.props.accessibilityRole === "alert",
+    );
+    expect(
+      screenText({ root: alert } as unknown as ReactTestRenderer),
+    ).toContain("Use a year between");
+    // Not inside the 96-wide column that holds the year's field, or the
+    // Major / Grad year row.
+    let ancestor = input(tree, "Graduation year").parent;
+    for (let depth = 0; depth < 2 && ancestor; depth += 1) {
+      expect(ancestor.findAll((node) => node === alert)).toHaveLength(0);
+      ancestor = ancestor.parent;
+    }
+  });
+
+  // Paul, 2026-11-06: an undergrad has no after-graduation city or company.
+  it("hides City and Company until the graduation year arrives", () => {
+    const undergrad = { ...PROFILE, graduationYear: 2099, currentCity: null };
+    const tree = render(undergrad);
+
+    expect(screenText(tree)).not.toContain("After graduation");
+    expect(() => input(tree, "City")).toThrow();
+
+    type(tree, "Graduation year", "2020");
+    expect(screenText(tree)).toContain("After graduation");
+    expect(input(tree, "City").props.value).toBe("");
+  });
+
+  it("keeps City showing for an undergrad who already has one, so it can be cleared", () => {
+    const tree = render({ ...PROFILE, graduationYear: 2099 });
+
+    expect(input(tree, "City").props.value).toBe("Troy, NY");
+    type(tree, "City", "");
+    expect(input(tree, "City").props.value).toBe("");
+  });
+
   it("opens on a blank name without calling it an error", () => {
     const tree = render({ ...PROFILE, displayName: null });
 

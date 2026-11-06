@@ -170,6 +170,22 @@ describe("NetworkProvider connection state (#512)", () => {
     expect(screen.getByTestId("state")).toHaveTextContent("ONLINE");
   });
 
+  it("drops a pending retry once a probe gets through", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("timeout"));
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
+    fetchMock.mockRejectedValue(new Error("timeout"));
+    await renderProbe();
+    await act(async () => {
+      screen.getByRole("button", { name: "probe" }).click();
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await confirmFirstFailure();
+    // The retry had nothing left to confirm, so it never ran.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("state")).toHaveTextContent("ONLINE");
+  });
+
   it("is DEGRADED after a confirmed failed probe with the link still up", async () => {
     fetchMock.mockRejectedValue(new Error("timeout"));
     await renderProbe();

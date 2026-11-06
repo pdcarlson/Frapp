@@ -23,6 +23,7 @@ import {
   PROFILE_ALUMNI_SECTION,
   PROFILE_FIELD_COPY,
   rowsToNotificationCategoryState,
+  showsAfterGraduation,
   type NotificationCategoryKey,
 } from "@repo/validation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -320,6 +321,13 @@ export function ProfilePanel() {
   }
 
   const profile = profileDraft;
+  // City and Company wait for the graduation year as typed; a stored value
+  // keeps its field showing so it can be cleared (`showsAfterGraduation`).
+  const afterGraduation = showsAfterGraduation({
+    graduationYear: profile.graduation_year ?? null,
+    city: (userQuery.data as CurrentUser | undefined)?.current_city,
+    company: (userQuery.data as CurrentUser | undefined)?.current_company,
+  });
   const settings = settingsDraft;
   // Two different fallbacks, deliberately: the heading needs *something* to
   // say when a member has not set a display name, but the avatar must not
@@ -634,50 +642,52 @@ export function ProfilePanel() {
                 rows={3}
               />
             </div>
-            <fieldset className="grid gap-4 pt-2">
-              <legend className="mb-4 grid gap-1">
-                <span className="text-sm font-semibold text-foreground">
-                  {PROFILE_ALUMNI_SECTION.title}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {PROFILE_ALUMNI_SECTION.hint}
-                </span>
-              </legend>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="grid gap-2">
-                  <Label htmlFor="current-city">
-                    {PROFILE_FIELD_COPY.city.label}
-                  </Label>
-                  <Input
-                    id="current-city"
-                    value={profile.current_city ?? ""}
-                    onChange={(event) =>
-                      setProfileDraft((prev) => ({
-                        ...prev,
-                        current_city: event.target.value,
-                      }))
-                    }
-                    placeholder={PROFILE_FIELD_COPY.city.placeholder}
-                  />
+            {afterGraduation ? (
+              <fieldset className="grid gap-4 pt-2">
+                <legend className="mb-4 grid gap-1">
+                  <span className="text-sm font-semibold text-foreground">
+                    {PROFILE_ALUMNI_SECTION.title}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {PROFILE_ALUMNI_SECTION.hint}
+                  </span>
+                </legend>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="current-city">
+                      {PROFILE_FIELD_COPY.city.label}
+                    </Label>
+                    <Input
+                      id="current-city"
+                      value={profile.current_city ?? ""}
+                      onChange={(event) =>
+                        setProfileDraft((prev) => ({
+                          ...prev,
+                          current_city: event.target.value,
+                        }))
+                      }
+                      placeholder={PROFILE_FIELD_COPY.city.placeholder}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="current-company">
+                      {PROFILE_FIELD_COPY.company.label}
+                    </Label>
+                    <Input
+                      id="current-company"
+                      value={profile.current_company ?? ""}
+                      onChange={(event) =>
+                        setProfileDraft((prev) => ({
+                          ...prev,
+                          current_company: event.target.value,
+                        }))
+                      }
+                      placeholder={PROFILE_FIELD_COPY.company.placeholder}
+                    />
+                  </div>
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="current-company">
-                    {PROFILE_FIELD_COPY.company.label}
-                  </Label>
-                  <Input
-                    id="current-company"
-                    value={profile.current_company ?? ""}
-                    onChange={(event) =>
-                      setProfileDraft((prev) => ({
-                        ...prev,
-                        current_company: event.target.value,
-                      }))
-                    }
-                    placeholder={PROFILE_FIELD_COPY.company.placeholder}
-                  />
-                </div>
-              </div>
-            </fieldset>
+              </fieldset>
+            ) : null}
             <div className="flex items-center justify-end gap-2">
               <Button type="submit" disabled={updateUser.isPending}>
                 {updateUser.isPending ? (

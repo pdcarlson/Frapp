@@ -616,6 +616,37 @@ describe("connection monitor", () => {
     expect(seen).toEqual([]);
   });
 
+  it("drops a pending retry once a probe gets through, and never counts a second first strike", async () => {
+    const { monitor, fetchMock, elapse, seen } = harness();
+    fetchMock.mockRejectedValueOnce(new Error("timeout"));
+    fetchMock.mockResolvedValueOnce(OK);
+    fetchMock.mockRejectedValue(new Error("timeout"));
+    monitor.start();
+    await settle();
+    // A probe gets through before the retry fires: the retry has nothing to
+    // confirm, so it must not run and count the next failure as a strike.
+    await monitor.probeOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    elapse(CONFIRM_RETRY_MS);
+    await settle();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(seen).toEqual([]);
+  });
+
+  it("lets a pending retry decide when another first strike fails before it", async () => {
+    const { monitor, fetchMock, elapse, deps } = harness();
+    fetchMock.mockRejectedValue(new Error("timeout"));
+    monitor.start();
+    await settle();
+    await monitor.probeOnce();
+    // The second failure neither counts nor schedules a second retry.
+    expect(monitor.get()).toBe("ONLINE");
+    expect(deps.setTimeout).toHaveBeenCalledTimes(1);
+    elapse(CONFIRM_RETRY_MS);
+    await settle();
+    expect(monitor.get()).toBe("DEGRADED");
+  });
+
   it("recovers to ONLINE on the first success", async () => {
     const { monitor, fetchMock, elapse } = harness();
     fetchMock.mockRejectedValue(new Error("timeout"));

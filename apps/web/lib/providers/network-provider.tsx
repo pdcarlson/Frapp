@@ -11,14 +11,14 @@ import React, {
 } from "react";
 import { normalizeApiBaseUrl, withRequestIdInit } from "@repo/api-sdk";
 import {
+  CONFIRM_RETRY_MS,
   deriveConnectionState,
   healthProbeIsReachable,
   type ConnectionState,
 } from "@repo/validation";
 
-
-/** How long a first failed `/health` probe waits for its one retry. */
-export const CONFIRM_RETRY_MS = 2_000;
+/** Re-exported for the specs; the rule and its reasons live in `@repo/validation`. */
+export { CONFIRM_RETRY_MS };
 
 export type { ConnectionState };
 
@@ -91,9 +91,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
   const confirmRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The retry calls the probe through this, since a callback can't name
   // itself before it exists.
-  const probeRef = useRef<((retried?: boolean) => Promise<void>) | null>(
-    null,
-  );
+  const probeRef = useRef<((retried?: boolean) => Promise<void>) | null>(null);
 
   const probeOnce = useCallback(async (retried = false) => {
     if (!navigator.onLine) {
@@ -126,6 +124,11 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (healthProbeIsReachable(res)) {
+          // A pending confirm has nothing left to confirm.
+          if (confirmRetryRef.current) {
+            clearTimeout(confirmRetryRef.current);
+            confirmRetryRef.current = null;
+          }
           failuresRef.current = 0;
           setFailureCount(0);
         } else {
@@ -143,11 +146,12 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
 
     // A first strike is retried once, 2s later, before it counts: one failed
     // probe is what a blip looks like, and it is enough to show "Slow
-    // connection" (`CONFIRM_RETRY_MS` in the mobile monitor, which does the
-    // same; spec/ui/resilience/connection-state.md).
+    // connection" (`CONFIRM_RETRY_MS` in @repo/validation; the mobile monitor
+    // does the same). A retry already on its way decides, so a second failure
+    // meanwhile neither counts nor pushes it back.
     function fail() {
       if (!retried && failuresRef.current === 0) {
-        if (confirmRetryRef.current) clearTimeout(confirmRetryRef.current);
+        if (confirmRetryRef.current) return;
         confirmRetryRef.current = setTimeout(() => {
           confirmRetryRef.current = null;
           void probeRef.current?.(true);

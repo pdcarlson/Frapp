@@ -321,7 +321,7 @@ function QuietHoursCard({
             }
             onBlur={() => commitDraft("start")}
             editable={windowEditable}
-            placeholder="22:00"
+            placeholder="e.g. 22:00"
             placeholderTextColor={tokens.color.text.muted}
             accessibilityLabel="Quiet hours start time"
             autoCapitalize="none"
@@ -339,7 +339,7 @@ function QuietHoursCard({
             }
             onBlur={() => commitDraft("end")}
             editable={windowEditable}
-            placeholder="08:00"
+            placeholder="e.g. 08:00"
             placeholderTextColor={tokens.color.text.muted}
             accessibilityLabel="Quiet hours end time"
             autoCapitalize="none"
@@ -359,7 +359,7 @@ function QuietHoursCard({
           }
           onBlur={() => commitDraft("tz")}
           editable={windowEditable}
-          placeholder="America/New_York"
+          placeholder="e.g. America/New_York"
           placeholderTextColor={tokens.color.text.muted}
           accessibilityLabel="Quiet hours timezone"
           autoCapitalize="none"

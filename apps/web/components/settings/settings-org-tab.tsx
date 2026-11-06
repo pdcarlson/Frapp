@@ -355,7 +355,7 @@ export function SettingsOrgTab({
                     value={greekLetters}
                     onChange={(event) => setGreekLetters(event.target.value)}
                     maxLength={8}
-                    placeholder="ΣΦΕ"
+                    placeholder="e.g. ΣΦΕ"
                     className="font-mono"
                   />
                 </div>
@@ -366,7 +366,7 @@ export function SettingsOrgTab({
                   id="designation"
                   value={designation}
                   onChange={(event) => setDesignation(event.target.value)}
-                  placeholder="California Eta"
+                  placeholder="e.g. California Eta"
                 />
               </div>
               <div className="grid gap-1">
@@ -375,7 +375,7 @@ export function SettingsOrgTab({
                   id="school-short"
                   value={schoolShort}
                   onChange={(event) => setSchoolShort(event.target.value)}
-                  placeholder="UCLA"
+                  placeholder="e.g. UCLA"
                 />
               </div>
               <div className="grid gap-1">
@@ -386,7 +386,7 @@ export function SettingsOrgTab({
                   inputMode="numeric"
                   value={foundedYear}
                   onChange={(event) => setFoundedYear(event.target.value)}
-                  placeholder="1901"
+                  placeholder="e.g. 1901"
                   onBlur={() => reveal.blur("founded")}
                   aria-invalid={foundedError}
                   aria-describedby={foundedError ? "founded-year-error" : undefined}

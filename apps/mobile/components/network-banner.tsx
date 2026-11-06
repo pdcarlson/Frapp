@@ -3,6 +3,7 @@ import { Animated, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
 import { useConnection } from "@/lib/connection/use-connection";
+import { connectionPillLabel } from "@/lib/connection/state";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { CloseGlyph } from "@/components/control-glyphs";
 import { IconButton } from "@/components/icon-button";
@@ -20,10 +21,13 @@ import { IconButton } from "@/components/icon-button";
  * ## Two deliberate deviations from connection-state.md, both recorded in the spec
  *
  * **Placement.** UI Indicators says "below the header bar". That is a web-shaped rule
- * written for a dashboard chrome. Here the banner is mounted above the
- * navigator in `app/_layout.tsx`, because a global banner belongs above every
- * screen and moving it under each header would mean editing the frozen
- * `components/screen-shell.tsx`.
+ * written for a dashboard chrome. Here the pill floats at the top of the
+ * window, over the header, mounted in `app/_layout.tsx` after the sheet
+ * provider so it draws over every screen and every open sheet, because a
+ * global banner belongs above everything and moving it under each header would
+ * mean editing the frozen `components/screen-shell.tsx`. It draws a short label
+ * ("Slow connection", `connectionPillLabel`) so it fits between a header's
+ * back capsule and its right-hand controls, and it can be dismissed.
  *
  * **A floating pill, not a band (2026-11-06).** It used to be a full-width
  * tinted band in the layout, under the status bar, so every state change
@@ -88,11 +92,10 @@ export function NetworkBanner() {
    * Kept mounted only while it has something to show or is animating out.
    *
    * Without this the component returned early only on `message === null`, so a
-   * *dismissed* banner stayed in the tree at opacity 0 — keeping its safe-area
-   * padding, its text line and its border, and pushing every screen in the app
-   * down behind an invisible band for the full 30s until it reappeared. A
-   * control whose only job is to give the screen back has to actually give it
-   * back. It also keeps the `alert` node and the Dismiss button out of the
+   * *dismissed* banner stayed in the tree at opacity 0 for the full 30s until
+   * it reappeared: when it was still a band in the layout, that pushed every
+   * screen down behind an invisible strip. The pill takes no layout, but
+   * unmounting still keeps the `alert` node and the Dismiss button out of the
    * screen-reader tree, which `pointerEvents` alone does not do.
    */
   const [mounted, setMounted] = useState(false);
@@ -103,10 +106,8 @@ export function NetworkBanner() {
     Animated.timing(slide, {
       toValue: visible ? 1 : 0,
       duration: SLIDE_MS,
-      // Opacity alone could run on the UI thread, but the height collapse below
-      // cannot — layout is not a transform property — and both have to finish
-      // together or the band outlives the message.
-      useNativeDriver: false,
+      // Opacity only, which the native driver runs on the UI thread.
+      useNativeDriver: true,
     }).start(({ finished }) => {
       if (finished && !visible) setMounted(false);
     });
@@ -139,8 +140,14 @@ export function NetworkBanner() {
         pointerEvents={visible ? "auto" : "none"}
       >
         <View style={[styles.dot, { backgroundColor: severity }]} />
-        <Text style={styles.text} numberOfLines={1}>
-          {message}
+        {/* The short label is drawn; the whole sentence is what a screen
+            reader announces (`connectionPillLabel`). */}
+        <Text
+          style={styles.text}
+          numberOfLines={1}
+          accessibilityLabel={message}
+        >
+          {connectionPillLabel(state) ?? message}
         </Text>
         <IconButton
           label="Dismiss"
@@ -166,8 +173,10 @@ function createStyles(tokens: SignetTokens) {
       right: 0,
       alignItems: "center",
       paddingHorizontal: tokens.spacing.lg,
-      // Over every screen, sheets' scrims included: it is mounted before the
-      // navigator, so the later siblings would otherwise paint over it.
+      // Over every screen. `app/_layout.tsx` mounts it after the sheet
+      // provider, whose portal host is where every open sheet and scrim
+      // paints, so it draws over those too; this lifts it over the navigator
+      // on Android, where elevation, not order, decides.
       zIndex: 1000,
       elevation: 1000,
     },

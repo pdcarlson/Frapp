@@ -160,10 +160,12 @@ The tables below are the canonical strings for high-frequency state messages, so
 
 ### Connection banner (global)
 
-| State | Title | Description |
-|---|---|---|
-| Degraded | — | `Slow connection. Some features may be delayed.` |
-| Offline | — | `You're offline. Showing cached data.` |
+| State | Title | Description | Mobile pill (drawn) |
+|---|---|---|---|
+| Degraded | — | `Slow connection. Some features may be delayed.` | `Slow connection` |
+| Offline | — | `You're offline. Showing cached data.` | `Offline` |
+
+Mobile's floating pill draws the last column so it fits over a header, and its accessible name is the Description (2026-11-06, `connectionPillLabel` in `apps/mobile/lib/connection/state.ts`).
 
 **The closing clause was removed in #1707 and MUST NOT be re-added to the global banner.** The rule it replaces read: *"The offline string MUST keep its closing clause — a member who edited or posted while offline needs to be told the work is queued, not lost."* The intent was right and the placement was wrong. Only the chat composer has an outbox, so "changes will sync" was true on exactly one surface and false on every other route this global banner renders on — dashboard writes are queueless and now reject rather than pausing. Promising a queue that does not exist is the §1 principle 1 violation ("actions must never appear to succeed when they haven't") that the clause was meant to prevent.
 
