@@ -100,7 +100,11 @@ export function EmailChipsInput({
     const text = event.clipboardData.getData("text");
     if (!/[\s,;]/.test(text.trim())) return; // one address: let it paste
     event.preventDefault();
-    commit(`${draft} ${text}`);
+    // The paste replaces any selected text, as it would in a plain field.
+    const input = event.currentTarget;
+    const start = input.selectionStart ?? draft.length;
+    const end = input.selectionEnd ?? draft.length;
+    commit(`${draft.slice(0, start)} ${text} ${draft.slice(end)}`);
   }
 
   function remove(index: number) {

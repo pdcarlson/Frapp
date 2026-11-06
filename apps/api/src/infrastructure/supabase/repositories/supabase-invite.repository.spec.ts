@@ -159,33 +159,43 @@ describe('SupabaseInviteRepository — tenant scope', () => {
       ).toBeNull();
     });
 
-    it('markRevoked cannot land on a claimed row, so releaseClaim still releases it (#1863)', async () => {
+    it('markRevoked sticks on a claimed row, so a failed redeem cannot reopen it (#1863)', async () => {
       const claimedAt = await repo.markUsedAtomically(INVITE_A);
 
-      const revoked = await repo.markRevoked(INVITE_A);
+      await repo.markRevoked(INVITE_A);
       const released = await repo.releaseClaim(INVITE_A, claimedAt!);
 
-      expect(revoked).toBe(false);
-      expect(released).toBe(true);
+      expect(released).toBe(false);
       const row = harness.rows('invites').find((r) => r.id === INVITE_A);
-      expect(row?.used_at).toBeNull();
-      expect(row?.revoked_at ?? null).toBeNull();
+      expect(row?.used_at).toEqual(expect.any(String));
+      expect(row?.revoked_at).toEqual(expect.any(String));
     });
 
-    it('markRevoked (revoke path) claims by id alone, setting used_at and revoked_at', async () => {
+    it('markRevoked (revoke path) writes by id alone, setting used_at and revoked_at', async () => {
       // The other id-only writer, and the one reachable from a client-supplied
       // `:id` via `DELETE /invites/:id`. `InviteService.revoke` compares
       // `invite.chapter_id !== chapterId` and 404s before calling this; the
-      // repository applies no chapter filter of its own (the `used_at` filter
-      // is the race guard, not a scope).
-      const revoked = await repo.markRevoked(INVITE_A);
+      // repository applies no chapter filter of its own (the `revoked_at`
+      // filter keeps a second revoke from moving the time, not a scope).
+      await repo.markRevoked(INVITE_A);
 
-      expect(revoked).toBe(true);
       const [op] = harness.ops;
-      expect(op.filters.map((f) => f.column)).toEqual(['id', 'used_at']);
+      expect(op.filters.map((f) => f.column)).toEqual(['id', 'revoked_at']);
       const row = harness.rows('invites').find((r) => r.id === INVITE_A);
       expect(row?.used_at).toEqual(expect.any(String));
       expect(row?.revoked_at).toBe(row?.used_at);
+    });
+
+    it('revokePending skips an invite already redeemed', async () => {
+      const claimedAt = await repo.markUsedAtomically(INVITE_B);
+
+      await repo.revokePending([INVITE_A, INVITE_B]);
+
+      const a = harness.rows('invites').find((r) => r.id === INVITE_A);
+      const b = harness.rows('invites').find((r) => r.id === INVITE_B);
+      expect(a?.revoked_at).toEqual(expect.any(String));
+      expect(b?.used_at).toBe(claimedAt);
+      expect(b?.revoked_at ?? null).toBeNull();
     });
   });
 });

@@ -3,6 +3,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { Check, Link2, Loader2 } from "lucide-react";
 import { useCreateInvite, useEmailInvites } from "@repo/hooks";
+import { MAX_INVITE_EMAILS } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
@@ -14,9 +15,6 @@ import {
   splitAddresses,
   type EmailChip,
 } from "@/components/members/email-chips-input";
-
-/** The most addresses one send takes (`BulkEmailInviteDto`). */
-export const MAX_EMAILS_PER_SEND = 50;
 
 /** How long the Copy link button reads "Copied". */
 const COPIED_MS = 2000;
@@ -109,7 +107,7 @@ export function InviteComposer({
     setChips(pending);
     if (pending.some((chip) => chip.problem === "invalid")) return;
     if (pending.length === 0) return;
-    if (pending.length > MAX_EMAILS_PER_SEND) {
+    if (pending.length > MAX_INVITE_EMAILS) {
       setTooMany(true);
       return;
     }
@@ -121,7 +119,8 @@ export function InviteComposer({
       );
       const sent = emails.length - failed.size;
       // Addresses the server couldn't email stay in the field, marked, so
-      // Send tries them again. Their invites exist and are listed as links.
+      // Send tries them again. Their invites exist and are listed under
+      // Invited; a later send that gets through retires them.
       setChips(
         emails
           .filter((email) => failed.has(email.toLowerCase()))
@@ -163,7 +162,7 @@ export function InviteComposer({
       toast({
         title: minted ? "Couldn't copy the link" : "Couldn't create a link",
         description: minted
-          ? "Your browser blocked the clipboard. Try again."
+          ? `Your browser blocked the clipboard. Copy it from here: ${await link}`
           : getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
@@ -171,7 +170,7 @@ export function InviteComposer({
   }
 
   const problem = tooMany
-    ? `Up to ${MAX_EMAILS_PER_SEND} addresses at a time. Remove some, then send.`
+    ? `Up to ${MAX_INVITE_EMAILS} addresses at a time. Remove some, then send.`
     : invalidCount > 0
       ? invalidCount === 1
         ? "One address in red isn't an email address. Fix or remove it."

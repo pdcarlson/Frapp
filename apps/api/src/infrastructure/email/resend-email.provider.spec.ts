@@ -60,12 +60,35 @@ describe('ResendEmailProvider', () => {
     });
 
     const body = JSON.parse((fetchMock.mock.calls[0][1] as any).body);
+    // The inviter's free-text name stays out of the subject.
     expect(body.subject).toBe(
-      'Paul <Carlson> invited you to join Phi Gamma Delta Tau Nu on Frapp',
+      "You're invited to join Phi Gamma Delta Tau Nu on Frapp",
     );
     expect(body.html).toContain('Paul &lt;Carlson&gt; invited you');
     expect(body.html).not.toContain('<Carlson>');
     expect(body.text).toContain('as Member');
+  });
+
+  it("clips a name long enough to carry someone else's message", async () => {
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    const provider = new ResendEmailProvider({
+      apiKey: 're_test',
+      fromAddress: 'Frapp <invites@mail.frapp.live>',
+    });
+    const long = `Account locked, verify now at evil.example ${'x'.repeat(80)}`;
+
+    await provider.sendInviteEmail({
+      ...params,
+      chapterName: long,
+      inviterName: long,
+    });
+
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as any).body);
+    expect(body.subject.length).toBeLessThan(100);
+    expect(body.subject).toContain('…');
+    expect(body.text).not.toContain('x'.repeat(30));
   });
 
   it('reports failure on a non-2xx response without throwing', async () => {

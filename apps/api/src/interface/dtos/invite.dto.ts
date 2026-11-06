@@ -4,14 +4,18 @@ import {
   IsOptional,
   Min,
   Max,
-  IsEmail,
   ArrayMinSize,
   ArrayMaxSize,
   Equals,
+  ValidateBy,
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { LEGAL_ACCEPTANCE_LABEL } from '@repo/validation';
+import {
+  isInviteEmail,
+  LEGAL_ACCEPTANCE_LABEL,
+  MAX_INVITE_EMAILS,
+} from '@repo/validation';
 import type {
   BulkEmailInviteResult,
   InviteListItem,
@@ -50,6 +54,24 @@ export class BatchCreateInvitesDto {
   count: number;
 }
 
+/**
+ * The web composer's own check (`isInviteEmail`), so an address it lets
+ * through is never the one that 400s the whole batch here.
+ */
+function IsInviteEmail() {
+  return ValidateBy(
+    {
+      name: 'isInviteEmail',
+      validator: {
+        validate: (value: unknown) =>
+          typeof value === 'string' && isInviteEmail(value),
+        defaultMessage: () => 'each value in emails must be an email',
+      },
+    },
+    { each: true },
+  );
+}
+
 export class BulkEmailInviteDto {
   @ApiPropertyOptional({ description: ROLE_DESCRIPTION })
   @IsOptional()
@@ -61,8 +83,8 @@ export class BulkEmailInviteDto {
     type: [String],
   })
   @ArrayMinSize(1)
-  @ArrayMaxSize(50)
-  @IsEmail({}, { each: true })
+  @ArrayMaxSize(MAX_INVITE_EMAILS)
+  @IsInviteEmail()
   emails: string[];
 }
 

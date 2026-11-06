@@ -14,12 +14,36 @@ export interface ResendProviderOptions {
 const RESEND_API_URL = 'https://api.resend.com/emails';
 
 /**
+ * Names in an invite are typed by the inviter, and the email goes out from
+ * Frapp's own address, so each is clipped: long enough for any real chapter
+ * or person, too short to carry a paragraph of someone else's text.
+ */
+const MAX_NAME_IN_EMAIL = 60;
+
+function clipName(value: string | null | undefined): string | null {
+  const name = value?.replace(/\s+/g, ' ').trim();
+  if (!name) return null;
+  return name.length > MAX_NAME_IN_EMAIL
+    ? `${name.slice(0, MAX_NAME_IN_EMAIL - 1).trimEnd()}…`
+    : name;
+}
+
+/**
+ * "You're invited to join Phi Gamma Delta Tau Nu on Frapp". The subject
+ * leaves the inviter out: their display name is free text, and the subject
+ * line is what a phishing attempt would borrow. Exported for its spec.
+ */
+export function inviteSubject(params: SendInviteEmailParams): string {
+  return `You're invited to join ${clipName(params.chapterName) ?? 'a chapter'} on Frapp`;
+}
+
+/**
  * "Paul Carlson invited you to join Phi Gamma Delta Tau Nu on Frapp", with
  * either name left out when it is unknown. Exported for its spec.
  */
 export function inviteHeadline(params: SendInviteEmailParams): string {
-  const chapter = params.chapterName?.trim() || 'a chapter';
-  const inviter = params.inviterName?.trim();
+  const chapter = clipName(params.chapterName) ?? 'a chapter';
+  const inviter = clipName(params.inviterName);
   return inviter
     ? `${inviter} invited you to join ${chapter} on Frapp`
     : `You're invited to join ${chapter} on Frapp`;
@@ -83,7 +107,7 @@ export class ResendEmailProvider implements IEmailProvider {
         body: JSON.stringify({
           from: this.fromAddress,
           to: params.to,
-          subject: inviteHeadline(params),
+          subject: inviteSubject(params),
           html: inviteEmailHtml(params),
           text: inviteEmailText(params),
         }),

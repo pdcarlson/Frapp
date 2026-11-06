@@ -2773,7 +2773,7 @@ alter table public.chat_message_reports
 
 * **Migration**: `20261106220000_invites_email_and_revoked_at.sql`
 
-Two nullable columns on `invites`, `email` and `revoked_at`. The API from the same PR writes both (an email invite stores its address, a revoke stamps `revoked_at`), so roll the API back first: a column dropped under the new API fails every email invite and every revoke.
+Two nullable columns on `invites`, `email` and `revoked_at`. The API from the same PR writes both (an email invite stores its address, a revoke stamps `revoked_at`), so roll the API back first: a column dropped under the new API fails every invite create (share links included, since every insert names `email`) and every revoke.
 
 **Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). After the API is back on the earlier version:
 

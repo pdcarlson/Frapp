@@ -551,8 +551,9 @@ describe("InviteMemberDialog share link and list", () => {
     );
   });
 
-  it("sends a pending invite again by revoking it first", async () => {
-    mockRevoke.mockResolvedValue({ success: true });
+  it("sends a pending invite again without revoking it first", async () => {
+    // The server retires the old invite once the new one is delivered, so a
+    // failed resend can't leave the address with no live link.
     mockEmailInvites.mockResolvedValue({ invites: [], failed: [] });
     await openDialog();
     await userEvent.click(
@@ -568,10 +569,27 @@ describe("InviteMemberDialog share link and list", () => {
         emails: [INVITE.email],
       }),
     );
-    expect(mockRevoke).toHaveBeenCalledWith(INVITE.id);
-    expect(mockRevoke.mock.invocationCallOrder[0]).toBeLessThan(
-      mockEmailInvites.mock.invocationCallOrder[0]!,
+    expect(mockRevoke).not.toHaveBeenCalled();
+  });
+
+  it("revokes an invite from its menu", async () => {
+    mockRevoke.mockResolvedValue({ success: true });
+    await openDialog();
+    await userEvent.click(await revoke());
+
+    await waitFor(() => expect(mockRevoke).toHaveBeenCalledWith(INVITE.id));
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Invite revoked" }),
     );
+  });
+
+  it("tells share links apart by when they were made", async () => {
+    mockInvites.mockReturnValue([{ ...INVITE, email: null }]);
+    await openDialog();
+
+    expect(
+      screen.getByRole("button", { name: /^More for Invite link, sent / }),
+    ).toBeInTheDocument();
   });
 });
 

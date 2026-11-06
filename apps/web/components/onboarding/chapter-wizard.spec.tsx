@@ -765,12 +765,42 @@ describe("the invite step (#238)", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows no join link or token until one is copied", async () => {
+  it("mints a link only when Copy link is pressed, then offers Finish", async () => {
+    createInviteMutate.mockResolvedValue({ token: "tok-1" });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
     render(<ChapterWizard onComplete={() => {}} />);
     await gotoInviteStep();
 
     expect(screen.queryByText(/join\?token=/)).not.toBeInTheDocument();
     expect(createInviteMutate).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+
+    await waitFor(() =>
+      expect(createInviteMutate).toHaveBeenCalledWith({ role: "Member" }),
+    );
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        `${window.location.origin}/join?token=tok-1`,
+      ),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Finish" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/join\?token=/)).not.toBeInTheDocument();
+  });
+
+  it("still discloses usage analytics (spec/behavior/settings)", async () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    await gotoInviteStep();
+
+    expect(
+      screen.getByText(/pseudonymous usage analytics \(on by default\)/),
+    ).toBeInTheDocument();
   });
 });
 

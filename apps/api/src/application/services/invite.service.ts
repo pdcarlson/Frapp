@@ -319,9 +319,10 @@ export class InviteService {
       this.inviteRepo.createMany(inviteData),
       // The email names the chapter and who sent it, so the recipient knows
       // what they are joining before they open the link. Read alongside the
-      // insert; a missing row only drops that line from the email.
-      this.chapterRepo.findById(chapterId),
-      this.userRepo.findById(createdBy),
+      // insert; a missing row, or a failed read, only drops that line from the
+      // email, because the tokens are already in by then.
+      this.chapterRepo.findById(chapterId).catch(() => null),
+      this.userRepo.findById(createdBy).catch(() => null),
     ]);
 
     // Correlate by token rather than by array position: each token was
@@ -356,6 +357,11 @@ export class InviteService {
       },
     );
     const failed = deliveries.filter((d) => !d.sent).map((d) => d.to);
+    await this.replaceOlderInvites(
+      chapterId,
+      deliveries.filter((d) => d.sent).map((d) => d.to),
+      new Set(invites.map((invite) => invite.id)),
+    );
 
     await this.activation.record(chapterId, 'activation-first-invite-created', {
       batch_size: invites.length,
@@ -366,6 +372,40 @@ export class InviteService {
       invites: invites.map((invite) => toListItem(invite, now)),
       failed,
     };
+  }
+
+  /**
+   * A new invite that reached an address replaces that address's older
+   * pending ones, so resending never leaves two live links for one person
+   * (spec/behavior/members.md § Invite Flow). An address whose new email
+   * failed keeps its older invite, which may be the one that arrived. Best
+   * effort: the new invites are already out, so a failure here is logged, not
+   * thrown.
+   */
+  private async replaceOlderInvites(
+    chapterId: string,
+    delivered: string[],
+    newIds: Set<string>,
+  ): Promise<void> {
+    if (delivered.length === 0) return;
+    const addresses = new Set(delivered.map((email) => email.toLowerCase()));
+    try {
+      const older = (await this.inviteRepo.findByChapter(chapterId)).filter(
+        (invite) =>
+          !newIds.has(invite.id) &&
+          !invite.used_at &&
+          !!invite.email &&
+          addresses.has(invite.email.toLowerCase()),
+      );
+      await this.inviteRepo.revokePending(older.map((invite) => invite.id));
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        'Failed to revoke older invites after a resend',
+        error,
+      );
+    }
   }
 
   /**
@@ -510,9 +550,8 @@ export class InviteService {
       // 410 the same token (#1863). Skip the release if a membership row is
       // already there — create() can throw after the insert committed, and
       // releasing then would let a second redeemer join on the same token.
-      // Match this claim's used_at. A revoke can't land on a claimed row
-      // (`markRevoked` needs `used_at` null), so an officer revoking inside
-      // this window is told the invite was used. A lookup or release failure
+      // Match this claim's used_at, so a revoke that landed inside this window
+      // (it overwrites used_at) stays revoked. A lookup or release failure
       // must not hide `error`.
       let membershipLanded = false;
       try {
@@ -653,9 +692,8 @@ export class InviteService {
       throw new BadRequestException('Invite has already been used');
     }
 
-    // Lost a race with a redeem between the read above and this write.
-    if (!(await this.inviteRepo.markRevoked(id))) {
-      throw new BadRequestException('Invite has already been used');
-    }
+    // A redeem racing this write may still land its membership; the revoke
+    // wins the token either way, so a failed redeem can't reopen it.
+    await this.inviteRepo.markRevoked(id);
   }
 }

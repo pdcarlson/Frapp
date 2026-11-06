@@ -83,7 +83,7 @@ export function listedInvites(
   });
 }
 
-/** "Sent today at 4:46 PM", "Sent Friday at 4:46 PM", "Sent Nov 6 at …". */
+/** "Sent today at 4:46 PM", "Sent yesterday at …", "Sent Nov 3 at …". */
 export function sentLabel(createdAt: string, now: Date = new Date()): string {
   const when = formatRelativeDayTime(createdAt, now);
   if (!when) return "Sent";
@@ -260,15 +260,14 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   }
 
   async function copyInviteLink(invite: InviteListItem) {
+    const link = buildJoinUrl(window.location.origin, invite.token);
     try {
-      await copyWhenReady(
-        Promise.resolve(buildJoinUrl(window.location.origin, invite.token)),
-      );
+      await copyWhenReady(Promise.resolve(link));
       toast({ title: "Link copied" });
     } catch {
       toast({
         title: "Couldn't copy the link",
-        description: "Your browser blocked the clipboard. Try again.",
+        description: `Your browser blocked the clipboard. Copy it from here: ${link}`,
         variant: "destructive",
       });
     }
@@ -277,11 +276,8 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   async function sendAgain(invite: InviteListItem) {
     if (!invite.email) return;
     try {
-      // The old invite goes first, so the address isn't left holding two
-      // live links. An expired one has nothing left to revoke.
-      if (invite.status === "pending") {
-        await revokeInviteMutation.mutateAsync(invite.id);
-      }
+      // The server retires this address's older invite once the new one is
+      // delivered, so a failed send leaves the old link working.
       const result = await emailInvites.mutateAsync({
         role: invite.role,
         emails: [invite.email],
@@ -507,7 +503,11 @@ function InviteRow({
   );
   if (entries.length === 0) return row(null);
   return (
-    <RowMenu entries={entries} label={`More for ${name}`}>
+    // Share links all read "Invite link", so their menus also name when.
+    <RowMenu
+      entries={entries}
+      label={`More for ${name}${invite.email ? "" : `, ${sentLabel(invite.created_at).replace(/^Sent/, "sent")}`}`}
+    >
       {row}
     </RowMenu>
   );

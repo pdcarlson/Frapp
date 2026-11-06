@@ -91,7 +91,8 @@ describe('InviteService', () => {
       findByChapter: jest.fn(),
       create: jest.fn(),
       createMany: jest.fn(),
-      markRevoked: jest.fn(),
+      markRevoked: jest.fn().mockResolvedValue(undefined),
+      revokePending: jest.fn().mockResolvedValue(undefined),
       markUsedAtomically: jest.fn(),
       releaseClaim: jest.fn().mockResolvedValue(true),
     };
@@ -132,7 +133,7 @@ describe('InviteService', () => {
     mockConfig = { get: jest.fn().mockReturnValue(undefined) };
 
     mockUserRepo = {
-      findById: jest.fn(),
+      findById: jest.fn().mockResolvedValue(null),
       findByIds: jest.fn(),
       findDisplayIdentitiesByIds: jest.fn(),
       findContactsByIds: jest.fn(),
@@ -355,6 +356,58 @@ describe('InviteService', () => {
       );
       expect(result.invites[0]).not.toHaveProperty('created_by');
       expect(result.failed).toEqual([]);
+    });
+
+    it('still sends when the chapter or inviter read fails, without their names', async () => {
+      mockChapterRepo.findById.mockRejectedValue(new Error('timeout'));
+      mockUserRepo.findById.mockRejectedValue(new Error('timeout'));
+
+      const result = await service.createWithEmails(
+        'ch-1',
+        'user-1',
+        'Member',
+        ['a@example.com'],
+      );
+
+      expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ chapterName: null, inviterName: null }),
+      );
+      expect(result.failed).toEqual([]);
+    });
+
+    it("replaces an address's older pending invite once the new one reaches it", async () => {
+      const older = (
+        id: string,
+        email: string,
+        used_at: string | null = null,
+      ) => ({
+        id,
+        token: `tok-${id}`,
+        chapter_id: 'ch-1',
+        role: 'Member',
+        expires_at: '2099-01-01',
+        created_by: 'user-1',
+        used_at,
+        created_at: '2023-12-31',
+        email,
+        revoked_at: null,
+      });
+      mockInviteRepo.findByChapter.mockResolvedValue([
+        older('old-a', 'A@example.com'),
+        older('old-b', 'b@example.com'),
+        older('joined-a', 'a@example.com', '2024-01-01'),
+      ]);
+      // a@ is delivered; b@ fails, so b@'s older invite stays live.
+      mockEmailProvider.sendInviteEmail.mockImplementation(({ to }) =>
+        Promise.resolve(to === 'a@example.com'),
+      );
+
+      await service.createWithEmails('ch-1', 'user-1', 'Member', [
+        'a@example.com',
+        'b@example.com',
+      ]);
+
+      expect(mockInviteRepo.revokePending).toHaveBeenCalledWith(['old-a']);
     });
 
     it('correlates by token rather than array position, even if the repository returns rows out of order', async () => {
@@ -1783,33 +1836,11 @@ describe('InviteService', () => {
         revoked_at: null,
       };
       mockInviteRepo.findById.mockResolvedValue(invite);
-      mockInviteRepo.markRevoked.mockResolvedValue(true);
 
       await service.revoke('inv-1', 'ch-1');
 
       expect(mockInviteRepo.findById).toHaveBeenCalledWith('inv-1');
       expect(mockInviteRepo.markRevoked).toHaveBeenCalledWith('inv-1');
-    });
-
-    it('reports a redeem that won the race as already used', async () => {
-      const invite: Invite = {
-        id: 'inv-1',
-        token: 'test-uuid',
-        chapter_id: 'ch-1',
-        role: 'Member',
-        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-        created_by: 'user-1',
-        used_at: null,
-        created_at: '2024-01-01',
-        email: null,
-        revoked_at: null,
-      };
-      mockInviteRepo.findById.mockResolvedValue(invite);
-      mockInviteRepo.markRevoked.mockResolvedValue(false);
-
-      await expect(service.revoke('inv-1', 'ch-1')).rejects.toThrow(
-        'Invite has already been used',
-      );
     });
 
     it('should reject already-used invite', async () => {
