@@ -76,13 +76,22 @@ Added 2026-11-05, owner direction ("Mobile opens up to the last channel you were
 - **Privacy invariant:** DMs and group DMs are **never** part of the [AI corpus](../ai.md). They are not indexed for AI Q&A, not used as summarization context, and not surfaced via citations. This is enforced server-side regardless of any chapter-level AI consent settings — opting in to AI does not opt in DMs.
 - **System DM on invite accept.** When a member accepts an invite, the inviter receives a `kind="system_audit"` message in their DM channel with that member — `"Alex Chen accepted your invite."` This is the same server-originated system-message pattern as the audit bridge, but targeted to a DM rather than `#chapter-audit`.
 
+## Channel list previews
+
+Mobile Chat home draws each row's latest message under its name, with its time on the right (owner decision 2026-11-06). Web's rail draws none yet (#1191).
+
+- **Source.** `GET /v1/channels/latest` returns one row per channel the caller can read that has a message: its id, sender, `author_name`, `content` cut to 500 characters, `kind`, `payload` (an audit line's only), attachment count and `created_at`. It is computed by `get_channel_latest_messages`, which skips deleted messages and senders the caller blocked, and is filtered to the same channels as `GET /v1/channels/unread`, a hidden DM left out. A channel with no message has no row, and its list row draws one line.
+- **Wording** (`channelPreviewLine` in `@repo/chat-core/channel-preview`). The sender's first name and the one-line text: "Jake: I've got the van". The viewer's own reads "You: ...". In a DM the other person's message drops the name, which the row is already titled with. A file-only message or a card with no text is named ("Attachment", "Event"). An audit line reads as the thread draws it ("Paul updated the chapter profile"), and a server notice is its text alone.
+- **Time** (`formatListStamp` in `@repo/formatting`): the clock time today, "Yesterday", the weekday within a week, then the date.
+- **Freshness.** The previews refresh with the unread badges, on focus, on a pull and when stale (15 s), not live. Opening a channel invalidates `["channels"]`, which covers both.
+
 ## Sidebar arrangement
 
 Each member arranges their own channel list (#2877, owner decision 2026-09-29). The arrangement belongs to the member and the chapter together: it follows the member between web and mobile, it differs per chapter, and nobody else can read or change it, an officer included. The categories themselves stay the chapter's (§ Channels).
 
 - **Sections, top to bottom:** Pinned, the default Channels group, one section per category in the chapter's order, Direct messages, then System on web (`#chapter-audit`). Hidden conversations stays at the end, as § Direct Messages describes. An empty section is not drawn.
 - **Pin.** A member can pin any channel or DM they can read. A pinned row moves out of its section into Pinned; it isn't shown twice. Pins carry no order of their own. Hiding a DM outranks pinning it: a hidden DM stays in Hidden conversations, and while web keeps an open one on the rail (§ Direct Messages) it sits under Direct messages, not Pinned. A hidden row offers no pin control. A pin is removed with its channel, and one on a channel the member can no longer read is left out of every response. Pinning needs read access (403 without it, 404 outside the chapter). Unpinning needs none, so a member can always clear a pin.
-- **Sort.** Every section, Pinned included, sorts A–Z by the title the row shows, so a DM sorts under the other member's name. Channels inside a category have no chapter-set order. **Recent activity** is the second sort Paul approved; it waits on a last-message projection (#1191), so neither client offers it yet.
+- **Sort.** Every section, Pinned included, sorts A–Z by the title the row shows, so a DM sorts under the other member's name. Channels inside a category have no chapter-set order. **Recent activity** is the second sort Paul approved. The last-message projection it needed exists since 2026-11-06 (§ Channel list previews), but neither client offers the sort: Paul chose to keep the sections A–Z on mobile Chat home and add previews instead (2026-11-06).
 - **Filters,** off by default, either or both on:
   - **Unread only** keeps rows with something unread by the server's counts (§ Read Receipts), an @-mention included.
   - **Hide muted** drops rows whose effective notification level is `off` ([`../notifications.md`](../notifications.md#chat-notification-preferences)). A muted row that addresses the member stays: an unread @-mention, or anything unread in a DM. That matches push, where a mention gets past a mute.

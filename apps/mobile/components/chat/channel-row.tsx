@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
+import Svg, { Path } from "react-native-svg";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { initialsFor } from "@/lib/chat/display-name";
@@ -53,8 +54,20 @@ export interface ChannelRowProps {
    * chapter accent (foundations.md §6, "Where the accent goes", 2026-11-05).
    */
   isPinned?: boolean;
+  /**
+   * The latest message's one-line preview and its time (2026-11-06), from
+   * `GET /v1/channels/latest` through `channelPreviewLine` and
+   * `formatListStamp`. A channel with no message passes neither and draws
+   * as one line.
+   */
   preview?: string | null;
   timestamp?: string | null;
+  /**
+   * The member muted this channel. The row stays where it is, drawn quiet: a
+   * read row's title whatever its count, and a crossed-out bell after the
+   * name, so a busy muted channel doesn't shout from the top of the list.
+   */
+  isMuted?: boolean;
   unreadCount: number;
   mentionCount: number;
   onPress: () => void;
@@ -99,6 +112,7 @@ export function ChannelRow({
   isPinned = false,
   preview,
   timestamp,
+  isMuted = false,
   unreadCount,
   mentionCount,
   onPress,
@@ -120,6 +134,9 @@ export function ChannelRow({
   // A mention always implies an unread row even if the counts ever disagree —
   // a red badge over a read-styled row would be a contradiction on screen.
   const isUnread = unreadCount > 0 || hasMention;
+  // Muted rows read as read unless they address the member: a mention gets
+  // past a mute, as it does for push.
+  const looksUnread = isUnread && (!isMuted || hasMention);
 
   return (
     <PressableRow
@@ -129,6 +146,9 @@ export function ChannelRow({
         isDirect,
         unreadCount,
         mentionCount,
+        isMuted,
+        preview,
+        timestamp,
       })}
       onPress={onPress}
       onLongPress={onLongPress ?? onHide}
@@ -169,16 +189,22 @@ export function ChannelRow({
       )}
 
       <View style={styles.body}>
-        <Text
-          numberOfLines={1}
-          style={isUnread ? styles.titleUnread : styles.titleRead}
-        >
-          {name}
-        </Text>
+        <View style={styles.titleLine}>
+          <Text
+            numberOfLines={1}
+            style={[
+              looksUnread ? styles.titleUnread : styles.titleRead,
+              styles.titleText,
+            ]}
+          >
+            {name}
+          </Text>
+          {isMuted ? <MutedGlyph color={tokens.color.text.muted} /> : null}
+        </View>
         {preview ? (
           <Text
             numberOfLines={1}
-            style={isUnread ? styles.previewUnread : styles.previewRead}
+            style={looksUnread ? styles.previewUnread : styles.previewRead}
           >
             {preview}
           </Text>
@@ -196,6 +222,24 @@ export function ChannelRow({
         ) : null}
       </View>
     </PressableRow>
+  );
+}
+
+/**
+ * A bell with a slash, after a muted row's name. Decorative: the row's label
+ * says "muted".
+ */
+function MutedGlyph({ color }: { color: string }) {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24" accessible={false}>
+      <Path
+        d="M6 10a6 6 0 0 1 10.4-4.1M18 10c0 4 1.6 5.6 2.2 6.4.2.3 0 .6-.3.6H8M9.5 20a2.6 2.6 0 0 0 5 0M4 4l16 16"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        fill="none"
+      />
+    </Svg>
   );
 }
 
@@ -279,14 +323,21 @@ export function accessibilityLabelFor({
   isDirect,
   unreadCount,
   mentionCount,
+  isMuted = false,
+  preview,
+  timestamp,
 }: {
   name: string;
   isDirect: boolean;
   unreadCount: number;
   mentionCount: number;
+  isMuted?: boolean;
+  preview?: string | null;
+  timestamp?: string | null;
 }): string {
   const subject = isDirect ? name : `#${name}`;
   const parts: string[] = [subject];
+  if (isMuted) parts.push("muted");
   if (mentionCount > 0) {
     parts.push(
       `${mentionCount} ${mentionCount === 1 ? "mention" : "mentions"}`,
@@ -295,6 +346,8 @@ export function accessibilityLabelFor({
   if (unreadCount > 0) {
     parts.push(`${unreadCount} unread`);
   }
+  // The preview last, after the counts a member listens for first.
+  if (preview) parts.push(timestamp ? `${preview}, ${timestamp}` : preview);
   return parts.join(", ");
 }
 
@@ -327,6 +380,14 @@ function createStyles(tokens: SignetTokens) {
     sigil: {
       ...typeRole(tokens.typography.role.title),
       color: tokens.color.text.muted,
+    },
+    titleLine: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+    },
+    titleText: {
+      flexShrink: 1,
     },
     avatar: {
       width: AVATAR_SIZE,

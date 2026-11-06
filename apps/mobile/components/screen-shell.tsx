@@ -71,6 +71,13 @@ type ScreenShellProps = {
    * remounts everything under the scroll view.
    */
   refresh?: ScreenRefresh;
+  /**
+   * Drawn last, over the whole screen and outside the scroll view, for a
+   * menu that opens from a control in the body (Chat home's channel filters).
+   * Last in paint order and hit-testing, as `spec/ui/mobile/patterns.md`
+   * § Overlays requires; render `null` while nothing is open.
+   */
+  overlay?: ReactNode;
   children: ReactNode;
 };
 
@@ -108,6 +115,7 @@ export function ScreenShell({
   subtitle,
   headerAction,
   refresh,
+  overlay,
   children,
 }: ScreenShellProps) {
   const { tokens } = useFrappTheme();
@@ -158,6 +166,7 @@ export function ScreenShell({
           </ScrollView>
         </View>
       </SafeAreaView>
+      {overlay}
     </View>
   );
 }
