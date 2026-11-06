@@ -19,6 +19,7 @@ import { useInvites } from "./use-invites";
 import { useInvoices } from "./use-invoices";
 import { useActiveChapterId } from "./use-frapp-client";
 import { useMyPermissions } from "./use-user";
+import { activeZoneCount } from "./unset-features";
 
 /**
  * The officer "Set up your chapter" checklist on chat home
@@ -274,7 +275,8 @@ export function useChapterSetupChecklist(
     counts: {
       invite: sumOf(lengthOf(roster.data), lengthOf(invites.data)),
       event: lengthOf(events.data),
-      "study-zone": lengthOf(zones.data),
+      // Active zones only, the same count that shows Study hours to members.
+      "study-zone": activeZoneCount(zones.data),
       document: lengthOf(documents.data),
       dues: lengthOf(invoices.data),
     },
