@@ -536,10 +536,12 @@ describe("s13's frame (#2485)", () => {
 
 /** #3022. s13 draws its own header, so it draws the board's `‹ More` itself. */
 describe("s13's back row (#3022)", () => {
-  it("draws ‹ More above the title", () => {
+  it("pins ‹ More above the title, outside the scrolling list", () => {
     const tree = render();
-    // `FlatList` is a host stand-in here, so its header element is never
-    // mounted; mount it on its own to press the row.
+    // Pinned like every screen's capsule, so it never scrolls away: it sits
+    // before the list in the tree, and the list's header starts at the title.
+    expectBackRow(tree, "More", "/more");
+    expect(screenText(tree).startsWith("More")).toBe(true);
     let header!: ReactTestRenderer;
     act(() => {
       header = create(
@@ -548,9 +550,7 @@ describe("s13's back row (#3022)", () => {
         </FrappThemeProvider>,
       );
     });
-    // Above the title: the header reads the row first, then "Directory".
-    expect(screenText(header).startsWith("‹ More\nDirectory")).toBe(true);
-    expectBackRow(header, "More", "/more");
+    expect(screenText(header).startsWith("Directory")).toBe(true);
     header.unmount();
     tree.unmount();
   });

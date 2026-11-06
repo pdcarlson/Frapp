@@ -44,6 +44,9 @@ export const reactNativeStub = {
     // (`components/state-block.tsx`). Off by default; a spec flips it, or
     // runs the listener a block registered.
     isReduceMotionEnabled: vi.fn().mockResolvedValue(false),
+    // Glass falls back to solid under Reduce Transparency
+    // (`components/glass-surface.tsx`). Off by default.
+    isReduceTransparencyEnabled: vi.fn().mockResolvedValue(false),
     addEventListener: vi.fn(() => ({ remove: vi.fn() })),
   },
   // Enough of the styling/layout surface for Signet token factories and

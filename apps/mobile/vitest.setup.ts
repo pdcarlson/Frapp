@@ -484,6 +484,20 @@ vi.mock("@sentry/react-native", () => ({
   mobileReplayIntegration: vi.fn(),
 }));
 
+// The glass layer's native pieces (`components/glass-surface.tsx`). String
+// stand-ins, so a spec can find them by type; the suite's stub runs as iOS,
+// where Liquid Glass is reported unavailable unless a spec says otherwise.
+vi.mock("expo-blur", () => ({
+  BlurView: "BlurView",
+  BlurTargetView: "BlurTargetView",
+}));
+vi.mock("expo-glass-effect", () => ({
+  GlassView: "GlassView",
+  GlassContainer: "GlassContainer",
+  isLiquidGlassAvailable: vi.fn(() => false),
+  isGlassEffectAPIAvailable: vi.fn(() => false),
+}));
+
 vi.mock("react-native-svg", () => ({
   default: "Svg",
   Svg: "Svg",

@@ -7,6 +7,7 @@
     "./tailwind": "./src/tailwind.config.ts",
     "./signet.css": "./src/signet.css",
     "./signet": "./src/signet.ts",
+    "./glass": "./src/glass.ts",
     "./nav-glyphs": "./src/nav-glyphs.ts"
   },
   "scripts": {

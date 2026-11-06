@@ -19,8 +19,7 @@ import { tint } from "@/lib/theme";
  *
  * `paint`, `Frame` and `STROKE_WIDTH` are the older stroke recipe (a 1.6px
  * stroke on a 24px grid, silhouette at 16% of the hue or 6% white when
- * neutral). The bell and `components/search-glyph.tsx` still draw in it, and
- * `documents/document-glyphs.tsx` borrows its `STROKE_WIDTH`.
+ * neutral). The bell and `components/search-glyph.tsx` still draw in it.
  */
 
 export const MORE_GLYPH_SIZE = 20;

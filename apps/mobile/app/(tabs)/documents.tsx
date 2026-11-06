@@ -12,10 +12,8 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
-import { IconButton } from "@/components/icon-button";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { BACK_TO_MORE } from "@/components/back-row";
-import { UploadGlyph } from "@/components/documents/document-glyphs";
 import { UploadDocumentSheet } from "@/components/documents/upload-document-sheet";
 import { FilterChips, SearchField } from "@/components/filter-chips";
 import {
@@ -36,7 +34,6 @@ import {
   selectDocumentRows,
   selectDownloadUrl,
 } from "@/lib/more/documents";
-import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -62,14 +59,16 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## Upload, for whoever may
  *
- * Canvas draws an upload glyph at the far end of the `‹ More` row, opening the
- * s21 sheet (`components/documents/upload-document-sheet.tsx`, #3399). It is
+ * The floating create button (Upload document) opens the s21 sheet
+ * (`components/documents/upload-document-sheet.tsx`, #3399). Canvas draws an
+ * upload glyph at the far end of the `‹ More` row; it moved to the thumb's
+ * reach on 2026-11-05 (`spec/ui/mobile/patterns.md` § Create actions). It is
  * drawn only for a viewer who holds `chapter_docs:upload`, the permission both
  * upload routes carry, as web's `<Can permission="chapter_docs:upload">` does:
  * by default that is the President alone (`DEFAULT_SYSTEM_ROLES`), so most
  * members never see a control the server would refuse them. `can` reads the
  * owner's `*` the way the server's guard does. While the permission read is
- * loading the glyph is absent, which fails closed.
+ * loading the button is absent, which fails closed.
  *
  * Photos only: a PDF needs `expo-document-picker`, a native module that waits
  * for a store build.
@@ -90,7 +89,6 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  */
 export default function DocumentsScreen() {
   const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
 
   const [folder, setFolder] = useState<string | null>(null);
@@ -224,19 +222,17 @@ export default function DocumentsScreen() {
     <ScreenShell
       back={BACK_TO_MORE}
       refresh={refresh}
-      backAction={
-        canUpload ? (
-          <IconButton
-            label="Upload document"
-            hint="Opens a sheet to upload a photo to the library."
-            onPress={() => {
-              setUploadedTitle(null);
-              uploadSheetRef.current?.present();
-            }}
-          >
-            <UploadGlyph color={accent} />
-          </IconButton>
-        ) : undefined
+      createAction={
+        canUpload
+          ? {
+              label: "Upload document",
+              hint: "Opens a sheet to upload a photo to the library.",
+              onPress: () => {
+                setUploadedTitle(null);
+                uploadSheetRef.current?.present();
+              },
+            }
+          : undefined
       }
       title="Documents"
     >
