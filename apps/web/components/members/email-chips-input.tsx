@@ -155,8 +155,11 @@ export function EmailChipsInput({
       <input
         ref={inputRef}
         id={id}
-        type="email"
-        multiple
+        // Text with an email keyboard, not type="email": that type hides the
+        // selection from script, which the paste above needs.
+        type="text"
+        inputMode="email"
+        autoCapitalize="none"
         autoComplete="off"
         spellCheck={false}
         value={draft}
