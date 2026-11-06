@@ -13,6 +13,7 @@ import {
   DISCORD_BOT_GATEWAY,
   DISCORD_MESSAGE_PAGE_LIMIT,
   DiscordImportStoppedError,
+  type DiscordGuildMemberProfile,
   type IDiscordBotGateway,
 } from '#domain/adapters/discord.interface';
 import {
@@ -31,6 +32,7 @@ import {
   isAllowedUploadMime,
 } from '@repo/validation';
 import {
+  AVATAR_DECLARED_BYTES,
   MAX_ARCHIVE_CHAPTER_BYTES,
   MAX_ARCHIVE_IMPORT_BYTES,
   isWithinArchiveUploadSizeLimit,
@@ -39,13 +41,16 @@ import {
   messageContentIntentOffError,
   EMPTY_CONTENT_TALLY,
   discordAttachmentKey,
+  discordAvatarAsset,
   isLikelyMissingMessageContentIntent,
   missingMessageContentIntentError,
   tallyMessageContent,
   toExportShapeMessage,
+  withServerProfiles,
   type DiscordApiAttachment,
   type DiscordApiMessage,
   type MessageContentTally,
+  type ServerProfileLookup,
 } from '#domain/utils/discord-api-message';
 import type {
   DiscordExportMessage,
@@ -115,6 +120,23 @@ export interface ExportSliceResult {
   };
 }
 
+/**
+ * How long a member's server profile is trusted before it is read again. A
+ * chapter's import runs for hours in 45-second slices; reading every author
+ * again each slice would spend most of a slice's Discord budget on names that
+ * have not changed.
+ */
+export const MEMBER_PROFILE_TTL_MS = 30 * 60_000;
+
+/** Member reads that took this long renew the lease before the page goes on. */
+export const MEMBER_READS_RENEW_AFTER_MS = 10_000;
+
+/** Member reads in flight at once. The REST client queues past Discord's limit. */
+const MEMBER_READS_IN_FLIGHT = 4;
+
+/** Past this many cached profiles the cache starts over, to bound memory. */
+const MEMBER_PROFILE_CACHE_MAX = 20_000;
+
 /** Making another row's channel failed while a page of this one was written. */
 class DestinationError extends Error {
   constructor(
@@ -173,6 +195,22 @@ interface SliceTotals {
 @Injectable()
 export class DiscordExportWorkerService {
   private readonly logger = new Logger(DiscordExportWorkerService.name);
+
+  /**
+   * Server profiles read so far, by `guildId:userId`; `profile: null` is a
+   * user who is not a member. Per process, across slices and imports, and
+   * keyed by guild, so one chapter's members never name another's.
+   */
+  private readonly memberProfiles = new Map<
+    string,
+    { readAt: number; profile: DiscordGuildMemberProfile | null }
+  >();
+
+  /**
+   * Avatars the copier could not store, by `importId:key`, so a departed
+   * member's expired avatar is not sent again with every page they wrote.
+   */
+  private readonly unavailableAvatars = new Set<string>();
 
   constructor(
     @Inject(DISCORD_IMPORT_REPOSITORY)
@@ -681,13 +719,40 @@ export class DiscordExportWorkerService {
         return true;
       }
 
+      // Discord's messages name people by account, never by what the server
+      // shows them as. Each author and mentioned user is read as a member of
+      // the server, so their nickname and server avatar are what land.
+      const readingSince = Date.now();
+      const profiles = await this.readServerProfiles(guildId, page);
+      const profiled = page.map((message) =>
+        withServerProfiles(message, profiles),
+      );
+      // A cold page can name a hundred people, read at Discord's pace, and the
+      // copy below does not renew the lease before its first call. Renew it
+      // when the reads took long enough to eat into the time that call was
+      // promised.
+      if (
+        Date.now() - readingSince >= MEMBER_READS_RENEW_AFTER_MS &&
+        !(await checkpoint({
+          imported: totals.imported,
+          skipped: totals.skipped,
+          attachmentsImported: totals.attachmentsImported,
+          attachmentsSkipped: totals.attachmentsSkipped,
+          totalMessages: totals.totalMessages,
+          warnings: totals.warnings,
+        }))
+      ) {
+        return false;
+      }
+
       // Attachments first: `attachment_count` on the message row has to be the
       // number of attachment rows that will actually exist, and that is only
       // knowable once the bytes have landed. Same ordering, same reason, as the
       // upload path's batch.
       const fetched = await this.copyPageAttachments({
         job,
-        page,
+        guildId,
+        page: profiled,
         mediaByRelativePath,
         totals,
         renewLease: () =>
@@ -717,7 +782,9 @@ export class DiscordExportWorkerService {
 
       await ensureMentionedDestinations(page);
       const outcome = await importBatch({
-        messages: page.map((message) => toExportShapeMessage(message)),
+        messages: profiled.map((message) =>
+          toExportShapeMessage(message, guildId),
+        ),
         targetChannelId,
         channelName: destinationName,
         mediaByRelativePath,
@@ -778,6 +845,77 @@ export class DiscordExportWorkerService {
         return true;
       }
     }
+  }
+
+  /**
+   * The server profile of every author and mentioned user on `page`, read from
+   * Discord where it is not cached.
+   *
+   * A read that fails for any reason but "not a member" is left unknown and
+   * not cached: those people are named by their account, as before, and the
+   * next page asks again. It never fails the import, because a name is not
+   * worth an archive.
+   */
+  private async readServerProfiles(
+    guildId: string,
+    page: readonly DiscordApiMessage[],
+  ): Promise<ServerProfileLookup> {
+    const keyOf = (userId: string) => `${guildId}:${userId}`;
+    const ids = new Set<string>();
+    for (const message of page) {
+      const author = message.author?.id;
+      if (typeof author === 'string' && author) ids.add(author);
+      for (const user of message.mentions ?? []) {
+        if (typeof user?.id === 'string' && user.id) ids.add(user.id);
+      }
+    }
+
+    const now = Date.now();
+    const isFresh = (key: string) => {
+      const cached = this.memberProfiles.get(key);
+      return Boolean(cached && now - cached.readAt <= MEMBER_PROFILE_TTL_MS);
+    };
+    let missing = [...ids].filter((id) => !isFresh(keyOf(id)));
+    // Bounded memory: drop what is stale first, and only if that is not
+    // enough, start over and read this whole page's people again, so no one on
+    // it is left unnamed by the eviction.
+    if (this.memberProfiles.size + missing.length > MEMBER_PROFILE_CACHE_MAX) {
+      for (const key of [...this.memberProfiles.keys()]) {
+        if (!isFresh(key)) this.memberProfiles.delete(key);
+      }
+      if (
+        this.memberProfiles.size + missing.length >
+        MEMBER_PROFILE_CACHE_MAX
+      ) {
+        this.memberProfiles.clear();
+        missing = [...ids];
+      }
+    }
+
+    let failed = 0;
+    let lastError: unknown = null;
+    for (let at = 0; at < missing.length; at += MEMBER_READS_IN_FLIGHT) {
+      await Promise.all(
+        missing.slice(at, at + MEMBER_READS_IN_FLIGHT).map(async (userId) => {
+          try {
+            const profile = await this.bot.fetchGuildMember(guildId, userId);
+            this.memberProfiles.set(keyOf(userId), { readAt: now, profile });
+          } catch (error) {
+            failed += 1;
+            lastError = error;
+          }
+        }),
+      );
+    }
+    if (failed > 0) {
+      this.logger.warn(
+        `Could not read ${failed} of ${missing.length} Discord members in guild ${guildId}; they are named by their account instead: ${
+          toReportableError(lastError).message
+        }`,
+      );
+    }
+
+    return (userId) => this.memberProfiles.get(keyOf(userId))?.profile;
   }
 
   /**
@@ -853,13 +991,16 @@ export class DiscordExportWorkerService {
    */
   private async copyPageAttachments(args: {
     job: DiscordImport;
+    /** The authorized guild, which a server avatar's address names. */
+    guildId: string;
     page: DiscordApiMessage[];
     mediaByRelativePath: Map<string, DiscordImportFile>;
     totals: SliceTotals;
     /** The slice's checkpoint: false when the job may no longer advance. */
     renewLease: () => Promise<boolean>;
   }): Promise<{ skipped: number; reported: string[]; complete: boolean }> {
-    const { job, page, mediaByRelativePath, totals, renewLease } = args;
+    const { job, guildId, page, mediaByRelativePath, totals, renewLease } =
+      args;
     /** Keys this slice already warned about, by name and reason. */
     const reported: string[] = [];
 
@@ -867,7 +1008,34 @@ export class DiscordExportWorkerService {
     // can carry the same attachment twice, and the same attachment id can
     // legitimately appear on a forwarded message later in the page.
     const pending = new Map<string, DiscordApiAttachment>();
+    /** Keys in `pending` that are an author's avatar, not an attachment. */
+    const avatarKeys = new Set<string>();
     let skipped = 0;
+
+    // Each author's avatar rides the same copy as the attachments, stored once
+    // per import under a key that names its hash. It is not an attachment: no
+    // message counts it, and one that cannot be copied leaves initials, not a
+    // warning.
+    for (const message of page) {
+      const avatar = discordAvatarAsset(message, guildId);
+      if (
+        !avatar ||
+        mediaByRelativePath.has(avatar.key) ||
+        pending.has(avatar.key) ||
+        this.unavailableAvatars.has(`${job.id}:${avatar.key}`)
+      ) {
+        continue;
+      }
+      pending.set(avatar.key, {
+        filename: avatar.key.slice(avatar.key.lastIndexOf('/') + 1),
+        content_type: 'image/png',
+        // Declared, so avatars count toward the archive ceilings; the real
+        // 128px PNG is smaller.
+        size: AVATAR_DECLARED_BYTES,
+        url: avatar.url,
+      });
+      avatarKeys.add(avatar.key);
+    }
 
     for (const message of page) {
       for (const attachment of message.attachments ?? []) {
@@ -985,7 +1153,7 @@ export class DiscordExportWorkerService {
         skipped += 1;
         continue;
       }
-      queue.push({ key, attachment, file, url });
+      queue.push({ key, attachment, file, url, avatar: avatarKeys.has(key) });
     }
 
     let sent = false;
@@ -1020,6 +1188,26 @@ export class DiscordExportWorkerService {
           case 'deferred':
             deferred.push(entry);
             return;
+        }
+        if (entry.avatar) {
+          // The author is drawn with initials; nothing to tell the admin. One
+          // Discord no longer serves is not asked for again this import; any
+          // other failure may pass, so a later page tries it again.
+          if (result.status === 'gone') {
+            if (this.unavailableAvatars.size >= MEMBER_PROFILE_CACHE_MAX) {
+              this.unavailableAvatars.clear();
+            }
+            this.unavailableAvatars.add(`${job.id}:${entry.key}`);
+          } else {
+            this.logger.warn(
+              `Avatar copy failed for import ${job.id}: ${
+                result.reason ?? result.status
+              }`,
+            );
+          }
+          return;
+        }
+        switch (result.status) {
           case 'gone':
             // A deleted or expired attachment is a warning on one message,
             // not a failed import — the message still has its text.
@@ -1118,6 +1306,8 @@ interface PendingCopy {
   attachment: DiscordApiAttachment;
   file: DiscordImportFile;
   url: string;
+  /** An author's avatar rather than a message's attachment. */
+  avatar: boolean;
 }
 
 /**
