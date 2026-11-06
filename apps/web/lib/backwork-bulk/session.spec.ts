@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { stageBulkUpload, takeStagedBulkUpload } from "./handoff";
 import {
   bulkDropNotice,
   endBulkSessions,
@@ -197,5 +198,12 @@ describe("bulk upload session", { timeout: TEST_TIMEOUT }, () => {
     );
     expect(bulkDropNotice("sign-out")).toContain("Signing out drops them.");
     expect(bulkDropNotice("delete-account")).toContain("Deleting your account drops them.");
+  });
+
+  it("drops files staged for bulk upload when batches end, so the next account never gets them", () => {
+    const pdf = new File(["%PDF"], "a.pdf", { type: "application/pdf" });
+    stageBulkUpload({ files: [pdf], skipped: 0 });
+    endBulkSessions({ except: "u2" });
+    expect(takeStagedBulkUpload()).toBeNull();
   });
 });
