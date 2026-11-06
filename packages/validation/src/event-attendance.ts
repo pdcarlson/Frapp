@@ -100,6 +100,37 @@ export function eventLimitsAudience(event: EventAttendanceFields): boolean {
   );
 }
 
+/** Whether any role is set apart from the default: a list's "By role" badge. */
+export function eventSetsRolesApart(event: EventAttendanceFields): boolean {
+  return (
+    event.others_invited === false ||
+    (event.required_role_ids?.length ?? 0) > 0 ||
+    (event.optional_role_ids?.length ?? 0) > 0 ||
+    (event.excluded_role_ids?.length ?? 0) > 0
+  );
+}
+
+/**
+ * The rule's fields off a loosely typed event record (a list row, a Realtime
+ * payload), dropping anything malformed. A row from before the columns reads
+ * as it did then: everyone invited.
+ */
+export function attendanceFieldsOf(
+  event: Record<string, unknown>,
+): EventAttendanceFields {
+  const ids = (value: unknown) =>
+    Array.isArray(value)
+      ? value.filter((id): id is string => typeof id === "string")
+      : null;
+  return {
+    is_mandatory: event.is_mandatory === true,
+    required_role_ids: ids(event.required_role_ids),
+    optional_role_ids: ids(event.optional_role_ids),
+    excluded_role_ids: ids(event.excluded_role_ids),
+    others_invited: event.others_invited !== false,
+  };
+}
+
 /** Whether anyone at all is required: the auto-absent sweep's filter. */
 export function eventRequiresAnyone(event: EventAttendanceFields): boolean {
   return (
@@ -211,4 +242,68 @@ export function describeAttendance(
     return `${EVENT_ATTENDANCE_LABELS[draft.everyone]} for everyone, ${parts.join(", ")}`;
   }
   return `${EVENT_ATTENDANCE_LABELS[draft.everyone]} for everyone, ${differ}`;
+}
+
+// The editors' moves, shared so web and mobile set a rule the same way.
+
+/** Roles to offer for adding: not already set, matching every typed word. */
+export function rolesToAdd<T extends { id: string; name: string }>(
+  options: readonly T[],
+  draft: EventAttendanceDraft,
+  query: string,
+): T[] {
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return options.filter(
+    (role) =>
+      !(role.id in draft.roles) &&
+      words.every((word) => role.name.toLowerCase().includes(word)),
+  );
+}
+
+/**
+ * What a role is set to when it is added: the first answer that differs from
+ * the default, in the order an officer most often wants it. Optional for
+ * everyone, so a role added is usually the one that must come; required for
+ * everyone, so a role added is usually the one excused (alumni, new members);
+ * nobody else invited, so a role added is one that must come.
+ */
+export function statusForAddedRole(
+  everyone: EventAttendanceStatus,
+): EventAttendanceStatus {
+  return everyone === "required" ? "optional" : "required";
+}
+
+/** The two answers a role row offers: every status except the default. */
+export function roleChoicesFor(
+  everyone: EventAttendanceStatus,
+): EventAttendanceStatus[] {
+  return (["required", "optional", "not_invited"] as const).filter(
+    (status) => status !== everyone,
+  );
+}
+
+/**
+ * The draft after the default changes. A role whose status now equals the
+ * default no longer differs, so it leaves the list.
+ */
+export function withEveryone(
+  draft: EventAttendanceDraft,
+  everyone: EventAttendanceStatus,
+): EventAttendanceDraft {
+  const roles: Record<string, EventAttendanceStatus> = {};
+  for (const [id, status] of Object.entries(draft.roles)) {
+    if (status !== everyone) roles[id] = status;
+  }
+  return { everyone, roles };
+}
+
+export function withRole(
+  draft: EventAttendanceDraft,
+  roleId: string,
+  status: EventAttendanceStatus | null,
+): EventAttendanceDraft {
+  const roles = { ...draft.roles };
+  if (status === null || status === draft.everyone) delete roles[roleId];
+  else roles[roleId] = status;
+  return { ...draft, roles };
 }

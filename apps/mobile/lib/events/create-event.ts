@@ -3,8 +3,7 @@ import {
   attendanceToWire,
   describeAttendance,
   emptyAttendanceDraft,
-  recurrenceLastStart,
-  recurrenceMeetingCount,
+  describeSeriesLength,
   type EventAttendanceDraft,
   type RecurrenceRule,
 } from "@repo/validation";
@@ -226,22 +225,13 @@ export function validateNewEvent(
 
 /**
  * The line under the Repeat choices: how long the series runs, since it isn't
- * open-ended ("13 meetings, the last on Feb 5"). `null` for a one-time event.
+ * open-ended. `null` for a one-time event.
  */
 export function repeatCaption(
   start: Date,
   rule: RecurrenceRule | null,
 ): string | null {
-  if (!rule) return null;
-  const count = recurrenceMeetingCount(rule);
-  const last = recurrenceLastStart(start, rule);
-  if (count === null || last === null) return null;
-  const day = last.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    ...(last.getFullYear() !== start.getFullYear() ? { year: "numeric" } : {}),
-  });
-  return `${count} meetings, the last on ${day}.`;
+  return rule ? describeSeriesLength(start, rule) : null;
 }
 
 /**

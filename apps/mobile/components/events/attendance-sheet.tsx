@@ -9,6 +9,11 @@ import { SignetTokens } from "@repo/theme/signet";
 import { useRoles } from "@repo/hooks";
 import {
   EVENT_ATTENDANCE_LABELS,
+  roleChoicesFor,
+  rolesToAdd,
+  statusForAddedRole,
+  withEveryone,
+  withRole,
   type EventAttendanceDraft,
   type EventAttendanceStatus,
 } from "@repo/validation";
@@ -27,12 +32,7 @@ import {
 import { Segmented } from "@/components/segmented";
 import { CloseGlyph } from "@/components/control-glyphs";
 import {
-  roleChoicesFor,
   roleOptionsFrom,
-  rolesToAdd,
-  statusForAddedRole,
-  withEveryone,
-  withRole,
   type RoleOption,
 } from "@/lib/events/attendance-roles";
 

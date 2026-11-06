@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
 
 // Capture the create/update mutation args. `vi.hoisted` runs before the hoisted
 // `vi.mock` factory, so the spies exist when the factory wires them in.
@@ -50,6 +56,20 @@ import {
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
+/** Open "More options", which starts closed on create. Safe to call twice. */
+function openMoreOptions() {
+  const more = screen.queryByRole("button", { name: /More options/ });
+  if (more) fireEvent.click(more);
+}
+
+/** Open More options and the check-in zone under it. */
+function openZone() {
+  openMoreOptions();
+  if (!screen.queryByRole("button", { name: "Add point" })) {
+    fireEvent.click(screen.getByRole("button", { name: /Check-in zone/ }));
+  }
+}
+
 function fillRequiredFields() {
   fireEvent.change(screen.getByLabelText("Event name"), {
     target: { value: "Exec Sync" },
@@ -62,16 +82,17 @@ function fillRequiredFields() {
   });
 }
 
-describe("EventEditorDialog role targeting", () => {
+describe("EventEditorDialog form shape and attendance by role", () => {
   beforeEach(() => {
     createMutate.mockReset();
     updateMutate.mockReset();
+    mockToast.mockReset();
     createMutate.mockResolvedValue(undefined);
     updateMutate.mockResolvedValue(undefined);
     chapter.active();
   });
 
-  it("labels the notes field as meeting minutes, not internal notes", () => {
+  function renderCreate() {
     render(
       <EventEditorDialog
         open
@@ -82,55 +103,100 @@ describe("EventEditorDialog role targeting", () => {
         onSaved={async () => {}}
       />,
     );
+  }
 
+  it("opens on the four fields every event needs, and says what the rest hold", () => {
+    renderCreate();
+    expect(screen.queryByLabelText("Points for attending")).toBeNull();
+    expect(screen.queryByLabelText("Repeat")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /More options/ }),
+    ).toHaveTextContent("10 pts · Optional for everyone · Doesn't repeat");
+  });
+
+  it("keeps meeting minutes to an edit, after the event exists", () => {
+    renderCreate();
+    openMoreOptions();
+    expect(screen.queryByLabelText("Meeting minutes")).toBeNull();
+  });
+
+  it("labels the notes field as meeting minutes on edit", () => {
+    render(
+      <EventEditorDialog
+        open
+        mode="edit"
+        event={{
+          id: "e0",
+          name: "Chapter",
+          start_time: "2026-07-01T18:00:00.000Z",
+          end_time: "2026-07-01T19:00:00.000Z",
+        }}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
     expect(screen.getByLabelText("Meeting minutes")).toBeInTheDocument();
     expect(screen.queryByLabelText("Internal notes")).not.toBeInTheDocument();
   });
 
-  it("sends required_role_ids in the create payload when roles are selected", async () => {
-    render(
-      <EventEditorDialog
-        open
-        mode="create"
-        event={null}
-        usingPreviewData={false}
-        onOpenChange={() => {}}
-        onSaved={async () => {}}
-      />,
-    );
-
+  it("creates an event required for one role and optional for everyone else", async () => {
+    renderCreate();
     fillRequiredFields();
-    fireEvent.click(screen.getByLabelText("Exec"));
+    openMoreOptions();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Set a role differently" }),
+    );
+    fireEvent.click(await screen.findByText("Exec"));
+    fireEvent.change(screen.getByLabelText("Repeat"), {
+      target: { value: "WEEKLY" },
+    });
+    expect(screen.getByText(/13 meetings, the last on Sep 23\./)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
     await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
-    expect(createMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ required_role_ids: ["r1"] }),
-    );
+    const body = createMutate.mock.calls[0]![0];
+    expect(body).toMatchObject({
+      is_mandatory: false,
+      others_invited: true,
+      required_role_ids: ["r1"],
+      recurrence_rule: "WEEKLY",
+    });
+    expect(body).not.toHaveProperty("optional_role_ids");
   });
 
-  it("omits required_role_ids on create when no roles are selected (all members)", async () => {
-    render(
-      <EventEditorDialog
-        open
-        mode="create"
-        event={null}
-        usingPreviewData={false}
-        onOpenChange={() => {}}
-        onSaved={async () => {}}
-      />,
-    );
-
+  it("sends no role list on create when nothing differs", async () => {
+    renderCreate();
     fillRequiredFields();
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
     await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
-    expect(createMutate).toHaveBeenCalledWith(
-      expect.not.objectContaining({ required_role_ids: expect.anything() }),
-    );
+    const body = createMutate.mock.calls[0]![0];
+    expect(body).not.toHaveProperty("required_role_ids");
+    expect(body).toMatchObject({ is_mandatory: false, others_invited: true });
   });
 
-  it("seeds existing roles and clears them to an empty array on edit", async () => {
+  it("refuses an event that invites nobody", async () => {
+    renderCreate();
+    fillRequiredFields();
+    openMoreOptions();
+    const everyone = screen.getByRole("radiogroup", {
+      name: "Attendance for everyone",
+    });
+    fireEvent.click(
+      within(everyone).getByRole("radio", { name: "Not invited" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Nobody is invited" }),
+      ),
+    );
+    expect(createMutate).not.toHaveBeenCalled();
+  });
+
+  it("reads an officers-only event back and clears it on edit", async () => {
     render(
       <EventEditorDialog
         open
@@ -141,6 +207,7 @@ describe("EventEditorDialog role targeting", () => {
           start_time: "2026-07-01T18:00:00.000Z",
           end_time: "2026-07-01T19:00:00.000Z",
           required_role_ids: ["r1"],
+          others_invited: false,
         }}
         usingPreviewData={false}
         onOpenChange={() => {}}
@@ -148,52 +215,31 @@ describe("EventEditorDialog role targeting", () => {
       />,
     );
 
-    const execCheckbox = screen.getByLabelText("Exec");
-    expect(execCheckbox).toBeChecked();
-    fireEvent.click(execCheckbox);
+    const everyone = screen.getByRole("radiogroup", {
+      name: "Attendance for everyone",
+    });
+    expect(
+      within(everyone).getByRole("radio", { name: "Not invited" }),
+    ).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Remove Exec" }));
+    fireEvent.click(within(everyone).getByRole("radio", { name: "Optional" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
     expect(updateMutate).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "e1",
-        body: expect.objectContaining({ required_role_ids: [] }),
+        body: expect.objectContaining({
+          required_role_ids: [],
+          optional_role_ids: [],
+          excluded_role_ids: [],
+          others_invited: true,
+        }),
       }),
     );
   });
 
-  it("preserves seeded roles on edit when the selection is untouched", async () => {
-    render(
-      <EventEditorDialog
-        open
-        mode="edit"
-        event={{
-          id: "e2",
-          name: "Committee Sync",
-          start_time: "2026-07-01T18:00:00.000Z",
-          end_time: "2026-07-01T19:00:00.000Z",
-          required_role_ids: ["r1", "r2"],
-        }}
-        usingPreviewData={false}
-        onOpenChange={() => {}}
-        onSaved={async () => {}}
-      />,
-    );
-
-    fireEvent.change(screen.getByLabelText("Event name"), {
-      target: { value: "Committee Sync (renamed)" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-
-    await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
-    expect(updateMutate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        body: expect.objectContaining({ required_role_ids: ["r1", "r2"] }),
-      }),
-    );
-  });
-
-  it("renders a seeded role missing from the loaded list as removable", async () => {
+  it("shows a role missing from the loaded list as a removable row", async () => {
     render(
       <EventEditorDialog
         open
@@ -204,6 +250,7 @@ describe("EventEditorDialog role targeting", () => {
           start_time: "2026-07-01T18:00:00.000Z",
           end_time: "2026-07-01T19:00:00.000Z",
           required_role_ids: ["r1", "legacyrole99"],
+          others_invited: false,
         }}
         usingPreviewData={false}
         onOpenChange={() => {}}
@@ -211,22 +258,15 @@ describe("EventEditorDialog role targeting", () => {
       />,
     );
 
-    // The seeded id not returned by useRoles still renders as a checked,
-    // removable row (stub label) so the admin can clear it instead of it
-    // silently persisting into the saved payload.
-    const execCheckbox = screen.getByLabelText("Exec");
-    const phantomCheckbox = screen.getByLabelText("Role legacyro");
-    expect(execCheckbox).toBeChecked();
-    expect(phantomCheckbox).toBeChecked();
-
-    fireEvent.click(execCheckbox);
-    fireEvent.click(phantomCheckbox);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove Removed role" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
     expect(updateMutate).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: expect.objectContaining({ required_role_ids: [] }),
+        body: expect.objectContaining({ required_role_ids: ["r1"] }),
       }),
     );
   });
@@ -273,6 +313,7 @@ describe("EventEditorDialog check-in zone", () => {
         onSaved={async () => {}}
       />,
     );
+    openZone();
 
     fillRequiredFields();
     fireEvent.change(screen.getByLabelText("Zone name"), {
@@ -308,6 +349,7 @@ describe("EventEditorDialog check-in zone", () => {
         onSaved={async () => {}}
       />,
     );
+    openZone();
 
     fillRequiredFields();
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
@@ -329,6 +371,7 @@ describe("EventEditorDialog check-in zone", () => {
         onSaved={async () => {}}
       />,
     );
+    openZone();
 
     fillRequiredFields();
     addPoints(TRIANGLE.slice(0, 2));
@@ -354,6 +397,7 @@ describe("EventEditorDialog check-in zone", () => {
         onSaved={async () => {}}
       />,
     );
+    openZone();
 
     fillRequiredFields();
     addPoints([["91", "0"], ...TRIANGLE.slice(1)]);
@@ -381,6 +425,7 @@ describe("EventEditorDialog check-in zone", () => {
         onSaved={async () => {}}
       />,
     );
+    openZone();
 
     fillRequiredFields();
     addPoints(TRIANGLE);
@@ -413,6 +458,7 @@ describe("EventEditorDialog check-in zone", () => {
         onSaved={async () => {}}
       />,
     );
+    openZone();
 
     fillRequiredFields();
     addPoints(TRIANGLE);
@@ -463,6 +509,7 @@ describe("EventEditorDialog check-in zone", () => {
         onSaved={async () => {}}
       />,
     );
+    openZone();
 
     expect(screen.getByLabelText("Point 1 latitude")).toHaveValue("1");
     expect(screen.getByLabelText("Zone name")).toHaveValue("Great Hall");
@@ -508,6 +555,7 @@ describe("EventEditorDialog check-in zone", () => {
         onSaved={async () => {}}
       />,
     );
+    openZone();
 
     fireEvent.click(screen.getByRole("button", { name: "Move point 1 down" }));
     expect(screen.getByLabelText("Point 1 latitude")).toHaveValue("3");
@@ -548,7 +596,8 @@ describe("EventEditorDialog point value guard (#2206)", () => {
         onSaved={async () => {}}
       />,
     );
-    return screen.getByLabelText("Point value");
+    openMoreOptions();
+    return screen.getByLabelText("Points for attending");
   }
 
   it("keeps the last whole number through a negative or a decimal", () => {
@@ -559,9 +608,7 @@ describe("EventEditorDialog point value guard (#2206)", () => {
     renderCreate();
 
     expect(screen.queryByText(/configure scheduling/i)).toBeNull();
-    expect(screen.getByRole("dialog")).not.toHaveAttribute(
-      "aria-describedby",
-    );
+    expect(screen.getByRole("dialog")).not.toHaveAttribute("aria-describedby");
   });
 
   it("keeps an emptied or unparseable field empty while the officer types", () => {

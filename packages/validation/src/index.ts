@@ -830,6 +830,7 @@ export {
   RECURRENCE_RULES,
   RECURRENCE_REPEAT_LABELS,
   RECURRENCE_RULE_LABELS,
+  describeSeriesLength,
   isRecurrenceRule,
   recurrenceChildCount,
   recurrenceLastStart,
@@ -842,6 +843,7 @@ export type { RecurrenceRule } from "./recurrence";
 export {
   EVENT_ATTENDANCE_LABELS,
   EVENT_ATTENDANCE_STATUSES,
+  attendanceFieldsOf,
   attendanceFromEvent,
   attendanceToWire,
   describeAttendance,
@@ -850,6 +852,12 @@ export {
   eventDefaultAttendance,
   eventLimitsAudience,
   eventRequiresAnyone,
+  eventSetsRolesApart,
+  roleChoicesFor,
+  rolesToAdd,
+  statusForAddedRole,
+  withEveryone,
+  withRole,
 } from "./event-attendance";
 export type {
   EventAttendance,

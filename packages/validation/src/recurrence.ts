@@ -160,3 +160,23 @@ export function recurrenceLastStart(
     }
   }
 }
+
+/**
+ * How long a new series runs, for the line under a Repeat picker: "13
+ * meetings, the last on Feb 5." (the year added when it differs). `null` for
+ * a value that is not a rule.
+ */
+export function describeSeriesLength(
+  start: Date,
+  rule: string | null | undefined,
+): string | null {
+  const count = recurrenceMeetingCount(rule);
+  const last = recurrenceLastStart(start, rule);
+  if (count === null || last === null) return null;
+  const day = last.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(last.getFullYear() !== start.getFullYear() ? { year: "numeric" } : {}),
+  });
+  return `${count} meetings, the last on ${day}.`;
+}
