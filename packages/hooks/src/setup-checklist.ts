@@ -56,6 +56,24 @@ interface SetupChecklistDefinition {
   doneAt: number;
 }
 
+/** The list's title and its hide control's label, the same on both clients. */
+export const SETUP_CHECKLIST_TITLE = "Set up your chapter";
+export const HIDE_SETUP_CHECKLIST_LABEL = "Hide the setup list";
+
+/**
+ * Where each line's action lives in the web app. Web links to these; mobile
+ * opens them in the browser for the lines it has no screen for.
+ */
+export const SETUP_CHECKLIST_WEB_PATH: Readonly<
+  Record<SetupChecklistKey, string>
+> = {
+  invite: "/members",
+  event: "/events",
+  "study-zone": "/geofences",
+  document: "/documents",
+  dues: "/billing",
+};
+
 /** In the order an officer usually does them. */
 export const SETUP_CHECKLIST_LINES: readonly SetupChecklistDefinition[] = [
   {

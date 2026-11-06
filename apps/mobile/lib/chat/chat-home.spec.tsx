@@ -46,7 +46,10 @@ const {
   notificationsData,
   channelsState,
   refetches,
+  setupChecklist,
 } = vi.hoisted(() => ({
+  // The officer setup checklist's state (#3535's hook), null for a member.
+  setupChecklist: { value: null as unknown },
   channelsData: { value: [] as unknown[] },
   categoriesData: { value: [] as unknown },
   unreadData: {
@@ -182,6 +185,13 @@ vi.mock("@repo/hooks", async () => {
       ...query(unreadData.value, refetches.unread),
       isError: queryErrors.unread,
     }),
+    useChapterSetupChecklist: () => ({
+      checklist: setupChecklist.value,
+      hide: vi.fn(),
+    }),
+    HIDE_SETUP_CHECKLIST_LABEL: actual.HIDE_SETUP_CHECKLIST_LABEL,
+    SETUP_CHECKLIST_TITLE: actual.SETUP_CHECKLIST_TITLE,
+    SETUP_CHECKLIST_WEB_PATH: actual.SETUP_CHECKLIST_WEB_PATH,
     useEvents: () => query([], refetches.events),
     useNotifications: () => query(notificationsData.value, refetches.inbox),
     useCurrentUser: () => query({ id: VIEWER }, refetches.viewer),
@@ -221,6 +231,7 @@ import {
 } from "@/lib/chat/last-channel";
 import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
 import { SearchGlyph } from "@/components/search-glyph";
+import { SetupChecklistView } from "@/components/chat/setup-checklist";
 import {
   EmptyState,
   EmptyStateAction,
@@ -300,6 +311,7 @@ function hiddenToggle(tree: ReactTestRenderer) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  setupChecklist.value = null;
   channelsData.value = [general, dmAlice, dmBobHidden, group];
   categoriesData.value = [];
   unreadData.value = [];
@@ -1135,5 +1147,27 @@ describe("Chat home opens the last channel on launch", () => {
     render();
     await settle();
     expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+});
+
+describe("Chat home setup checklist (spec/product/modules.md § Setup checklist)", () => {
+  const ONE_LINE = {
+    doneCount: 0,
+    lines: [{ key: "event", label: "Schedule the first event", done: false }],
+  };
+
+  it("draws the officer's list above the channels once they load", () => {
+    setupChecklist.value = ONE_LINE;
+    const tree = render();
+
+    expect(tree.root.findAllByType(SetupChecklistView)).toHaveLength(1);
+  });
+
+  it("draws nothing for a member, and nothing over the skeleton", () => {
+    expect(render().root.findAllByType(SetupChecklistView)).toHaveLength(0);
+
+    setupChecklist.value = ONE_LINE;
+    channelsState.value = { ...channelsState.value, isPending: true };
+    expect(render().root.findAllByType(SetupChecklistView)).toHaveLength(0);
   });
 });

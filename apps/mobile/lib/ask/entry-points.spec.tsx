@@ -45,6 +45,7 @@ vi.mock("@repo/hooks", () => {
     useViewerUserId: () => "viewer-1",
     useMemberDisplayNames: () => ({ byId: {} }),
     useChapterRoster: () => empty,
+    useChapterSetupChecklist: () => ({ checklist: null, hide: vi.fn() }),
     useSidebarPreferencesRefetch: () => ({ refetch: vi.fn() }),
     useLeaveChannel: () => ({ mutateAsync: vi.fn() }),
     useGetOrCreateDm: () => ({ mutate: vi.fn() }),

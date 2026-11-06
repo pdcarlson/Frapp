@@ -59,6 +59,7 @@ import {
   EmptyStateAction,
   ErrorState,
 } from "@/components/state-block";
+import { SetupChecklistSection } from "@/components/chat/setup-checklist";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
 import { isAskAvailable } from "@/lib/ask/flag";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -338,6 +339,16 @@ export default function ChatHomeScreen() {
         tasks={tasksQuery.data}
         viewerUserId={viewerId}
       />
+
+      {/*
+        The officer setup checklist (spec/product/modules.md § Setup
+        checklist), under UP NEXT and above the channels, as the web rail
+        draws it above its channel list. Only once channels have loaded, so it
+        never sits on top of the skeleton or the error.
+      */}
+      {!channelsQuery.isPending && !channelsQuery.isError ? (
+        <SetupChecklistSection />
+      ) : null}
 
       {/*
         A failed unread fetch must not read as "everything is read". The counts

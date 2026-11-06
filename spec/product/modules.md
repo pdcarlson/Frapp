@@ -251,7 +251,7 @@ Enabling paid ops modules is never a gate — it is surfaced as a dismissible in
 
 ## Setup checklist
 
-Officers get one **Set up your chapter** list instead of an officer half on every empty screen. On web it sits at the top of the chat channel rail, above the channels, where it stays out of the conversation. Each line opens the screen where the thing gets made, and checks itself off once the real thing exists, counted from the same list that screen shows:
+Officers get one **Set up your chapter** list instead of an officer half on every empty screen. On web it sits at the top of the chat channel rail, above the channels, where it stays out of the conversation. On mobile it sits on chat home under UP NEXT and above the channels. Each line opens the screen where the thing gets made, and checks itself off once the real thing exists, counted from the same list that screen shows:
 
 | Line | Shown to holders of | Module | Done when |
 | --- | --- | --- | --- |
@@ -261,7 +261,7 @@ Officers get one **Set up your chapter** list instead of an officer half on ever
 | Upload the bylaws | `chapter_docs:upload` | `documents` | the library has a document |
 | Send the first dues | `billing:manage` and `billing:view` (only `view` reads the whole chapter's invoices) | `dues` | the chapter has an invoice |
 
-A line shows only to an officer who can do it, and only while the module the server gates its action on is on (switching a module on is the ops nudge's job, above). The list draws nothing until every read it needs has loaded, so it never flashes in half-checked, and a read that fails leaves it undrawn rather than guessing a line. It is worked out from live counts, so it goes away while every line it shows is done and comes back if one comes undone, say the only event is deleted or a module is switched on. An officer can hide it for good; like a nudge, the hide is stored per user per chapter, as `setup-checklist` in `members.dismissed_ops_nudges`. The rule is shared by both clients (`useChapterSetupChecklist` in `@repo/hooks`); mobile chat home does not draw it yet.
+A line shows only to an officer who can do it, and only while the module the server gates its action on is on (switching a module on is the ops nudge's job, above). The list draws nothing until every read it needs has loaded, so it never flashes in half-checked, and a read that fails leaves it undrawn rather than guessing a line. It is worked out from live counts, so it goes away while every line it shows is done and comes back if one comes undone, say the only event is deleted or a module is switched on. An officer can hide it for good; like a nudge, the hide is stored per user per chapter, as `setup-checklist` in `members.dismissed_ops_nudges`. The rule, the copy and each line's web page are shared by both clients (`useChapterSetupChecklist` and `SETUP_CHECKLIST_WEB_PATH` in `@repo/hooks`). The phone can upload a document, so that line opens Documents in the app; it has no screen for the other four, so those lines say "Web" and open the same page of the web app in the in-app browser.
 
 ## Module disabling behavior
 
