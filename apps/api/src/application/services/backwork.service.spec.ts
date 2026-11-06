@@ -216,7 +216,7 @@ describe('BackworkService', () => {
       );
     });
 
-    it('accepts a declared size at exactly the backwork ceiling (50 MB, #3487)', async () => {
+    it('accepts a declared size at exactly the backwork ceiling (100 MB, #3487)', async () => {
       mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
         'https://storage.supabase.co/upload/signed',
       );
@@ -254,7 +254,7 @@ describe('BackworkService', () => {
           contentType: 'application/pdf',
           sizeBytes: MAX_BACKWORK_UPLOAD_BYTES + 1,
         }),
-      ).rejects.toThrow('File exceeds the 50 MB upload limit');
+      ).rejects.toThrow('File exceeds the 100 MB upload limit');
     });
   });
 
