@@ -859,6 +859,9 @@ export function createTenantHarness(
         return { data, error: canned?.error ?? null };
       };
       const call: Record<string, unknown> = {
+        // A column list on a set-returning function narrows the row; the
+        // canned rows already are whatever the spec says comes back.
+        select: jest.fn(() => call),
         order: jest.fn((column: string, opts?: { ascending?: boolean }) => {
           orderBy.push({ column, ascending: opts?.ascending !== false });
           return call;
