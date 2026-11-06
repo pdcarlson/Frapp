@@ -32,6 +32,8 @@ export interface User {
   avatar_url: string | null;
   bio: string | null;
   graduation_year: number | null;
+  /** Free text, like "Mechanical Engineering". Added 2026-11-06. */
+  major: string | null;
   current_city: string | null;
   current_company: string | null;
   /**

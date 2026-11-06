@@ -16,6 +16,7 @@ export interface ViewerProfile {
   initials: string;
   email: string | null;
   graduationYear: number | null;
+  major: string | null;
   currentCity: string | null;
   currentCompany: string | null;
   bio: string | null;
@@ -32,6 +33,7 @@ export function selectViewerProfile(data: unknown): ViewerProfile | null {
     initials: initialsFor(displayName),
     email: str(data, "email"),
     graduationYear: num(data, "graduation_year"),
+    major: str(data, "major"),
     currentCity: str(data, "current_city"),
     currentCompany: str(data, "current_company"),
     bio: str(data, "bio"),

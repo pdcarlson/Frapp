@@ -626,19 +626,29 @@ export type {
 // since mentions override a per-channel mute in the push rules and a
 // client-supplied list would be forgeable.
 export {
+  activeMentionQuery,
   extractMentionTokens,
   findMentionSpans,
   matchMentionCandidate,
+  mentionLabelFor,
+  mentionSuggestions,
   resolveMentions,
 } from "./mentions";
-export type { MentionCandidate, MentionSpan } from "./mentions";
+export type {
+  ActiveMentionQuery,
+  MentionCandidate,
+  MentionSpan,
+  MentionSuggestion,
+} from "./mentions";
 
 // ── Time zones (issue #687) ──────────────────────────────────────────────────
 export {
+  FALLBACK_TIME_ZONE,
   isSupportedTimeZone,
   isUtcOffset,
-  normalizeTimeZoneInput,
+  localTimeZone,
   MAX_TIME_ZONE_LENGTH,
+  timeZoneCity,
 } from "./time-zone";
 
 // ── Notification categories (issue #564; mobile half shipped in C4 of #937) ──
@@ -715,6 +725,7 @@ export {
 // mobile cannot disagree about ONLINE / DEGRADED / OFFLINE. Each app owns
 // the effects that feed it; this package owns the rule.
 export {
+  CONFIRM_RETRY_MS,
   DEGRADED_THRESHOLD,
   deriveConnectionState,
   healthProbeIsReachable,
@@ -742,11 +753,18 @@ export {
   DOCUMENT_TITLE_MAX_LENGTH,
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
+  MAJOR_MAX_LENGTH,
   POLL_OPTIONS_MAX,
   POLL_OPTIONS_MIN,
   SERVICE_DESCRIPTION_MAX_LENGTH,
   YEAR_MAX,
 } from "./field-limits";
+
+export {
+  PROFILE_ALUMNI_SECTION,
+  PROFILE_FIELD_COPY,
+  showsAfterGraduation,
+} from "./profile-copy";
 
 // ── Chapter mark (logo → short name → Greek letters → initials) ─────────────
 export {

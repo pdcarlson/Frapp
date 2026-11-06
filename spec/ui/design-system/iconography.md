@@ -55,8 +55,11 @@ Rules:
 1. A state change **recolors** the glyph (stroke + fill together). It MUST NOT
    swap to a solid-filled variant — solid fills are not part of the duotone
    family.
-2. Tab bar active state = accent duotone glyph + 700-weight label. No pill or
-   container shape behind the glyph.
+2. Tab bar active state = accent duotone glyph + 700-weight label, on a soft
+   capsule (white at 8%) the full height of the pill's row, as iOS 26's own
+   bars draw it. Corrected 2026-11-06 with the glass tab pill (owner pick, the
+   quick-actions mockup): this rule used to read "No pill or container shape
+   behind the glyph", which held for the flat bar.
 3. Locked emblem B is a brand asset, not an icon — it never takes
    the duotone treatment or the chapter accent (see
    [brand identity](../brand-identity.md)).
@@ -193,6 +196,15 @@ cluster replaces its own as it rebuilds; there is no separate icon migration.
 
 ### 6.1.2 Mobile More hub (Signet duotone, shipped)
 
+The tab bar's quick-actions panel (`apps/mobile/components/quick-actions/quick-actions-panel.tsx`,
+[`navigation.md` § Quick actions](../mobile/navigation.md#quick-actions)) draws
+each action at 26px on a 58pt glass disc, in `text.foreground`, with the nav
+shape of the place it leads: New event `events`, New task `tasks`, Message
+`chat`, Check in `checkIn` (Phosphor `map-pin`, added for it), Host check-in
+`hostCheckIn`, Log hours `service`, Study `study`, Upload `documents`. The
+active tab in the pill sits on a soft capsule (white at 8%) under its accent
+glyph and bold label, as iOS 26's own bars draw it, since 2026-11-06.
+
 The More hub's leading row glyphs (s09, #1048) live in
 `apps/mobile/components/more/more-glyphs.tsx` at 20px (§2's list-row size)
 and draw the shared nav set (§1.1), so one intent draws one shape on both
@@ -252,13 +264,14 @@ viewer draws the same intents in Lucide (`Download`, `X`, `ChevronLeft`,
 | Semantic intent | Glyph | Lives in |
 |---|---|---|
 | Close the viewer | `CloseGlyph` (an ×), at 24 | `components/control-glyphs.tsx` (§6.1.5) |
-| Share the image | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark | `components/chat/viewer-glyphs.tsx` |
+| Share the image | `ShareGlyph`, at 24 | `components/control-glyphs.tsx` (§6.1.5) |
 | Previous / next image | `ChevronGlyph` | `components/chat/viewer-glyphs.tsx` |
 
 ### 6.1.5 Mobile control glyphs (stroke recipe, shipped)
 
 The verbs an icon-only control draws ([components.md § Icon-only
-actions](components.md#icon-only-actions)) live in one file,
+actions](components.md#icon-only-actions)), plus share's companion mark for an
+invite link, live in one file,
 `apps/mobile/components/control-glyphs.tsx`, so every dismiss on mobile is the
 same ×. Detail strokes only, no silhouette fill, at 20px (§2's icon-button
 size) unless a caller passes another size. Color comes from the surface: the
@@ -270,6 +283,8 @@ the chapter accent in a back-row slot (2026-11-05).
 | Dismiss, close, remove | `CloseGlyph` (an ×) | the network banner, the thread's error banner, the composer's reply and attachment chips (16px), the image viewer (24px), the service-hours proof row, Chat home's setup-checklist hide (16px) | Lucide `X` |
 | Edit | `PencilGlyph` | Profile's back row | Lucide `Pencil` |
 | Mark all read | `CheckAllGlyph` (two checks) | the Notifications screen header | Lucide `CheckCheck` |
+| Share | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark (moved here from the image viewer's own file, 2026-11-06) | the image viewer (24px), chapter setup's `Share invite` gold button, in the button's ink | Lucide `Share` |
+| Invite link | `LinkGlyph` (two joined links) | chapter setup's invite step: its link card, in `gold.askText` on the ask tile, and each shared row (16px) | Lucide `Link` |
 
 ### 6.2 Web Dashboard shell (Signet duotone)
 

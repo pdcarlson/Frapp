@@ -39,6 +39,9 @@ vi.mock("@repo/hooks", () => {
     useCategories: () => empty,
     useChannelUnreadCounts: () => empty,
     useEvents: () => empty,
+    // s06 draws its New event button for an officer; a member here.
+    usePermissionList: () => [],
+    useCreateEvent: () => ({ mutate: vi.fn(), isPending: false }),
     useNotifications: () => empty,
     useCurrentUser: () => empty,
     useTasks: () => empty,

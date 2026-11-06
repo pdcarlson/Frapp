@@ -1,10 +1,18 @@
 import { extractMentionTokens, findMentionSpans } from "@repo/validation";
-import { MENTION_CHIP } from "../chip";
 
 /**
  * A remark transform that lifts every `@`-token in a message body out of its
- * surrounding text and into its own node, so `MessageMarkdown` can paint it as
- * the §11 mention chip.
+ * surrounding text and into a `mark` element of its own, so each client's
+ * `MessageMarkdown` can paint it as the §11 mention chip (`components.md`
+ * § In-body mention chip). Shared since 2026-11-06, when mobile started
+ * drawing the chip: web had it alone before, and a second copy is how the two
+ * clients would come to disagree about which runs are mentions.
+ *
+ * One gap remains, and it is web's to close: mobile links a bare URL before
+ * this runs (`remarkBareUrls`), and a link label is opaque here, so
+ * `https://youtube.com/@MrBeast` chips `@MrBeast` on web and not on mobile.
+ * The API reads that token and notifies, so web's chip is the true one; the
+ * two converge when web links bare URLs too (#2862).
  *
  * **Why a remark plugin and not a pass over the rendered React tree.** The
  * alternative — recursing through `react-markdown`'s children and splitting the
@@ -73,10 +81,9 @@ const OPAQUE_TO_MENTIONS = new Set(["link", "linkReference", "definition"]);
  * `value` on this node — with a `value` and no children the fallback would
  * produce an empty element and the handle would vanish from the message.
  *
- * The chip's paint rides `hProperties` rather than a `components.mark` override
- * in `MessageMarkdown`, so the element arrives fully formed and the renderer
- * keeps one fewer override to get right. The recipe itself still lives in
- * `chip.ts` with the rest of chat's chrome; only the reference is here.
+ * Web's paint rides `hProperties` (the `properties` option, its `MENTION_CHIP`
+ * class), so the element arrives fully formed there. Mobile draws a `Text`, not
+ * a class, so it passes none and paints the chip in its `mark` component.
  *
  * `data-mention` carries the *token* the tokenizer read, which is not always
  * what the reader sees: `@jane.` leaves the stop outside the chip. Kept as an
@@ -88,17 +95,24 @@ interface MentionChipNode extends MdastNode {
   children: [{ type: "text"; value: string }];
   data: {
     hName: "mark";
-    hProperties: { className: string; "data-mention": string };
+    hProperties: MentionChipProperties & { "data-mention": string };
   };
 }
 
-function mentionChip(raw: string, token: string): MentionChipNode {
+/** Attributes every chip element carries, besides its `data-mention`. */
+export type MentionChipProperties = Record<string, string>;
+
+function mentionChip(
+  raw: string,
+  token: string,
+  properties: MentionChipProperties,
+): MentionChipNode {
   return {
     type: "mentionChip",
     children: [{ type: "text", value: raw }],
     data: {
       hName: "mark",
-      hProperties: { className: MENTION_CHIP, "data-mention": token },
+      hProperties: { ...properties, "data-mention": token },
     },
   };
 }
@@ -111,7 +125,11 @@ function mentionChip(raw: string, token: string): MentionChipNode {
  * and `@alice` and `@Alice` are one handle. A span the set does not contain is
  * left as plain text — see the header on why that check cannot be skipped.
  */
-function splitTextNode(value: string, addressed: ReadonlySet<string>): MdastNode[] {
+function splitTextNode(
+  value: string,
+  addressed: ReadonlySet<string>,
+  properties: MentionChipProperties,
+): MdastNode[] {
   const spans = findMentionSpans(value).filter((span) =>
     addressed.has(span.token.toLowerCase()),
   );
@@ -123,7 +141,9 @@ function splitTextNode(value: string, addressed: ReadonlySet<string>): MdastNode
     if (span.start > cursor) {
       parts.push({ type: "text", value: value.slice(cursor, span.start) });
     }
-    parts.push(mentionChip(value.slice(span.start, span.end), span.token));
+    parts.push(
+      mentionChip(value.slice(span.start, span.end), span.token, properties),
+    );
     cursor = span.end;
   }
   if (cursor < value.length) {
@@ -136,7 +156,7 @@ function splitTextNode(value: string, addressed: ReadonlySet<string>): MdastNode
  * Hand-rolled rather than `unist-util-visit`, which is in the tree only as a
  * transitive dependency of remark. Importing it — or `@types/mdast`, hoisted
  * the same way, which is why the node types above are structural — would make
- * this file depend on a package `apps/web` never declared: the kind that keeps
+ * this file depend on a package this workspace never declared: the kind that keeps
  * working until an unrelated dependency bump hoists it somewhere else. The walk
  * it would save is a dozen lines.
  *
@@ -148,7 +168,11 @@ function splitTextNode(value: string, addressed: ReadonlySet<string>): MdastNode
  * (#2209), so today this walk never sees that depth; iterating anyway costs
  * nothing and keeps this file safe if the plugin order ever changes.
  */
-function transform(root: MdastNode, addressed: ReadonlySet<string>): void {
+function transform(
+  root: MdastNode,
+  addressed: ReadonlySet<string>,
+  properties: MentionChipProperties,
+): void {
   const stack: Array<{ node: MdastNode; opaque: boolean }> = [
     { node: root, opaque: false },
   ];
@@ -158,7 +182,7 @@ function transform(root: MdastNode, addressed: ReadonlySet<string>): void {
     const next: MdastNode[] = [];
     for (const child of node.children) {
       if (!opaque && child.type === "text" && child.value !== undefined) {
-        next.push(...splitTextNode(child.value, addressed));
+        next.push(...splitTextNode(child.value, addressed, properties));
         continue;
       }
       stack.push({
@@ -178,9 +202,12 @@ export interface MentionChipOptions {
    * one that can say whether a handle was really addressed; see the header.
    */
   content: string;
+  /** Attributes for every chip element, such as web's chip class. */
+  properties?: MentionChipProperties;
 }
 
 export function remarkMentionChips(options: MentionChipOptions) {
+  const properties = options.properties ?? {};
   // Folded once per message rather than per text node: a body is one string and
   // a bubble can hold many nodes.
   const addressed = new Set(
@@ -190,6 +217,6 @@ export function remarkMentionChips(options: MentionChipOptions) {
     // Nothing was addressed, so nothing can be chipped and the tree does not
     // need walking — the overwhelmingly common case for a chat message.
     if (addressed.size === 0) return;
-    transform(tree, addressed);
+    transform(tree, addressed, properties);
   };
 }

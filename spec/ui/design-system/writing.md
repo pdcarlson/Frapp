@@ -78,6 +78,18 @@ Example:
 
 Copy never shows a permission key such as `roles:manage`. A permission-denied line names what the role can't do (`Your role can't manage roles.`) and who can change that; an error that may be an access problem says `Confirm your chapter access and retry.`; a toast with no server message says `Try again in a moment.` Where a screen has to name a permission, it uses the words in [`permission-labels.ts`](../../../apps/web/lib/permission-labels.ts) (2026-11-05).
 
+## 3a. Form copy
+
+*(Added 2026-11-06, from the mobile Edit profile sheet, whose bio placeholder asked for "Major, year, anything brothers should know." directly above a Graduation year field.)*
+
+- **A placeholder never asks for what another field holds.** If the form has a field for it, the placeholder doesn't mention it; if it doesn't and the information matters, the form gets the field.
+- **A placeholder never repeats its label.** "Your password" under Password, "Your full name" under Name: say something the label doesn't ("First and last name"), or draw no placeholder.
+- **A placeholder is a hint, not a value.** A format (`YYYY`) or an `e.g.` example reads as a hint; a bare plausible value ("2027") reads as already filled in.
+- **Purpose shared by several fields is said once,** as a group heading or hint, not in each placeholder (components.md § Text input, "Grouping and spacing in a form").
+- **A placeholder is the only label only for a sheet's one primary field** whose purpose the sheet title already names: a composer, a search, a task title, a code entry. Any other field has a visible label.
+- **Free-text prompts can be light.** The bio is a member talking to their chapter, so its placeholder invites rather than instructs: "Hometown, hidden talent, go-to late-night order."
+- **Shared forms share their copy.** Where web and mobile draw the same form, the labels and placeholders come from one constant (`PROFILE_FIELD_COPY` in `@repo/validation` for the profile), so a wording fix lands on both.
+
 ## 4. Empty state pattern
 
 Every empty state MUST include:
@@ -94,7 +106,7 @@ Example (the Events surface, from the tables below):
 
 **Amended 2026-11-05**, after the owner's review of the Android build (2026-11-04): "we don't need to narrate stuff". The explanation used to be required on every empty state, which is how empty cards came to describe their own screen ("Documents the chapter uploads show up here.", "Members appear here once they join the chapter."). The rule above governs new and changed copy, for the reason [`../mobile/patterns.md` § Screen headers](../mobile/patterns.md#screen-headers) took the line under each screen title away: the member is already on the screen. The change that amended it removed those lines from the mobile screens it touched: Documents (s12), Directory (s13) and the notifications inbox (s14). Chat home's no-channels card (s04) swapped its line for what to do next: `No channels yet` / `Ask an admin to add one.` (mobile has no way to create one). A line that carries a fact stays: a search names its query, a filtered view says how to widen it, and the no-chapter state says where to pick a chapter.
 
-Lines that still narrate are follow-up ([#3429](https://github.com/pdcarlson/Frapp/issues/3429)), not changed by the amendment: mobile Events' `Events your chapter schedules will appear here.`; the second sentence of mobile Dues' empty body, `Anything they send will show up here.` ([Dues (mobile, s11)](#dues-mobile-s11)); and on web the empty rows of [Members](#members-dashboard) (`Actives appear here once they join.`), [Alumni](#alumni-dashboard) (`Graduated members appear here.`), [Notifications](#notifications-dashboard) (`… will appear here.`) and [Points](#points-dashboard)' empty transactions (`Your attendance, study sessions, and adjustments will appear here.`).
+Lines that still narrate are follow-up ([#3429](https://github.com/pdcarlson/Frapp/issues/3429)), not changed by the amendment: the second sentence of mobile Dues' empty body, `Anything they send will show up here.` ([Dues (mobile, s11)](#dues-mobile-s11)); and on web the empty rows of [Members](#members-dashboard) (`Actives appear here once they join.`), [Alumni](#alumni-dashboard) (`Graduated members appear here.`), [Notifications](#notifications-dashboard) (`… will appear here.`) and [Points](#points-dashboard)' empty transactions (`Your attendance, study sessions, and adjustments will appear here.`).
 
 The skeleton/empty/error state variants themselves — layout, structure, when each renders — are component-level and owned by [components.md](components.md). This document owns the words inside them.
 
@@ -148,10 +160,12 @@ The tables below are the canonical strings for high-frequency state messages, so
 
 ### Connection banner (global)
 
-| State | Title | Description |
-|---|---|---|
-| Degraded | — | `Slow connection. Some features may be delayed.` |
-| Offline | — | `You're offline. Showing cached data.` |
+| State | Title | Description | Mobile pill (drawn) |
+|---|---|---|---|
+| Degraded | — | `Slow connection. Some features may be delayed.` | `Slow connection` |
+| Offline | — | `You're offline. Showing cached data.` | `Offline` |
+
+Mobile's floating pill draws the last column so it fits over a header, and its accessible name is the Description (2026-11-06, `connectionPillLabel` in `apps/mobile/lib/connection/state.ts`).
 
 **The closing clause was removed in #1707 and MUST NOT be re-added to the global banner.** The rule it replaces read: *"The offline string MUST keep its closing clause — a member who edited or posted while offline needs to be told the work is queued, not lost."* The intent was right and the placement was wrong. Only the chat composer has an outbox, so "changes will sync" was true on exactly one surface and false on every other route this global banner renders on — dashboard writes are queueless and now reject rather than pausing. Promising a queue that does not exist is the §1 principle 1 violation ("actions must never appear to succeed when they haven't") that the clause was meant to prevent.
 
@@ -242,11 +256,15 @@ The composer is shared by the Members panel and the web setup wizard's last step
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading points ledger...` |
-| Empty leaderboard | `No leaderboard entries` | `Point activity will populate after attendance, study, or admin adjustments.` |
-| Leaderboard search matched nothing | `No members match that search` | `Check the spelling, or clear the search to see the full leaderboard.` |
-| Empty transactions | `No transactions in this window` | `Your attendance, study sessions, and adjustments will appear here.` |
+| Everyone at 0 | — | `Everyone is tied at 0. The first points earned take the lead.` (one line under the board) |
+| Empty leaderboard | — | `Nobody has points in this period.` (one line) |
+| Leaderboard search matched nothing | — | `No members match that search.` then a **Clear search** link (one line) |
+| Empty transactions | — | `No points in this period yet.` (one line) |
+| Transaction filters matched nothing | — | `No transactions match these filters.` then a **Clear filters** link (one line) |
 | Error | `Couldn't load the points ledger` | `Standings and transactions are unavailable, so none are shown. Confirm your chapter access and retry.` |
 | Offline | `Points ledger unavailable offline` | `Reconnect to refresh leaderboard standings and transaction history.` |
+
+The board lists the whole roster, at 0 until a member earns points ([`points.md` § Leaderboard](../../behavior/points.md#leaderboard)), so a new chapter sees its members tied for first with the one line above rather than a card. The empty and no-match states are single lines (`InlineNote`, `apps/web/components/shared/inline-note.tsx`) where the rows would be, not cards; error and offline keep theirs (2026-11-06).
 
 ### Points — Audit tab (dashboard)
 
@@ -415,6 +433,7 @@ bind every one of them, and both are the point rather than style:
 
 | Surface | Description |
 |---|---|
+| New event (sheet from the tab bar's +) | `Your chapter's subscription isn't active, so new events can't be saved. An officer can sort this out for the chapter.` |
 | New task (s19) | `Your chapter's subscription isn't active, so new tasks can't be saved. An officer can sort this out for the chapter.` |
 | Task status (s08 toggle, chat task card) | `Your chapter's subscription isn't active, so task updates can't be saved. An officer can sort this out for the chapter.` Shown on the board, and on a mobile chat task card for Start, Mark complete, Confirm and Reject (one copy for both, `taskStatusGateRefusal` in `apps/mobile/lib/tasks/status-refusal.ts`). On either, the controls stay withdrawn until the member comes back to the screen or to the app ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
 | Event check-in | `Your chapter's subscription isn't active, so check-in isn't available. An officer can sort this out for the chapter.` |
@@ -444,6 +463,7 @@ the state with `pollsGateOf` in `@repo/chat-core/polls`.
 
 | Surface | Description |
 |---|---|
+| New event (sheet from the tab bar's +) | `Events are turned off for your chapter right now, so new events can't be saved. An officer can turn events back on.` |
 | New task (s19) | `Tasks are turned off for your chapter right now, so new tasks can't be saved. An officer can turn tasks back on.` |
 | Task status (s08 toggle, chat task card) | `Tasks are turned off for your chapter right now, so task updates can't be saved. An officer can turn tasks back on.` Shown on the board and on a mobile chat task card, and withdrawn for as long, like the subscription row for the same writes ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
 | Event check-in | `Check-in is turned off for your chapter right now. An officer can turn events back on.` |
@@ -1060,8 +1080,8 @@ Mobile's first-officer setup, `(auth)/create-chapter.tsx` (#3351). Titles are `S
 | Live, chapter not made active | `<name> is live` | `Your chapter is ready. Open chat to see its channels and invite your members.` No channel list, no invite step: both act on the active chapter. |
 | Live, logo | — | `Add your chapter's logo` (`Change logo` once set) + `Optional. A logo stands in for your letter mark everywhere.` A refusal shows `uploadFailureReason`'s sentence, or `Logos can be JPEG, PNG, GIF or WebP.` / `Logos can be up to <limit>.` When the new chapter couldn't be made active: `You can add a logo later from the web dashboard's Settings.` |
 | Primer | `Stay in the loop` | No line under the title; the push primer card says it. Only when this build can push. |
-| Invite | `Invite your chapter` | `Each link lets one person join and expires after 24 hours.` The gold primary reads `Create invite link`, then `Share invite` once a link exists, with the link on a card above it and `Create another link` under the link. Leaving is the quiet line under the primary: `Skip for now`, then `Go to chat`. |
-| Invite failed | — | The server's message, else `Couldn't create an invite. You can invite members from the web dashboard.` |
+| Invite | `Invite your chapter` | `Send each person their own link. A link lets one person in and lasts 24 hours.` No link is ever drawn: a card reads `A new link for each person` over `<host>, good for 24 hours`. The gold primary is `Share invite` with the platform's share mark; each press shares a fresh link under the line `Join <name> on Frapp` (owner pick 2026-11-06, "Share first"). Links shared list under a `Shared` caption, newest first, as `Link <n>` with `Not used yet` or `Joined`. Leaving is the quiet line under the primary: `Skip for now`, then `Go to chat` once a link has gone out. |
+| Invite failed | — | The server's message, else `Couldn't create an invite. You can invite members from the web dashboard.` When the share sheet won't open: `Couldn't open the share sheet. Try again, or invite members from the web dashboard.` |
 
 ### Chapter picker (mobile)
 

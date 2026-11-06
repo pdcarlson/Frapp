@@ -76,7 +76,9 @@ describe("selectSetupChecklist", () => {
   });
 
   it("needs billing:view for dues, since only it reads the chapter's invoices", () => {
-    const list = select({ permissions: ["billing:manage", "events:create"] });
+    const list = select({
+      permissions: ["billing:manage", "events:create", "members:view"],
+    });
     expect(list?.lines.map((l) => l.key)).toEqual(["event"]);
   });
 
@@ -117,7 +119,7 @@ describe("selectSetupChecklist", () => {
 
   it("doesn't wait on a list for a line the viewer can't see", () => {
     const list = select({
-      permissions: ["events:create"],
+      permissions: ["events:create", "members:view"],
       counts: { event: 0 },
     });
     expect(list?.lines.map((l) => l.key)).toEqual(["event"]);

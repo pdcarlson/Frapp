@@ -827,6 +827,12 @@ function InviteStep({ onInvited }: { onInvited: () => void }) {
       {/* The Members panel's composer, so both say the same thing. New
           members join as Member; the panel lets an officer pick. */}
       <InviteComposer role={INVITE_ROLE} onInvited={onInvited} />
+      {/* Onboarding's analytics disclosure (spec/behavior/settings § Privacy). */}
+      <p className="text-caption text-muted-foreground">
+        Frapp collects pseudonymous usage analytics (on by default) to fix bugs
+        and improve the product. It never collects message content. You can turn
+        it off anytime in Settings → Privacy.
+      </p>
     </div>
   );
 }

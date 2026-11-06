@@ -13,7 +13,15 @@ import type { components } from "@repo/api-sdk";
 export type InviteListItem = components["schemas"]["InviteListItemDto"];
 export type InviteStatus = components["schemas"]["InviteStatus"];
 
-export function useInvites(options?: { enabled?: boolean }) {
+/**
+ * `refetchInterval` is for a screen that watches its invites get used while
+ * it is open, such as mobile setup's invite step, which marks a shared link
+ * Joined. Off by default.
+ */
+export function useInvites(options?: {
+  enabled?: boolean;
+  refetchInterval?: number | false;
+}) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
@@ -24,6 +32,7 @@ export function useInvites(options?: { enabled?: boolean }) {
       return data;
     },
     staleTime: 60_000,
+    refetchInterval: options?.refetchInterval ?? false,
     enabled: (options?.enabled ?? true) && !!chapterId,
   });
 }

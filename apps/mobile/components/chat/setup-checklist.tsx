@@ -12,7 +12,10 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { asRoute } from "@/lib/href";
-import { webAppOrigin } from "@/lib/onboarding/chapter-wizard/invite-link";
+import {
+  webAppHost,
+  webAppOrigin,
+} from "@/lib/onboarding/chapter-wizard/invite-link";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { IconButton } from "@/components/icon-button";
 import { CloseGlyph } from "@/components/control-glyphs";
@@ -24,9 +27,11 @@ import { CheckGlyph } from "@/components/tasks/task-glyphs";
  * UP NEXT and above the channels, drawn the way UP NEXT is (an eyebrow over
  * rows), so it reads as one more strip of chrome and not a card.
  *
- * The phone can upload a document, so that line opens Documents, where the
- * upload sheet is. It has no screen for inviting, scheduling or study zones,
- * so those lines open the same page of the web app in the in-app browser, and
+ * The phone can upload a document and schedule an event, so those lines open
+ * Documents (its + is the upload sheet) and Events (its empty state points at
+ * the tab bar's +, where New event is). It has no screen for inviting or
+ * study zones, so those lines open the same page of the web app in the
+ * in-app browser, and
  * say so before the tap, the way Settings' Study zones row says where zones
  * are managed. It never draws dues ({@link MOBILE_SETUP_CHECKLIST_OMIT}).
  *
@@ -47,6 +52,7 @@ export const SETUP_CHECKLIST_APP_ROUTE: Partial<
   Record<SetupChecklistKey, string>
 > = {
   document: "/documents",
+  event: "/events",
 };
 
 /** The trailing note on a line that opens the web app. */
@@ -59,7 +65,7 @@ export const SETUP_CHECKLIST_WEB_HINT = "Opens this step in the web app.";
 export function setupChecklistOpenFailedBody(
   origin: string = webAppOrigin(),
 ): string {
-  return `Sign in at ${origin.replace(/^https?:\/\//, "")} on a computer to finish this step.`;
+  return `Sign in at ${webAppHost(origin)} on a computer to finish this step.`;
 }
 
 export function setupChecklistWebUrl(

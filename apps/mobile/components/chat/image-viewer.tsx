@@ -26,7 +26,11 @@ import Animated, {
 import { isViewableImage } from "@repo/chat-core/attachments";
 import { useMessageAttachments } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { useBackToClose, useFocusOnOpen, type FocusTarget } from "@/lib/overlay";
+import {
+  useBackToClose,
+  useFocusOnOpen,
+  type FocusTarget,
+} from "@/lib/overlay";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import {
   UNZOOMED,
@@ -38,12 +42,8 @@ import {
   type ZoomState,
 } from "@/lib/chat/image-zoom";
 import { shareAttachment } from "@/lib/chat/share-attachment";
-import { CloseGlyph } from "@/components/control-glyphs";
-import {
-  ChevronGlyph,
-  ShareGlyph,
-  VIEWER_GLYPH_SIZE,
-} from "./viewer-glyphs";
+import { CloseGlyph, ShareGlyph } from "@/components/control-glyphs";
+import { ChevronGlyph, VIEWER_GLYPH_SIZE } from "./viewer-glyphs";
 
 /**
  * The backdrop is black in both themes, so its controls are white rather than
@@ -301,7 +301,7 @@ function ViewerBody({
             {isSharing ? (
               <ActivityIndicator size="small" color={CONTROL_COLOR} />
             ) : (
-              <ShareGlyph color={CONTROL_COLOR} />
+              <ShareGlyph color={CONTROL_COLOR} size={VIEWER_GLYPH_SIZE} />
             )}
           </Pressable>
           <Pressable
