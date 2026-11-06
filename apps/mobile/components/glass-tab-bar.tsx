@@ -3,6 +3,7 @@ import {
   BackHandler,
   Pressable,
   StyleSheet,
+  Text,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -23,11 +24,15 @@ import { useQuickActionsHost } from "@/components/quick-actions/quick-actions-ho
 import { useQuickActions } from "@/components/quick-actions/use-quick-actions";
 import { TabLabel } from "@/components/tab-glyphs";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { FLOATING_TAB_BAR, floatingTabBarBottom } from "@/lib/floating-chrome";
+import {
+  FLOATING_TAB_BAR,
+  floatingTabBarBottom,
+  floatingTabBarTop,
+} from "@/lib/floating-chrome";
 import { hidesTabBar } from "@/components/route-error";
 import { selectionHaptic } from "@/lib/haptics";
 import type { QuickActionKey } from "@/lib/quick-actions";
-import { useFrappTheme } from "@/lib/theme";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * The four tabs, in the locked order (`spec/ui/mobile/navigation.md` § Tab
@@ -60,8 +65,8 @@ export function GlassTabBar({
   const { accent } = useChapterBranding();
   const { width } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
-  const { shown, available, save } = useQuickActions();
-  const { run, sheets } = useQuickActionsHost({
+  const { shown, available, save, ready } = useQuickActions();
+  const { run, sheets, notice } = useQuickActionsHost({
     events: available.includes("checkIn") || available.includes("hostCheckIn"),
   });
 
@@ -119,7 +124,10 @@ export function GlassTabBar({
     [closePanel, run],
   );
 
-  const barBottom = floatingTabBarBottom(useSafeAreaInsets().bottom);
+  const bottomInset = useSafeAreaInsets().bottom;
+  const barBottom = floatingTabBarBottom(bottomInset);
+  // The panel and a confirmation sit this far above the window's bottom edge.
+  const aboveBar = floatingTabBarTop(bottomInset) + FLOATING_TAB_BAR.actionGap;
   const pillRight =
     FLOATING_TAB_BAR.side +
     FLOATING_TAB_BAR.actionButton +
@@ -158,25 +166,46 @@ export function GlassTabBar({
               exiting={FadeOut.duration(150)}
               style={[
                 styles.panel,
-                {
-                  left: FLOATING_TAB_BAR.side,
-                  bottom:
-                    barBottom +
-                    FLOATING_TAB_BAR.height +
-                    FLOATING_TAB_BAR.actionGap,
-                },
+                { left: FLOATING_TAB_BAR.side, bottom: aboveBar },
               ]}
-              accessibilityViewIsModal
+              // Not accessibilityViewIsModal: that would hide the X and the
+              // scrim from VoiceOver, its siblings. The escape gesture leaves
+              // editing, then closes, as Android's back does.
+              onAccessibilityEscape={() =>
+                editing ? setEditing(false) : closePanel()
+              }
             >
               <QuickActionsPanel
                 shown={shown}
                 available={available}
                 width={panelWidth}
                 editing={editing}
+                canEdit={ready}
                 onEditingChange={setEditing}
                 onRun={runAction}
                 onSave={save}
               />
+            </Animated.View>
+          ) : null}
+
+          {notice && !open ? (
+            <Animated.View
+              entering={FadeIn.duration(150)}
+              exiting={FadeOut.duration(200)}
+              pointerEvents="none"
+              style={[styles.noticeRow, { bottom: aboveBar }]}
+            >
+              <GlassSurface style={styles.notice}>
+                <Text
+                  accessibilityLiveRegion="polite"
+                  style={[
+                    typeRole(tokens.typography.role.caption),
+                    { color: tokens.color.text.foreground },
+                  ]}
+                >
+                  {notice}
+                </Text>
+              </GlassSurface>
             </Animated.View>
           ) : null}
 
@@ -191,7 +220,11 @@ export function GlassTabBar({
               },
             ]}
           >
-            <GlassSurface style={StyleSheet.absoluteFill} />
+            {/* GlassSurface clips to its own radius, so the pill's goes on it
+                too, not only on the frame. */}
+            <GlassSurface
+              style={[StyleSheet.absoluteFill, { borderRadius: PILL_RADIUS }]}
+            />
             <View style={styles.tabs}>
               {TAB_ROUTES.map((name) => {
                 const route = state.routes.find(
@@ -258,8 +291,11 @@ export function GlassTabBar({
                 }
                 accessibilityState={{ expanded: open }}
                 onPress={open ? closePanel : () => openPanel()}
-                // Holding the + goes straight to editing the panel.
-                onLongPress={() => (open ? setEditing(true) : openPanel(true))}
+                // Holding the + goes straight to editing the panel, once the
+                // member's role is in hand (`useQuickActions().ready`).
+                onLongPress={() =>
+                  open ? ready && setEditing(true) : openPanel(ready)
+                }
                 delayLongPress={400}
                 style={({ pressed }) => [
                   styles.plusPress,
@@ -302,6 +338,20 @@ function growFromPlus() {
 
 const styles = StyleSheet.create({
   scrim: { backgroundColor: "rgba(0,0,0,0.40)" },
+  noticeRow: {
+    position: "absolute",
+    left: FLOATING_TAB_BAR.side,
+    right: FLOATING_TAB_BAR.side,
+    alignItems: "center",
+  },
+  // A capsule sized to its line, the back capsule's height.
+  notice: {
+    minHeight: 36,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    justifyContent: "center",
+  },
   panel: {
     position: "absolute",
     // Grows out of the + below it, at the panel's bottom right.

@@ -14,7 +14,6 @@ import {
 import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { useRefetchAll } from "@/components/pull-to-refresh";
-import { onTaskCreated } from "@/lib/tasks/task-created";
 import { ScreenShell } from "@/components/screen-shell";
 import {
   SectionHeader,
@@ -103,7 +102,7 @@ export default function TasksScreen() {
   // tab (the AppState listener below, which `useFocusEffect` never sees). A tab
   // is never unmounted and the JS context survives days of backgrounding, so a
   // mount-only clock would keep bucketing by the day the app was opened, and
-  // the sheet's "Today" chip would file a task already overdue.
+  // a task due today would sit under the wrong day.
   const [now, setNow] = useState(() => new Date());
   useFocusEffect(
     useCallback(() => {
@@ -125,22 +124,6 @@ export default function TasksScreen() {
   );
 
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  // New task opens from the tab bar's quick actions now
-  // (`components/quick-actions/quick-actions-host.tsx`). A task assigned to
-  // someone else never appears on this board, so say where it went, or the
-  // create reads as a failed one.
-  useEffect(
-    () =>
-      onTaskCreated((assigneeName, wasSelf) =>
-        setNotice(
-          wasSelf
-            ? null
-            : `Assigned to ${assigneeName ?? "your chapter member"}.`,
-        ),
-      ),
-    [],
-  );
   /**
    * The member copy for a gate refusal on a status toggle, or `null` (#2710).
    *
@@ -334,7 +317,6 @@ export default function TasksScreen() {
     <ScreenShell title="Tasks" refresh={refresh}>
       <PointsSummaryCard summary={summary} rank={rank} />
 
-      {notice ? <Text style={styles.notice}>{notice}</Text> : null}
       {refusal ? <Text style={styles.refusal}>{refusal}</Text> : null}
 
       {renderBoard()}
@@ -347,10 +329,6 @@ function createStyles(tokens: SignetTokens) {
     // `ScreenShell`'s gap, between the caption and its rows.
     skeleton: {
       gap: tokens.spacing.md,
-    },
-    notice: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
     },
     refusal: {
       ...typeRole(tokens.typography.role.caption),

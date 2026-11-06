@@ -1,4 +1,5 @@
 import {
+  Component,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -7,22 +8,25 @@ import {
   useRef,
   useState,
 } from "react";
-import { AppState } from "react-native";
+import { AccessibilityInfo, AppState } from "react-native";
 import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useActiveChapterId, useDocumentFolders, useEvents } from "@repo/hooks";
 import { UploadDocumentSheet } from "@/components/documents/upload-document-sheet";
+import { reportRouteError } from "@/components/route-error";
 import { LogHoursSheet } from "@/components/service-hours/log-hours-sheet";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import { resolveCheckInWindow } from "@/lib/events/format";
 import { selectEventRows } from "@/lib/events/select";
 import { selectDocumentFolders } from "@/lib/more/documents";
 import type { QuickActionKey } from "@/lib/quick-actions";
-import { announceTaskCreated } from "@/lib/tasks/task-created";
 
 type SheetKey = "newTask" | "logHours" | "upload";
 
 const NONE: ReadonlySet<SheetKey> = new Set();
+
+/** How long a confirmation stays above the bar. */
+export const NOTICE_MS = 4000;
 
 /**
  * What each quick action opens (`spec/ui/mobile/navigation.md` § Quick
@@ -34,6 +38,10 @@ const NONE: ReadonlySet<SheetKey> = new Set();
  * It then stays mounted, so a closed sheet keeps its draft for the next visit
  * (`spec/ui/mobile/patterns.md` § Bottom sheets). One set per chapter: a draft
  * belongs to the chapter it was started in.
+ *
+ * A sheet can be opened over any tab, and the one it files into may not be on
+ * screen (a task assigned to someone else is on nobody's board here), so each
+ * create says it worked in `notice`, which the bar draws above itself.
  */
 export function useQuickActionsHost({
   events,
@@ -43,6 +51,8 @@ export function useQuickActionsHost({
 }): {
   run: (key: QuickActionKey) => void;
   sheets: ReactNode;
+  /** The last create's confirmation, for a few seconds, or `null`. */
+  notice: string | null;
 } {
   const router = useRouter();
   const chapterId = useActiveChapterId() ?? null;
@@ -66,6 +76,36 @@ export function useQuickActionsHost({
     opened.chapterId === chapterId ? opened.keys : NONE;
   // A sheet asked for before it mounted is presented once it has.
   const pending = useRef<SheetKey | null>(null);
+
+  // Each confirmation gets an id, so a second one restarts the clock and the
+  // first one's timer can't take it down early.
+  const [notice, setNotice] = useState<{ id: number; text: string } | null>(
+    null,
+  );
+  const confirm = useCallback((text: string) => {
+    setNotice((prev) => ({ id: (prev?.id ?? 0) + 1, text }));
+    AccessibilityInfo.announceForAccessibility(text);
+  }, []);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => {
+      setNotice((current) => (current?.id === notice.id ? null : current));
+    }, NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  // A sheet that throws while rendering is dropped, not the tab bar with it
+  // (it renders in the navigator's tabBar, outside every screen's boundary).
+  // The next ask mounts it fresh.
+  const dropSheet = useCallback(
+    (key: SheetKey) =>
+      setOpened((prev) => {
+        const keys = new Set(prev.keys);
+        keys.delete(key);
+        return { chapterId: prev.chapterId, keys };
+      }),
+    [],
+  );
 
   // Log hours' date chips read this clock: re-read on each open and when the
   // app comes back, as Service hours does, so "Today" is today.
@@ -158,37 +198,80 @@ export function useQuickActionsHost({
   const sheets = (
     <>
       {mounted.has("newTask") ? (
-        <NewTaskSheet
+        <SheetBoundary
           key={`task-${chapterId ?? "none"}`}
-          ref={taskRef}
-          now={now}
-          onCreated={announceTaskCreated}
-        />
+          onError={() => dropSheet("newTask")}
+        >
+          <NewTaskSheet
+            ref={taskRef}
+            now={now}
+            onCreated={(assigneeName, wasSelf) =>
+              confirm(
+                wasSelf
+                  ? "Added to your tasks."
+                  : `Assigned to ${assigneeName ?? "your chapter member"}.`,
+              )
+            }
+          />
+        </SheetBoundary>
       ) : null}
       {mounted.has("logHours") ? (
-        <LogHoursSheet
+        <SheetBoundary
           key={`hours-${chapterId ?? "none"}`}
-          ref={hoursRef}
-          now={now}
-        />
+          onError={() => dropSheet("logHours")}
+        >
+          <LogHoursSheet
+            ref={hoursRef}
+            now={now}
+            onLogged={() => confirm("Hours logged.")}
+          />
+        </SheetBoundary>
       ) : null}
       {mounted.has("upload") ? (
-        <QuickUploadSheet
+        <SheetBoundary
           key={`upload-${chapterId ?? "none"}`}
-          sheetRef={uploadRef}
-        />
+          onError={() => dropSheet("upload")}
+        >
+          <QuickUploadSheet
+            sheetRef={uploadRef}
+            onUploaded={(title) => confirm(`“${title}” is in the library.`)}
+          />
+        </SheetBoundary>
       ) : null}
     </>
   );
 
-  return { run, sheets };
+  return { run, sheets, notice: notice?.text ?? null };
+}
+
+/** Catches a sheet's render error, reports it, and lets the host drop it. */
+class SheetBoundary extends Component<
+  { onError: () => void; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: unknown): void {
+    reportRouteError(error, { boundary: "sheet" });
+    this.props.onError();
+  }
+
+  render(): ReactNode {
+    return this.state.failed ? null : this.props.children;
+  }
 }
 
 /** Upload needs the chapter's folders, read only once it is asked for. */
 function QuickUploadSheet({
   sheetRef,
+  onUploaded,
 }: {
   sheetRef: RefObject<BottomSheetModal | null>;
+  onUploaded: (title: string) => void;
 }) {
   const foldersQuery = useDocumentFolders();
   const folders = useMemo(
@@ -200,6 +283,7 @@ function QuickUploadSheet({
       ref={sheetRef}
       folders={folders}
       initialFolder={null}
+      onUploaded={onUploaded}
     />
   );
 }

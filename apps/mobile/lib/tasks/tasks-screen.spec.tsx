@@ -134,7 +134,6 @@ vi.mock("@/lib/haptics", () => ({
 }));
 
 import TasksScreen from "@/app/(tabs)/tasks";
-import { announceTaskCreated } from "@/lib/tasks/task-created";
 
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
 const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
@@ -374,40 +373,6 @@ describe("Tasks board clock", () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-});
-
-/**
- * New task opens from the tab bar's quick actions, over any screen. A task
- * assigned to someone else never appears on this board, so the board says
- * where it went, or the create reads as a failed one.
- */
-describe("Tasks board after a New task from quick actions", () => {
-  const notice = (tree: ReactTestRenderer) =>
-    tree.root
-      .findAll((node) => (node.type as unknown) === "Text")
-      .map((node) => [node.props.children].flat().join(""))
-      .find((text) => text.startsWith("Assigned to"));
-
-  it("says who a task went to when it went to someone else", () => {
-    const tree = render();
-    act(() => announceTaskCreated("Sam Rivera", false));
-    expect(notice(tree)).toBe("Assigned to Sam Rivera.");
-    act(() => tree.unmount());
-  });
-
-  it("says nothing when the officer assigned it to themselves", () => {
-    const tree = render();
-    act(() => announceTaskCreated("Sam Rivera", false));
-    act(() => announceTaskCreated(null, true));
-    expect(notice(tree)).toBeUndefined();
-    act(() => tree.unmount());
-  });
-
-  it("stops listening once the board is gone", () => {
-    const tree = render();
-    act(() => tree.unmount());
-    expect(() => announceTaskCreated("Sam Rivera", false)).not.toThrow();
   });
 });
 

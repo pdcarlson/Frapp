@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   useActiveChapterId,
   useCurrentChapter,
-  usePermissionList,
+  useMyPermissions,
   useViewerUserId,
 } from "@repo/hooks";
 import {
   availableQuickActions,
+  mergeSavedQuickActions,
   type QuickActionKey,
   readSavedQuickActions,
   resolveQuickActions,
@@ -27,10 +28,26 @@ export type QuickActionsState = {
   available: QuickActionKey[];
   /** Keeps a new arrangement, on the phone, for this member and chapter. */
   save: (keys: readonly QuickActionKey[]) => void;
+  /**
+   * Whether the member's role and the chapter's modules are in hand. Until
+   * they are, `available` is short, so the panel runs actions but doesn't
+   * offer editing: an arrangement built then would be built from the wrong
+   * list.
+   */
+  ready: boolean;
 };
 
+const NO_PERMISSIONS: readonly string[] = [];
+
 export function useQuickActions(): QuickActionsState {
-  const permissions = usePermissionList();
+  const permissionsQuery = useMyPermissions();
+  const permissions = useMemo(
+    () =>
+      Array.isArray(permissionsQuery.data?.permissions)
+        ? permissionsQuery.data.permissions
+        : NO_PERMISSIONS,
+    [permissionsQuery.data],
+  );
   // The member view of the chapter: officers and members alike can read its
   // `enabled_modules`, which the org config endpoint is not (#1982).
   const chapterQuery = useCurrentChapter();
@@ -64,7 +81,12 @@ export function useQuickActions(): QuickActionsState {
     if (!userId) return;
     let live = true;
     void readSavedQuickActions(userId, chapterId).then((keys) => {
-      if (live) setSaved({ key: storeKey, keys });
+      // An edit made while the read was out is newer than what it read.
+      if (live) {
+        setSaved((prev) =>
+          prev.key === storeKey ? prev : { key: storeKey, keys },
+        );
+      }
     });
     return () => {
       live = false;
@@ -79,11 +101,15 @@ export function useQuickActions(): QuickActionsState {
 
   const save = useCallback(
     (next: readonly QuickActionKey[]) => {
-      setSaved({ key: storeKey, keys: [...next] });
-      if (userId) writeSavedQuickActions(userId, chapterId, next);
+      const merged = mergeSavedQuickActions(next, keys, available);
+      setSaved({ key: storeKey, keys: merged });
+      if (userId) writeSavedQuickActions(userId, chapterId, merged);
     },
-    [storeKey, userId, chapterId],
+    [keys, available, storeKey, userId, chapterId],
   );
 
-  return { shown, available, save };
+  const ready =
+    permissionsQuery.data !== undefined && chapterQuery.data !== undefined;
+
+  return { shown, available, save, ready };
 }

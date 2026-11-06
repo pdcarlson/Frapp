@@ -35,6 +35,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import TabLayout from "@/app/(tabs)/_layout";
+import { TAB_ROUTES } from "@/components/glass-tab-bar";
 
 type Node = ReactTestRenderer["root"];
 
@@ -120,6 +121,15 @@ describe("tab layout (#2485)", () => {
  * #3344 inset are held in `components/glass-tab-bar.spec.tsx`.
  */
 describe("tab bar", () => {
+  it("draws in the bar exactly the tabs the layout leaves visible", () => {
+    // GlassTabBar draws `TAB_ROUTES` and ignores `href: null`, so the two
+    // lists have to agree.
+    const visible = hosts(render().root, "Tabs.Screen")
+      .filter((screen) => resolved(screen.props.options).href !== null)
+      .map((screen) => screen.props.name);
+    expect(visible).toEqual([...TAB_ROUTES]);
+  });
+
   it("draws the glass pill and + in place of the navigator's bar", () => {
     const [tabs] = hosts(render().root, "Tabs");
     expect(typeof tabs.props.tabBar).toBe("function");

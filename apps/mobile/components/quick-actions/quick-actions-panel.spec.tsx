@@ -40,6 +40,7 @@ function render(
   shown: QuickActionKey[],
   editing = false,
   available: QuickActionKey[] = OFFICER,
+  canEdit = true,
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -50,6 +51,7 @@ function render(
           available={available}
           width={374}
           editing={editing}
+          canEdit={canEdit}
           {...props}
         />
       </FrappThemeProvider>,
@@ -102,6 +104,20 @@ describe("the panel at rest", () => {
     expect(props.onEditingChange).toHaveBeenCalledWith(true);
   });
 
+  it("runs actions but offers no editing while the role loads", () => {
+    const tree = render(["message"], false, OFFICER, false);
+    const button = byLabel(tree.root, "Message")!;
+    expect(button.props.accessibilityActions).toEqual([]);
+    expect(button.props.onLongPress).toBeUndefined();
+    const surface = pressables(tree.root).find(
+      (node) => node.props.accessible === false,
+    );
+    act(() => surface!.props.onLongPress());
+    expect(props.onEditingChange).not.toHaveBeenCalled();
+    act(() => button.props.onPress());
+    expect(props.onRun).toHaveBeenCalledWith("message");
+  });
+
   it("says how to add actions when the member removed them all", () => {
     const tree = render([]);
     const text = tree.root
@@ -130,6 +146,45 @@ describe("editing in place", () => {
     const add = byLabel(tree.root, "Add Upload")!;
     expect(add.props.disabled).toBe(true);
     expect(add.props.accessibilityState).toEqual({ disabled: true });
+  });
+
+  it("lets a screen reader remove and move, one place at a time", () => {
+    const tree = render(["message", "checkIn", "logHours"], true);
+    const placed = (label: string) =>
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Animated.View" &&
+          node.props.accessible === true &&
+          node.props.accessibilityLabel === label,
+      )[0];
+    const names = (label: string) =>
+      (placed(label).props.accessibilityActions as { name: string }[]).map(
+        (action) => action.name,
+      );
+    expect(names("Message")).toEqual(["remove", "moveLater"]);
+    expect(names("Check in")).toEqual(["remove", "moveEarlier", "moveLater"]);
+    expect(names("Log hours")).toEqual(["remove", "moveEarlier"]);
+
+    const act11y = (label: string, actionName: string) =>
+      act(() =>
+        placed(label).props.onAccessibilityAction({
+          nativeEvent: { actionName },
+        }),
+      );
+    act11y("Check in", "moveLater");
+    expect(props.onSave).toHaveBeenLastCalledWith([
+      "message",
+      "logHours",
+      "checkIn",
+    ]);
+    act11y("Check in", "moveEarlier");
+    expect(props.onSave).toHaveBeenLastCalledWith([
+      "checkIn",
+      "message",
+      "logHours",
+    ]);
+    act11y("Log hours", "remove");
+    expect(props.onSave).toHaveBeenLastCalledWith(["message", "checkIn"]);
   });
 
   it("leaves editing on Done", () => {

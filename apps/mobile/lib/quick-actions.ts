@@ -25,8 +25,9 @@ export const QUICK_ACTION_LIMIT = 6;
 /**
  * Every action, in the order a member who never edits the panel sees them.
  * The starting set is the first six of these the member may use, so an
- * officer starts with New event, New task, Message, Check in, Host check-in
- * and Log hours, and a member with Message, Check in, Log hours and Study.
+ * officer starts with New event (once this build can open it), New task,
+ * Message, Check in, Host check-in and Log hours (Study until then), and a
+ * member whose role logs hours with Message, Check in, Log hours and Study.
  */
 export const QUICK_ACTION_ORDER: readonly QuickActionKey[] = [
   "newEvent",
@@ -76,8 +77,9 @@ export type QuickActionAccess = {
 
 /**
  * The actions this member can use in this chapter: their role grants it and
- * the module is on. The same checks the screens behind them make, so the panel
- * never offers something the screen would then refuse.
+ * the module is on. The same checks the API makes on what each action does
+ * (each gate names its endpoint), so the panel never offers something the
+ * server would then refuse.
  */
 export function availableQuickActions({
   permissions,
@@ -93,12 +95,16 @@ export function availableQuickActions({
       on("events") &&
       canAll(["events:create", "members:view"], permissions),
     newTask: on("tasks") && can("tasks:manage", permissions),
-    message: true,
+    // The Directory lists the roster (`GET /v1/members`, `members:view`).
+    message: can("members:view", permissions),
     checkIn: on("events"),
     hostCheckIn: on("events") && can("events:update", permissions),
-    logHours: on("hours"),
+    // Filing an entry is `service:log` (`POST /v1/service-entries`), which the
+    // seeded New Member and Alumni roles don't hold.
+    logHours: on("hours") && can("service:log", permissions),
     // A session starts against the chapter's study zones, so both modules.
-    study: on("hours") && on("geofences"),
+    // The study endpoints sit behind `members:view` too.
+    study: on("hours") && on("geofences") && can("members:view", permissions),
     upload: on("documents") && can("chapter_docs:upload", permissions),
   };
   return QUICK_ACTION_ORDER.filter((key) => allowed[key]);
@@ -120,6 +126,27 @@ export function resolveQuickActions(
     if (action && !seen.has(action)) seen.add(action);
   }
   return [...seen].slice(0, QUICK_ACTION_LIMIT);
+}
+
+/**
+ * What an edit keeps on the phone: the new arrangement, then whatever the
+ * saved one held that the member can't use right now (a module turned off, a
+ * role still loading), in its saved order. An edit only changes what the
+ * member could see, so an action hidden for a while comes back when its
+ * module or role does, rather than being lost to an unrelated reorder.
+ */
+export function mergeSavedQuickActions(
+  next: readonly QuickActionKey[],
+  saved: readonly string[] | null,
+  available: readonly QuickActionKey[],
+): QuickActionKey[] {
+  const hidden = (saved ?? []).filter(
+    (key): key is QuickActionKey =>
+      (QUICK_ACTION_ORDER as readonly string[]).includes(key) &&
+      !available.includes(key as QuickActionKey) &&
+      !next.includes(key as QuickActionKey),
+  );
+  return [...new Set([...next, ...hidden])];
 }
 
 /** The edit mode's Add row: what the member can use and hasn't placed. */

@@ -24,22 +24,30 @@ vi.mock("@/lib/haptics", () => ({ selectionHaptic: vi.fn() }));
 const quick = vi.hoisted(() => ({
   run: vi.fn(),
   save: vi.fn(),
+  ready: true,
+  notice: null as string | null,
 }));
 vi.mock("@/components/quick-actions/use-quick-actions", () => ({
   useQuickActions: () => ({
     shown: ["message", "checkIn"],
     available: ["message", "checkIn"],
     save: quick.save,
+    ready: quick.ready,
   }),
 }));
 vi.mock("@/components/quick-actions/quick-actions-host", () => ({
-  useQuickActionsHost: () => ({ run: quick.run, sheets: null }),
+  useQuickActionsHost: () => ({
+    run: quick.run,
+    sheets: null,
+    notice: quick.notice,
+  }),
 }));
 // The panel has its own spec; here it only has to be there or not.
 vi.mock("@/components/quick-actions/quick-actions-panel", () => ({
   QuickActionsPanel: "QuickActionsPanel",
 }));
 
+import { BackHandler } from "react-native";
 import { GlassTabBar } from "./glass-tab-bar";
 
 type Node = ReactTestRenderer["root"];
@@ -69,8 +77,22 @@ beforeEach(() => {
   navigation.emit.mockClear();
   navigation.navigate.mockClear();
   quick.run.mockReset();
+  quick.ready = true;
+  quick.notice = null;
   device.bottomInset = 0;
+  vi.mocked(BackHandler.addEventListener).mockClear();
 });
+
+/** Android's back, as the bar's latest listener answers it. */
+function pressBack(): boolean {
+  const calls = vi.mocked(BackHandler.addEventListener).mock.calls;
+  const handler = calls[calls.length - 1][1] as () => boolean;
+  let handled = false;
+  act(() => {
+    handled = handler();
+  });
+  return handled;
+}
 
 function element(focused: string) {
   const descriptors = Object.fromEntries(
@@ -139,6 +161,15 @@ describe("the bar (#3344)", () => {
     expect(style.left).toBe(14);
     // Leaves room for the 62pt + and the 10pt gap beside it.
     expect(style.right).toBe(14 + 62 + 10);
+  });
+
+  it("rounds the glass itself, not only its frame", () => {
+    // GlassSurface clips to the radius in its own style.
+    const [glass] = pill(render().root).findAll(
+      (node) =>
+        typeof node.type === "string" && node.props.testID === "glass-surface",
+    );
+    expect(flat(glass.props.style).borderRadius).toBe(31);
   });
 
   it("keeps 12pt off the edge where there is no inset", () => {
@@ -210,6 +241,47 @@ describe("the +", () => {
     expect(panel(tree.root).props.editing).toBe(true);
   });
 
+  it("holds the + while open to start editing", () => {
+    const tree = render();
+    act(() => plus(tree.root)!.props.onPress());
+    act(() => plus(tree.root)!.props.onLongPress());
+    expect(panel(tree.root).props.editing).toBe(true);
+  });
+
+  it("offers no editing until the member's role is in hand", () => {
+    quick.ready = false;
+    const tree = render();
+    act(() => plus(tree.root)!.props.onLongPress());
+    expect(panel(tree.root).props.editing).toBe(false);
+    expect(panel(tree.root).props.canEdit).toBe(false);
+  });
+
+  it("leaves editing on Android's back, then closes", () => {
+    const tree = render();
+    act(() => plus(tree.root)!.props.onLongPress());
+    expect(pressBack()).toBe(true);
+    expect(panel(tree.root).props.editing).toBe(false);
+    expect(pressBack()).toBe(true);
+    expect(panel(tree.root)).toBeUndefined();
+  });
+
+  it("leaves editing on the screen reader's escape, then closes", () => {
+    const tree = render();
+    act(() => plus(tree.root)!.props.onLongPress());
+    const container = () =>
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Animated.View" &&
+          typeof node.props.onAccessibilityEscape === "function",
+      )[0];
+    // Not modal: VoiceOver can still reach the X and the scrim.
+    expect(container().props.accessibilityViewIsModal).toBeUndefined();
+    act(() => container().props.onAccessibilityEscape());
+    expect(panel(tree.root).props.editing).toBe(false);
+    act(() => container().props.onAccessibilityEscape());
+    expect(panel(tree.root)).toBeUndefined();
+  });
+
   it("closes on the scrim", () => {
     const tree = render();
     act(() => plus(tree.root)!.props.onPress());
@@ -238,5 +310,19 @@ describe("the +", () => {
     // And stays closed on the way back.
     act(() => tree.update(element("index")));
     expect(panel(tree.root)).toBeUndefined();
+  });
+});
+
+describe("a confirmation", () => {
+  it("shows above the bar, and not over an open panel", () => {
+    quick.notice = "Assigned to Sam Rivera.";
+    const tree = render();
+    const texts = () =>
+      tree.root
+        .findAll((node) => (node.type as unknown) === "Text")
+        .map((node) => node.props.children);
+    expect(texts()).toContain("Assigned to Sam Rivera.");
+    act(() => plus(tree.root)!.props.onPress());
+    expect(texts()).not.toContain("Assigned to Sam Rivera.");
   });
 });

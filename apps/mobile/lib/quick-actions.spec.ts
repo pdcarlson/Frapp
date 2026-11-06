@@ -14,6 +14,7 @@ import {
   addableQuickActions,
   addQuickAction,
   availableQuickActions,
+  mergeSavedQuickActions,
   moveQuickAction,
   QUICK_ACTION_LIMIT,
   quickActionColumns,
@@ -49,11 +50,24 @@ describe("which actions a member can use", () => {
   it("gives a member only what needs no officer permission", () => {
     expect(
       availableQuickActions({
-        permissions: ["members:view"],
+        permissions: ["members:view", "service:log"],
         enabledModules: undefined,
         canOpenNewEvent: true,
       }),
     ).toEqual(["message", "checkIn", "logHours", "study"]);
+  });
+
+  it("asks each action for the permission its endpoint does", () => {
+    const keys = (permissions: string[]) =>
+      availableQuickActions({
+        permissions,
+        enabledModules: undefined,
+        canOpenNewEvent: false,
+      });
+    // New Member and Alumni hold members:view but not service:log.
+    expect(keys(["members:view"])).toEqual(["message", "checkIn", "study"]);
+    // No roster, no Directory and no study sessions; check-in needs none.
+    expect(keys(["service:log"])).toEqual(["checkIn", "logHours"]);
   });
 
   it("lets officers check themselves in, not only host", () => {
@@ -73,12 +87,19 @@ describe("which actions a member can use", () => {
       canOpenNewEvent: true,
     });
     expect(keys).toEqual(["newTask", "message"]);
+    expect(
+      availableQuickActions({
+        permissions: OFFICER,
+        enabledModules: { tasks: false },
+        canOpenNewEvent: true,
+      }),
+    ).not.toContain("newTask");
   });
 
   it("needs both hours and study zones for Study", () => {
     const keys = (modules: Record<string, boolean>) =>
       availableQuickActions({
-        permissions: [],
+        permissions: ["members:view"],
         enabledModules: modules,
         canOpenNewEvent: false,
       });
@@ -129,7 +150,7 @@ describe("what the panel shows", () => {
 
   it("starts a member on the four they can use", () => {
     const member = availableQuickActions({
-      permissions: [],
+      permissions: ["members:view", "service:log"],
       enabledModules: undefined,
       canOpenNewEvent: true,
     });
@@ -198,6 +219,29 @@ describe("editing", () => {
     expect(moveQuickAction(["message", "checkIn"], 1, 9)).toEqual([
       "message",
       "checkIn",
+    ]);
+  });
+
+  it("keeps what is hidden for now through an unrelated edit", () => {
+    // Upload's module is off for a moment (or the role is still loading);
+    // reordering what is shown doesn't lose it.
+    expect(
+      mergeSavedQuickActions(
+        ["checkIn", "message"],
+        ["message", "upload", "checkIn", "polls"],
+        ["message", "checkIn"],
+      ),
+    ).toEqual(["checkIn", "message", "upload"]);
+    // Removing a shown one does remove it.
+    expect(
+      mergeSavedQuickActions(
+        ["message"],
+        ["message", "checkIn"],
+        ["message", "checkIn"],
+      ),
+    ).toEqual(["message"]);
+    expect(mergeSavedQuickActions(["study"], null, ["study"])).toEqual([
+      "study",
     ]);
   });
 

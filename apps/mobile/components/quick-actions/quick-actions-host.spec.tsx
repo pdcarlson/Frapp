@@ -9,7 +9,10 @@ const data = vi.hoisted(() => ({
   chapterId: "chapter-1" as string | null,
   events: [] as object[],
   present: vi.fn(),
+  /** A sheet name that throws while rendering. */
+  throws: null as string | null,
 }));
+vi.mock("@/components/route-error", () => ({ reportRouteError: vi.fn() }));
 
 vi.mock("@repo/hooks", () => ({
   useActiveChapterId: () => data.chapterId,
@@ -25,6 +28,7 @@ function sheet(name: string) {
       useImperativeHandle(ref, () => ({
         present: () => data.present(name),
       }));
+      if (data.throws === name) throw new Error(`${name} failed`);
       return React.createElement(name, props);
     },
   );
@@ -39,8 +43,10 @@ vi.mock("@/components/documents/upload-document-sheet", () => ({
   UploadDocumentSheet: sheet("UploadDocumentSheet"),
 }));
 
+import { AccessibilityInfo } from "react-native";
+import { reportRouteError } from "@/components/route-error";
 import type { QuickActionKey } from "@/lib/quick-actions";
-import { useQuickActionsHost } from "./quick-actions-host";
+import { NOTICE_MS, useQuickActionsHost } from "./quick-actions-host";
 
 type Host = ReturnType<typeof useQuickActionsHost>;
 let latest!: Host;
@@ -83,6 +89,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   data.chapterId = "chapter-1";
   data.events = [];
+  data.throws = null;
 });
 
 describe("the sheets", () => {
@@ -134,6 +141,92 @@ describe("the sheets", () => {
       );
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+describe("a confirmation after a create", () => {
+  const sheetProps = (tree: ReactTestRenderer, name: string) =>
+    hosts(tree, name)[0].props as Record<string, (...args: never[]) => void>;
+
+  it("says where a task went, over whatever screen is up", () => {
+    const tree = render();
+    run("newTask");
+    act(() =>
+      (
+        sheetProps(tree, "NewTaskSheet").onCreated as (
+          name: string | null,
+          self: boolean,
+        ) => void
+      )("Sam Rivera", false),
+    );
+    expect(latest.notice).toBe("Assigned to Sam Rivera.");
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
+      "Assigned to Sam Rivera.",
+    );
+    act(() =>
+      (
+        sheetProps(tree, "NewTaskSheet").onCreated as (
+          name: string | null,
+          self: boolean,
+        ) => void
+      )(null, true),
+    );
+    expect(latest.notice).toBe("Added to your tasks.");
+  });
+
+  it("confirms logged hours and an upload", () => {
+    const tree = render();
+    run("logHours");
+    act(() => (sheetProps(tree, "LogHoursSheet").onLogged as () => void)());
+    expect(latest.notice).toBe("Hours logged.");
+    run("upload");
+    act(() =>
+      (
+        sheetProps(tree, "UploadDocumentSheet").onUploaded as (
+          title: string,
+        ) => void
+      )("Bylaws"),
+    );
+    expect(latest.notice).toBe("“Bylaws” is in the library.");
+  });
+
+  it("goes away after a few seconds, counted from the latest", () => {
+    vi.useFakeTimers();
+    try {
+      const tree = render();
+      run("logHours");
+      const logged = sheetProps(tree, "LogHoursSheet").onLogged as () => void;
+      act(() => logged());
+      act(() => vi.advanceTimersByTime(NOTICE_MS - 1000));
+      act(() => logged());
+      act(() => vi.advanceTimersByTime(NOTICE_MS - 1000));
+      expect(latest.notice).toBe("Hours logged.");
+      act(() => vi.advanceTimersByTime(1000));
+      expect(latest.notice).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("a sheet that fails to render", () => {
+  it("is dropped and reported, and the next ask mounts it again", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const tree = render();
+      data.throws = "LogHoursSheet";
+      run("logHours");
+      expect(hosts(tree, "LogHoursSheet")).toHaveLength(0);
+      expect(reportRouteError).toHaveBeenCalledWith(expect.any(Error), {
+        boundary: "sheet",
+      });
+      data.throws = null;
+      run("logHours");
+      expect(hosts(tree, "LogHoursSheet")).toHaveLength(1);
+      expect(data.present).toHaveBeenCalledWith("LogHoursSheet");
+    } finally {
+      spy.mockRestore();
     }
   });
 });

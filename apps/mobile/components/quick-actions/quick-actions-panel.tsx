@@ -28,19 +28,12 @@ import {
 } from "@/lib/quick-actions";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 
-/** Check in: Phosphor `map-pin`, in the nav set's duotone recipe. */
-const CHECK_IN_GLYPH: DuotoneGlyphPaths = {
-  back: "M208,104c0,72-80,128-80,128S48,176,48,104a80,80,0,0,1,160,0Z",
-  front:
-    "M128,16a88.1,88.1,0,0,0-88,88c0,75.3,80,132.17,83.41,134.55a8,8,0,0,0,9.18,0C136,236.17,216,179.3,216,104A88.1,88.1,0,0,0,128,16Zm0,206c-16.53-13-72-60.75-72-118a72,72,0,0,1,144,0C200,161.23,144.53,209,128,222Zm0-150a32,32,0,1,0,32,32A32,32,0,0,0,128,72Zm0,48a16,16,0,1,1,16-16A16,16,0,0,1,128,120Z",
-};
-
 /** Each action's glyph: the nav-set shape of the place it leads. */
 const GLYPHS: Record<QuickActionKey, DuotoneGlyphPaths> = {
   newEvent: NAV_GLYPHS.events,
   newTask: NAV_GLYPHS.tasks,
   message: NAV_GLYPHS.chat,
-  checkIn: CHECK_IN_GLYPH,
+  checkIn: NAV_GLYPHS.checkIn,
   hostCheckIn: NAV_GLYPHS.hostCheckIn,
   logHours: NAV_GLYPHS.service,
   study: NAV_GLYPHS.study,
@@ -66,6 +59,11 @@ export type QuickActionsPanelProps = {
   /** The panel's drawn width, for the edit grid's slots. */
   width: number;
   editing: boolean;
+  /**
+   * Whether a hold may start editing. Off while the member's role is still
+   * loading (`useQuickActions().ready`).
+   */
+  canEdit?: boolean;
   onEditingChange: (editing: boolean) => void;
   onRun: (key: QuickActionKey) => void;
   onSave: (keys: readonly QuickActionKey[]) => void;
@@ -85,6 +83,7 @@ export function QuickActionsPanel({
   available,
   width,
   editing,
+  canEdit = true,
   onEditingChange,
   onRun,
   onSave,
@@ -92,7 +91,7 @@ export function QuickActionsPanel({
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const enterEditing = () => {
-    if (editing) return;
+    if (editing || !canEdit) return;
     selectionHaptic();
     onEditingChange(true);
   };
@@ -128,7 +127,7 @@ export function QuickActionsPanel({
                 actionKey={key}
                 width={cellWidth}
                 onRun={onRun}
-                onEdit={enterEditing}
+                onEdit={canEdit ? enterEditing : undefined}
                 styles={styles}
               />
             ))}
@@ -152,7 +151,7 @@ function ActionButton({
   actionKey: QuickActionKey;
   width: number;
   onRun: (key: QuickActionKey) => void;
-  onEdit: () => void;
+  onEdit?: () => void;
   styles: Styles;
 }) {
   const [pressed, setPressed] = useState(false);
@@ -163,11 +162,11 @@ function ActionButton({
       accessibilityHint={QUICK_ACTION_HINTS[actionKey]}
       // A screen reader's hold, as a named action, so editing is in reach
       // without the gesture.
-      accessibilityActions={[
-        { name: "longpress", label: "Edit quick actions" },
-      ]}
+      accessibilityActions={
+        onEdit ? [{ name: "longpress", label: "Edit quick actions" }] : []
+      }
       onAccessibilityAction={(event) => {
-        if (event.nativeEvent.actionName === "longpress") onEdit();
+        if (event.nativeEvent.actionName === "longpress") onEdit?.();
       }}
       onPress={() => onRun(actionKey)}
       onLongPress={onEdit}
@@ -323,6 +322,7 @@ function EditGrid({
               if (final) onSave(final);
             }}
             onRemove={() => onSave(removeQuickAction(order, key))}
+            onMove={(to) => onSave(moveQuickAction(order, index, to))}
             styles={styles}
           />
         ))}
@@ -370,6 +370,7 @@ function DraggableAction({
   onHover,
   onDrop,
   onRemove,
+  onMove,
   styles,
 }: {
   actionKey: QuickActionKey;
@@ -382,6 +383,8 @@ function DraggableAction({
   onHover: (to: number) => void;
   onDrop: () => void;
   onRemove: () => void;
+  /** A screen reader's move, one place at a time. */
+  onMove: (to: number) => void;
   styles: Styles;
 }) {
   const reduceMotion = useReducedMotion();
@@ -464,6 +467,23 @@ function DraggableAction({
         accessible
         accessibilityLabel={QUICK_ACTION_LABELS[actionKey]}
         accessibilityHint="Drag to move it."
+        // The view is one element to a screen reader, so the minus badge
+        // inside it can't take focus: remove and move are its actions.
+        accessibilityActions={[
+          { name: "remove", label: "Remove" },
+          ...(index > 0
+            ? [{ name: "moveEarlier", label: "Move earlier" }]
+            : []),
+          ...(index < count - 1
+            ? [{ name: "moveLater", label: "Move later" }]
+            : []),
+        ]}
+        onAccessibilityAction={(event) => {
+          const action = event.nativeEvent.actionName;
+          if (action === "remove") onRemove();
+          if (action === "moveEarlier") onMove(index - 1);
+          if (action === "moveLater") onMove(index + 1);
+        }}
         style={[styles.slot, { width: cellWidth }, motion]}
       >
         <ActionFace
