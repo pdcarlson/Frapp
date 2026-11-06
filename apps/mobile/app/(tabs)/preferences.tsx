@@ -56,7 +56,8 @@ import {
  * s16 — Settings (`canvas-screens.dc.html:527`). The route file keeps the name
  * `preferences.tsx`; the drawn title is "Settings" (`spec/ui/mobile/screens.md`).
  *
- * Three sections, as drawn: NOTIFICATIONS, CHAPTER · ADMIN, ACCOUNT.
+ * Four sections: NOTIFICATIONS, CHAT, CHAPTER · ADMIN, ACCOUNT. All but CHAT
+ * are drawn.
  *
  * ## Deviations from the drawing, each deliberate
  *
@@ -67,6 +68,10 @@ import {
  *   under the drawn NOTIFICATIONS heading rather than in a section of its own.
  *   It is a grouped list like the rows around it: one switch while off, and
  *   time rows with native pickers only while on (`QuietHoursSection` says why).
+ * - **CHAT is here and is not drawn.** It holds one row, Chat density, which
+ *   opens a sheet of the two densities (`components.md` §11 § Density, owner
+ *   request 2026-11-06, #2252). A section of its own because it is a display
+ *   preference for this phone, not a notification or an account setting.
  * - **No Chat switch.** Chat is tuned per channel and per DM, from the
  *   conversation itself, so a switch that silenced every message at once was
  *   dropped (owner's iOS testing, 2026-11-06). Why in full: the catalog's

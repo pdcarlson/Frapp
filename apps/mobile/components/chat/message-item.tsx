@@ -304,18 +304,16 @@ export function MessageRowFrame({
   // two lookups would be two chances for them to drift apart. Both come from
   // `@repo/hooks`: `sender_id` is nullable, so an imported archive message has
   // no roster entry and names its author in `author_name`.
-  const authorName = resolveAuthorName(message, nameFor);
-  const authorLabel = resolveAuthorLabel(message, nameFor, viewerId);
+  const { authorName, authorLabel, roleColor } = rowAuthor(
+    message,
+    nameFor,
+    viewerId,
+    roleColorFor,
+  );
   const time = formatTimeOfDay(message.created_at);
   const headerA11y = messageActionsA11yProps(onOpenActions, {
     onJumpToParent: quote ? onJumpToParent : undefined,
   });
-  // Every name, the viewer's own "You" included, takes the author's role
-  // color (a contrast-checked palette value) or else the foreground text, and
-  // never the chapter accent (foundations.md §6, "Where the accent goes").
-  const roleColor = message.sender_id
-    ? (roleColorFor?.(message.sender_id) ?? null)
-    : null;
 
   return (
     <Pressable
@@ -450,6 +448,30 @@ export function MessageRowFrame({
 }
 
 /**
+ * Who a row is by, resolved one way for the frame's author line, its avatar
+ * initials and compact's lead (`CompactLead`), so the three can't drift.
+ * `@repo/hooks` resolves the name: `sender_id` is nullable, so an imported
+ * archive message has no roster entry and names its author in `author_name`.
+ * Every name, the viewer's own "You" included, takes the author's role color
+ * (a contrast-checked palette value) or else the foreground text, and never
+ * the chapter accent (foundations.md §6, "Where the accent goes").
+ */
+function rowAuthor(
+  message: ChatMessage,
+  nameFor: (userId: string) => string | null,
+  viewerId: string,
+  roleColorFor: ((userId: string) => string | null) | undefined,
+) {
+  return {
+    authorName: resolveAuthorName(message, nameFor),
+    authorLabel: resolveAuthorLabel(message, nameFor, viewerId),
+    roleColor: message.sender_id
+      ? (roleColorFor?.(message.sender_id) ?? null)
+      : null,
+  };
+}
+
+/**
  * Compact's lead for a text row that starts a run: the time, then the name,
  * nested at the front of the body's own `Text` so the message wraps back under
  * them like one sentence (§11 § Density). A screen reader hears it with the
@@ -468,9 +490,12 @@ function CompactLead({
   roleColorFor?: (userId: string) => string | null;
   styles: ReturnType<typeof createStyles>;
 }) {
-  const roleColor = message.sender_id
-    ? (roleColorFor?.(message.sender_id) ?? null)
-    : null;
+  const { authorLabel, roleColor } = rowAuthor(
+    message,
+    nameFor,
+    viewerId,
+    roleColorFor,
+  );
   return (
     <Text>
       <Text style={styles.compactTime}>
@@ -483,7 +508,7 @@ function CompactLead({
             : styles.compactName
         }
       >
-        {resolveAuthorLabel(message, nameFor, viewerId)}
+        {authorLabel}
       </Text>{" "}
     </Text>
   );

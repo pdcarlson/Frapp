@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { reactionActionType } from "@repo/chat-core/types";
 import { FrappThemeProvider } from "@/lib/theme";
-import { Keyboard } from "react-native";
+import { Keyboard, StyleSheet } from "react-native";
 import { drawnText, screenText } from "@/test/screen-text";
 import {
   resetChatDensityForTests,
@@ -1096,6 +1096,34 @@ describe("compact density", () => {
         (node.type as unknown) === "Text" && drawnText(node).includes("hello"),
     );
     expect(drawnText(body)).toMatch(/^\d{1,2}:\d{2}\s?[AP]M Casey hello$/);
+  });
+
+  it("starts a run 4 below the row above, against cozy's 16", () => {
+    const paddingTops = (tree: ReactTestRenderer) =>
+      tree.root
+        .findAll((node) => typeof node.props.style !== "function")
+        .map((node) => StyleSheet.flatten(node.props.style)?.paddingTop);
+    const cozy = renderItem(message({ content: "hello" }));
+    expect(paddingTops(cozy)).toContain(16);
+    act(() => setChatDensity("compact"));
+    const compact = renderItem(message({ content: "hello" }));
+    expect(paddingTops(compact)).toContain(4);
+    expect(paddingTops(compact)).not.toContain(16);
+  });
+
+  it("gives a leading code block its own line under the time and name", () => {
+    act(() => setChatDensity("compact"));
+    const tree = renderItem(
+      message({
+        content: "```\nlet x = 1\n```",
+        created_at: "2026-11-06T20:29:00.000Z",
+      }),
+    );
+    const lead = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" && drawnText(node).includes("Casey"),
+    );
+    expect(drawnText(lead)).toMatch(/Casey \n/);
   });
 
   it("puts the name on its own line when there is no text to lead", () => {

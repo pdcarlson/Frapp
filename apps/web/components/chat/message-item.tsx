@@ -1110,7 +1110,9 @@ export function MessageItem({
             <div className="flow-root min-w-0">
               <span
                 data-slot="author-line"
-                className="float-left mr-1.5 text-base font-semibold leading-[25px] text-foreground"
+                // `max-w-full break-words`: an unbroken imported handle wraps
+                // inside the column rather than spilling past it.
+                className="float-left mr-2 max-w-full break-words text-base font-semibold leading-[25px] text-foreground"
                 style={authorColor ? { color: authorColor } : undefined}
               >
                 {authorLabel}

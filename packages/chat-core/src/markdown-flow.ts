@@ -196,11 +196,25 @@ function endsInOwnLineBlock(nodes: HastNode[]): boolean {
   return last?.type === "element" && OWN_LINE_AFTER.has(last.tagName ?? "");
 }
 
+/**
+ * Whether the body opens with one of those blocks, so compact density's lead
+ * (the time and name, `components.md` §11 § Density) takes a line of its own
+ * above it rather than running into the block's first line.
+ */
+function startsWithOwnLineBlock(nodes: HastNode[]): boolean {
+  const first = nodes.find(
+    (node) => !isSeparator(node) && !drawsNothing(node),
+  );
+  return first?.type === "element" && OWN_LINE_AFTER.has(first.tagName ?? "");
+}
+
 export interface MessageBodyLayout {
   /** The new top level, to replace the root's children. */
   children: HastNode[];
   /** The trailing markers take a line of their own (`endsInOwnLineBlock`). */
   endsOnOwnLine: boolean;
+  /** A lead before the body takes a line of its own (`startsWithOwnLineBlock`). */
+  startsOnOwnLine: boolean;
 }
 
 /**
@@ -216,10 +230,12 @@ export function layOutMessageBody(
   { allowed, source }: { allowed: ReadonlySet<string>; source: string },
 ): MessageBodyLayout {
   const endsOnOwnLine = endsInOwnLineBlock(nodes);
+  const startsOnOwnLine = startsWithOwnLineBlock(nodes);
   // micromark drops a leading byte-order mark before it counts offsets.
   const parsed = source.startsWith("\uFEFF") ? source.slice(1) : source;
   return {
     children: layOutMessageFlow(applyMessageAllowlist(nodes, allowed), parsed),
     endsOnOwnLine,
+    startsOnOwnLine,
   };
 }

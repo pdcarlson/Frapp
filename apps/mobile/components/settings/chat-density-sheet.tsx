@@ -19,7 +19,7 @@ import {
   type ChapterBranding,
 } from "@/lib/chapter-branding";
 import { setChatDensity, useChatDensity } from "@/lib/chat/chat-density";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * Settings → Chat density, on the phone (`components.md` §11 § Density): two
@@ -162,21 +162,21 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       overflow: "hidden",
     },
     previewCozy: { gap: tokens.spacing.md },
-    previewCompact: { gap: 6 },
+    previewCompact: { gap: tokens.spacing.sm },
     cozyRow: { flexDirection: "row", gap: tokens.spacing.sm },
     cozyLines: { flex: 1, gap: tokens.spacing.xs },
     compactRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 6,
+      gap: tokens.spacing.sm,
     },
     dot: {
       width: 14,
       height: 14,
-      borderRadius: 7,
+      borderRadius: avatarRadius(14),
       backgroundColor: tokens.color.surface.popover,
     },
-    bar: { height: 5, borderRadius: 3 },
+    bar: { height: tokens.spacing.xs, borderRadius: tokens.spacing.xs / 2 },
     timeBar: { width: 12, backgroundColor: tokens.color.border.hairline },
     nameBar: { backgroundColor: tokens.color.text.muted },
     compactName: { width: 24 },

@@ -80,6 +80,11 @@ export interface ParsedMessageMarkdown {
    * says which blocks, for both clients).
    */
   trailingOnOwnLine: boolean;
+  /**
+   * The body opens with a code block, a list or a quote, so compact density's
+   * lead takes a line of its own above it (`MessageBodyLayout.startsOnOwnLine`).
+   */
+  leadOnOwnLine: boolean;
 }
 
 /**
@@ -131,6 +136,7 @@ function rehypeTextFlow({
       source,
     });
     result.trailingOnOwnLine = layout.endsOnOwnLine;
+    result.leadOnOwnLine = layout.startsOnOwnLine;
     root.children = layout.children;
     result.links = collectLinks(root);
     result.empty = textOf(root).trim() === "";
@@ -153,6 +159,7 @@ export function parseMessageMarkdown(content: string): ParsedMessageMarkdown {
     links: [],
     empty: false,
     trailingOnOwnLine: false,
+    leadOnOwnLine: false,
   };
   const body = Markdown({
     children: flatten ? "" : content,
@@ -329,6 +336,7 @@ export function MessageMarkdown({
     <MarkdownContext.Provider value={context}>
       <Text style={style}>
         {lead}
+        {lead && parsed.leadOnOwnLine ? "\n" : null}
         {parsed.body}
         {trailing && parsed.trailingOnOwnLine ? "\n" : null}
         {trailing}

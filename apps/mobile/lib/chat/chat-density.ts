@@ -10,11 +10,12 @@ import {
 /**
  * The member's chat density on this phone (`@repo/chat-core/density`).
  *
- * AsyncStorage, read once per app process on the first subscriber and held in
- * memory after that, so every row in a long thread reads a module variable
- * rather than storage. The read starts when this module loads, which is app
- * start (the thread's rows import it), so it has landed long before a member
- * opens a thread; until it does, rows draw cozy. Best-effort both ways: a storage error
+ * AsyncStorage, read once per app process and held in memory after that, so
+ * every row in a long thread reads a module variable rather than storage. The
+ * read starts when this module loads. In a release build route modules load
+ * when first rendered, so that is when the thread or Settings first opens; a
+ * cold start straight into a thread can draw cozy for the frame or two before
+ * the read lands, then redraw compact. Best-effort both ways: a storage error
  * reads as cozy, and a failed write keeps the choice until the app restarts.
  */
 let density: ChatDensity = DEFAULT_CHAT_DENSITY;

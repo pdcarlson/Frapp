@@ -2043,6 +2043,22 @@ describe("MessageItem compact density", () => {
     ).toContain("opacity-0");
   });
 
+  it("starts a run 4 below the row above and widens the gutter for the time", () => {
+    const cozy = renderItem(message());
+    const cozyRow =
+      cozy.container.querySelector<HTMLElement>('[data-run="start"]');
+    expect(cozyRow?.className).toContain("pt-4");
+    expect(cozyRow?.querySelector(".w-8")).not.toBeNull();
+    cozy.unmount();
+
+    act(() => setChatDensity("compact"));
+    const { container } = renderItem(message());
+    const row = container.querySelector<HTMLElement>('[data-run="start"]');
+    expect(row?.className).toContain("pt-1");
+    expect(row?.className).not.toContain("pt-4");
+    expect(row?.querySelector(".w-14")).not.toBeNull();
+  });
+
   it("puts the name on its own line above a message with no text", () => {
     act(() => setChatDensity("compact"));
     const { container } = renderItem(

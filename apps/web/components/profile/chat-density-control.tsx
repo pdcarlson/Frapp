@@ -4,7 +4,7 @@ import {
   CHAT_DENSITY_OPTIONS,
   type ChatDensity,
 } from "@repo/chat-core/density";
-import { FOCUS_RING_WITHIN } from "@/components/ui/focus";
+import { FOCUS_RING_OFFSET_HAS_VISIBLE } from "@/components/ui/focus";
 import { setChatDensity, useChatDensity } from "@/lib/chat/chat-density";
 import { cn } from "@/lib/utils";
 
@@ -30,7 +30,7 @@ export function ChatDensityControl() {
             key={option.value}
             className={cn(
               "flex cursor-pointer flex-col gap-3 rounded-lg border p-3 transition",
-              FOCUS_RING_WITHIN,
+              FOCUS_RING_OFFSET_HAS_VISIBLE,
               checked
                 ? "border-accent-border bg-accent-subtle-hover"
                 : "border-border hover:bg-card-hover",
@@ -93,7 +93,7 @@ function DensityPreview({ density }: { density: ChatDensity }) {
       aria-hidden="true"
       className={cn(
         "flex h-24 flex-col justify-center overflow-hidden rounded-md bg-surface-1 px-3",
-        density === "cozy" ? "gap-3" : "gap-1.5",
+        density === "cozy" ? "gap-3" : "gap-2",
       )}
     >
       {rows.map(([name, text], index) =>
@@ -106,7 +106,7 @@ function DensityPreview({ density }: { density: ChatDensity }) {
             </span>
           </span>
         ) : (
-          <span key={index} className="flex items-center gap-1.5">
+          <span key={index} className="flex items-center gap-2">
             <span className="h-1.5 w-4 shrink-0 rounded-full bg-border" />
             <span
               className={cn("h-1.5 shrink-0 rounded-full bg-muted", name)}
