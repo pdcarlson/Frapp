@@ -35,9 +35,9 @@ export default [
         "error",
         {
           selector:
-            "ImportExpression > Literal[value=/^(@stripe\\/stripe-react-native|react-native-keyboard-controller|expo-notifications|expo-apple-authentication)($|\\/)/]",
+            "ImportExpression > Literal[value=/^(@stripe\\/stripe-react-native|react-native-keyboard-controller|expo-notifications|expo-apple-authentication|@react-native-google-signin\\/google-signin)($|\\/)/]",
           message:
-            "Dynamic import() of a non-Expo-Go native module is still an import. Go through the isolation module (@/lib/payments/stripe, @/lib/keyboard, @/lib/notifications/push, @/lib/apple-auth).",
+            "Dynamic import() of a non-Expo-Go native module is still an import. Go through the isolation module (@/lib/payments/stripe, @/lib/keyboard, @/lib/notifications/push, @/lib/apple-auth, @/lib/google-auth).",
         },
       ],
       "no-restricted-imports": [
@@ -84,6 +84,14 @@ export default [
               ],
               message:
                 "Import via @/lib/apple-auth — a direct import kills expo export --platform web the same way Stripe does.",
+            },
+            {
+              group: [
+                "@react-native-google-signin/google-signin",
+                "@react-native-google-signin/google-signin/*",
+              ],
+              message:
+                "Import via @/lib/google-auth — the package reads its native module at import, which crashes Expo Go and kills expo export --platform web.",
             },
           ],
         },

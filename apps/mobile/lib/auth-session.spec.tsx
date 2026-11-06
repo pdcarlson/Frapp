@@ -56,6 +56,8 @@ const mockState = vi.hoisted(() => ({
     url?: string;
   },
   nativeAppleResult: "unavailable" as "completed" | "cancelled" | "unavailable",
+  nativeGoogleResult: "unavailable" as
+    "completed" | "cancelled" | "unavailable",
   signOutCalls: 0,
   configured: true,
   deepLinkUrl: null as string | null,
@@ -90,6 +92,14 @@ const mockAppleAuth = vi.hoisted(() => ({
 
 vi.mock("./apple-auth", () => ({
   signInWithNativeApple: mockAppleAuth.signInWithNativeApple,
+}));
+
+const mockGoogleAuth = vi.hoisted(() => ({
+  signInWithNativeGoogle: vi.fn(async () => mockState.nativeGoogleResult),
+}));
+
+vi.mock("./google-auth", () => ({
+  signInWithNativeGoogle: mockGoogleAuth.signInWithNativeGoogle,
 }));
 
 vi.mock("expo-web-browser", () => ({
@@ -347,6 +357,7 @@ beforeEach(async () => {
     url: "frapp:///?code=oauth-code",
   };
   mockState.nativeAppleResult = "unavailable";
+  mockState.nativeGoogleResult = "unavailable";
   mockState.signOutCalls = 0;
   mockState.configured = true;
   mockState.deepLinkUrl = null;
@@ -975,6 +986,37 @@ describe("AuthSessionProvider — OAuth", () => {
     expect(mockState.signInWithOAuthCalls).toEqual([]);
     const WebBrowser = await import("expo-web-browser");
     expect(WebBrowser.openAuthSessionAsync).not.toHaveBeenCalled();
+  });
+
+  it("uses native Google and skips the browser session", async () => {
+    mockState.nativeGoogleResult = "completed";
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await act(async () => {
+      await result.current.signInWithOAuthProvider("google");
+    });
+
+    expect(mockGoogleAuth.signInWithNativeGoogle).toHaveBeenCalled();
+    expect(mockAppleAuth.signInWithNativeApple).not.toHaveBeenCalled();
+    expect(mockState.signInWithOAuthCalls).toEqual([]);
+    const WebBrowser = await import("expo-web-browser");
+    expect(WebBrowser.openAuthSessionAsync).not.toHaveBeenCalled();
+  });
+
+  it("treats a cancelled native Google sheet as done, with no browser fallback", async () => {
+    mockState.nativeGoogleResult = "cancelled";
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await act(async () => {
+      await expect(
+        result.current.signInWithOAuthProvider("google"),
+      ).resolves.toBeUndefined();
+    });
+
+    expect(result.current.callbackError).toBeNull();
+    expect(mockState.signInWithOAuthCalls).toEqual([]);
   });
 
   it("treats a cancelled native Apple prompt as success with no error", async () => {
