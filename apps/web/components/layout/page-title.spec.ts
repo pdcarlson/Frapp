@@ -36,6 +36,16 @@ describe("resolvePageTitle", () => {
     expect(resolvePageTitle("/eventsx")).toBeNull();
   });
 
+  it("puts Bulk upload under its Backwork row", () => {
+    expect(resolvePageTitle("/backwork/upload")).toEqual({
+      title: "Bulk upload",
+      parent: { label: "Backwork", href: "/backwork" },
+    });
+    expect(resolvePageTitle("/backwork/upload", (item) => item.href !== "/backwork")).toEqual({
+      title: "Bulk upload",
+    });
+  });
+
   it("titles Profile, which is not a nav row", () => {
     expect(resolvePageTitle("/profile")).toEqual({ title: "Profile" });
   });

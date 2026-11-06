@@ -2,6 +2,9 @@ import { nextJsConfig } from "@repo/eslint-config/next-js";
 
 /** @type {import("eslint").Linter.Config[]} */
 export default [
+  // Vendored pdf.js data copied from node_modules at build time
+  // (scripts/copy-pdfjs-assets.mjs); gitignored, not our code.
+  { ignores: ["public/pdfjs/**"] },
   ...nextJsConfig,
   {
     // Build-time config files run in Node, not the browser, so `process` is a
