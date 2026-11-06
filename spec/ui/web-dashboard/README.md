@@ -65,11 +65,11 @@ A Chat anchor, two member sections (Chapter, Resources), and one unlabeled group
 | Chapter | Events | `/events` | `events` | — |
 | Chapter | Tasks | `/tasks` | `tasks` | — (filtered to own tasks unless `tasks:manage`) |
 | Chapter | Points | `/points` | `points` | — |
-| Chapter | Study hours | `/study` | `hours` | — |
+| Chapter | Study hours | `/study` | `hours` | — (hidden from a viewer without `geofences:manage` while the chapter has no study zones: [`modules.md` § Not-set-up features](../../product/modules.md#not-set-up-features)) |
 | Chapter | Service hours | `/service` | `hours` | — (log/approve gated inline via `service:log` / `service:approve`) |
 | Chapter | Polls | `/polls` | `polls` | `polls:view_all` (chapter list + tallies; vote/create remain channel-scoped) |
-| Resources | Documents | `/documents` | `documents` | — (upload gated by `chapter_docs:upload`, delete by `chapter_docs:manage`) |
-| Resources | Backwork | `/backwork` | `backwork` | — (the API gates browsing on `backwork:upload` or `backwork:admin` at controller level; upload needs `backwork:upload` specifically) |
+| Resources | Documents | `/documents` | `documents` | — (upload gated by `chapter_docs:upload`, delete by `chapter_docs:manage`; hidden from a viewer without `chapter_docs:upload` while there are no documents: [`modules.md` § Not-set-up features](../../product/modules.md#not-set-up-features)) |
+| Resources | Backwork | `/backwork` | `backwork` | `backwork:upload` or `backwork:admin`, the pair the API gates browsing on at controller level (upload needs `backwork:upload` specifically) |
 | _(unlabeled)_ | Directory | `/members` | — | `members:view` |
 | _(unlabeled)_ | Billing | `/billing` | — | `billing:view` |
 | _(unlabeled)_ | Settings | `/settings` | — | shown when Settings holds a tab or a tool for the viewer ([`../../behavior/settings/README.md`](../../behavior/settings/README.md#who-sees-what) § Who sees what) |

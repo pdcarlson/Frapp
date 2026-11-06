@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { useHiddenUnsetFeatures } from "@repo/hooks";
 import { cn } from "@/lib/utils";
 import { ChapterNavHeader } from "@/components/layout/chapter-nav-header";
 import { DASHBOARD_NAV, type NavItem } from "@/components/layout/nav-config";
@@ -93,10 +94,13 @@ export function AppNav({
   // The drawer has no room to be a rail and no toggle to leave it, so it is
   // always expanded regardless of the stored preference.
   const isCollapsed = collapsed && !isDrawer;
+  // Study hours with no zones and Documents with nothing in them leave the
+  // nav for a member who can't set them up (`nav-config.ts`, Setup gating).
+  const hiddenFeatures = useHiddenUnsetFeatures(permissions, isModuleEnabled);
 
   const sections = DASHBOARD_NAV.map((section) => {
     const visibleItems = section.items.filter((item) =>
-      isNavItemVisible(item, permissions, isModuleEnabled),
+      isNavItemVisible(item, permissions, isModuleEnabled, hiddenFeatures),
     );
     if (visibleItems.length === 0) return null;
 
@@ -136,6 +140,7 @@ export function AppNav({
             onNavigate={onNavigate}
             focusClassName={FOCUS_RING_SHELL}
             isModuleEnabled={isModuleEnabled}
+            hiddenFeatures={hiddenFeatures}
             collapsed={isCollapsed}
             {...(chatRow && item.id === "chat"
               ? {

@@ -31,11 +31,19 @@ let events: unknown[] = [];
 let sessions: unknown[] | undefined;
 let invoices: unknown[] = [];
 let notifications: unknown[] = [];
+let hiddenFeatures = new Set<string>();
+const hiddenFeatureCalls: unknown[][] = [];
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useListChapters: () => ({ isSuccess: true, data: [{ id: "chapter-1" }] }),
   usePermissionList: () => permissions,
+  useMyPermissions: () => ({ data: { permissions } }),
+  // The rule itself is pinned in `@repo/hooks` (`unset-features.spec.tsx`).
+  useHiddenUnsetFeatures: (...args: unknown[]) => {
+    hiddenFeatureCalls.push(args);
+    return hiddenFeatures;
+  },
   useNotifications: () => ({ data: notifications }),
   useEvents: () => ({ data: events }),
   useViewerUserId: () => "user-1",
@@ -287,6 +295,37 @@ describe("More hub anatomy (#1048)", () => {
 
   // foundations.md §6 "Where the accent goes" (2026-11-05): an icon that
   // labels a row is neutral, so member and Admin rows draw the same muted hue.
+  it("drops Study hours and Documents while nobody has set them up for this member", () => {
+    hiddenFeatures = new Set(["study", "documents"]);
+    try {
+      const labels = render()
+        .root.findAllByType(ListRow)
+        .map((row) => row.props.label);
+      expect(labels).not.toContain("Study hours");
+      expect(labels).not.toContain("Documents");
+      expect(labels).toContain("Service hours");
+      expect(labels).toContain("Directory");
+    } finally {
+      hiddenFeatures = new Set();
+    }
+  });
+
+  it("asks the setup gate with the real permissions and the chapter's modules", () => {
+    permissions = ["members:view"];
+    try {
+      render();
+      const [perms, gate] = hiddenFeatureCalls.at(-1) as [
+        string[],
+        ((key: string) => boolean) | undefined,
+      ];
+      expect(perms).toEqual(["members:view"]);
+      // A chapter with no `enabled_modules` key has every module on.
+      expect(gate?.("geofences")).toBe(true);
+    } finally {
+      permissions = [];
+    }
+  });
+
   it("draws a neutral leading glyph on every row, never the chapter accent", () => {
     permissions = ["events:update"];
     const rows = render().root.findAllByType(ListRow);

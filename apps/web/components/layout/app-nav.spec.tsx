@@ -1,10 +1,16 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
+const { hidden } = vi.hoisted(() => ({
+  hidden: { features: new Set<string>() },
+}));
+
 vi.mock("@repo/hooks", () => ({
   useAccessibleChapters: () => ({ data: [], isSuccess: true }),
   useCurrentChapter: () => ({ data: undefined, isError: false }),
   useMyPermissions: () => ({ data: undefined }),
+  // The rule itself is pinned in `@repo/hooks` (`unset-features.spec.tsx`).
+  useHiddenUnsetFeatures: () => hidden.features,
 }));
 vi.mock("@/lib/auth/select-chapter", () => ({
   useSelectChapter: () => vi.fn(),
@@ -144,6 +150,33 @@ describe("AppNav", () => {
       screen.queryByRole("link", { name: "Events" }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Tasks" })).toBeInTheDocument();
+  });
+
+  it("drops a row nobody has set up, from a member who can't set it up", () => {
+    hidden.features = new Set(["study", "documents"]);
+    try {
+      renderNav({ permissions: ["members:view", "backwork:upload"] });
+      const rows = Array.from(document.querySelectorAll("nav a")).map(
+        (el) => el.textContent,
+      );
+      expect(rows).not.toContain("Study hours");
+      expect(rows).not.toContain("Documents");
+      // Service hours shares Study's module, and members log their own.
+      expect(rows).toContain("Service hours");
+      // Members upload backwork themselves, so it has no setup gate.
+      expect(rows).toContain("Backwork");
+    } finally {
+      hidden.features = new Set();
+    }
+  });
+
+  it("drops Backwork for a viewer the library refuses", () => {
+    renderNav({ permissions: ["members:view", "alumni:post"] });
+    expect(
+      screen.queryByRole("link", { name: "Backwork" }),
+    ).not.toBeInTheDocument();
+    renderNav({ permissions: ["members:view", "backwork:admin"] });
+    expect(screen.getByRole("link", { name: "Backwork" })).toBeInTheDocument();
   });
 
   it("marks the active route", () => {
