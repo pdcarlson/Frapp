@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * Signet design tokens — the dark-first warm charcoal system.
+ * Signet design tokens — the dark-first neutral graphite system.
  *
  * This stylesheet is what BOTH web surfaces ship — `apps/web` since the #920
  * shell cutover, `apps/landing` since its token cutover (#2366). A surface
@@ -39,12 +39,12 @@
 @layer base {
   :root {
     /* ── Surface ladder (fixed for every chapter; foundations §2) ── */
-    --background: #131211;
-    --surface-1: #1A1A1A;
-    --card: #211E1A;
-    --card-foreground: #EDEAE3;
-    --popover: #2A2621;
-    --popover-foreground: #EDEAE3;
+    --background: #0A0A0A;
+    --surface-1: #111111;
+    --card: #171717;
+    --card-foreground: #EBEBEB;
+    --popover: #1E1E1E;
+    --popover-foreground: #EBEBEB;
 
     /* ── Borders & hairlines (foundations §3) ─────────────────────
      * Low-opacity white only, so a hairline tracks whatever surface
@@ -54,13 +54,13 @@
 
     /* ── Text ladder (foundations §4) ─────────────────────────────
      * NOTE the ShadCN-era name collision, resolved in foundations'
-     * favor: `--muted` is muted TEXT (#78716A), not a fill. Subtle
+     * favor: `--muted` is muted TEXT (#737373), not a fill. Subtle
      * fills use the surface ladder (`--surface-1`, `--card`) instead;
      * the web reskin retargeted every `bg-muted` call site accordingly. */
-    --foreground: #EDEAE3;
-    --muted-foreground: #A9A399;
-    --muted: #78716A;
-    --disabled: #57534C;
+    --foreground: #EBEBEB;
+    --muted-foreground: #A3A3A3;
+    --muted: #737373;
+    --disabled: #525252;
 
     /* ── Semantic status (foundations §5; status-only, never decorative) ──
      * Foregrounds are for text ON a solid semantic fill; measured against
@@ -68,11 +68,11 @@
      * success 2.54:1 and destructive 3.35:1). On dark surfaces, prefer the
      * tint recipe (the `--*-tint` fills below + hue text) over solid fills. */
     --success: #3FB950;
-    --success-foreground: #131211;
+    --success-foreground: #0A0A0A;
     --warning: #E5A000;
-    --warning-foreground: #131211;
+    --warning-foreground: #0A0A0A;
     --destructive: #F85149;
-    --destructive-foreground: #131211;
+    --destructive-foreground: #0A0A0A;
     /* The AA-lifted tone for danger text ON a danger tint, which components.md
      * §5 sanctions explicitly ("implementations MAY lift the text tone for AA
      * contrast, but the hue is the fixed semantic") and the reference already
@@ -102,7 +102,7 @@
     --destructive-tint: rgba(248, 81, 73, 0.13);
     --destructive-tint-hover: rgba(248, 81, 73, 0.2);
     --info: #2F81F7;
-    --info-foreground: #131211;
+    --info-foreground: #0A0A0A;
     /* The same AA lift components.md §5 sanctions for danger, applied to info
      * for the same reason: the lighter ladder puts solid `--info` at 4.43:1 over
      * --card and 4.01:1 over --popover, under the 4.5:1 gate on the two surfaces
@@ -167,7 +167,7 @@
      * the four steps above. `elevation-contrast.spec.ts` derives it from
      * `--popover`, so a ladder change fails there instead of leaving
      * this value behind. */
-    --card-hover: #37332E;
+    --card-hover: #2C2C2C;
 
     /* ── Accent slot — house default (accent-engine.md §2/§3) ─────
      * deriveSignetPalette("#DDB844") output, pinned by signet.css.spec.ts.
@@ -176,7 +176,7 @@
     --primary-hover: #D2AD37;
     --primary-foreground: #292109;
     --ring: #796938;
-    --accent-subtle: #282314;
+    --accent-subtle: #272213;
     --accent-border: #5F522C;
     --accent-text: #E7C86B;
 
@@ -245,8 +245,13 @@
      * measured 1.1744:1 against the OLD `--popover` (#26221C) — the board reuses
      * the legacy highlight without re-pitching it for the ladder it also moved.
      * If the sweep reads dead on a real panel, the fix is to re-pitch the
-     * highlight against #2A2621, not to move a ladder rung. */
-    --skeleton-highlight: #332E26;
+     * highlight against #2A2621, not to move a ladder rung.
+     *
+     * RE-PITCHED 2026-11-05 with the neutral ladder (foundations.md §2):
+     * `--popover` is now #1E1E1E, and #2B2B2B measures 1.1774:1 on it, the
+     * pre-greenfield amplitude again, and neutral like the ladder. The
+     * board's warm pair is history. */
+    --skeleton-highlight: #2B2B2B;
 
     /* ── Shadows are banned on Signet surfaces (foundations §10) ──
      * Elevation is a lighter surface step. The tokens exist because

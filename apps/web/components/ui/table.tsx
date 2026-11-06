@@ -24,15 +24,16 @@ import { cn } from "@/lib/utils";
  * The full `hover:bg-accent` that replaced that half-mix had the same defect at
  * full strength: `--accent` held the same value as `--popover` (the alias is
  * deleted, #3036), so a row on a `--card` surface hovered at **1.085:1** on
- * the ladder of the time (1.105:1 today), no feedback at all. The accent tint that replaced it separated by hue, not
- * luminance, and painted every hovered row in the chapter color.
+ * the ladder of the time (1.075:1 on today's neutral ladder), no feedback at
+ * all. The accent tint that replaced it separated by hue, not luminance, and
+ * painted every hovered row in the chapter color.
  *
  * Since 2026-11-05 both states are neutral (`foundations.md` §6, "Where the
  * accent goes"): a row is not a control the member switched on, so it does not
  * take the accent.
  *
- *   hover      `--card-hover`, the step above the whole ladder: 1.324:1 on
- *              `--card`, where the ladder's own next step is 1.105:1.
+ *   hover      `--card-hover`, the step above the whole ladder: 1.284:1 on
+ *              `--card`, where the ladder's own next step is 1.075:1.
  *   selected   `--popover` with `--foreground` text, one step under hover,
  *              so a ghost or secondary button inside a selected row still
  *              lifts when hovered.

@@ -26,12 +26,12 @@ import {
  * is #916's conflicting green beside `--success`; the `dark:` variant was the
  * last one in the tree and had been inert since the shell slice made Signet
  * dark-only, so the tone that actually shipped was the *light* one; and the
- * 40% wash measures 2.184:1, on the one mark that tells an admin a role lacks a
+ * 40% wash measures 2.189:1, on the one mark that tells an admin a role lacks a
  * capability.
  *
  * The near-miss is the reason this file exists rather than a comment. The
  * first fix reached for `--muted`, which reads like the token for absent
- * metadata — and is 3.568:1 on `--card`, under §6, which the chat slice
+ * metadata — and is 3.781:1 on `--card`, under §6, which the chat slice
  * already recorded as "`--muted` is not usable as text anywhere on the
  * ladder". A `✓` and an `—` are characters, so the 4.5:1 text floor applies
  * and not the 3:1 glyph one. Caught by measuring rather than by reading the
@@ -62,18 +62,19 @@ describe("the capability matrix states held and missing in text tones", () => {
     // the measured value, not just to "under the floor": the first write of
     // this comment said 2.3:1 from memory and the review recomputed it at
     // 2.184. A number in a comment is not a measurement — so the number is an
-    // assertion now, and the comment cites the assertion.
+    // assertion now, and the comment cites the assertion. (2.189 on the
+    // neutral ladder, 2026-11-05.)
     const washed = ratio(
       mix(TEXT.mutedForeground, MATRIX_SURFACE, 0.4),
       MATRIX_SURFACE,
     );
     expect(washed).toBeLessThan(AA_TEXT);
-    expect(washed).toBeCloseTo(2.173, 2);
+    expect(washed).toBeCloseTo(2.189, 2);
   });
 
   it("rules out `--muted`, which reads like the right token and is not", () => {
     // The fix this file's own review rejected. Recorded so the next reader
-    // does not re-derive it: 3.568:1 on the card the matrix sits in.
+    // does not re-derive it: 3.781:1 on the card the matrix sits in.
     expect(ratio(TEXT.muted, MATRIX_SURFACE)).toBeLessThan(AA_TEXT);
   });
 
@@ -135,11 +136,12 @@ describe("the accent preview's label tone, computed from the draft", () => {
    * *on the accent* — which is what a primary button is, and what this card's
    * description promises the colour will be used for. They diverge, and the
    * review found the band where: `#0080FD` passed the first (`reason: "ok"`,
-   * no warning) and failed the second at 4.191:1. It no longer reaches the
-   * second: the greenfield ladder lifted `--card`, and it now falls under
-   * 4.5:1 there, so the resolver substitutes it (pinned below). `#0086FE` is the band's example now
-   * (its figures are pinned in the test below); the ink-only assertions still
-   * hold for `#0080FD`, since they measure text on the fill, not the card.
+   * no warning) and failed the second at 4.191:1. The warm greenfield ladder
+   * lifted `--card` until the resolver substituted it, so `#0086FE` became the
+   * band's example (its figures are pinned in the test below). The darker
+   * neutral ladder (2026-11-05) gives `#0080FD` back to the band — kept on the
+   * card at 4.70 — but `#0086FE` stays the cited example, as it clears the
+   * card on the value with the wider margin.
    *
    * The first fix here made it worse in a quiet way — `pickAccessibleColor(...)
    * ?? gold.onHouse` reasserted the very tone the picker had just rejected, so
@@ -198,10 +200,12 @@ describe("the accent preview's label tone, computed from the draft", () => {
         fallbackAccent: signetDarkTokens.color.gold.house,
       }).reason;
     expect(onCard("#0086FE")).toBe("ok");
-    // And why the example moved: the original `#0080FD` is substituted on the
-    // card now, so it never reaches the label check.
-    expect(onCard("#0080FD")).toBe("insufficient_contrast");
-    expect(ratio("#0086FE", SURFACE.card)).toBeCloseTo(4.62, 2);
+    // Why the example moved, and why it has not moved back: the warm ladder
+    // substituted the original `#0080FD` on the card, so it never reached the
+    // label check. (neutral ladder, 2026-11-05) The darker `--card` keeps it
+    // again, so it is in the band too now; `#0086FE` stays the example.
+    expect(onCard("#0080FD")).toBe("ok");
+    expect(ratio("#0086FE", SURFACE.card)).toBeCloseTo(4.99, 2);
     const ink = bestInk("#0086FE");
     expect(ratio(ink, "#0086FE")).toBeLessThan(AA_TEXT);
     expect(ratio(ink, "#0086FE")).toBeCloseTo(4.45, 2);
