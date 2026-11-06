@@ -43,7 +43,7 @@ came with #2302 (PR #2611).
 | Create chapter (`/(auth)/create-chapter`) | The gold ‹ Back row (find, confirm and color) / Android back (confirm and color) | Steps back one; on find, the row leaves for join |
 | Create chapter (`/(auth)/create-chapter`) | Live: Add your chapter's logo / Continue | Optional picker → `POST /v1/chapters/current/logo-url`, PUT, `POST /v1/chapters/current/logo`; the mark becomes the logo. A success haptic plays on arrival |
 | Create chapter (`/(auth)/create-chapter`) | Primer, only when the build can push: Turn on / Not now | OS prompt on Turn on; either answer opens the invite step, or chat when the new chapter couldn't be made active |
-| Create chapter (`/(auth)/create-chapter`) | Create invite link / Share invite (the gold primary), Skip for now / Go to chat (the quiet line under it) | The primary makes the invite (`POST /v1/invites`), then opens the share sheet as Share invite; the quiet line replaces into `/(tabs)` |
+| Create chapter (`/(auth)/create-chapter`) | Share invite (the gold primary), Skip for now / Go to chat (the quiet line under it) | Each Share invite press mints a link (`POST /v1/invites`) and opens the share sheet with it; once sent it lists under Shared as Link n. On iOS a sheet closed without sending keeps its link for the next press and lists nothing; Android's chooser can't report that, so a backed-out chooser lists its link too (expected). The quiet line replaces into `/(tabs)` |
 
 Magic-link rows additionally need `frapp://` allowlisted in Supabase Auth →
 URL Configuration (#765), or the link opens the web app instead.
