@@ -11,8 +11,19 @@ import userEvent from "@testing-library/user-event";
  * member below President fails, so it never gated at all.
  */
 
-const { gate } = vi.hoisted(() => ({
+const { gate, hidden, setupArgs } = vi.hoisted(() => ({
   gate: { current: undefined as ((key: string) => boolean) | undefined },
+  hidden: { current: new Set<string>() },
+  setupArgs: [] as unknown[][],
+}));
+
+vi.mock("@repo/hooks", () => ({
+  useMyPermissions: () => ({ data: { permissions: ["members:view"] } }),
+  // The rule itself is pinned in `@repo/hooks` (`unset-features.spec.tsx`).
+  useHiddenUnsetFeatures: (...args: unknown[]) => {
+    setupArgs.push(args);
+    return hidden.current;
+  },
 }));
 
 vi.mock("@/lib/hooks/use-chapter-module-gate", () => ({
@@ -49,5 +60,21 @@ describe("AskPill", () => {
     gate.current = undefined;
     await openAsk();
     expect(screen.getByRole("link", { name: "Open Documents" })).toBeInTheDocument();
+  });
+
+  it("does not point at Documents nobody has uploaded to, for a member who can't", async () => {
+    gate.current = () => true;
+    hidden.current = new Set(["documents"]);
+    try {
+      await openAsk();
+      expect(
+        screen.queryByRole("link", { name: "Open Documents" }),
+      ).not.toBeInTheDocument();
+      expect(setupArgs.at(-1)?.[0]).toEqual(["members:view"]);
+      expect(setupArgs.at(-1)?.[1]).toBe(gate.current);
+    } finally {
+      hidden.current = new Set();
+      gate.current = undefined;
+    }
   });
 });
