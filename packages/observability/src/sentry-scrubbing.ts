@@ -178,9 +178,9 @@ const HEADER_ALLOWLIST = new Set<string>(SENTRY_REQUEST_HEADER_ALLOWLIST);
  * Top-level event keys that may survive. Sentry's own envelope metadata plus
  * the fields we deliberately populate.
  *
- * `user`, `request`, `breadcrumbs`, `fingerprint`, and `transaction_info` are
- * absent on purpose: they are rebuilt field-by-field below rather than passed
- * through. Leaving `fingerprint` out means a non-array one is dropped rather
+ * `user`, `request`, `breadcrumbs`, `fingerprint`, `transaction_info` and
+ * `debug_meta` are absent on purpose: they are rebuilt field-by-field below
+ * rather than passed through. Leaving `fingerprint` out means a non-array one is dropped rather
  * than copied raw — the SDK types it `string[]`, so anything else is already
  * anomalous.
  *
@@ -209,6 +209,10 @@ const EVENT_KEY_ALLOWLIST = new Set([
   'contexts',
   'modules',
 ]);
+
+/** A source-map debug ID: a UUID, as sentry-cli, the Next plugin and Metro mint. */
+const DEBUG_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Contexts Sentry populates with runtime/infra facts (no user data). Anything
@@ -631,6 +635,49 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
         .map((line) => redactFreeText(line));
     }
     return out;
+  }
+
+  /**
+   * `debug_meta`, rebuilt down to the source-map images Sentry matches frames
+   * by (#3380).
+   *
+   * The SDK moves each frame's `debug_id` into `debug_meta.images` before
+   * `beforeSend` runs (`applyDebugMeta` in `@sentry/core`), as one
+   * `{ type: "sourcemap", code_file, debug_id }` per file. Sentry pairs an
+   * image with a frame by `code_file` equal to the frame's `abs_path` (or
+   * `filename`), then finds the uploaded map by `debug_id`. Without this key
+   * every frame stays compiled JS however many maps were uploaded, which is
+   * what every `frapp-api`, `frapp-web` and `frapp-landing` issue showed while
+   * it was missing from {@link EVENT_KEY_ALLOWLIST}: the deploy check found
+   * the bundles, and no event could use them.
+   *
+   * `code_file` gets the same sweep as a frame's path, so a redaction leaves
+   * the two equal and the pairing intact. A `debug_id` must be a UUID, which
+   * is all sentry-cli, the Next plugin and Metro mint. Other image types
+   * (native `macho`/`elf` and the like) are not something these JS SDKs send
+   * through this hook, so they are dropped by omission.
+   */
+  function scrubDebugMeta(meta: unknown): Record<string, unknown> | undefined {
+    if (!meta || typeof meta !== 'object') return undefined;
+    const images = (meta as Record<string, unknown>).images;
+    if (!Array.isArray(images)) return undefined;
+    const kept: Record<string, string>[] = [];
+    for (const image of images) {
+      if (!image || typeof image !== 'object') continue;
+      const { type, code_file: codeFile, debug_id: debugId } = image as Record<
+        string,
+        unknown
+      >;
+      if (type !== 'sourcemap') continue;
+      if (typeof codeFile !== 'string' || typeof debugId !== 'string') continue;
+      if (!DEBUG_ID_PATTERN.test(debugId)) continue;
+      kept.push({
+        type,
+        code_file: redactFreeText(codeFile),
+        debug_id: debugId,
+      });
+    }
+    return kept.length > 0 ? { images: kept } : undefined;
   }
 
   /**
@@ -1283,6 +1330,8 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
       }
 
       if (event.exception) scrubbed.exception = scrubException(event.exception);
+      const debugMeta = scrubDebugMeta(event.debug_meta);
+      if (debugMeta) scrubbed.debug_meta = debugMeta;
       scrubMessageInto(scrubbed, event.message);
       if (event.transaction) scrubbed.transaction = pathOnlyHttpName(event.transaction);
       const transactionInfo = scrubTransactionInfo(event.transaction_info);
@@ -1355,6 +1404,8 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
       // allowlists precisely so that "the SDK does not do that today" is never
       // load-bearing.
       if (event.exception) scrubbed.exception = scrubException(event.exception);
+      const debugMeta = scrubDebugMeta(event.debug_meta);
+      if (debugMeta) scrubbed.debug_meta = debugMeta;
       scrubMessageInto(scrubbed, event.message);
 
       // HTTP-shaped names (`GET /path`, `POST https://host/path`) reduce
