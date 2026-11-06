@@ -137,6 +137,10 @@ The accent is a signal, so it goes only where a member has to act or notice. The
 
 Unread and mentions keep their own rule above (§5): neutral for unread, red for direct address.
 
+### A signature moment's accent (2026-11-06)
+
+A signature moment ([`README.md`](README.md) §7 § Signature moments) may carry the accent for its length: a band of `--accent-subtle` passing once behind the content it celebrates, as the Discord import landing sweeps across its figures. It sits under the text, never over it, and leaves nothing behind, so at rest everything above holds: the numbers it passed are `--foreground`. Nothing else may use the accent in motion; a hover, a spinner or a loading state is still neutral.
+
 **Kept on the owner's call (2026-11-06).** The `+N pts` reward chip ([`components.md`](components.md) §5) keeps the accent: a reward is something the member needs to notice. The active nav row and channel keep it too, under item 6 above.
 
 **Still accent, waiting on the owner's call.** Four uses that other docs sanction predate this rule and were left as they are: the meter fill ([`components.md`](components.md) §12), the PRO chip ([`web-dashboard/README.md`](../web-dashboard/README.md)), the empty-state icon tile (§10 of `components.md`, which the empty-states redesign owns) and mobile's back arrow and inline text actions ([`navigation.md`](../mobile/navigation.md)). Each is either an item above or the next thing to take neutral; until the owner decides, they stay. Where the accent's own text step (`--accent-text`) is used, it is for items 1 to 6, never to make a label stand out.
@@ -315,8 +319,9 @@ The grid as CSS custom properties. Every value is 4 × an integer; that is the w
 
 Panel 4h defines no motion tokens, so **no Signet motion values are locked yet (TODO-DESIGN)**. What that does and does not put in question:
 
-- **Settled — the discipline.** The three-class taxonomy (micro-feedback, standard transition, context shift), the budget each class is held to, and the requirements that motion stay subtle, functional, and reduced-motion-compatible bind every surface today. They are owned by [`README.md`](README.md) §7 and are not restated here.
+- **Settled — the discipline.** The three-class taxonomy (micro-feedback, standard transition, context shift), the budget each class is held to, and the requirements that motion stay subtle, functional, and reduced-motion-compatible bind every surface today. They are owned by [`README.md`](README.md) §7 and are not restated here. *Corrected 2026-11-06:* the taxonomy has four classes now, and "subtle, functional" binds every surface outside a signature moment; reduced-motion compatibility still binds all four.
 - **Provisional — the numbers only.** The durations and easing curves in use are carried forward from the legacy `@repo/theme` system, now in `packages/theme/src/motion.ts` (`duration` / `easing`) and are listed in README §7. Implementations SHOULD keep using them so motion stays consistent across the app, but they are placeholders, not Signet canon: a Signet motion spec MAY replace every value without changing any rule above.
+- **A fourth class, added 2026-11-06: signature.** The owner asked for a few deliberate, fun moments that set Frapp apart (#3493), so the taxonomy gained a `signature` class beside the three, with its own triggers, budget, reduced-motion rule and catalog, all owned by [`README.md`](README.md) §7 § Signature moments. Its numbers (`motion.duration.signature` = 520, `motion.easing.settle`, and the 1.8s whole-moment budget in `packages/theme/src/signature.ts`) are as provisional as the other three: chosen for the first moment, the Discord import landing, not Signet canon.
 
 ---
 

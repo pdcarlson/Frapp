@@ -25,6 +25,13 @@ import {
 import type { ImportProgress } from "./import-watch-panel";
 import { purgeLine } from "./delete-import-copy";
 import { SourceStep, type ImportSource } from "./source-step";
+import {
+  ArrivalCategories,
+  ArrivalMark,
+  ArrivalSweep,
+  useArrival,
+  useCountUp,
+} from "./import-arrival";
 
 function count(value: number): string {
   return value.toLocaleString("en-US");
@@ -44,13 +51,31 @@ function Meter({ percent }: { percent: number }) {
 }
 
 /** One figure in a row of them: the number large, its label under it. */
-function Figure({ value, label }: { value: string; label: string }) {
+function Figure({
+  value,
+  label,
+  shown,
+}: {
+  value: string;
+  label: string;
+  /** What the screen draws while a number counts up; a reader gets `value`. */
+  shown?: string;
+}) {
   return (
     // The term comes first for a screen reader; the number reads first on
     // screen.
     <div className="flex flex-col-reverse rounded-lg border border-border p-3">
       <dt className="text-caption text-muted-foreground">{label}</dt>
-      <dd className="text-title tabular-nums">{value}</dd>
+      <dd className="text-title tabular-nums">
+        {shown === undefined || shown === value ? (
+          value
+        ) : (
+          <>
+            <span aria-hidden="true">{shown}</span>
+            <span className="sr-only">{value}</span>
+          </>
+        )}
+      </dd>
     </div>
   );
 }
@@ -346,19 +371,29 @@ export function ImportFinished({
   // read lands, or on an upload, the row's combined count stands in. One
   // stopped part-way counts only what it got through, which the categories
   // don't split, so nothing is read for it.
-  const categories = (
-    useBotImportProgress(row, false, done).data as ImportProgress | undefined
-  )?.categories;
+  const progress = useBotImportProgress(row, false, done);
+  const categories = (progress.data as ImportProgress | undefined)?.categories;
   const totals = done && categories?.length ? importTotals(categories) : null;
+  // The landing (#3493): once, on a completed import this browser hasn't
+  // landed yet. Every other time this is the frame it lands on.
+  // A bot import's landing waits for its categories, so none arrive
+  // mid-moment and the figures don't regroup under it; an upload has none.
+  const arrival = useArrival(row, row.source !== "bot" || !progress.isPending);
+  const { playing } = arrival;
+  const messages = useCountUp(row.imported_messages, arrival);
+  const tiles = done && categories ? categoryTiles(categories) : [];
   return (
     <section
       aria-labelledby="discord-import-finished"
       className="mx-auto max-w-2xl space-y-5"
     >
       <div className="space-y-1">
-        <h2 id="discord-import-finished" className="text-headline">
-          {title}
-        </h2>
+        <div className="flex items-center gap-2.5">
+          {done ? <ArrivalMark {...arrival} /> : null}
+          <h2 id="discord-import-finished" className="text-headline">
+            {title}
+          </h2>
+        </div>
         <p className="text-sm text-muted-foreground">
           {[
             row.guild_name,
@@ -375,39 +410,48 @@ export function ImportFinished({
         ) : null}
       </div>
 
-      <dl
-        className={cn(
-          "grid grid-cols-2 gap-3",
-          totals ? "sm:grid-cols-4" : "sm:grid-cols-3",
-        )}
-      >
-        <Figure value={count(row.imported_messages)} label="messages" />
-        <Figure value={count(row.attachments_imported)} label="files" />
-        {/* Done, every channel it read; stopped part-way, the ones it got
+      <div className="relative isolate overflow-hidden rounded-lg">
+        <ArrivalSweep playing={playing} />
+        <dl
+          className={cn(
+            "grid grid-cols-2 gap-3",
+            totals ? "sm:grid-cols-4" : "sm:grid-cols-3",
+          )}
+        >
+          <Figure
+            value={count(row.imported_messages)}
+            shown={count(messages)}
+            label="messages"
+          />
+          <Figure value={count(row.attachments_imported)} label="files" />
+          {/* Done, every channel it read; stopped part-way, the ones it got
             through, since the rest never came over. */}
-        {totals ? (
-          <>
+          {totals ? (
+            <>
+              <Figure
+                value={count(totals.channels)}
+                label={totals.channels === 1 ? "channel" : "channels"}
+              />
+              <Figure
+                value={count(totals.threads)}
+                label={totals.threads === 1 ? "thread" : "threads"}
+              />
+            </>
+          ) : done && typeof row.channels_total === "number" ? (
             <Figure
-              value={count(totals.channels)}
-              label={totals.channels === 1 ? "channel" : "channels"}
+              value={count(row.channels_total)}
+              label="channels and threads"
             />
+          ) : !done && typeof row.channels_done === "number" ? (
             <Figure
-              value={count(totals.threads)}
-              label={totals.threads === 1 ? "thread" : "threads"}
+              value={count(row.channels_done)}
+              label="channels and threads done"
             />
-          </>
-        ) : done && typeof row.channels_total === "number" ? (
-          <Figure
-            value={count(row.channels_total)}
-            label="channels and threads"
-          />
-        ) : !done && typeof row.channels_done === "number" ? (
-          <Figure
-            value={count(row.channels_done)}
-            label="channels and threads done"
-          />
-        ) : null}
-      </dl>
+          ) : null}
+        </dl>
+      </div>
+
+      <ArrivalCategories tiles={tiles} playing={playing} />
 
       {done ? (
         <div>

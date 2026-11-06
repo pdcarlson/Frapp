@@ -92,10 +92,13 @@
  * is the owner's alone and is not cleared, so **the crest pieces are cut, not
  * trimmed** — the sheet's own instruction, because a 300ms wipe is a different
  * gesture, not a smaller one. The closing crest paints whole, from frame one,
- * on every branch. No fourth class is claimed here and neither doc is amended:
- * everything below sits inside the existing three-class taxonomy, under the
- * 300ms context-shift ceiling README §7 already sets for section entrances.
- * Restoring the signature moment is #2378, and it lands with the amendment.
+ * on every branch. No signature class is claimed here: everything below sits
+ * inside the three original classes, under the 300ms context-shift ceiling
+ * README §7 sets for section entrances. The fourth class now exists (README §7
+ * § Signature moments, written 2026-11-06 for an in-app moment, #3493), but
+ * its trigger excludes a page load, so restoring the crest (#2378) needs the
+ * owner's brand sign-off and a §7 amendment that admits it, with its own
+ * catalog row, in the same pull request.
  *
  * The durations and easings are the legacy `@repo/theme` motion scale carried
  * forward (foundations §11: the discipline is settled, the numbers are
@@ -252,7 +255,7 @@
    * only be legal by the letter: it writes no number above the limit, so it
    * slips past `app/page.spec.ts`'s duration guard while breaching the budget
    * that guard exists to protect. A gesture that long is the Motion sheet's
-   * SIGNATURE class, which needs the taxonomy amendment #2378 is blocked on.
+   * SIGNATURE class, which needs §7 to admit the crest first (#2378).
    * Nothing here claims that class, so nothing here needs it.
    *
    * (That guard reads this file whole, comments included, which is why the
