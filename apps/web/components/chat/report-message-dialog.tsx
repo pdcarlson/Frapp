@@ -5,7 +5,10 @@ import { Loader2 } from "lucide-react";
 import {
   REPORT_ALREADY_BODY,
   REPORT_ALREADY_TITLE,
+  REPORT_FORM_PROMPT,
+  REPORT_FORM_TITLE,
   REPORT_REASON_OPTIONS,
+  REPORT_SEND_LABEL,
   REPORT_SENT_BODY,
   REPORT_SENT_TITLE,
   reportFailureBody,
@@ -49,6 +52,12 @@ type Outcome = "sent" | "already";
  *
  * Keyed by the caller on `target.messageId`, so a second report never opens on
  * the last one's reason or its "Report sent".
+ *
+ * **It cannot be closed while the request is out.** Closing remounts it
+ * through that key, which would throw the answer away: a failure would reach
+ * no one, and a success would never say "Report sent" or offer Block. So
+ * Cancel, the close button, Escape and the scrim all wait for the answer, which
+ * is why web needs no "Couldn't send your report" alert after the form is gone.
  */
 export function ReportMessageDialog({
   target,
@@ -83,7 +92,7 @@ export function ReportMessageDialog({
     <Dialog
       open={target !== null}
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open && !report.isPending) onClose();
       }}
     >
       <DialogContent className="max-w-md">
@@ -127,8 +136,8 @@ export function ReportMessageDialog({
             }}
           >
             <DialogHeader>
-              <DialogTitle>Report message</DialogTitle>
-              <DialogDescription>Why are you reporting it?</DialogDescription>
+              <DialogTitle>{REPORT_FORM_TITLE}</DialogTitle>
+              <DialogDescription>{REPORT_FORM_PROMPT}</DialogDescription>
             </DialogHeader>
             <fieldset className="flex flex-col" disabled={report.isPending}>
               <legend className="sr-only">Reason</legend>
@@ -171,7 +180,12 @@ export function ReportMessageDialog({
               </p>
             ) : null}
             <DialogFooter>
-              <Button type="button" variant="secondary" onClick={onClose}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={onClose}
+                disabled={report.isPending}
+              >
                 Cancel
               </Button>
               <Button type="submit" disabled={!reason || report.isPending}>
@@ -181,7 +195,7 @@ export function ReportMessageDialog({
                     aria-hidden="true"
                   />
                 ) : null}
-                Send report
+                {REPORT_SEND_LABEL}
               </Button>
             </DialogFooter>
           </form>

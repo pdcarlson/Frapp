@@ -182,10 +182,12 @@ export const DELETE_MESSAGE_CONFIRM_BODY =
 export const DELETE_MESSAGE_CONFIRM_LABEL = "Delete message";
 
 /**
- * Which actions a message offers on either client: React, Reply, Edit and
- * Delete above, and Report and Block (#2257). Moved here from the mobile
- * sheet when web gained Report and Block (#2687), so the two clients read one
- * rule rather than a copy each.
+ * Which actions mobile's long-press sheet offers: React, Reply, Edit and
+ * Delete above, and Report and Block (#2257). Moved here from the mobile app
+ * when web gained Report and Block (#2687). Web's action bar gates Reply, Edit
+ * and Delete on its own callbacks and reads only {@link canReportMessage} and
+ * {@link canBlockSender}, which this composes, so the two clients still share
+ * one Report and one Block rule.
  */
 export interface MessageActions {
   /** Whether the long-press sheet opens at all. */
@@ -232,6 +234,42 @@ export interface MessageActionsContext {
 export type MemberLookup = (userId: string) => boolean | null;
 
 const NO_ONE: ReadonlySet<string> = new Set();
+
+/**
+ * The members a block attempt proved are not in the chapter (the API's 404
+ * `Member not found`), kept per chapter because membership and blocks are.
+ * That answer is the only positive evidence a sender left: a roster that merely
+ * does not list someone may be stale, and the likeliest sender it does not list
+ * yet is a brand-new member, exactly who Block is for. Both clients hold one in
+ * React state and read it through {@link departedIn}.
+ */
+export interface DepartedMembers {
+  chapterId: string | null;
+  ids: ReadonlySet<string>;
+}
+
+export function noDepartedMembers(chapterId: string | null): DepartedMembers {
+  return { chapterId, ids: NO_ONE };
+}
+
+/** The ids known departed from `chapterId`; none once the chapter changed. */
+export function departedIn(
+  departed: DepartedMembers,
+  chapterId: string | null,
+): ReadonlySet<string> {
+  return departed.chapterId === chapterId ? departed.ids : NO_ONE;
+}
+
+/** `departed` with `userId` added, starting over if the chapter changed. */
+export function withDeparted(
+  departed: DepartedMembers,
+  chapterId: string | null,
+  userId: string,
+): DepartedMembers {
+  const ids = new Set(departedIn(departed, chapterId));
+  ids.add(userId);
+  return { chapterId, ids };
+}
 
 export function rosterMembership(
   roster: {

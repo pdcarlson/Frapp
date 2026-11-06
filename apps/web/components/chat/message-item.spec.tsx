@@ -1900,6 +1900,21 @@ describe("MessageItem Report and Block (#2687)", () => {
     );
   });
 
+  it("does not pin the bar open when a menu item is chosen", async () => {
+    const onToggleTapReveal = vi.fn();
+    renderItemWithProps({
+      onReport: vi.fn(),
+      onBlock: vi.fn(),
+      isMember: everyoneIsMember,
+      onToggleTapReveal,
+    });
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: "Report message" }),
+    );
+    expect(onToggleTapReveal).not.toHaveBeenCalled();
+  });
+
   it("offers neither on the viewer's own message", () => {
     renderItemWithProps({
       message: message({ sender_id: VIEWER }),

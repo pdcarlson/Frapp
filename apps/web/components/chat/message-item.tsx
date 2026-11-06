@@ -47,7 +47,7 @@ import {
   visibleReactions,
   type BlockState,
 } from "@repo/chat-core/blocks";
-import { UNNAMED_MEMBER } from "@repo/chat-core/block-copy";
+import { blockActionLabel } from "@repo/chat-core/block-copy";
 import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
 import {
   authorInitialsFallback,
@@ -485,7 +485,10 @@ export function MessageItem({
     if (
       event.target instanceof Element &&
       event.target.closest(
-        "button, a, input, textarea, select, [role='button']",
+        // `menuitem`: the More menu's items are portalled, but a React click
+        // still bubbles up to this row, and choosing Report or Block is not
+        // a tap on the message (#2687).
+        "button, a, input, textarea, select, [role='button'], [role='menuitem']",
       )
     ) {
       return;
@@ -783,7 +786,7 @@ export function MessageItem({
                   onSelect={() => onBlock?.(message)}
                 >
                   <Ban aria-hidden="true" />
-                  {`Block ${authorName ?? UNNAMED_MEMBER}`}
+                  {blockActionLabel(authorName)}
                 </DropdownMenuItem>
               ) : null}
             </DropdownMenuContent>

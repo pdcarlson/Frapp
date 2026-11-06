@@ -26,6 +26,11 @@ export const REPORT_REASON_LABELS: Record<ChatReportReason, string> = {
   other: "Something else",
 };
 
+/** The report form's title and prompt, and its submit control. */
+export const REPORT_FORM_TITLE = "Report message";
+export const REPORT_FORM_PROMPT = "Why are you reporting it?";
+export const REPORT_SEND_LABEL = "Send report";
+
 export const REPORT_REASON_OPTIONS = (
   Object.keys(REPORT_REASON_LABELS) as ChatReportReason[]
 ).map((reason) => ({ reason, label: REPORT_REASON_LABELS[reason] }));

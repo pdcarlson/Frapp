@@ -91,9 +91,13 @@ import {
   DELETE_MESSAGE_CONFIRM_LABEL,
   DELETE_MESSAGE_CONFIRM_TITLE,
   replyTargetId,
+  departedIn,
+  noDepartedMembers,
   rosterMembership,
+  withDeparted,
+  type DepartedMembers,
 } from "@repo/chat-core/message-actions";
-import { UNNAMED_MEMBER } from "@repo/chat-core/block-copy";
+import { blockActionLabel } from "@repo/chat-core/block-copy";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
 import { SetupChecklistSection } from "./setup-checklist";
@@ -164,9 +168,6 @@ function matchMember(
  * pending, so scrolling up still opens it once it loads.
  */
 const JUMP_MAX_OLDER_PAGES = 20;
-
-/** No member proven departed yet: a stable empty set for `rosterMembership`. */
-const NO_DEPARTED: ReadonlySet<string> = new Set();
 
 type UnreachableReason = "far" | "missing" | "error" | "unloaded";
 
@@ -770,18 +771,13 @@ export function ChatShell({
   );
 
   // Report and Block from a row's More menu (#2687), the rules mobile's
-  // actions sheet uses. `departed` holds the members a block attempt proved
-  // are not in this chapter (404 `Member not found`), per chapter, because a
-  // roster that merely does not list someone may be stale, and the likeliest
-  // sender it misses is a brand-new member: exactly who Block is for.
+  // actions sheet uses, with the same `DepartedMembers` bookkeeping.
   const blockFlow = useBlockFlow();
   const { requestBlock } = blockFlow;
-  const [departed, setDeparted] = useState<{
-    chapterId: string | null;
-    ids: ReadonlySet<string>;
-  }>(() => ({ chapterId: activeChapterId, ids: new Set() }));
-  const departedIds =
-    departed.chapterId === activeChapterId ? departed.ids : NO_DEPARTED;
+  const [departed, setDeparted] = useState<DepartedMembers>(() =>
+    noDepartedMembers(activeChapterId),
+  );
+  const departedIds = departedIn(departed, activeChapterId);
   const isMember = useMemo(
     () =>
       rosterMembership(
@@ -796,17 +792,15 @@ export function ChatShell({
       if (!senderId) return;
       void requestBlock({
         userId: senderId,
-        name: nameFor(senderId),
+        // The name the menu item showed, which falls back to an imported
+        // row's `author_name` where the roster has no entry yet.
+        name: resolveAuthorName(message, nameFor),
         inDirectory: isMember(senderId) === true,
       }).then((result) => {
         if (result !== "not-a-member") return;
-        setDeparted((previous) => {
-          const ids = new Set(
-            previous.chapterId === activeChapterId ? previous.ids : [],
-          );
-          ids.add(senderId);
-          return { chapterId: activeChapterId, ids };
-        });
+        setDeparted((previous) =>
+          withDeparted(previous, activeChapterId, senderId),
+        );
       });
     },
     [activeChapterId, isMember, nameFor, requestBlock],
@@ -819,7 +813,7 @@ export function ChatShell({
       setReportTarget({
         messageId: message.id,
         onBlock: canBlock ? () => handleBlock(message) : undefined,
-        blockLabel: canBlock ? `Block ${name ?? UNNAMED_MEMBER}` : null,
+        blockLabel: canBlock ? blockActionLabel(name) : null,
       });
     },
     [handleBlock, isMember, nameFor, userId],

@@ -118,6 +118,11 @@ export function blockConfirmBody(
 export const BLOCK_NOT_A_MEMBER_BODY =
   "This member is no longer in your chapter, so there's nothing to block.";
 
+/** A Block control's label, on every surface that draws one. */
+export function blockActionLabel(name: string | null): string {
+  return `Block ${name ?? UNNAMED_MEMBER}`;
+}
+
 export function blockFailedTitle(name: string): string {
   return `Couldn't block ${name}`;
 }

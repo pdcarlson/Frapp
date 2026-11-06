@@ -72,7 +72,11 @@ import {
 } from "@/lib/chat/block-actions";
 import {
   messageActionsFor,
+  departedIn,
+  noDepartedMembers,
   rosterMembership,
+  withDeparted,
+  type DepartedMembers,
 } from "@repo/chat-core/message-actions";
 import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
@@ -103,8 +107,6 @@ import {
   type ChapterBranding,
   useChapterBranding,
 } from "@/lib/chapter-branding";
-
-const NO_DEPARTED: ReadonlySet<string> = new Set();
 
 /** One object for the list's life: the native prop is diffed by identity. */
 const MAINTAIN_POSITION = {
@@ -290,27 +292,15 @@ export default function ChatThreadScreen() {
     is_read_only: channelIsReadOnly,
   });
 
-  // Members a block attempt proved are not in this chapter (the API's 404
-  // `Member not found`), kept per chapter because membership and blocks are.
-  // That answer is the only positive evidence a sender left: a roster that
-  // merely does not list someone may be stale, and the likeliest sender it
-  // does not list yet is a brand-new member — exactly who Block is for.
+  // Members a block attempt proved are not in this chapter (`DepartedMembers`).
   const chapterId = useActiveChapterId();
-  const [departed, setDeparted] = useState<{
-    chapterId: string | null;
-    ids: ReadonlySet<string>;
-  }>(() => ({ chapterId, ids: new Set() }));
-  const departedIds =
-    departed.chapterId === chapterId ? departed.ids : NO_DEPARTED;
+  const [departed, setDeparted] = useState<DepartedMembers>(() =>
+    noDepartedMembers(chapterId),
+  );
+  const departedIds = departedIn(departed, chapterId);
   const markDeparted = useCallback(
     (userId: string) => {
-      setDeparted((previous) => {
-        const ids = new Set(
-          previous.chapterId === chapterId ? previous.ids : [],
-        );
-        ids.add(userId);
-        return { chapterId, ids };
-      });
+      setDeparted((previous) => withDeparted(previous, chapterId, userId));
     },
     [chapterId],
   );
