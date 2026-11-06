@@ -30,7 +30,7 @@ import { EYEBROW } from "@/components/ui/typography";
  * no collapse toggle and no chapter header, which the column pins above both.
  *
  * Section headings are derived, never declared — a heading renders only when at
- * least one of its items survives both the permission and module gates, so a
+ * least one of its items survives the permission, module and setup gates, so a
  * heading never announces a group the viewer cannot open. In the rail
  * there is no room for a heading at all, so grouping falls back to the hairline
  * dividers the board draws between rail groups (`1c` pin 1).
@@ -94,8 +94,8 @@ export function AppNav({
   // The drawer has no room to be a rail and no toggle to leave it, so it is
   // always expanded regardless of the stored preference.
   const isCollapsed = collapsed && !isDrawer;
-  // Study hours with no zones and Documents with nothing in them leave the
-  // nav for a member who can't set them up (`nav-config.ts`, Setup gating).
+  // Study hours with no active zone, and Documents with nothing in it for a
+  // viewer who can't upload, leave the nav (`nav-config.ts`, Setup gating).
   const hiddenFeatures = useHiddenUnsetFeatures(permissions, isModuleEnabled);
 
   const sections = DASHBOARD_NAV.map((section) => {

@@ -58,21 +58,25 @@ describe("selectHiddenUnsetFeatures", () => {
     ).toEqual(new Set(["documents"]));
   });
 
-  it("keeps each one for whoever can set it up, since setup is the page", () => {
+  it("keeps Documents for whoever can upload, since the upload is on its page", () => {
     expect(
       selectHiddenUnsetFeatures({
-        permissions: [...MEMBER, "geofences:manage"],
+        permissions: [...MEMBER, "chapter_docs:upload"],
         isModuleEnabled: ALL_ON,
-        counts: { study: 0, documents: 0 },
-      }),
-    ).toEqual(new Set(["documents"]));
+        counts: { study: 1, documents: 0 },
+      }).size,
+    ).toBe(0);
+  });
+
+  // Zones are made in the web zones tool, which neither Study page links to.
+  it("hides Study hours from an officer too, who could only make zones elsewhere", () => {
     expect(
       selectHiddenUnsetFeatures({
         permissions: ["*"],
         isModuleEnabled: ALL_ON,
         counts: { study: 0, documents: 0 },
-      }).size,
-    ).toBe(0);
+      }),
+    ).toEqual(new Set(["study"]));
   });
 
   it("hides nothing until permissions, modules and the list have answered", () => {
@@ -106,11 +110,29 @@ describe("useHiddenUnsetFeatures", () => {
       useHiddenUnsetFeatures([...MEMBER, "chapter_docs:upload"], ALL_ON),
     );
     expect(enabledCalls).toEqual({ zones: true, documents: false });
+    renderHook(() => useHiddenUnsetFeatures(["*"], ALL_ON));
+    expect(enabledCalls).toEqual({ zones: true, documents: false });
   });
 
-  it("reads nothing for an officer who can set both up", () => {
-    renderHook(() => useHiddenUnsetFeatures(["*"], ALL_ON));
-    expect(enabledCalls).toEqual({ zones: false, documents: false });
+  // The zones route refuses while its module is off, and that's the default
+  // in every org archetype, so the read must not fire for nothing.
+  it("reads no list whose module is off", () => {
+    renderHook(() =>
+      useHiddenUnsetFeatures(MEMBER, (key) => key !== "geofences"),
+    );
+    expect(enabledCalls).toEqual({ zones: false, documents: true });
+  });
+
+  it("counts only active zones, the ones the Study pages list", () => {
+    reads.zones = [{ id: "z1", is_active: false }];
+    reads.documents = [{ id: "d1" }];
+    const { result, rerender } = renderHook(() =>
+      useHiddenUnsetFeatures(MEMBER, ALL_ON),
+    );
+    expect(result.current).toEqual(new Set(["study"]));
+    reads.zones = [{ id: "z1", is_active: false }, { id: "z2", is_active: true }];
+    rerender();
+    expect(result.current.size).toBe(0);
   });
 
   it("reads nothing while permissions or modules load", () => {

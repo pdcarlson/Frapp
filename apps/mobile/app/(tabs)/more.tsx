@@ -86,12 +86,14 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * ## Rows nobody has set up
  *
- * Study hours with no study zones and Documents with nothing in them leave
- * the list for a member who can't set them up, since each screen could only
- * say so (`useHiddenUnsetFeatures` in `@repo/hooks`; `spec/product/modules.md`
- * § Not-set-up features). An officer who can still sees the row. Nothing
- * hides until the viewer's permissions, the chapter's modules and the list
- * have all answered, so a row never vanishes on a slow or failed read.
+ * Study hours with no active study zone leaves the list for everyone, since
+ * zones are made in the web app and the screen could only say so. Documents
+ * with nothing in it leaves it for a viewer who can't upload; an officer who
+ * can keeps the row, because the upload is on that screen
+ * (`useHiddenUnsetFeatures` in `@repo/hooks`; `spec/product/modules.md`
+ * § Not-set-up features). Nothing hides until the viewer's permissions, the
+ * chapter's modules and the list have all answered, so a row never vanishes
+ * on a slow or failed read.
  *
  * ## Trailing statuses
  *

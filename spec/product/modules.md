@@ -257,7 +257,7 @@ Officers get one **Set up your chapter** list instead of an officer half on ever
 | --- | --- | --- | --- |
 | Invite members | `members:invite` | always on | the roster has someone besides the officer, or an invite is out |
 | Schedule the first event | `events:create` | `events` | the chapter has an event |
-| Add a study zone | `geofences:manage` | `geofences` | the chapter has a study zone |
+| Add a study zone | `geofences:manage` | `geofences` | the chapter has an active study zone |
 | Upload the bylaws | `chapter_docs:upload` | `documents` | the library has a document |
 | Send the first dues | `billing:manage` and `billing:view` (only `view` reads the whole chapter's invoices) | `dues` | the chapter has an invoice |
 
@@ -265,9 +265,12 @@ A line shows only to an officer who can do it, and only while the module the ser
 
 ## Not-set-up features
 
-A member isn't sent to a feature that is on but that nobody has set up yet, because its screen could only say so and nothing the member does can change it. Two features qualify: **Study hours** with no study zones, and **Documents** with nothing in it. The web nav and the mobile More tab leave the row out for a viewer who can't make the first item (`geofences:manage` for a zone, `chapter_docs:upload` for a document), and show it again once that item exists. Whoever can make it still sees the row, because for them the screen is where the setup happens, and the [setup checklist](#setup-checklist) above points them there. While the zones module (`geofences`) is off no zone can exist, so Study hours counts as not set up. The rule is shared by both clients (`useHiddenUnsetFeatures` in `@repo/hooks`), and it reads a feature's list only for a viewer it could hide the feature from.
+Nobody is sent to a feature that is on but that nobody has set up yet, when its screen could only say so. Two features qualify, and the web nav, the mobile More tab and the web Ask popover leave them out until the first item exists:
 
-Every part of it fails open, like the nav's permission and module gates: nothing hides while the viewer's permissions, the chapter's modules or the list are still loading, or after the list's read fails. Only a read that answers "none" hides a row. Only the rows hide: the routes stay open, so a link into one still lands.
+- **Study hours** with no active study zone hides from everyone. Zones are made in the web app's Study zones tool (`/geofences`), which neither Study screen links to, so an officer who manages zones would land on the same dead end; the [setup checklist](#setup-checklist) above sends them to the tool instead. Only active zones count, because both Study screens list only those, and a zone that has sessions can't be deleted, so a chapter done with zones deactivates them. While the zones module (`geofences`) is off no zone can exist, so Study hours counts as not set up.
+- **Documents** with nothing in it hides from a viewer without `chapter_docs:upload`. Whoever can upload keeps it, because the upload is on that screen.
+
+The rule is shared by both clients (`useHiddenUnsetFeatures` in `@repo/hooks`), and it reads a feature's list only for a viewer it could hide the feature from, and only while the list's module is on. Nothing hides while the viewer's permissions, the chapter's modules or the list are still loading, or after the list's read fails: a row hides on a read that answers "none", or on its list's module being off. Only the entry points hide: the routes stay open, so a link into one still lands.
 
 **Backwork is not one of them.** Members upload it themselves (`backwork:upload` is in the Member and New Member roles), so an empty library is theirs to start, and hiding it would hide the only way to add the first file. Its nav row is instead gated on `backwork:upload` or `backwork:admin`, the pair the library's read requires, so a viewer the library would refuse (Alumni, an officer whose roles carry neither) isn't sent to a page that can only fail.
 

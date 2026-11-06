@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 const { hidden } = vi.hoisted(() => ({
-  hidden: { features: new Set<string>() },
+  hidden: { features: new Set<string>(), calls: [] as unknown[][] },
 }));
 
 vi.mock("@repo/hooks", () => ({
@@ -10,7 +10,10 @@ vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => ({ data: undefined, isError: false }),
   useMyPermissions: () => ({ data: undefined }),
   // The rule itself is pinned in `@repo/hooks` (`unset-features.spec.tsx`).
-  useHiddenUnsetFeatures: () => hidden.features,
+  useHiddenUnsetFeatures: (...args: unknown[]) => {
+    hidden.calls.push(args);
+    return hidden.features;
+  },
 }));
 vi.mock("@/lib/auth/select-chapter", () => ({
   useSelectChapter: () => vi.fn(),
@@ -168,6 +171,12 @@ describe("AppNav", () => {
     } finally {
       hidden.features = new Set();
     }
+  });
+
+  it("asks the setup gate with the nav's own permissions and module gate", () => {
+    const gate = (key: string) => key !== "polls";
+    renderNav({ permissions: ["members:view"], isModuleEnabled: gate });
+    expect(hidden.calls.at(-1)).toEqual([["members:view"], gate]);
   });
 
   it("drops Backwork for a viewer the library refuses", () => {

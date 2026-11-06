@@ -44,7 +44,7 @@ The board's Notifications row is not in the app's More: the inbox is the bell on
 | **Admin** (role-gated, captioned "Admin") | Host check-in | `host-check-in.tsx` (s22) | the next hostable event |
 | | Adjust points | s23 sheet — **not rendered** until the sheet ships (#2300) | — |
 
-Study hours and Documents leave the list for a member who can't set them up while the chapter has no study zones or no documents, and come back once it has one ([`modules.md` § Not-set-up features](../../product/modules.md#not-set-up-features)).
+Study hours leaves the list while the chapter has no active study zone, and Documents leaves it for a viewer who can't upload while there are no documents; each comes back once the first one exists ([`modules.md` § Not-set-up features](../../product/modules.md#not-set-up-features)).
 
 The admin section renders only for members whose role grants the underlying permissions; ordinary members never see it. The board captions it with the viewer's role ("ADMIN · PRESIDENT") and draws a role chip on the profile card; neither is drawn, because no role name is readable on mobile (`/v1/users/me/permissions` returns permissions only).
 

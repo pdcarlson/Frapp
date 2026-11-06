@@ -71,14 +71,15 @@ import {
  *
  * Setup gating:
  * - `hiddenUntilSetUp` — a feature that is on but that nobody has set up yet
- *   (no study zones, no documents) hides from a member who can't set it up,
- *   since its page could only say so (`useHiddenUnsetFeatures` in
- *   `@repo/hooks`; `spec/product/modules.md` § Not-set-up features). Whoever
- *   can set it up still sees it. Like the other gates it fails open: nothing
- *   hides until the list's read answers "none".
+ *   hides, since its page could only say so (`useHiddenUnsetFeatures` in
+ *   `@repo/hooks`; `spec/product/modules.md` § Not-set-up features).
+ *   Documents with nothing in it hides from a viewer who can't upload; Study
+ *   hours with no active zone hides from everyone, because zones are made in
+ *   the Study zones tool, not on its page. Nothing hides while permissions,
+ *   modules or the list are still loading, or after the list's read fails.
  *
  * Section gating is derived, never declared: a section renders only when at
- * least one of its items survives both gates (`isNavItemVisible` in
+ * least one of its items survives every gate (`isNavItemVisible` in
  * `protected-nav-item.tsx`), so a heading never announces an empty group.
  */
 

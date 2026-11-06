@@ -32,13 +32,17 @@ let sessions: unknown[] | undefined;
 let invoices: unknown[] = [];
 let notifications: unknown[] = [];
 let hiddenFeatures = new Set<string>();
+/** True while `/v1/users/me/permissions` hasn't answered. */
+let permissionsLoading = false;
 const hiddenFeatureCalls: unknown[][] = [];
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useListChapters: () => ({ isSuccess: true, data: [{ id: "chapter-1" }] }),
   usePermissionList: () => permissions,
-  useMyPermissions: () => ({ data: { permissions } }),
+  useMyPermissions: () => ({
+    data: permissionsLoading ? undefined : { permissions },
+  }),
   // The rule itself is pinned in `@repo/hooks` (`unset-features.spec.tsx`).
   useHiddenUnsetFeatures: (...args: unknown[]) => {
     hiddenFeatureCalls.push(args);
@@ -293,8 +297,6 @@ describe("More hub anatomy (#1048)", () => {
     ]);
   });
 
-  // foundations.md §6 "Where the accent goes" (2026-11-05): an icon that
-  // labels a row is neutral, so member and Admin rows draw the same muted hue.
   it("drops Study hours and Documents while nobody has set them up for this member", () => {
     hiddenFeatures = new Set(["study", "documents"]);
     try {
@@ -326,6 +328,20 @@ describe("More hub anatomy (#1048)", () => {
     }
   });
 
+  // `usePermissionList` says `[]` while loading, which would read as a member
+  // who holds nothing and hide an officer's rows for a beat.
+  it("tells the setup gate permissions are still loading, not empty", () => {
+    permissionsLoading = true;
+    try {
+      render();
+      expect(hiddenFeatureCalls.at(-1)?.[0]).toBeUndefined();
+    } finally {
+      permissionsLoading = false;
+    }
+  });
+
+  // foundations.md §6 "Where the accent goes" (2026-11-05): an icon that
+  // labels a row is neutral, so member and Admin rows draw the same muted hue.
   it("draws a neutral leading glyph on every row, never the chapter accent", () => {
     permissions = ["events:update"];
     const rows = render().root.findAllByType(ListRow);

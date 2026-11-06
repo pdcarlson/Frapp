@@ -68,16 +68,19 @@ function isGranted(
  * question before it draws a section's heading: a heading is a promise that
  * something the viewer can open sits under it.
  *
- * Both gates are deliberately fail-open while their source is unresolved:
+ * The permission and module gates are deliberately fail-open while their source is unresolved:
  * `permissions` is undefined until the query settles, and `isModuleEnabled` is
  * undefined until the current-chapter read settles. Showing a link one render early is
  * harmless — the route itself is guarded server-side — whereas hiding one is a
  * visible flash of nav items disappearing. (`<Can>` fails closed instead,
  * because it guards actions rather than signposts.)
  *
- * `hiddenFeatures` is the setup gate, from `useHiddenUnsetFeatures`: the
- * features nobody has set up that this viewer can't set up either. It is
- * empty until each list's read has answered, so it fails open the same way.
+ * `hiddenFeatures` is the third gate, the setup gate, from
+ * `useHiddenUnsetFeatures`: the features nobody has set up that this viewer
+ * can't set up from the feature's own page. It hides nothing while
+ * permissions or the module gate are unresolved, or while a list's read has
+ * no answer; it hides on a list that answers "none", or on that list's module
+ * being off.
  */
 export function isNavItemVisible(
   item: NavItem,

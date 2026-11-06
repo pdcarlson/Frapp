@@ -9,27 +9,36 @@ import { useDocuments } from "./use-documents";
  * Features a member isn't sent to until an officer sets them up
  * (`spec/product/modules.md` § Not-set-up features).
  *
- * A chapter with no study zones has a Study hours page that can only say so,
- * and a chapter with no documents has a Documents page that can only say so.
- * Neither is something a member can fix, so the web nav and the mobile More
- * tab leave the row out for them until the first zone or document exists.
- * Whoever can make that first item still sees the row, because for them the
- * page is where the setup happens (and the officer setup checklist on Chat
- * home points them there).
+ * A chapter with no active study zones has a Study hours page that can only
+ * say so, and a chapter with no documents has a Documents page that can only
+ * say so. Neither is something a member can fix, so the web nav, the mobile
+ * More tab and the web Ask popover leave it out until the first zone or
+ * document exists.
+ *
+ * Documents stays for whoever can upload, because its page is where the
+ * upload happens. Study hours hides from everyone: zones are made in the web
+ * app's Study zones tool, which neither Study page links to, so an officer
+ * would land on the same dead end (the officer setup checklist on Chat home
+ * opens the zones tool instead).
  *
  * Backwork is not here: members upload it themselves (`backwork:upload` is in
  * the Member and New Member roles), so an empty library is theirs to start,
  * and hiding it would hide the only way to add the first file.
  *
- * Every gate here fails open, as the nav's other gates do: nothing hides while
- * permissions, the chapter's modules or the list are still loading, or after
- * the list's read fails. Only a read that answers "none" hides a row.
+ * Nothing hides while permissions, the chapter's modules or the list are
+ * still loading, or after the list's read fails. A row hides on a read that
+ * answers "none", or on the list's module being off, since then nothing can
+ * be in it (and the read would be refused).
  */
 export type UnsetFeatureKey = "study" | "documents";
 
 interface UnsetFeatureDefinition {
-  /** Holding this means the viewer makes the first item, so always sees it. */
-  setUpBy: string;
+  /**
+   * Holding this means the viewer makes the first item on the feature's own
+   * page, so always sees it. Null when the page has no way to set it up, so
+   * it hides from everyone.
+   */
+  setUpBy: string | null;
   /**
    * The module the list's read is gated on. While it is off the list can't
    * be read and nothing in it can be made, so it counts as empty.
@@ -40,8 +49,8 @@ interface UnsetFeatureDefinition {
 export const UNSET_FEATURES: Readonly<
   Record<UnsetFeatureKey, UnsetFeatureDefinition>
 > = {
-  // Study hours needs a zone to study in; officers add them on the web.
-  study: { setUpBy: "geofences:manage", module: "geofences" },
+  // Study hours needs an active zone to study in, made in the web zones tool.
+  study: { setUpBy: null, module: "geofences" },
   documents: { setUpBy: "chapter_docs:upload", module: "documents" },
 };
 
@@ -69,8 +78,13 @@ function canHide(
     permissions !== undefined &&
     permissions !== null &&
     isModuleEnabled !== undefined &&
-    !can(UNSET_FEATURES[key].setUpBy, permissions)
+    !canSetUp(key, permissions)
   );
+}
+
+function canSetUp(key: UnsetFeatureKey, permissions: readonly string[]) {
+  const setUpBy = UNSET_FEATURES[key].setUpBy;
+  return setUpBy !== null && can(setUpBy, permissions);
 }
 
 /** Whether a feature's list has to be read to decide: the viewer can't set it up, and its module is on. */
@@ -88,6 +102,18 @@ export function needsUnsetFeatureRead(
 /** Undefined while a list loads and after its read fails: either way, hide nothing. */
 function lengthOf(data: unknown): number | undefined {
   return Array.isArray(data) ? data.length : undefined;
+}
+
+/**
+ * Only active zones count: both Study pages list just those, and a zone with
+ * sessions can't be deleted, so a chapter done with zones deactivates them.
+ */
+export function activeZoneCount(data: unknown): number | undefined {
+  return Array.isArray(data)
+    ? data.filter(
+        (zone) => (zone as { is_active?: unknown })?.is_active !== false,
+      ).length
+    : undefined;
 }
 
 /** The features to leave out for this viewer. */
@@ -109,7 +135,7 @@ export function selectHiddenUnsetFeatures({
 
 /**
  * The features to leave out for this viewer, reading a feature's list only
- * when the viewer can't set it up. Officers who can set both up read nothing.
+ * when the viewer can't set it up and its module is on.
  * The reads share their cache with the Study and Documents screens.
  */
 export function useHiddenUnsetFeatures(
@@ -122,7 +148,7 @@ export function useHiddenUnsetFeatures(
   const documents = useDocuments({
     enabled: needsUnsetFeatureRead("documents", permissions, isModuleEnabled),
   });
-  const zoneCount = lengthOf(zones.data);
+  const zoneCount = activeZoneCount(zones.data);
   const documentCount = lengthOf(documents.data);
   return useMemo(
     () =>
