@@ -154,6 +154,19 @@ describe("EditProfileSheet (#3387)", () => {
     expect(saveButton(tree).props.disabled).toBe(true);
   });
 
+  it("centers one-line fields and gives the bio its line height (components.md § Text input)", () => {
+    const tree = render();
+    const style = (label: string): Record<string, unknown> =>
+      Object.assign({}, ...[input(tree, label).props.style].flat(Infinity));
+
+    // A lineHeight on a single-line iOS field draws the text below center.
+    expect(style("Name")).not.toHaveProperty("lineHeight");
+    expect(style("City")).not.toHaveProperty("lineHeight");
+    // The bio wraps, so it keeps body's leading and starts at the top.
+    expect(style("Bio").lineHeight).toBe(25);
+    expect(style("Bio").textAlignVertical).toBe("top");
+  });
+
   it("sends only what changed, then closes", () => {
     mutate.mockImplementation((_body, options) => {
       options.onSuccess();

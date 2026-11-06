@@ -98,6 +98,7 @@ test("the seed has the RPI chapter the first seed got wrong, findable by its sch
   assert.ok(tauNu, "Tau Nu missing");
   assert.equal(tauNu[at("university")], "Rensselaer Polytechnic Institute");
   assert.equal(tauNu[at("university_short")], "RPI");
-  assert.deepEqual(tauNu[at("aliases")].split("|").sort(), ["FIJI", "Phi Gam", "RPI", "Rensselaer"]);
+  assert.deepEqual(tauNu[at("aliases")].split("|").sort(), ["RPI", "Rensselaer"]);
+  assert.deepEqual(tauNu[at("org_aliases")].split("|").sort(), ["FIJI", "Phi Gam"]);
   assert.ok(!rows.some((r) => r[at("chapter_designation")] === "Pi Tau" && r[at("university")] === "RPI"));
 });

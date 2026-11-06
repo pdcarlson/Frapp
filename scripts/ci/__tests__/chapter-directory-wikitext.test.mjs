@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { firstLink, isBold, plainText, readChapterTemplates, readTables } from "../../chapter-directory/wikitext.mjs";
-import { schoolNames } from "../../chapter-directory/school-names.mjs";
+import { canonicalSchools, schoolKey, schoolNames } from "../../chapter-directory/school-names.mjs";
 
 // The table shapes the "List of … chapters" articles use, as
 // build-from-wikipedia.mjs reads them. Each case is one that produced a wrong
@@ -69,3 +69,25 @@ test("schoolNames gives RPI its short name and the names people type", () => {
   assert.equal(schoolNames("Duke University").short, "Duke");
   assert.equal(schoolNames("University of Idaho").short, "Idaho");
 });
+
+test("canonicalSchools spells one school one way", () => {
+  assert.equal(schoolKey("Washington & Lee University"), schoolKey("Washington And Lee University"));
+  assert.equal(schoolKey("San José State University"), schoolKey("San Jose State University"));
+  assert.equal(schoolKey("St. John's University"), "st johns university");
+  const names = [
+    "Washington and Lee University",
+    "Washington and Lee University",
+    "Washington & Lee University",
+    "Washington And Lee University",
+    "San Jose State University",
+    "San José State University",
+  ];
+  const spelling = canonicalSchools(names);
+  // The spelling most rows use wins; on a tie, the school's own accents.
+  assert.equal(spelling.get("Washington & Lee University"), "Washington and Lee University");
+  assert.equal(spelling.get("Washington And Lee University"), "Washington and Lee University");
+  assert.equal(spelling.get("San Jose State University"), "San José State University");
+  // A spelling KNOWN doesn't hold still finds its names.
+  assert.equal(schoolNames("College of William and Mary").short, "William & Mary");
+});
+

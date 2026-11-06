@@ -186,6 +186,13 @@ const KNOWN = {
   "University of Calgary": ["UCalgary"],
 };
 
+let byKey;
+/** KNOWN keyed by schoolKey, so "College of William and Mary" finds its "&" entry. */
+function knownByKey() {
+  byKey ??= new Map(Object.entries(KNOWN).map(([name, names]) => [schoolKey(name), names]));
+  return byKey;
+}
+
 const SMALL = new Set(["of", "the", "and", "at", "in", "for", "&", "a", "an"]);
 
 function derived(name) {
@@ -209,10 +216,50 @@ function derived(name) {
  * for it, kept as an alias when it differs from the full name.
  */
 export function schoolNames(university, shown) {
-  const known = KNOWN[university];
+  const known = KNOWN[university] ?? knownByKey().get(schoolKey(university));
   const short = known ? known[0] : derived(university);
   const aliases = new Set(known ?? [short]);
   if (shown && shown !== university) aliases.add(shown);
   aliases.delete(university);
   return { short, aliases: [...aliases] };
+}
+
+/**
+ * The key two spellings of one school share: case, accents, "&" against
+ * "and", and punctuation aside. "Washington & Lee University", "Washington
+ * and Lee University" and "Washington And Lee University" share one; so do
+ * "San Jose State University" and "San José State University".
+ */
+export function schoolKey(name) {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/['’ʻ.]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * Each spelling to the one its school is written as: the spelling most rows
+ * use, and on a tie the one with diacritics (the school's own), then the
+ * first alphabetically, so a rebuild picks the same one.
+ */
+export function canonicalSchools(names) {
+  const byKey = new Map();
+  for (const n of names) {
+    const counts = byKey.get(schoolKey(n)) ?? new Map();
+    counts.set(n, (counts.get(n) ?? 0) + 1);
+    byKey.set(schoolKey(n), counts);
+  }
+  const out = new Map();
+  for (const counts of byKey.values()) {
+    const accented = (n) => (n.normalize("NFD") !== n ? 1 : 0);
+    const [best] = [...counts.entries()].sort(
+      ([a, ca], [b, cb]) => cb - ca || accented(b) - accented(a) || a.localeCompare(b),
+    );
+    for (const n of counts.keys()) out.set(n, best[0]);
+  }
+  return out;
 }

@@ -20,7 +20,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import { FilterChips, ToggleChips } from "./filter-chips";
+import { FilterChips, SearchField, ToggleChips } from "./filter-chips";
 
 /**
  * The chip row s12 and s13 draw (the owner's design review, 2026-11-04): one
@@ -225,5 +225,23 @@ describe("ToggleChips", () => {
     ).toBe("#8E4EC6");
     act(() => muted!.props.onPress());
     expect(onToggle).toHaveBeenCalledWith("muted", true);
+  });
+});
+
+describe("SearchField", () => {
+  it("sets no lineHeight, so iOS centers the typed text (components.md § Text input)", () => {
+    const tree = render(
+      <SearchField
+        value=""
+        onChangeText={vi.fn()}
+        placeholder="Search"
+        accessibilityLabel="Search"
+      />,
+    );
+    const field = tree.root.find((node) => (node.type as unknown) === "TextInput");
+    expect(flatten(field.props.style)).not.toHaveProperty("lineHeight");
+    expect(flatten(field.props.style).fontSize).toBe(
+      signetDarkTokens.typography.role.body.size,
+    );
   });
 });

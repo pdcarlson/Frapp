@@ -86,8 +86,8 @@ describe('SupabaseChapterDirectoryRepository — search query', () => {
       p_university: 'RPI',
       p_limit: 20,
     });
-    // The projection is the autocomplete contract; `search_text` and
-    // `aliases` stay out.
+    // The projection is the autocomplete contract; the generated `search_*`
+    // columns and the aliases stay out.
     const [columns] = builder.select.mock.calls[0] as [string];
     expect(columns.split(', ')).toEqual([
       'id',

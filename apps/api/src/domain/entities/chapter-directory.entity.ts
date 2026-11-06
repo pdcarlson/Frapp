@@ -33,25 +33,29 @@ export interface ChapterDirectoryEntry {
   /**
    * Provenance tag for the row: `wikipedia` for rows built from Wikipedia's
    * chapter lists (`supabase/seed/chapter_directory.sources.json` records the
-   * revisions), `seed` for the hand-written first seed, else whoever curated it.
+   * revisions), `seed` for the hand-written first seed, `retired` for a row
+   * the seed dropped that a chapter still links (kept for the link, never
+   * offered by search), else whoever curated it.
    */
   source: string;
-  /**
-   * Other names a search should find the row by: the school's short name and
-   * nicknames ("RPI"), the organization's ("FIJI"). Searched, never shown.
-   */
+  /** Other names a search should find the school by ("RPI"). Searched, never shown. */
   aliases: string[];
+  /** Other names a search should find the organization by ("FIJI"). Searched, never shown. */
+  org_aliases: string[];
   created_at: string;
   /**
-   * `GENERATED ALWAYS … STORED`: the normalized text
-   * `search_chapter_directory` matches against
-   * (20261106200000_chapter_directory_search.sql). No caller selects it and
-   * it can never be written, but it is declared so this interface describes
-   * the table as it actually is: `.eq`/`.order` are checked against
+   * The `search_*` columns are `GENERATED ALWAYS … STORED`: the normalized
+   * text and names `search_chapter_directory` matches and ranks against
+   * (20261106200000_chapter_directory_search.sql). No caller selects them and
+   * they can never be written, but they are declared so this interface
+   * describes the table as it actually is: `.eq`/`.order` are checked against
    * `keyof Row`, so an undeclared column is a compile error at those call
    * sites.
    */
   search_text: string;
+  search_org_names: string[];
+  search_chapter_names: string[];
+  search_school_names: string[];
 }
 
 export type ChapterDirectoryRequestStatus = 'pending' | 'imported' | 'rejected';

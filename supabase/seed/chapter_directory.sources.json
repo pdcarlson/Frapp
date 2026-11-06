@@ -1,7 +1,7 @@
 {
   "built": "2026-11-06",
   "builder": "scripts/chapter-directory/build-from-wikipedia.mjs",
-  "rows": 13128,
+  "rows": 13327,
   "organizations": [
     {
       "org": "Alpha Chi Omega",
@@ -23,6 +23,14 @@
       "revision": 1383763473,
       "url": "https://en.wikipedia.org/w/index.php?oldid=1383763473",
       "active_chapters": 53
+    },
+    {
+      "org": "Alpha Delta Gamma",
+      "article": "Alpha Delta Gamma",
+      "revision": 1379191567,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1379191567",
+      "active_chapters": 8,
+      "from": "the organization's own article (no chapter list)"
     },
     {
       "org": "Alpha Delta Phi",
@@ -67,11 +75,27 @@
       "active_chapters": 72
     },
     {
+      "org": "Alpha Gamma Sigma",
+      "article": "Alpha Gamma Sigma (fraternity)",
+      "revision": 1379634541,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1379634541",
+      "active_chapters": 6,
+      "from": "the organization's own article (no chapter list)"
+    },
+    {
       "org": "Alpha Kappa Alpha",
       "article": "List of Alpha Kappa Alpha chapters",
       "revision": 1383642142,
       "url": "https://en.wikipedia.org/w/index.php?oldid=1383642142",
       "active_chapters": 402
+    },
+    {
+      "org": "Alpha Kappa Delta Phi",
+      "article": "Alpha Kappa Delta Phi",
+      "revision": 1346467411,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1346467411",
+      "active_chapters": 0,
+      "from": "the organization's own article (no chapter list)"
     },
     {
       "org": "Alpha Kappa Lambda",
@@ -151,6 +175,22 @@
       "active_chapters": 124
     },
     {
+      "org": "Beta Chi Theta",
+      "article": "Beta Chi Theta",
+      "revision": 1366217934,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1366217934",
+      "active_chapters": 18,
+      "from": "the organization's own article (no chapter list)"
+    },
+    {
+      "org": "Beta Sigma Psi",
+      "article": "Beta Sigma Psi",
+      "revision": 1369081680,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1369081680",
+      "active_chapters": 11,
+      "from": "the organization's own article (no chapter list)"
+    },
+    {
       "org": "Beta Theta Pi",
       "article": "List of Beta Theta Pi chapters",
       "revision": 1383769935,
@@ -200,6 +240,14 @@
       "active_chapters": 137
     },
     {
+      "org": "Delta Epsilon Psi",
+      "article": "Delta Epsilon Psi",
+      "revision": 1379085542,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1379085542",
+      "active_chapters": 23,
+      "from": "the organization's own article (no chapter list)"
+    },
+    {
       "org": "Delta Gamma",
       "article": "List of Delta Gamma chapters",
       "revision": 1346546204,
@@ -221,11 +269,27 @@
       "active_chapters": 13
     },
     {
+      "org": "Delta Phi",
+      "article": "Delta Phi",
+      "revision": 1375253625,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1375253625",
+      "active_chapters": 8,
+      "from": "the organization's own article (no chapter list)"
+    },
+    {
       "org": "Delta Phi Epsilon",
       "article": "List of Delta Phi Epsilon (social) chapters",
       "revision": 1365642307,
       "url": "https://en.wikipedia.org/w/index.php?oldid=1365642307",
       "active_chapters": 109
+    },
+    {
+      "org": "Delta Psi",
+      "article": "St. Anthony Hall",
+      "revision": 1383252992,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1383252992",
+      "active_chapters": 10,
+      "from": "the organization's own article (no chapter list)"
     },
     {
       "org": "Delta Sigma Phi",
@@ -277,6 +341,14 @@
       "active_chapters": 133
     },
     {
+      "org": "Iota Nu Delta",
+      "article": "Iota Nu Delta",
+      "revision": 1356074869,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1356074869",
+      "active_chapters": 11,
+      "from": "the organization's own article (no chapter list)"
+    },
+    {
       "org": "Iota Phi Theta",
       "article": "List of Iota Phi Theta chapters",
       "revision": 1383897295,
@@ -296,6 +368,14 @@
       "revision": 1383772702,
       "url": "https://en.wikipedia.org/w/index.php?oldid=1383772702",
       "active_chapters": 443
+    },
+    {
+      "org": "Kappa Alpha Society",
+      "article": "Kappa Alpha Society",
+      "revision": 1379823347,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1379823347",
+      "active_chapters": 5,
+      "from": "the organization's own article (no chapter list)"
     },
     {
       "org": "Kappa Alpha Theta",
@@ -340,6 +420,14 @@
       "active_chapters": 286
     },
     {
+      "org": "Lambda Alpha Upsilon",
+      "article": "Lambda Alpha Upsilon",
+      "revision": 1380237580,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380237580",
+      "active_chapters": 27,
+      "from": "the organization's own article (no chapter list)"
+    },
+    {
       "org": "Lambda Chi Alpha",
       "article": "List of Lambda Chi Alpha chapters",
       "revision": 1380158576,
@@ -380,6 +468,14 @@
       "revision": 1380268156,
       "url": "https://en.wikipedia.org/w/index.php?oldid=1380268156",
       "active_chapters": 83
+    },
+    {
+      "org": "Nu Alpha Kappa",
+      "article": "Nu Alpha Kappa",
+      "revision": 1374075042,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1374075042",
+      "active_chapters": 22,
+      "from": "the organization's own article (no chapter list)"
     },
     {
       "org": "Omega Delta Phi",
@@ -462,6 +558,14 @@
       "active_chapters": 30
     },
     {
+      "org": "Phi Lambda Chi",
+      "article": "Phi Lambda Chi",
+      "revision": 1344151249,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1344151249",
+      "active_chapters": 9,
+      "from": "the organization's own article (no chapter list)"
+    },
+    {
       "org": "Phi Mu",
       "article": "List of Phi Mu chapters",
       "revision": 1346546275,
@@ -481,6 +585,14 @@
       "revision": 1363648691,
       "url": "https://en.wikipedia.org/w/index.php?oldid=1363648691",
       "active_chapters": 67
+    },
+    {
+      "org": "Phi Sigma Phi",
+      "article": "Phi Sigma Phi",
+      "revision": 1381403998,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1381403998",
+      "active_chapters": 7,
+      "from": "the organization's own article (no chapter list)"
     },
     {
       "org": "Phi Sigma Sigma",
@@ -549,6 +661,14 @@
       "active_chapters": 47
     },
     {
+      "org": "Sigma Beta Rho",
+      "article": "Sigma Beta Rho",
+      "revision": 1361961591,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1361961591",
+      "active_chapters": 23,
+      "from": "the organization's own article (no chapter list)"
+    },
+    {
       "org": "Sigma Chi",
       "article": "List of Sigma Chi chapters",
       "revision": 1380338423,
@@ -589,6 +709,14 @@
       "revision": 1383466071,
       "url": "https://en.wikipedia.org/w/index.php?oldid=1383466071",
       "active_chapters": 158
+    },
+    {
+      "org": "Sigma Phi",
+      "article": "Sigma Phi",
+      "revision": 1381694922,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1381694922",
+      "active_chapters": 6,
+      "from": "the organization's own article (no chapter list)"
     },
     {
       "org": "Sigma Phi Delta",
@@ -654,11 +782,27 @@
       "active_chapters": 191
     },
     {
+      "org": "Tau Phi Sigma",
+      "article": "Tau Phi Sigma",
+      "revision": 1333679526,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1333679526",
+      "active_chapters": 5,
+      "from": "the organization's own article (no chapter list)"
+    },
+    {
       "org": "Theta Chi",
       "article": "List of Theta Chi chapters",
       "revision": 1379032190,
       "url": "https://en.wikipedia.org/w/index.php?oldid=1379032190",
       "active_chapters": 158
+    },
+    {
+      "org": "Theta Delta Chi",
+      "article": "Theta Delta Chi",
+      "revision": 1380631157,
+      "url": "https://en.wikipedia.org/w/index.php?oldid=1380631157",
+      "active_chapters": 0,
+      "from": "the organization's own article (no chapter list)"
     },
     {
       "org": "Theta Phi Alpha",
@@ -716,80 +860,16 @@
       "reason": "no Greek letters"
     },
     {
-      "org": "Alpha Delta Gamma",
-      "reason": "no chapter-list article"
-    },
-    {
-      "org": "Alpha Gamma Sigma",
-      "reason": "no chapter-list article"
-    },
-    {
       "org": "Alpha Kappa Delta Phi",
-      "reason": "no chapter-list article"
-    },
-    {
-      "org": "Beta Chi Theta",
-      "reason": "no chapter-list article"
-    },
-    {
-      "org": "Beta Sigma Psi",
-      "reason": "no chapter-list article"
-    },
-    {
-      "org": "Delta Epsilon Psi",
-      "reason": "no chapter-list article"
-    },
-    {
-      "org": "Delta Phi",
-      "reason": "no chapter-list article"
-    },
-    {
-      "org": "Delta Psi",
-      "reason": "no chapter-list article"
+      "reason": "no chapter-list article, and no chapter table in its own article"
     },
     {
       "org": "FarmHouse",
       "reason": "no Greek letters"
     },
     {
-      "org": "Iota Nu Delta",
-      "reason": "no chapter-list article"
-    },
-    {
-      "org": "Kappa Alpha Society",
-      "reason": "no chapter-list article"
-    },
-    {
-      "org": "Lambda Alpha Upsilon",
-      "reason": "no chapter-list article"
-    },
-    {
-      "org": "Nu Alpha Kappa",
-      "reason": "no chapter-list article"
-    },
-    {
-      "org": "Phi Lambda Chi",
-      "reason": "no chapter-list article"
-    },
-    {
-      "org": "Phi Sigma Phi",
-      "reason": "no chapter-list article"
-    },
-    {
-      "org": "Sigma Beta Rho",
-      "reason": "no chapter-list article"
-    },
-    {
-      "org": "Sigma Phi",
-      "reason": "no chapter-list article"
-    },
-    {
-      "org": "Tau Phi Sigma",
-      "reason": "no chapter-list article"
-    },
-    {
       "org": "Theta Delta Chi",
-      "reason": "no chapter-list article"
+      "reason": "no chapter-list article, and no chapter table in its own article"
     },
     {
       "org": "Triangle",

@@ -12,7 +12,12 @@
 // must also run before `npm install` has necessarily happened — so it stays
 // dependency-free.
 //
-//   node scripts/load-chapter-directory.mjs            # SQL to stdout
+//   node scripts/load-chapter-directory.mjs              # SQL to stdout, in its own transaction
+//   node scripts/load-chapter-directory.mjs --migration  # the body of a supabase/migrations file
+//
+// The first is what the local bootstrap scripts pipe into psql. A changed CSV
+// reaches staging and production only as a new migration, generated with
+// --migration (see main()).
 //
 // Context: issue #840. The table shipped empty in every environment because
 // nothing ever read the CSV — a repo-wide search for its filename returned
@@ -42,9 +47,13 @@ function num(value) {
 }
 
 /**
- * The \`source\` values this loader owns: rows it may update or prune. 'seed'
- * is the hand-written first seed; 'wikipedia' is what
+ * The \`source\` values this loader owns: rows it may update, retire or
+ * prune. 'seed' is the hand-written first seed; 'wikipedia' is what
  * scripts/chapter-directory/build-from-wikipedia.mjs writes (#232).
+ *
+ * A row it owned that left the seed but a chapter still links becomes
+ * 'retired': kept for the link, never offered by search
+ * (search_chapter_directory skips it), and no longer this loader's.
  */
 const OWNED_SOURCES = ["seed", "wikipedia"];
 const OWNED_SQL = OWNED_SOURCES.map(lit).join(", ");
@@ -95,6 +104,7 @@ function main() {
           lit(r.website),
           lit(r.source),
           textArray(r.aliases),
+          textArray(r.org_aliases),
         ].join(", ") +
         ")",
     )
@@ -133,12 +143,14 @@ create temporary table _seed_chapter_directory (
   default_colors       jsonb not null,
   website              text,
   source               text not null,
-  aliases              text[] not null
+  aliases              text[] not null,
+  org_aliases          text[] not null
 )${asMigration ? "" : " on commit drop"};
 
 insert into _seed_chapter_directory (
   org_letters, org_name, archetype, chapter_designation, university,
-  university_short, founded_year, default_colors, website, source, aliases
+  university_short, founded_year, default_colors, website, source, aliases,
+  org_aliases
 ) values
 ${values};
 
@@ -148,7 +160,8 @@ ${values};
 --
 -- Updates are scoped to rows this loader owns (${OWNED_SQL}). A row curated
 -- by hand or arriving from another source keeps its values; the seed never
--- silently overwrites someone's correction.
+-- silently overwrites someone's correction. A row already equal to the seed
+-- is skipped, so a re-run writes nothing.
 update chapter_directory d
 set
   org_name            = s.org_name,
@@ -158,19 +171,38 @@ set
   default_colors      = s.default_colors,
   website             = s.website,
   source              = s.source,
-  aliases             = s.aliases
+  aliases             = s.aliases,
+  org_aliases         = s.org_aliases
 from _seed_chapter_directory s
 where d.org_letters = s.org_letters
   and d.university  = s.university
   and coalesce(d.chapter_designation, '') = coalesce(s.chapter_designation, '')
-  and d.source in (${OWNED_SQL});
+  -- 'retired' too: a chapter back on its list is offered again.
+  and d.source in (${OWNED_SQL}, 'retired')
+  and (d.org_name, d.archetype, d.university_short, d.founded_year, d.default_colors,
+       d.website, d.source, d.aliases, d.org_aliases)
+      is distinct from
+      (s.org_name, s.archetype, s.university_short, s.founded_year, s.default_colors,
+       s.website, s.source, s.aliases, s.org_aliases);
 
 -- A row this loader owns that the seed no longer lists is gone from the
 -- source (a chapter closed, or the row was wrong: the first 50-row seed was
--- written by hand and named chapters that don't exist). It is deleted only
--- when no chapter links to it, because chapters.directory_id is
--- \`on delete set null\` and a re-run must never detach a real chapter. A
--- linked stale row stays, and the next load leaves it alone.
+-- written by hand and named chapters that don't exist). chapters.directory_id
+-- is \`on delete set null\` and a load must never detach a real chapter, so a
+-- row a chapter links is retired (kept, out of search, out of this loader's
+-- hands), and only an unlinked one is deleted.
+update chapter_directory d
+set source = 'retired'
+where d.source in (${OWNED_SQL})
+  and not exists (
+    select 1
+    from _seed_chapter_directory s
+    where d.org_letters = s.org_letters
+      and d.university  = s.university
+      and coalesce(d.chapter_designation, '') = coalesce(s.chapter_designation, '')
+  )
+  and exists (select 1 from chapters c where c.directory_id = d.id);
+
 delete from chapter_directory d
 where d.source in (${OWNED_SQL})
   and not exists (
@@ -184,11 +216,13 @@ where d.source in (${OWNED_SQL})
 
 insert into chapter_directory (
   org_letters, org_name, archetype, chapter_designation, university,
-  university_short, founded_year, default_colors, website, source, aliases
+  university_short, founded_year, default_colors, website, source, aliases,
+  org_aliases
 )
 select
   s.org_letters, s.org_name, s.archetype, s.chapter_designation, s.university,
-  s.university_short, s.founded_year, s.default_colors, s.website, s.source, s.aliases
+  s.university_short, s.founded_year, s.default_colors, s.website, s.source, s.aliases,
+  s.org_aliases
 from _seed_chapter_directory s
 where not exists (
   select 1

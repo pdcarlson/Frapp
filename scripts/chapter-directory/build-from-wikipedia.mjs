@@ -14,22 +14,29 @@
 //   1. Reads the member tables of the three umbrella councils (NIC, NPC, NPHC)
 //      for organization names, Greek letters and archetype, and adds the
 //      organizations of other archetypes listed in EXTRA_ORGS.
-//   2. Finds each organization's chapter-list article, following redirects.
+//   2. Finds each organization's chapter-list article, following redirects,
+//      and falls back to the chapter sections of the organization's own
+//      article when it has no list.
 //   3. Keeps the chapters each list marks active (a Status column saying
 //      "Active", or, where a list has no Status column, a chapter name in bold,
 //      the convention those lists use), at a named institution.
-//   4. Writes one CSV row per chapter, with the school's short name and the
-//      names people search for it by (school-names.mjs).
+//   4. Spells each school one way (the spelling most of its rows use, so
+//      "Washington & Lee" and "Washington and Lee" are one school), and writes
+//      one CSV row per chapter, with the school's short name and the names
+//      people search for it by (school-names.mjs).
 //
 // Usage (needs en.wikipedia.org reachable):
-//   node scripts/chapter-directory/build-from-wikipedia.mjs [--cache DIR] [--offline]
+//   node scripts/chapter-directory/build-from-wikipedia.mjs [--cache DIR] [--offline | --cached]
 //
 // Node's fetch ignores HTTPS_PROXY unless NODE_USE_ENV_PROXY=1 (Node 24+, or
 // 22 with the experimental agent); a sandbox behind the agent proxy needs it.
-// --offline rebuilds from the pages the last online run saved in the cache.
+// --offline rebuilds from the pages the last online run saved in the cache;
+// --cached reuses those and fetches only the pages the cache lacks.
 //
-// Then regenerate the load SQL into a NEW migration:
-//   node scripts/load-chapter-directory.mjs > supabase/migrations/<ts>_chapter_directory_<what>.sql
+// Then regenerate the load SQL into a NEW migration, with --migration (no
+// begin/commit of its own: `db push` wraps each migration in a transaction):
+//   node scripts/load-chapter-directory.mjs --migration > supabase/migrations/<ts>_chapter_directory_<what>.sql
+// and add the migration to the promotion log and the rollback playbook.
 //
 // Requests are spaced a second apart and identify the project in the
 // User-Agent, as Wikimedia's API etiquette asks.
@@ -38,15 +45,19 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { firstLink, isBold, plainText, readChapterTemplates, readTables } from "./wikitext.mjs";
-import { schoolNames } from "./school-names.mjs";
-import { EXPECTED_HEADER, SEED_RELATIVE_PATH } from "../lib/chapter-directory-seed.mjs";
+import { canonicalSchools, schoolNames } from "./school-names.mjs";
+import { EXPECTED_HEADER, SEED_RELATIVE_PATH, parseCsv } from "../lib/chapter-directory-seed.mjs";
 
 const INDEX = "https://en.wikipedia.org/w/index.php";
 const USER_AGENT =
   "FrappDirectoryBuilder/1.0 (https://github.com/pdcarlson/Frapp; chapter directory seed)";
 const SOURCES_RELATIVE_PATH = join("supabase", "seed", "chapter_directory.sources.json");
 
-/** The placeholder accent every directory row has carried; the wizards prefer the org's own colors. */
+/**
+ * The accent a row carries when nothing better is known. Wikipedia's lists
+ * carry no colors, and the wizards prefer the organization's own colors from
+ * ORG_PROFILES (packages/org-archetypes) over this.
+ */
 const DEFAULT_COLORS = { accent: "#C9A56F" };
 
 const COUNCILS = [
@@ -58,8 +69,8 @@ const COUNCILS = [
 /**
  * Organizations outside the three councils that the directory carried before
  * this script existed (the multicultural, professional and honor rows), so a
- * chapter of one of them can still be found. Letters and archetype are the
- * ones the previous seed held.
+ * chapter of one of them can still be found. Letters are written as each
+ * organization writes them (Alpha Kappa Delta Phi uses a lowercase alpha).
  */
 const EXTRA_ORGS = [
   { name: "Lambda Theta Alpha", letters: "ΛΘΑ", archetype: "mgc" },
@@ -133,10 +144,11 @@ const GREEK = {
 const GREEK_RE = /[Ͱ-Ͽ]/;
 
 function parseArgs(argv) {
-  const args = { cache: join(process.cwd(), ".cache", "chapter-directory"), offline: false };
+  const args = { cache: join(process.cwd(), ".cache", "chapter-directory"), offline: false, cached: false };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === "--cache") args.cache = argv[++i];
     else if (argv[i] === "--offline") args.offline = true;
+    else if (argv[i] === "--cached") args.cached = true;
   }
   return args;
 }
@@ -197,13 +209,13 @@ async function fetchPage(asked) {
  * page lands in `cacheDir` with an `index.json`, which `--offline` rebuilds
  * from without asking Wikipedia again.
  */
-async function fetchPages(titles, cacheDir, offline) {
+async function fetchPages(titles, cacheDir, offline, cached = false) {
   const indexPath = join(cacheDir, "index.json");
   const index = existsSync(indexPath) ? JSON.parse(readFileSync(indexPath, "utf8")) : {};
   const out = new Map();
   for (const asked of titles) {
-    if (offline) {
-      const hit = index[asked];
+    const hit = index[asked];
+    if (offline || (cached && hit)) {
       if (hit) out.set(asked, { ...hit, text: readFileSync(join(cacheDir, hit.file), "utf8") });
       continue;
     }
@@ -289,7 +301,10 @@ function institutionName(cell) {
   // A link whose target shares no word with the cell is a city or a former
   // name's redirect gone stale; keep what the list shows.
   const share = target.split(/\s+/).some((w) => w.length > 3 && text.includes(w));
-  return { name: normalizeSchool(share || text === "" ? target : text), shown: plainText(link.text) };
+  // A link to one school inside the university ("Columbia University" linked
+  // to its medical school's article) names the university as the cell does.
+  const unit = target.startsWith(`${text} `) && /\b(school|college|department|faculty) of\b/i.test(target.slice(text.length));
+  return { name: normalizeSchool((share && !unit) || text === "" ? target : text), shown: plainText(link.text) };
 }
 
 /** "Delta Psi; See also Rho" -> "Delta Psi"; "(Colony)" and stray punctuation go. */
@@ -303,11 +318,18 @@ function cleanDesignation(text) {
   return t || null;
 }
 
-function chapterRows(org, page) {
+/**
+ * Active chapters on a page. `fromOrgArticle` is the fallback for an
+ * organization with no chapter list: only tables under a section named for
+ * chapters count there, since its other tables (notable members, national
+ * presidents) can carry a name and a school too.
+ */
+function chapterRows(org, page, fromOrgArticle = false) {
   const rows = [];
   const unread = [];
   for (const table of [...readTables(page.text), ...readChapterTemplates(page.text)]) {
     if (SKIP_SECTION_RE.test(table.section)) continue;
+    if (fromOrgArticle && !/chapter/i.test(table.section)) continue;
     const cols = chapterColumns(table.header, table.rows);
     if (!cols) {
       if (table.rows.length > 5) unread.push(`${table.section || "(lead)"}: ${table.header.join(" / ")}`);
@@ -343,7 +365,7 @@ async function main() {
   const previous = readPreviousSeed();
 
   // 1. Organizations.
-  const councilPages = await fetchPages(COUNCILS.map((c) => c.page), args.cache, args.offline);
+  const councilPages = await fetchPages(COUNCILS.map((c) => c.page), args.cache, args.offline, args.cached);
   const orgs = new Map();
   for (const council of COUNCILS) {
     const page = councilPages.get(council.page);
@@ -373,39 +395,28 @@ async function main() {
     ])];
     candidates.set(org.name, titles);
   }
-  const lists = await fetchPages([...new Set([...candidates.values()].flat())], args.cache, args.offline);
+  const lists = await fetchPages([...new Set([...candidates.values()].flat())], args.cache, args.offline, args.cached);
+  const withoutList = [...orgs.values()].filter((o) => !candidates.get(o.name).some((t) => lists.has(t)));
+  const orgArticles = await fetchPages(withoutList.map((o) => o.article), args.cache, args.offline, args.cached);
 
-  // 3 + 4. Rows.
-  const out = [];
+  // 3. Rows, per organization.
+  const found = [];
   const sources = [];
   for (const org of orgs.values()) {
     const title = candidates.get(org.name).find((t) => lists.has(t));
-    if (!title) {
-      skippedOrgs.push({ org: org.name, reason: "no chapter-list article" });
+    const page = title ? lists.get(title) : orgArticles.get(org.article);
+    if (!page) {
+      skippedOrgs.push({ org: org.name, reason: "no chapter-list article, and its own article could not be read" });
       continue;
     }
-    const page = lists.get(title);
-    const { rows, unread } = chapterRows(org, page);
+    const { rows, unread } = chapterRows(org, page, !title);
     const seen = new Set();
     let kept = 0;
     for (const r of rows) {
       const key = `${r.university}|${r.designation ?? ""}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const school = schoolNames(r.university, r.shown);
-      out.push({
-        org_letters: org.letters,
-        org_name: org.name,
-        archetype: org.archetype,
-        chapter_designation: r.designation,
-        university: r.university,
-        university_short: school.short,
-        founded_year: r.founded_year,
-        default_colors: DEFAULT_COLORS,
-        website: previous.get(org.name)?.website ?? null,
-        source: "wikipedia",
-        aliases: [...new Set([...(ORG_ALIASES[org.name] ?? []), ...school.aliases])],
-      });
+      found.push({ org, ...r });
       kept++;
     }
     sources.push({
@@ -414,9 +425,42 @@ async function main() {
       revision: page.revid,
       url: `https://en.wikipedia.org/w/index.php?oldid=${page.revid}`,
       active_chapters: kept,
+      ...(title ? {} : { from: "the organization's own article (no chapter list)" }),
       ...(unread.length ? { tables_not_read: unread } : {}),
     });
-    if (kept === 0) skippedOrgs.push({ org: org.name, reason: `no active chapters read from ${page.title}` });
+    if (kept === 0) {
+      skippedOrgs.push({
+        org: org.name,
+        reason: title ? `no active chapters read from ${page.title}` : "no chapter-list article, and no chapter table in its own article",
+      });
+    }
+  }
+
+  // 4. One spelling per school, then the CSV rows.
+  const spelling = canonicalSchools(found.map((r) => r.university));
+  const out = [];
+  const seenRows = new Set();
+  for (const r of found) {
+    const university = spelling.get(r.university);
+    const key = `${r.org.letters}|${university}|${r.designation ?? ""}`;
+    if (seenRows.has(key)) continue;
+    seenRows.add(key);
+    const org = r.org;
+    const school = schoolNames(university, r.shown);
+    out.push({
+      org_letters: org.letters,
+      org_name: org.name,
+      archetype: org.archetype,
+      chapter_designation: r.designation,
+      university,
+      university_short: school.short,
+      founded_year: r.founded_year,
+      default_colors: DEFAULT_COLORS,
+      website: previous.get(org.name)?.website ?? null,
+      source: "wikipedia",
+      aliases: school.aliases,
+      org_aliases: ORG_ALIASES[org.name] ?? [],
+    });
   }
 
   out.sort((a, b) =>
@@ -429,7 +473,7 @@ async function main() {
   for (const r of out) {
     lines.push(EXPECTED_HEADER.map((h) => {
       if (h === "default_colors") return csvCell(JSON.stringify(r.default_colors));
-      if (h === "aliases") return csvCell(r.aliases.join("|"));
+      if (h === "aliases" || h === "org_aliases") return csvCell(r[h].join("|"));
       return csvCell(r[h]);
     }).join(","));
   }
@@ -452,12 +496,10 @@ function readPreviousSeed() {
   const path = join(process.cwd(), SEED_RELATIVE_PATH);
   const map = new Map();
   if (!existsSync(path)) return map;
-  const [header, ...rows] = readFileSync(path, "utf8").trim().split("\n");
-  const cols = header.split(",");
+  const [cols, ...rows] = parseCsv(readFileSync(path, "utf8"));
   const nameIdx = cols.indexOf("org_name");
   const siteIdx = cols.indexOf("website");
-  for (const line of rows) {
-    const cells = line.match(/("([^"]|"")*"|[^,]*)(,|$)/g)?.map((c) => c.replace(/,$/, "")) ?? [];
+  for (const cells of rows) {
     const site = cells[siteIdx];
     if (cells[nameIdx] && site && site.startsWith("http")) map.set(cells[nameIdx], { website: site });
   }

@@ -2801,7 +2801,7 @@ alter table public.chat_channels drop column if exists is_default;
 
 * **Migration**: `20261106200000_chapter_directory_search.sql`
 
-One column added (`chapter_directory.aliases`), one generated column swapped (`search_vector` and its GIN index out, `search_text` in), two functions (`chapter_directory_search_text`, `search_chapter_directory`), and `pg_trgm` in `extensions` if it wasn't there. No row's data changed.
+Two columns added (`chapter_directory.aliases`, `org_aliases`), generated columns swapped (`search_vector` and its GIN index out; `search_text`, `search_org_names`, `search_chapter_names` and `search_school_names` in), four functions (`chapter_directory_normalize`, `chapter_directory_search_text`, `chapter_directory_search_names`, `search_chapter_directory`), and `pg_trgm` in `extensions` if it wasn't there. No row's data changed.
 
 **Revert the code forward and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)) only together with a forward migration that puts `search_vector` back, because the reverted API reads it:
 
@@ -2818,7 +2818,7 @@ create index if not exists idx_chapter_directory_search
   on public.chapter_directory using gin (search_vector);
 ```
 
-Leave `aliases`, `search_text` and the functions in place; nothing old reads them. Leave `pg_trgm`, which backwork search also uses.
+Leave the alias and `search_*` columns and the functions in place; nothing old reads them. Leave `pg_trgm`, which backwork search also uses.
 
 ## Rollback chapter directory Wikipedia rows (20261106200100)
 
@@ -2834,7 +2834,7 @@ where d.source = 'wikipedia'
   and not exists (select 1 from public.chapters c where c.directory_id = d.id);
 ```
 
-The 50 hand-written rows it deleted are not worth restoring; they named chapters that don't exist.
+The 50 hand-written rows it deleted are not worth restoring; they named chapters that don't exist. A `retired` row stays where a chapter links it; the older API would offer it again in search, which is the one visible difference after a code revert.
 
 ## Rollback backwork search wider (20261106190000)
 

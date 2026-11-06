@@ -24,10 +24,12 @@ export class SupabaseChapterDirectoryRepository implements IChapterDirectoryRepo
    * starts a word of the organization, letters, chapter, school or its
    * aliases ("phi gam rens" finds Tau Nu at Rensselaer), and a longer word
    * may be a close misspelling. The raw query travels as one opaque argument
-   * and is never spliced into a filter. An empty query finds nothing.
+   * and is never spliced into a filter. `university` narrows by school name,
+   * short name or alias; with it and an empty query the call lists that
+   * school's chapters, and with neither it finds nothing.
    *
    * The explicit `select` is the autocomplete contract: the generated
-   * `search_text` and the `aliases` stay out of the response.
+   * `search_*` columns and the aliases stay out of the response.
    */
   async search(
     q: string,
@@ -40,7 +42,9 @@ export class SupabaseChapterDirectoryRepository implements IChapterDirectoryRepo
         p_university: university ?? null,
         p_limit: limit,
       })
-      .select(SEARCH_COLUMNS)) as PagedQueryResult<ChapterDirectorySearchResult>;
+      .select(
+        SEARCH_COLUMNS,
+      )) as PagedQueryResult<ChapterDirectorySearchResult>;
 
     if (error) throw new SupabaseQueryError(error);
     return data ?? [];

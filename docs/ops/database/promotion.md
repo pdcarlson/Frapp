@@ -383,10 +383,12 @@ Post-apply production checks:
   rows come from `supabase/seed/chapter_directory.csv`, and until
   `20260907011500_chapter_directory_seed_rows.sql` only the local bootstrap scripts
   loaded them, so both hosted projects had an empty table (#840). That migration loads
-  them everywhere: on a project that started empty,
-  `select count(*) from chapter_directory where source = 'seed'` matches the CSV's row
-  count once it has applied ([promotion log](promotion-log.md#2026-09-07-chapter-directory-reference-rows-reach-every-environment-840)).
-  A changed CSV ships as a **new** migration generated with
-  `npm run load:chapter-directory`, never as an edit to that file. What the loader
-  guarantees (idempotent, row ids preserved, only `source = 'seed'` rows updated):
+  them everywhere ([promotion log](promotion-log.md#2026-09-07-chapter-directory-reference-rows-reach-every-environment-840)).
+  Since `20261106200100_chapter_directory_wikipedia_rows.sql` the CSV's rows carry
+  `source = 'wikipedia'`, and after a load
+  `select count(*) from chapter_directory where source = 'wikipedia'` matches the CSV's
+  row count. A changed CSV ships as a **new** migration generated with
+  `node scripts/load-chapter-directory.mjs --migration`, never as an edit to an applied
+  one. What the loader guarantees (idempotent, row ids preserved, only its own
+  `seed` and `wikipedia` rows updated, a linked dropped row retired rather than deleted):
   [`docs/guides/database.md` § Reference data](../../guides/database.md#reference-data-the-chapter-directory).

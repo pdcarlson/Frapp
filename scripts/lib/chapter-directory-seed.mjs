@@ -10,7 +10,7 @@
 // and the rules live here and nowhere else.
 //
 // Why a module and not `supabase/seed.sql`: the CSV is the source of truth and
-// #232 grows it to ~2,000 rows. Consuming it from seed.sql would mean either
+// #232 grew it to about 13,000 rows. Consuming it from seed.sql would mean either
 // `\copy` (a psql meta-command resolving paths against the caller's cwd — the
 // fragility class PR #801 spent four review rounds removing) or inlining every
 // row, which duplicates the source of truth and does not scale.
@@ -70,7 +70,16 @@ export const EXPECTED_HEADER = Object.freeze([
   "website",
   "source",
   "aliases",
+  "org_aliases",
 ]);
+
+/** A `|`-separated alias cell as a list. */
+function splitAliases(cell) {
+  return cell
+    .split("|")
+    .map((a) => a.trim())
+    .filter(Boolean);
+}
 
 /**
  * RFC 4180 CSV reader.
@@ -248,6 +257,7 @@ export function loadSeed(repoRoot) {
       website,
       source,
       aliases,
+      org_aliases,
     ] = cells;
 
     // NOT NULL columns per the migration. Empty string is absence, not a value.
@@ -336,16 +346,18 @@ export function loadSeed(repoRoot) {
       default_colors: colors,
       website: website.trim() === "" ? null : website,
       source,
-      // Other names a search should find this row by (the school's short name,
-      // the organization's nickname): `|`-separated in the file, never shown.
-      aliases: aliases
-        .split("|")
-        .map((a) => a.trim())
-        .filter(Boolean),
+      // Other names a search should find this row by, `|`-separated in the
+      // file and never shown: the school's (its short name and nicknames,
+      // "RPI") and the organization's ("FIJI"). Kept apart because search
+      // ranks a row higher for naming its organization than its school.
+      aliases: splitAliases(aliases),
+      org_aliases: splitAliases(org_aliases),
     };
 
-    if (row.aliases.some((a) => a.length > 120)) {
-      at("aliases", "an alias is over 120 characters; is a separator missing?");
+    for (const field of ["aliases", "org_aliases"]) {
+      if (row[field].some((a) => a.length > 120)) {
+        at(field, "an alias is over 120 characters; is a separator missing?");
+      }
     }
 
     const key = rowKey(row);

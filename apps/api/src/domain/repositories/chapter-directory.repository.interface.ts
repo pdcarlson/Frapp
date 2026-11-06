@@ -42,8 +42,9 @@ export type NewChapterDirectoryRequest = Pick<
 export interface IChapterDirectoryRepository {
   /**
    * Word-prefix search with typo tolerance over the directory, optionally
-   * narrowed to a school by a substring of its name or short name. An empty
-   * `query` finds nothing.
+   * narrowed to a school by a word prefix of its name, short name or an
+   * alias. An empty `query` with a school lists its chapters; with no school
+   * it finds nothing.
    */
   search(
     query: string,
