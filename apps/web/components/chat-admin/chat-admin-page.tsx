@@ -17,6 +17,9 @@ import {
   useUpdateCategory,
   useUpdateChannel,
   resolveAuthorLabel,
+  deleteChannelConfirmTitle,
+  DELETE_CHANNEL_CONFIRM_BODY,
+  DELETE_CHANNEL_LABEL,
 } from "@repo/hooks";
 import { formatClock } from "@repo/formatting";
 import {
@@ -446,10 +449,9 @@ function ChatAdminBody({
 
   async function handleDeleteChannel(channel: AdminChannel) {
     const confirmed = await confirm({
-      title: `Delete #${channel.name}?`,
-      description:
-        "Every message, attachment, and pin in this channel is removed. This cannot be undone.",
-      confirmLabel: "Delete channel",
+      title: deleteChannelConfirmTitle(channel.name),
+      description: DELETE_CHANNEL_CONFIRM_BODY,
+      confirmLabel: DELETE_CHANNEL_LABEL,
     });
     if (!confirmed) return;
     try {

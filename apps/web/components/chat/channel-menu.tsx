@@ -121,8 +121,11 @@ type ChannelMenuProps = {
   };
 };
 
-/** The Notifications row's trailing word: the level the channel is on. */
-const LEVEL_DETAIL: Record<ChatNotificationLevel, string> = {
+/**
+ * The Notifications row's trailing word: the level the channel is on. The
+ * rail's right-click menu reads it too, so the two say the same thing.
+ */
+export const LEVEL_DETAIL: Record<ChatNotificationLevel, string> = {
   all: "All",
   mentions: "Mentions",
   off: "Muted",

@@ -307,6 +307,7 @@ vi.mock("@repo/hooks", async () => ({
     mutate: vi.fn(),
   }),
   useMarkChannelRead: () => ({ mutate: vi.fn() }),
+  useDeleteChannel: () => ({ mutateAsync: vi.fn() }),
   useChannelUnreadCounts: () => ({
     data: [{ channel_id: "chan-general", unread_count: 2, mention_count: 1 }],
     isError: sidebarState.unreadError,
@@ -429,6 +430,10 @@ vi.mock("@repo/hooks", async () => ({
 
 // Captured so the hide failure (#2303) is observable; no other case here
 // asserts on a toast.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
 vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
