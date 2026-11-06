@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/api-sdk";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { Loader2, Trash2 } from "lucide-react";
@@ -407,7 +408,7 @@ export function RolesAndPermissionsPage() {
     body = (
       <ErrorState
         title="Couldn't load roles"
-        description="Check your connection and retry."
+        description={describeLoadFailure(rolesQuery.error)}
         onRetry={retryQueries}
       />
     );

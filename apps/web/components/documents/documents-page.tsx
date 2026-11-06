@@ -321,6 +321,7 @@ export function DocumentsPage() {
 
         <DocumentList
           listState={listState}
+          loadError={documentsQuery.error}
           visible={visible}
           activeFolder={activeFolder}
           search={search}

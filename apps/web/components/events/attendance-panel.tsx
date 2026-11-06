@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/api-sdk";
 import { useMemo, useState } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { DirectoryGlyph } from "@/components/events/chapter-ops-glyphs";
@@ -237,7 +238,7 @@ export function AttendancePanel({
       <div role="status" aria-live="polite">
         <NestedError
           title="Attendance unavailable"
-          description="Couldn't load attendance for this event. Check your connection and retry."
+          description={`Couldn't load attendance for this event. ${describeLoadFailure(attendanceQuery.error)}`}
           onRetry={() => void attendanceQuery.refetch()}
         />
       </div>

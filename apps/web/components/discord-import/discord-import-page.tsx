@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/api-sdk";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -271,7 +272,7 @@ function DiscordImportView({
       <NestedError
         sole
         title="Couldn't load the import"
-        description="Check your connection and retry."
+        description={describeLoadFailure(imports.error)}
         onRetry={() => void imports.refetch()}
       />
     );

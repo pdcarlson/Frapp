@@ -1,3 +1,4 @@
+import { describeLoadFailure } from "@repo/api-sdk";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
@@ -1031,7 +1032,7 @@ export default function ChatThreadScreen() {
             <View style={styles.stateBlock}>
               <ErrorState
                 title="Couldn't load messages"
-                body="Check your connection and retry."
+                body={describeLoadFailure(loadError)}
                 onRetry={reload}
                 isRetrying={isReloading}
               />

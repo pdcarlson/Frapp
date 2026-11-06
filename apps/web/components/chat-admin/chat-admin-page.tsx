@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/api-sdk";
 import { useCallback, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { Loader2, Pencil, PinOff, Plus, Trash2 } from "lucide-react";
@@ -598,7 +599,9 @@ function ChatAdminBody({
       <NestedError
         sole
         title="Couldn't load channels"
-        description="Check your connection and retry."
+        description={describeLoadFailure(
+          channelsQuery.error ?? categoriesQuery.error,
+        )}
         onRetry={retryQueries}
       />
     );
@@ -1068,7 +1071,7 @@ function ChatAdminBody({
                     ) : pinsQuery.isError && pinsQuery.data === undefined ? (
                       <NestedError
                         title="Couldn't load pins"
-                        description="Check your connection and retry."
+                        description={describeLoadFailure(pinsQuery.error)}
                         onRetry={() => void pinsQuery.refetch()}
                       />
                     ) : pins.length === 0 ? (

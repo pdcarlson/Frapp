@@ -14,7 +14,7 @@ import {
   useResolveChatReport,
 } from "@repo/hooks";
 import type { ChatReport, ChatReportStatus } from "@repo/hooks";
-import { serverMessageOf, statusOf } from "@repo/api-sdk";
+import { serverMessageOf, statusOf, describeLoadFailure } from "@repo/api-sdk";
 import { isViewableImage } from "@repo/chat-core/attachments";
 import { formatBytes, formatTimestampFull } from "@repo/formatting";
 import { CHAT_REPORT_QUEUE_PERMISSIONS } from "@repo/validation";
@@ -359,7 +359,7 @@ function ReportListBody({
     return (
       <NestedError
         title={copy.errorTitle}
-        description={copy.errorDescription}
+        description={describeLoadFailure(query.error)}
         onRetry={() => void query.refetch()}
       />
     );

@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/api-sdk";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   InviteGlyph,
@@ -570,7 +571,7 @@ export function MembersDirectory() {
       <NestedError
         sole
         title={stateMicrocopy.members.errorTitle}
-        description={stateMicrocopy.members.errorDescription}
+        description={describeLoadFailure(activeQuery.error)}
         onRetry={() => {
           void activeQuery.refetch();
         }}

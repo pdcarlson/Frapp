@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/api-sdk";
 import {
   useDeferredValue,
   useEffect,
@@ -801,7 +802,11 @@ export function BackworkPage() {
           <NestedError
             sole
             title="Couldn't load backwork"
-            description="Check your connection and retry."
+            description={describeLoadFailure(
+              resourcesQuery.error ??
+                departmentsQuery.error ??
+                professorsQuery.error,
+            )}
             onRetry={() => {
               void resourcesQuery.refetch();
               void departmentsQuery.refetch();

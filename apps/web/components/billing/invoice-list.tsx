@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/api-sdk";
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Loader2, Plus } from "lucide-react";
 import {
@@ -705,7 +706,7 @@ export function InvoiceList({ id }: { id?: string }) {
         <NestedError
           sole
           title="Couldn't load invoices"
-          description="Check your connection and retry."
+          description={describeLoadFailure(invoicesQuery.error)}
           onRetry={() => void invoicesQuery.refetch()}
         />
       ) : filtered.length === 0 ? (

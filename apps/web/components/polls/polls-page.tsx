@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/api-sdk";
 import { useMemo, useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 import {
@@ -477,7 +478,7 @@ export function PollsPage() {
           <NestedError
             sole
             title="Couldn't load polls"
-            description="Check your connection and retry."
+            description={describeLoadFailure(pollsQuery.error)}
             onRetry={() => void pollsQuery.refetch()}
           />
         ) : polls.length === 0 ? (

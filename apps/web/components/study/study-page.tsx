@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/api-sdk";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Eye, EyeOff, Loader2, Pause, Play, Square } from "lucide-react";
 import { StudyZonesGlyph } from "@/components/events/chapter-ops-glyphs";
@@ -548,7 +549,9 @@ export function StudyPage() {
       <>
         <ErrorState
           title="Couldn't load study data"
-          description="Check your connection and retry."
+          description={describeLoadFailure(
+            geofencesQuery.error ?? sessionsQuery.error,
+          )}
           onRetry={() => {
             void geofencesQuery.refetch();
             void sessionsQuery.refetch();

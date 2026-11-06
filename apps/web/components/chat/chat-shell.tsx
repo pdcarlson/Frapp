@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/api-sdk";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MembersGlyph } from "./chat-glyphs";
@@ -2045,7 +2046,7 @@ export function ChatShell({
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
             <ErrorState
               title="Couldn't load channels"
-              description="Check your connection and retry."
+              description={describeLoadFailure(channelsQuery.error)}
               onRetry={() => void channelsQuery.refetch()}
             />
           </div>

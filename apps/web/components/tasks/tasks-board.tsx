@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/api-sdk";
 import { useMemo, useState } from "react";
 import { CheckCircle2, Loader2, Plus, Trash2, Undo2 } from "lucide-react";
 import {
@@ -357,7 +358,7 @@ export function TasksBoard() {
         <NestedError
           sole
           title="Couldn't load tasks"
-          description="Check your connection and retry."
+          description={describeLoadFailure(tasksQuery.error)}
           onRetry={() => void tasksQuery.refetch()}
         />
       </div>

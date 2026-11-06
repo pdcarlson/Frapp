@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/api-sdk";
 import {
   forwardRef,
   useEffect,
@@ -792,10 +793,9 @@ export const MessageTimeline = forwardRef<
     return (
       <ErrorState
         title="Couldn't load messages"
-        // The canonical string from `writing.md` §7, not `loadError.message`.
-        // A raw fetch rejection ("Failed to fetch") is not copy, and the doc
-        // that owns this table already answers the question a member has.
-        description="Check your connection and retry."
+        // Picked by the failure's status (`writing.md` §7), not
+        // `loadError.message`: a raw fetch rejection is not copy.
+        description={describeLoadFailure(loadError)}
         onRetry={onRetryLoad}
       />
     );

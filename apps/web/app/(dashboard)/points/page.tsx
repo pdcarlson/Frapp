@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/api-sdk";
 import { useEffect, useMemo, useState } from "react";
 import { AdjustGlyph, SearchGlyph } from "@/components/points/points-glyphs";
 import {
@@ -342,7 +343,7 @@ export default function PointsPage() {
         <NestedError
           sole
           title={stateMicrocopy.points.errorTitle}
-          description={stateMicrocopy.points.errorDescription}
+          description={`Standings and transactions are unavailable, so none are shown. ${describeLoadFailure(leaderboardQuery.error ?? summaryQuery.error)}`}
           onRetry={() => {
             void leaderboardQuery.refetch();
             void summaryQuery.refetch();

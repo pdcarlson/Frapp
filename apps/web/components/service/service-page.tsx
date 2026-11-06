@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/api-sdk";
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Loader2, Plus, XCircle } from "lucide-react";
 import {
@@ -442,7 +443,7 @@ export function ServiceHoursPage() {
       <>
         <ErrorState
           title="Couldn't load service entries"
-          description="Check your connection and retry."
+          description={describeLoadFailure(entriesQuery.error)}
           onRetry={() => void entriesQuery.refetch()}
         />
       </>

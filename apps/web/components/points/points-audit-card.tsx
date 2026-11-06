@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/api-sdk";
 import { useMemo, useState, type ReactNode } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { FlaggedGlyph } from "@/components/points/points-glyphs";
@@ -296,7 +297,7 @@ export function PointsAuditCard() {
             {transactionsQuery.isError ? (
               <NestedError
                 title="Audit unavailable"
-                description="Couldn't load chapter transactions. Check your connection and retry."
+                description={`Couldn't load chapter transactions. ${describeLoadFailure(transactionsQuery.error)}`}
                 onRetry={() => void transactionsQuery.refetch()}
               />
             ) : rows.length === 0 ? (
