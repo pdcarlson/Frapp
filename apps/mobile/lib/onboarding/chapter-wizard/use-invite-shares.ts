@@ -55,14 +55,27 @@ export function inviteShareContent(
   return { message: `Join ${chapterName} on Frapp\n${url}` };
 }
 
-/** The tokens in a `GET /v1/invites` answer that have been redeemed. */
+/**
+ * The tokens in a `GET /v1/invites` answer that someone joined with.
+ *
+ * A row's `status` decides (#3607): revoking a link also stamps `used_at`, so
+ * `used_at` alone would show a revoked link as Joined. `used_at` is read only
+ * from a row with no `status`, which an API older than #3652 sends; a store
+ * build can meet one during a deploy.
+ */
 export function usedInviteTokens(list: unknown): Set<string> {
   const used = new Set<string>();
   if (!Array.isArray(list)) return used;
   for (const row of list) {
     if (!row || typeof row !== "object") continue;
-    const { token, used_at } = row as { token?: unknown; used_at?: unknown };
-    if (typeof token === "string" && used_at) used.add(token);
+    const { token, status, used_at } = row as {
+      token?: unknown;
+      status?: unknown;
+      used_at?: unknown;
+    };
+    if (typeof token !== "string") continue;
+    const joined = typeof status === "string" ? status === "joined" : !!used_at;
+    if (joined) used.add(token);
   }
   return used;
 }
