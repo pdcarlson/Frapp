@@ -428,6 +428,8 @@ describe("Placeholder rows sit on their real row's frame", () => {
           pointReward: 5,
           pointsAwarded: false,
           isDone: false,
+          description: null,
+          createdBy: null,
           isOverdue: false,
         }}
         now={new Date("2026-11-05T12:00:00Z")}

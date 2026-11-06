@@ -6,7 +6,8 @@ import {
   canReadCardTask,
   readLiveTask,
   taskCardControls,
-  taskCardStatusLabel,
+  TASK_ACTION_LABELS,
+  taskStatusLabel,
   useMyPermissions,
   useTask,
   useUpdateTaskStatus,
@@ -122,7 +123,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // `TODO` forever, so drawing it before (or instead of) a live read would call
   // a finished task "To do".
   const status: TaskStatus | null = live?.status ?? null;
-  const statusLabel = live ? taskCardStatusLabel(live) : null;
+  const statusLabel = live ? taskStatusLabel(live) : null;
   // No control until the live task is read (#2065): acting on the snapshot
   // offered Start on tasks already in progress or done.
   const controls = taskCardControls({ live, isAssignee, canManage });
@@ -216,7 +217,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
                 )
               }
             >
-              Start
+              {TASK_ACTION_LABELS.start}
             </Button>
           ) : null}
           {controls.includes("complete") ? (
@@ -234,7 +235,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
                 )
               }
             >
-              Mark complete
+              {TASK_ACTION_LABELS.complete}
             </Button>
           ) : null}
           {managerControls.length > 0 ? (
@@ -260,8 +261,8 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
                 >
                   <CheckCircle2 className="h-4 w-4" />
                   {managerControls.includes("confirmed")
-                    ? "Confirmed"
-                    : "Confirm"}
+                    ? TASK_ACTION_LABELS.confirmed
+                    : TASK_ACTION_LABELS.confirm}
                 </Button>
               ) : null}
               {managerControls.includes("reject") ? (
@@ -280,7 +281,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
                   }
                 >
                   <Undo2 className="h-4 w-4" />
-                  Reject
+                  {TASK_ACTION_LABELS.reject}
                 </Button>
               ) : null}
             </Can>

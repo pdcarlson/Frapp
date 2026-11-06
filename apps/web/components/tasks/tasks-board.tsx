@@ -15,6 +15,7 @@ import {
 import type { TaskStatus } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import { formatWeekdayDay } from "@repo/formatting";
+import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -53,7 +54,13 @@ import {
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { actionStatus } from "@repo/hooks";
+import {
+  TASK_ACTION_LABELS,
+  TASK_CONFIRMED_LABEL,
+  TASK_STATUS_LABELS,
+  actionStatus,
+  canReopenOwnTask,
+} from "@repo/hooks";
 import {
   asArray,
   getErrorMessage,
@@ -89,7 +96,12 @@ type Task = {
 };
 
 /*
- * The four columns, each named by its section label and count. The
+ * The four columns, each named by its section label and count, in the shared
+ * words every task surface uses (`TASK_STATUS_LABELS`, `@repo/hooks`), so a
+ * task reads the same here as on mobile and on its chat card. The third
+ * column holds only completions an officer still has to confirm: confirmed
+ * ones leave it for the Confirmed list under the board, or "Waiting on an
+ * officer" would go on listing work nobody is waiting on. The
  * per-column descriptions ("Assignee is working on it.") and the empty-column
  * paragraphs are gone: the label already says what the column holds, and an
  * empty column needs one quiet line, not a tile explaining the workflow.
@@ -99,11 +111,33 @@ const COLUMNS: {
   label: string;
   empty: string;
 }[] = [
-  { status: "TODO", label: "To do", empty: "No tasks" },
-  { status: "IN_PROGRESS", label: "In progress", empty: "No tasks" },
-  { status: "COMPLETED", label: "Awaiting confirmation", empty: "No tasks" },
-  { status: "OVERDUE", label: "Overdue", empty: "Nothing overdue" },
+  { status: "TODO", label: TASK_STATUS_LABELS.TODO, empty: "No tasks" },
+  {
+    status: "IN_PROGRESS",
+    label: TASK_STATUS_LABELS.IN_PROGRESS,
+    empty: "No tasks",
+  },
+  {
+    status: "COMPLETED",
+    label: TASK_STATUS_LABELS.COMPLETED,
+    empty: "Nothing to confirm",
+  },
+  {
+    status: "OVERDUE",
+    label: TASK_STATUS_LABELS.OVERDUE,
+    empty: "Nothing overdue",
+  },
 ];
+
+/**
+ * Days a confirmed task stays in the Confirmed list under the board, counted
+ * from its confirmation. The same week mobile keeps a finished row on its
+ * board (`COMPLETED_RETENTION_DAYS`, `apps/mobile/lib/tasks/board.ts`): long
+ * enough to see this week's confirmations, short enough that a semester of
+ * them doesn't pile up under the columns. The points history keeps the rest.
+ */
+const CONFIRMED_RETENTION_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function TasksBoard() {
   const { toast } = useToast();
@@ -155,15 +189,26 @@ export function TasksBoard() {
     point_reward: "",
   });
 
-  const columns = useMemo(() => {
+  const { columns, confirmed } = useMemo(() => {
     const grouped = new Map<TaskStatus, Task[]>();
     for (const column of COLUMNS) {
       grouped.set(column.status, []);
     }
+    const recent: Task[] = [];
+    const cutoff = Date.now() - CONFIRMED_RETENTION_DAYS * DAY_MS;
     for (const task of tasks) {
+      if (task.status === "COMPLETED" && task.points_awarded) {
+        const at = Date.parse(task.confirmed_at ?? task.completed_at ?? "");
+        if (Number.isNaN(at) || at >= cutoff) recent.push(task);
+        continue;
+      }
       const bucket = grouped.get(task.status);
       if (bucket) bucket.push(task);
     }
+    recent.sort(
+      (a, b) =>
+        Date.parse(b.confirmed_at ?? "") - Date.parse(a.confirmed_at ?? ""),
+    );
     for (const [, list] of grouped) {
       list.sort((a, b) => {
         const aMs = new Date(a.due_date).getTime();
@@ -171,7 +216,7 @@ export function TasksBoard() {
         return aMs - bMs;
       });
     }
-    return grouped;
+    return { columns: grouped, confirmed: recent };
   }, [tasks]);
 
   async function submitDraft(event: React.FormEvent<HTMLFormElement>) {
@@ -209,15 +254,39 @@ export function TasksBoard() {
   }
 
   async function changeStatus(task: Task, next: TaskStatus) {
+    const reopening = actionStatus(task) === "COMPLETED";
     try {
       await updateStatus.mutateAsync({
         id: task.id,
         body: { status: next },
       });
-      toast({
-        title: "Status updated",
-        description: `${task.title} → ${next}.`,
-      });
+      if (next === "COMPLETED") {
+        // The undo a stray click needs (owner audit 2026-11-06, P6.1). The
+        // API lets the assignee take back their own completion until an
+        // officer confirms it, so Undo is a real write, not a delayed one.
+        toast({
+          title: "Marked done",
+          description: `${task.title} is waiting on an officer to confirm it.`,
+          action: (
+            <ToastAction
+              altText={`${TASK_ACTION_LABELS.reopen}: ${task.title}`}
+              onClick={() =>
+                void changeStatus(
+                  { ...task, status: "COMPLETED", stored_status: "COMPLETED" },
+                  "IN_PROGRESS",
+                )
+              }
+            >
+              Undo
+            </ToastAction>
+          ),
+        });
+      } else {
+        toast({
+          title: reopening ? "Moved back to In progress" : "Started",
+          description: task.title,
+        });
+      }
     } catch (error) {
       toast({
         title: "Couldn't update task",
@@ -252,7 +321,7 @@ export function TasksBoard() {
     const result = await confirm({
       title: `Reject completion of "${task.title}"?`,
       description:
-        "The task goes back to IN_PROGRESS and the assignee is notified to keep working.",
+        "The task goes back to In progress and the assignee is notified to keep working.",
       confirmLabel: "Reject completion",
       tone: "destructive",
       comment: {
@@ -569,6 +638,39 @@ export function TasksBoard() {
           })}
         </div>
       )}
+
+      {/*
+        This week's confirmations, under the columns rather than in them: they
+        are finished, so they are the quietest thing on the page, and the
+        Waiting on an officer column stays the officer's queue.
+      */}
+      {confirmed.length > 0 ? (
+        <section aria-labelledby="tasks-confirmed" className="space-y-3">
+          <SectionLabel id="tasks-confirmed" count={confirmed.length}>
+            {TASK_CONFIRMED_LABEL}
+          </SectionLabel>
+          <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            {confirmed.map((task) => (
+              <TaskTile
+                key={task.id}
+                task={task}
+                assigneeName={
+                  membersByUserId.get(task.assignee_id) ??
+                  memberFallbackLabel(task.assignee_id)
+                }
+                myUserId={myUserId}
+                gate={gate}
+                lifecycleWritePending={lifecycleWritePending}
+                onChangeStatus={(next) => void changeStatus(task, next)}
+                onConfirm={() => void confirmCompletion(task)}
+                onReject={() => void rejectCompletion(task)}
+                onDelete={() => void removeTask(task)}
+              />
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {confirmDialog}
     </div>
   );
@@ -655,7 +757,7 @@ function TaskTile({
             {...gate.controlProps(lifecycleWritePending)}
             onClick={() => onChangeStatus("IN_PROGRESS")}
           >
-            Start
+            {TASK_ACTION_LABELS.start}
           </Button>
         ) : null}
         {isMine && status === "IN_PROGRESS" ? (
@@ -665,34 +767,49 @@ function TaskTile({
             {...gate.controlProps(lifecycleWritePending)}
             onClick={() => onChangeStatus("COMPLETED")}
           >
-            Mark complete
+            {TASK_ACTION_LABELS.complete}
+          </Button>
+        ) : null}
+        {/*
+          The assignee taking back their own "done" until an officer confirms
+          it. Ghost, not secondary: it is the rare move on this tile.
+        */}
+        {canReopenOwnTask({
+          stored: status,
+          pointsAwarded: task.points_awarded,
+          isAssignee: isMine,
+        }) ? (
+          <Button
+            size="toolbar"
+            variant="ghost"
+            {...gate.controlProps(lifecycleWritePending)}
+            onClick={() => onChangeStatus("IN_PROGRESS")}
+          >
+            {TASK_ACTION_LABELS.reopen}
           </Button>
         ) : null}
         <Can permission="tasks:manage">
-          {status === "COMPLETED" ? (
+          {status === "COMPLETED" && !task.points_awarded ? (
             <>
               {/*
-               * The *live* Confirm is hidden on your own task: the API refuses
-               * a self-confirmation (#1056), so rendering it would offer an
-               * action guaranteed to 403 — and the optimistic write would flip
-               * the label to "Confirmed" and snap back. The already-awarded
-               * button is kept: it is disabled and reads "Confirmed", so it
-               * reports state rather than offering an action, and an
-               * assignee-admin would otherwise lose any sign their task was
-               * confirmed. Reject stays throughout: it withholds points rather
-               * than awarding them, so the server rule does not cover it.
+               * Hidden on your own task: the API refuses a self-confirmation
+               * (#1056), so rendering it would offer an action guaranteed to
+               * 403, and the optimistic write would flip the label to
+               * "Confirmed" and snap back. A confirmed task carries neither
+               * control: it sits in the Confirmed list, which says so, and the
+               * API refuses a reject once points are awarded. Reject stays on
+               * your own unconfirmed task: it withholds points rather than
+               * awarding them, so the self-confirm rule does not cover it.
                */}
-              {cannotConfirm && !task.points_awarded ? null : (
+              {cannotConfirm ? null : (
                 <Button
                   size="toolbar"
                   className="gap-1.5"
                   onClick={onConfirm}
-                  {...gate.controlProps(
-                    task.points_awarded || lifecycleWritePending,
-                  )}
+                  {...gate.controlProps(lifecycleWritePending)}
                 >
                   <CheckCircle2 className="h-4 w-4" />
-                  {task.points_awarded ? "Confirmed" : "Confirm"}
+                  {TASK_ACTION_LABELS.confirm}
                 </Button>
               )}
               <Button
@@ -703,7 +820,7 @@ function TaskTile({
                 onClick={onReject}
               >
                 <Undo2 className="h-4 w-4" />
-                Reject
+                {TASK_ACTION_LABELS.reject}
               </Button>
             </>
           ) : null}

@@ -31,6 +31,10 @@ const THIS_WEEK_DAYS = 7;
 export interface TaskRowModel {
   id: string;
   title: string;
+  /** Free text the officer wrote when assigning it. Read in the detail sheet. */
+  description: string | null;
+  /** Who assigned it: the member an unconfirmed completion is waiting on. */
+  createdBy: string | null;
   /** The persisted status. What `nextTapSequence` keys off. May be `null`. */
   storedStatus: string | null;
   /** What the server wants rendered — may be the synthesized `OVERDUE`. */
@@ -63,6 +67,8 @@ function toRow(row: Record<string, unknown>): TaskRowModel | null {
   return {
     id,
     title,
+    description: str(row, "description"),
+    createdBy: str(row, "created_by"),
     storedStatus,
     displayStatus,
     dueDate: str(row, "due_date"),

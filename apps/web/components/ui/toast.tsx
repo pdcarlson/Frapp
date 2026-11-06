@@ -78,6 +78,28 @@ const Toast = React.forwardRef<
 })
 Toast.displayName = ToastPrimitives.Root.displayName
 
+/**
+ * The one action a toast may carry, such as Undo after a change that can be
+ * taken back. `altText` is required by Radix: it is what a screen reader is
+ * told to do instead, since the toast can close before focus gets there.
+ * A quiet text button, so it never competes with the page's own primary.
+ */
+const ToastAction = React.forwardRef<
+  React.ElementRef<typeof ToastPrimitives.Action>,
+  React.ComponentPropsWithoutRef<typeof ToastPrimitives.Action>
+>(({ className, ...props }, ref) => (
+  <ToastPrimitives.Action
+    ref={ref}
+    className={cn(
+      "inline-flex h-8 shrink-0 items-center justify-center rounded-sm px-3 text-sm font-semibold text-accent-text hover:bg-muted",
+      FOCUS_RING,
+      className
+    )}
+    {...props}
+  />
+))
+ToastAction.displayName = ToastPrimitives.Action.displayName
+
 const ToastClose = React.forwardRef<
   React.ElementRef<typeof ToastPrimitives.Close>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Close>
@@ -143,4 +165,5 @@ export {
   ToastTitle,
   ToastDescription,
   ToastClose,
+  ToastAction,
 }
