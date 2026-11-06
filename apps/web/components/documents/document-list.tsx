@@ -5,15 +5,19 @@ import { Label } from "@/components/ui/label";
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { SearchGlyph } from "@/components/documents/resources-glyphs";
 import { DocumentRow } from "@/components/documents/document-row";
 import type { ChapterDocument } from "@/components/documents/document-types";
 import { SectionLabel } from "@/components/shared/section-label";
-import { denseListClassName } from "@/components/shared/table-controls";
+import {
+  dashboardToolbarSearchClassName,
+  dashboardToolbarSearchGlyphClassName,
+  denseListClassName,
+} from "@/components/shared/table-controls";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
+import { DocumentRowsSkeleton } from "@/components/documents/documents-skeleton";
 
 export type DocumentListState =
   "offline-search" | "offline" | "loading" | "error" | "empty" | "ready";
@@ -78,18 +82,18 @@ export function DocumentList({
 
           Icon placement follows the dashboard's existing search inputs
           (`events-page.tsx`, `alumni-directory.tsx`): the shared glyph at a
-          fixed `top-2.5` against an `h-11` field. The wrapper carries the
+          glyph class sized against the toolbar field. The wrapper carries the
           spacing so the icon offset never has to compensate for it.
         */}
         <div className="relative w-full sm:w-64">
           <Label htmlFor="doc-search" className="sr-only">
             Search documents
           </Label>
-          <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+          <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
           <Input
             id="doc-search"
             type="search"
-            className="h-11 pl-9"
+            className={dashboardToolbarSearchClassName}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search by title"
@@ -121,7 +125,7 @@ export function DocumentList({
             onRetry={onRetry}
           />
         ) : listState === "loading" ? (
-          <NestedLoading message="Loading chapter documents..." sole />
+          <DocumentRowsSkeleton />
         ) : listState === "error" ? (
           <NestedError
             sole

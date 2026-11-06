@@ -36,7 +36,7 @@ export function payIntentErrorCopy(error: unknown): string {
         "A payment for this invoice is already being processed."
       );
     case 503:
-      return "The payment provider is unavailable right now. Please try again.";
+      return "Payments are unavailable right now. Please try again.";
     default:
       return serverMessage ?? "Could not start payment. Please try again.";
   }

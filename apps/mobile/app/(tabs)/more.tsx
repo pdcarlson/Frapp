@@ -2,21 +2,39 @@ import { useMemo } from "react";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text } from "react-native";
 import {
+  useCurrentChapter,
+  useCurrentUser,
   useEvents,
+  useHiddenUnsetFeatures,
   useInvoices,
   useListChapters,
-  useNotifications,
+  useMyPermissions,
+  useMyPoints,
   useNowDate,
   usePermissionList,
   useStudySessions,
   useViewerUserId,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { can } from "@repo/validation";
+import { can, isBetaOffModule, isModuleEnabled } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
-import { CountBadge, NavTile } from "@/components/nav-tile";
+import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
+import {
+  ChapterGlyph,
+  DirectoryGlyph,
+  DocumentsGlyph,
+  DuesGlyph,
+  HostCheckInGlyph,
+  ServiceGlyph,
+  SettingsGlyph,
+  StudyGlyph,
+} from "@/components/more/more-glyphs";
+import { ProfileCard } from "@/components/more/profile-card";
+import { StatusChip } from "@/components/status-chip";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectEventRows } from "@/lib/events/select";
-import { selectUnreadIds } from "@/lib/more/notifications";
+import { formatPointsLabel } from "@/lib/more/hub";
+import { selectPointsBalance, selectViewerProfile } from "@/lib/more/profile";
 import {
   dueChip,
   selectInvoiceRows,
@@ -25,53 +43,84 @@ import {
 import { formatHoursLabel, startOfWeek } from "@/lib/study/format";
 import { selectSessionHistory } from "@/lib/study/session";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { StatusChip } from "@/components/status-chip";
 
 /**
- * s09 — More hub.
+ * s09 — More hub (`canvas-screens.dc.html:326`).
  *
- * Rows follow spec/ui/mobile/navigation.md §"More hub (s09)", in its order.
- * Profile leads because it leaves the tab bar in this slice and More becomes
- * its only entry point.
+ * The drawn anatomy (#1048): a profile card, then grouped lists of rows with a
+ * leading duotone glyph, a trailing status where there is one, and a chevron.
+ * Rows carry no description line; the board draws none, and the label names
+ * the destination.
  *
- * **Chapter** is an extra row, and it is the only entry to the chapter picker
- * (#764). When `GET /v1/chapters` is empty the same slot becomes **Create a
- * chapter** (#1084) so a first officer who landed in the tabs (the pre-#958
- * gate) still has a door. The picker is deliberately not forced on members
- * whose token lacks an `active_chapter_id` claim — see `lib/auth-gate.ts` for
- * why that would be an outage rather than a feature when the claim is absent —
- * so it needs a door.
+ * ## Grouping
+ *
+ * The board draws one group (Study hours through Settings) and an Admin group.
+ * The app splits the first in two, chapter tools and then your own Settings
+ * and chapter switcher, so the two reachability rows the board never drew
+ * (Service hours and Switch chapter, `spec/ui/mobile/navigation.md` § More hub) sit
+ * with their kind instead of trailing the list. The owner approved this
+ * layout on 2026-11-04.
+ *
+ * The board's Notifications row is not here: the inbox moved to a bell on
+ * Chat home, beside the unread counts it belongs with (#3362, owner decision
+ * 2026-11-04; `components/chat/notifications-bell.tsx`).
+ *
+ * **Switch chapter** is the only entry to the chapter picker (#764). When
+ * `GET /v1/chapters` is empty the same slot becomes **Create a chapter**
+ * (#1084) so a first officer who landed in the tabs still has a door. The
+ * picker is deliberately not forced on members whose token lacks an
+ * `active_chapter_id` claim (see `lib/auth-gate.ts`), so it needs a door.
  *
  * ## The admin section, and why it may look empty
  *
  * The gate is `usePermissionList()` + `can`, the pattern `host-check-in.tsx`
  * established. The underlying `useMyPermissions` hook is `enabled:
- * !!chapterId`. A user with no claim (no membership yet, or a hook-off
- * incident) therefore gets an empty permission set and this section renders
- * for nobody, Presidents included. It fails closed, which is the right
- * direction. After the first membership exists the hook stamps the claim
- * (#805 is closed) and the section appears; a local stack with the hook
- * enabled in `supabase/config.toml` behaves the same.
+ * !!chapterId`, so a user with no claim gets an empty permission set and the
+ * section renders for nobody, Presidents included. It fails closed, which is
+ * the right direction.
  *
- * ## What is still not the drawn s09
+ * Canvas labels the section "ADMIN · PRESIDENT", the viewer's role name. No
+ * role string is readable on mobile (`/v1/users/me/permissions` returns
+ * permissions only), so it reads "Admin", and the profile card shows no role
+ * chip for the same reason.
  *
- * Canvas draws a profile card, leading duotone glyphs, a grouped-list
- * container, and trailing status on Study hours and Dues. This screen keeps the
- * `NavTile` structure it shipped with. TODO-DESIGN: the full drawn anatomy
- * (`canvas-screens.dc.html:326`) is filed separately.
+ * ## Rows nobody has set up
  *
- * The **trailing statuses** C4 deferred to "study and dues data that C5/C6 own"
- * land here with C5/C6. Both are honest about what exists: Canvas draws
- * "4.0 / 6.0" on Study, but no weekly requirement is modelled anywhere, so the
- * row shows the week's real total with no denominator (see
- * `components/study/week-summary.tsx`). Neither renders a placeholder while its
- * query is in flight — a row that says "0.0 hrs" for a beat at a member who
- * studied all week is worse than one that says nothing yet.
+ * Study hours with no active study zone leaves the list for everyone, since
+ * zones are made in the web app and the screen could only say so. Documents
+ * with nothing in it leaves it for a viewer who can't upload; an officer who
+ * can keeps the row, because the upload is on that screen
+ * (`useHiddenUnsetFeatures` in `@repo/hooks`; `spec/product/modules.md`
+ * § Not-set-up features). Nothing hides until the viewer's permissions, the
+ * chapter's modules and the list have all answered, so a row never vanishes
+ * on a slow or failed read.
+ *
+ * ## Trailing statuses
+ *
+ * Canvas draws "4.0 / 6.0" on Study, but no weekly requirement is modelled
+ * anywhere, so the row shows the week's real total with no denominator (see
+ * `components/study/week-summary.tsx`). Neither Study nor Dues renders a
+ * placeholder while its query is in flight: a row that says "0.0 hrs" for a
+ * beat at a member who studied all week is worse than one that says nothing
+ * yet.
  */
 export default function MoreScreen() {
   const router = useRouter();
   const { tokens } = useFrappTheme();
+  const { chapterName } = useChapterBranding();
   const styles = createStyles(tokens);
+  // Every row's leading glyph is neutral, member and Admin rows alike: an icon
+  // that labels a row never takes the chapter accent (foundations.md §6,
+  // "Where the accent goes", 2026-11-05).
+  const glyphColor = tokens.color.text.muted;
+
+  // Both reads are shared with s15 (Profile), so opening More warms them.
+  const userQuery = useCurrentUser();
+  const profile = useMemo(
+    () => selectViewerProfile(userQuery.data),
+    [userQuery.data],
+  );
+  const pointsBalance = selectPointsBalance(useMyPoints().data);
 
   const chaptersQuery = useListChapters();
   const hasNoChapters =
@@ -84,8 +133,21 @@ export default function MoreScreen() {
   // section from exactly the people who need it.
   const canHost = can("events:update", permissions);
 
-  const notificationsQuery = useNotifications();
-  const unreadCount = selectUnreadIds(notificationsQuery.data).length;
+  // The setup gate needs to tell "still loading" from "holds nothing", which
+  // `usePermissionList` (`[]` while loading) can't, so it reads the query.
+  const permissionsQuery = useMyPermissions();
+  const chapter = useCurrentChapter().data;
+  const moduleGate = useMemo(
+    () =>
+      chapter
+        ? (key: string) => isModuleEnabled(chapter.enabled_modules, key)
+        : undefined,
+    [chapter],
+  );
+  const hiddenFeatures = useHiddenUnsetFeatures(
+    permissionsQuery.data?.permissions,
+    moduleGate,
+  );
 
   // s22 takes an `eventId`, so the row resolves one rather than leading
   // nowhere. `selectEventRows` already returns upcoming-plus-still-checkable-in,
@@ -107,10 +169,15 @@ export default function MoreScreen() {
   // rather than duplicating work.
   const viewerUserId = useViewerUserId();
   const sessionsQuery = useStudySessions();
+  // The Dues row hides only while dues is off for every chapter in the beta
+  // (`BETA_OFF_MODULES`). A chapter's own dues switch leaves it, so a member
+  // can still pay an invoice the chapter already sent
+  // (`spec/product/modules.md` § Module disabling behavior).
+  const duesOn = !isBetaOffModule("dues");
   // Viewer-filtered server-side, for the reason `dues.tsx` records: unfiltered,
   // this row would pull the whole chapter's ledger onto an officer's device.
   const invoicesQuery = useInvoices(viewerUserId ?? undefined, {
-    enabled: !!viewerUserId,
+    enabled: duesOn && !!viewerUserId,
   });
 
   // Keyed on the week boundary rather than the ticking `now`: this
@@ -134,129 +201,139 @@ export default function MoreScreen() {
   }, [invoicesQuery.data, viewerUserId, now]);
 
   return (
-    <ScreenShell
-      title="More"
-      subtitle="Secondary chapter tools, notifications, and account controls."
-    >
-      <NavTile
-        href="/profile"
-        title="Profile"
-        description="Your membership details and points."
-        accessibilityHint="Open your member profile."
+    <ScreenShell title="More">
+      <ProfileCard
+        displayName={profile?.displayName ?? null}
+        initials={profile?.initials ?? "?"}
+        photoUrl={profile?.photoUrl ?? null}
+        fetchedAt={userQuery.dataUpdatedAt}
+        pointsLabel={formatPointsLabel(pointsBalance)}
       />
-      <NavTile
-        href="/study"
-        title="Study hours"
-        description="Track study sessions and weekly progress."
-        accessibilityHint="Open study hours and session tracking."
-        trailing={
-          studyThisWeek ? (
-            <Text style={styles.trailingMeta}>{studyThisWeek}</Text>
-          ) : undefined
-        }
-      />
-      <NavTile
-        href="/dues"
-        title="Dues"
-        description="Balance, payment, and history."
-        accessibilityHint="Open chapter dues and payment history."
-        trailing={
-          duesDue ? (
-            <StatusChip
-              label={duesDue.label}
-              // foundations.md §5 assigns "overdue" to the destructive role. A
-              // late bill reading the same as an upcoming one is the confusion
-              // the semantic palette exists to prevent.
-              hue={
-                duesDue.state === "past-due"
-                  ? tokens.color.semantic.destructive
-                  : tokens.color.semantic.warning
-              }
-            />
-          ) : undefined
-        }
-      />
-      <NavTile
-        href="/documents"
-        title="Documents"
-        description="Chapter document library."
-        accessibilityHint="Open the chapter document library."
-      />
-      <NavTile
-        href="/directory"
-        title="Directory"
-        description="Actives and alumni."
-        accessibilityHint="Open the member directory."
-      />
-      <NavTile
-        href="/notifications"
-        title="Notifications"
-        description="Recent activity, and what you haven't read."
-        accessibilityHint="Open notification history and deep-link alerts."
-        trailing={unreadCount > 0 ? <CountBadge count={unreadCount} /> : null}
-      />
-      <NavTile
-        href="/service-hours"
-        title="Service hours"
-        description="Log philanthropy work and track your own status."
-        accessibilityHint="Log a service entry and see whether yours were approved."
-      />
-      <NavTile
-        href="/preferences"
-        title="Settings"
-        description="Notifications, quiet hours, and your account."
-        accessibilityHint="Manage quiet hours and category notification controls."
-      />
-      {hasNoChapters ? (
-        <NavTile
-          href="/(auth)/create-chapter"
-          title="Create a chapter"
-          description="Set up your chapter if you're the first officer."
-          accessibilityHint="Open the chapter creation wizard."
+
+      <ListSection>
+        {hiddenFeatures.has("study") ? null : (
+          <ListRow
+            label="Study hours"
+            leading={<StudyGlyph color={glyphColor} />}
+            value={studyThisWeek}
+            accessibilityHint="Opens study hours and session tracking."
+            onPress={() => router.push("/study")}
+          />
+        )}
+        <ListRow
+          label="Service hours"
+          leading={<ServiceGlyph color={glyphColor} />}
+          accessibilityHint="Opens your logged service hours."
+          onPress={() => router.push("/service-hours")}
         />
-      ) : (
-        <NavTile
-          href="/(auth)/chapter-picker"
-          title="Chapter"
-          description="Switch between the chapters you belong to."
-          accessibilityHint="Choose which chapter to open."
+        {duesOn ? (
+          <ListRow
+            label="Dues"
+            leading={<DuesGlyph color={glyphColor} />}
+            accessibilityHint="Opens your dues and payment history."
+            accessibilityValue={duesDue?.label}
+            trailing={
+              duesDue ? (
+                <StatusChip
+                  label={duesDue.label}
+                  // foundations.md §5 assigns "overdue" to the destructive role.
+                  // A late bill reading the same as an upcoming one is the
+                  // confusion the semantic palette exists to prevent.
+                  hue={
+                    duesDue.state === "past-due"
+                      ? tokens.color.semantic.destructive
+                      : tokens.color.semantic.warning
+                  }
+                />
+              ) : undefined
+            }
+            onPress={() => router.push("/dues")}
+          />
+        ) : null}
+        {hiddenFeatures.has("documents") ? null : (
+          <ListRow
+            label="Documents"
+            leading={<DocumentsGlyph color={glyphColor} />}
+            accessibilityHint="Opens the chapter's documents."
+            onPress={() => router.push("/documents")}
+          />
+        )}
+        <ListRow
+          label="Directory"
+          leading={<DirectoryGlyph color={glyphColor} />}
+          accessibilityHint="Opens the member directory."
+          onPress={() => router.push("/directory")}
         />
-      )}
+      </ListSection>
+
+      <ListSection>
+        <ListRow
+          label="Settings"
+          leading={<SettingsGlyph color={glyphColor} />}
+          accessibilityHint="Opens notifications, quiet hours and your account."
+          onPress={() => router.push("/preferences")}
+        />
+        {hasNoChapters ? (
+          <ListRow
+            label="Create a chapter"
+            leading={<ChapterGlyph color={glyphColor} />}
+            accessibilityHint="Opens the chapter setup wizard."
+            onPress={() => router.push("/(auth)/create-chapter")}
+          />
+        ) : (
+          <ListRow
+            label="Switch chapter"
+            leading={<ChapterGlyph color={glyphColor} />}
+            value={chapterName}
+            accessibilityHint="Opens the list of chapters you belong to."
+            onPress={() =>
+              // `from` is how the picker knows More is under it, and so
+              // draws `‹ More`: a link that opens it has sign-in under it
+              // instead (`app/(auth)/chapter-picker.tsx`). Object form, the
+              // shape `lib/routes.spec.ts` matches when a param is involved.
+              router.push({
+                pathname: "/(auth)/chapter-picker",
+                params: { from: "more" },
+              })
+            }
+          />
+        )}
+      </ListSection>
 
       {canHost ? (
         <>
-          {/* TODO-DESIGN: Canvas labels this "ADMIN · PRESIDENT" — the viewer's
-              role name. No role string is readable on mobile:
-              `/v1/users/me/permissions` returns permissions only, and the
-              roster projection carries names and avatars. Nearest pattern used:
-              the section label without the role suffix. */}
-          <Text style={styles.sectionHeader}>Admin</Text>
-          <NavTile
-            title="Host check-in"
-            description={
-              nextEvent
-                ? "Project a rotating code for members to scan."
-                : "No upcoming event to host right now."
-            }
-            disabled={!nextEvent}
-            trailing={
-              nextEvent ? (
-                <Text numberOfLines={1} style={styles.trailingText}>
-                  {nextEvent.name}
+          <SectionHeader>Admin</SectionHeader>
+          <ListSection>
+            <ListRow
+              label="Host check-in"
+              leading={<HostCheckInGlyph color={glyphColor} />}
+              accessibilityValue={
+                nextEvent ? nextEvent.name : "No upcoming event"
+              }
+              trailing={
+                <Text numberOfLines={1} style={styles.eventName}>
+                  {nextEvent ? nextEvent.name : "No upcoming event"}
                 </Text>
-              ) : null
-            }
-            accessibilityHint="Open the host check-in display for the next event."
-            onPress={() => {
-              if (!nextEvent) return;
-              // Object form: the only navigation shape `lib/routes.spec.ts`
-              // matches when a param is involved.
-              router.push({
-                pathname: "/host-check-in",
-                params: { eventId: nextEvent.id },
-              });
-            }}
-          />
+              }
+              disabled={!nextEvent}
+              // A disabled row's hint is not what it would open, which it
+              // cannot do; its value already says why.
+              accessibilityHint={
+                nextEvent
+                  ? "Opens the host check-in display for the next event."
+                  : undefined
+              }
+              onPress={() => {
+                if (!nextEvent) return;
+                // Object form: the only navigation shape `lib/routes.spec.ts`
+                // matches when a param is involved.
+                router.push({
+                  pathname: "/host-check-in",
+                  params: { eventId: nextEvent.id },
+                });
+              }}
+            />
+          </ListSection>
         </>
       ) : null}
     </ScreenShell>
@@ -265,25 +342,11 @@ export default function MoreScreen() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    trailingMeta: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-    },
-    sectionHeader: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      textTransform: "uppercase",
-      // Canvas gives s09's admin caption a wider letter-spacing and a 4px
-      // indent than the section captions on s12/s14/s16; nothing documents
-      // which is canonical, so each screen follows its own drawing.
-      letterSpacing: 0.7,
-      marginTop: tokens.spacing.sm,
-      paddingLeft: tokens.spacing.xs,
-    },
-    trailingText: {
+    // A long event name truncates rather than pushing the label off the row.
+    eventName: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
-      maxWidth: 140,
+      maxWidth: 160,
     },
   });
 }

@@ -1,5 +1,7 @@
 /**
- * Shared upload MIME / extension allowlists and the 25 MB size cap.
+ * Shared upload MIME / extension allowlists and the size caps: 25 MB for
+ * every kind but two exceptions, `archive` and backwork's 100 MB
+ * (`MAX_BACKWORK_UPLOAD_BYTES`).
  *
  * One table per kind; MIME types, extensions, the HTML `accept` attribute, and
  * the size bound all derive from it. Application services, web upload pages,
@@ -33,8 +35,9 @@
  * **not** one number, and `supabase/config.toml`'s `[storage] file_size_limit`
  * is not `MAX_UPLOAD_BYTES`: it caps the **local stack** and overrides a higher
  * per-bucket column there. What the hosted projects enforce per object is not
- * measured here, and so is not claimed. See the `archive` kind below for the
- * one kind deliberately held off this cap; the per-bucket values are owned by
+ * measured here, and so is not claimed. See the `archive` kind and
+ * `MAX_BACKWORK_UPLOAD_BYTES` below for the two deliberately held off this
+ * cap; the per-bucket values are owned by
  * `spec/architecture/README.md` § 7 (Storage).
  *
  * ## What the bucket allowlist actually enforces
@@ -82,6 +85,30 @@
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 export const MAX_UPLOAD_LABEL = "25 MB";
+
+/**
+ * Backwork's own ceiling, the one member-upload surface above
+ * `MAX_UPLOAD_BYTES`. Scanned exams run large, and the owner set 100 MB per
+ * file, the hosted projects' global storage limit (#3487; 50 MB until
+ * 2026-11-06). It is a separate constant rather than a raise of
+ * `MAX_UPLOAD_BYTES` for the same reason `archive` is: raising the shared cap
+ * would raise it on every member upload. The `backwork` bucket's
+ * `file_size_limit` mirrors it
+ * (`supabase/migrations/20261106153000_backwork_bucket_100mb.sql`).
+ */
+export const MAX_BACKWORK_UPLOAD_BYTES = 100 * 1024 * 1024;
+export const MAX_BACKWORK_UPLOAD_LABEL = "100 MB";
+
+/**
+ * The backwork zip's caps (owner's rule, 2026-11-05): a zip is offered only
+ * once a search or filter has narrowed the library, and holds at most this
+ * many files and bytes, so nobody pulls a chapter's whole archive at once.
+ * The API refuses more than `MAX_BACKWORK_ZIP_FILES` ids; the browser stops
+ * a zip that passes `MAX_BACKWORK_ZIP_BYTES` as it downloads.
+ */
+export const MAX_BACKWORK_ZIP_FILES = 50;
+export const MAX_BACKWORK_ZIP_BYTES = 250 * 1024 * 1024;
+export const MAX_BACKWORK_ZIP_LABEL = "250 MB";
 
 /**
  * The `archive` kind is NOT a member-upload surface.
@@ -193,7 +220,9 @@ interface KindTable {
 function freezeKind(bindings: readonly MimeBinding[]): KindTable {
   const mimes = new Set<string>();
   const extensions = new Set<string>();
-  const byExtension: Record<string, string> = {};
+  // No prototype: callers index it with a file's own extension, and a file
+  // named `x.constructor` must read as unknown, not as `Object`.
+  const byExtension: Record<string, string> = Object.create(null);
   const mimeList: string[] = [];
 
   for (const binding of bindings) {
@@ -293,11 +322,16 @@ export function isAllowedUploadMime(
   return KINDS[kind].mimes.has(contentType);
 }
 
-export function isWithinUploadSizeLimit(byteLength: number): boolean {
+/**
+ * `maxBytes` defaults to the shared member-upload cap. Backwork passes
+ * `MAX_BACKWORK_UPLOAD_BYTES`; nothing else should pass a value.
+ */
+export function isWithinUploadSizeLimit(
+  byteLength: number,
+  maxBytes: number = MAX_UPLOAD_BYTES,
+): boolean {
   return (
-    Number.isFinite(byteLength) &&
-    byteLength >= 0 &&
-    byteLength <= MAX_UPLOAD_BYTES
+    Number.isFinite(byteLength) && byteLength >= 0 && byteLength <= maxBytes
   );
 }
 
@@ -330,12 +364,13 @@ export type InspectedUpload =
 export function inspectUploadFile(
   kind: UploadKind,
   file: { name: string; type: string; size: number },
+  maxBytes: number = MAX_UPLOAD_BYTES,
 ): InspectedUpload {
   const contentType = mimeForUploadFile(kind, file);
   if (!contentType || !isAllowedUploadExtension(kind, file.name)) {
     return { ok: false, reason: "type" };
   }
-  if (!isWithinUploadSizeLimit(file.size)) {
+  if (!isWithinUploadSizeLimit(file.size, maxBytes)) {
     return { ok: false, reason: "size" };
   }
   return { ok: true, contentType };

@@ -7,8 +7,9 @@ import { FOCUS_RING } from "@/components/ui/focus";
 /*
  * Badges and chips, `spec/ui/design-system/components.md` §5.
  *
- * Geometry is one recipe — height 28, radius 8, padding-x 10, caption text at
- * 600 — and the kinds differ only in fill, border and text, which is what keeps
+ * Geometry is one recipe — height 24 (the Chip step of foundations.md §9's
+ * control size scale; 28 until 2026-11-05), radius 8, padding-x 8, caption
+ * text at 600 — and the kinds differ only in fill, border and text, which is what keeps
  * a status pill and an accent chip the same object at a glance.
  *
  * The names are the scaffold's; the recipes are §5's plus the neutral count
@@ -65,7 +66,7 @@ import { FOCUS_RING } from "@/components/ui/focus";
  */
 const badgeVariants = cva(
   cn(
-    "inline-flex h-7 items-center rounded-xs border px-2.5 text-caption font-semibold transition-colors",
+    "inline-flex h-6 items-center rounded-xs border px-2 text-caption font-semibold transition-colors",
     FOCUS_RING,
   ),
   {

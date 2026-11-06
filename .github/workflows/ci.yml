@@ -89,6 +89,8 @@ jobs:
               - '.github/environments.json'
               # The search-column landmark reads the API's search repository.
               - 'apps/api/src/infrastructure/supabase/repositories/supabase-search.repository.ts'
+              # The default-channel-descriptions tier checks its lines against the seeder.
+              - 'apps/api/src/domain/constants/permissions.ts'
               # The job's own definition and npm script. Required (#2538): every file the
               # check reads belongs in this list.
               - '.github/workflows/ci.yml'
@@ -159,6 +161,12 @@ jobs:
       # Includes the stopwatch, bare-date and minute-rounding clusters the generic formatter must not absorb.
       - name: Shared formatting package tests
         run: npm run test -w @repo/formatting
+
+      # Which organizations hide their Greek letters, and what setup fills in for them;
+      # `vocab()` and `memberViewVocabulary()`, which name a chapter's recruitment,
+      # new-member and class words on web and mobile's rush card.
+      - name: Shared org-archetypes package tests
+        run: npm run test -w @repo/org-archetypes
 
       # Sentry PII scrubbing, sample-rate parse, correlation types.
       - name: Shared observability package tests
@@ -610,8 +618,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # Full history: the native-version check below diffs this tree against
+      # each recorded store build's commit and the pull request's base.
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Setup Node and install dependencies
         uses: ./.github/actions/node-setup
@@ -655,6 +667,17 @@ jobs:
         env:
           TZ: Asia/Tokyo
         run: npm run test -w apps/mobile
+
+      # An OTA update reaches every store build of the same expo.version, so a
+      # native change under a version that has shipped would crash those
+      # builds. Fails a PR that makes one without a bump; warns on a push, and
+      # on a PR that didn't cause it (scripts/check-mobile-native-version.mjs).
+      # A PR's HEAD is its test merge, whose first parent is the base it was
+      # merged onto; the payload's base.sha can be older than that.
+      - name: Native changes carry an expo.version bump
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && 'HEAD^1' || '' }}
+        run: npm run check:mobile-native-version
 
       # What the binaries declare, read from the introspected config rather than
       # app.json (#2343); roster and reasons in scripts/check-mobile-native-declarations.mjs.

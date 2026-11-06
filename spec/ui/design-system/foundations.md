@@ -19,14 +19,22 @@ Fixed for every chapter — only the accent varies per tenant.
 
 | Token | Value | Role |
 |-------|-------|------|
-| `--background` | `#131211` | App background, base of the ladder |
-| `--surface-1` | `#1A1A1A` | Raised surface — nav bars, input fills, other-party chat context |
-| `--card` | `#211E1A` | Cards and list rows |
-| `--popover` | `#2A2621` | Elevated surface — sheets, popovers, menus (the "elevated" step) |
+| `--background` | `#0A0A0A` | App background, base of the ladder |
+| `--surface-1` | `#111111` | Raised surface — nav bars, input fills, other-party chat context |
+| `--card` | `#171717` | Cards and list rows |
+| `--popover` | `#1E1E1E` | Elevated surface — sheets, popovers, menus (the "elevated" step) |
 
-Rationale: a warm charcoal ladder deliberately lifted off a pure `#0a0a0a` floor so the warmth reads on real screens. Each step is visibly lighter than the one below it, which is what carries elevation (§10).
+Rationale: a pure neutral graphite ladder with no hue in any step, so nothing on a surface competes with the chapter's accent and every chapter's accent sits on it the same way. Each step is an even notch lighter than the one below it (OKLCH lightness 0.145 / 0.178 / 0.205 / 0.235), which is what carries elevation (§10). `--card-hover` (`#2C2C2C`, `--popover` lifted 6% toward white) and the skeleton highlight (`#2B2B2B`) sit above the ladder and are neutral for the same reason.
 
-**The ladder was re-pitched for the web greenfield** ([#2143](https://github.com/pdcarlson/Frapp/issues/2143)). It previously ran `#0E0D0B` / `#171512` / `#1E1B17` / `#26221C`. Two things moved with it, and both are deliberate:
+**The ladder went dark and neutral on 2026-11-05, at the owner's request.** The owner found the warm yellowish surfaces did not fit the darker, simpler look the app had moved to. The old ladder was `#131211` / `#1A1A1A` / `#211E1A` / `#2A2621`, and it was uneven twice over: the base and `--surface-1` were neutral while `--card` and `--popover` leaned brown, and `--card` sat barely above `--surface-1`. The owner picked the neutral option over a faintly blue "ink" ladder at the same lightness. Before and after: <https://claude.ai/artifact/7hhDN6nptq1B5EmzGWDdUV>. What moved with it:
+
+- **Text contrast only rose.** Body text on `--popover` went from 12.5:1 to 14.0:1, and `--muted` on `--popover` from 3.1:1 to 3.5:1.
+- **The accent engine's ladder and generator background moved too**, so its version went to 2 and stored palettes are recomputed ([`accent-engine.md`](accent-engine.md) §4). The house seed paints the same fill; `accent-subtle` moved one 8-bit step (`#282314` to `#272213`). Some dark directory seeds lift differently on the darker surfaces: `#003087` no longer needs a lift, and `#1F4E79` and `#800000` now get one.
+- **`--surface-1` is no longer the mark's field.** The mark keeps `#1A1A1A` ([`../brand-identity.md`](../brand-identity.md) §2), so the 404 and error pages, which draw the opaque crest raster, moved from `--surface-1` to `--card` (`#171717`, 1.03:1 off the field) to keep the tile edge from showing.
+
+**Before that, the ladder was re-pitched for the web greenfield** ([#2143](https://github.com/pdcarlson/Frapp/issues/2143)). The history below is kept as it was written.
+
+It previously ran `#0E0D0B` / `#171512` / `#1E1B17` / `#26221C`. Two things moved with it, and both are deliberate:
 
 - `--surface-1` is now `#1A1A1A`, stated at the time as the **mark's own field** ([`../brand-identity.md`](../brand-identity.md) §2), so locked emblem B would sit flush on the raised surface instead of on a warmer neighbour. **That rationale did not survive measurement at the time:** the committed mark's field measured `#151515` and its gold `#DDA220`, so `#1A1A1A` was close to but not the mark's field, and the emblem did not sit flush. [#2153](https://github.com/pdcarlson/Frapp/issues/2153) closed the gap by re-exporting the mark at the spec'd pair rather than by moving this rung, so the rationale now holds and the value never changed — see [`../web-dashboard/tokens.md`](../web-dashboard/tokens.md) L-08 for the measurements and the history.
 - Every step is lighter than before, which lowers contrast for light text by 0.142 to 0.681 points. **Three pairs crossed** below the 4.5:1 gate in [`README.md`](README.md) §6 as a result, and are handled in §5: `--destructive` on `--popover` (4.717 → 4.482), `--info` on `--card` (4.577 → 4.429), and `--mention` on `--surface-1` (4.656 → 4.447).
@@ -49,12 +57,12 @@ Borders MUST be low-opacity white. Fixed-hex border colors are banned: an opaque
 
 | Token | Value | Role |
 |-------|-------|------|
-| `--foreground` | `#EDEAE3` | Primary text |
-| `--muted-foreground` | `#A9A399` | Secondary text |
-| `--muted` | `#78716A` | Muted text — placeholders, timestamps, metadata |
-| `--disabled` | `#57534C` | Disabled text |
+| `--foreground` | `#EBEBEB` | Primary text |
+| `--muted-foreground` | `#A3A3A3` | Secondary text |
+| `--muted` | `#737373` | Muted text — placeholders, timestamps, metadata |
+| `--disabled` | `#525252` | Disabled text |
 
-Token names follow panel 4h (ShadCN-style); panel 4a labels the same values text / secondary / muted. All four are warm-tinted to match the surface ladder — pure grays look dirty on warm charcoal.
+Token names follow panel 4h (ShadCN-style); panel 4a labels the same values text / secondary / muted. All four are neutral, matching the surface ladder: cream text on the graphite ladder reads yellow. Until 2026-11-05 they were warm-tinted (`#EDEAE3` / `#A9A399` / `#78716A` / `#57534C`) to match the warm ladder (§2).
 
 ---
 
@@ -84,17 +92,17 @@ Status-only, never decorative. A semantic hue states a fact ("paid", "overdue");
   - Three alternatives were weighed and rejected. **An opaque literal** (the recipe resolved over `--card`, as `--mention-chip` does) gives one contrast figure on every surface, but one fill can't stay distinct from every ladder step: the danger tint came out 1.06:1 against `--popover`, so a destructive button in a dialog lost its edge. `--mention-chip` can be a literal because it always sits in a message body; a status tint sits anywhere. **A `color-mix()` token** (`color-mix(in oklab, var(--destructive) 13%, transparent)`) avoids restating the hue, but below the floor it degrades to no fill at all, which leaves the borderless tints (the destructive button, the error icon tile) with no shape. **Keeping the alpha utility and documenting the band** would leave text invisible on a stated floor rather than degrading it.
   - **A tint over something other than a ladder step takes an opaque base.** The tint is 87% see-through, so it is only as legible as what is under it. The destructive toast floats over page content, so it paints `--popover` as its background colour and the tint over it as a one-colour gradient image. Anything inside it that paints its own tint hover repaints that base too, rather than stacking 20% on the toast's 13%, which measures 3.94:1 over `--popover`.
   - **Danger text on the danger tint is always `--destructive-text`.** Solid `--destructive` measures 3.82–4.85:1 on its tint across the ladder. `apps/web`'s `status-tint-call-sites.spec.ts` fails on a `bg-<semantic>/<alpha>` fill anywhere in the Next surfaces and on unlifted danger text over the tint, and `status-tint-contrast.spec.ts` measures every shipped pair on every step, reading the alpha from the tokens. The tokens are CSS-only: `signetDarkTokens` is what `apps/mobile` reads, and React Native has no `color-mix` fallback to avoid.
-- **A lifted text tone is not a second semantic.** [`components.md`](components.md) §5 lets an implementation raise the *text* tone of a semantic for AA while the hue stays fixed; the solid token remains the fill and the border. The greenfield ladder (§2) made two of these load-bearing rather than optional, because solid `--destructive` and solid `--info` now fall under 4.5:1 on the surfaces their badges sit on:
+- **A lifted text tone is not a second semantic.** [`components.md`](components.md) §5 lets an implementation raise the *text* tone of a semantic for AA while the hue stays fixed; the solid token remains the fill and the border. The greenfield ladder (§2) made two of these load-bearing, because solid `--destructive` and solid `--info` fell under 4.5:1 on the surfaces their badges sat on. On the neutral ladder (2026-11-05) the plain-surface miss is down to solid `--info` on `--popover`, but both lifts stay: the danger tint still needs its lift (below), and one rule for "hue as text" is simpler than a per-surface one. Measured on the neutral ladder, greenfield figures in brackets:
 
   | Text token | Value | Lifts | Measured on `--card` / `--popover` |
   |---|---|---|---|
-  | `--destructive-text` | `#FF7B72` | `--destructive` (4.95 / 4.48 solid) | 6.58 / 5.96 |
-  | `--info-text` | `#4C93F8` | `--info` (4.43 / 4.01 solid) | 5.40 / 4.89 |
+  | `--destructive-text` | `#FF7B72` | `--destructive` (5.35 / 4.97 solid; was 4.95 / 4.48) | 7.11 / 6.61 (was 6.58 / 5.96) |
+  | `--info-text` | `#4C93F8` | `--info` (4.78 / 4.45 solid; was 4.43 / 4.01) | 5.84 / 5.43 (was 5.40 / 4.89) |
 
-  Both are CSS-only (`packages/theme/src/signet.css`); neither is a `signetDarkTokens` entry, because neither is a new semantic. Use the lifted token wherever the hue is **text**, and the solid wherever it is a fill or a border.
+  Neither is a new semantic. `--info-text` is CSS-only (`packages/theme/src/signet.css`). `--destructive-text` is also `signetDarkTokens.color.semantic.destructiveText`, so mobile's `StatusChip` can draw danger text on its tint at the same lift (added 2026-11-05). Use the lifted token wherever the hue is **text**, and the solid wherever it is a fill or a border.
 
-  **The two lifts do not have the same reach, and `--info-text` does not cover every case.** On plain surfaces both clear throughout. On the §5 *tint* recipe (13% of the hue as fill, the hue as text) `--destructive-text` measures 4.80–6.12:1 across the four steps and clears, but `--info-text` measures 4.08–5.16:1 and **fails on a `--popover`-seated tint (4.08)**. An info badge inside a dialog, sheet or menu therefore needs a further lift or a solid fill; the token as specified does not reach it. No surface renders `--info` today, so nothing is broken by this — but the first consumer must not assume the twin is sufficient.
-- **Mention red did not get a lifted tone, and the reason matters.** `#E5484D` now measures 4.45:1 on `--surface-1` and below that on `--card` and `--popover`, so it is under the text floor on every step except `--background`. It is exempt from the lift above because it is not drawn as text: it is a badge fill carrying white text (the separate, tracked 3.91:1 miss above) and an avatar dot, and a dot is non-text UI held to §6's 3:1 floor, which it clears on every step. A future surface that renders mention red **as text** needs a lifted tone first; it does not have one today — which is why the in-body mention chip takes its own amber pair rather than this red.
+  **On the tint recipe both lifts now clear on every step.** On the §5 *tint* recipe (13% of the hue as fill, the hue as text) the neutral ladder measures `--destructive-text` at 5.67–6.96:1 and `--info-text` at 4.66–5.74:1 across the four steps, so both clear, with `--info-text` on a `--popover`-seated tint the thinnest margin (4.66). On the greenfield ladder `--info-text` failed there (4.08) and an info badge in a dialog needed a further lift; that is no longer true (2026-11-05). Solid `--destructive` on its own tint still misses on `--popover` (4.26), which is why danger text on a tint is always the lift.
+- **Mention red did not get a lifted tone, and the reason matters.** On the neutral ladder `#E5484D` measures 5.06 / 4.82 / 4.58 / 4.26:1 from `--background` to `--popover`, so it is under the text floor on `--popover` only (on the greenfield ladder it missed on every step except `--background`). It is exempt from the lift above because it is not drawn as text: it is a badge fill carrying white text (the separate, tracked 3.91:1 miss above) and an avatar dot, and a dot is non-text UI held to §6's 3:1 floor, which it clears on every step. A future surface that renders mention red **as text** needs a lifted tone first; it does not have one today — which is why the in-body mention chip takes its own amber pair rather than this red.
 - **The in-body mention chip is a second fixed family, not a lift of the red.** `--mention-chip` / `--mention-chip-text` are their own hue rather than a lifted `#E5484D`, so they sit in the table above rather than in the lift table below, and they are locked out of the accent engine exactly as the red and the gold family are (`packages/theme/src/signet.css.spec.ts`'s `FIXED` list). Both are CSS-only, like the two lifts: `signetDarkTokens` is what `apps/mobile` reads, and no mobile screen draws an in-body mention yet. The pair's fill is **opaque** where this section's tint recipe would use 13% alpha, so one contrast figure covers the row at rest and hovered (it was first argued from the per-chapter `--primary` self bubble, which the compact chat layout removed on 2026-09-29); the geometry, the reasoning and the guards are owned by [components.md](components.md) § In-body mention chip.
 
 ---
@@ -102,6 +110,40 @@ Status-only, never decorative. A semantic hue states a fact ("paid", "overdue");
 ## 6. Accent Slot (Per Tenant)
 
 The tokens above are fixed; the accent family — `--primary`, `--primary-hover`, `--primary-foreground`, `--ring`, `--accent-subtle`, `--accent-border`, `--accent-text` — is resolved per chapter from a single seed hex by the accent engine. Components read these roles, never the seed hex. Pipeline, scale-step mapping, caching, and the default house-gold seed are owned by [`accent-engine.md`](accent-engine.md).
+
+### Where the accent goes (2026-11-05)
+
+The accent is a signal, so it goes only where a member has to act or notice. The owner's call, after an audit found it on names, labels, icons, hovers, numbers and spinners on both apps, where it made the gold the loudest thing on every screen and the one action that mattered no louder than the rest. The rule is the same on web and mobile.
+
+**The accent marks only:**
+
+1. **The one primary action** of a screen, sheet or card: Primary's fill, and Tinted for an empty state's call to action ([`components.md`](components.md) §3).
+2. **A control the member has switched on:** a checked checkbox, a switch that is on, a selected radio or option card, an active filter, a permission they can toggle that is granted, their own reaction, the poll option they voted for.
+3. **Focus**, through `--ring` and the focus recipe (§10).
+4. **A link in running text**, through Button's `link` variant or an inline anchor.
+5. **The chapter's own mark:** its letters, crest or chosen color where the chapter is the subject (the accent picker, the chapter card).
+6. **Where the member is:** the active row of a navigation list (the sidebar, the channel list, the Settings rail, the mobile tab bar) and the open item of a list-and-detail page (the folder you are in, the role you are editing). Only the active one; its neighbours' hover is neutral.
+
+**Everything else is neutral**, from the text ladder (§4) and the surface ladder (§2):
+
+- Names (your own included), labels, eyebrows, card kind labels and metadata: `--foreground`, `--muted-foreground` or `--muted`.
+- Icons that label a row, a card or a field, and icon-only controls: `--muted-foreground` (`--muted` for a glyph that sits beside its own text label, as on mobile's More hub and Up next strip), `--foreground` on hover.
+- Hover, pressed and keyboard-highlight fills, in menus, tables, lists and rails alike: `--card-hover`, never an accent tint. It is the one step above the whole surface ladder, so it reads on `--popover` (1.194:1) where the ladder's own ~1.1:1 steps do not ([`components.md`](components.md) §2).
+- Numbers and stats (points, hours, counts, timers): `--foreground`.
+- Spinners: a neutral text step, `--muted` on mobile as every mobile spinner already is.
+- Done states (a completed task, a past event): a muted fill or check, never the accent; finished work is the quietest thing on a list.
+- Selection that is not a control the member switched on: a selected table or list row takes `--popover` with `--foreground` text, a step under the `--card-hover` hover so a control inside it still lifts, and its checked checkbox carries the selection; the "N selected" bar above it is `--popover` with `--foreground` text.
+- People's avatars, borders, dividers and decorative frames.
+
+Unread and mentions keep their own rule above (§5): neutral for unread, red for direct address.
+
+### A signature moment's accent (2026-11-06)
+
+A signature moment ([`README.md`](README.md) §7 § Signature moments) may carry the accent for its length: a band of `--accent-subtle` passing once behind the content it celebrates, as the Discord import landing sweeps across its figures. It sits under the text, never over it, and leaves nothing behind, so at rest everything above holds: the numbers it passed are `--foreground`. Nothing else may use the accent in motion; a hover, a spinner or a loading state is still neutral.
+
+**Kept on the owner's call (2026-11-06).** The `+N pts` reward chip ([`components.md`](components.md) §5) keeps the accent: a reward is something the member needs to notice. The active nav row and channel keep it too, under item 6 above.
+
+**Still accent, waiting on the owner's call.** Four uses that other docs sanction predate this rule and were left as they are: the meter fill ([`components.md`](components.md) §12), the PRO chip ([`web-dashboard/README.md`](../web-dashboard/README.md)), the empty-state icon tile (§10 of `components.md`, which the empty-states redesign owns) and mobile's back arrow and inline text actions ([`navigation.md`](../mobile/navigation.md)). Each is either an item above or the next thing to take neutral; until the owner decides, they stay. Where the accent's own text step (`--accent-text`) is used, it is for items 1 to 6, never to make a label stand out.
 
 ---
 
@@ -226,7 +268,27 @@ Canonical map (locked; supersedes panel 4h — see deviation note):
 
 - **4px grid.** Steps: 4 / 8 / 12 / 16 / 24 / 32 / 48.
 - Dominant rhythm is **8 / 16 / 24**: 8 inside a component, 16 between components, 24 between sections.
-- Touch targets MUST be ≥ 44px. Buttons run 46–48px tall. Tab bar items are 56px tall.
+- Touch targets MUST be ≥ 44px. Buttons run 44–48px tall. Tab bar items are 50px tall, inside the 62px floating bar (§15).
+
+### Control size scale
+
+*(Added 2026-11-05, owner direction: the old system was "flawed" and "all the bubbles just feel way too big".)* Every control, row and chip takes a step from this table, and new work never invents a height off it. It is the rule the sizing, icon-button, chrome and dialog passes all build on, so a component spec names its step rather than restating a number. The shipped surfaces still off the scale are listed in [#3511](https://github.com/pdcarlson/Frapp/issues/3511) until they move.
+
+| Step | Mouse (web, fine pointer) | Touch (web coarse pointer, and mobile) | Takes it |
+|------|------|------|------|
+| Chip | 24 | 24 drawn, 44 hit area through padding or `hitSlop` | badges, status chips, counts. Mobile's filter chips draw 32 |
+| Row | 32 | 44 | menu, select and command rows; a checkbox row inside a form |
+| Small | 36 | 44 | toolbar controls, Inline (`sm`) and icon buttons, tabs, a table header, a dense list row, a sheet's fields and footer buttons |
+| Field | 40 | 44 | text fields, select triggers, Default buttons, the color picker |
+| Primary | (web: Field) | 48 | mobile only: a full-width button that ends a sheet or a flow step (the sheet CTA, the dues Pay button, onboarding's buttons). A web full-width primary is a Default button, 44 on touch |
+
+- **Mouse and touch are one rule, not two designs.** Web reads `pointer-coarse` for the touch column (Tailwind's `pointer-coarse:` variant), so a laptop gets the dense column and a phone or tablet browser the 44 floor. Mobile is touch-only and reads the touch column alone. The web sidebar (34) and app bar (34) are older pointer-only geometry and stay as [components.md](components.md) §7 draws them.
+- **Labels stay 14, values stay 16.** Button, tab and table-header labels are 14px at every height. A menu or select row's label is 14px on a mouse and 16px on touch. A typed value is 16px at every height, because §7's body floor binds on text a member types.
+- **Padding does not split by pointer.** Field padding-x is 12, a Default button's 16, a Small one's 12, on every pointer. Only heights split: on web a `pointer-coarse:` padding class survives a caller's plain `pl-9` or `px-0` (tailwind-merge merges only classes with the same variant), which put search glyphs on top of typed text.
+- **Two lines grow a row, not the scale.** A row whose meta line wraps under its name takes the Row floor as a `min-height` and grows with its content.
+- **The toggle has its own two sizes**: a 36×22 track with an 18px thumb on a mouse, and 50×30 with a 24px thumb on touch ([components.md](components.md) §4).
+
+Tokens: `touch.minimum` (44) is every touch step's floor, `touch.button` (44) the touch Default, and `touch.buttonLarge` (48) the touch Primary.
 
 ### Spacing tokens
 
@@ -242,7 +304,7 @@ The grid as CSS custom properties. Every value is 4 × an integer; that is the w
 | `--space-2xl` | `32px` | major section breaks |
 | `--space-3xl` | `48px` | page-level separation |
 | `--touch-min` | `44px` | the touch floor, honored on web as well as mobile |
-| `--touch-button` | `46px` | standard button height |
+| `--touch-button` | `44px` | standard button height on touch (46 until 2026-11-05) |
 
 ---
 
@@ -257,8 +319,9 @@ The grid as CSS custom properties. Every value is 4 × an integer; that is the w
 
 Panel 4h defines no motion tokens, so **no Signet motion values are locked yet (TODO-DESIGN)**. What that does and does not put in question:
 
-- **Settled — the discipline.** The three-class taxonomy (micro-feedback, standard transition, context shift), the budget each class is held to, and the requirements that motion stay subtle, functional, and reduced-motion-compatible bind every surface today. They are owned by [`README.md`](README.md) §7 and are not restated here.
+- **Settled — the discipline.** The three-class taxonomy (micro-feedback, standard transition, context shift), the budget each class is held to, and the requirements that motion stay subtle, functional, and reduced-motion-compatible bind every surface today. They are owned by [`README.md`](README.md) §7 and are not restated here. *Corrected 2026-11-06:* the taxonomy has four classes now, and "subtle, functional" binds every surface outside a signature moment; reduced-motion compatibility still binds all four.
 - **Provisional — the numbers only.** The durations and easing curves in use are carried forward from the legacy `@repo/theme` system, now in `packages/theme/src/motion.ts` (`duration` / `easing`) and are listed in README §7. Implementations SHOULD keep using them so motion stays consistent across the app, but they are placeholders, not Signet canon: a Signet motion spec MAY replace every value without changing any rule above.
+- **A fourth class, added 2026-11-06: signature.** The owner asked for a few deliberate, fun moments that set Frapp apart (#3493), so the taxonomy gained a `signature` class beside the three, with its own triggers, budget, reduced-motion rule and catalog, all owned by [`README.md`](README.md) §7 § Signature moments. Its numbers (`motion.duration.signature` = 520, `motion.easing.settle`, and the 1.8s whole-moment budget in `packages/theme/src/signature.ts`) are as provisional as the other three: chosen for the first moment, the Discord import landing, not Signet canon.
 
 ---
 
@@ -268,18 +331,24 @@ A scroll region on a Signet surface draws its own scrollbar. The browser default
 
 | Token | Value | Role |
 |-------|-------|------|
-| `--scrollbar-width` | `8px` | track width, and height for a horizontal bar |
-| `--scrollbar-thumb` | `#DDB844` | the thumb at rest |
-| `--scrollbar-thumb-hover` | `#F0CD5E` | the thumb under the pointer |
-| `--scrollbar-track` | `#1A1A1A` | the track |
+| `--scrollbar-width` | `6px` | gutter width, and height for a horizontal bar |
+| `--scrollbar-thumb` | `rgba(255,255,255,0.12)` | the thumb at rest |
+| `--scrollbar-thumb-hover` | `rgba(255,255,255,0.22)` | the thumb under the pointer |
+| `--scrollbar-track` | `rgba(0,0,0,0)` | the track, which paints nothing |
+
+The thumb is inset 1px inside its gutter and rounded with `--radius-xs` (which clamps to a full round at this size), so the visible bar is 4px wide.
 
 Three rules, each for a reason the token values alone do not carry:
 
-- **The thumb is fixed mark gold and never retints.** It is brand chrome, not an accent role. The chapter accent engine must not reach it, for the same reason it must not reach the mark (`../brand-identity.md` §2) — a tenant accent on the scrollbar is the house-tenant mistake in a different place. The track is the fixed `#1A1A1A` nav field, not a ladder token, so the pair reads the same on every surface.
-- **The track is opaque, and the bar is never hidden.** A scroll region always shows where it is. This reverses the earlier transparent-track rule: a persistent bar is part of how the surface reads.
-- **Styling is global, not opt-in per region.** The web implementation is a rule on `*` (`packages/theme/src/signet.css`), not a class. The previous `.signet-scroll` opt-in was retired by the greenfield shell lane ([#2141](https://github.com/pdcarlson/Frapp/issues/2141)) because the framework board declares the bar at the root and calls it chrome; the class had zero call sites, so nothing regressed. The old objection that a blanket rule can land a low-opacity thumb on an unknown surface no longer applies, because both colors are now opaque.
+- **The bar is neutral and never retints.** A scrollbar is quiet chrome, not an accent role and not brand. The chapter accent engine must not reach it, and it carries no hue of its own. The thumb is a low-alpha white, the same idea as the hairline family (§3), so it reads as a slightly lighter step of whatever surface it sits on.
+- **The track is clear, and the bar is never hidden.** A scroll region always shows where it is, but the bar does not draw a strip of its own between panes.
+- **Styling is global, not opt-in per region.** The web implementation is a rule on `*` (`packages/theme/src/signet.css`), not a class. The previous `.signet-scroll` opt-in was retired by the greenfield shell lane ([#2141](https://github.com/pdcarlson/Frapp/issues/2141)); it had zero call sites. A low-alpha thumb on a clear track would vanish on a light surface, which is acceptable only because every Signet surface is dark; a light surface that scrolls would need its own track.
 
-**Engine split, and why the board's own CSS is not copied verbatim.** The standard properties (`scrollbar-width` / `scrollbar-color`) and the WebKit pseudo-elements are mutually exclusive: since Chromium 121, a non-`auto` value for either standard property makes that element's `::-webkit-scrollbar-*` rules ignored outright. The board declares both together, which in Chrome and Edge silently discards the 8px width, the rounding and the track inset it also specifies. So the standard properties are scoped to `@supports not selector(::-webkit-scrollbar)` — true only in Firefox — and every other engine gets the pseudo-elements. All engines then render the board's intent rather than only the one that reads the shorthand.
+**Why the gold bar was retired (2026-11-05).** From lane 2 until this date the bar was the framework board's option `3a`: an 8px mark-gold thumb (`#DDB844`, hover `#F0CD5E`) on an opaque `#1A1A1A` track, held at gold by the brand lock and drawn as a persistent part of how the surface reads. In use it was the loudest element on the chat screen: two tall gold bars beside the channel list and the timeline pulled the eye away from the content. The owner asked for it to blend in, so the bar went back to a neutral thumb on a clear track, close to the pre-board `.signet-scroll` values (`rgba(255,255,255,0.14)` on `transparent`, 10px) but thinner.
+
+**Contrast exception.** The gold measured 9.13:1 on its track. The neutral thumb composites to about 1.4:1 on the ladder at rest and about 2:1 under the pointer, under the 3:1 non-text floor in [README §6](README.md#6-accessibility-baseline-release-gate). That is a recorded exception, the owner's call on 2026-11-05, and it holds only for the scrollbar: the bar repeats information the content already shows (where you are in a region moves with the content itself), and wheel, trackpad, touch and keyboard scrolling do not depend on finding it. No other control may cite it. The thumb stays visible (alpha above 0) and quiet (alpha at most 0.3, gutter at most 8px); `signet.css.spec.ts` pins both bounds.
+
+**Engine split, and why the board's own CSS is not copied verbatim.** The standard properties (`scrollbar-width` / `scrollbar-color`) and the WebKit pseudo-elements are mutually exclusive: since Chromium 121, a non-`auto` value for either standard property makes that element's `::-webkit-scrollbar-*` rules ignored outright. The board declares both together, which in Chrome and Edge silently discards the width, the rounding and the thumb inset. So the standard properties are scoped to `@supports not selector(::-webkit-scrollbar)` (true only in Firefox) and every other engine gets the pseudo-elements. Firefox has no width finer than `thin`, so only the two colors reach it.
 
 ---
 
@@ -313,7 +382,7 @@ engine never writes. Against the gold accent fill the highlight still measures a
 perceptible, and the text pair under it goes from near-black-on-gold to near-black-on-near-white.
 
 **This is §12's rule again, for a different reason.** The scrollbar is chrome that looks like it
-should carry the chapter and must not, because the brand lock holds it at mark gold. Selection is
+should carry the chapter and must not, because it is meant to blend in. Selection is
 chrome that looks like it should carry the chapter and must not, because the chapter's own colour is
 what it would have to be legible against.
 
@@ -322,3 +391,54 @@ selection, so this is an extension beyond what the board draws rather than a tra
 [`../web-dashboard/tokens.md`](../web-dashboard/tokens.md) records that as the lane note.
 `::-moz-selection` is deliberately not duplicated: Firefox has supported unprefixed `::selection`
 since 62, and an invalid prefixed selector in the same rule list would drop the rule in every engine.
+
+---
+
+## 14. Native controls
+
+A Signet web surface declares `color-scheme: dark` on `:root` (`packages/theme/src/signet.css`), so
+the controls the browser draws itself render on the dark ladder: radios, the calendar and clock
+glyphs in date and time fields, native `<select>` popups, file inputs, number spinners and
+autofill. Until 2026-11-05 nothing declared it, and every one of them kept light-scheme chrome: a
+white box per row on each list with a checkbox column (`/events`, `/points`, `/members`, `/billing`)
+and a black calendar glyph that vanished into every date field. The checkbox, which the scheme alone
+did not fix, is now drawn by hand (below).
+
+It is `dark` alone, never `light dark`: Signet has one appearance (§1), so handing the choice back to
+the operating system would draw light controls on a dark page for anyone whose OS is in light mode.
+`signet.css.spec.ts` pins the single declaration.
+
+The scheme gets a browser's dark control, not Signet's, so the web checkbox is drawn by hand: a
+native input with `appearance: none`, painted as [components.md](components.md) § Checkbox by
+`.signet-checkbox` in `apps/web/app/globals.css`. Chromium's dark checkbox is a solid grey square
+with a light rim, which matches neither the spec's transparent fill nor its border, and border and
+radius utilities do nothing to a control the browser paints itself (#3186, 2026-11-05).
+`table-controls.spec.ts` pins the rule.
+
+---
+
+## 15. Glass
+
+Owner pick 2026-11-05 ("Floating bar, no glow"). The recipe is `signetGlass` in `packages/theme/src/glass.ts`. Mobile reads it through `GlassSurface`; web's dialog and sheet scrims spell the scrim blur as a Tailwind class (`backdrop-blur-[6px]`), so a change to `scrimBlur` moves both.
+
+**Glass is chrome only.** It is for what floats over content: the mobile tab bar, back capsules, the floating create button, and the blur under a sheet or dialog scrim. Never a sheet, a card or an input. Those stay solid steps on the ladder (§2) so their text keeps the contrast measured against a known fill.
+
+| Part | Value |
+| ---- | ----- |
+| Fill | `surface-1` at 56% over a blur, so colour shows through (`glassFill`). Where nothing blurs behind it, 92% |
+| Blur | 26px backdrop blur |
+| Edge | 1px (a hairline on mobile) of white at 10%, a step brighter than §3's 8% hairline so the shape reads over any content |
+| Sheen | white at 7% at the top, gone by 46% of the height |
+| Scrim | a 6px blur under the existing 55% black, on web's dialogs and sheets. Mobile's sheet scrim has none yet ([#3545](https://github.com/pdcarlson/Frapp/issues/3545)) |
+
+The fill moves with the ladder because it is `surface-1`, never a hex of its own. Elevation stays luminance (§10): the edge and the sheen are light, and glass casts no shadow.
+
+**How each device draws it** (`GlassSurface`, `apps/mobile/components/glass-surface.tsx`):
+
+- **iOS 26:** the system's own Liquid Glass (`expo-glass-effect`), which brings its own refraction and press response, so nothing is layered on top.
+- **iOS before 26, and web:** the blur (`expo-blur`; CSS `backdrop-filter` on web) under the 56% fill, the edge and the sheen.
+- **Android:** the 92% fill with the edge and sheen, no blur, until each screen is wrapped in the blur target Android's blur needs ([#3545](https://github.com/pdcarlson/Frapp/issues/3545)).
+- **Reduce Transparency on:** plain `surface-1` and §3's hairline, nothing see-through. Web reads `prefers-reduced-transparency`.
+
+`glass-surface.spec.tsx` pins the modes and `glass.spec.ts` the recipe.
+

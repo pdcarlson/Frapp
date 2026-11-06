@@ -25,7 +25,7 @@
 //   (required afresh inside that build's `process.env`, then its default
 //   export called with `{ config }`), leaves every one of them, and
 //   `expo.name`, exactly as app.json has them. It runs once with no EAS
-//   profile (`expo start`, `eas update`), then for every `eas.json` build
+//   profile (`expo start`, a bare `eas update`), then for every `eas.json` build
 //   profile on each platform, with that profile's `env` block (and any profile
 //   it `extends`) and the `EAS_BUILD*` values easBuildEnvs lists. The lock
 //   can't see a rename keyed on a variable it doesn't set: one that lives only

@@ -152,6 +152,7 @@ All live in `interface/decorators/`.
 | `@RequireModule('key')` | `ChapterGuard` rejects writes when the chapter has disabled that paid module. Reads still pass. Use it only for toggleable paid modules |
 | `@FreeTier()`, `@GraceBlocked()`, `@SubscriptionExempt()` | Subscription write-gating in `ChapterGuard`. `@SubscriptionExempt()` is only for billing recovery and member safety, and `subscription.decorator.spec.ts` pins the roster. Semantics: api-architecture.md §2 "Subscription enforcement" |
 | `@ThrottleExpensiveWrite()`, `@ThrottleFanOutWrite()`, `@ThrottleExpensiveRead()` | Per-route rate limits (below) |
+| `@FeatureEvent('name', describe?)` | Sends that PostHog feature event after the handler succeeds. A feature's main action carries one; how to add one: `spec/behavior/observability.md` § Feature Events |
 
 ### Special cases
 

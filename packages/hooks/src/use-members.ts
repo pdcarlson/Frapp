@@ -8,7 +8,7 @@ import {
   keepPreviousData,
 } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
-import type { OpsNudgeModuleKey } from "@repo/validation";
+import { roleColorOrNull, type MemberDismissalKey } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { resolveDisplayName, type DisplayNameMap } from "./display-names";
 
@@ -92,6 +92,13 @@ export interface MemberDisplayNames {
    */
   avatarFor: (userId: string) => string | null;
   /**
+   * The palette color of the member's highest-ranked colored role, or `null`
+   * for the plain foreground (#3485). Chat paints a sender's name in it. Same
+   * roster read again, and re-checked against the palette here so a client
+   * never paints a value the contrast guard did not cover.
+   */
+  roleColorFor: (userId: string) => string | null;
+  /**
    * True until the first roster read settles — and, because the read is
    * `enabled: !!chapterId`, true forever while there is no active chapter. A
    * surface that blocks rendering on this never renders for a chapterless
@@ -99,6 +106,15 @@ export interface MemberDisplayNames {
    */
   isPending: boolean;
   isError: boolean;
+  /**
+   * Whether a roster read has ever landed. TanStack keeps the last good data
+   * through a failed refetch, so `isError` with `hasData` means stale names
+   * that still draw, and a surface should keep them rather than swap in an
+   * error (#3536).
+   */
+  hasData: boolean;
+  /** A read is in flight, the first or a retry, for a Retry control's busy state. */
+  isFetching: boolean;
   /** Re-runs the roster read, so a caller's retry control can recover names. */
   refetch: () => void;
 }
@@ -142,6 +158,21 @@ export function useMemberDisplayNames(): MemberDisplayNames {
     [avatarById],
   );
 
+  const roleColorById = useMemo(
+    () =>
+      new Map(
+        (query.data ?? []).map((row) => [
+          row.user_id,
+          roleColorOrNull(row.role_color),
+        ]),
+      ),
+    [query.data],
+  );
+  const roleColorFor = useCallback(
+    (userId: string) => roleColorById.get(userId) ?? null,
+    [roleColorById],
+  );
+
   // Keyed on `query.refetch`, which TanStack keeps stable, rather than on
   // `query` — the observer hands back a fresh result object every render, so
   // depending on it would make this callback a new identity each time and defeat
@@ -155,8 +186,11 @@ export function useMemberDisplayNames(): MemberDisplayNames {
     byId,
     nameFor,
     avatarFor,
+    roleColorFor,
     isPending: query.isPending,
     isError: query.isError,
+    hasData: query.data !== undefined,
+    isFetching: query.isFetching,
     refetch,
   };
 }
@@ -346,7 +380,7 @@ export function useDismissOpsNudge() {
   const queryClient = useQueryClient();
   return useMutation({
     scope: { id: "ops-nudge-dismiss" },
-    mutationFn: async (body: { module_key: OpsNudgeModuleKey }) => {
+    mutationFn: async (body: { module_key: MemberDismissalKey }) => {
       const { data, error } = await client.PATCH(
         "/v1/members/me/ops-nudges/dismiss",
         { body },

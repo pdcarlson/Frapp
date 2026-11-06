@@ -5,8 +5,8 @@ export const ANALYTICS_PROVIDER = 'ANALYTICS_PROVIDER';
 /**
  * Transport to the product-analytics provider (PostHog or equivalent). Receives
  * already-pseudonymous events — the `distinctId` on an {@link AnalyticsEvent}
- * is the HMAC hash, never a raw user id. Implementations must not add any
- * identifying property of their own.
+ * is the HMAC hash, never a raw user id, and so is each of its `groups`.
+ * Implementations must not add any identifying property of their own.
  */
 export interface IAnalyticsProvider {
   /**

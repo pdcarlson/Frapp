@@ -4,6 +4,25 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
 import { AccessibilityInfo, BackHandler, Keyboard } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// These screens paint with the chapter accent (`useChapterBranding`), which
+// reads the current chapter through the client provider these specs don't
+// mount. A purple chapter's values, deliberately not house gold, so a control
+// that slips back to a `gold.*` token shows up in an assertion; the hook
+// itself has its own spec.
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({
+    accent: "#CB9FFF",
+    accentPrimary: "#8E4EC6",
+    accentOnPrimary: "#FFFFFF",
+    accentSubtle: "#251A33",
+    accentBorder: "#5C3E8A",
+    logoUrl: null,
+    chapterName: null,
+    textMark: null,
+  }),
+}));
+import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import type { ChatNotificationLevel } from "@repo/hooks";
 import {
@@ -190,6 +209,19 @@ describe("NotificationLevelControl", () => {
     expect(trigger.props.disabled).toBe(false);
   });
 
+  // components.md § Chrome weight: the trigger is the ⋯ glyph alone, and a
+  // muted channel's header shows no "Muted" word. The label above says it.
+  it("draws the muted glyph alone, with no word beside it", () => {
+    const tree = renderControl({ level: "off" });
+    const trigger = byLabel(
+      tree,
+      "Notifications: muted. Change notification level",
+    );
+    expect(
+      trigger.findAll((node) => (node.type as unknown) === "Text"),
+    ).toHaveLength(0);
+  });
+
   it("names the current level when not muted", () => {
     const tree = renderControl({ level: "all" });
     expect(
@@ -239,6 +271,53 @@ describe("NotificationLevelControl", () => {
 
     // A no-op round trip would still bump `updated_at` for nothing.
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  // foundations.md §6 "Where the accent goes" (2026-11-05): the current level
+  // is a selected radio, so its checkmark is the accent, and nothing else is.
+  it("marks the current level with an accent check and keeps every row neutral", () => {
+    const tree = renderControl({ level: "off", onChange: vi.fn() });
+    press(byLabel(tree, "Notifications: muted. Change notification level"));
+    const muteRow = byLabel(
+      tree,
+      "Mute. No notifications — but @mentions still reach you.",
+    );
+    const flat = (style: unknown) =>
+      Object.assign({}, ...[style].flat(Infinity)) as Record<string, unknown>;
+
+    expect(flat(muteRow.props.style({ pressed: false })).backgroundColor).toBe(
+      undefined,
+    );
+    const label = muteRow.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "Mute",
+    );
+    expect(flat(label.props.style).color).toBe(
+      signetDarkTokens.color.text.foreground,
+    );
+    const description = muteRow.find(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        node.props.children ===
+          "No notifications — but @mentions still reach you.",
+    );
+    expect(flat(description.props.style).color).toBe(
+      signetDarkTokens.color.text.mutedForeground,
+    );
+    // The check's stroke is the accent text, on the selected row alone.
+    const strokes = (row: typeof muteRow) =>
+      row
+        .findAll((node) => (node.type as unknown) === "Path")
+        .map((node) => node.props.stroke);
+    expect(strokes(muteRow)).toEqual(["#CB9FFF"]);
+    const allRow = byLabel(
+      tree,
+      `${NOTIFICATION_LEVEL_OPTIONS[0]!.label}. ${NOTIFICATION_LEVEL_OPTIONS[0]!.description}`,
+    );
+    expect(strokes(allRow)).toEqual([]);
+    expect(JSON.stringify(menu(tree).map((node) => node.props.style))).not.toContain(
+      "#251A33",
+    );
   });
 
   it("is disabled when the caller says so", () => {
@@ -468,12 +547,20 @@ describe("NotificationLevelMenu hit target (#2033)", () => {
     expect(Keyboard.dismiss).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the backdrop out of the accessibility tree; Cancel is the spoken dismissal", () => {
+  it("keeps the backdrop out of the accessibility tree; the escape gesture is the spoken dismissal", () => {
     const tree = openMenu();
     const node = backdrop(tree);
     expect(node.props.accessible).toBe(false);
     expect(node.props.importantForAccessibility).toBe("no");
-    expect(byLabel(tree, "Cancel").props.accessibilityRole).toBe("button");
+    // No Cancel row (components.md § Chrome weight). VoiceOver's escape
+    // gesture closes the menu; Android back is `useBackToClose`'s.
+    expect(() => byLabel(tree, "Cancel")).toThrow();
+    const modal = tree.root.find(
+      (n) =>
+        n.props.accessibilityViewIsModal === true && typeof n.type === "string",
+    );
+    act(() => modal.props.onAccessibilityEscape());
+    expect(menu(tree)).toHaveLength(0);
   });
 
   // What a back press does, and when focus is sent, are `lib/overlay.spec.tsx`'s
@@ -550,7 +637,7 @@ describe("NotificationLevelMenu hit target (#2033)", () => {
       expect(eventType).toBe("focus");
       expect(target.element.props.children).toBe("Notify me about");
 
-      press(byLabel(tree, "Cancel"));
+      press(backdrop(tree));
       press(byLabel(tree, TRIGGER));
       act(() => {
         vi.runAllTimers();

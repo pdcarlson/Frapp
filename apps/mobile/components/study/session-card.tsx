@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { formatTimer } from "@repo/formatting";
+import { CardMessages } from "@/components/card-messages";
 
 /**
  * The live-session card — `canvas-screens.dc.html`, `id="s10"`.
@@ -39,6 +40,13 @@ export interface SessionCardProps {
   /** e.g. `Leaving the zone pauses with a 5-min grace window.` */
   graceCopy: string;
   isEnding: boolean;
+  /**
+   * The screen's notice and failure lines (a picked-up session, a refused or
+   * failed End), drawn under End rather than above the card so the timer
+   * doesn't jump when one arrives.
+   */
+  notice?: string | null;
+  failure?: string | null;
   onEnd: () => void;
 }
 
@@ -49,6 +57,8 @@ export function SessionCard({
   isReportingStale,
   graceCopy,
   isEnding,
+  notice = null,
+  failure = null,
   onEnd,
 }: SessionCardProps) {
   const { tokens } = useFrappTheme();
@@ -120,6 +130,8 @@ export function SessionCard({
         </Text>
       </Pressable>
 
+      <CardMessages notice={notice} failure={failure} align="center" />
+
       <Text style={styles.grace}>{graceCopy}</Text>
     </View>
   );
@@ -145,7 +157,9 @@ function createStyles(tokens: SignetTokens) {
       // Fixed-width digits, so the seconds column does not shuffle every tick.
       fontVariant: ["tabular-nums"],
       letterSpacing: -1,
-      color: tokens.color.gold.askText,
+      // A timer is a number, so the foreground text, never the chapter accent
+      // (foundations.md §6, "Where the accent goes", 2026-11-05).
+      color: tokens.color.text.foreground,
       marginTop: tokens.spacing.sm,
     },
     statusRow: {

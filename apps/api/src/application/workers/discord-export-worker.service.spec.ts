@@ -13,7 +13,10 @@ import {
   DISCORD_IMPORT_REPOSITORY,
 } from '#domain/repositories/discord-import.repository.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
-import { DISCORD_BOT_GATEWAY } from '#domain/adapters/discord.interface';
+import {
+  DISCORD_BOT_GATEWAY,
+  DiscordImportStoppedError,
+} from '#domain/adapters/discord.interface';
 import {
   ARCHIVE_MEDIA_COPIER,
   ArchiveMediaCopyError,
@@ -120,6 +123,9 @@ function channel(
     new_channel_required_permissions: null,
     discord_reader_role_ids: null,
     new_channel_same_as_discord: false,
+    new_channel_group: null,
+    discord_category_position: null,
+    new_channel_category_id: null,
     ...overrides,
   };
 }
@@ -326,6 +332,12 @@ describe('DiscordExportWorkerService — the tenant boundary', () => {
         runArgs(harness, { job: job({ guild_id: GUILD }) }),
       ),
     ).rejects.toThrow(/was created for Discord server/);
+    // An admin-facing stop, which the import sweep logs and does not report.
+    await expect(
+      harness.worker.runSlice(
+        runArgs(harness, { job: job({ guild_id: GUILD }) }),
+      ),
+    ).rejects.toBeInstanceOf(DiscordImportStoppedError);
 
     expect(harness.bot.fetchMessagePage).not.toHaveBeenCalled();
   });
@@ -336,6 +348,9 @@ describe('DiscordExportWorkerService — the tenant boundary', () => {
     await expect(harness.worker.runSlice(runArgs(harness))).rejects.toThrow(
       /no longer has a Discord server connected/,
     );
+    await expect(
+      harness.worker.runSlice(runArgs(harness)),
+    ).rejects.toBeInstanceOf(DiscordImportStoppedError);
     expect(harness.bot.fetchMessagePage).not.toHaveBeenCalled();
   });
 
@@ -1247,7 +1262,9 @@ describe('DiscordExportWorkerService — attachments', () => {
           attachmentsImported: batch.mediaByRelativePath.size,
           attachmentsSkipped: 0,
           // What the real batch writer says about a file with no stored object.
-          warnings: ['No uploaded file for attachment: att-1/p1.png'],
+          warnings: [
+            '"att-1/p1.png" wasn\'t in the upload, so it was not imported. The message it belongs to was.',
+          ],
         }),
       ),
     });
@@ -1267,11 +1284,13 @@ describe('DiscordExportWorkerService — attachments', () => {
     ]);
     const warnings: string[] =
       jest.mocked(args.checkpoint).mock.calls.at(-1)?.[0].warnings ?? [];
+    // In plain words: the storage service's own text goes to the log only.
     expect(warnings).toContain(
-      'Could not import attachment "p1.png": CDN answered 503.',
+      'Storage couldn\'t take "p1.png", so it was not imported. The message it belongs to was.',
     );
+    expect(warnings.join(' ')).not.toContain('CDN answered 503');
     // Explained by name and reason already, so the generic line is dropped.
-    expect(warnings.join(' ')).not.toContain('No uploaded file');
+    expect(warnings.join(' ')).not.toContain("wasn't in the upload");
   });
 
   it('sends a large page in batches', async () => {
@@ -1457,7 +1476,11 @@ describe('DiscordExportWorkerService — attachments', () => {
       ),
     );
 
-    await expect(harness.worker.runSlice(runArgs(harness))).rejects.toThrow(
+    const stop: unknown = await harness.worker
+      .runSlice(runArgs(harness))
+      .catch((e) => e);
+    expect(stop).toBeInstanceOf(DiscordImportStoppedError);
+    expect((stop as Error).message).toMatch(
       /archive would hold .* past its .* limit/,
     );
     expect(harness.copier.copy).not.toHaveBeenCalled();
@@ -1489,6 +1512,61 @@ describe('DiscordExportWorkerService — attachments', () => {
     const warnings =
       jest.mocked(args.checkpoint).mock.calls.at(-1)?.[0].warnings ?? [];
     expect(warnings.join(' ')).toContain('setup.exe');
+  });
+
+  it('stores a .heic photo Discord sent with no useful type, by its extension', async () => {
+    const harness = await build({
+      pages: [
+        [
+          apiMessage('1', {
+            attachments: [
+              {
+                id: 'att-heic',
+                filename: 'IMG_0001.HEIC',
+                size: 10,
+                url: 'https://cdn.discordapp.com/a/IMG_0001.HEIC',
+                content_type: 'application/octet-stream',
+              },
+            ],
+          }),
+        ],
+      ],
+    });
+
+    await harness.worker.runSlice(runArgs(harness));
+
+    expect(harness.copier.copy).toHaveBeenCalledWith([
+      expect.objectContaining({ contentType: 'image/heic' }),
+    ]);
+  });
+
+  it('skips a file with no type and no extension, and says so in plain words', async () => {
+    const harness = await build({
+      pages: [
+        [
+          apiMessage('1', {
+            attachments: [
+              {
+                id: 'att-bare',
+                filename: 'scan',
+                size: 10,
+                url: 'https://cdn.discordapp.com/a/scan',
+              },
+            ],
+          }),
+        ],
+      ],
+    });
+
+    const args = runArgs(harness);
+    await harness.worker.runSlice(args);
+
+    expect(harness.copier.copy).not.toHaveBeenCalled();
+    const warnings =
+      jest.mocked(args.checkpoint).mock.calls.at(-1)?.[0].warnings ?? [];
+    expect(warnings).toContain(
+      '"scan" has no file type Frapp could tell, so it was not imported. The message it belongs to was.',
+    );
   });
 
   it('skips an oversized attachment rather than failing the whole import', async () => {
@@ -1592,7 +1670,9 @@ describe('DiscordExportWorkerService — the missing-intent guard', () => {
     const harness = await build({ pages: [blanks] });
 
     const args = runArgs(harness);
-    await expect(harness.worker.runSlice(args)).rejects.toThrow(
+    const stop: unknown = await harness.worker.runSlice(args).catch((e) => e);
+    expect(stop).toBeInstanceOf(DiscordImportStoppedError);
+    expect((stop as Error).message).toBe(
       missingMessageContentIntentError({ thisRun: 0, earlierRuns: 0 }),
     );
 
@@ -1705,9 +1785,9 @@ describe('DiscordExportWorkerService — the Message Content Intent pre-flight (
     });
     const args = runArgs(harness);
 
-    await expect(harness.worker.runSlice(args)).rejects.toThrow(
-      messageContentIntentOffError(0),
-    );
+    const stop: unknown = await harness.worker.runSlice(args).catch((e) => e);
+    expect(stop).toBeInstanceOf(DiscordImportStoppedError);
+    expect((stop as Error).message).toBe(messageContentIntentOffError(0));
     // Nothing read, made or written: the small-archive case the tally could
     // never see is refused here, with every message still unimported.
     expect(harness.bot.verifyChannelInGuild).not.toHaveBeenCalled();

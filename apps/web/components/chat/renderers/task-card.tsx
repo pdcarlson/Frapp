@@ -3,6 +3,10 @@
 import { CheckCircle2, Undo2 } from "lucide-react";
 import { TasksGlyph } from "../chat-glyphs";
 import {
+  canReadCardTask,
+  readLiveTask,
+  taskCardControls,
+  taskCardStatusLabel,
   useMyPermissions,
   useTask,
   useUpdateTaskStatus,
@@ -14,7 +18,7 @@ import { EYEBROW, MESSAGE_CARD } from "../chip";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
-import type { TaskPayload } from "@repo/chat-core/integrations";
+import { readTaskPayload } from "@repo/chat-core/cards";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Can } from "@/components/shared/can";
@@ -25,7 +29,6 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
-import { actionStatus } from "@/lib/task-action-status";
 import { getErrorMessage } from "@/lib/utils";
 
 interface TaskCardProps {
@@ -34,89 +37,6 @@ interface TaskCardProps {
   viewerId: string;
   /** False while the optimistic chat row is not yet server-acked. */
   isConfirmed: boolean;
-}
-
-/** Live task shape read back from `GET /v1/tasks/{id}`. */
-interface LiveTask {
-  id: string;
-  title: string;
-  assignee_id: string;
-  due_date: string;
-  /** Display status — `OVERDUE` when derived. Drives the badge. */
-  status: TaskStatus;
-  /**
-   * The persisted status (#1051). Drives which action is offered, because
-   * `OVERDUE` renders identically for a stored `TODO` and a stored
-   * `IN_PROGRESS`, and the server checks its transition table against this.
-   * `undefined` from a pre-#1051 API — deliberately not defaulted, so the
-   * caller can tell "unknown" from a real value.
-   */
-  stored_status: TaskStatus | undefined;
-  point_reward: number | null;
-  points_awarded: boolean;
-}
-
-const STATUS_LABELS: Record<TaskStatus, string> = {
-  TODO: "To do",
-  IN_PROGRESS: "In progress",
-  COMPLETED: "Awaiting confirmation",
-  OVERDUE: "Overdue",
-};
-
-/**
- * Defensive read of a `task` payload. A malformed row returns `null` so the
- * renderer falls back to the hot-path `content` string instead of blanking the
- * timeline (master-plan guard-on-missing-key rule).
- */
-function readPayload(message: ChatMessage): TaskPayload | null {
-  const raw = message.payload;
-  if (!raw || typeof raw !== "object") return null;
-  const r = raw as Record<string, unknown>;
-  if (
-    typeof r.task_id !== "string" ||
-    typeof r.title !== "string" ||
-    typeof r.assignee_name !== "string" ||
-    typeof r.assigner_name !== "string" ||
-    typeof r.due_date !== "string"
-  ) {
-    return null;
-  }
-  return {
-    task_id: r.task_id,
-    title: r.title,
-    assigner_user_id:
-      typeof r.assigner_user_id === "string" ? r.assigner_user_id : "",
-    assigner_name: r.assigner_name,
-    assignee_user_id:
-      typeof r.assignee_user_id === "string" ? r.assignee_user_id : "",
-    assignee_name: r.assignee_name,
-    due_date: r.due_date,
-    status: "TODO",
-    point_reward:
-      typeof r.point_reward === "number" && Number.isFinite(r.point_reward)
-        ? r.point_reward
-        : null,
-    created_at: typeof r.created_at === "string" ? r.created_at : "",
-  };
-}
-
-function coerceLiveTask(data: unknown): LiveTask | null {
-  if (!data || typeof data !== "object") return null;
-  const r = data as Record<string, unknown>;
-  if (typeof r.id !== "string" || typeof r.status !== "string") return null;
-  return {
-    id: r.id,
-    title: typeof r.title === "string" ? r.title : "",
-    assignee_id: typeof r.assignee_id === "string" ? r.assignee_id : "",
-    due_date: typeof r.due_date === "string" ? r.due_date : "",
-    status: r.status as TaskStatus,
-    stored_status:
-      typeof r.stored_status === "string"
-        ? (r.stored_status as TaskStatus)
-        : undefined,
-    point_reward: typeof r.point_reward === "number" ? r.point_reward : null,
-    points_awarded: r.points_awarded === true,
-  };
 }
 
 function formatDate(value: string): string {
@@ -131,7 +51,8 @@ function formatDate(value: string): string {
   return instant.toLocaleDateString();
 }
 
-const STATUS_BADGE: Record<TaskStatus, "default" | "outline" | "destructive"> =
+/** Exported for the sign-in showcase, which draws this badge without a live task. */
+export const STATUS_BADGE: Record<TaskStatus, "default" | "outline" | "destructive"> =
   {
     TODO: "outline",
     IN_PROGRESS: "default",
@@ -149,19 +70,37 @@ const STATUS_BADGE: Record<TaskStatus, "default" | "outline" | "destructive"> =
  * Interactive: the assignee can Start / Mark complete and an admin
  * (`tasks:manage`) can Confirm / Reject inline. Buttons fire the existing task
  * REST endpoints with optimistic cache writes; the server stays the trust
- * boundary, so the gating here is UX-only.
+ * boundary, so the gating here is UX-only. Which controls show, and when the
+ * live status can be read at all, are `taskCardControls` and `canReadCardTask`
+ * in `@repo/hooks`, the rules the mobile card applies too.
  */
 export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
-  const payload = readPayload(message);
+  const payload = readTaskPayload(message);
   const { toast } = useToast();
   const updateStatus = useUpdateTaskStatus();
   const confirmTask = useConfirmTask();
   const rejectTask = useRejectTask();
+  const { data: permissionsPayload } = useMyPermissions();
 
+  /*
+    `!!viewerId` rather than `!= null`, for the reason `poll-card` records: the
+    declared type does not stop `undefined` arriving through a spread, and
+    `undefined != null` is false. A false value here hides the assignee's
+    controls and keeps a tasks:manage holder's Confirm off a task that isn't
+    theirs, which is the safe direction.
+  */
+  const isAssignee =
+    !!viewerId && !!payload && viewerId === payload.assignee_user_id;
+  const canManage = can("tasks:manage", permissionsPayload?.permissions);
   // Hooks must run before any early return; `useTask` no-ops on an empty id.
-  const taskId = payload?.task_id ?? "";
-  const { data: liveRaw } = useTask(taskId);
-  // Same constraint — this one is a hook too, so it cannot sit down with the
+  // Only the assignee and a tasks:manage holder can read the task, so nobody
+  // else asks: for them the request is a guaranteed 403.
+  const { data: liveRaw } = useTask(
+    payload && canReadCardTask({ isAssignee, canManage })
+      ? payload.task_id
+      : "",
+  );
+  // Same constraint: this one is a hook too, so it cannot sit down with the
   // derived values below the malformed-payload return.
   //
   // Every button on this card hits `task.controller.ts` — PATCH /tasks/:id/status,
@@ -169,7 +108,6 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // surface itself is `@FreeTier`, so it is easy to assume a card rendered inside
   // chat inherits that; it does not. The route decides, not the host (#841).
   const gate = useSubscriptionGate();
-  const { data: permissionsPayload } = useMyPermissions();
 
   if (!payload) {
     return (
@@ -179,61 +117,36 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
     );
   }
 
-  const live = coerceLiveTask(liveRaw);
-  const status: TaskStatus = live?.status ?? payload.status;
-  // The badge shows `status` (so an overdue task reads as overdue), but the
-  // action row keys off `storedStatus`: the server's transition table is
-  // checked against the stored value, and `OVERDUE` hides whether that is
-  // `TODO` or `IN_PROGRESS`. Before #1051 exposed it, an overdue task offered
-  // the assignee no action at all — the task could never be moved.
-  //
-  // A row whose *persisted* status is `OVERDUE` maps to `TODO`, because
-  // `VALID_ASSIGNEE_TRANSITIONS[OVERDUE]` is `[IN_PROGRESS]` — the same move
-  // Start makes. `undefined` means a pre-#1051 API left the stored value
-  // ambiguous, and no branch below matches it, so no action is offered.
-  const storedStatus: TaskStatus | undefined = live
-    ? actionStatus(live)
-    : payload.status;
-  const pointsAwarded = live?.points_awarded ?? false;
-  /*
-    `!!viewerId` rather than `!= null`, for the reason `poll-card` records: the
-    declared type does not stop `undefined` arriving through a spread, and
-    `undefined != null` is false — so that shape happened to fail closed here
-    while it failed *open* there. Spelled the same way in both so neither has to
-    be reasoned about again.
-
-    Failing closed is not harmless either. Start and Mark complete simply
-    disappear, but the COMPLETED branch below is gated on `<Can>` rather than on
-    `isAssignee`, so a false value un-hides Confirm on the viewer's *own*
-    completed task — an affordance #1056 says the server refuses.
-  */
-  const isAssignee = !!viewerId && viewerId === payload.assignee_user_id;
+  const live = readLiveTask(liveRaw);
+  // The badge is the live status only. The payload's is the creation-time
+  // `TODO` forever, so drawing it before (or instead of) a live read would call
+  // a finished task "To do".
+  const status: TaskStatus | null = live?.status ?? null;
+  const statusLabel = live ? taskCardStatusLabel(live) : null;
+  // No control until the live task is read (#2065): acting on the snapshot
+  // offered Start on tasks already in progress or done.
+  const controls = taskCardControls({ live, isAssignee, canManage });
+  const memberControls = controls.filter(
+    (control) => control === "start" || control === "complete",
+  );
+  // Confirm, Confirmed and Reject are worked out as if `tasks:manage` were
+  // held, and `<Can>` decides: it tells a check that couldn't run from a
+  // denial (design-system README §4, §5 rule 4), and for the check that
+  // couldn't run it draws the offline chip and Retry. That only reaches a
+  // viewer whose task is read without the permission, which is the assignee
+  // (their own Reject). Any other officer whose permissions couldn't be read
+  // never reads the task, so their card offers nothing, the way every card
+  // does before its live task arrives.
+  const managerControls = taskCardControls({
+    live,
+    isAssignee,
+    canManage: true,
+  }).filter((control) => control !== "start" && control !== "complete");
   const actionsDisabled =
     !isConfirmed ||
     updateStatus.isPending ||
     confirmTask.isPending ||
     rejectTask.isPending;
-  // The notice belongs to the action row, not the card: a timeline of task
-  // cards would otherwise repeat the same chapter-wide sentence under every
-  // one, including cards this viewer could never act on anyway.
-  // Mirrors the render conditions of the four buttons below, INCLUDING the
-  // `tasks:manage` gate on the COMPLETED branch. Without that last term a
-  // rank-and-file member scrolling a channel full of completed cards gets one
-  // orphaned notice per card, explaining a control they cannot see — which is
-  // the exact repetition this variable exists to prevent.
-  const canManageTasks = can("tasks:manage", permissionsPayload?.permissions);
-  // Confirm is refused server-side on your own task (#1056), so the assignee
-  // gets no *live* confirm control. The already-confirmed button is a different
-  // thing — it is disabled and reads "Confirmed", so it is a state indicator
-  // rather than an action, and hiding it would leave an assignee-admin unable to
-  // see that their task was confirmed at all. Keeping it also means a COMPLETED
-  // card always carries exactly one control for a `tasks:manage` assignee
-  // (Reject before confirmation, the Confirmed indicator after), so
-  // `showsAnyAction` stays honest and the notice never renders alone.
-  const showsAnyAction =
-    (isAssignee &&
-      (storedStatus === "TODO" || storedStatus === "IN_PROGRESS")) ||
-    (storedStatus === "COMPLETED" && canManageTasks);
 
   /**
    * Per-call failure copy. The optimistic write and its rollback moved into the
@@ -262,11 +175,16 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
     <Card className={cn(MESSAGE_CARD)}>
       <div className="flex items-center justify-between gap-2">
         <div
-          className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}
+          className={cn(
+            EYEBROW,
+            "flex items-center gap-1.5 text-muted-foreground",
+          )}
         >
           <TasksGlyph className="h-4 w-4" /> Task
         </div>
-        <Badge variant={STATUS_BADGE[status]}>{STATUS_LABELS[status]}</Badge>
+        {status && statusLabel ? (
+          <Badge variant={STATUS_BADGE[status]}>{statusLabel}</Badge>
+        ) : null}
       </div>
       <p className="mt-2 text-base font-bold">{payload.title}</p>
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
@@ -279,92 +197,110 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
           <Badge variant="outline">+{payload.point_reward} pts</Badge>
         ) : null}
       </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {isAssignee && storedStatus === "TODO" ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            {...gate.controlProps(actionsDisabled)}
-            onClick={() =>
-              updateStatus.mutate(
-                { id: payload.task_id, body: { status: "IN_PROGRESS" } },
-                onFailure(
-                  "Couldn't start task",
-                  "Only the assignee can start this task.",
-                ),
-              )
-            }
-          >
-            Start
-          </Button>
-        ) : null}
-        {isAssignee && storedStatus === "IN_PROGRESS" ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            {...gate.controlProps(actionsDisabled)}
-            onClick={() =>
-              updateStatus.mutate(
-                { id: payload.task_id, body: { status: "COMPLETED" } },
-                onFailure(
-                  "Couldn't complete task",
-                  "The API rejected the transition.",
-                ),
-              )
-            }
-          >
-            Mark complete
-          </Button>
-        ) : null}
-        {storedStatus === "COMPLETED" ? (
-          <Can permission="tasks:manage">
-            {isAssignee && !pointsAwarded ? null : (
-              <Button
-                size="sm"
-                {...gate.controlProps(actionsDisabled || pointsAwarded)}
-                onClick={() =>
-                  confirmTask.mutate(
-                    payload.task_id,
-                    onFailure(
-                      "Couldn't confirm task",
-                      "Only admins with tasks:manage can confirm completions.",
-                    ),
-                  )
-                }
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                {pointsAwarded ? "Confirmed" : "Confirm"}
-              </Button>
-            )}
-            {pointsAwarded ? null : (
-              <Button
-                size="sm"
-                variant="secondary"
-                {...gate.controlProps(actionsDisabled)}
-                onClick={() =>
-                  rejectTask.mutate(
-                    { id: payload.task_id },
-                    onFailure(
-                      "Couldn't reject task",
-                      "Only admins with tasks:manage can reject completions.",
-                    ),
-                  )
-                }
-              >
-                <Undo2 className="h-4 w-4" />
-                Reject
-              </Button>
-            )}
-          </Can>
-        ) : null}
-        {showsAnyAction ? (
-          <SubscriptionNotice
-            gate={gate}
-            feature="task actions"
-            className="mb-0 w-full"
-          />
-        ) : null}
-      </div>
+      {memberControls.length > 0 || managerControls.length > 0 ? (
+        // `empty:hidden`: a denied `<Can>` leaves the row with nothing in it,
+        // and an empty row would still add its margin to the card.
+        <div className="mt-3 flex flex-wrap gap-2 empty:hidden">
+          {controls.includes("start") ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              {...gate.controlProps(actionsDisabled)}
+              onClick={() =>
+                updateStatus.mutate(
+                  { id: payload.task_id, body: { status: "IN_PROGRESS" } },
+                  onFailure(
+                    "Couldn't start task",
+                    "Only the assignee can start this task.",
+                  ),
+                )
+              }
+            >
+              Start
+            </Button>
+          ) : null}
+          {controls.includes("complete") ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              {...gate.controlProps(actionsDisabled)}
+              onClick={() =>
+                updateStatus.mutate(
+                  { id: payload.task_id, body: { status: "COMPLETED" } },
+                  onFailure(
+                    "Couldn't complete task",
+                    "The API rejected the transition.",
+                  ),
+                )
+              }
+            >
+              Mark complete
+            </Button>
+          ) : null}
+          {managerControls.length > 0 ? (
+            <Can permission="tasks:manage">
+              {managerControls.includes("confirm") ||
+              managerControls.includes("confirmed") ? (
+                // `confirmed` is a disabled indicator, not an action: an admin
+                // sees that the completion was confirmed.
+                <Button
+                  size="sm"
+                  {...gate.controlProps(
+                    actionsDisabled || managerControls.includes("confirmed"),
+                  )}
+                  onClick={() =>
+                    confirmTask.mutate(
+                      payload.task_id,
+                      onFailure(
+                        "Couldn't confirm task",
+                        "Only admins with tasks:manage can confirm completions.",
+                      ),
+                    )
+                  }
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  {managerControls.includes("confirmed")
+                    ? "Confirmed"
+                    : "Confirm"}
+                </Button>
+              ) : null}
+              {managerControls.includes("reject") ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  {...gate.controlProps(actionsDisabled)}
+                  onClick={() =>
+                    rejectTask.mutate(
+                      { id: payload.task_id },
+                      onFailure(
+                        "Couldn't reject task",
+                        "Only admins with tasks:manage can reject completions.",
+                      ),
+                    )
+                  }
+                >
+                  <Undo2 className="h-4 w-4" />
+                  Reject
+                </Button>
+              ) : null}
+            </Can>
+          ) : null}
+          {/*
+            The notice belongs to the action row, not the card: a timeline of
+            task cards would otherwise repeat the same chapter-wide sentence
+            under every one, including cards this viewer could never act on.
+            Hence `controls`, which counts a manager control only once the
+            permission is known to be held.
+          */}
+          {controls.length > 0 ? (
+            <SubscriptionNotice
+              gate={gate}
+              feature="task actions"
+              className="mb-0 w-full"
+            />
+          ) : null}
+        </div>
+      ) : null}
     </Card>
   );
 }

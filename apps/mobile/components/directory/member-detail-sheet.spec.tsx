@@ -51,12 +51,16 @@ function profile(userId: string, name: string) {
   };
 }
 
-const PROFILES: Record<string, ReturnType<typeof profile>> = {
-  [ADA]: profile(ADA, "Ada"),
-  [BOB]: profile(BOB, "Bob"),
-  [SYSTEM_SENDER_ID]: profile(SYSTEM_SENDER_ID, "Frapp"),
-  [VIEWER]: profile(VIEWER, "Me"),
-};
+// Keyed by member id, the id `GET /v1/members/{id}` takes: a sheet that
+// fetched by user id would find nothing here, as it found a 404 on the API.
+const PROFILES: Record<string, ReturnType<typeof profile>> = Object.fromEntries(
+  [
+    profile(ADA, "Ada"),
+    profile(BOB, "Bob"),
+    profile(SYSTEM_SENDER_ID, "Frapp"),
+    profile(VIEWER, "Me"),
+  ].map((p) => [p.id, p]),
+);
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -96,18 +100,24 @@ vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
   }),
 }));
 
+import { ListRow } from "@/components/list-section";
+import { SheetHeader } from "@/components/sheet-scaffold";
 import { MemberDetailSheet } from "./member-detail-sheet";
 
 const dismiss = vi.fn();
 
 // The directory hands the sheet a ref, and the sheet dismisses itself through
 // it; one ref across re-renders, as the directory's `useRef` is.
-const sheetRef = React.createRef<React.ComponentRef<typeof MemberDetailSheet>>();
+const sheetRef =
+  React.createRef<React.ComponentRef<typeof MemberDetailSheet>>();
 
 function sheet(userId: string | null) {
   return (
     <FrappThemeProvider>
-      <MemberDetailSheet ref={sheetRef} userId={userId} />
+      <MemberDetailSheet
+        ref={sheetRef}
+        member={userId ? { memberId: `m-${userId}`, userId } : null}
+      />
     </FrappThemeProvider>
   );
 }
@@ -141,6 +151,42 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+// components.md § Surface size: a tall sheet, closed with an icon X, headed by
+// the member's own name rather than a "Member" title and a Done button.
+describe("MemberDetailSheet as a tall sheet", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.viewer = VIEWER;
+  });
+
+  it("opens full height, with no Member title or Done, and closes from its X", () => {
+    const tree = render(ADA);
+    const modal = tree.root.findByType("BottomSheetModal" as never);
+    expect(modal.props.snapPoints).toEqual(["100%"]);
+    expect(modal.props.enableDynamicSizing).toBe(false);
+    // Stops under the status bar, so the X is never in the unsafe area.
+    expect(modal.props.topInset).toBeGreaterThan(0);
+    // The header (and its X) stays put while the profile scrolls under it.
+    const scroll = tree.root.findByType("BottomSheetScrollView" as never);
+    expect(scroll.props.stickyHeaderIndices).toEqual([0]);
+
+    const texts = tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map((node) => node.props.children);
+    expect(texts).not.toContain("Member");
+    expect(texts).not.toContain("Done");
+
+    const close = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Close" &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => close.props.onPress());
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+});
+
 describe("MemberDetailSheet Message action (#2773)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -155,6 +201,35 @@ describe("MemberDetailSheet Message action (#2773)", () => {
   it("offers Message on another member's profile", () => {
     const tree = render(ADA);
     expect(messageRows(tree)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("draws Block with no chevron, since it acts in place", () => {
+    // components.md § Chrome weight: a chevron promises somewhere to go.
+    const tree = render(ADA);
+    const block = tree.root.find(
+      (node) =>
+        typeof node.type === "function" &&
+        typeof node.props.label === "string" &&
+        node.props.label.startsWith("Block "),
+    );
+    expect(block.props.action).toBe(true);
+    act(() => tree.unmount());
+  });
+
+  it("draws Unblock with no chevron, and no title row or Done over the name", () => {
+    state.blocked = new Set([ADA]);
+    const tree = render(ADA);
+    const unblock = tree.root.find(
+      (node) =>
+        typeof node.type === "function" &&
+        typeof node.props.label === "string" &&
+        node.props.label.startsWith("Unblock "),
+    );
+    expect(unblock.props.action).toBe(true);
+    // The member's name heads the sheet (components.md § Chrome weight).
+    expect(tree.root.findAllByType(SheetHeader)).toHaveLength(0);
+    expect(JSON.stringify(tree.toJSON())).not.toContain('"Done"');
     act(() => tree.unmount());
   });
 
@@ -271,12 +346,15 @@ describe("MemberDetailSheet Message action (#2773)", () => {
       row.props.onPress();
     });
     expect(state.mutateAsync).toHaveBeenCalledTimes(1);
-    expect(messageRows(tree)[0].props.disabled).toBe(true);
+    // Working, not unavailable: a spinner in the chevron's place, and the
+    // label keeps its colour (`ListRow`'s `busy`, not `disabled`).
+    expect(messageRows(tree)[0].props.busy).toBe(true);
+    expect(messageRows(tree)[0].props.disabled).toBe(false);
 
     await act(async () => {
       pending.resolve({ id: "dm-ada" });
     });
-    expect(messageRows(tree)[0].props.disabled).toBe(false);
+    expect(messageRows(tree)[0].props.busy).toBe(false);
     act(() => tree.unmount());
   });
 
@@ -289,7 +367,7 @@ describe("MemberDetailSheet Message action (#2773)", () => {
       messageRows(tree)[0].props.onPress();
     });
     act(() => tree.update(sheet(BOB)));
-    expect(messageRows(tree)[0].props.disabled).toBe(false);
+    expect(messageRows(tree)[0].props.busy).toBe(false);
 
     await act(async () => {
       pending.resolve({ id: "dm-ada" });
@@ -361,10 +439,10 @@ describe("MemberDetailSheet Message action (#2773)", () => {
       messageRows(tree)[0].props.onPress();
     });
 
-    // Back on Ada while both are out: her row is still disabled, and a tap
+    // Back on Ada while both are out: her row is still busy, and a tap
     // sends nothing.
     act(() => tree.update(sheet(ADA)));
-    expect(messageRows(tree)[0].props.disabled).toBe(true);
+    expect(messageRows(tree)[0].props.busy).toBe(true);
     await act(async () => {
       messageRows(tree)[0].props.onPress();
     });
@@ -375,12 +453,12 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     await act(async () => {
       ada.resolve({ id: "dm-ada" });
     });
-    expect(messageRows(tree)[0].props.disabled).toBe(true);
+    expect(messageRows(tree)[0].props.busy).toBe(true);
 
     await act(async () => {
       bob.resolve({ id: "dm-bob" });
     });
-    expect(messageRows(tree)[0].props.disabled).toBe(false);
+    expect(messageRows(tree)[0].props.busy).toBe(false);
     act(() => tree.unmount());
   });
 });
@@ -424,6 +502,53 @@ describe("MemberDetailSheet Block row (#2257)", () => {
     state.viewer = null;
     const tree = render(ADA);
     expect(blockRows(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+});
+
+/**
+ * The sheet's facts are `ListRow`'s detail rows, as s15's are: the label the
+ * quiet half and the value the one a member reads (the owner's design review,
+ * 2026-11-04). A chapter's custom field, whose label can run long, too.
+ */
+describe("MemberDetailSheet fact rows", () => {
+  const CARA = "44444444-4444-4444-8444-444444444444";
+  const LONG_LABEL = "Emergency contact name and phone number";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.viewer = VIEWER;
+    state.blockStatus = "ready";
+    state.blocked = new Set();
+    state.blockPaused = false;
+    PROFILES[`m-${CARA}`] = {
+      ...profile(CARA, "Cara"),
+      custom_fields: [
+        {
+          field_id: "f-1",
+          label: LONG_LABEL,
+          type: "text",
+          value: "Jordan Lee, 555-0100",
+        },
+      ] as never[],
+    };
+  });
+
+  it("draws Email, Role, Joined and each custom field as detail rows", () => {
+    const tree = render(CARA);
+    const rows = tree.root.findAllByType(ListRow);
+    const variantOf = (label: string) =>
+      rows.find((row) => row.props.label === label)?.props.variant;
+
+    expect(variantOf("Email")).toBe("detail");
+    expect(variantOf("Role")).toBe("detail");
+    expect(variantOf("Joined")).toBe("detail");
+    expect(variantOf(LONG_LABEL)).toBe("detail");
+    expect(
+      rows.find((row) => row.props.label === LONG_LABEL)?.props.value,
+    ).toBe("Jordan Lee, 555-0100");
+    // The actions stay default rows: their label names what a tap does.
+    expect(variantOf("Message")).toBeUndefined();
     act(() => tree.unmount());
   });
 });

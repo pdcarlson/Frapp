@@ -64,7 +64,7 @@ hotspot files are frozen for merge contention instead
 | Direction | Dark-first, warm, consumer (Notion dark / Cash App) | Light-first bone / bronze / ink |
 | Typeface | **Figtree**. Both web surfaces ship `packages/theme/fonts/FigtreeVF.woff2` (`next/font/local`, `--font-figtree`); static `Figtree-{Regular,Bold}.ttf` sit beside it for `next/og`, which can't parse a variable woff2. Read `packages/theme/README.md` before vendoring a fourth copy. | Geist Sans: rejected, and `GeistVF.woff2` is deleted |
 | House accent | Gold/amber: house gold `#EFB63B`; the default accent seed is [`accent-engine.md` § 3](../../../spec/ui/design-system/accent-engine.md#3-default-seed). Never brown-bronze, never royal blue. | Bronze `primary`; royal blue in old specs |
-| Tokens | Values in `foundations.md` (ladder `#131211` / `#1A1A1A` / `#211E1A` / `#2A2621`). Web: `packages/theme/src/signet.css` + `packages/theme/src/signet.ts`, bound as Tailwind keys in the shared preset `packages/theme/src/tailwind.config.ts`. Each app keeps one surface-specific remainder: `gold.*` in `apps/web/tailwind.config.ts`, the three marketing type roles in `apps/landing/tailwind.config.ts`. | `packages/theme/src/globals.css` and its package export, deleted in #2366 |
+| Tokens | Values in `foundations.md` (ladder `#0A0A0A` / `#111111` / `#171717` / `#1E1E1E`). Web: `packages/theme/src/signet.css` + `packages/theme/src/signet.ts`, bound as Tailwind keys in the shared preset `packages/theme/src/tailwind.config.ts`. Each app keeps one surface-specific remainder: `gold.*` in `apps/web/tailwind.config.ts`, the three marketing type roles in `apps/landing/tailwind.config.ts`. | `packages/theme/src/globals.css` and its package export, deleted in #2366 |
 
 ## The landing
 

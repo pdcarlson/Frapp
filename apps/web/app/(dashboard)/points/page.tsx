@@ -10,35 +10,45 @@ import {
   useSemesters,
   type SemesterArchive,
 } from "@repo/hooks";
-import { Badge } from "@/components/ui/badge";
+import { formatDay, formatTimestampFull } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ErrorState, anyReadUncached, LoadingState, OfflineState } from "@/components/shared/async-states";
-import { NestedEmpty } from "@/components/shared/nested-states";
-import { PageHeader } from "@/components/layout/page-header";
+import { Label } from "@/components/ui/label";
+import { anyReadUncached } from "@/components/shared/async-states";
+import {
+  NestedEmpty,
+  NestedError,
+  NestedOffline,
+} from "@/components/shared/nested-states";
+import { SectionLabel } from "@/components/shared/section-label";
+import { PageActions } from "@/components/layout/page-actions";
 import { amountToneClassName } from "@/components/points/amount-tone";
 import {
-  dashboardCheckboxCellClassName,
+  POINT_CATEGORIES,
+  pointCategoryLabel,
+} from "@/components/points/point-category";
+import {
   dashboardCheckboxHitAreaClassName,
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
+  dashboardToolbarSearchClassName,
+  dashboardToolbarSearchGlyphClassName,
+  denseListClassName,
 } from "@/components/shared/table-controls";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { asArray, downloadCsv } from "@/lib/utils";
+import { asArray, cn, downloadCsv } from "@/lib/utils";
 import { PointsAdjustmentDialog } from "@/components/points/points-adjustment-dialog";
 import {
   SubscriptionNotice,
   useGatedDialog,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
-import { formatLocaleDateTime as formatTimestamp } from "@repo/formatting";
 import { PointsAuditCard } from "@/components/points/points-audit-card";
+import { PointsPageSkeleton } from "@/components/points/points-skeleton";
 
 const windows = [
-  { label: "All Time", value: "all" as const },
+  { label: "All time", value: "all" as const },
   { label: "Semester", value: "semester" as const },
   { label: "Month", value: "month" as const },
 ];
@@ -62,7 +72,6 @@ type PointTransactionRow = {
   created_at: string;
 };
 
-
 export default function PointsPage() {
   const { isOffline } = useNetwork();
   const [window, setWindow] = useState<"all" | "semester" | "month">("all");
@@ -72,9 +81,13 @@ export default function PointsPage() {
   const [semesterArchiveId, setSemesterArchiveId] = useState("");
   const [leaderboardSearch, setLeaderboardSearch] = useState("");
   const [transactionSearch, setTransactionSearch] = useState("");
-  const [amountFilter, setAmountFilter] = useState<"all" | "positive" | "negative">("all");
+  const [amountFilter, setAmountFilter] = useState<
+    "all" | "positive" | "negative"
+  >("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
+  const [selectedTransactionIds, setSelectedTransactionIds] = useState<
+    string[]
+  >([]);
   // `POST /v1/points/adjust` is paid-ops. The dialog gates its own fields, but
   // `open` is owned here, so §5 rule 1 — refuse to open onto a doomed form —
   // has to be enforced at this trigger (#841).
@@ -99,9 +112,10 @@ export default function PointsPage() {
   const { nameFor, refetch: refetchRoster } = useMemberDisplayNames();
 
   // The roster gates nothing, at either scope. It feeds one column, and a query
-  // stays `isLoading` across its whole retry sequence — with `retry: 3` and
-  // 1s/2s/4s backoff, waiting on it would hide a board that is already in memory
-  // for the better part of ten seconds and then show the fallback labels anyway.
+  // stays `isLoading` across its whole retry sequence, whose backoff
+  // (`spec/ui/resilience/api-retry.md` § Reads) would hide a board that is
+  // already in memory for the better part of ten seconds and then show the
+  // fallback labels anyway.
   // Rows render as soon as their totals arrive and names land when they land;
   // the unresolved label is a real, permanent state for departed members, so an
   // unnamed row is never a broken-looking one.
@@ -114,10 +128,8 @@ export default function PointsPage() {
       : [];
   }, [leaderboardQuery.data]);
 
-
   const summary = summaryQuery.data as
-    | { balance?: number; transactions?: PointTransactionRow[] }
-    | undefined;
+    { balance?: number; transactions?: PointTransactionRow[] } | undefined;
   const transactions = useMemo(() => {
     return Array.isArray(summary?.transactions) ? summary.transactions : [];
   }, [summary]);
@@ -182,14 +194,16 @@ export default function PointsPage() {
       }
       if (
         categoryFilter !== "all" &&
-        transaction.category.toLowerCase() !== categoryFilter
+        transaction.category.toUpperCase() !== categoryFilter
       ) {
         return false;
       }
+      // The label, not the token: the search matches what the row shows.
+      const categoryLabel = pointCategoryLabel(transaction.category) ?? "";
       if (
         query &&
         !transaction.description.toLowerCase().includes(query) &&
-        !transaction.category.toLowerCase().includes(query)
+        !categoryLabel.toLowerCase().includes(query)
       ) {
         return false;
       }
@@ -205,22 +219,35 @@ export default function PointsPage() {
   /* eslint-disable react-hooks/set-state-in-effect -- reset selection when the visible transaction set changes */
   useEffect(() => {
     setSelectedTransactionIds([]);
-  }, [window, semesterArchiveId, transactionSearch, amountFilter, categoryFilter]);
+  }, [
+    window,
+    semesterArchiveId,
+    transactionSearch,
+    amountFilter,
+    categoryFilter,
+  ]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const transactionIds = filteredTransactions.map((transaction) => transaction.id);
+  const transactionIds = filteredTransactions.map(
+    (transaction) => transaction.id,
+  );
   const allTransactionsSelected =
     transactionIds.length > 0 &&
-    transactionIds.every((transactionId) => selectedTransactionIds.includes(transactionId));
+    transactionIds.every((transactionId) =>
+      selectedTransactionIds.includes(transactionId),
+    );
 
   function exportSelectedTransactionsCsv() {
     const rows = filteredTransactions
       .filter((transaction) => selectedTransactionIds.includes(transaction.id))
       .map((transaction) => ({
         Amount: String(transaction.amount),
-        Category: transaction.category,
+        Category:
+          pointCategoryLabel(transaction.category) ?? transaction.category,
         Description: transaction.description,
-        Time: formatTimestamp(transaction.created_at),
+        // ISO, not a display shape: a spreadsheet sorts and parses this column,
+        // and a locale string with no year or zone would lose both.
+        Time: transaction.created_at,
       }));
     downloadCsv(rows, "points");
   }
@@ -239,9 +266,7 @@ export default function PointsPage() {
 
   function toggleTransaction(id: string, checked: boolean) {
     if (checked) {
-      setSelectedTransactionIds((previous) => [
-        ...new Set([...previous, id]),
-      ]);
+      setSelectedTransactionIds((previous) => [...new Set([...previous, id])]);
       return;
     }
     setSelectedTransactionIds((previous) =>
@@ -255,46 +280,50 @@ export default function PointsPage() {
    * unresolved label is a real permanent state for a departed member rather
    * than a broken-looking one. Only the two reads the board and the ledger are
    * actually made of belong here.
+   *
+   * Every path below is the nested state family with `sole`, under the top
+   * bar's page title. The whole-screen `LoadingState` / `ErrorState` /
+   * `OfflineState` paint `--card`, which on a flush route redraws the card the
+   * route deleted (`spec/ui/web-dashboard/README.md` § Page grammar); `sole`
+   * gives the nested one back the live region and heading a page's only state
+   * needs.
    */
   if (isOffline && anyReadUncached(leaderboardQuery, summaryQuery)) {
     return (
-      <>
-        <PageHeader title="Points Ledger" />
-        <OfflineState
+      <div className="space-y-6">
+        <NestedOffline
+          sole
           title="Points ledger unavailable offline"
           description="Reconnect to refresh leaderboard standings and transaction history."
           onRetry={() => {
             /*
              * Both reads key on `window` and `semesterArchiveId`, and the
-             * controls that set them render *below* this card — so changing
-             * either offline swaps to a never-fetched key and this branch
-             * unmounts the only way back. Resetting to the default selection is
-             * what lets Retry reach cached rows; a paused refetch alone cannot.
+             * controls that set them render only on the loaded page — so
+             * changing either offline swaps to a never-fetched key and this
+             * branch unmounts the only way back. Resetting to the default
+             * selection is what lets Retry reach cached rows; a paused refetch
+             * alone cannot.
              */
             setWindow("all");
             setSemesterArchiveId("");
             void leaderboardQuery.refetch();
             void summaryQuery.refetch();
-            // Names are refreshed alongside the reads that raised this card, so a
-            // retry that fixes the board fixes the labels too. Not the only path
-            // and not a complete one: a roster that fails while the points reads
-            // succeed renders no card at all, and recovers on window focus or
-            // reconnect (`query-provider.tsx`) rather than from any control here.
-            // Giving that case a visible signal is #1209's.
+            // Names are refreshed alongside the reads that raised this state,
+            // so a retry that fixes the board fixes the labels too. Not the
+            // only path and not a complete one: a roster that fails while the
+            // points reads succeed renders no state at all, and recovers on
+            // window focus or reconnect (`query-provider.tsx`) rather than
+            // from any control here. Giving that case a visible signal is
+            // #1209's.
             refetchRoster();
           }}
         />
-      </>
+      </div>
     );
   }
 
   if (isLoading) {
-    return (
-      <>
-        <PageHeader title="Points Ledger" />
-        <LoadingState message={stateMicrocopy.points.loading} />
-      </>
-    );
+    return <PointsPageSkeleton />;
   }
 
   // The leaderboard and the ledger are what officers read chapter financial
@@ -305,70 +334,58 @@ export default function PointsPage() {
   // matching how Members handles its supporting queries.
   if (hasError) {
     return (
-      <>
-        <PageHeader title="Points Ledger" />
-        <ErrorState
+      <div className="space-y-6">
+        <NestedError
+          sole
           title={stateMicrocopy.points.errorTitle}
           description={stateMicrocopy.points.errorDescription}
           onRetry={() => {
             void leaderboardQuery.refetch();
             void summaryQuery.refetch();
-            // Names are refreshed alongside the reads that raised this card, so
-            // a retry that fixes the board fixes the labels too. Not the only
-            // path and not a complete one: a roster that fails while the points
-            // reads succeed renders no card at all, and recovers on window
-            // focus or reconnect (`query-provider.tsx`) rather than from any
-            // control here.
-            // Giving that case a visible signal is #1209's.
+            // Names are refreshed alongside the reads that raised this state,
+            // so a retry that fixes the board fixes the labels too (#1209
+            // owns the roster-only failure, which raises nothing here).
             refetchRoster();
           }}
         />
-      </>
+      </div>
     );
   }
 
+  const balance = typeof summary?.balance === "number" ? summary.balance : 0;
+  const selectedCount = selectedTransactionIds.length;
+
   return (
     <div className="space-y-6">
-      <PageHeader title="Points Ledger" />
-      <Card>
+      {/*
+        One toolbar row: the window choice, the archive picker and the route's
+        action, rather than a summary card. `PageActions` wraps them once the
+        row runs out of width, which is what holds the 375px floor (#1142 was
+        this row overflowing inside the old card header).
+      */}
+      <PageActions>
         {/*
-          Stacked below `sm` (#1142): the description plus "Adjust points" and
-          the three window buttons cannot share a row inside a 375px viewport,
-          and every one of them is `whitespace-nowrap`. Scoped with `max-sm:`
-          rather than written mobile-first on purpose — at `sm` and above the
-          class list resolves to exactly what it was, so the pinned 1440px
-          visual baseline for this route does not move.
-        */}
-        <CardHeader className="flex flex-row items-center justify-between max-sm:flex-col max-sm:items-start max-sm:gap-3 max-sm:space-y-0">
-          <div>
-            <CardDescription>
-              Track chapter ranking, manual adjustments, and transaction history.
-            </CardDescription>
-          </div>
-          {/* `flex-wrap` is inert at desktop width and lets the four nowrap
-              buttons stack instead of overflow at 375px. */}
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              {...adjustGate.controlProps()}
-              onClick={() => adjustDialog.setOpen(true)}
-            >
-              <AdjustGlyph className="h-4 w-4" />
-              Adjust points
-            </Button>
-            {windows.map((item) => (
+            A segmented choice, not three primaries: the selected window is
+            the outlined Secondary and the others are Ghost, so the row's
+            filled control is never a filter. `aria-pressed` carries the
+            selection, which the fill alone used to.
+          */}
+        <div
+          role="group"
+          aria-label="Time window"
+          className="flex items-center gap-1"
+        >
+          {windows.map((item) => {
+            // Selecting an archived period overrides `window` entirely,
+            // so none of these reads as selected while one is chosen —
+            // reselecting one here is what returns to live mode.
+            const active = !semesterArchiveId && window === item.value;
+            return (
               <Button
                 key={item.value}
-                // Selecting an archived period below overrides `window`
-                // entirely, so none of these read as "active" while one is
-                // chosen — reselecting one here is what returns to live mode.
-                variant={
-                  !semesterArchiveId && window === item.value
-                    ? "default"
-                    : "secondary"
-                }
-                size="sm"
+                variant={active ? "secondary" : "ghost"}
+                size="toolbar"
+                aria-pressed={active}
                 onClick={() => {
                   setWindow(item.value);
                   setSemesterArchiveId("");
@@ -376,122 +393,160 @@ export default function PointsPage() {
               >
                 {item.label}
               </Button>
+            );
+          })}
+        </div>
+        {archives.length > 0 ? (
+          <select
+            aria-label="View an archived semester"
+            value={semesterArchiveId}
+            onChange={(event) => setSemesterArchiveId(event.target.value)}
+            className={dashboardFilterSelectClassName}
+          >
+            <option value="">Archived period…</option>
+            {archives.map((archive) => (
+              <option key={archive.id} value={archive.id}>
+                {archive.label}
+              </option>
             ))}
-            {archives.length > 0 ? (
-              <select
-                aria-label="View an archived semester"
-                value={semesterArchiveId}
-                onChange={(event) => setSemesterArchiveId(event.target.value)}
-                className={dashboardFilterSelectClassName}
-              >
-                <option value="">Archived period…</option>
-                {archives.map((archive) => (
-                  <option key={archive.id} value={archive.id}>
-                    {archive.label}
-                  </option>
-                ))}
-              </select>
-            ) : null}
-          </div>
-        </CardHeader>
-        <CardContent>
-          {/*
-            The all/semester/month window buttons beside the trigger are reads
-            and stay live — a lapsed chapter keeps its full ledger history.
+          </select>
+        ) : null}
+        {/*
+            The window buttons beside this trigger are reads and stay live
+            while it is gated: a lapsed chapter keeps its full ledger history.
           */}
-          <SubscriptionNotice
-            gate={adjustGate}
-            feature="point adjustments"
-          />
-          <div className="flex flex-wrap items-center gap-3">
-            <Badge variant="secondary">My balance</Badge>
-            <p className="text-2xl font-bold tabular-nums">
-              {typeof summary?.balance === "number" ? summary.balance : 0} points
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+        <Button
+          size="toolbar"
+          variant="secondary"
+          className="gap-2"
+          {...adjustGate.controlProps()}
+          onClick={() => adjustDialog.setOpen(true)}
+        >
+          <AdjustGlyph className="h-4 w-4" />
+          Adjust points
+        </Button>
+      </PageActions>
 
-      <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Leaderboard</CardTitle>
-            <CardDescription>Current ranking for selected time window.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-3 relative">
-              <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+      <SubscriptionNotice gate={adjustGate} feature="point adjustments" />
+
+      {/* A stat on the page surface: the label over the number, no frame. */}
+      <dl className="space-y-0.5">
+        <dt className="text-caption text-muted-foreground">My balance</dt>
+        <dd className="text-headline font-bold tabular-nums text-foreground">
+          {balance}{" "}
+          <span className="text-label font-semibold text-muted-foreground">
+            points
+          </span>
+        </dd>
+      </dl>
+
+      <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
+        <section
+          aria-labelledby="points-leaderboard-label"
+          className="min-w-0 space-y-3"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <SectionLabel
+              id="points-leaderboard-label"
+              count={
+                leaderboardRows.length > 0
+                  ? `${leaderboardRows.length} member${leaderboardRows.length === 1 ? "" : "s"}`
+                  : null
+              }
+            >
+              Leaderboard
+            </SectionLabel>
+            <div className="relative w-full sm:w-56">
+              <Label htmlFor="points-leaderboard-search" className="sr-only">
+                Search the leaderboard
+              </Label>
+              <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
               <Input
+                id="points-leaderboard-search"
+                type="search"
                 value={leaderboardSearch}
                 onChange={(event) => setLeaderboardSearch(event.target.value)}
-                placeholder="Search by member name"
-                className="h-11 pl-9"
+                placeholder="Search members"
+                className={dashboardToolbarSearchClassName}
               />
             </div>
-            {filteredLeaderboard.length === 0 ? (
-              // A search that matches nothing is not an empty board — saying
-              // "point activity will populate after..." there would assert
-              // something false about the chapter's data.
-              leaderboardRows.length > 0 ? (
-                <NestedEmpty
-                  title={stateMicrocopy.points.noLeaderboardMatchesTitle}
-                  description={
-                    stateMicrocopy.points.noLeaderboardMatchesDescription
-                  }
-                />
-              ) : (
-                <NestedEmpty
-                  title={stateMicrocopy.points.emptyLeaderboardTitle}
-                  description={stateMicrocopy.points.emptyLeaderboardDescription}
-                />
-              )
+          </div>
+          {filteredLeaderboard.length === 0 ? (
+            // A search that matches nothing is not an empty board — saying
+            // "point activity will populate after..." there would assert
+            // something false about the chapter's data.
+            leaderboardRows.length > 0 ? (
+              <NestedEmpty
+                title={stateMicrocopy.points.noLeaderboardMatchesTitle}
+                description={
+                  stateMicrocopy.points.noLeaderboardMatchesDescription
+                }
+              />
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Rank</TableHead>
-                    <TableHead>User</TableHead>
-                    <TableHead>Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredLeaderboard.map((entry) => (
-                    <TableRow key={entry.user_id}>
-                      <TableCell className="font-mono tabular-nums">#{entry.rank}</TableCell>
-                      {/*
-                        foundations §7 reserves mono for ids, tokens, keys and
-                        points cells. This cell now holds a person, not an id —
-                        even the unresolved fallback is a `Member …` label — so
-                        it is no longer one of them.
-                      */}
-                      <TableCell className="text-caption">
-                        {entry.label}
-                      </TableCell>
-                      <TableCell className="font-mono font-semibold tabular-nums">
-                        {entry.total}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+              <NestedEmpty
+                title={stateMicrocopy.points.emptyLeaderboardTitle}
+                description={stateMicrocopy.points.emptyLeaderboardDescription}
+              />
+            )
+          ) : (
+            // `role="list"` restated: a flex `<li>` loses its `list-item` box,
+            // and WebKit then stops exposing the list and its item count.
+            <ul role="list" className={denseListClassName}>
+              {filteredLeaderboard.map((entry) => (
+                <li
+                  key={entry.user_id}
+                  className="flex min-h-11 items-center gap-3"
+                >
+                  <span className="w-10 shrink-0 font-mono text-caption tabular-nums text-muted-foreground">
+                    {`#${entry.rank}`}
+                  </span>
+                  {/*
+                    foundations §7 reserves mono for ids, tokens, keys and
+                    points cells. This holds a person, not an id — even the
+                    unresolved fallback is a `Member …` label — so it is not
+                    one of them.
+                  */}
+                  <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+                    {entry.label}
+                  </span>
+                  <span className="shrink-0 text-right font-mono text-sm font-semibold tabular-nums text-foreground">
+                    {entry.total}
+                    <span className="sr-only"> points</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">My Transactions</CardTitle>
-            <CardDescription>Most recent point activity in this window.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-3 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
-              <div className="relative">
-                <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+        <section
+          aria-labelledby="points-transactions-label"
+          className="min-w-0 space-y-3"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <SectionLabel
+              id="points-transactions-label"
+              count={
+                transactions.length > 0
+                  ? `${transactions.length} transaction${transactions.length === 1 ? "" : "s"}`
+                  : null
+              }
+            >
+              My transactions
+            </SectionLabel>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative w-full sm:w-48">
+                <Label htmlFor="points-transaction-search" className="sr-only">
+                  Search transactions
+                </Label>
+                <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
                 <Input
+                  id="points-transaction-search"
+                  type="search"
                   value={transactionSearch}
                   onChange={(event) => setTransactionSearch(event.target.value)}
-                  placeholder="Search descriptions"
-                  className="h-11 pl-9"
+                  placeholder="Search transactions"
+                  className={dashboardToolbarSearchClassName}
                 />
               </div>
               <select
@@ -515,102 +570,146 @@ export default function PointsPage() {
                 className={dashboardFilterSelectClassName}
               >
                 <option value="all">Category: All</option>
-                <option value="attendance">Attendance</option>
-                <option value="study">Study</option>
-                <option value="fine">Fine</option>
-                <option value="manual">Manual</option>
-                <option value="service">Service</option>
+                {POINT_CATEGORIES.map((category) => (
+                  <option key={category} value={category}>
+                    {`Category: ${pointCategoryLabel(category)}`}
+                  </option>
+                ))}
               </select>
             </div>
-            {selectedTransactionIds.length > 0 ? (
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent-border bg-accent-subtle p-3">
-                <p className="text-sm font-semibold">
-                  {selectedTransactionIds.length} transaction
-                  {selectedTransactionIds.length > 1 ? "s" : ""} selected
-                </p>
-                {/*
-                  Flag for audit removed rather than wired (#336): flags are
-                  raised automatically whenever a single adjustment *reaches*
-                  the chapter's configured anomaly threshold (#394 — default
-                  ±100, see PointsAuditCard below) — there is no manual
-                  override to call, and adding one would be a new moderation
-                  feature rather than a wiring fix.
-                */}
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={exportSelectedTransactionsCsv}
-                >
-                  Export selected
-                </Button>
-              </div>
-            ) : null}
-            {filteredTransactions.length === 0 ? (
-              <NestedEmpty
-                title={stateMicrocopy.points.emptyTransactionsTitle}
-                description={stateMicrocopy.points.emptyTransactionsDescription}
-              />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className={dashboardCheckboxCellClassName}>
-                      <label className={dashboardCheckboxHitAreaClassName}>
+          </div>
+          {/*
+            The selection bar: a flush tinted strip, and only the count and
+            the bulk action are conditional. Flag for audit was removed rather
+            than wired (#336): flags are raised automatically whenever a single
+            adjustment *reaches* the chapter's configured anomaly threshold
+            (#394 — default ±100, see PointsAuditCard below), so there is no
+            manual override to call.
+          */}
+          {selectedCount > 0 ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-popover px-2 py-1.5">
+              <p className="text-caption font-semibold text-foreground">
+                {`${selectedCount} transaction${selectedCount > 1 ? "s" : ""} selected`}
+              </p>
+              <Button
+                size="toolbar"
+                variant="secondary"
+                className="sm:ml-auto"
+                onClick={exportSelectedTransactionsCsv}
+              >
+                Export selected
+              </Button>
+            </div>
+          ) : null}
+          {filteredTransactions.length === 0 ? (
+            <NestedEmpty
+              title={stateMicrocopy.points.emptyTransactionsTitle}
+              description={stateMicrocopy.points.emptyTransactionsDescription}
+            />
+          ) : (
+            <>
+              {/*
+                The select-all lives in the always-rendered list header, not
+                in the selection bar: inside the bar it would be unreachable
+                until a row was ticked, and unticking it would unmount the
+                control that has focus (README § Page grammar).
+              */}
+              <label className="flex w-fit min-h-9 cursor-pointer items-center gap-2 text-caption text-muted-foreground pointer-coarse:min-h-11">
+                <span className={dashboardCheckboxHitAreaClassName}>
+                  <input
+                    type="checkbox"
+                    aria-label="Select all visible transactions"
+                    className={dashboardTableCheckboxClassName}
+                    checked={allTransactionsSelected}
+                    onChange={(event) =>
+                      toggleAllTransactions(event.target.checked)
+                    }
+                  />
+                </span>
+                Select all
+              </label>
+              <ul role="list" className={denseListClassName}>
+                {filteredTransactions.map((transaction) => {
+                  const selected = selectedTransactionIds.includes(
+                    transaction.id,
+                  );
+                  const categoryLabel = pointCategoryLabel(
+                    transaction.category,
+                  );
+                  const day = formatDay(transaction.created_at);
+                  // The reason is the row's title; a transaction without one
+                  // is titled by its category instead, and the meta line then
+                  // drops the category rather than saying it twice.
+                  const title = transaction.description || categoryLabel;
+                  const metaCategory = transaction.description
+                    ? categoryLabel
+                    : null;
+                  return (
+                    <li
+                      key={transaction.id}
+                      className={cn(
+                        "flex min-h-11 items-center gap-2 py-1.5",
+                        // Fill means state, never striping.
+                        selected && "bg-popover",
+                      )}
+                    >
+                      <label
+                        className={`${dashboardCheckboxHitAreaClassName} shrink-0`}
+                      >
                         <input
                           type="checkbox"
-                          aria-label="Select all visible transactions"
+                          aria-label={`Select ${title ?? "transaction"}`}
                           className={dashboardTableCheckboxClassName}
-                          checked={allTransactionsSelected}
-                          onChange={(event) => toggleAllTransactions(event.target.checked)}
+                          checked={selected}
+                          onChange={(event) =>
+                            toggleTransaction(
+                              transaction.id,
+                              event.target.checked,
+                            )
+                          }
                         />
                       </label>
-                    </TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Time</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredTransactions.map((transaction) => (
-                    <TableRow
-                      key={transaction.id}
-                      data-state={
-                        selectedTransactionIds.includes(transaction.id)
-                          ? "selected"
-                          : undefined
-                      }
-                    >
-                      <TableCell className={dashboardCheckboxCellClassName}>
-                        <label className={dashboardCheckboxHitAreaClassName}>
-                          <input
-                            type="checkbox"
-                            aria-label={`Select ${transaction.description}`}
-                            className={dashboardTableCheckboxClassName}
-                            checked={selectedTransactionIds.includes(transaction.id)}
-                            onChange={(event) =>
-                              toggleTransaction(transaction.id, event.target.checked)
-                            }
-                          />
-                        </label>
-                      </TableCell>
-                      <TableCell
-                        className={amountToneClassName(transaction.amount)}
+                      <div className="min-w-0 flex-1">
+                        {title ? (
+                          <p className="truncate text-sm text-foreground">
+                            {title}
+                          </p>
+                        ) : null}
+                        {metaCategory || day ? (
+                          <p className="truncate text-caption text-muted-foreground">
+                            {metaCategory}
+                            {metaCategory && day ? " · " : null}
+                            {day ? (
+                              <time
+                                dateTime={transaction.created_at}
+                                title={
+                                  formatTimestampFull(transaction.created_at) ??
+                                  undefined
+                                }
+                              >
+                                {day}
+                              </time>
+                            ) : null}
+                          </p>
+                        ) : null}
+                      </div>
+                      <span
+                        className={cn(
+                          amountToneClassName(transaction.amount, "sm"),
+                          "shrink-0 text-right",
+                        )}
                       >
-                        {transaction.amount >= 0 ? `+${transaction.amount}` : transaction.amount}
-                      </TableCell>
-                      <TableCell>{transaction.category}</TableCell>
-                      <TableCell>{transaction.description}</TableCell>
-                      <TableCell className="text-caption text-muted-foreground">
-                        {formatTimestamp(transaction.created_at)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+                        {transaction.amount >= 0
+                          ? `+${transaction.amount}`
+                          : `${transaction.amount}`}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
+        </section>
       </div>
 
       <PointsAuditCard />
@@ -620,7 +719,10 @@ export default function PointsPage() {
         onOpenChange={adjustDialog.setOpen}
         onCloseAutoFocus={adjustDialog.contentProps.onCloseAutoFocus}
         onAdjusted={async () => {
-          await Promise.all([leaderboardQuery.refetch(), summaryQuery.refetch()]);
+          await Promise.all([
+            leaderboardQuery.refetch(),
+            summaryQuery.refetch(),
+          ]);
         }}
       />
     </div>

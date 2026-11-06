@@ -101,15 +101,18 @@ VALUES ('c0ffee00-0000-4000-8000-000000000001', 'Beta Theta Omega', 'Westfield U
 -- is no key at all: with 'alumni' here, `GET /v1/alumni` found no Alumni role
 -- and the mobile directory read "Alumni · 0" over three seeded alumni, and none
 -- of the Alumni restrictions applied to them.
-INSERT INTO roles (id, chapter_id, name, permissions, is_system, display_order, system_key)
+--
+-- `color` is the role palette default `DEFAULT_SYSTEM_ROLES` seeds (#3485), so
+-- officers' chat names show their color in the demo and store screenshots.
+INSERT INTO roles (id, chapter_id, name, permissions, is_system, display_order, system_key, color)
 VALUES
- ('c0ffee00-0000-4000-8000-0000000000a1', 'c0ffee00-0000-4000-8000-000000000001', 'President',      ARRAY['*'], true, 1, 'PRESIDENT'),
- ('c0ffee00-0000-4000-8000-0000000000a2', 'c0ffee00-0000-4000-8000-000000000001', 'Treasurer',      ARRAY['billing:view','billing:manage','points:adjust','points:view_all','polls:view_all','members:view','reports:export','events:create','events:update'], true, 2, 'TREASURER'),
- ('c0ffee00-0000-4000-8000-0000000000a3', 'c0ffee00-0000-4000-8000-000000000001', 'Vice President', ARRAY['members:view','polls:view_all'], true, 3, 'VICE_PRESIDENT'),
- ('c0ffee00-0000-4000-8000-0000000000a4', 'c0ffee00-0000-4000-8000-000000000001', 'Secretary',      ARRAY['members:view','polls:view_all'], true, 4, 'SECRETARY'),
- ('c0ffee00-0000-4000-8000-0000000000a5', 'c0ffee00-0000-4000-8000-000000000001', 'Member',         ARRAY['members:view','backwork:upload','service:log','polls:create'], true, 5, 'MEMBER'),
- ('c0ffee00-0000-4000-8000-0000000000a6', 'c0ffee00-0000-4000-8000-000000000001', 'New Member',     ARRAY['members:view','backwork:upload'], true, 6, 'NEW_MEMBER'),
- ('c0ffee00-0000-4000-8000-0000000000a7', 'c0ffee00-0000-4000-8000-000000000001', 'Alumni',         ARRAY['members:view'], true, 7, 'ALUMNI');
+ ('c0ffee00-0000-4000-8000-0000000000a1', 'c0ffee00-0000-4000-8000-000000000001', 'President',      ARRAY['*'], true, 1, 'PRESIDENT', '#F2994A'),
+ ('c0ffee00-0000-4000-8000-0000000000a2', 'c0ffee00-0000-4000-8000-000000000001', 'Treasurer',      ARRAY['billing:view','billing:manage','points:adjust','points:view_all','polls:view_all','members:view','reports:export','events:create','events:update'], true, 2, 'TREASURER', '#6FD08C'),
+ ('c0ffee00-0000-4000-8000-0000000000a3', 'c0ffee00-0000-4000-8000-000000000001', 'Vice President', ARRAY['members:view','polls:view_all'], true, 3, 'VICE_PRESIDENT', '#8FA8FF'),
+ ('c0ffee00-0000-4000-8000-0000000000a4', 'c0ffee00-0000-4000-8000-000000000001', 'Secretary',      ARRAY['members:view','polls:view_all'], true, 4, 'SECRETARY', '#F47FA4'),
+ ('c0ffee00-0000-4000-8000-0000000000a5', 'c0ffee00-0000-4000-8000-000000000001', 'Member',         ARRAY['members:view','backwork:upload','service:log','polls:create'], true, 5, 'MEMBER', NULL),
+ ('c0ffee00-0000-4000-8000-0000000000a6', 'c0ffee00-0000-4000-8000-000000000001', 'New Member',     ARRAY['members:view','backwork:upload'], true, 6, 'NEW_MEMBER', NULL),
+ ('c0ffee00-0000-4000-8000-0000000000a7', 'c0ffee00-0000-4000-8000-000000000001', 'Alumni',         ARRAY['members:view'], true, 7, 'ALUMNI', '#A9B4C2');
 
 -- ── People ───────────────────────────────────────────────────────────────────
 -- 26 invented members. Roster #1, the president, is the one real login.
@@ -403,6 +406,18 @@ FROM u CROSS JOIN (VALUES
 ) AS c(i, cat, descr)
 WHERE u.n <= 23 AND (u.n + c.i) % 3 <> 0;
 
+-- The demo login (roster #1, the president) set up the 5K course and hosted
+-- the alumni panel, so the Tasks screen's rank card reads near the top rather
+-- than mid-table. Roster #2 out-raised everyone, so the president is second,
+-- not a suspiciously perfect first.
+INSERT INTO point_transactions (chapter_id, user_id, amount, category, description, created_at)
+SELECT 'c0ffee00-0000-4000-8000-000000000001', u.id, c.amount, c.cat, c.descr, now() - (interval '1 day' * c.days)
+FROM u JOIN (VALUES
+ (1, 20,'SERVICE','Philanthropy 5K course setup',9),
+ (1, 10,'ATTENDANCE','Alumni panel host',16),
+ (2, 20,'SERVICE','Philanthropy 5K top fundraiser',9)
+) AS c(who, amount, cat, descr, days) ON u.n = c.who;
+
 INSERT INTO point_transactions (chapter_id, user_id, amount, category, description, created_at)
 SELECT 'c0ffee00-0000-4000-8000-000000000001', id, -15, 'FINE', 'Missed mandatory chapter meeting', now() - interval '6 days'
 FROM u WHERE n IN (12, 17, 21);
@@ -456,10 +471,10 @@ FROM (VALUES
  ('c0ffee00-0000-4000-8000-4000000000b2', 9, 'grabbing coffee before the 5k meeting if anyone wants in', 95),
  ('c0ffee00-0000-4000-8000-4000000000b2',14, 'im in, meet at the corner spot?', 91),
  ('c0ffee00-0000-4000-8000-4000000000b2', 9, 'yep see you in 10', 88),
- ('c0ffee00-0000-4000-8000-4000000000b2', 2, 'dues reminder went out this morning — if you already paid you can ignore it, the batch went to everyone', 44),
- ('c0ffee00-0000-4000-8000-4000000000b2', 6, 'confirmed mine cleared last week, thanks Devin', 39),
- ('c0ffee00-0000-4000-8000-4000000000b2',17, 'is the laundry room door fixed yet or still jammed', 22),
- ('c0ffee00-0000-4000-8000-4000000000b2', 8, 'two quotes in, house manager is picking one this week', 18),
+ ('c0ffee00-0000-4000-8000-4000000000b2', 2, 'Founders Day photos are up in Documents. grab yours before the composite deadline', 44),
+ ('c0ffee00-0000-4000-8000-4000000000b2', 6, 'these came out really good, thanks Devin', 39),
+ ('c0ffee00-0000-4000-8000-4000000000b2',17, 'what time are we heading over for the game saturday', 22),
+ ('c0ffee00-0000-4000-8000-4000000000b2', 8, 'tailgate starts at 11 in lot C, bring chairs', 18),
  ('c0ffee00-0000-4000-8000-4000000000b2',12, 'who is bringing the canopy tent saturday', 9),
  ('c0ffee00-0000-4000-8000-4000000000b2', 5, 'i have it in my trunk already', 4)
 ) AS m(chan, who, body, mins_ago);
@@ -479,6 +494,22 @@ FROM (VALUES
  ('c0ffee00-0000-4000-8000-4000000000b5', 1, 'Budget proposal draft is in the shared folder. Comments by Sunday.', false, 14),
  ('c0ffee00-0000-4000-8000-4000000000b5', 2, 'Added the line items for house improvements. Numbers are conservative.', false, 11)
 ) AS m(chan, who, body, pinned, hrs);
+
+-- Reactions on two #general messages, so the thread the store screenshots
+-- show reads like a chapter that uses it.
+-- Reactions live on `chat_message_actions` as `reaction:<emoji>` (the chat
+-- hot path, packages/chat-core REACTION_ACTION_PREFIX); the legacy
+-- `message_reactions` table is not what the thread reads.
+INSERT INTO chat_message_actions (message_id, user_id, action_type, created_at)
+SELECT msg.id, u.id, 'reaction:' || r.emoji, msg.created_at + interval '2 minutes'
+FROM (VALUES
+ ('tailgate starts at 11 in lot C, bring chairs', '🔥', ARRAY[3,5,9,12,14,17]),
+ ('tailgate starts at 11 in lot C, bring chairs', '🙌', ARRAY[6,11]),
+ ('Founders Day photos are up in Documents. grab yours before the composite deadline', '❤️', ARRAY[4,6,7,10])
+) AS r(body, emoji, who)
+JOIN chat_messages msg ON msg.content = r.body
+  AND msg.channel_id = 'c0ffee00-0000-4000-8000-4000000000b2'
+JOIN u ON u.n = ANY (r.who);
 
 -- ── Study geofences + sessions ───────────────────────────────────────────────
 -- The zones sit on the fictional campus, at real coordinates in Akron, Ohio. A

@@ -3,7 +3,10 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FrappThemeProvider } from "@/lib/theme";
+import { getSignetTokens } from "@repo/theme/signet";
+import { FrappThemeProvider, typeRole } from "@/lib/theme";
+import { expectBackRow } from "@/test/back-row";
+import { screenText } from "@/test/screen-text";
 import type { DirectoryRow } from "@/lib/more/directory";
 
 /**
@@ -50,31 +53,58 @@ const MEMBERS = [MARCUS, CHARLES, ANDRE, DANIEL];
 /** `GET /v1/alumni`: its own endpoint, its own payload. */
 const ALUMNI = [CHARLES, DANIEL];
 
-function read(data: unknown) {
+function read(data: unknown, refetch = vi.fn()) {
+  if (state.pending) {
+    return {
+      data: undefined,
+      isPending: true,
+      isError: false,
+      isSuccess: false,
+      isFetching: true,
+      refetch,
+    };
+  }
   return {
     data,
     isPending: false,
     isError: false,
     isSuccess: true,
     isFetching: false,
-    refetch: vi.fn(),
+    refetch,
   };
 }
 
-const state = vi.hoisted(() => ({ search: [] as unknown[] }));
+const state = vi.hoisted(() => ({ search: [] as unknown[], pending: false }));
+
+// One refetch per read, so a pull can be checked against each of them.
+const refetches = vi.hoisted(() => ({
+  members: vi.fn(),
+  alumni: vi.fn(),
+  search: vi.fn(),
+}));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => "c-1",
-  useMembers: () => read(MEMBERS),
+  useMembers: () => read(MEMBERS, refetches.members),
   useAlumni: (filters?: { company?: string }) =>
-    read(filters?.company === "Acme" ? [CHARLES] : ALUMNI),
-  useMemberSearch: (q: string) => (q ? read(state.search) : read(undefined)),
+    read(filters?.company === "Acme" ? [CHARLES] : ALUMNI, refetches.alumni),
+  // Off without a term, as the real query is, so a pull skips it then.
+  useMemberSearch: (q: string) => ({
+    ...read(q ? state.search : undefined, refetches.search),
+    isEnabled: q.length > 0,
+  }),
+}));
+
+// The back row paints the chapter accent; its value is back-row.spec.tsx's.
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({ accent: "#CB9FFF" }),
 }));
 
 // Stubbed so the header needs none of the chapter-branding hooks they call.
 // The spec reads their props off the header element the screen builds.
 vi.mock("@/components/filter-chips", () => ({
+  Chip: () => null,
   FilterChips: () => null,
   SearchField: () => null,
 }));
@@ -83,7 +113,14 @@ vi.mock("@/components/directory/member-detail-sheet", () => ({
   MemberDetailSheet: () => null,
 }));
 
-import DirectoryScreen from "@/app/(tabs)/directory";
+import DirectoryScreen, {
+  MemberListSkeleton,
+  MemberRow,
+} from "@/app/(tabs)/directory";
+import { signetDarkTokens } from "@repo/theme/signet";
+import { DirectoryGlyph } from "@/components/more/more-glyphs";
+import { SearchGlyph } from "@/components/search-glyph";
+import { EmptyState } from "@/components/state-block";
 import {
   FilterChips as FilterChipsStandIn,
   SearchField as SearchFieldStandIn,
@@ -145,7 +182,28 @@ function chips(tree: ReactTestRenderer) {
   ) as {
     chips: { value: string; count: number | null }[];
     onSelect: (value: string) => void;
+    scroll?: boolean;
+    trailing: React.ReactElement<{
+      label: string;
+      on: boolean;
+      accessibilityState: { expanded: boolean };
+      onPress: () => void;
+    }> | null;
   };
+}
+
+/** The alumni filter field with this label, or `null` while they're folded. */
+function alumniField(tree: ReactTestRenderer, label: string) {
+  try {
+    return inHeader(
+      tree,
+      (element) =>
+        (element.type as unknown) === SearchFieldStandIn &&
+        element.props.accessibilityLabel === label,
+    ) as { onChangeText: (text: string) => void };
+  } catch {
+    return null;
+  }
 }
 
 function countOf(tree: ReactTestRenderer, value: string) {
@@ -154,6 +212,10 @@ function countOf(tree: ReactTestRenderer, value: string) {
 
 beforeEach(() => {
   state.search = [];
+  state.pending = false;
+  for (const refetch of Object.values(refetches)) {
+    refetch.mockReset().mockResolvedValue(undefined);
+  }
 });
 
 describe("s13 Directory on a chapter with alumni (#2484)", () => {
@@ -182,18 +244,102 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
   it("lists what GET /v1/alumni answers for the Alumni tab's filters", () => {
     const tree = render();
     act(() => chips(tree).onSelect("alumni"));
+    act(() => chips(tree).trailing!.props.onPress());
 
-    const company = inHeader(
-      tree,
-      (element) =>
-        (element.type as unknown) === SearchFieldStandIn &&
-        element.props.accessibilityLabel === "Filter alumni by company",
-    ) as { onChangeText: (text: string) => void };
+    const company = alumniField(tree, "Filter alumni by company")!;
     act(() => company.onChangeText("Acme"));
 
     expect(listed(tree)).toEqual(["Charles Whitmore III"]);
     // A filtered list isn't the chapter's total, so the chip drops its count.
     expect(countOf(tree, "alumni")).toBeNull();
+  });
+
+  // One row that scrolls sideways, with the Filters chip at its end, rather
+  // than FilterChips' default wrapping row, which is the sheets'.
+  it("puts its chips on one sideways-scrolling row", () => {
+    const tree = render();
+    expect(chips(tree).scroll).toBe(true);
+  });
+
+  // The owner's design review, 2026-11-04: the three fields used to stack
+  // under the tabs whenever the Alumni tab was up, pushing the list down.
+  it("keeps the alumni fields behind a Filters chip that counts what is set", () => {
+    const tree = render();
+    expect(chips(tree).trailing).toBeNull();
+
+    act(() => chips(tree).onSelect("alumni"));
+    const filters = () => chips(tree).trailing!.props;
+    expect(filters().label).toBe("Filters");
+    expect(filters().accessibilityState).toEqual({ expanded: false });
+    expect(alumniField(tree, "Filter alumni by city")).toBeNull();
+
+    act(() => filters().onPress());
+    expect(filters().on).toBe(true);
+    act(() => alumniField(tree, "Filter alumni by city")!.onChangeText("Troy"));
+    act(() =>
+      alumniField(tree, "Filter alumni by company")!.onChangeText("Acme"),
+    );
+    expect(filters().label).toBe("Filters · 2");
+
+    // Folded away, the filters still apply and the chip still says so.
+    act(() => filters().onPress());
+    expect(alumniField(tree, "Filter alumni by city")).toBeNull();
+    expect(filters().label).toBe("Filters · 2");
+    expect(listed(tree)).toEqual(["Charles Whitmore III"]);
+  });
+
+  it("draws the More hub's glyphs on its empty states, and doesn't narrate", () => {
+    const tree = render();
+    const body = () =>
+      list(tree).props.ListEmptyComponent as React.ReactElement<{
+        children: React.ReactElement<Record<string, unknown>>;
+      }>;
+    expect(body().props.children.type).toBe(EmptyState);
+    expect(body().props.children.props).toEqual({
+      glyph: DirectoryGlyph,
+      title: "No actives yet",
+    });
+
+    act(() => chips(tree).onSelect("alumni"));
+    act(() => chips(tree).trailing!.props.onPress());
+    act(() => alumniField(tree, "Filter alumni by city")!.onChangeText("Troy"));
+    expect(body().props.children.props).toEqual({
+      glyph: SearchGlyph,
+      title: "No alumni match the filters",
+      body: "Clear a filter to see more.",
+    });
+  });
+
+  async function pull(tree: ReturnType<typeof render>) {
+    const control = list(tree).props.refreshControl as React.ReactElement<{
+      refresh: () => Promise<unknown>;
+    }>;
+    await act(async () => {
+      await control.props.refresh();
+    });
+  }
+
+  it("refreshes both lists on a pull, and skips the search with no term (#3385)", async () => {
+    await pull(render());
+
+    expect(refetches.members).toHaveBeenCalledWith({ cancelRefetch: true });
+    expect(refetches.alumni).toHaveBeenCalledWith({ cancelRefetch: true });
+    expect(refetches.search).not.toHaveBeenCalled();
+  });
+
+  it("refreshes the search results too while a term is typed (#3385)", async () => {
+    state.search = [CHARLES];
+    const tree = render();
+    const field = inHeader(
+      tree,
+      (element) =>
+        (element.type as unknown) === SearchFieldStandIn &&
+        element.props.accessibilityLabel === "Search the directory",
+    ) as { onChangeText: (text: string) => void };
+    act(() => field.onChangeText("r"));
+
+    await pull(tree);
+    expect(refetches.search).toHaveBeenCalledWith({ cancelRefetch: true });
   });
 
   it("searches across both lists", () => {
@@ -209,6 +355,151 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
     act(() => field.onChangeText("r"));
 
     expect(listed(tree)).toEqual(["Charles Whitmore III", "Marcus Reid"]);
+  });
+});
+
+describe("s13's member rows", () => {
+  const ROW: DirectoryRow = {
+    memberId: "m-u-1",
+    userId: "u-1",
+    displayName: "Marcus Reid",
+    initials: "MR",
+    meta: null,
+    avatarUrl: null,
+  };
+
+  function pressableOf(onPress?: () => void) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MemberRow row={ROW} onPress={onPress} />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree.root.find((node) => (node.type as unknown) === "Pressable");
+  }
+
+  // Every list row answers a press the same way (`usePressFeedback`); these
+  // rows used to give none at all.
+  it("ripples on Android and lifts on iOS while held, never fading", () => {
+    const row = pressableOf(vi.fn());
+    const held = Object.assign(
+      {},
+      ...[row.props.style({ pressed: true })].flat(Infinity),
+    ) as Record<string, unknown>;
+
+    expect(row.props.android_ripple?.color).toMatch(/^rgba\(/);
+    // The suite's react-native stub runs as iOS.
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    expect(held).not.toHaveProperty("opacity");
+  });
+
+  // The row pads itself by `sm` and bleeds that same `sm` into the screen
+  // gutter, as Chat home's channel rows do: without the padding the ripple
+  // and lift stop flush at the avatar and text, and without the bleed the
+  // content moves off the gutter line.
+  it("bleeds its own padding into the screen gutter", () => {
+    const row = pressableOf(vi.fn());
+    const resting = Object.assign(
+      {},
+      ...[row.props.style({ pressed: false })].flat(Infinity),
+    ) as Record<string, unknown>;
+
+    expect(resting.paddingHorizontal).toBe(signetDarkTokens.spacing.sm);
+    expect(resting.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
+  });
+
+  it("gives a row with nothing to open no feedback", () => {
+    const row = pressableOf(undefined);
+    expect(row.props.android_ripple).toBeUndefined();
+    expect(JSON.stringify(row.props.style({ pressed: true }))).not.toContain(
+      signetDarkTokens.color.surface.card,
+    );
+  });
+});
+
+describe("s13's loading state", () => {
+  // components.md §10: the skeleton is the rows it becomes, on the row's own
+  // frame and hairline, with the avatar's circle where the initials land.
+  it("draws member rows on the member row's frame", () => {
+    let real!: ReactTestRenderer;
+    let skeleton!: ReactTestRenderer;
+    act(() => {
+      real = create(
+        <FrappThemeProvider>
+          <MemberRow
+            row={{
+              memberId: "m-1",
+              userId: "u-1",
+              displayName: "Marcus Reid",
+              initials: "MR",
+              meta: null,
+              avatarUrl: null,
+            }}
+            onPress={vi.fn()}
+          />
+        </FrappThemeProvider>,
+      );
+      skeleton = create(
+        <FrappThemeProvider>
+          <MemberListSkeleton label="Loading chapter members" rows={2} />
+        </FrappThemeProvider>,
+      );
+    });
+    const flat = (style: unknown) =>
+      Object.assign({}, ...[style].flat(Infinity)) as Record<string, unknown>;
+    const pressable = real.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    const realRow = flat(pressable.props.style({ pressed: false }));
+    const [region, firstRow] = skeleton.root.findAllByType("View" as never);
+
+    expect(region!.props.accessibilityRole).toBe("progressbar");
+    expect(region!.props.accessibilityLabel).toBe("Loading chapter members");
+    const row = flat(firstRow!.props.style);
+    for (const key of [
+      "paddingVertical",
+      "paddingHorizontal",
+      "marginHorizontal",
+      "minHeight",
+      "borderBottomWidth",
+      "gap",
+    ]) {
+      expect(row[key]).toBe(realRow[key]);
+    }
+    const [avatar] = skeleton.root.findAllByType("Animated.View" as never);
+    expect(flat(avatar!.props.style).width).toBe(40);
+    expect(flat(avatar!.props.style).borderRadius).toBe(20);
+  });
+});
+
+describe("s13's loading label", () => {
+  // writing.md §7: the skeleton is named for the list that loads. A search
+  // looks across both lists, so it names neither tab's.
+  const label = (tree: ReactTestRenderer) =>
+    (
+      list(tree).props.ListEmptyComponent as React.ReactElement<{
+        label: string;
+      }>
+    ).props.label;
+
+  it("names the tab's list, or the search", () => {
+    state.pending = true;
+    const tree = render();
+    expect(label(tree)).toBe("Loading chapter members");
+
+    act(() => chips(tree).onSelect("alumni"));
+    expect(label(tree)).toBe("Loading alumni directory");
+
+    const field = inHeader(
+      tree,
+      (element) =>
+        (element.type as unknown) === SearchFieldStandIn &&
+        element.props.accessibilityLabel === "Search the directory",
+    ) as { onChangeText: (text: string) => void };
+    act(() => field.onChangeText("r"));
+    expect(label(tree)).toBe("Searching chapter members");
   });
 });
 
@@ -232,5 +523,35 @@ describe("s13's frame (#2485)", () => {
     );
 
     expect(title.children).toBe("Directory");
+    // The same headline as every ScreenShell title: s13's own header spreads
+    // the shell's screenTitleStyle because its body is a FlatList.
+    expect(title.style).toEqual(
+      expect.objectContaining({
+        ...typeRole(getSignetTokens().typography.role.headline),
+        letterSpacing: -0.3,
+      }),
+    );
+  });
+});
+
+/** #3022. s13 draws its own header, so it draws the board's `‹ More` itself. */
+describe("s13's back row (#3022)", () => {
+  it("pins ‹ More above the title, outside the scrolling list", () => {
+    const tree = render();
+    // Pinned like every screen's capsule, so it never scrolls away: it sits
+    // before the list in the tree, and the list's header starts at the title.
+    expectBackRow(tree, "More", "/more");
+    expect(screenText(tree).startsWith("More")).toBe(true);
+    let header!: ReactTestRenderer;
+    act(() => {
+      header = create(
+        <FrappThemeProvider>
+          {list(tree).props.ListHeaderComponent}
+        </FrappThemeProvider>,
+      );
+    });
+    expect(screenText(header).startsWith("Directory")).toBe(true);
+    header.unmount();
+    tree.unmount();
   });
 });

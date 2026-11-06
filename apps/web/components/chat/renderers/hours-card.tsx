@@ -4,58 +4,65 @@ import { ServiceGlyph } from "../chat-glyphs";
 import { EYEBROW, MESSAGE_CARD } from "../chip";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { serviceStatusKind } from "@/components/service/service-status";
 import { cn } from "@/lib/utils";
-import { formatMinutesExact } from "@repo/formatting";
+import { formatBareDateMedium, formatMinutesExact } from "@repo/formatting";
+import {
+  canReadCardServiceEntry,
+  readLiveServiceEntry,
+  SERVICE_ENTRY_CARD_LABELS,
+  useMyPermissions,
+  useServiceEntry,
+} from "@repo/hooks";
+import { can } from "@repo/validation";
 import type { ChatMessage } from "@repo/chat-core/types";
-import type { HoursPayload } from "@repo/chat-core/integrations";
+import { readHoursPayload } from "@repo/chat-core/cards";
 
 interface HoursCardProps {
   message: ChatMessage;
-}
-
-/**
- * Defensive read of an `hours` payload. A malformed row (missing names, a
- * non-numeric duration) returns `null` so the renderer falls back to the
- * hot-path `content` string instead of blanking the timeline.
- */
-function readPayload(message: ChatMessage): HoursPayload | null {
-  const raw = message.payload;
-  if (!raw || typeof raw !== "object") return null;
-  const r = raw as Record<string, unknown>;
-  const { duration_minutes } = r;
-  if (
-    typeof r.entry_id !== "string" ||
-    typeof r.user_id !== "string" ||
-    typeof r.user_name !== "string" ||
-    typeof r.description !== "string" ||
-    typeof r.date !== "string" ||
-    r.status !== "PENDING" ||
-    typeof duration_minutes !== "number" ||
-    !Number.isFinite(duration_minutes)
-  ) {
-    return null;
-  }
-  return {
-    entry_id: r.entry_id,
-    user_id: r.user_id,
-    user_name: r.user_name,
-    duration_minutes,
-    description: r.description,
-    date: r.date,
-    status: "PENDING",
-    created_at: typeof r.created_at === "string" ? r.created_at : "",
-  };
+  /** Known, never `null` — see `MessageRendererProps.viewerId`. */
+  viewerId: string;
 }
 
 /**
  * Hours card: a read-only, append-only record of a single service-entry log
- * (`member logged N of service on DATE`). Server-originated — there are no
- * action buttons and the card is never edited (review happens on the service
- * hours page). The snapshot is creation-time `PENDING`; live status is a later
- * concern.
+ * (`member logged N on DATE`). Server-originated — there are no action buttons
+ * and the card is never edited (review happens on the service hours page).
+ *
+ * **The badge is the entry's live review status, or nothing.** The payload's
+ * status is the creation-time `PENDING` forever, so a badge drawn from it
+ * called approved hours "Pending review" for good. The card reads the entry
+ * back instead (`useServiceEntry`), by the rules in `@repo/hooks`'s
+ * `service-entry-card.ts` that mobile's card applies too: only a `members:view`
+ * holder who logged it or holds `service:approve` can read an entry, so nobody
+ * else asks (for them it is a guaranteed 403), and their card, like every card
+ * before its read lands or when it answers with no entry, shows no badge.
+ * Until the viewer's permissions are read, only the member who logged it asks. The hue is the
+ * service page's own mapping (`serviceStatusKind`).
  */
-export function HoursCard({ message }: HoursCardProps) {
-  const payload = readPayload(message);
+export function HoursCard({ message, viewerId }: HoursCardProps) {
+  const payload = readHoursPayload(message);
+  const { data: permissionsPayload } = useMyPermissions();
+  // `!!viewerId`, for the reason `task-card` gives: a missing viewer must
+  // never match a missing member id.
+  const isOwner = !!viewerId && !!payload && viewerId === payload.user_id;
+  const permissions = permissionsPayload?.permissions;
+  const canApprove = can("service:approve", permissions);
+  const canViewMembers = can("members:view", permissions);
+  // A hook, so it runs before the malformed-payload return; an empty id holds
+  // the request.
+  const { data: liveRaw } = useServiceEntry(
+    payload &&
+      canReadCardServiceEntry({
+        isOwner,
+        canApprove,
+        canViewMembers,
+        permissionsKnown: Array.isArray(permissions),
+      })
+      ? payload.entry_id
+      : "",
+  );
+
   if (!payload) {
     return (
       <div className="mt-1 whitespace-pre-wrap break-words text-base">
@@ -64,15 +71,24 @@ export function HoursCard({ message }: HoursCardProps) {
     );
   }
 
+  const live = readLiveServiceEntry(liveRaw);
+
   return (
     <Card className={cn(MESSAGE_CARD)}>
       <div className="flex items-center justify-between gap-2">
         <div
-          className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}
+          className={cn(
+            EYEBROW,
+            "flex items-center gap-1.5 text-muted-foreground",
+          )}
         >
           <ServiceGlyph className="h-4 w-4" /> Service hours
         </div>
-        <Badge variant="warning">Pending review</Badge>
+        {live ? (
+          <Badge variant={serviceStatusKind(live.status)}>
+            {SERVICE_ENTRY_CARD_LABELS[live.status]}
+          </Badge>
+        ) : null}
       </div>
       <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-base">
         <span className="font-semibold">{payload.user_name}</span>
@@ -81,11 +97,15 @@ export function HoursCard({ message }: HoursCardProps) {
           {formatMinutesExact(payload.duration_minutes)}
         </span>
         <span className="text-muted-foreground">on</span>
-        <span className="font-semibold">{payload.date}</span>
+        <span className="font-semibold">
+          {formatBareDateMedium(payload.date)}
+        </span>
       </div>
-      <div className="mt-2 whitespace-pre-wrap break-words text-base text-muted-foreground">
-        &ldquo;{payload.description}&rdquo;
-      </div>
+      {payload.description.trim() ? (
+        <div className="mt-2 whitespace-pre-wrap break-words text-base text-muted-foreground">
+          &ldquo;{payload.description}&rdquo;
+        </div>
+      ) : null}
     </Card>
   );
 }

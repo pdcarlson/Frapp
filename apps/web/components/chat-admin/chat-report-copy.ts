@@ -1,9 +1,5 @@
 import type { ChatReportReason, ChatReportStatus } from "@repo/hooks";
-import {
-  formatLocaleDate,
-  formatLocaleDateTime,
-  parseInstant,
-} from "@repo/formatting";
+import { formatDay, formatTimestampFull, parseInstant } from "@repo/formatting";
 
 /**
  * Words for the officer report queue (`chat-reports-card.tsx`), in one module
@@ -98,7 +94,7 @@ export const chatReportCopy = {
     "Each report shows the message as it read when reported. Who reported it is never shown.",
   openHint:
     "Mark reviewed and Dismiss close a report and leave the message up. Only an open report can remove its message.",
-  loading: "Loading reports...",
+  loading: "Loading reports",
   errorTitle: "Couldn't load reports",
   /** Over rows a failed background refetch left on screen. */
   stale: "Couldn't refresh the reports. These are the last ones that loaded.",
@@ -112,7 +108,7 @@ export const chatReportCopy = {
    * `chat-report-copy.spec.ts` fails if it stops naming one of them.
    */
   deniedDescription:
-    "Reviewing reported messages needs the members:view and channels:manage permissions. Ask your chapter president to grant access.",
+    "Reviewing reported messages needs a role that can see the full directory and manage channels and pins. Ask your chapter president for access.",
   noContent: "This message had no text.",
   detailsLabel: "Reporter's note",
   /**
@@ -256,7 +252,7 @@ export function reportedMessageSubject(
  * carry them too.
  *
  * The time is the absolute one the row's "Reported …" text shows on hover
- * (`formatLocaleDateTime`), not the relative age: "5 minutes ago" is shared by
+ * (`formatTimestampFull`), not the relative age: "5 minutes ago" is shared by
  * every report filed that minute, and would rename the controls on every tick.
  * An unparseable timestamp leaves it out rather than reading "reported —".
  * Two reports can still match on all of it; {@link reportDistinctions} numbers
@@ -269,7 +265,7 @@ export function reportDistinction(report: {
 }): string {
   const parts: string[] = [CHAT_REPORT_REASON_LABEL[report.reason]];
   if (parseInstant(report.createdAt)) {
-    parts.push(`reported ${formatLocaleDateTime(report.createdAt)}`);
+    parts.push(`reported ${formatTimestampFull(report.createdAt)}`);
   }
   if (report.hasNote) parts.push("with a reporter's note");
   return parts.join(", ");
@@ -339,7 +335,7 @@ export function reportAge(value: string, now: number): string {
   if (!instant) return "";
   const elapsed = Math.max(0, now - instant.getTime());
   if (elapsed < MINUTE) return "just now";
-  if (elapsed >= RELATIVE_LIMIT) return formatLocaleDate(value);
+  if (elapsed >= RELATIVE_LIMIT) return formatDay(value) ?? "";
   const format = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
   if (elapsed < HOUR)
     return format.format(-Math.floor(elapsed / MINUTE), "minute");

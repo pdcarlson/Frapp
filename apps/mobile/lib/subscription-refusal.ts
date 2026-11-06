@@ -22,7 +22,7 @@
  * arms, which for an `incomplete` chapter reads "…complete checkout to use
  * this feature."
  *
- * THE GATE IS WRITES-ONLY. `chapter.guard.ts:211` returns early for
+ * THE GATE IS WRITES-ONLY. `chapter.guard.ts` returns early for
  * `GET/HEAD/OPTIONS`, so reads are never refused and no read surface needs a
  * branch here. A gate state rendered on a *read* error would be dead code for
  * this issue and actively harmful — the 403s that do reach reads are
@@ -97,6 +97,9 @@ export const SUBSCRIPTION_REFUSAL_COPY = {
    */
   serviceHours:
     "Your chapter's subscription isn't active, so service hours can't be logged. An officer can sort this out for the chapter.",
+  /** `POST /v1/documents/upload-url` and `POST /v1/documents`, s21 (#3399). */
+  document:
+    "Your chapter's subscription isn't active, so documents can't be uploaded. An officer can sort this out for the chapter.",
   /**
    * Pause, resume, heartbeat and stop — a session that is ALREADY RUNNING.
    *

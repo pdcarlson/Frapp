@@ -3,20 +3,19 @@
 import { useState } from "react";
 import { Download, Loader2, Trash2 } from "lucide-react";
 import { selectDownloadUrl, useDocument } from "@repo/hooks";
-import { formatBareDate, formatLocaleDate } from "@repo/formatting";
-import { Button } from "@/components/ui/button";
+import { formatDay } from "@repo/formatting";
+import { IconButton } from "@/components/ui/icon-button";
 import { Can } from "@/components/shared/can";
 import { DocumentsGlyph } from "@/components/documents/resources-glyphs";
-import { compactControlClassName } from "@/components/shared/table-controls";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import type { ChapterDocument } from "@/components/documents/document-types";
 import { useToast } from "@/lib/hooks/use-toast";
-import { getErrorMessage } from "@/lib/utils";
+import { getErrorMessage, labelled } from "@/lib/utils";
 
 // Deliberately ungated: the signed link comes from `GET /v1/documents/:id`, and
 // `enforceSubscription` returns early for GET — a lapsed chapter can still read
 // everything it owns (§5 "writes only").
-function DownloadButton({ id }: { id: string }) {
+function DownloadButton({ id, title }: { id: string; title: string }) {
   const { toast } = useToast();
   const query = useDocument(id);
   const [isFetching, setIsFetching] = useState(false);
@@ -43,29 +42,20 @@ function DownloadButton({ id }: { id: string }) {
   }
 
   /*
-    A trailing text action rather than the filled Secondary it was. The board
-    puts a 13px/600 text action at a row's trailing edge (`1j`'s "Replace", the
-    settings rows in `4c`), and a 44px Secondary button set the height of every
-    row in a list this lane pulled down to 40.
-
-    The label stays. An icon-only download is the version that needs a tooltip
-    to be usable, and `compactControlClassName`'s coarse-pointer carve-out
-    gets the 44px target back on touch either way.
+    Icon-only, like Delete beside it (components.md § Icon-only actions). The
+    word used to stay, on the grounds that an icon-only download needs a
+    tooltip to be usable. `IconButton` carries one: the native `title`, plus
+    the `aria-label` a screen reader reads.
   */
   return (
-    <Button
-      variant="ghost"
+    <IconButton
+      label={`Download ${title}`}
       onClick={handleDownload}
       disabled={isFetching}
-      className="h-8 gap-1.5 px-2 text-caption font-semibold pointer-coarse:h-11"
+      aria-busy={isFetching}
     >
-      {isFetching ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <Download className="h-4 w-4" />
-      )}
-      Download
-    </Button>
+      {isFetching ? <Loader2 className="animate-spin" /> : <Download />}
+    </IconButton>
   );
 }
 
@@ -120,12 +110,10 @@ export function DocumentRow({
       */}
         <p className="truncate text-caption text-muted">
           {[
-            `Uploaded ${formatLocaleDate(doc.created_at)}`,
+            labelled("Uploaded", formatDay(doc.created_at)),
             doc.folder,
             doc.document_type,
-            doc.effective_date
-              ? `Effective ${formatBareDate(doc.effective_date)}`
-              : null,
+            labelled("Effective", formatDay(doc.effective_date)),
             doc.description,
           ]
             .filter(Boolean)
@@ -133,7 +121,7 @@ export function DocumentRow({
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-1 sm:ml-auto">
-        <DownloadButton id={doc.id} />
+        <DownloadButton id={doc.id} title={doc.title} />
         <Can permission="chapter_docs:manage">
           {/*
           `DELETE /v1/documents/:id` sits behind the same guard
@@ -141,16 +129,13 @@ export function DocumentRow({
           have the page claim writes are blocked while still
           offering one per row.
         */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className={compactControlClassName}
-            aria-label={`Delete ${doc.title}`}
+          <IconButton
+            label={`Delete ${doc.title}`}
             onClick={() => onDelete(doc)}
             {...gate.controlProps(deleting)}
           >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+            <Trash2 />
+          </IconButton>
         </Can>
       </div>
     </li>

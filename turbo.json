@@ -17,13 +17,14 @@
     "VERCEL_GIT_COMMIT_SHA",
     "GOOGLE_SERVICES_JSON",
     "EAS_BUILD_PROFILE",
-    "EAS_BUILD_PLATFORM"
+    "EAS_BUILD_PLATFORM",
+    "FRAPP_EAS_UPDATE_PROFILE"
   ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**", "public/pdfjs/**"]
     },
     "lint": {
       "dependsOn": ["^build"]

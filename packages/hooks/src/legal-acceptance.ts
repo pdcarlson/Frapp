@@ -28,8 +28,9 @@ import { useFrappClient } from "./use-frapp-client";
 export type LegalAcceptance = components["schemas"]["LegalAcceptanceDto"];
 
 /**
- * Query key for {@link useLegalAcceptance}. Under `["user", "me"]`, so
- * `useUpdateUser`'s invalidation refreshes it too.
+ * Query key for {@link useLegalAcceptance}, under the viewer's `["user", "me"]`.
+ * The profile mutations match that key exactly (`PROFILE_QUERY_FILTERS`), so
+ * an edit to the profile doesn't refetch this; accepting writes it directly.
  */
 export const legalAcceptanceQueryKey = () =>
   ["user", "me", "legal-acceptance"] as const;

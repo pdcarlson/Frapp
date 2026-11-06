@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
+import * as Sentry from '@sentry/nestjs';
 import {
   DiscordImportWorkerService,
   IMPORT_BATCH_SIZE,
@@ -12,16 +13,35 @@ import { ARCHIVE_MEDIA_COPY_BUDGET_MS } from '../../infrastructure/storage/supab
 import { ChannelCacheService } from '../services/channel-cache.service';
 import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
 import { RbacService } from '../services/rbac.service';
+import { NotificationService } from '../services/notification.service';
 import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.repository.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
-import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import {
+  CHAT_CATEGORY_REPOSITORY,
+  CHAT_CHANNEL_REPOSITORY,
+} from '#domain/repositories/chat.repository.interface';
 import type {
   DiscordImport,
   DiscordImportChannel,
   DiscordImportFile,
 } from '#domain/entities/discord-import.entity';
 import type { ImportedMessageRow } from '#domain/utils/discord-export';
+import { DiscordApiError } from '#domain/adapters/discord.interface';
+
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
+
+/** The `caught_at` site of every Sentry capture so far. */
+function reportedSites(): string[] {
+  return jest
+    .mocked(Sentry.captureException)
+    .mock.calls.map(
+      (call) => (call[1] as { tags: { caught_at: string } }).tags.caught_at,
+    );
+}
 
 const FIXTURES = join(__dirname, '../../../test/fixtures/discord');
 const CHAPTER = 'chapter-1';
@@ -152,6 +172,9 @@ function channelMapping(
     private_in_discord: null,
     discord_reader_role_ids: null,
     new_channel_same_as_discord: false,
+    new_channel_group: null,
+    discord_category_position: null,
+    new_channel_category_id: null,
     ...overrides,
   };
 }
@@ -275,6 +298,7 @@ function makeRepo(initial: DiscordImport) {
     deleteEmptyCreatedChannels: jest.fn(
       async (): Promise<string[]> => repoRef.deletedChannels,
     ),
+    deleteEmptyCreatedCategories: jest.fn(async (): Promise<string[]> => []),
     create: jest.fn(),
     findById: jest.fn(async () => current),
     findByChapter: jest.fn(async () => [current]),
@@ -291,6 +315,9 @@ async function buildWorker(
   options: {
     exportWorker?: { runSlice: jest.Mock };
     reportRepo?: { findHeldObjects: jest.Mock };
+    notifications?: { notifyUser: jest.Mock };
+    /** Who holds `channels:manage` now; the import's creator by default. */
+    admins?: string[];
   } = {},
 ) {
   const channelRepo = {
@@ -328,6 +355,14 @@ async function buildWorker(
         : null,
     ),
   };
+  // The groups `start` resolved; any other id reads as deleted since.
+  const categoryRepo = {
+    findById: jest.fn(async (id: string, chapterId: string) =>
+      chapterId === CHAPTER && id === 'group-1'
+        ? { id, chapter_id: chapterId, name: 'Committees', display_order: 0 }
+        : null,
+    ),
+  };
   const connectionRepo = { deleteExpiredStates: jest.fn(async () => 0) };
   const exportWorker = options.exportWorker ?? {
     runSlice: jest.fn(async () => {
@@ -339,18 +374,26 @@ async function buildWorker(
   // Role mentions read as the mapped Frapp role's current name (#2875).
   const rbac = {
     findByChapter: jest.fn(async () => [{ id: 'role-1', name: 'Brothers' }]),
+    findUserIdsWithPermissions: jest.fn(
+      async () => options.admins ?? ['user-1'],
+    ),
   };
   const channelCache = { invalidate: jest.fn() };
   // No open chat report holds anything unless a case says so (#2481).
   const reportRepo = options.reportRepo ?? {
     findHeldObjects: jest.fn(async () => []),
   };
+  const notifications = options.notifications ?? {
+    notifyUser: jest.fn(async () => undefined),
+  };
   const moduleRef = await Test.createTestingModule({
     providers: [
       DiscordImportWorkerService,
+      { provide: NotificationService, useValue: notifications },
       { provide: DISCORD_IMPORT_REPOSITORY, useValue: repo },
       { provide: STORAGE_PROVIDER, useValue: storage },
       { provide: CHAT_CHANNEL_REPOSITORY, useValue: channelRepo },
+      { provide: CHAT_CATEGORY_REPOSITORY, useValue: categoryRepo },
       // Every job in this file is `source: 'upload'`, so the sweeper never
       // delegates here. Stubbed rather than real so a regression that DID
       // delegate an upload job would fail loudly instead of hitting Discord.
@@ -367,7 +410,10 @@ async function buildWorker(
   return {
     worker: moduleRef.get(DiscordImportWorkerService),
     channelRepo,
+    categoryRepo,
     channelCache,
+    connectionRepo,
+    notifications,
   };
 }
 
@@ -394,6 +440,135 @@ function makeStorage(partBytes: Uint8Array | null) {
 
 const part000 = () =>
   new Uint8Array(readFileSync(join(FIXTURES, 'part-000.json')));
+
+describe('DiscordImportWorkerService — telling the admin it ended', () => {
+  beforeEach(() => {
+    repoRef = makeRepo(job());
+  });
+
+  const botSlice = (finished: boolean) => ({
+    runSlice: jest.fn(async () => ({
+      messagesImported: 6,
+      finished,
+      totals: {
+        imported: 6,
+        skipped: 0,
+        attachmentsImported: 0,
+        attachmentsSkipped: 0,
+        totalMessages: 6,
+        warnings: [],
+      },
+    })),
+  });
+
+  it('notifies the admin who set the import up once an upload completes', async () => {
+    const { worker, notifications } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.state().status).toBe('completed');
+    expect(notifications.notifyUser).toHaveBeenCalledTimes(1);
+    expect(notifications.notifyUser).toHaveBeenCalledWith('user-1', CHAPTER, {
+      title: 'Discord import finished',
+      body: '6 messages from Tau Nu are now in Frapp chat.',
+      priority: 'NORMAL',
+      category: 'admin',
+      data: { target: { screen: 'discord_import' } },
+    });
+  });
+
+  // The bot path closes in its own write, the main way in.
+  it('notifies once a bot import completes, and not on a slice that leaves it running', async () => {
+    repoRef = makeRepo(job({ source: 'bot', status: 'running' }));
+    const running = await buildWorker(repoRef, makeStorage(null), {
+      exportWorker: botSlice(false),
+    });
+    await running.worker.sweepImports(NOW);
+    expect(running.notifications.notifyUser).not.toHaveBeenCalled();
+
+    repoRef = makeRepo(job({ source: 'bot', status: 'running' }));
+    const done = await buildWorker(repoRef, makeStorage(null), {
+      exportWorker: botSlice(true),
+    });
+    await done.worker.sweepImports(NOW);
+    expect(repoRef.state().status).toBe('completed');
+    expect(done.notifications.notifyUser).toHaveBeenCalledWith(
+      'user-1',
+      CHAPTER,
+      expect.objectContaining({ title: 'Discord import finished' }),
+    );
+  });
+
+  it('tells the admin when the import stops on an error', async () => {
+    repoRef = makeRepo(job({ source: 'bot', status: 'running' }));
+    const { worker, notifications } = await buildWorker(
+      repoRef,
+      makeStorage(null),
+      {
+        exportWorker: {
+          runSlice: jest.fn(async () => {
+            throw new DiscordApiError('Missing Access', 403);
+          }),
+        },
+      },
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.state().status).toBe('failed');
+    expect(notifications.notifyUser).toHaveBeenCalledWith('user-1', CHAPTER, {
+      title: 'Discord import stopped',
+      body: 'The import from Tau Nu stopped on an error. Open the Discord import page to see why.',
+      priority: 'NORMAL',
+      category: 'admin',
+      data: { target: { screen: 'discord_import' } },
+    });
+  });
+
+  it('sends nothing to an admin who no longer manages channels', async () => {
+    const { worker, notifications } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+      { admins: ['someone-else'] },
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.state().status).toBe('completed');
+    expect(notifications.notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('says nothing when the closing write finds the import stopped', async () => {
+    // An admin's cancel landed mid-slice: the guarded write matches no row.
+    repoRef.updateIfStatus.mockResolvedValue(null);
+    const { worker, notifications } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(notifications.notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('finishes the import even when the notice fails', async () => {
+    const { worker } = await buildWorker(repoRef, makeStorage(part000()), {
+      notifications: {
+        notifyUser: jest.fn(async () => {
+          throw new Error('push down');
+        }),
+      },
+    });
+
+    const result = await worker.sweepImports(NOW);
+
+    expect(result.finished).toBe(true);
+    expect(repoRef.state().status).toBe('completed');
+  });
+});
 
 describe('DiscordImportWorkerService — importing', () => {
   beforeEach(() => {
@@ -523,7 +698,7 @@ describe('DiscordImportWorkerService — importing', () => {
     };
     expect(last.attachments_skipped).toBeGreaterThan(0);
     expect(last.warnings.join('\n')).toContain(
-      'No uploaded file for attachment',
+      "wasn't in the upload, so it was not imported",
     );
   });
 
@@ -542,7 +717,7 @@ describe('DiscordImportWorkerService — importing', () => {
     expect(result.messagesImported).toBe(0);
     expect(repoRef.insertMessages).not.toHaveBeenCalled();
     const last = repoRef.updates.at(-1) as { warnings: string[] };
-    expect(last.warnings.join('\n')).toContain('No mapping for');
+    expect(last.warnings.join('\n')).toContain('had no place chosen in Frapp');
   });
 
   it('skips a channel the admin chose to skip', async () => {
@@ -675,6 +850,85 @@ describe('DiscordImportWorkerService — importing', () => {
     expect(channelRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'PUBLIC', required_permissions: null }),
     );
+  });
+
+  it('creates a channel in the group the import resolved for it', async () => {
+    repoRef.channels = [
+      channelMapping({
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        new_channel_name: 'rush',
+        new_channel_type: 'PUBLIC',
+        new_channel_group: 'Committees',
+        new_channel_category_id: 'group-1',
+      }),
+    ];
+    const { worker, channelRepo, categoryRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(categoryRepo.findById).toHaveBeenCalledWith('group-1', CHAPTER);
+    expect(channelRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'rush', category_id: 'group-1' }),
+    );
+  });
+
+  it('creates the channel with no group when its group was deleted since the import started', async () => {
+    repoRef.channels = [
+      channelMapping({
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        new_channel_name: 'rush',
+        new_channel_type: 'PUBLIC',
+        new_channel_group: 'Committees',
+        new_channel_category_id: 'group-deleted',
+      }),
+    ];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(channelRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'rush', category_id: null }),
+    );
+    expect(repoRef.state().status).not.toBe('failed');
+  });
+
+  it('creates the channel with no group when the group is deleted between its read and the insert', async () => {
+    repoRef.channels = [
+      channelMapping({
+        mapping_action: 'create_new',
+        target_channel_id: null,
+        new_channel_name: 'rush',
+        new_channel_type: 'PUBLIC',
+        new_channel_group: 'Committees',
+        new_channel_category_id: 'group-1',
+      }),
+    ];
+    const { worker, channelRepo } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+    const create = channelRepo.create as jest.Mock;
+    const original = create.getMockImplementation();
+    create.mockImplementationOnce(() =>
+      Promise.reject(Object.assign(new Error('fk'), { code: '23503' })),
+    );
+    if (original) create.mockImplementation(original);
+
+    await worker.sweepImports(NOW);
+
+    expect(create.mock.calls.map(([data]) => data.category_id)).toEqual([
+      'group-1',
+      null,
+    ]);
+    expect(repoRef.state().status).not.toBe('failed');
   });
 
   it('stops when the admin cancels mid-slice, instead of resurrecting the job', async () => {
@@ -1197,14 +1451,95 @@ describe('DiscordImportWorkerService — importing', () => {
   });
 
   it('never lets a sweep failure escape the cron handler', async () => {
-    // An unhandled rejection out of a @Cron takes the API process down under
-    // Node's default --unhandled-rejections=throw.
+    // A rejection out of a @Cron reaches only Nest's raw logger.error, which
+    // no alert sees.
     repoRef.claimNextRunnable = jest.fn(async () => {
       throw new Error('database down');
     });
     const { worker } = await buildWorker(repoRef, makeStorage(part000()));
 
     await expect(worker.handleImportSweep()).resolves.toBeUndefined();
+  });
+
+  describe('what reaches Sentry', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('reports a failed tick once, however many ticks fail', async () => {
+      repoRef.claimNextRunnable = jest.fn(async () => {
+        throw new Error('database down');
+      });
+      const { worker } = await buildWorker(repoRef, makeStorage(part000()));
+
+      await expect(worker.handleImportSweep()).resolves.toBeUndefined();
+      await expect(worker.handleImportSweep()).resolves.toBeUndefined();
+
+      expect(reportedSites()).toEqual(['discord-import-sweep-tick']);
+    });
+
+    it('reports an import that a fault stopped, and still marks it failed', async () => {
+      const storage = makeStorage(part000());
+      storage.downloadFile.mockImplementation(async () => {
+        throw new Error('storage exploded');
+      });
+      const { worker } = await buildWorker(repoRef, storage);
+
+      const result = await worker.sweepImports(NOW);
+
+      expect(result).toMatchObject({ claimed: true, finished: true });
+      expect(repoRef.state().status).toBe('failed');
+      expect(reportedSites()).toEqual(['discord-import-job-failed']);
+    });
+
+    it('does not report a stop the admin can fix', async () => {
+      repoRef.channels = [channelMapping({ target_channel_id: null })];
+      const { worker } = await buildWorker(repoRef, makeStorage(part000()));
+
+      await worker.sweepImports(NOW);
+
+      expect(repoRef.state().status).toBe('failed');
+      expect(Sentry.captureException).not.toHaveBeenCalled();
+    });
+
+    it('does not report Discord refusing the bot', async () => {
+      repoRef = makeRepo(job({ source: 'bot', status: 'running' }));
+      const exportWorker = {
+        runSlice: jest.fn(async () => {
+          throw new DiscordApiError('Missing Access', 403);
+        }),
+      };
+      const { worker } = await buildWorker(repoRef, makeStorage(null), {
+        exportWorker,
+      });
+
+      await worker.sweepImports(NOW);
+
+      expect(repoRef.state()).toMatchObject({
+        status: 'failed',
+        error: 'Missing Access',
+      });
+      expect(Sentry.captureException).not.toHaveBeenCalled();
+    });
+
+    it('reports a failed OAuth state reap as a warning', async () => {
+      const { worker, connectionRepo } = await buildWorker(
+        repoRef,
+        makeStorage(null),
+      );
+      connectionRepo.deleteExpiredStates.mockRejectedValue(
+        new Error('database down'),
+      );
+
+      await expect(worker.handleOAuthStateSweep()).resolves.toBeUndefined();
+
+      expect(reportedSites()).toEqual(['discord-oauth-state-sweep']);
+      expect(
+        jest.mocked(Sentry.captureException).mock.calls[0]?.[1],
+      ).toMatchObject({
+        level: 'warning',
+      });
+    });
   });
 
   it('bounds the warning list', async () => {
@@ -1460,6 +1795,29 @@ describe('DiscordImportWorkerService — purging', () => {
     expect(repoRef.updates.at(-1)).toMatchObject({ status: 'purged' });
   });
 
+  it('deletes the channel groups it created after its channels, before the objects', async () => {
+    repoRef.deletedRounds = [12];
+    const storage = makeStorage(null);
+    storage.listFiles.mockImplementation(async () => ['a/one.png']);
+    const { worker } = await buildWorker(repoRef, storage);
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.deleteEmptyCreatedCategories).toHaveBeenCalledWith(
+      job().id,
+      CHAPTER,
+    );
+    const groups =
+      repoRef.deleteEmptyCreatedCategories.mock.invocationCallOrder[0];
+    expect(groups).toBeGreaterThan(
+      repoRef.deleteEmptyCreatedChannels.mock.invocationCallOrder[0],
+    );
+    expect(storage.deleteFiles.mock.invocationCallOrder[0]).toBeGreaterThan(
+      groups,
+    );
+    expect(repoRef.updates.at(-1)).toMatchObject({ status: 'purged' });
+  });
+
   // An open chat report on an imported message holds its attachments (#2481):
   // deleting the import must not erase the evidence, any more than the
   // sender's own delete may. The report's release deletes them later.
@@ -1517,13 +1875,19 @@ describe('DiscordImportWorkerService — purging', () => {
     });
     const storage = makeStorage(null);
     storage.listFiles.mockImplementation(async () => ['a/one.png']);
-    const { worker, channelCache } = await buildWorker(repoRef, storage);
+    const { worker, channelCache, notifications } = await buildWorker(
+      repoRef,
+      storage,
+    );
 
     await worker.sweepImports(NOW);
 
     expect(storage.deleteFiles).not.toHaveBeenCalled();
     expect(channelCache.invalidate).not.toHaveBeenCalled();
     expect(repoRef.updates.at(-1)).toMatchObject({ status: 'failed' });
+    // The admin who asked for the deletion is watching it; a failed one is
+    // not sent as news.
+    expect(notifications.notifyUser).not.toHaveBeenCalled();
     expect(repoRef.updates).not.toContainEqual(
       expect.objectContaining({ status: 'purged' }),
     );

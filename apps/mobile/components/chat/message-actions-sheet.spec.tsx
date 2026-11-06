@@ -5,6 +5,7 @@ import { act } from "react";
 import { AccessibilityInfo, Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { SheetHeader } from "@/components/sheet-scaffold";
 
 // The report settles in a microtask after the press, so its state update lands
 // inside an async `act`; React only accepts that when told this is a test env.
@@ -40,6 +41,8 @@ vi.mock("@/lib/chapter-branding", () => ({
     accent: "#C49A3A",
     accentPrimary: "#C49A3A",
     accentOnPrimary: "#2B2009",
+    accentSubtle: "#251A33",
+    accentBorder: "#5C3E8A",
     logoUrl: null,
     chapterName: null,
   }),
@@ -47,14 +50,16 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import {
   MessageActionsSheet,
+  QUICK_REACTIONS,
+  quickReactionLabel,
   type MessageActionsSheetHandle,
   type MessageActionsTarget,
 } from "./message-actions-sheet";
+import { BLOCK_ROW_DESCRIPTION } from "@/lib/chat/block-actions";
 import {
   BLOCK_NOT_A_MEMBER_BODY,
-  BLOCK_ROW_DESCRIPTION,
   blockConfirmBody,
-} from "@/lib/chat/block-actions";
+} from "@repo/chat-core/block-copy";
 import {
   REPORT_ALREADY_BODY,
   REPORT_FAILED_BODY,
@@ -62,7 +67,7 @@ import {
   REPORT_SENT_BODY,
   REPORT_SENT_TITLE,
   REPORT_UNAVAILABLE_BODY,
-} from "@/lib/chat/report-reasons";
+} from "@repo/chat-core/report-copy";
 
 const BLOCKED = "22222222-2222-4222-8222-222222222222";
 
@@ -170,6 +175,7 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     senderInDirectory: true,
     senderLabel: "Blake",
     sentAt: SENT_AT,
+    reactedWith: [],
   };
 
   it("says who sent the message and when, since a follow-on row shows neither", () => {
@@ -181,6 +187,43 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
       minute: "2-digit",
     });
     expect(text(tree)).toContain(`You · Today at ${time}`);
+  });
+
+  it("opens on that line, with no Message title over the menu", () => {
+    // components.md § Chrome weight: an action menu draws no title and no
+    // Cancel. The grabber, the scrim, Android back and VoiceOver's escape
+    // close it (`SheetBackToClose`, `useSheetClose`).
+    const tree = render(OWN);
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Text" &&
+          node.props.children === "Message",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("draws no chevron on a row that acts in place", () => {
+    const chevrons = (tree: ReactTestRenderer) =>
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Text" && node.props.children === "›",
+      ).length;
+    // Reply, Edit and Delete all act here.
+    expect(chevrons(render(OWN))).toBe(0);
+    // Block acts here too; only Report opens a sheet of its own.
+    const blockable = render({
+      ...SOMEONE_ELSES,
+      messageId: "m1",
+      blockUserId: BLOCKED,
+      senderName: "Blake",
+      senderInDirectory: true,
+      senderLabel: "Blake",
+      sentAt: SENT_AT,
+      reactedWith: [],
+    });
+    expect(text(blockable)).toContain("Block Blake");
+    expect(chevrons(blockable)).toBe(1);
   });
 
   it("offers Reply, Edit and Delete on your own message, and never Report or Block", () => {
@@ -203,6 +246,7 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
       senderInDirectory: true,
       senderLabel: "Blake",
       sentAt: SENT_AT,
+      reactedWith: [],
     });
     expect(hasRow(tree, "Reply")).toBe(true);
     expect(hasRow(tree, "Edit message")).toBe(false);
@@ -256,6 +300,102 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
   });
 });
 
+describe("MessageActionsSheet — quick reactions", () => {
+  // The thread draws no reaction control on a message nobody has reacted to,
+  // so this row is where the first reaction starts.
+  const TARGET: MessageActionsTarget = {
+    ...SOMEONE_ELSES,
+    messageId: "m4",
+    blockUserId: null,
+    senderName: "Blake",
+    senderInDirectory: true,
+    senderLabel: "Blake",
+    sentAt: SENT_AT,
+    reactedWith: ["🔥"],
+  };
+
+  function renderWith(
+    target: MessageActionsTarget,
+    handlers: {
+      onReact?: (messageId: string, emoji: string) => void;
+      onUnreact?: (messageId: string, emoji: string) => void;
+    },
+    dismiss = vi.fn(),
+  ) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MessageActionsSheet
+            ref={createRef<MessageActionsSheetHandle>()}
+            target={target}
+            {...handlers}
+          />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) =>
+            element.type === "BottomSheetModal" ? { dismiss } : null,
+        },
+      );
+    });
+    return tree;
+  }
+
+  it("draws web's four picks ahead of the rows", () => {
+    const tree = renderWith(TARGET, { onReact: vi.fn(), onUnreact: vi.fn() });
+    const labels = tree.root
+      .findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          typeof node.props.accessibilityLabel === "string",
+      )
+      .map((node) => node.props.accessibilityLabel as string);
+    expect(QUICK_REACTIONS).toEqual(["👍", "🙏", "✅", "🔥"]);
+    const picks = QUICK_REACTIONS.map((emoji) =>
+      quickReactionLabel(emoji, emoji === "🔥"),
+    );
+    for (const pick of picks) expect(labels).toContain(pick);
+    expect(labels.indexOf(picks[3]!)).toBeLessThan(
+      labels.indexOf("Report message"),
+    );
+  });
+
+  it("adds a reaction, and closes the sheet", () => {
+    const onReact = vi.fn();
+    const onUnreact = vi.fn();
+    const dismiss = vi.fn();
+    const tree = renderWith(TARGET, { onReact, onUnreact }, dismiss);
+    pressByLabel(tree, quickReactionLabel("👍", false));
+    expect(onReact).toHaveBeenCalledWith("m4", "👍");
+    expect(onUnreact).not.toHaveBeenCalled();
+    expect(dismiss).toHaveBeenCalled();
+  });
+
+  it("draws one the viewer already used as selected, and takes it back on a tap", () => {
+    const onReact = vi.fn();
+    const onUnreact = vi.fn();
+    const tree = renderWith(TARGET, { onReact, onUnreact });
+    const mine = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === quickReactionLabel("🔥", true),
+    );
+    expect(mine.props.accessibilityState).toEqual({ selected: true });
+    const style = JSON.stringify(mine.props.style({ pressed: false }));
+    // The chapter's quiet fill and border, as on the reacted chip.
+    expect(style).toContain("#251A33");
+    expect(style).toContain("#5C3E8A");
+    pressByLabel(tree, quickReactionLabel("🔥", true));
+    expect(onUnreact).toHaveBeenCalledWith("m4", "🔥");
+    expect(onReact).not.toHaveBeenCalled();
+  });
+
+  it("draws no picks when the thread wires no reaction handlers", () => {
+    const tree = renderWith(TARGET, {});
+    expect(text(tree)).not.toContain("🙏");
+  });
+});
+
 describe("MessageActionsSheet — menu", () => {
   it("offers Report and Block for a blockable sender", () => {
     const tree = render({
@@ -266,6 +406,7 @@ describe("MessageActionsSheet — menu", () => {
       senderInDirectory: true,
       senderLabel: "Blake",
       sentAt: SENT_AT,
+      reactedWith: [],
     });
     expect(text(tree)).toContain("Report message");
     expect(text(tree)).toContain("Block Blake");
@@ -280,6 +421,7 @@ describe("MessageActionsSheet — menu", () => {
       senderInDirectory: false,
       senderLabel: "Blake",
       sentAt: SENT_AT,
+      reactedWith: [],
     });
     expect(text(tree)).toContain("Report message");
     expect(text(tree)).not.toContain("Block Frapp");
@@ -295,13 +437,14 @@ describe("MessageActionsSheet — menu", () => {
       senderInDirectory: true,
       senderLabel: "Blake",
       sentAt: SENT_AT,
+      reactedWith: [],
     });
 
     pressByLabel(tree, "Block Blake");
     expect(Alert.alert).toHaveBeenCalledTimes(1);
     const [title, body, buttons] = vi.mocked(Alert.alert).mock.calls[0]!;
     expect(title).toBe("Block Blake?");
-    expect(body).toBe(blockConfirmBody(true));
+    expect(body).toBe(blockConfirmBody(true, "in Settings"));
     expect(body).toMatch(/won't be told/);
     expect(blockActions.block).not.toHaveBeenCalled();
 
@@ -320,6 +463,7 @@ describe("MessageActionsSheet — menu", () => {
       senderInDirectory: true,
       senderLabel: "Blake",
       sentAt: SENT_AT,
+      reactedWith: [],
     });
     expect(text(tree)).toContain(BLOCK_ROW_DESCRIPTION);
   });
@@ -339,6 +483,7 @@ describe("MessageActionsSheet — menu", () => {
         senderInDirectory: false,
         senderLabel: "Blake",
         sentAt: SENT_AT,
+        reactedWith: [],
       },
       onSenderDeparted,
     );
@@ -366,6 +511,7 @@ describe("MessageActionsSheet — report", () => {
     senderInDirectory: true,
     senderLabel: "Blake",
     sentAt: SENT_AT,
+    reactedWith: [],
   };
 
   function sendButton(tree: ReactTestRenderer) {
@@ -409,6 +555,20 @@ describe("MessageActionsSheet — report", () => {
     expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
       REPORT_SENT_TITLE,
     );
+  });
+
+  it("titles the sent sheet with no header Done beside its primary Done", async () => {
+    // components.md § Chrome weight: never a header Done and a primary Done.
+    report.mutateAsync.mockResolvedValue(filed());
+    const tree = render(target);
+    pressByLabel(tree, "Spam");
+    act(() => sendButton(tree).props.onPress());
+    await flush();
+
+    const headers = tree.root.findAllByType(SheetHeader);
+    const sent = headers.find((h) => h.props.title === REPORT_SENT_TITLE);
+    expect(sent).toBeDefined();
+    expect(sent!.props.onCancel).toBeUndefined();
   });
 
   it("says it was already reported, rather than 'Report sent', when the API hands back the open report", async () => {

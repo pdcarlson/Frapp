@@ -21,8 +21,10 @@ import {
   ConflictException,
   ForbiddenException,
   GoneException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { InviteService } from './invite.service';
 import { INVITE_REPOSITORY } from '#domain/repositories/invite.repository.interface';
 import type { IInviteRepository } from '#domain/repositories/invite.repository.interface';
@@ -53,6 +55,13 @@ import {
   userFixture,
 } from '#test/helpers/entity-fixtures';
 
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(() => 'event-exception'),
+  captureMessage: jest.fn(() => 'event-message'),
+}));
+
+const captureException = jest.mocked(Sentry.captureException);
+
 describe('InviteService', () => {
   let service: InviteService;
   let mockInviteRepo: jest.Mocked<IInviteRepository>;
@@ -75,6 +84,7 @@ describe('InviteService', () => {
   let chapterDefaultRoleId: string | null;
 
   beforeEach(async () => {
+    captureException.mockClear();
     mockInviteRepo = {
       findById: jest.fn(),
       findByToken: jest.fn(),
@@ -554,6 +564,138 @@ describe('InviteService', () => {
   // matters is the invite's, not the caller's), so the subscription hard lock
   // is evaluated here: a canceled chapter, or a past_due one past its grace
   // window, cannot gain a member through a token minted before it lapsed.
+  describe('preview (#3352)', () => {
+    const LIVE_UNTIL = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const invite = (overrides: Partial<Invite> = {}): Invite => ({
+      id: 'inv-p',
+      token: 'preview-token',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: LIVE_UNTIL,
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+      ...overrides,
+    });
+    const chapter = (
+      branding: Record<string, unknown>,
+      name = 'FIJI Tau Nu',
+    ): Chapter =>
+      ({
+        id: 'ch-1',
+        name,
+        university: 'Rensselaer Polytechnic Institute',
+        accent_color: '#5b2c83',
+        branding,
+      }) as Chapter;
+
+    beforeEach(() => {
+      mockInviteRepo.findByToken.mockResolvedValue(invite());
+      mockChapterRepo.findById.mockResolvedValue(
+        chapter({ short_name: 'FIJI', greek_letters: 'ΦΓΔ' }),
+      );
+      mockUserRepo.findById.mockResolvedValue(
+        userFixture({ id: 'user-1', display_name: 'Paul Carlson' }),
+      );
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        roleFixture({
+          id: 'r-member',
+          name: 'Brother',
+          system_key: SystemRoleKeys.MEMBER,
+        }),
+      ]);
+    });
+
+    it('names the chapter, the inviter and the role, and uses nothing up', async () => {
+      await expect(service.preview('preview-token')).resolves.toEqual({
+        chapter_name: 'FIJI Tau Nu',
+        university: 'Rensselaer Polytechnic Institute',
+        mark_text: 'FIJI',
+        accent_color: '#5b2c83',
+        invited_by: 'Paul Carlson',
+        // "Member" isn't a role here, so the redeem would grant the seeded
+        // Member role under the name this chapter gave it.
+        role: 'Brother',
+        expires_at: LIVE_UNTIL,
+      });
+      expect(mockInviteRepo.markUsedAtomically).not.toHaveBeenCalled();
+      expect(mockMemberRepo.create).not.toHaveBeenCalled();
+      expect(mockLegalAcceptance.requireOrAccept).not.toHaveBeenCalled();
+    });
+
+    it('never sends letters a chapter hides', async () => {
+      // A name no letter-hiding organization matches, so only the chapter's
+      // own stored switch can keep the letters off (the default name is a
+      // FIJI chapter, which the org override would hide anyway).
+      mockChapterRepo.findById.mockResolvedValue(
+        chapter({ greek_letters: 'ΦΓΔ', show_greek_letters: false }, 'Tau Nu'),
+      );
+      const preview = await service.preview('preview-token');
+      expect(preview.mark_text).toBeNull();
+      expect(JSON.stringify(preview)).not.toContain('ΦΓΔ');
+    });
+
+    // Any character in the Greek and Coptic block or Greek Extended.
+    const GREEK = /[\u0370-\u03FF\u1F00-\u1FFF]/u;
+
+    it.each(['Phi Gamma Delta Tau Nu', 'Phi Gamma Delta', 'FIJI'])(
+      'never sends the letters of an organization that hides them, with no switch stored (%s, #3421)',
+      async (name) => {
+        // A chapter created before FIJI's profile turned letters off stores
+        // them with no switch, which on its own means shown.
+        mockChapterRepo.findById.mockResolvedValue(
+          chapter({ greek_letters: 'ΦΓΔ' }, name),
+        );
+        const preview = await service.preview('preview-token');
+        expect(preview.mark_text).toBeNull();
+        expect(JSON.stringify(preview)).not.toMatch(GREEK);
+      },
+    );
+
+    it('still sends the letters of an organization that shows them', async () => {
+      mockChapterRepo.findById.mockResolvedValue(
+        chapter({ greek_letters: 'ΣΦΕ' }, 'Sigma Phi Epsilon California Eta'),
+      );
+      const preview = await service.preview('preview-token');
+      expect(preview.mark_text).toBe('ΣΦΕ');
+      expect(preview.mark_text).toMatch(GREEK);
+    });
+
+    it('names no role when the redeem would grant none', async () => {
+      // The invite's role is gone and there is no seeded Member role: redeem
+      // inserts the membership with no roles, so the card mustn't promise one.
+      mockRoleRepo.findByChapter.mockResolvedValue([]);
+      await expect(service.preview('preview-token')).resolves.toMatchObject({
+        role: null,
+      });
+    });
+
+    it('still previews when the inviter profile is gone', async () => {
+      mockUserRepo.findById.mockResolvedValue(null);
+      await expect(service.preview('preview-token')).resolves.toMatchObject({
+        invited_by: null,
+      });
+    });
+
+    it.each([
+      ['unknown', null],
+      ['used', invite({ used_at: '2024-01-02' })],
+      ['expired', invite({ expires_at: '2020-01-01T00:00:00.000Z' })],
+    ])('answers 410 for a %s invite, as redeem does', async (_label, found) => {
+      mockInviteRepo.findByToken.mockResolvedValue(found);
+      await expect(service.preview('preview-token')).rejects.toBeInstanceOf(
+        GoneException,
+      );
+    });
+
+    it('answers 410 when the chapter is gone', async () => {
+      mockChapterRepo.findById.mockResolvedValue(null);
+      await expect(service.preview('preview-token')).rejects.toBeInstanceOf(
+        GoneException,
+      );
+    });
+  });
+
   describe('redeem into a chapter under the subscription hard lock (#1546)', () => {
     const liveInvite = (): Invite => ({
       id: 'inv-locked',
@@ -1165,6 +1307,63 @@ describe('InviteService', () => {
     );
   });
 
+  it('still redeems, and reports once, when the New Member Joined notification fails', async () => {
+    const invite: Invite = {
+      id: 'inv-1',
+      token: 'test-uuid',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+    };
+    const memberRole: Role = roleFixture({
+      id: 'role-member',
+      name: 'Member',
+      system_key: SystemRoleKeys.MEMBER,
+      is_system: true,
+      display_order: 3,
+    });
+    const member: Member = memberFixture({
+      user_id: 'user-2',
+      role_ids: [memberRole.id],
+    });
+    mockInviteRepo.findByToken.mockResolvedValue(invite);
+    mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(
+      '2026-01-01T00:00:00.000Z',
+    );
+    mockRoleRepo.findByChapter.mockResolvedValue([memberRole]);
+    mockMemberRepo.create.mockResolvedValue(member);
+    mockNotificationService.notifyChapter.mockRejectedValue(
+      new Error('roster read failed'),
+    );
+    const error = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    await expect(service.redeem('test-uuid', 'user-2')).resolves.toEqual({
+      chapterId: 'ch-1',
+      memberId: member.id,
+    });
+
+    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'roster read failed' }),
+      expect.objectContaining({
+        level: 'error',
+        tags: { caught_at: 'invite-redeem-new-member-notify-failed' },
+        fingerprint: [
+          'caught-failure',
+          'invite-redeem-new-member-notify-failed',
+          'Error',
+        ],
+      }),
+    );
+    error.mockRestore();
+  });
+
   it('should reject if invite not found', async () => {
     mockInviteRepo.findByToken.mockResolvedValue(null);
     const promise = service.redeem('test-uuid', 'user-2');
@@ -1303,10 +1502,29 @@ describe('InviteService', () => {
     mockRoleRepo.findByChapter.mockResolvedValue([]);
     mockMemberRepo.create.mockRejectedValue(insertError);
     mockInviteRepo.releaseClaim.mockRejectedValue(new Error('release failed'));
+    const error = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
 
     await expect(service.redeem('test-uuid', 'user-2')).rejects.toBe(
       insertError,
     );
+    expect(error).toHaveBeenCalledWith(
+      'Failed to release invite after membership insert failed: release failed',
+      expect.any(String),
+    );
+    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'release failed' }),
+      expect.objectContaining({
+        fingerprint: [
+          'caught-failure',
+          'invite-redeem-claim-release-failed',
+          'Error',
+        ],
+      }),
+    );
+    error.mockRestore();
   });
 
   it('does not claim the invite when role lookup fails (#1863)', async () => {

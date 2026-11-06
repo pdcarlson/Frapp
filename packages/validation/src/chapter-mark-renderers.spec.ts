@@ -34,7 +34,7 @@ const ALLOWED: Record<string, string> = {
   "apps/api/src/interface/dtos/chapter-config.dto.ts":
     "the DTO validates the field on write",
   "apps/api/src/application/services/chapter-onboarding.service.ts":
-    "stores the field and files the directory request; the welcome message goes through chapterTextMark",
+    "stores the field and files the directory request; the welcome message never reads it (#3347)",
   "apps/web/components/onboarding/chapter-wizard.tsx":
     "the wizard's input for the field, and its preview feeds resolveChapterMark",
   "apps/web/components/settings/settings-org-tab.tsx":
@@ -43,8 +43,14 @@ const ALLOWED: Record<string, string> = {
     "reads the stored field into the Settings form",
   "apps/web/components/settings/settings-chapter-mark-card.tsx":
     "the Settings preview, which feeds resolveChapterMark",
+  "apps/web/components/layout/chapter-nav-header.tsx":
+    "turns show_greek_letters off for an organization that hides its letters (FIJI) before the crest goes through resolveChapterMark",
   "apps/mobile/app/(auth)/create-chapter.tsx":
     "the mobile wizard's input for the field",
+  "apps/mobile/lib/chapter-branding.ts":
+    "turns show_greek_letters off for an organization that hides its letters (FIJI) before Chat home's mark goes through chapterTextMark",
+  "apps/api/src/application/services/invite.service.ts":
+    "turns show_greek_letters off for an organization that hides its letters (FIJI) before the invite preview's mark_text goes through chapterTextMark",
 };
 
 /**
@@ -57,9 +63,9 @@ const ALLOWED: Record<string, string> = {
 function printsTheField(source: string): boolean {
   const field = "(?:greek_letters|greekLetters)";
   return [
-    // JSX child: `{…}` on one line, not an attribute value (`={`) and not a
-    // template interpolation (`${`).
-    new RegExp(`(?<![=$\\w])\\{[^{}\\n]*\\b${field}\\b[^{}\\n]*\\}`),
+    // JSX child: `{…}` on one line, not an attribute value (`={`), not a
+    // template interpolation (`${`) and not a spread of props (`{...`).
+    new RegExp(`(?<![=$\\w])\\{(?!\\.\\.\\.)[^{}\\n]*\\b${field}\\b[^{}\\n]*\\}`),
     // Template interpolation: `${…}`
     new RegExp(`\\$\\{[^}\\n]*\\b${field}\\b[^}\\n]*\\}`),
     // Concatenation: `"…" + x.greek_letters` or `x.greek_letters + "…"`
@@ -134,6 +140,7 @@ describe("greek_letters readers (#2876)", () => {
       "setGreekLetters(branding.greek_letters ?? \"\");",
       "if (letters !== undefined) brandingDiff.greek_letters = letters;",
       "greek_letters: identity.greekLetters.trim() || undefined,",
+      '<TextInput {...chain("greekLetters")} />',
     ];
     expect(printed.filter((line) => !printsTheField(line))).toEqual([]);
     expect(bound.filter(printsTheField)).toEqual([]);

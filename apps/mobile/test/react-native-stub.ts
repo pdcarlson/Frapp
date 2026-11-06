@@ -28,6 +28,10 @@ export const reactNativeStub = {
   Alert: {
     alert: vi.fn(),
   },
+  // s15's photo choices are iOS's own action sheet (Android takes an Alert).
+  ActionSheetIOS: {
+    showActionSheetWithOptions: vi.fn(),
+  },
   // Outcomes a sighted member reads off the screen are announced to VoiceOver
   // through this, because `accessibilityLiveRegion` is Android-only. A spec
   // asserting on it clears it itself (`clearMocks` is off, see the config).
@@ -36,12 +40,32 @@ export const reactNativeStub = {
     // An overlay moves a screen reader's focus onto itself as it appears
     // (spec/ui/mobile/patterns.md § Overlays).
     sendAccessibilityEvent: vi.fn(),
+    // The skeleton's pulse follows the Reduce Motion setting live
+    // (`components/state-block.tsx`). Off by default; a spec flips it, or
+    // runs the listener a block registered.
+    isReduceMotionEnabled: vi.fn().mockResolvedValue(false),
+    // Glass falls back to solid under Reduce Transparency
+    // (`components/glass-surface.tsx`). Off by default.
+    isReduceTransparencyEnabled: vi.fn().mockResolvedValue(false),
+    addEventListener: vi.fn(() => ({ remove: vi.fn() })),
   },
   // Enough of the styling/layout surface for Signet token factories and
   // component tests; string stand-ins render fine under react-test-renderer.
   StyleSheet: {
     create: <T>(styles: T) => styles,
-    flatten: (style: unknown) => style,
+    // Merges nested arrays left to right and skips falsy entries, as React
+    // Native's does, so code that reads a flattened style sees real values.
+    flatten: function flatten(style: unknown): Record<string, unknown> {
+      if (Array.isArray(style)) {
+        return style.reduce<Record<string, unknown>>(
+          (acc, entry) => ({ ...acc, ...flatten(entry) }),
+          {},
+        );
+      }
+      return style && typeof style === "object"
+        ? (style as Record<string, unknown>)
+        : {};
+    },
     hairlineWidth: 1,
   },
   useColorScheme: () => "dark",
@@ -52,7 +76,11 @@ export const reactNativeStub = {
   // attachments inline.
   Image: "Image",
   ScrollView: "ScrollView",
+  // Pull-to-refresh (#3385) on ScreenShell's ScrollView and Directory's list.
+  RefreshControl: "RefreshControl",
   TextInput: "TextInput",
+  // Added with s16's rendered spec (#3022): its notification rows are switches.
+  Switch: "Switch",
   // The chat thread windows its messages with a FlatList. As a string stand-in
   // it renders its props but never invokes `renderItem`, so a test that needs
   // to assert on a row should call the row component directly. A spec that

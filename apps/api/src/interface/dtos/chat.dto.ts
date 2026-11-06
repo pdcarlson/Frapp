@@ -129,6 +129,16 @@ export class UpdateChannelDto {
   @IsOptional()
   @IsIn(CHAT_NOTIFICATION_LEVELS)
   default_notification_level?: (typeof CHAT_NOTIFICATION_LEVELS)[number] | null;
+
+  @ApiPropertyOptional({
+    description:
+      "Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. Refused as `true` on a DM or group DM.",
+  })
+  // Not `@IsOptional()`, which lets `null` through to a not-null column (a
+  // 500): absent skips validation, `null` is refused as not a boolean.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsStrictBoolean()
+  is_default?: boolean;
 }
 
 export class CreateDmDto {
@@ -145,6 +155,20 @@ export class AddChannelMemberDto {
   })
   @IsUUID()
   user_id: string;
+}
+
+/** `GET /v1/channels/{id}/members` (#3536): one person who can read the channel. */
+export class ChannelMemberDto {
+  @ApiProperty({ format: 'uuid', description: "The member's `users.id`." })
+  user_id: string;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      "The `display_order` of the member's highest role (lower ranks higher), or null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`.",
+  })
+  role_rank: number | null;
 }
 
 export class CreateGroupDmDto {

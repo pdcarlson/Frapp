@@ -11,6 +11,10 @@ import {
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { RolloverDto } from '../dtos/semester-rollover.dto';
+import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
 
 @ApiTags('Semesters')
 @ApiBearerAuth()
@@ -25,6 +29,12 @@ export class SemesterRolloverController {
   @Post('chapters/current/rollover')
   @RequirePermissions(SystemPermissions.SEMESTER_ROLLOVER)
   @ApiOperation({ summary: 'Trigger semester rollover' })
+  @FeatureEvent(
+    'semester-rolled-over',
+    ({ body }: FeatureEventInput<RolloverDto>) => ({
+      promote_new_members: body.promote_new_members === true,
+    }),
+  )
   async rollover(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,

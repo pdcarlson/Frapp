@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import type { ChatMessage } from "@repo/chat-core/types";
 import {
   POLL_VOTE_ACTION_TYPE,
   pollsGateOf,
@@ -12,18 +11,15 @@ import {
 import { parseInstant } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { isModuleEnabled } from "@repo/validation";
-import { useChapterBranding } from "@/lib/chapter-branding";
-import {
-  deliveryChrome,
-  type DeliveryChrome,
-} from "@/lib/chat/delivery-status";
+import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useCurrentChapter, useNow } from "@repo/hooks";
 import {
-  groupReactions,
-  messageActionsA11yProps,
-  ReactionRow,
-} from "./message-item";
+  CardEyebrow,
+  CardTitle,
+  ChatCardShell,
+  type ChatCardFrameProps,
+} from "./chat-card";
 
 /**
  * #528 — mobile in-chat poll voting. Mirrors
@@ -33,13 +29,10 @@ import {
  * 1. **A card in the row, not a message body.** `thread-message-row.tsx` puts
  *    it inside `MessageRowFrame`, which draws the reply quote, the avatar and
  *    the author line every row has (a card always starts a run,
- *    `@repo/chat-core/grouping`). The card itself renders the rest of the
- *    chrome — status text + Retry/Discard sourced from
- *    `message._status`/`_error` via exhaustive `deliveryChrome` (#1910), and
- *    `ReactionRow` imported from `message-item.tsx` rather than
- *    reimplemented, so a poll message keeps the same affordances every other
- *    mobile message kind has. `unconfirmed`/`recorded` are a muted note with
- *    no Discard; mobile has no slash replay path, so they are read-only.
+ *    `@repo/chat-core/grouping`). The rest of the chrome (delivery status,
+ *    reactions, the actions long-press) is `ChatCardShell` in `chat-card.tsx`,
+ *    the frame the event and task cards share, so a poll message keeps the
+ *    same affordances every other mobile message kind has.
  * 2. **`PollOption`/`POLL_VOTE_ACTION_TYPE`/payload-reading/tallying come from
  *    `@repo/chat-core/polls`**, the one shared copy web's `poll-card.tsx`
  *    also reads from, so a future fix to vote-parsing or tallying only has
@@ -60,57 +53,31 @@ import {
  * paths before choosing which one to mirror.
  */
 
-export interface PollCardProps {
-  message: ChatMessage;
-  viewerId: string;
-  /** Confirmed messages can be voted on; pending optimistic rows cannot. */
-  isConfirmed: boolean;
+/**
+ * `onOpenActions` matters more here than on most cards: a poll's question and
+ * options are member-authored text, so a poll from someone else is reportable
+ * like any message (#2312 §2). The viewer's own poll gets it too, for Reply
+ * and Delete (#2775).
+ */
+export interface PollCardProps extends ChatCardFrameProps {
   onVote: (
     messageId: string,
     actionType: string,
     payload: Record<string, unknown>,
   ) => void;
-  onRetry: (clientMessageId: string) => void;
-  onDiscard: (clientMessageId: string) => void;
-  onReact: (messageId: string, emoji: string) => void;
-  onUnreact: (messageId: string, emoji: string) => void;
-  /**
-   * Opens the message actions sheet — the same one `MessageItem` uses. A
-   * poll's question and options are member-authored text, so a poll from
-   * someone else is reportable like any message (#2312 §2). The viewer's own
-   * poll gets it too, for Reply and Delete (#2775); which rows the sheet shows
-   * is decided by `messageActionsFor`, not by whether this is passed.
-   */
-  onOpenActions?: () => void;
-  /**
-   * Scrolls to the parent when this poll is a reply whose parent is shown.
-   * The quote above the row is tappable; this is its screen-reader twin on the
-   * card's own accessible container, as a text reply has on its body.
-   */
-  onJumpToParent?: () => void;
 }
 
-export function PollCard({
-  message,
-  viewerId,
-  isConfirmed,
-  onVote,
-  onRetry,
-  onDiscard,
-  onReact,
-  onUnreact,
-  onOpenActions,
-  onJumpToParent,
-}: PollCardProps) {
+export function PollCard(props: PollCardProps) {
+  const { message, viewerId, isConfirmed, onVote, onOpenActions } = props;
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
   // The chapter accent is the tally fill and the selected-option chip: a
   // poll's own vote is the viewer's content, and the engine's solid-fill pair
   // (accent-engine.md §8) is what a filled control takes.
   const { accentPrimary, accentOnPrimary } = useChapterBranding();
   const payload = readPollPayload(message);
   const now = useNow();
-  const reactions = groupReactions(message, viewerId);
   // A card vote is a Polls write, and the server refuses it while Polls is off
   // (#2993). The gate is mirrored here so the member sees that before tapping
   // (#3012). It reads the member view (`useCurrentChapter`'s
@@ -136,57 +103,16 @@ export function PollCard({
     return tallyPollVotes(message, payload.options, viewerId);
   }, [message, payload, viewerId]);
 
-  // Sourced straight off `message._status`/`_error` through `deliveryChrome`
-  // — a poll message is optimistic/failed/unconfirmed under exactly the
-  // same `sendMessage` contract any other kind is. The switch is exhaustive
-  // so a new `MessageStatus` cannot render as a fully-sent poll (#1910).
-  const statusAndActions = (
-    <PollDeliveryChrome
-      chrome={deliveryChrome(message)}
-      styles={styles}
-      clientMessageId={message.client_message_id}
-      onRetry={onRetry}
-      onDiscard={onDiscard}
-    />
-  );
-  const reactionRow = (
-    <ReactionRow
-      reactions={reactions}
-      messageId={message.id}
-      disabled={!isConfirmed}
-      onReact={onReact}
-      onUnreact={onUnreact}
-      onLongPress={onOpenActions}
-      styles={styles}
-    />
-  );
-
-  // Same shape as `MessageItem`'s row: the gesture on a wrapper that
-  // is not itself an accessibility element (so the option buttons stay
-  // reachable), and the screen-reader action on an accessible `View` around
-  // the card's own text — never on a bare `Text` (see
-  // `messageActionsA11yProps`).
-  const a11yActions = messageActionsA11yProps(onOpenActions, {
-    onJumpToParent,
-  });
-  const hasActions = "accessibilityActions" in a11yActions;
-
   if (!payload) {
     return (
-      <Pressable
-        accessible={false}
-        onLongPress={onOpenActions}
-        disabled={!onOpenActions}
-        style={styles.card}
-      >
-        <View accessible={hasActions} {...a11yActions}>
+      <ChatCardShell
+        {...props}
+        header={
           <Text style={styles.malformed}>
             Malformed poll · {message.content}
           </Text>
-        </View>
-        {statusAndActions}
-        {reactionRow}
-      </Pressable>
+        }
+      />
     );
   }
 
@@ -201,16 +127,15 @@ export function PollCard({
   };
 
   return (
-    <Pressable
-      accessible={false}
-      onLongPress={onOpenActions}
-      disabled={!onOpenActions}
-      style={styles.card}
+    <ChatCardShell
+      {...props}
+      header={
+        <>
+          <CardEyebrow label={`Poll${isClosed ? " · Closed" : ""}`} />
+          <CardTitle>{payload.question}</CardTitle>
+        </>
+      }
     >
-      <View accessible={hasActions} {...a11yActions}>
-        <Text style={styles.eyebrow}>Poll{isClosed ? " · Closed" : ""}</Text>
-        <Text style={styles.question}>{payload.question}</Text>
-      </View>
       <View style={styles.options}>
         {payload.options.map((option) => {
           const count = byOption[option.id] ?? 0;
@@ -286,102 +211,15 @@ export function PollCard({
           ) : null}
         </View>
       ) : null}
-      {statusAndActions}
-      {reactionRow}
-    </Pressable>
+    </ChatCardShell>
   );
 }
 
-/**
- * Poll-row delivery chrome. Exhaustive over `DeliveryChrome` so a new
- * `MessageStatus` cannot render as a fully-sent poll (the old `else` was
- * `null`, which is the delivered look).
- *
- * Retry/Discard stay on `failed` only. `unconfirmed` is a muted note with
- * no control — mobile has no slash replay path, and discard is never safe.
- */
-function PollDeliveryChrome({
-  chrome,
-  styles,
-  clientMessageId,
-  onRetry,
-  onDiscard,
-}: {
-  chrome: DeliveryChrome;
-  styles: ReturnType<typeof createStyles>;
-  clientMessageId: string;
-  onRetry: (clientMessageId: string) => void;
-  onDiscard: (clientMessageId: string) => void;
-}) {
-  switch (chrome.status) {
-    case "pending":
-      return <Text style={styles.metaText}>Sending…</Text>;
-    case "failed":
-      return (
-        <View style={styles.failedRow}>
-          <Text style={styles.metaFailed}>{chrome.error}</Text>
-          <View style={styles.failedActions}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Retry sending this message"
-              hitSlop={8}
-              onPress={() => onRetry(clientMessageId)}
-            >
-              <Text style={styles.retryText}>Retry</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Discard this message"
-              hitSlop={8}
-              onPress={() => onDiscard(clientMessageId)}
-            >
-              <Text style={styles.discardText}>Discard</Text>
-            </Pressable>
-          </View>
-        </View>
-      );
-    case "unconfirmed":
-    case "recorded":
-      return (
-        <Text style={styles.metaText} accessibilityLiveRegion="polite">
-          {chrome.note}
-        </Text>
-      );
-    case "confirmed":
-      return null;
-    default: {
-      const _never: never = chrome;
-      return _never;
-    }
-  }
-}
-
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
-    // The body column's full width: a card in the row, under its author line.
-    card: {
-      marginTop: tokens.spacing.xs,
-      padding: tokens.spacing.md,
-      borderRadius: tokens.radius.card,
-      backgroundColor: tokens.color.surface.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-    },
     malformed: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
-    },
-    eyebrow: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-      textTransform: "uppercase",
-      letterSpacing: 0.5,
-    },
-    question: {
-      ...typeRole(tokens.typography.role.body),
-      fontWeight: "700",
-      color: tokens.color.text.foreground,
-      marginTop: tokens.spacing.xs,
     },
     options: {
       marginTop: tokens.spacing.sm + 1,
@@ -434,62 +272,9 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
-    // Matches `MessageItem`'s delivery line in message-item.tsx — same
-    // pending/failed/unconfirmed/recorded treatment, since a poll message
-    // shares the `sendMessage` contract any other kind is.
-    metaText: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-      marginTop: tokens.spacing.sm + 1,
-    },
-    failedRow: {
-      marginTop: tokens.spacing.sm + 1,
-      gap: tokens.spacing.xs,
-    },
-    metaFailed: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.semantic.destructive,
-    },
-    failedActions: {
-      flexDirection: "row",
-      gap: tokens.spacing.md,
-    },
     retryText: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.gold.askText,
-    },
-    discardText: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    // Matches `MessageItem`'s equivalent styles — `ReactionRow` (imported
-    // from message-item.tsx) is narrowed to exactly these five keys.
-    reactionRow: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: tokens.spacing.sm - 2,
-      marginTop: tokens.spacing.sm + 1,
-    },
-    reactionChip: {
-      height: 26,
-      paddingHorizontal: tokens.spacing.sm + 1,
-      borderRadius: tokens.radius.chip + 1,
-      backgroundColor: tokens.color.surface.popover,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    reactionChipMine: {
-      backgroundColor: tokens.color.gold.askFill,
-      borderWidth: 1,
-      borderColor: tokens.color.gold.askBorder,
-    },
-    reactionText: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    reactionTextMine: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.gold.askText,
+      color: brand.accent,
     },
   });
 }

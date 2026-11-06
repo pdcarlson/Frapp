@@ -1,5 +1,12 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import { validateCardPollVote } from '#domain/utils/poll-vote-rules';
+import {
+  CARD_VOTE_ACTION_TYPE,
+  cardPollChoiceMode,
+  cardPollOptionIds,
+  cardVoteSelection,
+  validateCardPollVote,
+  type CardPollPayload,
+} from '#domain/utils/poll-vote-rules';
 import {
   CHAT_MESSAGE_ACTION_REPOSITORY,
   MESSAGE_REACTION_REPOSITORY,
@@ -13,45 +20,31 @@ import { assertModuleEnabled, type EnabledModules } from './module-gate';
 import { ChatBlockService } from './chat-block.service';
 import { isFromBlockedSender } from './chat-block-mask';
 
-/** Vote action UPSERTS rather than duplicates (ADR-07). */
-const VOTE_ACTION_TYPE = 'vote';
-
-/** The poll-card payload written by the composer (`@repo/chat-core/dispatch`). */
-type PollCardPayload = {
-  options?: { id?: unknown }[];
-  closes_at?: string | null;
-  choice_mode?: 'single' | 'multi';
-};
-
 /**
  * Applies the shared poll rules to a chat-card vote, translating a rejection
  * into the same 400 the polls surface returns.
  *
  * A card whose payload carries no options is left alone rather than rejected:
  * that is a malformed message, and refusing every vote on it would turn a data
- * problem into a dead card. Cards default to single-choice, matching the
- * composer, which offers no multi-select.
+ * problem into a dead card. A card whose `options` isn't a list is refused,
+ * as it always was (it used to throw here), because nothing about it can be
+ * checked. Cards default to single-choice, matching the composer, which
+ * offers no multi-select.
  */
 function assertCardPollVoteAllowed(
   messagePayload: unknown,
   actionPayload: Record<string, unknown>,
 ): void {
-  const card = (messagePayload ?? {}) as PollCardPayload;
-  const optionIds = (card.options ?? [])
-    .map((option) => option?.id)
-    .filter((id): id is string => typeof id === 'string');
+  const card = (messagePayload ?? {}) as CardPollPayload;
+  const optionIds = cardPollOptionIds(card);
+  if (optionIds === null) throw new BadRequestException('Malformed poll card');
   if (optionIds.length === 0) return;
-
-  const rawSelection = actionPayload['option_id'];
-  const selected = (
-    Array.isArray(rawSelection) ? rawSelection : [rawSelection]
-  ).filter((id): id is string => typeof id === 'string');
 
   const rejection = validateCardPollVote({
     closesAt: card.closes_at,
     optionIds,
-    selected,
-    choiceMode: card.choice_mode ?? 'single',
+    selected: cardVoteSelection(actionPayload),
+    choiceMode: cardPollChoiceMode(card),
   });
   if (!rejection) return;
 
@@ -164,7 +157,7 @@ export class ChatReactionService {
     );
 
     const payload = input.payload ?? {};
-    const isVote = input.action_type === VOTE_ACTION_TYPE;
+    const isVote = input.action_type === CARD_VOTE_ACTION_TYPE;
 
     // #871: this path used to check channel access and then insert whatever it
     // was handed, so a member could vote on a closed poll, pick an option that

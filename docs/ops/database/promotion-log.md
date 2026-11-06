@@ -29,6 +29,116 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-06: `#chapter-audit` entries arrive silently
+
+### 20261106193000_chat_unread_skip_audit_mirror.sql
+
+- **Purpose**: Re-creates `get_channel_unread_counts` with one more predicate: a `system_audit` message whose `client_message_id` starts `audit:` (an entry the audit mirror posted into `#chapter-audit`) never counts as unread or as a mention. The server's other `system_audit` notices still count. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#read-receipts) § Read Receipts. Same signature, grants and settings as `20260927050000`. No data changes.
+- **Checks**: After `db push`, `select proname, prosecdef, proconfig from pg_proc where proname = 'get_channel_unread_counts';` returns one row, `true | {"search_path=public, pg_temp"}`, and `select pg_get_functiondef('public.get_channel_unread_counts(uuid, uuid)'::regprocedure) like '%audit:%%';` returns `true`. A member's `#chapter-audit` row in `GET /v1/channels/unread` reads 0 after the next settings change.
+- **Promoter notes**: No API change rides it; any API version reads the counts the same way. Re-applying is idempotent (`create or replace`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-silent-audit-entries-in-unread-counts-20261106193000) § Rollback silent audit entries in unread counts.
+
+## 2026-11-06: Backwork search covers department, professor and tags
+
+### 20261106190000_backwork_search_wider.sql
+
+- **Purpose**: Adds `search_backwork_resources(p_chapter_id, p_query, p_limit)`, a read-only SQL function (security invoker, EXECUTE for `service_role` only) that `GET /v1/search` now uses for its Backwork source. It matches title, course, department code and name, professor and tags, ranks word matches by `ts_rank_cd`, and falls back to `pg_trgm` word similarity so a typo still matches (#585). Creates the `extensions` schema if missing and `pg_trgm` in it. The rule is in [`spec/behavior/search.md`](../../../spec/behavior/search.md#global-search) § Global search. Nothing is rewritten; `backwork_resources.search_vector` stays.
+- **Checks**: After `db push`, `select extnamespace::regnamespace from pg_extension where extname = 'pg_trgm';` returns `extensions`, `select has_function_privilege('authenticated', 'public.search_backwork_resources(uuid, text, integer)', 'execute');` returns `false`, and `select id from public.search_backwork_resources('<a chapter id>', '<a professor name>', 20);` returns that professor's files.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API doesn't call the function. The newer API against an unmigrated database fails every global search with a 500, because a source that errors fails the whole request (spec/behavior/search.md, server-side timeout), so the migration must land first. `create ... if not exists` and `create or replace` make re-applying idempotent. If `pg_trgm` is already installed in another schema on a hosted project, `create extension if not exists` leaves it there and the function's `extensions.word_similarity` call fails: check the query above first. Checked 2026-11-06 with the Supabase connector: `pg_trgm` is not installed on frapp-staging or frapp-prod, and both already have the `extensions` schema (pgcrypto, uuid-ossp and pg_stat_statements live there). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-backwork-search-wider-20261106190000) § Rollback backwork search wider.
+
+## 2026-11-06: A Discord import's progress per category
+
+### 20261106170000_discord_import_category_progress.sql
+
+- **Purpose**: Adds `discord_import_category_progress(p_import_id, p_chapter_id)`, a read-only SQL function that adds up an import's channel and thread rows per Discord category (a thread under its parent channel's category): channels, threads, done and failed. `GET /v1/discord-imports/:id/progress` returns it as `categories`, which the one-import page draws as a tile per category while a bot import runs, and as separate channel and thread counts once it finishes. The behaviour is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages. Service role only. Nothing is rewritten.
+- **Checks**: After `db push`, `select has_function_privilege('authenticated', 'public.discord_import_category_progress(uuid, uuid)', 'execute');` returns `false`, and `select * from public.discord_import_category_progress('<an import id>', '<its chapter id>');` returns one row per category. The function's body, run as a plain query against staging's 2026-09-30 import before this shipped, returned 11 categories adding up to 78 channels and 1,068 threads.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API doesn't call the function. The newer API against an unmigrated database logs a warning on every `GET :id/progress` and answers it without `categories`, so the page draws no tiles and the combined channel count; the channel panel and the import itself are unaffected. `create or replace` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-discord-import-category-progress-20261106170000) § Rollback Discord import category progress.
+
+## 2026-11-06: Backwork accepts files up to 100 MB
+
+### 20261106153000_backwork_bucket_100mb.sql
+
+- **Purpose**: Raises `storage.buckets.file_size_limit` on `backwork` from 52428800 (50 MB) to 104857600 (100 MB), matching `MAX_BACKWORK_UPLOAD_BYTES` in `@repo/validation`. The owner set it to the hosted projects' global storage limit, 100 MB (confirmed in the dashboard on 2026-11-06). Every other member-upload bucket keeps 25 MB. The rule is in [`spec/behavior/backwork.md`](../../../spec/behavior/backwork.md#storage) § Storage. No object or row is touched.
+- **Checks**: Before `db push`, `select file_size_limit from storage.buckets where id = 'backwork';` returns 52428800 once `20261105230000` has run (26214400 if it has not, since both ride the same push). After it, the same query returns 104857600.
+- **Promoter notes**: Order doesn't matter much. An API that allows 100 MB against an unmigrated bucket refuses a 50 to 100 MB file at the PUT instead of at URL issuance; an older API against the migrated bucket refuses it at issuance. The hosted global storage upload limit must stay at least 100 MB, or it wins over the bucket column. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-backwork-100-mb-limit-20261106153000) § Rollback the backwork 100 MB limit.
+
+## 2026-11-06: A chapter can pick the channel Chat opens on
+
+### 20261106010000_chat_channels_is_default.sql
+
+- **Purpose**: Adds `chat_channels.is_default` (boolean, not null, default false) and the partial unique index `chat_channels_one_default_per_chapter` on `(chapter_id) where is_default`, so a chapter has at most one default channel, and the RPC `set_chat_channel_default(p_channel_id, p_chapter_id)`, which moves the default in one transaction under a per-chapter advisory lock (security invoker, EXECUTE for `service_role` only). Officers who can manage channels set it from the web chat admin page. Chat opens on it when a member's device has no last channel, ahead of `#general`. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#where-chat-opens) § Where Chat opens. No row is rewritten: a constant default is stored in the catalog.
+- **Checks**: After `db push`, `select count(*) from public.chat_channels where is_default;` returns 0, and `select has_function_privilege('authenticated', 'public.set_chat_channel_default(uuid, uuid)', 'execute');` returns false.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API ignores the column. The newer API against an unmigrated database fails every channel save that sends `is_default`, and nothing else, because the list reads `*`. Re-applying is idempotent (`if not exists`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-chapter-default-channel-20261106010000) § Rollback the chapter default channel.
+
+## 2026-11-05: Backwork accepts files up to 50 MB (#3499)
+
+### 20261105230000_backwork_bucket_50mb.sql
+
+- **Purpose**: Raises `storage.buckets.file_size_limit` on `backwork` from 26214400 (25 MB) to 52428800 (50 MB), matching `MAX_BACKWORK_UPLOAD_BYTES` in `@repo/validation`. Every other member-upload bucket keeps 25 MB. The rule is in [`spec/behavior/backwork.md`](../../../spec/behavior/backwork.md#storage) § Storage. No object or row is touched.
+- **Checks**: Before `db push`, `select file_size_limit from storage.buckets where id = 'backwork';` gave 26214400 on both `frapp-staging` and `frapp-prod` on 2026-11-05. After it, the same query returns 52428800.
+- **Promoter notes**: Order doesn't matter much. An API that allows 50 MB against an unmigrated bucket refuses a 25 to 50 MB file at the PUT instead of at URL issuance; an older API against the migrated bucket refuses it at issuance. The hosted project's global storage upload limit (Supabase dashboard, Storage settings) must also be at least 50 MB, or it wins over the bucket column. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-backwork-50-mb-limit-20261105230000) § Rollback the backwork 50 MB limit.
+
+## 2026-11-05: A Discord import can keep the server's categories as channel groups
+
+### 20261105220000_discord_import_channel_groups.sql
+
+- **Purpose**: Lets a Discord import put the channels it creates into channel groups (`chat_channel_categories`) named after the server's categories, when the admin chooses it on the mapping step. The behaviour is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages.
+  - Three nullable columns on `discord_import_channels`: `new_channel_group` (the group name the admin chose), `discord_category_position` (the category's place in Discord, read by the bot scan) and `new_channel_category_id` (the group `start` resolved the name to; `on delete set null`). Two checks: only a `create_new` row may carry a group, and a group name is 1 to 100 characters once trimmed.
+  - `discord_import_created_categories` (RLS on, no policies) records each group an import created, as `discord_import_created_channels` does for channels.
+  - `delete_empty_discord_import_categories` and its check `discord_import_category_holds_anything`, the purge's group step. Service role only.
+  - Two partial indexes: `discord_import_channels (new_channel_category_id)` and `chat_channels (category_id)`.
+
+  No row is rewritten: every existing mapping row gets nulls, which is the behaviour it had.
+- **Checks**: After `db push`, `select count(*) from public.discord_import_created_categories;` returns 0, and `select has_function_privilege('authenticated', 'public.delete_empty_discord_import_categories(uuid, uuid)', 'execute');` returns `false`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API ignores the new columns and table. The newer API against an unmigrated database fails to scan a server, save a channel mapping and start an import, because it writes the new columns, and fails every import deletion, old imports included, because the purge calls the new function. Adding nullable columns and empty indexes is quick; `chat_channels` holds one row per channel. Re-applying is idempotent (`if not exists`, `create or replace`, constraints dropped and re-added). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-discord-import-channel-groups-20261105220000) § Rollback Discord import channel groups.
+
+## 2026-11-05: Starting descriptions for the default channels
+
+### 20261105210000_default_channel_descriptions.sql
+
+- **Purpose**: Writes a starting `description` into the four channels every chapter is created with (`#general`, `#announcements`, `#chapter-audit`, `#alumni`), only where the description was never set (null). The channel header shows it beside the name and the empty channel's start repeats it. New chapters get the same lines from `DEFAULT_CHANNELS` (`apps/api/src/domain/constants/permissions.ts`). A description an officer typed is never replaced, a description an officer cleared (stored as `''` by Chat admin, which since this change sends the field only when it was edited) stays clear, and only the seeded name and type pairs are touched.
+- **Checks**: Before `db push`, `select name, type, count(*), count(*) filter (where description is null) from chat_channels where name in ('general','announcements','chapter-audit','alumni') group by 1, 2;` gave 8 channels, all 8 null, on `frapp-prod` and 5 channels, all 5 null, on `frapp-staging` on 2026-11-05 (none were `''`). After it, the same query should give a null count of 0 for the seeded name and type pairs; re-run it before `db push` if time has passed, since a channel an officer saved blank meanwhile is skipped on purpose.
+- **Promoter notes**: Data only, no schema change. It rewrites at most a handful of rows per chapter, so the lock is brief. Any API version works against it: the column has always existed and every client already treats it as optional text. Re-applying is a no-op, because the `where` only matches null descriptions. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-default-channel-descriptions-20261105210000) § Rollback default channel descriptions.
+
+## 2026-11-05: Seeded role colors move onto the role palette (#3485)
+
+### 20261105200000_role_color_palette_defaults.sql
+
+- **Purpose**: Rewrites `roles.color` on seeded system roles a chapter never touched, so they use the role palette the rule in [`spec/behavior/rbac.md`](../../../spec/behavior/rbac.md) describes. President `#FFD700` → `#F2994A`, Treasurer `#10B981` → `#6FD08C`, Alumni `#6B7280` → `#A9B4C2`, and Vice President and Secretary `null` → `#8FA8FF` and `#F47FA4`. A row is rewritten only while its color still equals the old seed (`is not distinct from`). For Vice President and Secretary that seed is `null`, which also matches a color a chapter cleared through the API; the web picker never sent a clear. Member, New Member, custom roles and any color a chapter chose are left alone. No column, index, constraint or policy changes.
+- **Checks**: Before `db push`, `select system_key, color, count(*) from public.roles group by 1, 2 order by 1, 2;` on 2026-11-05 showed two chapters on each of `frapp-staging` and `frapp-prod`, every system role on its seed, and no custom role with a color. After it, the same query shows the five new values with two rows each, and Member and New Member still `null`.
+- **Promoter notes**: Ship it with the API and clients from the same PR, in either order. An older client paints names plain whatever the column holds, and the newer clients paint only palette values, so an unmigrated database shows no color on the old seeds until this runs. The update touches at most five rows per chapter. Re-applying changes nothing, because rewritten rows no longer match the old seeds. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-role-palette-defaults-20261105200000) § Rollback the role palette defaults.
+
+## 2026-11-04: One chapter_documents row per stored object (#3399)
+
+### 20261104210000_chapter_documents_storage_path_key.sql
+
+- **Purpose**: Makes the database hold at most one `chapter_documents` row per `storage_path`. The rule is in [`spec/behavior/chapter-docs.md`](../../../spec/behavior/chapter-docs.md#storage) § Storage.
+  - A guard that raises, and changes nothing, if any path is already filed twice. Choosing which row survives is the owner's decision.
+  - `chapter_documents_storage_path_key`, a unique index on `(storage_path)`. Every path is minted under a fresh document id, so no two rows have had a reason to share one.
+
+  Mobile's upload sheet retries a failed `POST /v1/documents` with the bytes it already sent. `confirmUpload` reads the path first and answers a filed one with its row, and two confirms that race past that read meet the index, whose `23505` `create` turns into the row that won. So a confirm retried after its response was lost files one row, and so do two sent at once. Before this change a retried confirm filed two rows on one object, and deleting either removed the object the other pointed at. No row is rewritten.
+- **Checks**: Before `db push`, `select count(*), count(distinct storage_path) from public.chapter_documents;` gave 1 / 1 on `frapp-staging` and 0 / 0 on `frapp-prod` on 2026-11-04. After it, `select indexname from pg_indexes where indexname = 'chapter_documents_storage_path_key';` returns one row.
+- **Promoter notes**: Ship it before, or with, the API that relies on it. A deploy applies migrations first. Against an unmigrated database the newer API's read still answers a retried confirm with its row; only two confirms racing past the read can file a second row. An older API against the migrated database keeps working, but a retried confirm gets the raw `23505` as a 500, which mobile shows as a retryable failure and web never sends (web re-mints a path on retry). The index build blocks writes to `chapter_documents` until the migration commits, and the table holds one row per document, so it is brief. If the guard raises, the migration stops and nothing is applied: bring the rows to the owner (#3399) rather than deleting any. Re-applying is idempotent (`create unique index if not exists`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-one-document-row-per-object-20261104210000) § Rollback one document row per object.
+
 ## 2026-10-01: `discord_imports.role_mapping` gets a catalog comment that is true (#2887)
 
 ### 20261001024000_discord_import_role_mapping_comment.sql

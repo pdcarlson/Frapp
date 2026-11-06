@@ -23,25 +23,23 @@ const {
   chaptersQuery,
   currentChapterQuery,
   permissionsQuery,
-} = vi.hoisted(
-  () => ({
-    // An officer by default, so the "Chapter settings" link has somewhere to
-    // go. `undefined` data is a permission read still in flight.
-    permissionsQuery: {
-      current: { data: { permissions: ["chapter-config:view"] } } as {
-        data: { permissions: string[] } | undefined;
-      },
+} = vi.hoisted(() => ({
+  // An officer by default, so the "Chapter settings" link has somewhere to
+  // go. `undefined` data is a permission read still in flight.
+  permissionsQuery: {
+    current: { data: { permissions: ["chapter-config:view"] } } as {
+      data: { permissions: string[] } | undefined;
     },
-    selectChapter: vi.fn(async () => true),
-    toast: vi.fn(),
-    chaptersQuery: {
-      current: { data: [] as unknown[], isSuccess: true },
-    },
-    currentChapterQuery: {
-      current: { data: undefined as unknown, isError: false },
-    },
-  }),
-);
+  },
+  selectChapter: vi.fn(async () => true),
+  toast: vi.fn(),
+  chaptersQuery: {
+    current: { data: [] as unknown[], isSuccess: true },
+  },
+  currentChapterQuery: {
+    current: { data: undefined as unknown, isError: false },
+  },
+}));
 
 vi.mock("@repo/hooks", () => ({
   useAccessibleChapters: () => chaptersQuery.current,
@@ -62,6 +60,11 @@ vi.mock("@/lib/stores/chapter-store", () => ({
   useChapterStore: (
     selector: (s: { activeChapterId: string | null }) => unknown,
   ) => selector({ activeChapterId }),
+}));
+
+const bulkDropNotice = vi.fn((): string | null => null);
+vi.mock("@/lib/backwork-bulk/session", () => ({
+  bulkDropNotice: () => bulkDropNotice(),
 }));
 
 import { ChapterNavHeader } from "./chapter-nav-header";
@@ -91,6 +94,7 @@ describe("ChapterNavHeader", () => {
   beforeEach(() => {
     selectChapter.mockClear();
     selectChapter.mockResolvedValue(true);
+    bulkDropNotice.mockReturnValue(null);
     assign.mockClear();
     toast.mockClear();
     activeChapterId = "chap-1";
@@ -130,6 +134,19 @@ describe("ChapterNavHeader", () => {
     expect(
       screen.getByRole("button", { name: /Chapter menu/ }),
     ).toBeInTheDocument();
+  });
+
+  it("draws the crest and name as placeholders while the chapter loads", () => {
+    // Not a "--" crest beside a "Loading..." label, which reads as a chapter
+    // actually named that.
+    currentChapterQuery.current = { data: undefined, isError: false };
+    render(<ChapterNavHeader collapsed={false} />);
+
+    const trigger = screen.getByRole("button", {
+      name: "Chapter menu (currently Loading chapter)",
+    });
+    expect(trigger).not.toHaveTextContent("Loading");
+    expect(trigger.querySelectorAll(".skeleton-shimmer")).toHaveLength(2);
   });
 
   it("offers join and chapter settings even with one chapter", async () => {
@@ -173,7 +190,10 @@ describe("ChapterNavHeader", () => {
       data: { permissions: ["members:view", "reports:export"] },
     };
     currentChapterQuery.current = {
-      data: { ...chapterPayload("Alpha Chapter"), enabled_modules: { reports: false } },
+      data: {
+        ...chapterPayload("Alpha Chapter"),
+        enabled_modules: { reports: false },
+      },
       isError: false,
     };
     const { unmount } = render(<ChapterNavHeader collapsed={false} />);
@@ -183,7 +203,10 @@ describe("ChapterNavHeader", () => {
     unmount();
 
     currentChapterQuery.current = {
-      data: { ...chapterPayload("Alpha Chapter"), enabled_modules: { reports: true } },
+      data: {
+        ...chapterPayload("Alpha Chapter"),
+        enabled_modules: { reports: true },
+      },
       isError: false,
     };
     render(<ChapterNavHeader collapsed={false} />);
@@ -251,6 +274,34 @@ describe("ChapterNavHeader", () => {
     // subscriptions are keyed to the outgoing chapter, and the current route
     // may itself be chapter-scoped.
     await waitFor(() => expect(assign).toHaveBeenCalledWith("/"));
+  });
+
+  it("asks before a switch drops Bulk upload documents, and stays put on Cancel", async () => {
+    bulkDropNotice.mockReturnValue(
+      "Bulk upload has 2 documents that aren't uploaded yet. Switching chapters drops them.",
+    );
+    chaptersQuery.current = {
+      data: [
+        membership("chap-1", "Alpha Chapter"),
+        membership("chap-2", "Beta Chapter"),
+      ],
+      isSuccess: true,
+    };
+    render(<ChapterNavHeader collapsed={false} />);
+
+    openMenu();
+    fireEvent.click(await screen.findByText("Beta Chapter"));
+    expect(await screen.findByRole("dialog")).toHaveTextContent(
+      "Switching chapters drops them.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(selectChapter).not.toHaveBeenCalled();
+
+    openMenu();
+    fireEvent.click(await screen.findByText("Beta Chapter"));
+    fireEvent.click(await screen.findByRole("button", { name: "Switch chapters" }));
+    await waitFor(() => expect(selectChapter).toHaveBeenCalledWith("chap-2"));
   });
 
   it("does not re-select the chapter the user is already in", async () => {
@@ -411,6 +462,28 @@ describe("ChapterNavHeader chapter mark", () => {
     withBranding({ branding: { greek_letters: "ΣΦΕ" } });
     expect(screen.getByTestId("chapter-mark-text")).toHaveTextContent("ΣΦΕ");
   });
+
+  it("never shows the letters of an organization that hides them, whatever the switch says", () => {
+    // A FIJI chapter created before the profile turned its letters off: the
+    // switch was never written, and the crest still falls to initials.
+    withBranding({
+      name: "Phi Gamma Delta",
+      branding: { greek_letters: "ΦΓΔ" },
+    });
+    expect(screen.getByTestId("chapter-mark-text")).toHaveTextContent("PG");
+    expect(screen.queryByText("ΦΓΔ")).not.toBeInTheDocument();
+  });
+
+  it.each(["Phi Gamma Delta Tau Nu", "FIJI at RPI"])(
+    "hides those letters when the chapter's name, %j, adds to the organization's",
+    (name) => {
+      withBranding({ name, branding: { greek_letters: "ΦΓΔ" } });
+      expect(screen.getByTestId("chapter-mark-text")).not.toHaveTextContent(
+        "ΦΓΔ",
+      );
+      expect(screen.queryByText("ΦΓΔ")).not.toBeInTheDocument();
+    },
+  );
 
   /*
    * `branding` is jsonb, so a stored row can carry a value no schema would

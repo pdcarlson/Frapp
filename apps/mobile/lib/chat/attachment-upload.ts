@@ -185,16 +185,10 @@ export async function byteSizeOf(
   return info.exists && typeof info.size === "number" ? info.size : 0;
 }
 
-/** What a pick-and-upload needs from its caller, beyond the bytes. */
-export interface ImageUploadOptions {
+/** What a pick needs from its caller: the gate, the crop, and its words. */
+export interface ImagePickOptions {
   /** The allowlist the pick is gated on and transcoded towards. */
   kind: UploadKind;
-  /** Mints the signed URL; the caller holds the mutation and its route. */
-  requestUploadUrl: (body: {
-    filename: string;
-    content_type: string;
-    size_bytes: number;
-  }) => Promise<unknown>;
   /** Square-crop in the picker. Re-encodes, so a GIF keeps one frame. */
   cropSquare?: boolean;
   /** The sentences a refusal reads as, in the caller's own words. */
@@ -207,6 +201,35 @@ export interface ImageUploadOptions {
     size: string;
   };
 }
+
+/** What a pick-and-upload needs from its caller, beyond the bytes. */
+export interface ImageUploadOptions extends ImagePickOptions {
+  /** Mints the signed URL; the caller holds the mutation and its route. */
+  requestUploadUrl: RequestSignedUpload;
+}
+
+/** Mints a signed URL for one file; the caller holds the mutation and its route. */
+export type RequestSignedUpload = (body: {
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+}) => Promise<unknown>;
+
+/**
+ * A photo the member picked that passed the gate, still only on the device:
+ * the bytes at `uri` are the ones to PUT, under `contentType`.
+ */
+export interface PickedImage {
+  uri: string;
+  filename: string;
+  contentType: string;
+  byteSize: number;
+}
+
+export type ImagePickResult =
+  | { status: "cancelled" }
+  | { status: "picked"; image: PickedImage }
+  | { status: "refused"; reason: string };
 
 /** The upload finished; the object is in the bucket at `storagePath`. */
 export interface UploadedImage {
@@ -221,7 +244,11 @@ export type ImageUploadResult =
   | { status: "uploaded"; image: UploadedImage }
   | { status: "refused"; reason: string };
 
-export const UPLOAD_FAILED = "Couldn't upload that photo. Try again in a moment.";
+export const UPLOAD_FAILED =
+  "Couldn't upload that photo. Try again in a moment.";
+
+/** A pick that threw: an unguarded native call, read as a sentence. */
+const PICK_FAILED = "Couldn't add that photo. Try again in a moment.";
 
 /**
  * The sentence to show for a failed request.
@@ -239,9 +266,9 @@ export function uploadFailureReason(err: unknown): string {
   return definitiveRefusalMessage(err) ?? UPLOAD_FAILED;
 }
 
-async function pickAndUploadImageUnguarded(
-  options: ImageUploadOptions,
-): Promise<ImageUploadResult> {
+async function pickImageUnguarded(
+  options: ImagePickOptions,
+): Promise<ImagePickResult> {
   const { kind, copy } = options;
   const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!permission.granted) {
@@ -295,13 +322,61 @@ async function pickAndUploadImageUnguarded(
     };
   }
 
-  try {
-    const ticket = await options.requestUploadUrl({
+  return {
+    status: "picked",
+    image: {
+      uri: uploadable.uri,
       filename: uploadable.filename,
-      content_type: inspected.contentType,
+      contentType: inspected.contentType,
+      byteSize: size,
+    },
+  };
+}
+
+/**
+ * Pick one photo from the library and gate it, uploading nothing.
+ *
+ * Split from the upload for a caller that shows the pick before sending it:
+ * s21 (`components/documents/upload-document-sheet.tsx`) lets the member title
+ * and file the photo first, and a sheet cancelled at that point must leave no
+ * object in the bucket.
+ *
+ * The contract is that this never throws, so it is enforced in one place.
+ * Three awaits can reject for reasons a member can actually hit:
+ * `requestMediaLibraryPermissionsAsync` and `launchImageLibraryAsync` (Android
+ * rejects a second launch while one is already open), and `getInfoAsync` on
+ * an asset the picker could not materialize — a limited-permission iOS library
+ * pick, or a provider URI. Guarding each one individually is the version of
+ * this that rots: the next await added above inherits nothing. A rejection
+ * escaping here would reach a screen's fire-and-forget handler and become an
+ * unhandled rejection, which on this platform means no hint and a spinner
+ * that simply stops.
+ */
+export async function pickImage(
+  options: ImagePickOptions,
+): Promise<ImagePickResult> {
+  try {
+    return await pickImageUnguarded(options);
+  } catch {
+    return { status: "refused", reason: PICK_FAILED };
+  }
+}
+
+/**
+ * PUT a picked photo to a freshly minted signed URL. Never throws: a refused
+ * mint or a failed PUT comes back as a sentence.
+ */
+export async function uploadPickedImage(
+  image: PickedImage,
+  requestUploadUrl: RequestSignedUpload,
+): Promise<Exclude<ImageUploadResult, { status: "cancelled" }>> {
+  try {
+    const ticket = await requestUploadUrl({
+      filename: image.filename,
+      content_type: image.contentType,
       // Declared so the API's own 25 MB check runs and answers with a
       // readable 400 instead of the bucket's raw one.
-      size_bytes: size,
+      size_bytes: image.byteSize,
     });
     const { signedUrl, storagePath } = readSignedUpload(ticket);
 
@@ -309,10 +384,10 @@ async function pickAndUploadImageUnguarded(
     // PUTs a DOM `File`, which React Native has no equivalent of for a
     // `file://` URI. `uploadAsync` with BINARY_CONTENT is the same request
     // — raw bytes, one Content-Type header — made from a URI instead.
-    const response = await FileSystem.uploadAsync(signedUrl, uploadable.uri, {
+    const response = await FileSystem.uploadAsync(signedUrl, image.uri, {
       httpMethod: "PUT",
       uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-      headers: { "Content-Type": inspected.contentType },
+      headers: { "Content-Type": image.contentType },
     });
     if (response.status < 200 || response.status >= 300) {
       return { status: "refused", reason: UPLOAD_FAILED };
@@ -322,9 +397,9 @@ async function pickAndUploadImageUnguarded(
       status: "uploaded",
       image: {
         storagePath,
-        filename: uploadable.filename,
-        contentType: inspected.contentType,
-        byteSize: size,
+        filename: image.filename,
+        contentType: image.contentType,
+        byteSize: image.byteSize,
       },
     };
   } catch (err) {
@@ -334,30 +409,45 @@ async function pickAndUploadImageUnguarded(
 
 /**
  * Pick one photo from the library and PUT it to a freshly minted signed URL:
- * the pipeline chat attachments ({@link pickAndUploadPhoto}) and the profile
- * photo (`lib/more/profile-photo.ts`) share, so a fix to either reaches both.
- *
- * The contract is that this never throws, so it is enforced in one place.
- * Three awaits sit outside the inner try blocks and can reject for reasons a
- * member can actually hit: `requestMediaLibraryPermissionsAsync` and
- * `launchImageLibraryAsync` (Android rejects a second launch while one is
- * already open), and `getInfoAsync` on an asset the picker could not
- * materialize — a limited-permission iOS library pick, or a provider URI.
- * Guarding each one individually is the version of this that rots: the next
- * await added above inherits nothing. A rejection escaping here would reach a
- * screen's fire-and-forget handler and become an unhandled rejection, which on
- * this platform means no hint and a spinner that simply stops.
+ * the pipeline chat attachments ({@link pickAndUploadPhoto}), the profile
+ * photo and the chapter logo ({@link pickUploadAndConfirmImage}) share, so a
+ * fix to one reaches all of them. It is {@link pickImage} then
+ * {@link uploadPickedImage}, and like both it never throws.
  */
 export async function pickAndUploadImage(
   options: ImageUploadOptions,
 ): Promise<ImageUploadResult> {
+  const picked = await pickImage(options);
+  if (picked.status !== "picked") return picked;
+  return uploadPickedImage(picked.image, options.requestUploadUrl);
+}
+
+/** How a pick, upload and confirm ended. */
+export type ConfirmedImageResult =
+  | { status: "cancelled" }
+  | { status: "updated" }
+  | { status: "refused"; reason: string };
+
+/**
+ * {@link pickAndUploadImage}, then `confirm` the uploaded path: the whole flow
+ * for an image that replaces one thing, the profile photo
+ * (`lib/more/profile-photo.ts`) and the chapter logo
+ * (`lib/onboarding/chapter-wizard/chapter-logo.ts`). Never rejects; a refused
+ * confirm reads as `uploadFailureReason`'s sentence.
+ */
+export async function pickUploadAndConfirmImage(
+  options: ImageUploadOptions & {
+    confirm: (storagePath: string) => Promise<unknown>;
+  },
+): Promise<ConfirmedImageResult> {
+  const { confirm, ...upload } = options;
+  const result = await pickAndUploadImage(upload);
+  if (result.status !== "uploaded") return result;
   try {
-    return await pickAndUploadImageUnguarded(options);
-  } catch {
-    return {
-      status: "refused",
-      reason: "Couldn't add that photo. Try again in a moment.",
-    };
+    await confirm(result.image.storagePath);
+    return { status: "updated" };
+  } catch (err) {
+    return { status: "refused", reason: uploadFailureReason(err) };
   }
 }
 
@@ -371,7 +461,8 @@ export async function pickAndUploadPhoto(
     requestUploadUrl: (body) => requestUploadUrl({ id: channelId, body }),
     copy: {
       askAccess: "Frapp needs access to your photos to send one.",
-      settingsAccess: "Allow photo access for Frapp in Settings to send a photo.",
+      settingsAccess:
+        "Allow photo access for Frapp in Settings to send a photo.",
       type: TYPE_REFUSAL,
       size: SIZE_REFUSAL,
     },

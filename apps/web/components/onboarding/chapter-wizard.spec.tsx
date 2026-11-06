@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 // Capture the onboard mutation args. `vi.hoisted` runs before the hoisted
@@ -62,12 +62,26 @@ vi.mock("@repo/hooks", () => ({
   }),
 }));
 
-vi.mock("@repo/org-archetypes", () => ({
-  ARCHETYPES: {
-    ifc: { key: "ifc", label: "IFC", short: "IFC", council: "Interfraternity" },
-  },
-  getArchetype: (key: string) => ({ key: key || "ifc" }),
-}));
+vi.mock("@repo/org-archetypes", async (importOriginal) => {
+  // The real profile lookups, so FIJI's color and mark come from the data.
+  const actual = await importOriginal<typeof import("@repo/org-archetypes")>();
+  return {
+    ARCHETYPES: {
+      ifc: {
+        key: "ifc",
+        label: "IFC",
+        short: "IFC",
+        council: "Interfraternity",
+      },
+    },
+    getArchetype: (key: string) => ({ key: key || "ifc" }),
+    orgDefaultAccent: actual.orgDefaultAccent,
+    orgColorsFor: actual.orgColorsFor,
+    orgHidesGreekLetters: actual.orgHidesGreekLetters,
+    orgHidingGreekLettersIn: actual.orgHidingGreekLettersIn,
+    orgMarkFieldsFor: actual.orgMarkFieldsFor,
+  };
+});
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -242,7 +256,9 @@ describe("ChapterWizard chapter mark (#2876)", () => {
     fireEvent.change(screen.getByLabelText("Short name (optional)"), {
       target: { value: "FIJI" },
     });
-    fireEvent.click(screen.getByRole("switch", { name: /show greek letters/i }));
+    fireEvent.click(
+      screen.getByRole("switch", { name: /show greek letters/i }),
+    );
     create();
 
     await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
@@ -260,7 +276,9 @@ describe("ChapterWizard chapter mark (#2876)", () => {
       target: { value: "ΦΓΔ" },
     });
     expect(screen.getByTestId("chapter-mark-text")).toHaveTextContent("ΦΓΔ");
-    fireEvent.click(screen.getByRole("switch", { name: /show greek letters/i }));
+    fireEvent.click(
+      screen.getByRole("switch", { name: /show greek letters/i }),
+    );
     expect(screen.getByTestId("chapter-mark-text")).toHaveTextContent("TC");
   });
 
@@ -294,7 +312,9 @@ describe("ChapterWizard chapter mark (#2876)", () => {
     gotoIdentityStep();
     const input = screen.getByLabelText("Logo (optional)") as HTMLInputElement;
     fireEvent.change(input, {
-      target: { files: [new File(["png"], "crest.png", { type: "image/png" })] },
+      target: {
+        files: [new File(["png"], "crest.png", { type: "image/png" })],
+      },
     });
     const clearValue = vi.spyOn(input, "value", "set");
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
@@ -307,7 +327,9 @@ describe("ChapterWizard chapter mark (#2876)", () => {
     render(<ChapterWizard onComplete={() => {}} />);
     gotoIdentityStep();
     fireEvent.change(screen.getByLabelText("Logo (optional)"), {
-      target: { files: [new File(["png"], "crest.png", { type: "image/png" })] },
+      target: {
+        files: [new File(["png"], "crest.png", { type: "image/png" })],
+      },
     });
     create();
 
@@ -316,10 +338,11 @@ describe("ChapterWizard chapter mark (#2876)", () => {
     );
   });
 
-  it("keeps the opt-out and short name when the founder re-picks a directory row", async () => {
-    // The directory autofills Greek letters for every chapter it knows,
-    // FIJI's included. Choosing the row again (after going back) must not
-    // switch the letters back on or drop the short name.
+  it("starts a FIJI directory match on its short name and color, letters hidden", async () => {
+    // Phi Gamma Delta doesn't display its letters. The directory row carries
+    // them anyway, so the organization's profile has to keep them off the
+    // result row, the identity form and the saved branding, including when
+    // the founder goes back and picks the row again.
     directoryRows.current = [
       {
         id: "dir-fiji",
@@ -330,44 +353,299 @@ describe("ChapterWizard chapter mark (#2876)", () => {
         university: "Rensselaer Polytechnic Institute",
         university_short: "RPI",
         founded_year: 1893,
-        default_colors: null,
+        // The placeholder most directory rows carry; the organization's own
+        // color must win over it.
+        default_colors: { accent: "#C9A56F" },
       },
     ];
     const pickFiji = async () => {
       fireEvent.change(screen.getByLabelText("Search the chapter directory"), {
         target: { value: "Phi Gamma" },
       });
-      fireEvent.click(await screen.findByText(/Phi Gamma Delta/));
+      const row = await screen.findByText(/Phi Gamma Delta/);
+      expect(row.textContent).not.toContain("ΦΓΔ");
+      fireEvent.click(row);
       fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     };
     try {
       render(<ChapterWizard onComplete={() => {}} />);
       await pickFiji();
-      fireEvent.change(screen.getByLabelText("Short name (optional)"), {
-        target: { value: "FIJI" },
-      });
-      fireEvent.click(
-        screen.getByRole("switch", { name: /show greek letters/i }),
-      );
       fireEvent.click(screen.getByRole("button", { name: /back/i }));
       fireEvent.click(screen.getByRole("button", { name: /back/i }));
       await pickFiji();
 
-      expect(screen.getByLabelText("Greek letters")).toHaveValue("ΦΓΔ");
-      expect(screen.getByLabelText("Short name (optional)")).toHaveValue("FIJI");
+      expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
+        "FIJI",
+      );
+      // Neither the letters field nor the switch that would show them.
+      expect(screen.queryByLabelText("Greek letters")).not.toBeInTheDocument();
       expect(
-        screen.getByRole("switch", { name: /show greek letters/i }),
-      ).toHaveAttribute("aria-checked", "false");
+        screen.queryByRole("switch", { name: /show greek letters/i }),
+      ).not.toBeInTheDocument();
       create();
       await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
       expect(onboardMutate.mock.calls[0]![0].branding).toMatchObject({
-        greek_letters: "ΦΓΔ",
+        short_name: "FIJI",
+        show_greek_letters: false,
+        colors: { accent: "#4F2683" },
+      });
+    } finally {
+      directoryRows.current = [];
+    }
+  });
+
+  it("hides the letters when the founder types FIJI's name by hand", async () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+    expect(screen.getByLabelText("Greek letters")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Chapter / organization name"), {
+      target: { value: "Phi Gamma Delta" },
+    });
+
+    expect(screen.queryByLabelText("Greek letters")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("switch", { name: /show greek letters/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Short name (optional)")).toHaveValue("FIJI");
+    create();
+    await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
+    expect(onboardMutate.mock.calls[0]![0].branding).toMatchObject({
+      short_name: "FIJI",
+      show_greek_letters: false,
+    });
+  });
+
+  it("keeps FIJI's letters hidden when the founder edits the matched name", async () => {
+    // The row is FIJI's whatever the name field says next, so the letters and
+    // the switch stay away and the short name the row filled stays put.
+    directoryRows.current = [
+      {
+        id: "dir-fiji",
+        org_letters: "ΦΓΔ",
+        org_name: "Phi Gamma Delta",
+        archetype: "ifc",
+        chapter_designation: "Tau Nu",
+        university: "Rensselaer Polytechnic Institute",
+        university_short: "RPI",
+        founded_year: 1893,
+        default_colors: { accent: "#C9A56F" },
+      },
+    ];
+    try {
+      render(<ChapterWizard onComplete={() => {}} />);
+      fireEvent.change(screen.getByLabelText("Search the chapter directory"), {
+        target: { value: "Phi Gamma" },
+      });
+      fireEvent.click(await screen.findByText(/Phi Gamma Delta/));
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+      fireEvent.change(screen.getByLabelText("Chapter / organization name"), {
+        target: { value: "Phi Gamma Delta Tau Nu" },
+      });
+
+      expect(screen.queryByLabelText("Greek letters")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("switch", { name: /show greek letters/i }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
+        "FIJI",
+      );
+      expect(document.body.textContent).not.toContain("ΦΓΔ");
+      create();
+      await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
+      expect(onboardMutate.mock.calls[0]![0].branding).toMatchObject({
         short_name: "FIJI",
         show_greek_letters: false,
       });
     } finally {
       directoryRows.current = [];
     }
+  });
+
+  it("never overwrites a short name the founder typed", async () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+    fireEvent.change(screen.getByLabelText("Short name (optional)"), {
+      target: { value: "Phi Gam" },
+    });
+    const name = screen.getByLabelText("Chapter / organization name");
+    fireEvent.change(name, { target: { value: "Phi Gamma Delta" } });
+    expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
+      "Phi Gam",
+    );
+    expect(
+      screen.queryByRole("switch", { name: /show greek letters/i }),
+    ).not.toBeInTheDocument();
+
+    // A name that adds to the organization's still names FIJI.
+    fireEvent.change(name, { target: { value: "Phi Gamma Delta Colony" } });
+    expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
+      "Phi Gam",
+    );
+    expect(
+      screen.queryByRole("switch", { name: /show greek letters/i }),
+    ).not.toBeInTheDocument();
+
+    // Another organization: the switch comes back on, the typed name stays.
+    fireEvent.change(name, { target: { value: "Phi Delta Theta" } });
+    expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
+      "Phi Gam",
+    );
+    expect(
+      screen.getByRole("switch", { name: /show greek letters/i }),
+    ).toBeChecked();
+  });
+
+  it("undoes the short name FIJI filled in when the name moves to another organization", async () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+    const name = screen.getByLabelText("Chapter / organization name");
+    fireEvent.change(name, { target: { value: "Phi Gamma Delta" } });
+    expect(screen.getByLabelText("Short name (optional)")).toHaveValue("FIJI");
+
+    // Typing passes through names that match nothing on the way.
+    fireEvent.change(name, { target: { value: "Phi Gamma Delt" } });
+    fireEvent.change(name, { target: { value: "Phi Delta Theta" } });
+    expect(screen.getByLabelText("Short name (optional)")).toHaveValue("");
+    expect(
+      screen.getByRole("switch", { name: /show greek letters/i }),
+    ).toBeChecked();
+  });
+
+  describe("FIJI's row and the fields it fills", () => {
+    const fijiRow = {
+      id: "dir-fiji",
+      org_letters: "ΦΓΔ",
+      org_name: "Phi Gamma Delta",
+      archetype: "ifc",
+      chapter_designation: "Tau Nu",
+      university: "Rensselaer Polytechnic Institute",
+      university_short: "RPI",
+      founded_year: 1893,
+      default_colors: { accent: "#C9A56F" },
+    };
+    const sigmaNuRow = {
+      id: "dir-sn",
+      org_letters: "ΣΝ",
+      org_name: "Sigma Nu",
+      archetype: "ifc",
+      chapter_designation: "Delta Delta",
+      university: "Rensselaer Polytechnic Institute",
+      university_short: "RPI",
+      founded_year: 1921,
+      default_colors: { accent: "#C9A56F" },
+    };
+    afterEach(() => {
+      directoryRows.current = [];
+    });
+
+    function pick(name: RegExp) {
+      fireEvent.change(screen.getByLabelText("Search the chapter directory"), {
+        target: { value: "RPI" },
+      });
+      return screen.findByText(name).then((row) => {
+        fireEvent.click(row);
+        fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+      });
+    }
+
+    it("undoes FIJI's short name and switch when the founder picks another row", async () => {
+      directoryRows.current = [fijiRow, sigmaNuRow];
+      render(<ChapterWizard onComplete={() => {}} />);
+      await pick(/Phi Gamma Delta/);
+      expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
+        "FIJI",
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      await pick(/Sigma Nu/);
+
+      expect(screen.getByLabelText("Short name (optional)")).toHaveValue("");
+      expect(
+        screen.getByRole("switch", { name: /show greek letters/i }),
+      ).toBeChecked();
+    });
+
+    it("keeps FIJI's short name when the founder renames a picked chapter", async () => {
+      directoryRows.current = [fijiRow];
+      render(<ChapterWizard onComplete={() => {}} />);
+      await pick(/Phi Gamma Delta/);
+      fireEvent.change(screen.getByLabelText("Chapter / organization name"), {
+        target: { value: "Tau Nu Chapter" },
+      });
+
+      expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
+        "FIJI",
+      );
+      expect(
+        screen.queryByRole("switch", { name: /show greek letters/i }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("fills FIJI's short name when manual entry starts from a search for it", () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    fireEvent.change(screen.getByLabelText("Search the chapter directory"), {
+      target: { value: "Phi Gamma Delta" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Manual entry" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(screen.getByLabelText("Chapter / organization name")).toHaveValue(
+      "Phi Gamma Delta",
+    );
+    expect(screen.getByLabelText("Short name (optional)")).toHaveValue("FIJI");
+    expect(
+      screen.queryByRole("switch", { name: /show greek letters/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps a typed short name when the founder then picks FIJI's row", async () => {
+    directoryRows.current = [
+      {
+        id: "dir-fiji",
+        org_letters: "ΦΓΔ",
+        org_name: "Phi Gamma Delta",
+        archetype: "ifc",
+        chapter_designation: "Tau Nu",
+        university: "Rensselaer Polytechnic Institute",
+        university_short: "RPI",
+        founded_year: 1893,
+        default_colors: { accent: "#C9A56F" },
+      },
+    ];
+    try {
+      render(<ChapterWizard onComplete={() => {}} />);
+      gotoIdentityStep();
+      fireEvent.change(screen.getByLabelText("Short name (optional)"), {
+        target: { value: "Phi Gam" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      fireEvent.change(screen.getByLabelText("Search the chapter directory"), {
+        target: { value: "Phi Gamma" },
+      });
+      fireEvent.click(await screen.findByText(/Phi Gamma Delta/));
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+      expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
+        "Phi Gam",
+      );
+      expect(document.body.textContent).not.toContain("ΦΓΔ");
+    } finally {
+      directoryRows.current = [];
+    }
+  });
+
+  it("sets the accent from a swatch, without typing a hex", async () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+    fireEvent.click(screen.getByRole("button", { name: "Navy" }));
+    expect(screen.getByLabelText("Accent color")).toHaveValue("#1d2f6f");
+    create();
+    await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
+    expect(
+      onboardMutate.mock.calls[0]![0].branding.colors.accent.toUpperCase(),
+    ).toBe("#1D2F6F");
   });
 
   it("uploads nothing when no logo was chosen", async () => {

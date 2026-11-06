@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { Animated, Pressable, StyleSheet, Text } from "react-native";
+import { Animated, StyleSheet, Text } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
 import { useConnection } from "@/lib/connection/use-connection";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { CloseGlyph } from "@/components/control-glyphs";
+import { IconButton } from "@/components/icon-button";
 
 /**
  * The global connection banner — `spec/ui/resilience/connection-state.md`.
@@ -131,25 +133,19 @@ export function NetworkBanner() {
       >
         {message}
       </Text>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Dismiss"
-        accessibilityHint="Hides this message. It returns if the connection has not recovered."
-        // The control is a short word, so the box is well under 44pt; the hit
-        // area closes the gap without a chunky bar across the top — the same
-        // ruling `components/sheet-scaffold.tsx` applies to its Cancel.
-        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+      <IconButton
+        label="Dismiss"
+        hint="Hides this message. It returns if the connection has not recovered."
         onPress={onDismiss}
       >
-        <Text
-          style={[
-            styles.dismiss,
-            isOffline ? styles.offlineText : styles.degradedText,
-          ]}
-        >
-          Dismiss
-        </Text>
-      </Pressable>
+        <CloseGlyph
+          color={
+            isOffline
+              ? tokens.color.semantic.destructive
+              : tokens.color.semantic.warning
+          }
+        />
+      </IconButton>
     </Animated.View>
   );
 }
@@ -168,10 +164,6 @@ function createStyles(tokens: SignetTokens) {
       flex: 1,
       ...typeRole(tokens.typography.role.caption),
     },
-    dismiss: {
-      ...typeRole(tokens.typography.role.caption),
-      textDecorationLine: "underline",
-    },
     offlineContainer: {
       backgroundColor: tint(tokens.color.semantic.destructive),
       borderBottomColor: tint(tokens.color.semantic.destructive, 0.3),
@@ -181,7 +173,9 @@ function createStyles(tokens: SignetTokens) {
       borderBottomColor: tint(tokens.color.semantic.warning, 0.3),
     },
     offlineText: {
-      color: tokens.color.semantic.destructive,
+      // Danger as text on its own tint takes the AA lift (foundations §5), as
+      // web's offline banner does.
+      color: tokens.color.semantic.destructiveText,
     },
     degradedText: {
       color: tokens.color.semantic.warning,

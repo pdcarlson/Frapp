@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -7,6 +8,7 @@ import {
 } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 
 export const OLDER_LOADING_COPY = "Loading earlier messages…";
 export const OLDER_FAILED_COPY = "Couldn't load earlier messages.";
@@ -34,14 +36,21 @@ export function ThreadHistoryEdge({
   isLoadingOlder,
   olderError,
   onLoadOlder,
+  start,
 }: {
   hasOlder: boolean;
   isLoadingOlder: boolean;
   olderError: boolean;
   onLoadOlder: () => void;
+  /**
+   * The channel's start (`channel-start.tsx`), drawn in place of the bare
+   * start-of-history caption once nothing earlier is left to load.
+   */
+  start?: ReactNode;
 }) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
 
   if (isLoadingOlder) {
     return (
@@ -81,6 +90,7 @@ export function ThreadHistoryEdge({
       </View>
     );
   }
+  if (start) return <>{start}</>;
   return (
     <View style={styles.edge}>
       <Text style={styles.caption}>{HISTORY_START_COPY}</Text>
@@ -88,7 +98,7 @@ export function ThreadHistoryEdge({
   );
 }
 
-function createStyles(tokens: SignetTokens) {
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
     edge: {
       flexDirection: "row",
@@ -104,7 +114,7 @@ function createStyles(tokens: SignetTokens) {
     },
     action: {
       ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.askText,
+      color: brand.accent,
     },
     pressed: {
       opacity: 0.6,

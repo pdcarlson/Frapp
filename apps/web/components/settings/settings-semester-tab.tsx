@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { type SemesterArchive, type useSemesterRollover } from "@repo/hooks";
+import { formatDayRange } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -17,7 +18,6 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
   EmptyState,
-  LoadingState,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
@@ -28,6 +28,10 @@ import {
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
+import {
+  SectionSkeleton,
+  SkeletonRows,
+} from "@/components/shared/page-skeletons";
 
 export type RolloverForm = ReturnType<typeof useRolloverForm>;
 
@@ -164,9 +168,7 @@ export function SettingsSemesterTab({
           <CardHeader>
             <CardTitle>Start a new semester</CardTitle>
             <CardDescription>
-              Archives the current leaderboard period with a label and date
-              range. Points keep accumulating. The leaderboard just resets its
-              default window.
+              Archives the current leaderboard period. Points are kept.
             </CardDescription>
           </CardHeader>
           <form onSubmit={startRollover}>
@@ -274,14 +276,19 @@ export function SettingsSemesterTab({
       <Card>
         <CardHeader>
           <CardTitle>Archived semesters</CardTitle>
-          <CardDescription>
-            Every rollover is preserved and viewable in reports and
-            leaderboards.
-          </CardDescription>
         </CardHeader>
         <CardContent>
           {semestersPending ? (
-            <LoadingState message="Loading archives..." />
+            <SectionSkeleton label="Loading archives" className="">
+              <SkeletonRows
+                rows={3}
+                lines={1}
+                trailing={["w-32"]}
+                trailingHeight="h-[13px]"
+                rowClassName="py-2"
+                bare
+              />
+            </SectionSkeleton>
           ) : semesters.length === 0 ? (
             <EmptyState
               title="No archived semesters yet"
@@ -296,7 +303,8 @@ export function SettingsSemesterTab({
                 >
                   <span className="font-medium">{archive.label}</span>
                   <span className="text-muted-foreground">
-                    {archive.start_date} – {archive.end_date}
+                    {formatDayRange(archive.start_date, archive.end_date) ??
+                      `${archive.start_date} – ${archive.end_date}`}
                   </span>
                 </li>
               ))}

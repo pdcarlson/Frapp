@@ -7,44 +7,38 @@ import {
   RolesGlyph,
   SearchGlyph,
 } from "@/components/events/chapter-ops-glyphs";
-import { useAutoAbsent, useEvents, useNow } from "@repo/hooks";
-import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  useAutoAbsent,
+  useEvents,
+  useMyPermissions,
+  useNow,
+} from "@repo/hooks";
+import { can } from "@repo/validation";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { anyReadUncached } from "@/components/shared/async-states";
 import {
-  EmptyState,
-  ErrorState,
-  anyReadUncached,
-  LoadingState,
-  OfflineState,
-} from "@/components/shared/async-states";
-import { PageHeader } from "@/components/layout/page-header";
+  NestedEmpty,
+  NestedError,
+  NestedOffline,
+} from "@/components/shared/nested-states";
+import { SectionLabel } from "@/components/shared/section-label";
+import { PageActions } from "@/components/layout/page-actions";
 import {
   SubscriptionNotice,
   useGatedDialog,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import {
-  dashboardCheckboxCellClassName,
   dashboardCheckboxHitAreaClassName,
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
+  dashboardToolbarSearchClassName,
+  dashboardToolbarSearchGlyphClassName,
+  denseListClassName,
 } from "@/components/shared/table-controls";
 import { useToast } from "@/lib/hooks/use-toast";
 import { EventDetailSheet } from "@/components/events/event-detail-sheet";
@@ -56,16 +50,15 @@ import {
   EventsCalendar,
   startOfMonth,
 } from "@/components/events/events-calendar";
+import { pointsLabel, recurrenceLabel } from "@/components/events/event-labels";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
-import {
-  formatLocaleDateTime as formatDate,
-  parseInstant,
-} from "@repo/formatting";
+import { formatRelativeDayTime, parseInstant } from "@repo/formatting";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
-import { getErrorMessage } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
+import { EventsPageSkeleton } from "@/components/events/events-skeleton";
 
 type EventRow = Record<string, unknown>;
 
@@ -73,14 +66,26 @@ type EventRow = Record<string, unknown>;
 // reasonable default slot (6-7pm) rather than midnight-to-midnight.
 const CALENDAR_DEFAULT_START_HOUR = 18;
 
+type TimeFilter = "upcoming" | "past" | "all";
+
+/*
+ * The list's section label follows the Time filter. The card title it replaces
+ * read "Upcoming & Recent Events" whatever the filter said, so under Past it
+ * named events the list was not showing.
+ */
+const TIME_FILTER_LABELS: Record<TimeFilter, string> = {
+  upcoming: "Upcoming",
+  past: "Past",
+  all: "All events",
+};
+
 export function EventsPage() {
   const { isOffline } = useNetwork();
   const { toast } = useToast();
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const [query, setQuery] = useState("");
-  const [timeFilter, setTimeFilter] = useState<"upcoming" | "past" | "all">(
-    "upcoming",
-  );
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("upcoming");
+  const [view, setView] = useState<"list" | "calendar">("list");
   const [attendanceFilter, setAttendanceFilter] = useState<
     "all" | "mandatory" | "optional"
   >("all");
@@ -91,14 +96,14 @@ export function EventsPage() {
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
   // `POST /v1/events` and `PATCH /v1/events/:id` are paid-ops, so the editor's
   // entry points mirror the gate (#841). Routing the dialog through
-  // `useGatedDialog` covers all three of them at once — the New Event button,
+  // `useGatedDialog` covers all three of them at once — the New event button,
   // the empty-state CTA, and the detail sheet's Edit — and closes the dialog if
   // the subscription lapses while it is open.
   const eventWriteGate = useSubscriptionGate();
   const editorDialog = useGatedDialog(eventWriteGate);
   const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
   const [activeEvent, setActiveEvent] = useState<EventRow | null>(null);
-  // Set only by a calendar day click, so the "New Event" button and the
+  // Set only by a calendar day click, so the "New event" button and the
   // empty-state CTA keep opening a blank form exactly as they do today.
   const [calendarCreateDay, setCalendarCreateDay] = useState<Date | null>(null);
   // Lifted here (not local to EventsCalendar) because the Calendar tab's
@@ -108,6 +113,16 @@ export function EventsPage() {
   );
   const eventsQuery = useEvents();
   const autoAbsent = useAutoAbsent();
+  // The bulk action posts auto-absent, which is `events:update` and paid-ops
+  // on the server, as in the attendance panel. A role without it gets no
+  // checkboxes at all, and a lapsed chapter's button explains itself. Read as
+  // a boolean rather than a `<Can>`: the checkboxes are a column on every
+  // row, and nothing here has a recovery path to offer while offline.
+  const { data: permissionsPayload } = useMyPermissions();
+  const canMarkAttendance = can(
+    "events:update",
+    permissionsPayload?.permissions,
+  );
   const { confirm, confirmDialog } = useConfirmDialog();
 
   // Live updates: any admin creating or editing an event in another tab
@@ -291,367 +306,394 @@ export function EventsPage() {
   }
 
   /*
-   * Every path renders the title, not just the happy one.
-   *
-   * The shell used to supply an <h1> from the nav map, so these three early
-   * returns got a heading for free. It does not any more (#2141 moved the title
-   * into the page), and a bare state card with no heading is exactly where a
-   * member is least able to tell what screen they are on.
+   * The states are the nested family with `sole`, not the whole-screen ones:
+   * those paint `--card`, which on a flush route redraws the card the route
+   * deleted (`spec/ui/web-dashboard/README.md` § Page grammar).
    */
   if (isOffline && anyReadUncached(eventsQuery)) {
     return (
-      <>
-        <PageHeader title="Events" />
-        <OfflineState
-          title="Events workspace unavailable offline"
-          description="Reconnect to load event schedules and attendance updates."
+      <div className="space-y-4">
+        <NestedOffline
+          sole
+          title={stateMicrocopy.events.offlineTitle}
+          description={stateMicrocopy.events.offlineDescription}
           onRetry={() => {
             void eventsQuery.refetch();
           }}
         />
-      </>
+      </div>
     );
   }
 
   if (eventsQuery.isLoading) {
-    return (
-      <>
-        <PageHeader title="Events" />
-        <LoadingState message={stateMicrocopy.events.loading} />
-      </>
-    );
+    return <EventsPageSkeleton />;
   }
 
   if (eventsQuery.isError) {
     return (
-      <>
-        <PageHeader title="Events" />
-        <ErrorState
-          title="Couldn't load chapter events"
-          description="The events workflow needs a healthy API response. Verify your chapter access and retry."
+      <div className="space-y-4">
+        <NestedError
+          sole
+          title={stateMicrocopy.events.errorTitle}
+          description={stateMicrocopy.events.errorDescription}
           onRetry={() => void eventsQuery.refetch()}
         />
-      </>
+      </div>
     );
   }
 
   const eventWriteControls = eventWriteGate.controlProps();
+  const searchText = query.trim();
+  const narrowed =
+    timeFilter !== "all" ||
+    attendanceFilter !== "all" ||
+    recurrenceFilter !== "all";
+
+  function openCreate(day: Date | null) {
+    setEditorMode("create");
+    setActiveEvent(null);
+    setCalendarCreateDay(day);
+    editorDialog.setOpen(true);
+  }
+
+  function openDetails(event: EventRow) {
+    setActiveEvent(event);
+    setDetailSheetOpen(true);
+  }
 
   return (
-    <div className="space-y-6">
+    <Tabs
+      value={view}
+      onValueChange={(next) => setView(next as "list" | "calendar")}
+      className="space-y-4"
+    >
       {/*
-        No wrapper card, no description paragraph, one toolbar row. The card
-        that used to hold the title, a restatement of what Events is, and the
-        New Event button is the generated chrome the greenfield deletes (board
-        `1f` pin 2). The title and the action share one row; the filters sit
-        directly under it on the page surface.
+        One toolbar row: search, the three filters, the List/Calendar toggle
+        and New event, all at the toolbar height (board `1f` pin 2). The
+        filters used to sit in a second row and the toggle in a third. The
+        route's title is in the top bar (`top-bar.tsx`), so search and filters
+        hold the leading edge (`sm:mr-auto`) and the toggle and New event sit
+        at the trailing edge, as every route's actions do.
 
-        "New Event" also used to render a second time, as the shell header's
-        per-route primary action — a <Link> to the route already open. That one
-        is gone with `primaryActionLabel`, so this is now the only one.
+        `PageActions` renders its children as direct flex items, so a phone can
+        reorder them: there the first line keeps the view toggle and New event,
+        and search and the filters drop to their own rows under it
+        (`order-last w-full`). The filters become one strip that scrolls
+        sideways, bleeding to the screen edges, rather than three stacked rows
+        of selects.
       */}
-      <PageHeader
-        title="Events"
-        actions={
-          <Button
-            className="gap-2"
-            {...eventWriteGate.controlProps()}
-            onClick={() => {
-              setEditorMode("create");
-              setActiveEvent(null);
-              setCalendarCreateDay(null);
-              editorDialog.setOpen(true);
-            }}
-          >
-            <Plus className="h-4 w-4" />
-            New Event
-          </Button>
-        }
-      />
-      <div className="space-y-4">
-        {/*
-          Above the filters so it sits with the New Event button it explains.
-          Search and the time/status filters below are reads and stay live —
-          a lapsed chapter keeps full visibility of its own calendar.
-        */}
-        <SubscriptionNotice
-          gate={eventWriteGate}
-          feature="creating and editing events"
-        />
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="relative max-w-md">
-              <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search events by name or location"
-                aria-label="Search events by name or location"
-                className="h-11 pl-9"
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <select
-                value={timeFilter}
-                onChange={(event) =>
-                  setTimeFilter(
-                    event.target.value as "upcoming" | "past" | "all",
-                  )
-                }
-                className={dashboardFilterSelectClassName}
-                aria-label="Filter events by time window"
-              >
-                <option value="upcoming">Time: Upcoming</option>
-                <option value="past">Time: Past</option>
-                <option value="all">Time: All</option>
-              </select>
-              <select
-                value={attendanceFilter}
-                onChange={(event) =>
-                  setAttendanceFilter(
-                    event.target.value as "all" | "mandatory" | "optional",
-                  )
-                }
-                className={dashboardFilterSelectClassName}
-                aria-label="Filter events by attendance policy"
-              >
-                <option value="all">Attendance: All</option>
-                <option value="mandatory">Attendance: Mandatory</option>
-                <option value="optional">Attendance: Optional</option>
-              </select>
-              <select
-                value={recurrenceFilter}
-                onChange={(event) =>
-                  setRecurrenceFilter(
-                    event.target.value as "all" | "recurring" | "one-time",
-                  )
-                }
-                className={dashboardFilterSelectClassName}
-                aria-label="Filter events by cadence"
-              >
-                <option value="all">Cadence: All</option>
-                <option value="recurring">Cadence: Recurring</option>
-                <option value="one-time">Cadence: One-time</option>
-              </select>
-            </div>
+      <PageActions className="gap-x-3 gap-y-2">
+        <div className="order-last flex w-full min-w-0 flex-wrap items-center gap-2 sm:order-none sm:mr-auto sm:w-auto">
+          <div className="relative w-full sm:w-56">
+            <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
+            <Input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search events"
+              aria-label="Search events by name or location"
+              className={dashboardToolbarSearchClassName}
+            />
+          </div>
+          <div className="-mx-4 flex w-[calc(100%+2rem)] gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:w-auto sm:overflow-visible sm:px-0">
+            <select
+              value={timeFilter}
+              onChange={(event) =>
+                setTimeFilter(event.target.value as TimeFilter)
+              }
+              className={`${dashboardFilterSelectClassName} shrink-0`}
+              aria-label="Filter events by time window"
+            >
+              <option value="upcoming">Time: Upcoming</option>
+              <option value="past">Time: Past</option>
+              <option value="all">Time: All</option>
+            </select>
+            <select
+              value={attendanceFilter}
+              onChange={(event) =>
+                setAttendanceFilter(
+                  event.target.value as "all" | "mandatory" | "optional",
+                )
+              }
+              className={`${dashboardFilterSelectClassName} shrink-0`}
+              aria-label="Filter events by attendance policy"
+            >
+              <option value="all">Attendance: All</option>
+              <option value="mandatory">Attendance: Mandatory</option>
+              <option value="optional">Attendance: Optional</option>
+            </select>
+            <select
+              value={recurrenceFilter}
+              onChange={(event) =>
+                setRecurrenceFilter(
+                  event.target.value as "all" | "recurring" | "one-time",
+                )
+              }
+              className={`${dashboardFilterSelectClassName} shrink-0`}
+              aria-label="Filter events by cadence"
+            >
+              <option value="all">Cadence: All</option>
+              <option value="recurring">Cadence: Recurring</option>
+              <option value="one-time">Cadence: One-time</option>
+            </select>
+          </div>
         </div>
-      </div>
+        {/*
+          Underlined, not a segmented pill (`components.md` §6), and pulled
+          down to the toolbar height. The list's own hairline is dropped: in
+          a toolbar row the active item's underline is the only mark needed.
+        */}
+        <TabsList aria-label="View" className="w-auto gap-4 border-b-0">
+          <TabsTrigger
+            value="list"
+            className="min-h-9 py-1.5 pointer-coarse:min-h-11"
+          >
+            List
+          </TabsTrigger>
+          <TabsTrigger
+            value="calendar"
+            className="min-h-9 py-1.5 pointer-coarse:min-h-11"
+          >
+            Calendar
+          </TabsTrigger>
+        </TabsList>
+        <Button
+          size="toolbar"
+          className="gap-2"
+          {...eventWriteControls}
+          onClick={() => openCreate(null)}
+        >
+          <Plus className="h-4 w-4" />
+          New event
+        </Button>
+      </PageActions>
 
-      {selectedEventIds.length > 0 ? (
-        <Card className="border-accent-border bg-accent-subtle">
-          <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm font-semibold">
-              {selectedEventIds.length} event
-              {selectedEventIds.length > 1 ? "s" : ""} selected
+      {/*
+        Under the row it explains. Search and the filters stay live: a lapsed
+        chapter keeps full visibility of its own calendar.
+      */}
+      <SubscriptionNotice
+        gate={eventWriteGate}
+        feature="creating and editing events"
+      />
+
+      <TabsContent value="list" className="mt-0 space-y-3">
+        {/*
+          The selection bar, as a flush neutral strip rather than the accent
+          `<Card>` it used to be. Only the count and the bulk action are
+          conditional; select-all lives in the list header below, because a
+          control inside this bar would unmount itself when it cleared the
+          selection (`members-directory.tsx` has the full reasoning).
+
+          Notify assignees and Archive selected were removed rather than wired
+          (#336): events have no assignee concept and no archive state, only
+          delete, so there is no real mutation to call without inventing one.
+        */}
+        {canMarkAttendance && selectedEventIds.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-popover px-2 py-1.5">
+            <p className="text-caption font-semibold text-foreground">
+              {selectedEventIds.length} selected
             </p>
-            {/*
-              Notify assignees and Archive selected removed rather than wired
-              (#336): events have no assignee concept and no archive state —
-              only delete/cancel — so there is no real mutation to call
-              without inventing one.
-            */}
             <Button
-              size="sm"
+              size="toolbar"
               variant="secondary"
-              disabled={autoAbsent.isPending}
+              className="sm:ml-auto"
+              {...eventWriteGate.controlProps(autoAbsent.isPending)}
               onClick={() => void markSelectedAttendanceComplete()}
             >
               Mark attendance complete
             </Button>
-          </CardContent>
-        </Card>
-      ) : null}
+          </div>
+        ) : null}
 
-      <Tabs defaultValue="list">
-        <TabsList>
-          <TabsTrigger value="list">List</TabsTrigger>
-          <TabsTrigger value="calendar">Calendar</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="list">
-          {filteredEvents.length === 0 ? (
-            <EmptyState
+        {filteredEvents.length === 0 ? (
+          searchText ? (
+            <NestedEmpty
+              sole
+              title={`No match for “${searchText}”`}
+              description={stateMicrocopy.events.noMatchDescription}
+            />
+          ) : narrowed && events.length > 0 ? (
+            // "No events yet" over a chapter whose events are all past (the
+            // default filter is Upcoming) would tell the officer something
+            // false (`writing.md` §7).
+            <NestedEmpty
+              sole
+              title={stateMicrocopy.events.filteredTitle}
+              description={stateMicrocopy.events.filteredDescription}
+            />
+          ) : (
+            <NestedEmpty
+              sole
               title={stateMicrocopy.events.emptyTitle}
               description={stateMicrocopy.events.emptyDescription}
               actionLabel="Create first event"
-              actionProps={eventWriteGate.controlProps()}
-              onAction={() => {
-                setEditorMode("create");
-                setActiveEvent(null);
-                setCalendarCreateDay(null);
-                editorDialog.setOpen(true);
-              }}
+              actionProps={eventWriteControls}
+              onAction={() => openCreate(null)}
             />
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">
-                  Upcoming & Recent Events
-                </CardTitle>
-                <CardDescription>
-                  Attendance windows and point values are configured per event.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className={dashboardCheckboxCellClassName}>
-                        <label className={dashboardCheckboxHitAreaClassName}>
-                          <input
-                            type="checkbox"
-                            aria-label="Select all visible events"
-                            className={dashboardTableCheckboxClassName}
-                            checked={allVisibleSelected}
-                            onChange={(event) =>
-                              toggleAllVisibleEvents(event.target.checked)
-                            }
-                          />
-                        </label>
-                      </TableHead>
-                      <TableHead>Event</TableHead>
-                      <TableHead>Schedule</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Points</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredEvents.map((event) => {
-                      const eventId = String(
-                        event.id ?? event.name ?? "unknown-event",
-                      );
-                      const eventName = String(event.name ?? "Untitled event");
-                      const pointValue =
-                        typeof event.point_value === "number"
-                          ? event.point_value
-                          : 0;
-                      const isMandatory =
-                        typeof event.is_mandatory === "boolean"
-                          ? event.is_mandatory
-                          : false;
-                      const recurrenceRule =
-                        typeof event.recurrence_rule === "string"
-                          ? event.recurrence_rule
-                          : "";
-                      // One derived value: the row fill and the checkbox must never
-                      // disagree about whether the row is selected.
-                      const isSelected = selectedEventIds.includes(eventId);
-                      const requiredRoleIds = Array.isArray(
-                        event.required_role_ids,
-                      )
-                        ? event.required_role_ids.filter(
-                            (id): id is string => typeof id === "string",
-                          )
-                        : [];
-                      return (
-                        <TableRow
-                          key={eventId}
-                          data-state={isSelected ? "selected" : undefined}
-                        >
-                          <TableCell className={dashboardCheckboxCellClassName}>
-                            <label
-                              className={dashboardCheckboxHitAreaClassName}
-                            >
-                              <input
-                                type="checkbox"
-                                aria-label={`Select ${eventName}`}
-                                className={dashboardTableCheckboxClassName}
-                                checked={isSelected}
-                                onChange={(eventValue) =>
-                                  toggleEventSelection(
-                                    eventId,
-                                    eventValue.target.checked,
-                                  )
-                                }
-                              />
-                            </label>
-                          </TableCell>
-                          <TableCell className="font-semibold">
-                            {eventName}
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {formatDate(event.start_time)}
-                          </TableCell>
-                          <TableCell>
-                            {String(event.location ?? "TBD")}
-                          </TableCell>
-                          <TableCell>{pointValue}</TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-2">
-                              {isMandatory ? (
-                                <Badge>Mandatory</Badge>
-                              ) : (
-                                <Badge variant="secondary">Optional</Badge>
-                              )}
-                              {recurrenceRule ? (
-                                <Badge variant="outline" className="gap-1">
-                                  <EventsGlyph className="h-3.5 w-3.5" />
-                                  {recurrenceRule}
-                                </Badge>
-                              ) : null}
-                              {requiredRoleIds.length > 0 ? (
-                                <Badge variant="outline" className="gap-1">
-                                  <RolesGlyph className="h-3.5 w-3.5" />
-                                  Targeted
-                                </Badge>
-                              ) : null}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => {
-                                setActiveEvent(event);
-                                setDetailSheetOpen(true);
-                              }}
-                            >
-                              View details
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
+          )
+        ) : (
+          <section aria-labelledby="events-list-label">
+            {/*
+              The list header: all that survives of the deleted `<thead>`. The
+              select-all leads, in line with every row's checkbox, beside the
+              section label and its count.
+            */}
+            <div className="flex min-h-9 items-center gap-1 pointer-coarse:min-h-11">
+              {canMarkAttendance ? (
+                <label
+                  className={`${dashboardCheckboxHitAreaClassName} shrink-0`}
+                >
+                  <input
+                    type="checkbox"
+                    aria-label="Select all visible events"
+                    className={dashboardTableCheckboxClassName}
+                    checked={allVisibleSelected}
+                    onChange={(event) =>
+                      toggleAllVisibleEvents(event.target.checked)
+                    }
+                  />
+                </label>
+              ) : null}
+              <div className="min-w-0 px-2">
+                <SectionLabel
+                  id="events-list-label"
+                  count={`${filteredEvents.length} event${filteredEvents.length === 1 ? "" : "s"}`}
+                >
+                  {TIME_FILTER_LABELS[timeFilter]}
+                </SectionLabel>
+              </div>
+            </div>
+            {/*
+              `role="list"` restored explicitly: `display:flex` on an `<li>`
+              drops its list-item box, and WebKit then stops exposing the list.
+            */}
+            <ul role="list" className={denseListClassName}>
+              {filteredEvents.map((event) => {
+                const eventId = String(
+                  event.id ?? event.name ?? "unknown-event",
+                );
+                const eventName = String(event.name ?? "Untitled event");
+                const isMandatory = event.is_mandatory === true;
+                const cadence = recurrenceLabel(event.recurrence_rule);
+                const isTargeted =
+                  Array.isArray(event.required_role_ids) &&
+                  event.required_role_ids.some((id) => typeof id === "string");
+                // One derived value: the row fill and the checkbox must never
+                // disagree about whether the row is selected.
+                const isSelected = selectedEventIds.includes(eventId);
+                const location =
+                  typeof event.location === "string" && event.location.trim()
+                    ? event.location.trim()
+                    : null;
+                // An absent fact drops out of the line rather than reading
+                // "TBD" or "0".
+                const meta = [
+                  formatRelativeDayTime(event.start_time, new Date(nowTick)),
+                  location,
+                  pointsLabel(event.point_value),
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
+                return (
+                  <li
+                    key={eventId}
+                    className={cn(
+                      "flex items-center gap-1",
+                      // Fill means state, never striping.
+                      isSelected && "bg-popover",
+                    )}
+                  >
+                    {canMarkAttendance ? (
+                      <label
+                        className={`${dashboardCheckboxHitAreaClassName} shrink-0`}
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${eventName}`}
+                          className={dashboardTableCheckboxClassName}
+                          checked={isSelected}
+                          onChange={(eventValue) =>
+                            toggleEventSelection(
+                              eventId,
+                              eventValue.target.checked,
+                            )
+                          }
+                        />
+                      </label>
+                    ) : null}
+                    {/*
+                      The row is the control: it opens the event's details,
+                      the job the trailing "View details" button did. Its
+                      accessible name is its own text, so it always says
+                      exactly what the row shows.
+                    */}
+                    <button
+                      type="button"
+                      onClick={() => openDetails(event)}
+                      className={cn(
+                        "flex min-h-11 min-w-0 flex-1 flex-col items-start gap-1 rounded-md px-2 py-1.5 text-left transition-colors sm:flex-row sm:items-center sm:gap-3",
+                        !isSelected &&
+                          "hover:bg-card-hover hover:text-foreground",
+                        FOCUS_RING_OFFSET,
+                      )}
+                    >
+                      <span className="flex min-w-0 max-w-full flex-col sm:flex-1">
+                        <span className="truncate text-sm font-semibold">
+                          {eventName}
+                        </span>
+                        {meta ? (
+                          <span className="truncate text-caption text-muted-foreground">
+                            {meta}
+                          </span>
+                        ) : null}
+                      </span>
+                      {isMandatory || cadence || isTargeted ? (
+                        <span className="flex shrink-0 flex-wrap items-center gap-1.5">
+                          {isMandatory ? (
+                            // Danger, as the board draws s06/s07 and mobile
+                            // renders it: a status is never the accent (§5).
+                            <Badge variant="destructive">Mandatory</Badge>
+                          ) : null}
+                          {cadence ? (
+                            <Badge variant="outline" className="gap-1">
+                              <EventsGlyph className="h-3.5 w-3.5" />
+                              {cadence}
+                            </Badge>
+                          ) : null}
+                          {isTargeted ? (
+                            <Badge variant="outline" className="gap-1">
+                              <RolesGlyph className="h-3.5 w-3.5" />
+                              Targeted
+                            </Badge>
+                          ) : null}
+                        </span>
+                      ) : null}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+      </TabsContent>
 
-        <TabsContent value="calendar">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Chapter Calendar</CardTitle>
-              <CardDescription>
-                Click a date to schedule an event there, or select an event to
-                view its details.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <EventsCalendar
-                events={calendarEvents}
-                monthAnchor={calendarMonthAnchor}
-                onMonthAnchorChange={setCalendarMonthAnchor}
-                createDisabled={eventWriteControls.disabled}
-                createDescribedBy={eventWriteControls["aria-describedby"]}
-                createTitle={eventWriteControls.title}
-                onSelectEvent={(event) => {
-                  setActiveEvent(event);
-                  setDetailSheetOpen(true);
-                }}
-                onCreateOnDay={(day) => {
-                  setEditorMode("create");
-                  setActiveEvent(null);
-                  setCalendarCreateDay(day);
-                  editorDialog.setOpen(true);
-                }}
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {/*
+        Flush, with no card, title or description: the calendar names its own
+        month, and a day number and an event chip say what they do.
+      */}
+      <TabsContent value="calendar" className="mt-0">
+        <EventsCalendar
+          events={calendarEvents}
+          monthAnchor={calendarMonthAnchor}
+          onMonthAnchorChange={setCalendarMonthAnchor}
+          createDisabled={eventWriteControls.disabled}
+          createDescribedBy={eventWriteControls["aria-describedby"]}
+          createTitle={eventWriteControls.title}
+          onSelectEvent={openDetails}
+          onCreateOnDay={openCreate}
+        />
+      </TabsContent>
 
       <EventDetailSheet
         open={detailSheetOpen}
@@ -683,6 +725,6 @@ export function EventsPage() {
         }}
       />
       {confirmDialog}
-    </div>
+    </Tabs>
   );
 }

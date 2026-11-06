@@ -24,10 +24,12 @@ jest.mock('@repo/org-archetypes', () => ({
   })),
   getArchetype: jest.fn((key: string) => ({ key, rolePack: 'ifc_standard' })),
   // Enough of the real catalog to exercise the activation funnel's paid-module
-  // detection (#267): one always-on free module and two paid ones.
+  // detection (#267): one always-on free module and three paid ones, one of
+  // them (`dues`) beta-off.
   MODULE_CATALOG: [
     { key: 'chat', tier: 'free', alwaysOn: true },
     { key: 'events', tier: 'paid', alwaysOn: false },
+    { key: 'tasks', tier: 'paid', alwaysOn: false },
     { key: 'dues', tier: 'paid', alwaysOn: false },
   ],
 }));
@@ -56,6 +58,14 @@ jest.mock('@repo/chapter-theme', () => ({
     '@repo/chapter-theme',
   ).SIGNET_ENGINE_VERSION,
 }));
+
+jest.mock('@sentry/nestjs', () => ({
+  ...jest.requireActual<typeof import('@sentry/nestjs')>('@sentry/nestjs'),
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
+
+import * as Sentry from '@sentry/nestjs';
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
@@ -612,6 +622,54 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       );
     });
 
+    // The 2026-11-05 prod incident: Settings → Chapter → Save mark sent
+    // `{ short_name, show_greek_letters }`, the DTO arrived with an own
+    // `undefined` for every other branding key, and the merge stored their
+    // absence: accent, letters, designation, school and founding year gone,
+    // and the palette re-derived from no seed. An `undefined` is a key the
+    // client never sent, so the stored value stands.
+    it('keeps every stored branding key a PATCH carries only as undefined', async () => {
+      const stored = {
+        colors: { accent: '#35005F' },
+        greek_letters: 'ΦΓΔ',
+        designation: 'Tau Nu',
+        school_short: 'RPI',
+        founded_at: 1878,
+      };
+      const repos = makeRepos([], null, {}, null, null, {
+        chapterBranding: stored,
+      });
+      const service = await buildService(repos);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        branding: {
+          short_name: 'FIJI',
+          show_greek_letters: false,
+          greek_letters: undefined,
+          designation: undefined,
+          school_short: undefined,
+          founded_at: undefined,
+          colors: undefined,
+        },
+      });
+
+      const [, write] = repos.chapterUpdate.mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
+      expect(write.branding).toEqual({
+        ...stored,
+        short_name: 'FIJI',
+        show_greek_letters: false,
+      });
+      expect(write).not.toHaveProperty('accent_color');
+      expect(repos.paletteWrite).toHaveBeenCalledWith(
+        CHAPTER_ID,
+        expect.anything(),
+        '#35005F',
+      );
+    });
+
     it('leaves the engine stamp alone on a PATCH that writes no branding', async () => {
       const repos = makeRepos([]);
       const service = await buildService(repos);
@@ -817,7 +875,7 @@ describe('ChapterConfigService — branding accent (#795)', () => {
         contrastChecks: [
           {
             role: '--signet-accent-text',
-            against: '#131211',
+            against: '#0A0A0A',
             ratio: 4.4954,
             passes: false,
           },
@@ -832,7 +890,7 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       await service.recomputeAndPersistPalette(CHAPTER_ID);
 
       expect(warn).toHaveBeenCalledWith(
-        `Signet accent contrast below AA for chapter ${CHAPTER_ID}: --signet-accent-text on #131211 = 4.49:1`,
+        `Signet accent contrast below AA for chapter ${CHAPTER_ID}: --signet-accent-text on #0A0A0A = 4.49:1`,
       );
       expect(warn).toHaveBeenCalledWith(
         `Signet accent fill below 3:1 for chapter ${CHAPTER_ID}: --signet-accent-primary on --popover = 2.99:1`,
@@ -1088,18 +1146,31 @@ describe('ChapterConfigService — activation funnel (#267)', () => {
   });
 
   it('names the alphabetically-first module when a patch enables several', async () => {
-    const repos = makeRepos([], null, { events: false, dues: false });
+    // Not `dues`: while it is beta-off (`BETA_OFF_MODULES`), switching it on
+    // turns nothing on, so it is no activation.
+    const repos = makeRepos([], null, { tasks: false, events: false });
     const service = await buildService(repos);
 
     await service.patchConfig(CHAPTER_ID, 'user-1', {
-      enabled_modules: { events: true, dues: true },
+      enabled_modules: { tasks: true, events: true },
     });
 
     expect(mockActivation.record).toHaveBeenCalledWith(
       CHAPTER_ID,
       'activation-first-paid-module-enabled',
-      { module: 'dues', modules_enabled: 2 },
+      { module: 'events', modules_enabled: 2 },
     );
+  });
+
+  it('records no activation for switching on a beta-off module', async () => {
+    const repos = makeRepos([], null, { dues: false });
+    const service = await buildService(repos);
+
+    await service.patchConfig(CHAPTER_ID, 'user-1', {
+      enabled_modules: { dues: true },
+    });
+
+    expect(mockActivation.record).not.toHaveBeenCalled();
   });
 
   it('ignores a free module being toggled', async () => {
@@ -1581,6 +1652,34 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
     scholarship_pool_cents: 10000,
     installment_count: 2,
   };
+
+  it('reports a failed trailing read once, as a warning, and still returns the merged state', async () => {
+    const captureException = jest.mocked(Sentry.captureException);
+    captureException.mockClear();
+    const repos = makeRepos([], CONFIGURED_DUES, {}, null, null, {
+      readErrorOnCall: { dues: 2 },
+      trailingReadError: TRAILING,
+    });
+    const service = await buildService(repos);
+    jest.spyOn(service['logger'], 'warn').mockImplementation(() => undefined);
+    jest.spyOn(service['logger'], 'error').mockImplementation(() => undefined);
+
+    const result = await service.patchConfig(CHAPTER_ID, 'user-1', {
+      dues: { cadence: 'monthly' },
+    });
+
+    expect(result.dues).toMatchObject({ cadence: 'monthly' });
+    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(captureException.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        level: 'warning',
+        fingerprint: expect.arrayContaining([
+          'caught-failure',
+          'chapter-config-trailing-read',
+        ]),
+      }),
+    );
+  });
 
   it('returns the merged dues row when only the trailing dues read fails', async () => {
     const repos = makeRepos([], CONFIGURED_DUES, {}, null, null, {

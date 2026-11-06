@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { randomUUID } from 'node:crypto';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
 import { isForeignKeyViolation } from '#domain/constants/postgres-error-codes';
 import {
@@ -16,13 +17,18 @@ import {
   STORAGE_PROVIDER,
   type IStorageProvider,
 } from '#domain/adapters/storage.interface';
-import { MAX_ARCHIVE_EXPORT_PART_BYTES } from '#domain/constants/discord-archive-limits';
+import {
+  MAX_ARCHIVE_EXPORT_PART_BYTES,
+  MAX_WARNINGS,
+} from '#domain/constants/discord-archive-limits';
 import {
   CHAT_ARCHIVE_BUCKET,
   archiveImportPrefix,
 } from '#domain/constants/storage';
 import {
+  CHAT_CATEGORY_REPOSITORY,
   CHAT_CHANNEL_REPOSITORY,
+  type IChatCategoryRepository,
   type IChatChannelRepository,
 } from '#domain/repositories/chat.repository.interface';
 import {
@@ -40,7 +46,16 @@ import {
   wholeChapterTargets,
 } from '#domain/utils/discord-mentions';
 import { parseRoleMapping } from '#domain/utils/discord-role-gates';
+import {
+  DiscordApiError,
+  DiscordImportStoppedError,
+  DiscordNotConfiguredError,
+} from '#domain/adapters/discord.interface';
 import { RbacService } from '../services/rbac.service';
+import {
+  NotificationService,
+  type NotifyPayload,
+} from '../services/notification.service';
 import type {
   DiscordImport,
   DiscordImportChannel,
@@ -85,8 +100,42 @@ export const IMPORT_BATCH_SIZE = 200;
  */
 export const PURGE_BATCH_SIZE = 500;
 
-/** Most recent warnings kept on the job row. */
-export const MAX_WARNINGS = 50;
+/** The notification target that opens `/discord-import` on web. */
+export const DISCORD_IMPORT_NOTIFICATION_SCREEN = 'discord_import';
+
+/**
+ * What the admin who set an import up (`created_by`) is told when it ends on
+ * its own: finished, or stopped on an error. A large server takes hours and
+ * the page says they can leave, so either way they need to hear. One they
+ * stopped themselves sends nothing. `admin`, like a filed chat report: officer
+ * traffic with no member-facing switch. NORMAL, so quiet hours hold. The
+ * target opens the import page on web; mobile has no such page and falls
+ * through to the list.
+ */
+export function importFinishedNotification(
+  row: Pick<DiscordImport, 'status' | 'imported_messages' | 'guild_name'>,
+): NotifyPayload {
+  const base = {
+    priority: 'NORMAL' as const,
+    category: 'admin' as const,
+    data: { target: { screen: DISCORD_IMPORT_NOTIFICATION_SCREEN } },
+  };
+  if (row.status === 'failed') {
+    return {
+      ...base,
+      title: 'Discord import stopped',
+      body: `The import${row.guild_name ? ` from ${row.guild_name}` : ''} stopped on an error. Open the Discord import page to see why.`,
+    };
+  }
+  const count = row.imported_messages.toLocaleString('en-US');
+  const one = row.imported_messages === 1;
+  const from = row.guild_name ? ` from ${row.guild_name}` : '';
+  return {
+    ...base,
+    title: 'Discord import finished',
+    body: `${count} ${one ? 'message' : 'messages'}${from} ${one ? 'is' : 'are'} now in Frapp chat.`,
+  };
+}
 
 /**
  * Statuses in which a slice may keep going.
@@ -97,6 +146,31 @@ export const MAX_WARNINGS = 50;
  * ordinary API write on the same row.
  */
 const WORKER_MAY_CONTINUE: DiscordImportStatus[] = ['ready', 'running'];
+
+/** Discord's answers for a bot that lost its token, access, or the resource. */
+const DISCORD_REFUSAL_STATUSES = new Set([401, 403, 404]);
+
+/**
+ * Whether an import ended on an expected stop rather than a fault: an
+ * admin-facing stop (`DiscordImportStoppedError`, thrown by this worker and by
+ * the bot export worker), the integration not configured, or Discord
+ * refusing the bot (a revoked token, missing permissions, a deleted channel).
+ * Everything else (the database, storage, the copy service, Discord timeouts
+ * and 5xx, and its integrity refusals, which carry no status) is a fault.
+ */
+function isExpectedStop(error: unknown): boolean {
+  if (
+    error instanceof DiscordImportStoppedError ||
+    error instanceof DiscordNotConfiguredError
+  ) {
+    return true;
+  }
+  return (
+    error instanceof DiscordApiError &&
+    error.status !== null &&
+    DISCORD_REFUSAL_STATUSES.has(error.status)
+  );
+}
 
 /**
  * Why an import stopped when the Frapp channel a Discord channel imports into
@@ -112,9 +186,9 @@ const WORKER_MAY_CONTINUE: DiscordImportStatus[] = ['ready', 'running'];
 function targetDeleted(
   mapping: Pick<DiscordImportChannel, 'discord_channel_name'>,
   detail = 'was deleted',
-): Error {
+): DiscordImportStoppedError {
   const name = `#${mapping.discord_channel_name}`;
-  return new Error(
+  return new DiscordImportStoppedError(
     `The Frapp channel ${name} was importing into ${detail}, so the import stopped. To bring ${name} in, delete this import and import again.`,
   );
 }
@@ -159,6 +233,8 @@ export class DiscordImportWorkerService {
     private readonly storage: IStorageProvider,
     @Inject(CHAT_CHANNEL_REPOSITORY)
     private readonly channelRepo: IChatChannelRepository,
+    @Inject(CHAT_CATEGORY_REPOSITORY)
+    private readonly categoryRepo: IChatCategoryRepository,
     private readonly exportWorker: DiscordExportWorkerService,
     @Inject(DISCORD_CONNECTION_REPOSITORY)
     private readonly connectionRepo: IDiscordConnectionRepository,
@@ -168,6 +244,9 @@ export class DiscordImportWorkerService {
     // an imported message's attachments live under the import's prefix.
     @Inject(CHAT_MESSAGE_REPORT_REPOSITORY)
     private readonly reportRepo: IChatMessageReportRepository,
+    // Tells the admin who set an import up that it ended: a large server
+    // takes hours, and the page says they will hear.
+    private readonly notifications: NotificationService,
   ) {}
 
   /**
@@ -189,14 +268,14 @@ export class DiscordImportWorkerService {
         this.logger.log(`Reaped ${reaped} expired Discord OAuth handshakes.`);
       }
     } catch (error) {
-      // Same reasoning as the import sweep: an unhandled rejection out of a
-      // `@Cron` takes the process down. A failed reap must cost one tick.
-      logThrowable(
-        this.logger,
-        'error',
-        'Discord OAuth state sweep failed',
+      // Same reasoning as the import sweep: a rejection out of a `@Cron`
+      // reaches only Nest's raw `logger.error`, never Sentry.
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'discord-oauth-state-sweep',
+        message: 'Discord OAuth state sweep failed',
         error,
-      );
+      });
     }
   }
 
@@ -204,21 +283,22 @@ export class DiscordImportWorkerService {
    * The tick.
    *
    * The try/catch is not decoration: this handler reaches storage and the
-   * database, and an unhandled rejection out of a `@Cron` under Node's default
-   * `--unhandled-rejections=throw` takes the API process down with it. A failed
-   * sweep must cost one tick, never the service.
+   * database. `@nestjs/schedule` catches a rejected `@Cron` and hands the raw
+   * throwable to Nest's `logger.error`, which reaches no alert and can print a
+   * PostgREST `details`. Caught here, a failed sweep costs one tick and reports
+   * to Sentry as `discord-import-sweep-tick`.
    */
   @Cron(CronExpression.EVERY_MINUTE)
   async handleImportSweep(): Promise<void> {
     try {
       await this.sweepImports(new Date());
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'error',
-        'Discord import sweep failed; skipping this tick',
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'discord-import-sweep-tick',
+        message: 'Discord import sweep failed; skipping this tick',
         error,
-      );
+      });
     }
   }
 
@@ -252,18 +332,30 @@ export class DiscordImportWorkerService {
         // `String()` turned into "[object Object]" in the log and on the page,
         // and anything else that is not an `Error` still would.
         const message = toReportableError(error).message;
-        logThrowable(
-          this.logger,
-          'error',
-          `Discord import ${job.id} failed`,
-          error,
-        );
-        await this.importRepo.updateIfStatus(
+        if (isExpectedStop(error)) {
+          logThrowable(
+            this.logger,
+            'warn',
+            `Discord import ${job.id} failed`,
+            error,
+          );
+        } else {
+          reportCaughtFailure(this.logger, {
+            level: 'error',
+            site: 'discord-import-job-failed',
+            message: `Discord import ${job.id} failed`,
+            error,
+          });
+        }
+        const failed = await this.importRepo.updateIfStatus(
           job.id,
           job.chapter_id,
           [...WORKER_MAY_CONTINUE, 'purging'],
           { status: 'failed', error: message },
         );
+        // A deletion that failed is not news to send: the admin who asked
+        // for it is watching it count down. An import that failed is.
+        if (job.status !== 'purging') await this.announceFinished(failed);
         return { claimed: true, importId: job.id, finished: true };
       } finally {
         await this.importRepo.releaseLease(job.id, lockToken).catch(() => {
@@ -394,7 +486,7 @@ export class DiscordImportWorkerService {
     // channel and then completes — and `checkpoint` is the only writer inside
     // that loop. Without this the admin gets a green "Completed · 0 messages"
     // with an empty warning list and no statement of what went wrong.
-    await this.importRepo.updateIfStatus(
+    const closed = await this.importRepo.updateIfStatus(
       job.id,
       chapterId,
       WORKER_MAY_CONTINUE,
@@ -409,6 +501,7 @@ export class DiscordImportWorkerService {
         completed_at: result.finished ? new Date().toISOString() : null,
       },
     );
+    await this.announceFinished(closed);
 
     return {
       claimed: true,
@@ -416,6 +509,39 @@ export class DiscordImportWorkerService {
       messagesImported: result.messagesImported,
       finished: result.finished,
     };
+  }
+
+  /**
+   * Notify the admin who set the import up, once a closing write has made it
+   * `completed` or `failed`. Those writes are status-guarded, so only one
+   * slice reaches this with the closed row. Only while they can still open
+   * the import page (`channels:manage` in this chapter): an officer who has
+   * since left the role, or the chapter, is not sent the chapter's news.
+   * Best-effort: the import is over whether or not the notice goes out, so a
+   * failure is logged and never fails the slice.
+   */
+  private async announceFinished(row: DiscordImport | null): Promise<void> {
+    if (!row?.created_by) return;
+    if (row.status !== 'completed' && row.status !== 'failed') return;
+    try {
+      const admins = await this.rbac.findUserIdsWithPermissions(
+        row.chapter_id,
+        ['channels:manage'],
+      );
+      if (!admins.includes(row.created_by)) return;
+      await this.notifications.notifyUser(
+        row.created_by,
+        row.chapter_id,
+        importFinishedNotification(row),
+      );
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not send the finished notice for import ${row.id}`,
+        error,
+      );
+    }
   }
 
   // ── import ────────────────────────────────────────────────────────────────
@@ -488,7 +614,9 @@ export class DiscordImportWorkerService {
         part.storage_path,
       );
       if (!bytes) {
-        warnings.push(`Uploaded export part is missing: ${part.relative_path}`);
+        warnings.push(
+          `Export file "${part.relative_path}" is missing from the upload, so its messages were skipped.`,
+        );
         partIndex += 1;
         messageIndex = 0;
         continue;
@@ -504,7 +632,7 @@ export class DiscordImportWorkerService {
       // the cursor advances and the import cannot loop on it forever.
       if (bytes.byteLength > MAX_ARCHIVE_EXPORT_PART_BYTES) {
         warnings.push(
-          `${part.relative_path} is ${Math.round(bytes.byteLength / 1024 / 1024)} MB, over the ${Math.round(MAX_ARCHIVE_EXPORT_PART_BYTES / 1024 / 1024)} MB limit for one export part — re-export with a smaller --partition. Skipped.`,
+          `Export file "${part.relative_path}" is ${Math.round(bytes.byteLength / 1024 / 1024)} MB, over the ${Math.round(MAX_ARCHIVE_EXPORT_PART_BYTES / 1024 / 1024)} MB limit for one export file, so its messages were skipped. Re-export with a smaller --partition.`,
         );
         partIndex += 1;
         messageIndex = 0;
@@ -516,7 +644,9 @@ export class DiscordImportWorkerService {
         parsed = parseExportPart(bytes);
       } catch (error) {
         if (!(error instanceof DiscordExportFormatError)) throw error;
-        warnings.push(`${part.relative_path}: ${error.message}`);
+        warnings.push(
+          `Export file "${part.relative_path}" couldn't be read (${error.message}), so its messages were skipped.`,
+        );
         partIndex += 1;
         messageIndex = 0;
         continue;
@@ -530,7 +660,7 @@ export class DiscordImportWorkerService {
       if (!mapping || mapping.mapping_action === 'skip') {
         if (!mapping) {
           warnings.push(
-            `No mapping for #${parsed.channel.name ?? parsed.channel.id}; its messages were skipped.`,
+            `#${parsed.channel.name ?? parsed.channel.id} had no place chosen in Frapp, so its messages were skipped.`,
           );
         }
         partIndex += 1;
@@ -668,7 +798,7 @@ export class DiscordImportWorkerService {
     }
 
     const finished = partIndex >= parts.length;
-    await this.importRepo.updateIfStatus(
+    const closed = await this.importRepo.updateIfStatus(
       job.id,
       chapterId,
       WORKER_MAY_CONTINUE,
@@ -685,6 +815,7 @@ export class DiscordImportWorkerService {
         completed_at: finished ? new Date().toISOString() : null,
       },
     );
+    await this.announceFinished(closed);
 
     return {
       claimed: true,
@@ -783,7 +914,9 @@ export class DiscordImportWorkerService {
       );
       attachmentsSkipped += unresolved.length;
       for (const path of unresolved) {
-        warnings.push(`No uploaded file for attachment: ${path}`);
+        warnings.push(
+          `"${path}" wasn't in the upload, so it was not imported. The message it belongs to was.`,
+        );
       }
 
       const row = toImportedMessage({
@@ -797,7 +930,7 @@ export class DiscordImportWorkerService {
       });
       if (!row) {
         warnings.push(
-          `Skipped a message with no id or timestamp in this export.`,
+          `A message with no id or time in the export was skipped.`,
         );
         continue;
       }
@@ -930,7 +1063,7 @@ export class DiscordImportWorkerService {
       }
       // Checked here too, for a mapping saved before the service refused it.
       if (target.type === 'DM' || target.type === 'GROUP_DM') {
-        throw new Error(
+        throw new DiscordImportStoppedError(
           `Channel mapping for #${mapping.discord_channel_name} points at a direct message. Map the channels again, then restart the import.`,
         );
       }
@@ -943,7 +1076,7 @@ export class DiscordImportWorkerService {
         mapping.mapping_action === 'create_new' &&
         !channelServesMergeKey(target, mapping)
       ) {
-        throw new Error(
+        throw new DiscordImportStoppedError(
           `The channel recorded for #${mapping.discord_channel_name} no longer has the readers its mapping asks for. Map the channels again, then restart the import.`,
         );
       }
@@ -958,7 +1091,7 @@ export class DiscordImportWorkerService {
       throw targetDeleted(mapping);
     }
     if (mapping.mapping_action !== 'create_new' || !mapping.new_channel_name) {
-      throw new Error(
+      throw new DiscordImportStoppedError(
         `Channel mapping for #${mapping.discord_channel_name} has no target.`,
       );
     }
@@ -995,25 +1128,46 @@ export class DiscordImportWorkerService {
       }
     }
 
-    const created = await this.channelRepo.create({
-      chapter_id: chapterId,
-      name: mapping.new_channel_name,
-      description: `Imported from Discord #${mapping.discord_channel_name}`,
-      // The admin's choice, recorded on the mapping. On the bot path a channel
-      // that was private in Discord, held a private thread, or whose privacy
-      // the scan could not read reaches here as PUBLIC only by an explicit
-      // choice (the mapping route refuses the default); an upload has no
-      // privacy to go on. ROLE_GATED always carries at least one permission
-      // (DB CHECK).
-      type: mapping.new_channel_type,
-      required_permissions:
-        mapping.new_channel_type === 'ROLE_GATED'
-          ? mapping.new_channel_required_permissions
-          : null,
-      member_ids: null,
-      category_id: null,
-      is_read_only: mapping.new_channel_is_read_only,
-    });
+    // The group `start` resolved, read back through the chapter: an officer
+    // may delete it while the import runs, and a channel then lands with no
+    // group. A delete between this read and the insert meets the foreign key,
+    // so the insert is tried again with no group rather than failing.
+    const categoryId = mapping.new_channel_category_id
+      ? ((
+          await this.categoryRepo.findById(
+            mapping.new_channel_category_id,
+            chapterId,
+          )
+        )?.id ?? null)
+      : null;
+    const name = mapping.new_channel_name;
+    const create = (category_id: string | null) =>
+      this.channelRepo.create({
+        chapter_id: chapterId,
+        name,
+        description: `Imported from Discord #${mapping.discord_channel_name}`,
+        // The admin's choice, recorded on the mapping. On the bot path a
+        // channel that was private in Discord, held a private thread, or whose
+        // privacy the scan could not read reaches here as PUBLIC only by an
+        // explicit choice (the mapping route refuses the default); an upload
+        // has no privacy to go on. ROLE_GATED always carries at least one
+        // permission (DB CHECK).
+        type: mapping.new_channel_type,
+        required_permissions:
+          mapping.new_channel_type === 'ROLE_GATED'
+            ? mapping.new_channel_required_permissions
+            : null,
+        member_ids: null,
+        category_id,
+        is_read_only: mapping.new_channel_is_read_only,
+      });
+    let created: Awaited<ReturnType<typeof create>>;
+    try {
+      created = await create(categoryId);
+    } catch (error) {
+      if (categoryId === null || !isForeignKeyViolation(error)) throw error;
+      created = await create(null);
+    }
     // Recorded before the mapping row learns its target: remapping a failed
     // import rewrites the mapping rows without targets, and this is how the
     // purge still finds a channel the import made (#2905).
@@ -1100,6 +1254,10 @@ export class DiscordImportWorkerService {
     for (const channelId of channelsDeleted) {
       this.channelCache.invalidate(channelId);
     }
+    // Then the channel groups it created, now that its channels are gone,
+    // under the same rules: a group still holding a channel, or one a live
+    // import still means to fill, stays.
+    await this.importRepo.deleteEmptyCreatedCategories(job.id, job.chapter_id);
 
     const prefix =
       job.storage_prefix ?? archiveImportPrefix(job.chapter_id, job.id);

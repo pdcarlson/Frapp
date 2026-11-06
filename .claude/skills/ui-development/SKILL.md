@@ -43,15 +43,18 @@ Conventions that are easy to get wrong:
   metadata that must not read as a status.
 - `Table` row hover (`accent-3`) and selection (`accent-4` plus `accent-11` text) are a matched
   pair. Don't re-spell either at a call site or merge them. The reasoning is in the file header.
+- A route's loading state mirrors its loaded layout: compose it from
+  `components/shared/page-skeletons.tsx` in the feature folder (`<feature>-skeleton.tsx`), render
+  it from both the route's `loading.tsx` and the page's first-load branch, and never wrap a flush
+  page in `LoadingState`'s card. A new route without a `loading.tsx` fails `page-skeletons.spec.tsx`.
 - A loading, empty, or error state inside a `<CardContent>` uses
   `components/shared/nested-states.tsx`, not `async-states.tsx`, which paints `--card` and would
   vanish inside a card.
 - Take focus indicators from the recipes in `components/ui/focus.ts` (`FOCUS_RING`,
   `FOCUS_RING_OFFSET`, `FOCUS_RING_SHELL` and the rest) instead of writing focus classes at the call
   site, because a hand-copied string escapes a grep for the constant. A few call sites still write
-  their own and aren't precedent: the default-role `<select>` in `settings/settings-roles-tab.tsx`,
-  the notification links in `layout/dashboard-notification-drawer.tsx`, and the reload button in
-  `app/global-error.tsx`. `typography.ts` (`EYEBROW`) and `duotone.tsx` are shared recipes too.
+  their own and aren't precedent: the default-role `<select>` in `settings/settings-roles-tab.tsx`
+  and the reload button in `app/global-error.tsx`. `typography.ts` (`EYEBROW`) and `duotone.tsx` are shared recipes too.
 
 ## Tailwind and theming
 
@@ -111,7 +114,7 @@ constraints web habits most often break:
 
 - Style with typed `StyleSheet` token factories, not NativeWind (removed). A screen calls
   `useFrappTheme()` from `apps/mobile/lib/theme.tsx` and passes the tokens to a
-  `createStyles(tokens: SignetTokens)` factory. Follow `apps/mobile/components/nav-tile.tsx`.
+  `createStyles(tokens: SignetTokens)` factory. Follow `apps/mobile/components/list-section.tsx`.
 - The theme is dark-only. The context is `{ tokens: SignetTokens }`, with no light/dark preference,
   no `resolvedTheme`, and no `useColorScheme`.
 - Don't put raw hex or hand-set type in screen code. Set type only through

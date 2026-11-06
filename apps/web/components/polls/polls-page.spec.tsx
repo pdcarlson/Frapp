@@ -1,9 +1,10 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import { networkMock } from "@/tests/network";
+import { cardFilledContainers } from "@/tests/card-surfaces";
 
 const { mockCurrentChapter, mockVote, mockUnvote, mockRefetch, pollsQuery } =
   vi.hoisted(() => ({
@@ -139,12 +140,12 @@ describe("PollsPage disabled-query handling", () => {
 
     render(<PollsPage />);
 
-    expect(
-      screen.queryByText("Loading chapter polls..."),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/poll list requires polls:view_all/i),
-    ).toBeInTheDocument();
+    expect(screen.queryByText("Loading chapter polls")).not.toBeInTheDocument();
+    // Inside the granted `<Can>` the permission half of `enabled` is already
+    // true, so an idle query settles on the empty state rather than repeating
+    // the denied copy, which lives in `deniedFallback` alone.
+    expect(screen.getByText("No polls match this view")).toBeInTheDocument();
+    expect(screen.queryByText(/can.t see every poll/)).not.toBeInTheDocument();
   });
 
   it("still spins while a permitted fetch is actually in flight", () => {
@@ -156,7 +157,7 @@ describe("PollsPage disabled-query handling", () => {
 
     render(<PollsPage />);
 
-    expect(screen.getByText("Loading chapter polls...")).toBeInTheDocument();
+    expect(screen.getByText("Loading chapter polls")).toBeInTheDocument();
   });
 
   it("spins when the query is paused (offline) rather than claiming view_all is missing", () => {
@@ -171,15 +172,15 @@ describe("PollsPage disabled-query handling", () => {
 
     render(<PollsPage />);
 
-    expect(screen.getByText("Loading chapter polls...")).toBeInTheDocument();
+    expect(screen.getByText("Loading chapter polls")).toBeInTheDocument();
     expect(
-      screen.queryByText(/poll list requires polls:view_all/i),
+      screen.queryByText("No polls match this view"),
     ).not.toBeInTheDocument();
   });
 
   it("offers a retry when offline instead of a spinner that cannot resolve", () => {
     // README §4 item 4. A paused query is `isPending`, so without this branch
-    // an offline member with no cached polls sat on "Loading chapter polls..."
+    // an offline member with no cached polls sat on "Loading chapter polls"
     // for as long as they stayed offline.
     mockOffline.value = true;
     pollsQuery.data = undefined as unknown as unknown[];
@@ -189,9 +190,7 @@ describe("PollsPage disabled-query handling", () => {
     render(<PollsPage />);
 
     expect(screen.getByText(/polls unavailable offline/i)).toBeInTheDocument();
-    expect(
-      screen.queryByText("Loading chapter polls..."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading chapter polls")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
   });
 
@@ -222,9 +221,7 @@ describe("PollsPage disabled-query handling", () => {
     render(<PollsPage />);
 
     expect(screen.getAllByText("Pizza night?").length).toBeGreaterThan(0);
-    expect(
-      screen.queryByText("Loading chapter polls..."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading chapter polls")).not.toBeInTheDocument();
   });
 
   it("answers the permission question before the network one", () => {
@@ -238,7 +235,7 @@ describe("PollsPage disabled-query handling", () => {
     expect(
       screen.queryByText(/polls unavailable offline/i),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(/polls:view_all/)).toBeInTheDocument();
+    expect(screen.getByText(/can.t see every poll/)).toBeInTheDocument();
   });
 
   it("shows the Can denied copy, not a spinner, when the caller lacks polls:view_all", () => {
@@ -251,11 +248,80 @@ describe("PollsPage disabled-query handling", () => {
 
     render(<PollsPage />);
 
+    expect(screen.queryByText("Loading chapter polls")).not.toBeInTheDocument();
+    expect(screen.getByText(/can.t see every poll/i)).toBeInTheDocument();
+    expect(screen.getByText(/you can still vote in chat/i)).toBeInTheDocument();
+  });
+
+  it("offers no filters on the denied path", () => {
+    // The toolbar drives a read this member cannot make, so it rides on the
+    // granted branch only. The title is the top bar's, on every branch.
+    mockCanGrant.value = false;
+
+    render(<PollsPage />);
+
     expect(
-      screen.queryByText("Loading chapter polls..."),
+      screen.getByText(/your role can't see every poll/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: /filter polls by channel/i }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(/polls:view_all/i)).toBeInTheDocument();
-    expect(screen.getByText(/ask your chapter president/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /refresh polls/i }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("PollsPage layout", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCanGrant.value = true;
+    mockOffline.value = false;
+    resolvedPollsQuery();
+    chapter.active();
+  });
+
+  it("draws each poll as a hairline tile, not a --card panel", () => {
+    const { container } = render(<PollsPage />);
+
+    expect(cardFilledContainers(container)).toEqual([]);
+    const tiles = within(
+      screen.getByRole("list", { name: "Polls" }),
+    ).getAllByRole("listitem");
+    expect(tiles).toHaveLength(2);
+    expect(tiles[0]!.className).toContain("border-border");
+  });
+
+  it("puts the filters and refresh in one action row", () => {
+    render(<PollsPage />);
+
+    const titleRow = screen.getByRole("button", {
+      name: /refresh polls/i,
+    }).parentElement!;
+    expect(
+      within(titleRow).getByRole("combobox", {
+        name: /filter polls by channel/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(titleRow).getByRole("button", { name: /refresh polls/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("states the channel and choice mode without a created timestamp", () => {
+    render(<PollsPage />);
+
+    expect(screen.getAllByText("#General · Single choice")).toHaveLength(2);
+    expect(document.body.textContent).not.toMatch(/Created/);
+  });
+
+  it("keeps the empty state off --card", () => {
+    pollsQuery.data = [];
+
+    const { container } = render(<PollsPage />);
+
+    expect(screen.getByText("No polls match this view")).toBeInTheDocument();
+    expect(cardFilledContainers(container)).toEqual([]);
   });
 });
 

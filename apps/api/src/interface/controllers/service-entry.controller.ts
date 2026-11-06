@@ -27,6 +27,11 @@ import {
   RequireAnyOfPermissions,
 } from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
+import {
+  FeatureEvent,
+  type FeatureEventInput,
+  hasText,
+} from '../decorators/feature-event.decorator';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
   CurrentChapterId,
@@ -42,6 +47,7 @@ import {
   ServiceLeaderboardQueryDto,
 } from '../dtos/service-entry.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
+import type { ServiceEntry } from '#domain/entities/service-entry.entity';
 
 @ApiTags('Service Entries')
 @ApiBearerAuth()
@@ -186,6 +192,22 @@ export class ServiceEntryController {
   @RequirePermissions(SystemPermissions.SERVICE_LOG)
   @ApiOperation({ summary: 'Log a service entry' })
   @ApiCreatedResponse({ type: CreateServiceEntryResponseDto })
+  @FeatureEvent(
+    'service-hours-logged',
+    ({
+      result,
+    }: FeatureEventInput<
+      CreateServiceEntryDto,
+      CreateServiceEntryResponseDto
+    >) => ({
+      // From the created row, not the raw body: the service trims proof_path
+      // and validated duration_minutes as an integer.
+      duration_minutes: result.duration_minutes,
+      has_proof: result.proof_path != null,
+      // `card_posted` is absent when no card was due and false when it failed.
+      posted_to_chat: result.card_posted === true,
+    }),
+  )
   async create(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -207,6 +229,16 @@ export class ServiceEntryController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.SERVICE_APPROVE)
   @ApiOperation({ summary: 'Approve or reject a service entry' })
+  @FeatureEvent(
+    'service-hours-reviewed',
+    ({
+      body,
+      result,
+    }: FeatureEventInput<ReviewServiceEntryDto, ServiceEntry>) => ({
+      status: result.status,
+      has_comment: hasText(body.review_comment),
+    }),
+  )
   async review(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') reviewerId: string,

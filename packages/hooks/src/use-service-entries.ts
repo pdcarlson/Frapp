@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { isCardReadMiss } from "./card-read-miss";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 /**
@@ -52,6 +53,47 @@ export function useServiceEntries(
   });
 }
 
+/**
+ * One service entry, as `GET /v1/service-entries/{id}` returns it, or `null`
+ * when the server answers that there is none for this viewer: what a chat
+ * hours card reads its live review status from.
+ *
+ * The route needs `members:view` and the Hours module, and then answers only
+ * the member who logged the entry and a `service:approve` holder; anyone else
+ * gets a 403. A caller that knows the viewer can't read it passes an empty id,
+ * which holds the request (see `canReadCardServiceEntry`). Under the list's
+ * `["service-entries"]` prefix, so a review or a delete from any screen
+ * refreshes it.
+ *
+ * A 404, or a 403 a retry won't change, resolves to `null` rather than
+ * throwing (`isCardReadMiss`). Both are answers (the entry was deleted, or the
+ * viewer lost a permission or the module was turned off), and a thrown refetch
+ * would keep the badge read before it, so a deleted entry would go on saying
+ * "Approved". Resolving also keeps an expected miss out of the query's retries
+ * and out of Sentry. `ChapterGuard`'s `chapter.context.mismatch` still throws:
+ * it clears once the token catches up with a chapter switch. No chapter, no
+ * read, as for every chapter-scoped query.
+ */
+export function useServiceEntry(id: string) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["service-entries", chapterId, "detail", id],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/service-entries/{id}", {
+        params: { path: { id } },
+      });
+      if (error) {
+        if (isCardReadMiss(error)) return null;
+        throw error;
+      }
+      return data;
+    },
+    staleTime: 30_000,
+    enabled: !!chapterId && !!id,
+  });
+}
+
 export function useCreateServiceEntry() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
@@ -77,7 +119,12 @@ export function useCreateServiceEntry() {
 export function useRequestServiceProofUploadUrl() {
   const client = useFrappClient();
   return useMutation({
-    mutationFn: async (body: { filename: string; content_type: string }) => {
+    mutationFn: async (body: {
+      filename: string;
+      content_type: string;
+      /** Declared so the API's own size check answers with a readable 400. */
+      size_bytes?: number;
+    }) => {
       const { data, error } = await client.POST(
         "/v1/service-entries/proof-upload-url",
         { body },

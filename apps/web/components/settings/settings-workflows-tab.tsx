@@ -17,6 +17,21 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { guardIntDraft, parseGuardedInt } from "@/lib/utils";
 import { intDraftRefusal } from "./int-draft-refusal";
 import type { OrgWorkflow } from "@repo/hooks";
+import { isBetaOffModule } from "@repo/validation";
+
+/**
+ * Workflows that configure one module. While that module is beta-off its row
+ * is hidden, and the save still sends the stored value, so nothing changes
+ * when it comes back.
+ */
+const WORKFLOW_MODULES: Readonly<Record<string, string>> = {
+  wf_dues_grace: "dues",
+};
+
+function isWorkflowShown(wf: { key: string }): boolean {
+  const moduleKey = WORKFLOW_MODULES[wf.key];
+  return !moduleKey || !isBetaOffModule(moduleKey);
+}
 
 type WorkflowDraft = {
   key: string;
@@ -134,15 +149,13 @@ export function SettingsWorkflowsTab({
       <CardHeader>
         <CardTitle>Workflows</CardTitle>
         <CardDescription>
-          Enable the approvals and enforcement rules your chapter runs on. Each
-          enabled workflow can carry a numeric threshold. Saving writes an entry
-          to the chapter audit log.
+          Saving writes an entry to the chapter audit log.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent>
           <ul className="divide-y divide-border rounded-md border border-border">
-            {draft.map((wf) => (
+            {draft.filter(isWorkflowShown).map((wf) => (
               <li key={wf.key} className="flex items-start gap-3 p-4">
                 <div className="min-w-0 flex-1">
                   <span className="text-sm font-medium">{wf.label}</span>

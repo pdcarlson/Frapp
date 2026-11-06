@@ -4,6 +4,7 @@ import {
   screen,
   fireEvent,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useEffect } from "react";
@@ -195,6 +196,8 @@ const slashGateReads = {
   enabledModules: null as Record<string, boolean> | null,
   recruitment: undefined as string | undefined,
   archetype: undefined as string | undefined,
+  /** The member view never answered and TanStack paused it offline (#3160). */
+  paused: false,
 };
 
 // ChatShell pulls a wide surface from @repo/hooks; stub every hook it reads
@@ -204,6 +207,12 @@ const slashGateReads = {
   The viewer's block list (#2313). Ready and naming nobody by default, so the
   shell's other cases see every row; the block cases below set it.
 */
+const setupChecklistState = vi.hoisted(() => ({
+  value: null as null | {
+    doneCount: number;
+    lines: { key: string; label: string; done: boolean }[];
+  },
+}));
 const blockListState = vi.hoisted(() => ({
   value: {
     ids: new Set<string>() as ReadonlySet<string>,
@@ -226,14 +235,49 @@ vi.mock("./use-unblock-flow", () => ({
   }),
 }));
 
+vi.mock("./use-block-flow", () => ({
+  useBlockFlow: () => ({
+    requestBlock: vi.fn(),
+    isPending: false,
+    confirmDialog: null,
+  }),
+}));
+vi.mock("./report-message-dialog", () => ({
+  ReportMessageDialog: () => null,
+}));
+// The member list owns its own reads and has its own spec; here it is only a
+// column the shell decides to show.
+vi.mock("./channel-member-list", () => ({
+  ChannelMemberList: ({ channelId }: { channelId: string | null }) => (
+    <div data-testid="channel-member-list" data-channel-id={channelId ?? ""} />
+  ),
+}));
+
 vi.mock("@repo/hooks", async () => ({
   // The shared helpers run for real, so the shell's use of them is under test.
   ...(await vi
     .importActual<typeof import("@repo/hooks")>("@repo/hooks")
-    .then(({ sidebarMutedChannelIds, sidebarUnreadCounts }) => ({
-      sidebarMutedChannelIds,
-      sidebarUnreadCounts,
-    }))),
+    .then(
+      ({
+        HIDE_SETUP_CHECKLIST_LABEL,
+        landingChannelId,
+        lastChannelStorageKey,
+        resolveAuthorName,
+        SETUP_CHECKLIST_TITLE,
+        SETUP_CHECKLIST_WEB_PATH,
+        sidebarMutedChannelIds,
+        sidebarUnreadCounts,
+      }) => ({
+        HIDE_SETUP_CHECKLIST_LABEL,
+        landingChannelId,
+        lastChannelStorageKey,
+        resolveAuthorName,
+        SETUP_CHECKLIST_TITLE,
+        SETUP_CHECKLIST_WEB_PATH,
+        sidebarMutedChannelIds,
+        sidebarUnreadCounts,
+      }),
+    )),
   useBlockedUserIds: () => blockListState.value,
   useChannels: () => ({
     data: CHANNELS,
@@ -277,17 +321,27 @@ vi.mock("@repo/hooks", async () => ({
         },
   // The slash gate's source: the member view, through
   // `useChapterModuleGateState` (#2957, #2993).
-  useCurrentChapter: () => ({
-    data: {
-      enabled_modules: slashGateReads.enabledModules,
-      org_archetype: slashGateReads.archetype,
-      vocabulary: slashGateReads.recruitment
-        ? { recruitment: slashGateReads.recruitment }
-        : undefined,
-    },
-    isError: false,
-    refetch: vi.fn(),
-  }),
+  useCurrentChapter: () =>
+    slashGateReads.paused
+      ? {
+          data: undefined,
+          isPending: true,
+          isError: false,
+          fetchStatus: "paused",
+          refetch: vi.fn(),
+        }
+      : {
+          data: {
+            enabled_modules: slashGateReads.enabledModules,
+            org_archetype: slashGateReads.archetype,
+            vocabulary: slashGateReads.recruitment
+              ? { recruitment: slashGateReads.recruitment }
+              : undefined,
+          },
+          isError: false,
+          fetchStatus: "idle",
+          refetch: vi.fn(),
+        },
   useChapterRoster: () => ({ data: [] }),
   useMyPermissions: () => mockUseMyPermissions(),
   // Read by `OpsSetupNudge`, which the shell renders above the timeline
@@ -298,6 +352,12 @@ vi.mock("@repo/hooks", async () => ({
   // its own behaviour is pinned.
   useAccessibleChapters: () => ({ data: [] }),
   useDismissOpsNudge: () => ({ mutate: vi.fn() }),
+  // Read by the setup checklist at the top of the rail. Inert here for the
+  // same reason as the nudge: `setup-checklist.spec.tsx` pins its behaviour.
+  useChapterSetupChecklist: () => ({
+    checklist: setupChecklistState.value,
+    hide: vi.fn(),
+  }),
   directChannelDisplayName: () => "",
   // The channel header now carries `ChatSearchPopover`, which reads these.
   // Idle by default: these cases are about the shell, and a search that never
@@ -405,8 +465,10 @@ vi.mock("@/lib/chat/use-chat-channel", () => ({
 // Heavy children (real timeline/composer need Virtuoso/tiptap DOM APIs jsdom
 // doesn't provide) are stubbed — this test is about ChatShell's own
 // deep-link wiring, not their internals.
-vi.mock("./channel-list", () => ({
+vi.mock("./channel-list-skeleton", () => ({
   ChannelListSkeleton: () => <div data-testid="channel-list-skeleton" />,
+}));
+vi.mock("./channel-list", () => ({
   ChannelFilters: ({
     onChange,
   }: {
@@ -730,9 +792,18 @@ vi.mock("./message-timeline", async () => {
       onEdit?: (messageId: string, content: string) => Promise<void>;
       canManageChannel?: boolean;
       holdFollow?: boolean;
+      channelStart?: React.ReactNode;
     }
   >(function MessageTimeline(
-    { messages, onDelete, onReply, onEdit, canManageChannel, holdFollow },
+    {
+      messages,
+      onDelete,
+      onReply,
+      onEdit,
+      canManageChannel,
+      holdFollow,
+      channelStart,
+    },
     ref,
   ) {
     // Models the REAL contract: the timeline can only scroll to a message it
@@ -751,6 +822,11 @@ vi.mock("./message-timeline", async () => {
       <div data-testid="message-timeline">
         <span data-testid="can-manage-channel">{String(canManageChannel)}</span>
         <span data-testid="hold-follow">{String(!!holdFollow)}</span>
+        {/* Hidden, so its region doesn't count as a shell column; its
+            queries pass `hidden: true`. */}
+        <div data-testid="channel-start" hidden>
+          {channelStart}
+        </div>
         {/* Whether the shell offered a Reply handler at all — the read-only
             rule (#489 AC 4) is expressed by withholding the prop, so it is
             invisible without this echo. */}
@@ -781,6 +857,10 @@ vi.mock("./message-timeline", async () => {
 
 import { blockClearance } from "@repo/chat-core/blocks";
 import { ChatShell } from "./chat-shell";
+import {
+  NavFaceContext,
+  type NavFaceContextValue,
+} from "@/components/layout/nav-face";
 
 /**
  * The notice for a jump target the channel's whole history did not hold. The
@@ -832,10 +912,13 @@ function chatChannelResult(
 }
 
 beforeEach(() => {
+  // The shell remembers the last channel per browser; start every case cold.
+  window.localStorage.clear();
   slashGateReads.orgConfigError = false;
   slashGateReads.enabledModules = null;
   slashGateReads.recruitment = undefined;
   slashGateReads.archetype = undefined;
+  slashGateReads.paused = false;
   // Session-wide by design, so a row an earlier case showed against a ready
   // list would otherwise stay cleared into the next one.
   blockClearance.reset();
@@ -894,6 +977,18 @@ describe("ChatShell slash-command module gate (#2957, #2993)", () => {
       "data-recruitment",
       "Intake",
     );
+  });
+
+  it("tells the composer the gate is offline, not loading, when the member view is paused (#3160)", () => {
+    // A paused read never answers by itself. Reported as "loading", the
+    // palette drew a wait with no Retry for as long as the member stayed
+    // offline.
+    slashGateReads.paused = true;
+    render(<ChatShell />);
+
+    const composer = screen.getByTestId("composer");
+    expect(composer).toHaveAttribute("data-slash-status", "offline");
+    expect(composer).toHaveAttribute("data-polls-enabled", "false");
   });
 
   it("hands the composer the chapter's switched-off modules", () => {
@@ -1525,7 +1620,10 @@ describe("ChatShell deep-link targets", () => {
     fireEvent.click(screen.getByTestId("search-jump"));
     expect(await screen.findByText(NOT_IN_CHANNEL)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    // An × alone (components.md § Icon-only actions), not a worded button.
+    const dismiss = screen.getByRole("button", { name: "Dismiss" });
+    expect(dismiss.textContent).toBe("");
+    fireEvent.click(dismiss);
     expect(screen.queryByText(NOT_IN_CHANNEL)).toBeNull();
 
     // A new message lands. Dismiss abandons the target, so this must not
@@ -1842,6 +1940,64 @@ describe("ChatShell accessibility landmarks (#396)", () => {
  * call the handler back) — this is the one place that logic can be tested
  * without a real Virtuoso/DOM-heavy `MessageTimeline`.
  */
+/**
+ * The channel's description in the header, and the channel start the shell
+ * hands the timeline: an officer's shortcut into Chat admin, a member's none.
+ */
+describe("ChatShell channel description and start", () => {
+  const described = () => {
+    channelsQueryState.value = {
+      data: CHANNELS.map((c) =>
+        c.id === "chan-general"
+          ? { ...c, description: "The whole chapter." }
+          : c,
+      ),
+    };
+  };
+
+  it("shows the description in the header and hands the timeline the channel start", async () => {
+    described();
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    const lines = await screen.findAllByText("The whole chapter.");
+    const header = lines
+      .map((line) => line.closest("header"))
+      .find((found) => found !== null)!;
+    expect(header).toBeTruthy();
+    // The channel name is the thread's own h2, so the start's h3 sits under it.
+    expect(
+      within(header).getByRole("heading", { level: 2 }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("channel-start")).getByRole("heading", {
+        level: 3,
+        hidden: true,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers an officer Edit channel and a member nothing", async () => {
+    described();
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["channels:manage"] },
+    });
+    const { unmount } = render(<ChatShell initialChannelId="chan-general" />);
+    const start = await screen.findByTestId("channel-start");
+    expect(
+      within(start).getByRole("link", { name: "Edit channel", hidden: true }),
+    ).toHaveAttribute("href", "/chat-admin?channel=chan-general");
+    unmount();
+
+    mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(
+      within(await screen.findByTestId("channel-start")).queryByRole("link", {
+        hidden: true,
+      }),
+    ).toBeNull();
+  });
+});
+
 describe("ChatShell delete-message wiring", () => {
   it("derives canManageChannel from the channels:manage permission", async () => {
     mockUseMyPermissions.mockReturnValue({
@@ -2016,6 +2172,27 @@ describe("ChatShell hide conversation (#2303)", () => {
 
     // The re-read list still carries the row, flagged: the shell must not
     // keep it open just because it can still resolve it.
+    channelsQueryState.value = {
+      data: [...CHANNELS, { ...DM, hidden: true }],
+    };
+    await act(async () => write.resolve());
+
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveTextContent("chan-general");
+    });
+  });
+
+  it("lands on #general after hiding the open DM, not on the channel the page loaded with", async () => {
+    window.localStorage.setItem(
+      "frapp.chat.last-channel.viewer-1.chapter-1",
+      "chan-random",
+    );
+    channelsQueryState.value = { data: [...CHANNELS, DM] };
+    const write = pending();
+    mockLeaveMutateAsync.mockReturnValue(write.promise);
+    render(<ChatShell initialChannelId="chan-dm" />);
+
+    fireEvent.click(screen.getByTestId("hide-conversation"));
     channelsQueryState.value = {
       data: [...CHANNELS, { ...DM, hidden: true }],
     };
@@ -2774,6 +2951,110 @@ describe("ChatShell narrow viewports (#2142)", () => {
 });
 
 /**
+ * From `lg` up inside the dashboard shell, the channels pane is the shell's
+ * left column, in place of the module nav (owner, 2026-11-05;
+ * `components/layout/nav-face.tsx`).
+ */
+describe("ChatShell inside the shell's left column", () => {
+  let slot: HTMLDivElement;
+  const realMatchMedia = window.matchMedia;
+
+  function stubDesktop(matches: boolean) {
+    window.matchMedia = ((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+  }
+
+  function navFace(overrides: Partial<NavFaceContextValue> = {}) {
+    return {
+      face: "channels" as const,
+      showModules: vi.fn(),
+      showChannels: vi.fn(),
+      channelsSlot: slot,
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    slot = document.createElement("div");
+    document.body.appendChild(slot);
+  });
+  afterEach(() => {
+    slot.remove();
+    window.matchMedia = realMatchMedia;
+  });
+
+  it("renders the channels pane into the shell's column, with a back arrow to the menu", () => {
+    stubDesktop(true);
+    const value = navFace();
+    render(
+      <NavFaceContext.Provider value={value}>
+        <ChatShell />
+      </NavFaceContext.Provider>,
+    );
+
+    const channels = screen.getByRole("region", { name: "Channels" });
+    expect(slot.contains(channels)).toBe(true);
+    // Exactly one copy: nothing inline beside the thread.
+    expect(screen.getAllByRole("region", { name: "Channels" })).toHaveLength(1);
+
+    fireEvent.click(
+      within(channels).getByRole("button", { name: "Back to menu" }),
+    );
+    expect(value.showModules).toHaveBeenCalledTimes(1);
+  });
+
+  it("brings the channel list back when a link to a channel lands", () => {
+    stubDesktop(true);
+    const value = navFace({ face: "modules" });
+    const { rerender } = render(
+      <NavFaceContext.Provider value={value}>
+        <ChatShell />
+      </NavFaceContext.Provider>,
+    );
+    expect(value.showChannels).not.toHaveBeenCalled();
+
+    rerender(
+      <NavFaceContext.Provider value={value}>
+        <ChatShell initialChannelId="chan-general" />
+      </NavFaceContext.Provider>,
+    );
+    expect(value.showChannels).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays inline below lg, hidden from lg up until the column takes it", () => {
+    stubDesktop(false);
+    render(
+      <NavFaceContext.Provider value={navFace()}>
+        <ChatShell />
+      </NavFaceContext.Provider>,
+    );
+
+    const channels = screen.getByRole("region", { name: "Channels" });
+    expect(slot.contains(channels)).toBe(false);
+    expect(channels.classList.contains("lg:hidden")).toBe(true);
+    // The drawer is the way to the modules below lg, so no back arrow here.
+    expect(
+      within(channels).queryByRole("button", { name: "Back to menu" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("stays inline, and visible from lg up, outside the shell", () => {
+    stubDesktop(true);
+    render(<ChatShell />);
+    const channels = screen.getByRole("region", { name: "Channels" });
+    expect(channels.classList.contains("lg:hidden")).toBe(false);
+  });
+});
+
+/**
  * Two regressions the rewrite introduced and this pins shut: a cold load that
  * says nothing to assistive tech, and an error branch that blanks a list the
  * member is still using.
@@ -2781,6 +3062,40 @@ describe("ChatShell narrow viewports (#2142)", () => {
 describe("ChatShell channel-list states (#2142)", () => {
   afterEach(() => {
     channelsQueryState.value = {};
+    setupChecklistState.value = null;
+  });
+
+  it("puts the setup checklist above the channels once they load", () => {
+    setupChecklistState.value = {
+      doneCount: 0,
+      lines: [{ key: "event", label: "Schedule the first event", done: false }],
+    };
+    render(<ChatShell />);
+
+    const channels = screen.getByRole("region", { name: "Channels" });
+    const setup = within(channels).getByRole("region", {
+      name: "Set up your chapter",
+    });
+    const firstChannel = within(channels).getAllByRole("button", {
+      name: /general/,
+    })[0]!;
+    expect(
+      setup.compareDocumentPosition(firstChannel) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("doesn't draw the setup checklist over the loading skeleton", () => {
+    setupChecklistState.value = {
+      doneCount: 0,
+      lines: [{ key: "event", label: "Schedule the first event", done: false }],
+    };
+    channelsQueryState.value = { isPending: true, data: undefined };
+    render(<ChatShell />);
+
+    expect(
+      screen.queryByRole("region", { name: "Set up your chapter" }),
+    ).not.toBeInTheDocument();
   });
 
   it("announces the cold load, which the skeleton alone cannot", () => {
@@ -3063,6 +3378,28 @@ describe("ChatShell block list (#2313)", () => {
     expect(screen.getByText(/new message from someone/i)).toBeInTheDocument();
   });
 
+  it("announces the system actor as Frapp, not as Someone (#3347)", () => {
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          {
+            id: "msg-3",
+            // `SYSTEM_SENDER_ID`, on no roster: a poll-expiry notice, say.
+            sender_id: "00000000-0000-0000-0000-000000000000",
+            content: "Poll closed",
+            created_at: "2026-01-01T00:02:00Z",
+          },
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByText("New message from Frapp")).toBeInTheDocument();
+  });
+
   it("keeps a blocked member's message out of the Pinned panel, even when an echo put its words back", () => {
     blockListState.value = {
       ...blockListState.value,
@@ -3265,5 +3602,244 @@ describe("ChatShell block list (#2313)", () => {
     render(<ChatShell initialChannelId="chan-general" />);
 
     expect(screen.getByText("Someone is typing…")).toBeInTheDocument();
+  });
+});
+
+describe("ChatShell heading level", () => {
+  it("names the channel in an h2, under the top bar's h1", () => {
+    // The route's h1 is the top bar's "Chat" (`top-bar.tsx`), rendered by the
+    // shell around this component, so an h1 here would give /chat two.
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
+    expect(screen.getAllByRole("heading", { level: 2 }).length).toBeGreaterThan(
+      0,
+    );
+  });
+});
+
+/**
+ * Chat opens where this browser last left it (owner, 2026-11-05: "Mobile
+ * opens up to the last channel you were in. like discord"), per member and
+ * chapter, and falls back to #general when that channel is gone.
+ */
+describe("ChatShell opens on the last channel", () => {
+  const key = "frapp.chat.last-channel.viewer-1.chapter-1";
+
+  it("opens the channel this browser was last in", () => {
+    window.localStorage.setItem(key, "chan-random");
+    render(<ChatShell />);
+    expect(mockUseChatChannel).toHaveBeenLastCalledWith("chan-random");
+  });
+
+  it("falls back to #general when the last channel is no longer listed", () => {
+    window.localStorage.setItem(key, "chan-deleted");
+    render(<ChatShell />);
+    expect(mockUseChatChannel).toHaveBeenLastCalledWith("chan-general");
+  });
+
+  it("remembers the channel a link opened, for this member and chapter only", () => {
+    render(<ChatShell initialChannelId="chan-random" />);
+    expect(window.localStorage.getItem(key)).toBe("chan-random");
+    expect(
+      window.localStorage.getItem("frapp.chat.last-channel.viewer-2.chapter-1"),
+    ).toBeNull();
+  });
+
+  it("lets a link win over the remembered channel", () => {
+    window.localStorage.setItem(key, "chan-random");
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(mockUseChatChannel).toHaveBeenLastCalledWith("chan-general");
+  });
+
+  it("opens the chapter default when this browser has no last channel", () => {
+    channelsQueryState.value = {
+      data: CHANNELS.map((ch) =>
+        ch.id === "chan-random" ? { ...ch, is_default: true } : ch,
+      ),
+    };
+    try {
+      render(<ChatShell />);
+      expect(mockUseChatChannel).toHaveBeenLastCalledWith("chan-random");
+    } finally {
+      channelsQueryState.value = {};
+    }
+  });
+
+  it("lets a link by channel name win too", () => {
+    // Onboarding's completion redirect passes the literal `general`.
+    window.localStorage.setItem(key, "chan-random");
+    render(<ChatShell initialChannelId="general" />);
+    expect(mockUseChatChannel).toHaveBeenLastCalledWith("chan-general");
+  });
+
+  it("waits for the member's identity before landing", () => {
+    // Landing on #general first would stamp its read cursor, then jump.
+    window.localStorage.setItem(key, "chan-random");
+    setViewer(null);
+    const { rerender } = render(<ChatShell />);
+    expect(mockUseChatChannel).not.toHaveBeenCalledWith("chan-general");
+
+    setViewer("viewer-1");
+    rerender(<ChatShell />);
+    expect(mockUseChatChannel).toHaveBeenLastCalledWith("chan-random");
+  });
+
+  it("remembers a member with no chapter claim under the sole key", () => {
+    chapterStoreState.value = null;
+    try {
+      render(<ChatShell initialChannelId="chan-random" />);
+      expect(
+        window.localStorage.getItem("frapp.chat.last-channel.viewer-1.sole"),
+      ).toBe("chan-random");
+    } finally {
+      chapterStoreState.value = "chapter-1";
+    }
+  });
+
+  it("does not write the old chapter's channel under the new chapter's key", () => {
+    const nextKey = "frapp.chat.last-channel.viewer-1.chapter-2";
+    window.localStorage.setItem(nextKey, "chan-announcements");
+    const { rerender } = render(<ChatShell initialChannelId="chan-random" />);
+    try {
+      // The chapter id changes one commit before the old list is cleared.
+      chapterStoreState.value = "chapter-2";
+      rerender(<ChatShell initialChannelId="chan-random" />);
+      expect(window.localStorage.getItem(nextKey)).toBe("chan-announcements");
+    } finally {
+      chapterStoreState.value = "chapter-1";
+    }
+  });
+});
+
+/** The member list column and sheet (#3536). */
+describe("ChatShell member list", () => {
+  const realMatchMedia = window.matchMedia;
+
+  function stubWide(matches: boolean) {
+    window.matchMedia = ((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+  }
+
+  afterEach(() => {
+    window.matchMedia = realMatchMedia;
+    document.cookie = "frapp_chat_members_hidden=; Max-Age=0; Path=/";
+  });
+
+  it("shows the column for the open channel by default, and hides it from the header", () => {
+    stubWide(true);
+    render(<ChatShell />);
+
+    const column = screen.getByRole("complementary", { name: "Members" });
+    expect(within(column).getByTestId("channel-member-list")).toHaveAttribute(
+      "data-channel-id",
+      "chan-general",
+    );
+
+    const toggle = screen.getByRole("button", { name: "Hide members" });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(toggle);
+
+    expect(
+      screen.queryByRole("complementary", { name: "Members" }),
+    ).not.toBeInTheDocument();
+    expect(document.cookie).toContain("frapp_chat_members_hidden=1");
+    expect(
+      screen.getByRole("button", { name: "Show members" }),
+    ).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("starts hidden when the route read the remembered choice", () => {
+    stubWide(true);
+    render(<ChatShell defaultMembersHidden />);
+
+    expect(
+      screen.queryByRole("complementary", { name: "Members" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show members" }));
+    expect(
+      screen.getByRole("complementary", { name: "Members" }),
+    ).toBeInTheDocument();
+    expect(document.cookie).toContain("frapp_chat_members_hidden=0");
+  });
+
+  it("opens a sheet below 1280px instead, without touching the remembered choice", () => {
+    stubWide(false);
+    render(<ChatShell />);
+
+    const toggle = screen.getByRole("button", { name: "Show members" });
+    expect(toggle).not.toHaveAttribute("aria-pressed");
+    fireEvent.click(toggle);
+
+    const sheet = screen.getByRole("dialog", { name: "Members" });
+    expect(within(sheet).getByTestId("channel-member-list")).toHaveAttribute(
+      "data-channel-id",
+      "chan-general",
+    );
+    expect(document.cookie).not.toContain("frapp_chat_members_hidden");
+  });
+
+  it("shows no toggle and no column on a 1:1 DM", () => {
+    stubWide(true);
+    channelsQueryState.value = {
+      data: [
+        ...CHANNELS,
+        {
+          id: "chan-dm",
+          name: "dm-viewer-other",
+          type: "DM",
+          member_ids: ["viewer", "other"],
+        },
+      ],
+    };
+    try {
+      render(<ChatShell initialChannelId="chan-dm" />);
+      expect(
+        screen.queryByRole("button", { name: /members/i }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("complementary", { name: "Members" }),
+      ).not.toBeInTheDocument();
+    } finally {
+      channelsQueryState.value = {};
+    }
+  });
+
+  it("holds the column's place while the channel list loads", () => {
+    stubWide(true);
+    channelsQueryState.value = { isPending: true, data: undefined };
+    try {
+      render(<ChatShell />);
+      expect(
+        within(
+          screen.getByRole("complementary", { name: "Members" }),
+        ).getByTestId("channel-member-list"),
+      ).toHaveAttribute("data-channel-id", "");
+    } finally {
+      channelsQueryState.value = {};
+    }
+  });
+
+  it("closes a sheet the window outgrew, so it never reopens by itself", () => {
+    stubWide(false);
+    const { rerender } = render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Show members" }));
+    expect(screen.getByRole("dialog", { name: "Members" })).toBeInTheDocument();
+
+    stubWide(true);
+    rerender(<ChatShell />);
+    expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
+
+    stubWide(false);
+    rerender(<ChatShell />);
+    expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
   });
 });

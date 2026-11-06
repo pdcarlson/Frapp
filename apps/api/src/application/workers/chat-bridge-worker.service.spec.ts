@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import * as Sentry from '@sentry/nestjs';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
@@ -10,7 +11,15 @@ import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 import {
   auditMirrorClientId,
   ChatBridgeWorkerService,
+  isAuditMirrorRow,
 } from './chat-bridge-worker.service';
+import { reopenDelayMs } from './worker-subscription';
+import { fakeRealtime } from '#test/helpers/fake-realtime';
+
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
 
 type Lookup = () => Promise<string | null>;
 type Insert = (
@@ -72,12 +81,38 @@ describe('ChatBridgeWorkerService.handleAuditRow', () => {
     return mod.get(ChatBridgeWorkerService);
   }
 
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  function errorSpy(service: ChatBridgeWorkerService) {
+    return jest
+      .spyOn(
+        (
+          service as unknown as {
+            logger: { error: (...args: unknown[]) => void };
+          }
+        ).logger,
+        'error',
+      )
+      .mockImplementation(() => undefined);
+  }
+
   function warnSpy(service: ChatBridgeWorkerService) {
     return jest.spyOn(
       (service as unknown as { logger: { warn: (...args: unknown[]) => void } })
         .logger,
       'warn',
     );
+  }
+
+  /** The Sentry fingerprint's site, for each capture so far. */
+  function reportedSites(): unknown[] {
+    return jest
+      .mocked(Sentry.captureException)
+      .mock.calls.map(
+        (call) => (call[1] as { fingerprint: string[] }).fingerprint[1],
+      );
   }
 
   it('posts a system_audit message when the channel exists', async () => {
@@ -120,31 +155,42 @@ describe('ChatBridgeWorkerService.handleAuditRow', () => {
     expect(repos.insertCalls).toHaveLength(0);
   });
 
-  it('warns and skips the insert when the channel lookup fails', async () => {
+  it('reports and skips the insert when the channel lookup fails', async () => {
     const repos = buildRepos(() =>
       Promise.reject(new SupabaseQueryError({ message: 'lookup boom' })),
     );
     const service = await instantiate(repos);
-    const warn = warnSpy(service);
+    const error = errorSpy(service);
     await expect(service.handleAuditRow(baseRow)).resolves.toBeUndefined();
     expect(repos.messages.insertIdempotent).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(String(warn.mock.calls[0]?.[0])).toContain(
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0]?.[0])).toContain(
       'chapter-audit channel lookup failed for chapter chap-1',
     );
+    expect(reportedSites()).toEqual([
+      'chat-bridge-audit-channel-lookup-failed',
+    ]);
   });
 
-  it('warns and does not throw when the insert fails', async () => {
+  it('reports once and does not throw when inserts keep failing', async () => {
     const repos = buildRepos(auditChannel, () =>
       Promise.reject(new SupabaseQueryError({ message: 'boom' })),
     );
     const service = await instantiate(repos);
-    const warn = warnSpy(service);
+    const error = errorSpy(service);
     await expect(service.handleAuditRow(baseRow)).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(String(warn.mock.calls[0]?.[0])).toContain(
+    await expect(
+      service.handleAuditRow({ ...baseRow, id: 'audit-2' }),
+    ).resolves.toBeUndefined();
+    expect(error).toHaveBeenCalledTimes(2);
+    expect(String(error.mock.calls[0]?.[0])).toContain(
       'system_audit insert failed for audit audit-1',
     );
+    // One event for the outage, not one per audit row.
+    expect(reportedSites()).toEqual(['chat-bridge-audit-insert-failed']);
+    expect(
+      JSON.stringify(jest.mocked(Sentry.captureException).mock.calls),
+    ).not.toContain('audit-1');
   });
 
   describe('one mirror per audit row (#2846)', () => {
@@ -218,5 +264,129 @@ describe('ChatBridgeWorkerService.handleAuditRow', () => {
         'chat-bridge: audit audit-1 already mirrored',
       );
     });
+  });
+});
+
+/**
+ * The bridge's own subscription (#3365), driven the way realtime-js would.
+ * The reopen logic itself is proven in `worker-subscription.spec.ts`; this
+ * proves the bridge is on it, with its listener on every channel it opens.
+ */
+describe('ChatBridgeWorkerService — the audit-log subscription', () => {
+  const TOPIC = 'chat-bridge-worker:audit-log';
+  const row = {
+    id: 'audit-9',
+    chapter_id: 'chap-1',
+    actor_user_id: 'user-1',
+    action: 'chapter_config_updated',
+    target_type: 'chapter',
+    target_id: 'chap-1',
+    scope: 'chapter',
+    diff: null,
+    member_visible: true,
+    created_at: '',
+  };
+
+  let realtime: ReturnType<typeof fakeRealtime>;
+  let repos: ReturnType<typeof buildRepos>;
+  let service: ChatBridgeWorkerService;
+
+  const channels = () => realtime.onTopic(TOPIC);
+  /** `handleAuditRow` is fired and forgotten; let its awaits settle. */
+  const settle = () => jest.advanceTimersByTimeAsync(0);
+
+  beforeEach(async () => {
+    jest.useFakeTimers();
+    realtime = fakeRealtime();
+    repos = buildRepos(auditChannel);
+    const mod = await Test.createTestingModule({
+      providers: [
+        ChatBridgeWorkerService,
+        {
+          provide: SUPABASE_CLIENT,
+          useValue: {
+            channel: realtime.channel,
+            removeChannel: realtime.removeChannel,
+          },
+        },
+        { provide: CHAT_CHANNEL_REPOSITORY, useValue: repos.channels },
+        { provide: CHAT_MESSAGE_REPOSITORY, useValue: repos.messages },
+      ],
+    }).compile();
+    service = mod.get(ChatBridgeWorkerService);
+    // The status lines are this file's subject only through their effects.
+    const logger = (
+      service as unknown as {
+        logger: { warn: (...args: unknown[]) => void };
+      }
+    ).logger;
+    jest.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    service.onApplicationBootstrap();
+  });
+
+  afterEach(async () => {
+    await service.onApplicationShutdown();
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it('mirrors an audit INSERT delivered on its subscription', async () => {
+    expect(channels()).toHaveLength(1);
+    expect(channels()[0].insert('chapter_audit_log', row)).toBe(1);
+    await settle();
+
+    expect(repos.insertCalls).toHaveLength(1);
+  });
+
+  it('reopens after the server closes its channel, and mirrors rows on the new one', async () => {
+    const [first] = channels();
+    first.status('SUBSCRIBED');
+
+    first.status('CLOSED');
+    await settle();
+    await jest.advanceTimersByTimeAsync(reopenDelayMs(0));
+
+    expect(channels()).toHaveLength(2);
+    expect(first.teardown).toHaveBeenCalledTimes(1);
+    expect(first.insert('chapter_audit_log', row)).toBe(0);
+    expect(channels()[1].insert('chapter_audit_log', row)).toBe(1);
+    await settle();
+    expect(repos.insertCalls).toHaveLength(1);
+  });
+
+  it('keeps its channel through a TIMED_OUT, which realtime-js rejoins', async () => {
+    const [first] = channels();
+
+    first.status('TIMED_OUT');
+    await jest.advanceTimersByTimeAsync(60_000);
+
+    expect(channels()).toHaveLength(1);
+    expect(first.teardown).not.toHaveBeenCalled();
+    expect(first.insert('chapter_audit_log', row)).toBe(1);
+  });
+
+  it('removes its channel on shutdown, and does not reopen it', async () => {
+    const [first] = channels();
+
+    await service.onApplicationShutdown();
+    await jest.advanceTimersByTimeAsync(60_000);
+
+    expect(realtime.removeChannel).toHaveBeenCalledWith(first);
+    expect(channels()).toHaveLength(1);
+  });
+});
+
+describe('isAuditMirrorRow', () => {
+  it('knows a mirror from a server notice and from a member message', () => {
+    const mirror = auditMirrorClientId('a1');
+    expect(
+      isAuditMirrorRow({ kind: 'system_audit', client_message_id: mirror }),
+    ).toBe(true);
+    expect(
+      isAuditMirrorRow({ kind: 'system_audit', client_message_id: null }),
+    ).toBe(false);
+    expect(isAuditMirrorRow({ kind: 'text', client_message_id: mirror })).toBe(
+      false,
+    );
   });
 });

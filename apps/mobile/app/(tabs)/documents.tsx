@@ -1,16 +1,34 @@
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text } from "react-native";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import * as WebBrowser from "expo-web-browser";
 import {
+  useActiveChapterId,
   useDocumentDownloadUrl,
   useDocumentFolders,
   useDocuments,
+  usePermissionList,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { can } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
+import { useRefetchAll } from "@/components/pull-to-refresh";
+import { BACK_TO_MORE } from "@/components/back-row";
+import { UploadDocumentSheet } from "@/components/documents/upload-document-sheet";
 import { FilterChips, SearchField } from "@/components/filter-chips";
-import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
-import { EmptyState, ErrorState, SkeletonLines } from "@/components/state-block";
+import {
+  ListRow,
+  ListRowSkeleton,
+  ListSection,
+  SectionHeader,
+} from "@/components/list-section";
+import { DocumentsGlyph } from "@/components/more/more-glyphs";
+import { SearchGlyph } from "@/components/search-glyph";
+import {
+  EmptyState,
+  ErrorState,
+  SkeletonRegion,
+} from "@/components/state-block";
 import {
   selectDocumentFolders,
   selectDocumentRows,
@@ -39,15 +57,21 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * document pinned, and promoting "the two newest" into that slot would dress an
  * arbitrary choice up as a chapter decision. Filed.
  *
- * ## No upload affordance
+ * ## Upload, for whoever may
  *
- * Canvas draws an upload glyph in the header, opening the s21 sheet. The glyph
- * is still omitted rather than rendered dead, but **the dependency blocker is
- * gone**: #2464 added `expo-image-picker` for chat photo upload, so this is now
- * ordinary screen work rather than an integrator PR against the frozen
- * `package.json`. `lib/chat/attachment-upload.ts` is the working reference for
- * the pick → inspect → mint → PUT sequence. A non-image document type would
- * still need `expo-document-picker`, which remains undeclared. Filed.
+ * The floating create button (Upload document) opens the s21 sheet
+ * (`components/documents/upload-document-sheet.tsx`, #3399). Canvas draws an
+ * upload glyph at the far end of the `‹ More` row; it moved to the thumb's
+ * reach on 2026-11-05 (`spec/ui/mobile/patterns.md` § Create actions). It is
+ * drawn only for a viewer who holds `chapter_docs:upload`, the permission both
+ * upload routes carry, as web's `<Can permission="chapter_docs:upload">` does:
+ * by default that is the President alone (`DEFAULT_SYSTEM_ROLES`), so most
+ * members never see a control the server would refuse them. `can` reads the
+ * owner's `*` the way the server's guard does. While the permission read is
+ * loading the button is absent, which fails closed.
+ *
+ * Photos only: a PDF needs `expo-document-picker`, a native module that waits
+ * for a store build.
  *
  * ## Opening a document
  *
@@ -71,6 +95,10 @@ export default function DocumentsScreen() {
   const [search, setSearch] = useState("");
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [openFailed, setOpenFailed] = useState(false);
+  const [uploadedTitle, setUploadedTitle] = useState<string | null>(null);
+  const uploadSheetRef = useRef<BottomSheetModal>(null);
+  const canUpload = can("chapter_docs:upload", usePermissionList());
+  const chapterId = useActiveChapterId();
 
   // Deferred, like s13's: `search` is in the query key, so feeding raw
   // keystrokes would mint a cache entry and fire a request per character, and
@@ -83,6 +111,7 @@ export default function DocumentsScreen() {
     search: deferredSearch || undefined,
   });
   const openDocument = useDocumentDownloadUrl();
+  const refresh = useRefetchAll([foldersQuery, documentsQuery]);
 
   const folders = useMemo(
     () => selectDocumentFolders(foldersQuery.data),
@@ -93,33 +122,60 @@ export default function DocumentsScreen() {
     [documentsQuery.data],
   );
 
+  // The latest tap's number, and whether a browser is already on its way up.
+  const latestOpen = useRef(0);
+  const presenting = useRef(false);
+
   async function open(id: string) {
-    // One at a time: iOS rejects a second presentation while one is showing,
-    // which is a rejection worth not provoking rather than reporting.
-    if (openingId) return;
+    // One browser at a time: iOS rejects a second presentation while one is
+    // showing, which is a rejection worth not provoking rather than reporting.
+    if (presenting.current) return;
+    // Before that, the latest tap wins. A tap on another row while one is
+    // still fetching its signed URL moves the spinner to that row, and the
+    // earlier row's URL is dropped when it lands rather than opened over the
+    // document the member asked for since.
+    const tap = ++latestOpen.current;
+    const isLatest = () => tap === latestOpen.current;
     setOpenFailed(false);
     setOpeningId(id);
     try {
       const url = selectDownloadUrl(await openDocument.mutateAsync(id));
+      if (!isLatest()) return;
       if (!url) {
         setOpenFailed(true);
         return;
       }
-      await WebBrowser.openBrowserAsync(url);
+      presenting.current = true;
+      try {
+        await WebBrowser.openBrowserAsync(url);
+      } finally {
+        presenting.current = false;
+      }
     } catch {
-      setOpenFailed(true);
+      if (isLatest()) setOpenFailed(true);
     } finally {
-      setOpeningId(null);
+      if (isLatest()) setOpeningId(null);
     }
   }
 
   function renderList() {
-    if (documentsQuery.isPending) return <SkeletonLines lines={4} />;
+    if (documentsQuery.isPending) {
+      // Document rows in the list's own section: a title and its meta line.
+      return (
+        <SkeletonRegion label="Loading chapter documents">
+          <ListSection>
+            {Array.from({ length: 4 }, (_, index) => (
+              <ListRowSkeleton key={index} index={index} description />
+            ))}
+          </ListSection>
+        </SkeletonRegion>
+      );
+    }
     if (documentsQuery.isError) {
       return (
         <ErrorState
           title="Couldn't load documents"
-          body="If you belong to more than one chapter, pick one from More → Chapter first."
+          body="If you belong to more than one chapter, pick one from More → Switch chapter first."
           onRetry={() => void documentsQuery.refetch()}
           isRetrying={documentsQuery.isFetching}
         />
@@ -127,13 +183,19 @@ export default function DocumentsScreen() {
     }
     if (rows.length === 0) {
       return (
+        // A title alone when the library or folder is empty: the screen is
+        // the documents list, and a line saying so told the member nothing.
+        // A search that matched nothing names the query, and the folder it
+        // searched in when one is picked, since the search stays inside it.
         <EmptyState
-          glyph="⌸"
+          glyph={deferredSearch ? SearchGlyph : DocumentsGlyph}
           title={deferredSearch ? "No matches" : "Nothing filed here yet"}
           body={
-            deferredSearch
-              ? `No document title matches “${deferredSearch}”.`
-              : "Documents uploaded on the web dashboard show up here."
+            !deferredSearch
+              ? undefined
+              : folder
+                ? `Nothing in ${folder} matches “${deferredSearch}”.`
+                : `No document title matches “${deferredSearch}”.`
           }
         />
       );
@@ -146,7 +208,9 @@ export default function DocumentsScreen() {
             label={row.title}
             description={row.meta}
             accessibilityHint="Opens in your browser."
-            disabled={openingId !== null}
+            // Only the row being opened shows it. The others stay as they
+            // are and take a tap, which moves the spinner to them (`open`).
+            busy={row.id === openingId}
             onPress={() => void open(row.id)}
           />
         ))}
@@ -155,7 +219,23 @@ export default function DocumentsScreen() {
   }
 
   return (
-    <ScreenShell title="Documents" subtitle="The chapter's document library.">
+    <ScreenShell
+      back={BACK_TO_MORE}
+      refresh={refresh}
+      createAction={
+        canUpload
+          ? {
+              label: "Upload document",
+              hint: "Opens a sheet to upload a photo to the library.",
+              onPress: () => {
+                setUploadedTitle(null);
+                uploadSheetRef.current?.present();
+              },
+            }
+          : undefined
+      }
+      title="Documents"
+    >
       <SearchField
         value={search}
         onChangeText={setSearch}
@@ -166,6 +246,7 @@ export default function DocumentsScreen() {
       {folders.length > 0 ? (
         <FilterChips
           accessibilityLabel="Filter by folder"
+          scroll
           selected={folder}
           onSelect={setFolder}
           chips={[
@@ -178,6 +259,12 @@ export default function DocumentsScreen() {
         />
       ) : null}
 
+      {uploadedTitle ? (
+        <Text accessibilityRole="alert" style={styles.uploadedNote}>
+          {`“${uploadedTitle}” is in the library.`}
+        </Text>
+      ) : null}
+
       {openFailed ? (
         <Text style={styles.errorNote}>
           That document couldn&apos;t be opened. Try again in a moment.
@@ -186,12 +273,30 @@ export default function DocumentsScreen() {
 
       <SectionHeader>Recent</SectionHeader>
       {renderList()}
+
+      {canUpload ? (
+        <UploadDocumentSheet
+          // A new sheet per chapter: a kept draft belongs to the chapter it
+          // was started in, and a retry the sheet holds after a failed
+          // confirm names a path minted under the chapter it was sent from.
+          key={chapterId ?? "no-chapter"}
+          ref={uploadSheetRef}
+          folders={folders}
+          initialFolder={folder}
+          onUploaded={setUploadedTitle}
+        />
+      ) : null}
     </ScreenShell>
   );
 }
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    uploadedNote: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      paddingHorizontal: tokens.spacing.xs,
+    },
     errorNote: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,

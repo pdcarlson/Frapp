@@ -254,6 +254,26 @@ export interface DiscordImportChannel {
    * starting the import refuses a row they no longer match.
    */
   new_channel_same_as_discord: boolean;
+  /**
+   * The Frapp channel group (`chat_channel_categories`) the channel
+   * `create_new` makes goes into, by name: the Discord category it came from
+   * when the admin keeps categories, or null for none. Only a `create_new` row
+   * carries one (DB CHECK); a merge leaves its channel where it is.
+   */
+  new_channel_group: string | null;
+  /**
+   * The Discord category's position in the server, read by the bot scan so the
+   * groups an import makes follow Discord's order. Null on an upload, and for
+   * a channel with no category.
+   */
+  discord_category_position: number | null;
+  /**
+   * The group `start` resolved `new_channel_group` to in this chapter: an
+   * existing group of that name, or one the import created. Null until the
+   * import starts, and again if an officer deletes the group (`on delete set
+   * null`), in which case the channel lands with no group.
+   */
+  new_channel_category_id: string | null;
 }
 
 /** The two `chat_channels.type` values an import may create. */
@@ -290,10 +310,26 @@ export const DISCORD_IMPORT_PROGRESS_LIMITS = {
  */
 export interface DiscordImportChannelProgress {
   counts: Record<DiscordImportChannelStatus, number>;
+  /** The same rows added up per Discord category, in Discord's order. */
+  categories: DiscordImportCategoryProgress[];
   running: DiscordImportChannelProgressRow[];
   /** Finished most recently first: the worker walks rows in `position` order. */
   recent: DiscordImportChannelProgressRow[];
   failed: DiscordImportChannelProgressRow[];
+}
+
+/**
+ * One Discord category's share of an import: its channels and threads being
+ * imported, how many are done (imported, or skipped by the worker), and how
+ * many failed. A thread counts under its parent channel's category.
+ * `category` is null for channels in no category.
+ */
+export interface DiscordImportCategoryProgress {
+  category: string | null;
+  channels: number;
+  threads: number;
+  done: number;
+  failed: number;
 }
 
 export type DiscordImportFileKind = 'export' | 'media';
@@ -306,6 +342,16 @@ export type DiscordImportFileKind = 'export' | 'media';
 export interface DiscordImportCreatedChannel {
   import_id: string;
   channel_id: string;
+  created_at: string;
+}
+
+/**
+ * A channel group `start` created for an import, as `DiscordImportCreatedChannel`
+ * records channels. The purge deletes the ones left holding no channel.
+ */
+export interface DiscordImportCreatedCategory {
+  import_id: string;
+  category_id: string;
   created_at: string;
 }
 

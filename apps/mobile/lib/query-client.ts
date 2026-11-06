@@ -1,4 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
+import { createReportingCaches } from "@/lib/sentry/query-errors";
 
 /**
  * `networkMode: "offlineFirst"` is load-bearing, not a tuning knob.
@@ -8,8 +9,8 @@ import { QueryClient } from "@tanstack/react-query";
  * `networkMode: "online"` that has a consequence nothing else in the app wants:
  * while offline, a query or mutation is **paused** rather than attempted, so it
  * never settles. Concretely — the s18 check-in scan would spin on "Checking you
- * in…" forever with no error and a dead camera, s14's Mark-all-read would stick
- * on "Marking…", and the explicit "Try again" controls on s04/s06 would become
+ * in…" forever with no error and a dead camera, s14's Mark-all-read would
+ * spin forever, and the explicit "Try again" controls on s04/s06 would become
  * silent no-ops (a paused query leaves `isFetching` false, so the button neither
  * spins nor errors). That is the dead end `spec/ui/design-system/README.md` §5
  * rule 2 bans, delivered by a default.
@@ -41,8 +42,12 @@ import { QueryClient } from "@tanstack/react-query";
  * provider and the module singleton is the only seam available. That layout
  * file is one of #937's frozen seven, so this module is what keeps the fix off
  * it.
+ *
+ * Its caches report every final failure to Sentry (`lib/sentry/query-errors.ts`,
+ * #3377).
  */
 export const queryClient = new QueryClient({
+  ...createReportingCaches(),
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: true,

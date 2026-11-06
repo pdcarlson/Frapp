@@ -221,12 +221,12 @@ Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requireme
 | Check name           | What it validates                                                                               |
 | -------------------- | ----------------------------------------------------------------------------------------------- |
 | `packages-build`     | Shared packages compile                                                                         |
-| `lint-and-typecheck` | ESLint + TypeScript (all workspaces); `npm run build -w apps/api` (`nest build`, Render parity); landing plus `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/observability`, `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` unit tests; the Supabase Edge Functions' Deno fmt, lint, check and tests (`npm run check:edge-functions`) |
+| `lint-and-typecheck` | ESLint + TypeScript (all workspaces); `npm run build -w apps/api` (`nest build`, Render parity); landing plus `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/org-archetypes`, `@repo/observability`, `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` unit tests; the Supabase Edge Functions' Deno fmt, lint, check and tests (`npm run check:edge-functions`) |
 | `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                |
 | `api-tests`          | API Jest unit tests                                                                             |
 | `api-contract-check` | openapi.json + api-sdk freshness, and compatibility with every shipped mobile build ([`quality-gates.md` § Two comparisons, two postures](../ci-cd/quality-gates.md#two-comparisons-two-postures)) |
 | `migration-safety`   | Migration filename + docs validation                                                            |
-| `mobile-validate`    | Expo SDK-line check (`check:expo-sdk-line`) + mobile iOS production bundle (`expo export`, no prebuilt packages) + lint + typecheck + Vitest unit tests + native declarations over the introspected config (`check:mobile-native-declarations`) + `expo prebuild` |
+| `mobile-validate`    | Expo SDK-line check (`check:expo-sdk-line`) + mobile iOS production bundle (`expo export`, no prebuilt packages) + lint + typecheck + Vitest unit tests + native declarations over the introspected config (`check:mobile-native-declarations`) + native changes carry an `expo.version` bump (`check:mobile-native-version`) + `expo prebuild` |
 | `ci-scripts-tests`   | `node --test` over `scripts/ci/__tests__/` (`npm run test:ci-scripts`), covering the gate and deploy scripts under both `scripts/` and `scripts/ci/`, plus every `*.test.sh` shell suite (`shell-suites.test.mjs`) |
 | `secret-scan`        | gitleaks over the PR/push commit range (ADR-13 push-protection replacement)                     |
 | `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`) |

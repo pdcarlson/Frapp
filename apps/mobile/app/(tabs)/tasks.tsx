@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
-import { AppState, Pressable, StyleSheet, Text, View } from "react-native";
+import { AppState, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
@@ -14,26 +14,26 @@ import {
 } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
+import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
-import { SectionHeader } from "@/components/list-section";
+import {
+  SectionHeader,
+  SectionHeaderSkeleton,
+} from "@/components/list-section";
 import {
   EmptyState,
   ErrorState,
   NoChapterState,
-  SkeletonLines,
+  SkeletonRegion,
 } from "@/components/state-block";
-import { TaskRow } from "@/components/tasks/task-row";
+import { TaskRow, TaskRowSkeleton } from "@/components/tasks/task-row";
 import { PointsSummaryCard } from "@/components/tasks/points-summary-card";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
-import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectTaskRows, type TaskRowModel } from "@/lib/tasks/board";
 import { selectHouseRank, selectPointsSummary } from "@/lib/tasks/points-card";
-import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
-import {
-  SUBSCRIPTION_REFUSAL_COPY,
-  subscriptionRefusalOf,
-} from "@/lib/subscription-refusal";
 import { nextTapSequence } from "@/lib/tasks/transitions";
+import { taskStatusGateRefusal } from "@/lib/tasks/status-refusal";
+import { successHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -71,8 +71,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  */
 export default function TasksScreen() {
   const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
-  const styles = createStyles(tokens, accent);
+  const styles = createStyles(tokens);
   const sheetRef = useRef<BottomSheetModal>(null);
 
   const chapterId = useActiveChapterId();
@@ -84,6 +83,14 @@ export default function TasksScreen() {
   const tasksQuery = useTasks();
   const pointsQuery = useMyPoints("semester");
   const leaderboardQuery = useLeaderboard("semester");
+  // `useTasks` has no chapter gate (see the no-chapter branch below), so the
+  // pull leaves the board out until there is a chapter to scope it to.
+  const refresh = useRefetchAll([
+    viewerQuery,
+    chapterId ? tasksQuery : null,
+    pointsQuery,
+    leaderboardQuery,
+  ]);
   const updateStatus = useUpdateTaskStatus();
 
   // `can` from @repo/validation, not a bare `includes` — an owner's grant is the
@@ -93,10 +100,12 @@ export default function TasksScreen() {
   const canManageTasks = can("tasks:manage", permissions);
 
   // One clock for the whole render, so the two sections cannot straddle a tick
-  // and disagree about what "today" means — but re-read whenever the screen is
-  // focused. A tab is never unmounted and the JS context survives days of
-  // backgrounding, so a mount-only clock would keep bucketing by the day the app
-  // was opened, and the sheet's "Today" chip would file a task already overdue.
+  // and disagree about what "today" means — but re-read whenever the member
+  // comes back: to the screen (a navigation focus, here) or to the app on this
+  // tab (the AppState listener below, which `useFocusEffect` never sees). A tab
+  // is never unmounted and the JS context survives days of backgrounding, so a
+  // mount-only clock would keep bucketing by the day the app was opened, and
+  // the sheet's "Today" chip would file a task already overdue.
   const [now, setNow] = useState(() => new Date());
   useFocusEffect(
     useCallback(() => {
@@ -147,7 +156,11 @@ export default function TasksScreen() {
   );
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (next) => {
-      if (next === "active") setRefusal(null);
+      if (next !== "active") return;
+      setRefusal(null);
+      // The clock too (see `now` above): a member who leaves the app on this
+      // tab overnight comes back to today's board and today's chips.
+      setNow(new Date());
     });
     return () => subscription.remove();
   }, []);
@@ -174,16 +187,19 @@ export default function TasksScreen() {
         for (const status of sequence) {
           await updateStatus.mutateAsync({ id: row.id, body: { status } });
         }
+        // The confirming action (`spec/ui/mobile/README.md` § Native-feel
+        // rules), felt once the server holds the task done: a TODO row
+        // writes two rungs, the first only draws it in progress, and a gate
+        // can refuse either. Only a sequence that completes the task earns
+        // it.
+        if (sequence[sequence.length - 1] === "COMPLETED") successHaptic();
       } catch (error) {
         // The hook has already reverted its own write and invalidated, so the
         // row redraws at whatever the server actually holds. A gate refusal
         // also says why and withdraws the toggles; anything else, a permission
         // 403 included, stays the quiet revert it always was, with the retap.
-        if (subscriptionRefusalOf(error)) {
-          setRefusal(SUBSCRIPTION_REFUSAL_COPY.taskStatus);
-        } else if (moduleRefusalOf(error)) {
-          setRefusal(MODULE_REFUSAL_COPY.taskStatus);
-        }
+        const gate = taskStatusGateRefusal(error);
+        if (gate) setRefusal(gate);
       } finally {
         inFlight.current.delete(row.id);
         setPendingId(null);
@@ -194,7 +210,7 @@ export default function TasksScreen() {
 
   const renderRows = useCallback(
     (rows: TaskRowModel[]) =>
-      rows.map((row) => {
+      rows.map((row, index) => {
         const busy = pendingId === row.id;
         const pressable =
           !busy &&
@@ -206,6 +222,7 @@ export default function TasksScreen() {
             row={row}
             now={now}
             isPending={busy}
+            isFirst={index === 0}
             // Dropped, not disabled-in-place, while the sequence runs: the row
             // is mid-ladder, so a second tap would race the compare-and-set.
             onToggle={pressable ? () => void toggle(row) : undefined}
@@ -223,10 +240,9 @@ export default function TasksScreen() {
 
     // Checked before the pending gate below, because `useViewerUserId` reports a
     // failed `/v1/users/me` as `null` too. Without this branch a 500 there
-    // leaves the board shimmering forever with no retry — the exact "blip at
-    // launch leaves a screen dead until a force-quit" case `state-block.tsx`
-    // says `onRetry` exists to prevent, and `ScreenShell` is frozen so there is
-    // no pull-to-refresh escape.
+    // leaves the board shimmering forever with no retry, a screen dead until a
+    // force-quit. A pull refetches it too (#3385), but nothing on screen says
+    // so, which is why `ErrorState` keeps its button (`state-block.tsx`).
     if (viewerQuery.isError) {
       return (
         <ErrorState
@@ -242,7 +258,19 @@ export default function TasksScreen() {
     // "no tasks". Treating it as empty flashes "You're all clear" on every cold
     // start, a beat before the real rows land.
     if (tasksQuery.isPending || viewerUserId === null) {
-      return <SkeletonLines lines={3} />;
+      // A section caption over task-shaped rows, so the real board lands in
+      // place. The caption is a bar: which section comes first (DUE THIS WEEK
+      // or LATER) depends on the tasks.
+      return (
+        <SkeletonRegion label="Loading chapter tasks" style={styles.skeleton}>
+          <SectionHeaderSkeleton width="30%" />
+          <View>
+            {Array.from({ length: 3 }, (_, index) => (
+              <TaskRowSkeleton key={index} index={index} />
+            ))}
+          </View>
+        </SkeletonRegion>
+      );
     }
 
     if (tasksQuery.isError) {
@@ -275,14 +303,14 @@ export default function TasksScreen() {
         {board.dueThisWeek.length > 0 ? (
           <>
             <SectionHeader>DUE THIS WEEK</SectionHeader>
-            <View style={styles.rows}>{renderRows(board.dueThisWeek)}</View>
+            <View>{renderRows(board.dueThisWeek)}</View>
           </>
         ) : null}
 
         {board.later.length > 0 ? (
           <>
             <SectionHeader>LATER</SectionHeader>
-            <View style={styles.rows}>{renderRows(board.later)}</View>
+            <View>{renderRows(board.later)}</View>
           </>
         ) : null}
       </>
@@ -292,25 +320,17 @@ export default function TasksScreen() {
   return (
     <ScreenShell
       title="Tasks"
-      subtitle="What you owe the chapter, and what it has earned you."
-      headerAction={
-        canManageTasks ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="New task"
-            hitSlop={tokens.spacing.sm}
-            onPress={() => {
-              setNotice(null);
-              sheetRef.current?.present();
-            }}
-            style={({ pressed }) => [
-              styles.headerAction,
-              pressed ? styles.headerActionPressed : null,
-            ]}
-          >
-            <Text style={styles.headerActionGlyph}>+</Text>
-          </Pressable>
-        ) : undefined
+      refresh={refresh}
+      createAction={
+        canManageTasks
+          ? {
+              label: "New task",
+              onPress: () => {
+                setNotice(null);
+                sheetRef.current?.present();
+              },
+            }
+          : undefined
       }
     >
       <PointsSummaryCard summary={summary} rank={rank} />
@@ -321,6 +341,9 @@ export default function TasksScreen() {
       {renderBoard()}
 
       <NewTaskSheet
+        // A new sheet per chapter: a kept draft's assignee is a member of the
+        // chapter it was started in, and the API refuses one who isn't.
+        key={chapterId ?? "no-chapter"}
         ref={sheetRef}
         now={now}
         // A task assigned to someone else never appears on this board, so
@@ -337,30 +360,11 @@ export default function TasksScreen() {
   );
 }
 
-function createStyles(tokens: SignetTokens, accent: string) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    headerAction: {
-      width: 38,
-      height: 38,
-      // TODO-DESIGN: Canvas draws radius 11; `navItem` is 10 and is the nearest
-      // role in the locked radius map (foundations.md § Radius).
-      borderRadius: tokens.radius.navItem,
-      backgroundColor: accent,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    headerActionPressed: {
-      opacity: 0.85,
-    },
-    headerActionGlyph: {
-      ...typeRole(tokens.typography.role.title),
-      // Drawn on house gold. The chapter accent is free to differ, and a dark
-      // ink on an arbitrary accent is the contrast hazard `service-hours.tsx`
-      // already carries — matched here rather than diverged from, and filed.
-      color: tokens.color.gold.onHouse,
-    },
-    rows: {
-      gap: tokens.spacing.sm,
+    // `ScreenShell`'s gap, between the caption and its rows.
+    skeleton: {
+      gap: tokens.spacing.md,
     },
     notice: {
       ...typeRole(tokens.typography.role.caption),

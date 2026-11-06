@@ -34,19 +34,21 @@ import { anyReadUncached } from "@/components/shared/async-states";
   `/backwork` across for this reason; this is the same move on the same grounds.
 
   `sole` on every one of them: each is the whole screen's only async state, so
-  the loading skeleton needs its live region back and the titles need to be
-  headings rather than paragraphs.
+  the titles need to be headings rather than paragraphs. Loading is not in
+  this family any more; it is the roster's own skeleton
+  (`directory-skeleton.tsx`).
 */
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import {
   dashboardCheckboxHitAreaClassName,
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
+  dashboardToolbarSearchClassName,
+  dashboardToolbarSearchGlyphClassName,
   denseListClassName,
 } from "@/components/shared/table-controls";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -59,10 +61,14 @@ import {
   presenceLabel,
   type PresenceStatus,
 } from "@/lib/realtime/presence-status";
-import { vocab } from "@/lib/vocabulary";
+import { vocab } from "@repo/org-archetypes";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { asArray, cn, initials } from "@/lib/utils";
 import { stateMicrocopy } from "@/lib/state-microcopy";
+import {
+  MemberRowsSkeleton,
+  MembersRosterSkeleton,
+} from "@/components/members/directory-skeleton";
 
 const PAGE_SIZE = 25;
 
@@ -556,7 +562,7 @@ export function MembersDirectory() {
   }
 
   if (activeQuery.isLoading) {
-    return <NestedLoading sole message={stateMicrocopy.members.loading} />;
+    return <MembersRosterSkeleton />;
   }
 
   if (activeQuery.isError) {
@@ -577,7 +583,7 @@ export function MembersDirectory() {
   // directory still looks healthy while those features are quietly broken, so
   // surface their load state.
   if (rolesQuery.isLoading || leaderboardQuery.isLoading) {
-    return <NestedLoading sole message={stateMicrocopy.members.loading} />;
+    return <MembersRosterSkeleton />;
   }
 
   if (rolesQuery.isError || leaderboardQuery.isError) {
@@ -642,14 +648,14 @@ export function MembersDirectory() {
             <Label htmlFor="member-search" className="sr-only">
               Search members
             </Label>
-            <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <SearchGlyph className={dashboardToolbarSearchGlyphClassName} />
             <Input
               id="member-search"
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search members"
-              className="h-11 pl-9"
+              className={dashboardToolbarSearchClassName}
             />
           </div>
           <select
@@ -712,7 +718,7 @@ export function MembersDirectory() {
         */}
           <InviteMemberDialog
             trigger={
-              <Button className="gap-2">
+              <Button size="toolbar" className="gap-2">
                 <InviteGlyph className="h-4 w-4" />
                 Invite member
               </Button>
@@ -723,9 +729,10 @@ export function MembersDirectory() {
 
       {/*
         The selection bar `1f` pin 4 names, in place of the accent-tinted
-        `<Card>` that used to stack above the results card. It is a flush tinted
-        row rather than a card because the page has no cards left for it to sit
-        beside.
+        `<Card>` that used to stack above the results card. It is a flush
+        neutral strip (`--popover`, since 2026-11-05: a count is not an action,
+        `foundations.md` §6) rather than a card because the page has no cards
+        left for it to sit beside.
 
         **The select-all is NOT in here**, and an earlier draft of this lane put
         it here on the reasoning that the toolbar should not carry a permanently
@@ -741,8 +748,8 @@ export function MembersDirectory() {
         only the *count* and the bulk action are conditional.
       */}
       {selectedCount > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-accent-border bg-accent-subtle px-2 py-1.5">
-          <p className="text-caption font-semibold text-accent-text">
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-popover px-2 py-1.5">
+          <p className="text-caption font-semibold text-foreground">
             {selectedCount} selected
           </p>
           <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
@@ -781,7 +788,7 @@ export function MembersDirectory() {
       ) : null}
 
       {activeQuery.isLoading ? (
-        <NestedLoading message={stateMicrocopy.members.loading} />
+        <MemberRowsSkeleton />
       ) : sortedMembers.length === 0 ? (
         /*
          * Three states where there was one, because the board draws them as
@@ -875,11 +882,13 @@ export function MembersDirectory() {
                   key={id}
                   className={cn(
                     "flex min-h-9 items-center gap-1 pointer-coarse:min-h-11",
-                    // Fill means state, never striping. `accent-subtle-hover`
-                    // is what the deleted `TableRow` painted for
-                    // `data-state="selected"`, kept so selection still reads a
-                    // step above the row hover below it.
-                    selected && "bg-accent-subtle-hover text-accent-text",
+                    // Fill means state, never striping. `--popover` is what
+                    // `TableRow` paints for `data-state="selected"`: neutral
+                    // since 2026-11-05 (`foundations.md` §6), a step under the
+                    // `--card-hover` hover so a control inside the row still
+                    // lifts, with the checked box and the "N selected" bar
+                    // carrying the selection.
+                    selected && "bg-popover",
                   )}
                 >
                   <label
@@ -935,16 +944,12 @@ export function MembersDirectory() {
                       "pointer-coarse:min-h-11",
                       /*
                         Hover only while NOT selected. The selected fill lives
-                        on the `<li>` and this button is `flex-1`, so an
-                        unconditional hover paints `accent-3` over the row's
-                        `accent-4` across everything right of the checkbox, and
-                        `hover:text-foreground` overrides `text-accent-text` —
-                        a hovered selected row would be pixel-identical to a
-                        hovered unselected one, leaving the checkbox as the only
-                        cue and contradicting the note on the `<li>` above.
+                        on the `<li>` and this button is `flex-1`, so a hover
+                        here would paint across everything right of the
+                        checkbox and the selected row would stop reading as
+                        one row.
                       */
-                      !selected &&
-                        "hover:bg-accent-subtle hover:text-foreground",
+                      !selected && "hover:bg-card-hover hover:text-foreground",
                       FOCUS_RING_OFFSET,
                     )}
                   >

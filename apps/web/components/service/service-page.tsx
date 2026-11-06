@@ -15,14 +15,6 @@ import {
 } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
@@ -41,16 +33,16 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { NestedEmpty } from "@/components/shared/nested-states";
-import { ServiceGlyph } from "@/components/events/chapter-ops-glyphs";
+import { SectionLabel } from "@/components/shared/section-label";
+import { denseListClassName } from "@/components/shared/table-controls";
 import {
   ErrorState,
   anyReadUncached,
-  LoadingState,
   OfflineState,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
-import { PageHeader } from "@/components/layout/page-header";
+import { PageActions } from "@/components/layout/page-actions";
 import {
   SubscriptionNotice,
   useGatedDialog,
@@ -73,9 +65,11 @@ import {
   readSignedUpload,
 } from "@repo/validation";
 import {
-  formatMinutesExact as formatDuration,
+  formatDay,
+  formatMinutesRounded,
   localIsoDate,
 } from "@repo/formatting";
+import { ServicePageSkeleton } from "@/components/service/service-skeleton";
 
 type ServiceEntry = {
   id: string;
@@ -91,6 +85,18 @@ type ServiceEntry = {
   points_awarded: boolean;
   created_at: string;
 };
+
+/**
+ * A row's when and how long: `"Nov 4 · 3h"`. `date` is a bare `YYYY-MM-DD`
+ * column, which `formatDay` reads at local noon so it keeps its calendar day
+ * in every zone; an unreadable date drops out of the line rather than
+ * printing a placeholder. Minutes are rounded, as mobile prints them.
+ */
+function entryMeta(entry: Pick<ServiceEntry, "date" | "duration_minutes">) {
+  return [formatDay(entry.date), formatMinutesRounded(entry.duration_minutes)]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 export function ServiceHoursPage() {
   const { toast } = useToast();
@@ -284,10 +290,7 @@ export function ServiceHoursPage() {
     } catch (error) {
       toast({
         title: "Couldn't log service entry",
-        description: getErrorMessage(
-          error,
-          "Confirm service:log permission and retry.",
-        ),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     } finally {
@@ -310,7 +313,7 @@ export function ServiceHoursPage() {
         title: "Couldn't approve entry",
         description: getErrorMessage(
           error,
-          "Requires service:approve, an active PENDING status, and an entry you did not submit yourself.",
+          "Only a pending entry someone else submitted can be approved.",
         ),
         variant: "destructive",
       });
@@ -346,7 +349,7 @@ export function ServiceHoursPage() {
     } catch (error) {
       toast({
         title: "Couldn't reject entry",
-        description: getErrorMessage(error, "Retry or check your permissions."),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }
@@ -418,7 +421,6 @@ export function ServiceHoursPage() {
   if (isOffline && anyReadUncached(entriesQuery, membersQuery)) {
     return (
       <>
-        <PageHeader title="Service hours" />
         <OfflineState
           title="Service hours unavailable offline"
           description="Reconnect to log hours and review the approval queue."
@@ -432,21 +434,15 @@ export function ServiceHoursPage() {
   }
 
   if (entriesQuery.isPending) {
-    return (
-      <>
-        <PageHeader title="Service hours" />
-        <LoadingState message="Loading service entries..." />
-      </>
-    );
+    return <ServicePageSkeleton />;
   }
 
   if (entriesQuery.isError) {
     return (
       <>
-        <PageHeader title="Service hours" />
         <ErrorState
           title="Couldn't load service entries"
-          description="Members see only their own entries; admins need service:approve to see every entry."
+          description="Confirm your chapter access and retry."
           onRetry={() => void entriesQuery.refetch()}
         />
       </>
@@ -455,146 +451,129 @@ export function ServiceHoursPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Service hours"
-        actions={
-          <Can permission="service:log">
-            <Dialog {...logDialog.dialogProps}>
-              <DialogTrigger asChild>
-                <Button className="gap-2" {...gate.controlProps()}>
-                  <Plus className="h-4 w-4" /> Log service
-                </Button>
-              </DialogTrigger>
-              <DialogContent
-                className="sm:max-w-lg"
-                {...logDialog.contentProps}
+      <PageActions>
+        <Can permission="service:log">
+          <Dialog {...logDialog.dialogProps}>
+            <DialogTrigger asChild>
+              <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
+                <Plus className="h-4 w-4" /> Log service
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-lg" {...logDialog.contentProps}>
+              <DialogHeader>
+                <DialogTitle>Log service hours</DialogTitle>
+                <DialogDescription>
+                  An admin approves it before points are awarded.
+                </DialogDescription>
+              </DialogHeader>
+              <form
+                id="service-log-form"
+                onSubmit={submitDraft}
+                className="space-y-4"
               >
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2">
-                    <ServiceGlyph className="h-4 w-4" />
-                    Log service hours
-                  </DialogTitle>
-                  <DialogDescription>
-                    Submit a service entry for admin approval. Attach a photo or
-                    PDF as proof of your service.
-                  </DialogDescription>
-                </DialogHeader>
-                <form
-                  id="service-log-form"
-                  onSubmit={submitDraft}
-                  className="space-y-4"
-                >
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="grid gap-1">
-                      <Label htmlFor="service-date">Date</Label>
-                      <Input
-                        id="service-date"
-                        type="date"
-                        value={draft.date}
-                        onChange={(event) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            date: event.target.value,
-                          }))
-                        }
-                        required
-                      />
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="service-hours">Hours</Label>
-                      <Input
-                        id="service-hours"
-                        type="number"
-                        min={0}
-                        step="any"
-                        value={draft.hours}
-                        onChange={(event) => {
-                          const next = guardDecimalDraft(event.target.value);
-                          if (next === undefined) return;
-                          setDraft((prev) => ({ ...prev, hours: next }));
-                        }}
-                      />
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="service-minutes">Minutes</Label>
-                      <Input
-                        id="service-minutes"
-                        type="number"
-                        min={0}
-                        max={59}
-                        value={draft.minutes}
-                        onChange={(event) => {
-                          const next = guardIntDraft(event.target.value);
-                          if (next === undefined) return;
-                          setDraft((prev) => ({ ...prev, minutes: next }));
-                        }}
-                      />
-                    </div>
-                  </div>
+                <div className="grid gap-3 sm:grid-cols-3">
                   <div className="grid gap-1">
-                    <Label htmlFor="service-description">
-                      What did you do?
-                    </Label>
-                    <Textarea
-                      id="service-description"
-                      rows={3}
-                      value={draft.description}
+                    <Label htmlFor="service-date">Date</Label>
+                    <Input
+                      id="service-date"
+                      type="date"
+                      value={draft.date}
                       onChange={(event) =>
                         setDraft((prev) => ({
                           ...prev,
-                          description: event.target.value,
+                          date: event.target.value,
                         }))
                       }
                       required
                     />
                   </div>
                   <div className="grid gap-1">
-                    <Label htmlFor="service-proof">{proofLabel}</Label>
+                    <Label htmlFor="service-hours">Hours</Label>
                     <Input
-                      id="service-proof"
-                      type="file"
-                      accept={acceptAttribute("proof")}
-                      onChange={(event) =>
-                        setProofFile(event.target.files?.[0] ?? null)
-                      }
-                      required={receiptRequired}
+                      id="service-hours"
+                      type="number"
+                      min={0}
+                      step="any"
+                      value={draft.hours}
+                      onChange={(event) => {
+                        const next = guardDecimalDraft(event.target.value);
+                        if (next === undefined) return;
+                        setDraft((prev) => ({ ...prev, hours: next }));
+                      }}
                     />
-                    <p className="text-caption text-muted-foreground">
-                      Photo or PDF, up to {MAX_UPLOAD_LABEL}.
-                    </p>
                   </div>
-                </form>
-                <DialogFooter>
-                  {/* Cancel only closes the dialog — gating the way out of a
-                      surface the gate just blocked would be a trap. */}
-                  <Button
-                    variant="secondary"
-                    onClick={() => logDialog.setOpen(false)}
-                    disabled={submitting}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    form="service-log-form"
-                    type="submit"
-                    {...gate.controlProps(submitting)}
-                  >
-                    {submitting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : null}
-                    Submit for approval
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </Can>
-        }
-      />
-      <p className="text-sm text-muted-foreground">
-        Members log hours; admins approve them for service points. Approved
-        hours also appear in chapter service reports.
-      </p>
-
+                  <div className="grid gap-1">
+                    <Label htmlFor="service-minutes">Minutes</Label>
+                    <Input
+                      id="service-minutes"
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={draft.minutes}
+                      onChange={(event) => {
+                        const next = guardIntDraft(event.target.value);
+                        if (next === undefined) return;
+                        setDraft((prev) => ({ ...prev, minutes: next }));
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-1">
+                  <Label htmlFor="service-description">What did you do?</Label>
+                  <Textarea
+                    id="service-description"
+                    rows={3}
+                    value={draft.description}
+                    onChange={(event) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        description: event.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <Label htmlFor="service-proof">{proofLabel}</Label>
+                  <Input
+                    id="service-proof"
+                    type="file"
+                    accept={acceptAttribute("proof")}
+                    onChange={(event) =>
+                      setProofFile(event.target.files?.[0] ?? null)
+                    }
+                    required={receiptRequired}
+                  />
+                  <p className="text-caption text-muted-foreground">
+                    Photo or PDF, up to {MAX_UPLOAD_LABEL}.
+                  </p>
+                </div>
+              </form>
+              <DialogFooter>
+                {/* Cancel only closes the dialog — gating the way out of a
+                    surface the gate just blocked would be a trap. */}
+                <Button
+                  variant="secondary"
+                  onClick={() => logDialog.setOpen(false)}
+                  disabled={submitting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  form="service-log-form"
+                  type="submit"
+                  {...gate.controlProps(submitting)}
+                >
+                  {submitting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : null}
+                  Submit for approval
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </Can>
+      </PageActions>
       {/*
         Disable, don't hide (§5 rule 4): the review queue, history, and proof
         links stay readable for a lapsed chapter — only logging and reviewing
@@ -611,80 +590,85 @@ export function ServiceHoursPage() {
           />
         )}
       >
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Review queue</CardTitle>
-            <CardDescription>
-              {pending.length} pending entr{pending.length === 1 ? "y" : "ies"}{" "}
-              awaiting approval.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {pending.length === 0 ? (
-              <NestedEmpty
-                title="No pending entries"
-                description="Approved or rejected entries appear in the History card below."
-              />
-            ) : (
-              <ul className="divide-y divide-border">
-                {pending.map((entry) => {
-                  const name =
-                    memberNameById.get(entry.user_id) ??
-                    memberFallbackLabel(entry.user_id);
-                  const isOwnEntry =
-                    !viewerUnknown && entry.user_id === viewerUserId;
-                  const cannotApprove = isOwnEntry || viewerUnknown;
-                  // Only describe the button when the subscription gate is not
-                  // already doing it. Key on `state.allowed` / `isPending`,
-                  // not `allowed`: `allowed` folds in OFFLINE, and an
-                  // offline-only block does not set `aria-describedby` (the
-                  // reason is on `title`). Overriding that would hide the
-                  // self-approval sentence behind "Reconnect to make changes."
-                  const showApproveReason =
-                    cannotApprove && gate.state.allowed && !gate.isPending;
-                  const approveReasonId = `svc-approve-reason-${entry.id}`;
-                  const approveBlockedReason = isOwnEntry
-                    ? "You can't approve your own hours. Another admin has to review them."
-                    : viewerLoading
-                      ? "Checking who you are\u2026"
-                      : "Couldn't confirm who you are, so approving is unavailable. Reload to try again.";
-                  return (
-                    <li
-                      key={entry.id}
-                      className="flex flex-col gap-2 py-3 md:flex-row md:items-center md:justify-between"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold">{name}</p>
-                        <p className="text-caption text-muted-foreground">
-                          {entry.date} ·{" "}
-                          {formatDuration(entry.duration_minutes)}
-                        </p>
-                        <p className="mt-1 text-sm">{entry.description}</p>
-                        {/* Deliberately ungated: the signed link comes from
+        {/*
+          Flush, not carded (README § Page grammar): three `<Card>`s sat here,
+          each with a description narrating it, and History carried a footer
+          explaining point awards. The queue's count is state, so it moved
+          onto the section label.
+        */}
+        <section aria-labelledby="svc-queue-label" className="space-y-3">
+          <SectionLabel
+            id="svc-queue-label"
+            count={pending.length > 0 ? `${pending.length} pending` : null}
+          >
+            Review queue
+          </SectionLabel>
+          {pending.length === 0 ? (
+            <NestedEmpty
+              title="No pending entries"
+              description="Approved or rejected entries appear under History."
+            />
+          ) : (
+            <ul className={denseListClassName}>
+              {pending.map((entry) => {
+                const name =
+                  memberNameById.get(entry.user_id) ??
+                  memberFallbackLabel(entry.user_id);
+                const isOwnEntry =
+                  !viewerUnknown && entry.user_id === viewerUserId;
+                const cannotApprove = isOwnEntry || viewerUnknown;
+                // Only describe the button when the subscription gate is not
+                // already doing it. Key on `state.allowed` / `isPending`,
+                // not `allowed`: `allowed` folds in OFFLINE, and an
+                // offline-only block does not set `aria-describedby` (the
+                // reason is on `title`). Overriding that would hide the
+                // self-approval sentence behind "Reconnect to make changes."
+                const showApproveReason =
+                  cannotApprove && gate.state.allowed && !gate.isPending;
+                const approveReasonId = `svc-approve-reason-${entry.id}`;
+                const approveBlockedReason = isOwnEntry
+                  ? "You can't approve your own hours. Another admin has to review them."
+                  : viewerLoading
+                    ? "Checking who you are\u2026"
+                    : "Couldn't confirm who you are, so approving is unavailable. Reload to try again.";
+                return (
+                  <li
+                    key={entry.id}
+                    className="flex min-h-11 flex-col gap-2 py-2 md:flex-row md:items-center md:justify-between md:gap-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold">{name}</p>
+                      <p className="text-caption text-muted-foreground">
+                        {entryMeta(entry)}
+                      </p>
+                      <p className="mt-0.5 text-sm text-muted-foreground">
+                        {entry.description}
+                      </p>
+                      {/* Deliberately ungated: the signed link comes from
                             `GET /v1/service-entries/:id/proof-url`, and
                             `enforceSubscription` returns early for GET — a
                             lapsed chapter can still read its own proof. */}
-                        {entry.proof_path ? (
-                          <Button
-                            size="sm"
-                            variant="link"
-                            className="h-auto px-0 text-caption pointer-coarse:h-11"
-                            onClick={() => void viewProof(entry)}
-                            disabled={getProofUrl.isPending}
-                          >
-                            View proof
-                          </Button>
-                        ) : null}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {/*
+                      {entry.proof_path ? (
+                        <Button
+                          size="sm"
+                          variant="link"
+                          className="h-auto px-0 text-caption pointer-coarse:h-11"
+                          onClick={() => void viewProof(entry)}
+                          disabled={getProofUrl.isPending}
+                        >
+                          View proof
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/*
                           `PATCH /v1/service-entries/:id/review` is paid-ops
                           too, so review mirrors the same gate as the log
                           trigger. Gating only the member's submit would leave
                           the page claiming writes are blocked while still
                           offering two per row.
                         */}
-                        {/*
+                      {/*
                           Approving awards SERVICE points to the submitter, and
                           the API refuses a self-approval (#1338). Mirror that
                           at the control rather than letting the click 403 —
@@ -698,104 +682,47 @@ export function ServiceHoursPage() {
                           window. Unlike the task board it says why in both
                           cases — a silently withheld control is #1346.
                         */}
-                        <Button
-                          size="sm"
-                          onClick={() => void approve(entry)}
-                          {...gate.controlProps(
-                            reviewEntry.isPending || cannotApprove,
-                          )}
-                          {...(showApproveReason
-                            ? { "aria-describedby": approveReasonId }
-                            : {})}
-                        >
-                          <CheckCircle2 className="h-4 w-4" />
-                          Approve
-                        </Button>
-                        {/*
+                      {/*
+                          Secondary, not primary: every row in the queue
+                          carries one, and a column of filled buttons is
+                          louder than the entries it acts on (Billing's Mark
+                          paid reads the same way). Reject is quiet beside it.
+                        */}
+                      <Button
+                        size="toolbar"
+                        variant="secondary"
+                        onClick={() => void approve(entry)}
+                        {...gate.controlProps(
+                          reviewEntry.isPending || cannotApprove,
+                        )}
+                        {...(showApproveReason
+                          ? { "aria-describedby": approveReasonId }
+                          : {})}
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        Approve
+                      </Button>
+                      {/*
                           Reject stays available on your own entry: it awards
                           no points, so the self-award rule does not reach it
                           (`spec/behavior/service-hours.md` § Approval Workflow).
                         */}
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => void reject(entry)}
-                          {...gate.controlProps(reviewEntry.isPending)}
+                      <Button
+                        size="toolbar"
+                        variant="ghost"
+                        onClick={() => void reject(entry)}
+                        {...gate.controlProps(reviewEntry.isPending)}
+                      >
+                        <XCircle className="h-4 w-4" />
+                        Reject
+                      </Button>
+                      {showApproveReason ? (
+                        <p
+                          id={approveReasonId}
+                          className="basis-full text-caption text-muted-foreground"
                         >
-                          <XCircle className="h-4 w-4" />
-                          Reject
-                        </Button>
-                        {showApproveReason ? (
-                          <p
-                            id={approveReasonId}
-                            className="basis-full text-caption text-muted-foreground"
-                          >
-                            {approveBlockedReason}
-                          </p>
-                        ) : null}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      </Can>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">History</CardTitle>
-          <CardDescription>
-            Approved and rejected entries you have permission to see.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {/* `pending` is chapter-wide on purpose here, matching `history`,
-              which is also everything the viewer may see — that is what the
-              description above claims. The second branch says "above" because
-              an approver reads the review queue above this card; a member who
-              cannot approve sees their pending entries only in the card BELOW,
-              so it names neither position. */}
-          {history.length === 0 && pending.length === 0 ? (
-            <NestedEmpty
-              title="No service activity yet"
-              description="Log your first service entry to build up chapter service hours."
-            />
-          ) : history.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Nothing reviewed yet. Pending entries haven&apos;t been approved or
-              rejected.
-            </p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {history.map((entry) => {
-                const name =
-                  memberNameById.get(entry.user_id) ??
-                  memberFallbackLabel(entry.user_id);
-                return (
-                  <li
-                    key={entry.id}
-                    className="flex flex-col gap-1 py-3 md:flex-row md:items-center md:justify-between"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold">{name}</p>
-                      <p className="text-caption text-muted-foreground">
-                        {entry.date} · {formatDuration(entry.duration_minutes)}
-                      </p>
-                      <p className="text-sm">{entry.description}</p>
-                      {entry.review_comment ? (
-                        <p className="text-caption text-muted-foreground">
-                          Reviewer note: {entry.review_comment}
+                          {approveBlockedReason}
                         </p>
-                      ) : null}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={serviceStatusKind(entry.status)}>
-                        {entry.status}
-                      </Badge>
-                      {entry.points_awarded ? (
-                        <Badge variant="outline">Points awarded</Badge>
                       ) : null}
                     </div>
                   </li>
@@ -803,72 +730,121 @@ export function ServiceHoursPage() {
               })}
             </ul>
           )}
-        </CardContent>
-        <CardFooter className="text-caption text-muted-foreground">
-          Approved hours automatically award service points at your
-          chapter&apos;s configured rate. A rejected entry stays on your
-          history. Submit a fresh one when ready.
-        </CardFooter>
-      </Card>
+        </section>
+      </Can>
 
-      {viewerUnknown ? (
-        /* The viewer id is what scopes this card, so without it there is no
-           honest list to show. But withholding the card silently is the wrong
-           half of §5 rule 4 — a member whose `/v1/users/me` failed would find
-           their only way to correct an entry simply gone, with no reason and no
-           retry, which is the silent-dead-control gap #1346 records. Say which
-           of the two states it is, in the same words the Approve control uses
-           for them. */
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Your pending entries</CardTitle>
-            <CardDescription>
-              {viewerLoading
-                ? "Confirming your account\u2026"
-                : "We couldn't confirm your account, so withdrawing is unavailable. Reload to try again."}
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      ) : myPending.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Your pending entries</CardTitle>
-            <CardDescription>
-              Withdraw any pending entry if you submitted it by mistake.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="divide-y divide-border">
-              {myPending.map((entry) => (
+      <section aria-labelledby="svc-history-label" className="space-y-3">
+        <SectionLabel id="svc-history-label">History</SectionLabel>
+        {/* `pending` is chapter-wide on purpose here, matching `history`, which
+            is also everything the viewer may see. The second branch names no
+            position: an approver reads the review queue above this section, but
+            a member who cannot approve sees their pending entries only in the
+            section below. */}
+        {history.length === 0 && pending.length === 0 ? (
+          <NestedEmpty
+            title="No service activity yet"
+            description="Log your first service entry to build up chapter service hours."
+          />
+        ) : history.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nothing reviewed yet.</p>
+        ) : (
+          <ul className={denseListClassName}>
+            {history.map((entry) => {
+              const name =
+                memberNameById.get(entry.user_id) ??
+                memberFallbackLabel(entry.user_id);
+              return (
                 <li
                   key={entry.id}
-                  className="flex items-center justify-between py-2 text-sm"
+                  className="flex min-h-11 flex-col gap-1 py-2 md:flex-row md:items-center md:justify-between md:gap-3"
                 >
-                  <span>
-                    {entry.date} · {formatDuration(entry.duration_minutes)} ·{" "}
-                    {entry.description}
-                  </span>
-                  {/* DELETE /v1/service-entries/:id accepts `service:log` OR
-                      `service:approve`, and the service only refuses a foreign
-                      entry when `!isAdmin` — so this is NOT "the same guard as
-                      the submit that created the entry", which is what this
-                      comment used to claim. An approver can delete anyone's
-                      pending entry and its proof. The list is filtered to the
-                      viewer above so that power is never reachable by mistake
-                      from a card headed "Your pending entries". */}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => void withdraw(entry)}
-                    {...gate.controlProps()}
-                  >
-                    Withdraw
-                  </Button>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold">{name}</p>
+                    <p className="text-caption text-muted-foreground">
+                      {entryMeta(entry)}
+                    </p>
+                    <p className="mt-0.5 text-sm text-muted-foreground">
+                      {entry.description}
+                    </p>
+                    {entry.review_comment ? (
+                      <p className="text-caption text-muted-foreground">
+                        Reviewer note: {entry.review_comment}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={serviceStatusKind(entry.status)}>
+                      {entry.status}
+                    </Badge>
+                    {entry.points_awarded ? (
+                      <Badge variant="outline">Points awarded</Badge>
+                    ) : null}
+                  </div>
                 </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      {viewerUnknown ? (
+        /* The viewer id is what scopes this section, so without it there is no
+           honest list to show. But withholding the section silently is the
+           wrong half of §5 rule 4 — a member whose `/v1/users/me` failed would
+           find their only way to correct an entry simply gone, with no reason
+           and no retry, which is the silent-dead-control gap #1346 records. Say
+           which of the two states it is, in the same words the Approve control
+           uses for them. */
+        <section aria-labelledby="svc-mine-label" className="space-y-3">
+          <SectionLabel id="svc-mine-label">Your pending entries</SectionLabel>
+          <p className="text-sm text-muted-foreground">
+            {viewerLoading
+              ? "Confirming your account…"
+              : "We couldn't confirm your account, so withdrawing is unavailable. Reload to try again."}
+          </p>
+        </section>
+      ) : myPending.length > 0 ? (
+        <section aria-labelledby="svc-mine-label" className="space-y-3">
+          <SectionLabel
+            id="svc-mine-label"
+            count={`${myPending.length} pending`}
+          >
+            Your pending entries
+          </SectionLabel>
+          <ul className={denseListClassName}>
+            {myPending.map((entry) => (
+              <li
+                key={entry.id}
+                className="flex min-h-11 items-center justify-between gap-3 py-2"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">
+                    {entry.description}
+                  </p>
+                  <p className="text-caption text-muted-foreground">
+                    {entryMeta(entry)}
+                  </p>
+                </div>
+                {/* DELETE /v1/service-entries/:id accepts `service:log` OR
+                    `service:approve`, and the service only refuses a foreign
+                    entry when `!isAdmin` — so this is NOT "the same guard as
+                    the submit that created the entry", which is what this
+                    comment used to claim. An approver can delete anyone's
+                    pending entry and its proof. The list is filtered to the
+                    viewer above so that power is never reachable by mistake
+                    from a section headed "Your pending entries". */}
+                <Button
+                  size="toolbar"
+                  variant="ghost"
+                  onClick={() => void withdraw(entry)}
+                  {...gate.controlProps()}
+                >
+                  Withdraw
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
       {confirmDialog}
     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { FlaggedGlyph } from "@/components/points/points-glyphs";
 import {
@@ -10,15 +10,9 @@ import {
   useOrgConfig,
   usePointsTransactions,
 } from "@repo/hooks";
+import { formatDayTime, formatTimestampFull } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -28,17 +22,35 @@ import {
 } from "@/components/ui/select";
 import { amountToneClassName } from "@/components/points/amount-tone";
 import {
+  POINT_CATEGORIES,
+  pointCategoryLabel,
+  type PointCategory,
+} from "@/components/points/point-category";
+import {
   NestedEmpty,
   NestedError,
   NestedLoading,
 } from "@/components/shared/nested-states";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
-import { asArray } from "@/lib/utils";
-import { formatLocaleDateTime as formatTimestamp } from "@repo/formatting";
+import { SectionLabel } from "@/components/shared/section-label";
+import {
+  dashboardToolbarHeightClassName,
+  denseListClassName,
+} from "@/components/shared/table-controls";
+import { asArray, cn } from "@/lib/utils";
 
-type Category =
-  "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY";
+type Category = PointCategory;
+
+/**
+ * The Radix filter triggers at the toolbar height. `SelectTrigger` is a form
+ * field at 40 (44 to a finger) by default; in this section's toolbar row it lines up with the
+ * buttons beside it instead.
+ */
+const TOOLBAR_SELECT = `${dashboardToolbarHeightClassName} w-full text-sm sm:w-44`;
+
+/** The square refresh control at the toolbar height: 36, or 44 to a finger. */
+const TOOLBAR_ICON = `${dashboardToolbarHeightClassName} w-9 pointer-coarse:w-11`;
 
 type TransactionRow = {
   id?: string;
@@ -99,8 +111,8 @@ export function PointsAuditCard() {
   // and its map's keys are the same member ids the filter needs.
   const memberIds = useMemo(() => Object.keys(byId), [byId]);
 
-  // #394 — the two anti-fraud limits are chapter-configurable, so this
-  // description states what the chapter actually enforces rather than the
+  // #394 — the two anti-fraud limits are chapter-configurable, so the
+  // section's state line states what the chapter actually enforces rather than the
   // "±100 points" it used to hardcode. Falls back to the documented defaults
   // while the config query is in flight, or if it fails: those are exactly
   // what an unconfigured chapter enforces, so the fallback is never a guess.
@@ -109,7 +121,7 @@ export function PointsAuditCard() {
   // write a partial `points` into the cache after a single-dial PATCH, and an
   // object-level fallback would then render a blank where a number belongs.
   //
-  // `isSuccess` gates the sentence because this card renders for roles that
+  // `isSuccess` gates the line because this section renders for roles that
   // cannot read the config at all — the seeded Treasurer holds points:view_all
   // but not chapter-config:view, so GET /config 403s and `data` is undefined.
   // Stating the defaults as this chapter's policy would be a guess, and a
@@ -162,51 +174,92 @@ export function PointsAuditCard() {
         />
       )}
       deniedFallback={
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <FlaggedGlyph className="h-5 w-5 text-muted-foreground" />
-              Audit tab
-            </CardTitle>
-            <CardDescription>
-              Viewing the full chapter transaction log requires the
-              <code className="mx-1">points:view_all</code>
-              permission. Ask your chapter president to grant it if you need
-              audit visibility.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        // Labelled as the section is when it renders, with one caption saying
+        // why the list is missing: a card here would draw the section's title
+        // in a second style beside the page's flush sections.
+        <section aria-labelledby="points-audit-label" className="space-y-1">
+          <SectionLabel id="points-audit-label">Audit</SectionLabel>
+          <p className="text-sm text-muted-foreground">
+            Your role can&apos;t see every transaction.
+          </p>
+        </section>
       }
     >
-      <Card className="border-border">
-        <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <FlaggedGlyph className="h-5 w-5 text-muted-foreground" />
-              Audit tab
-            </CardTitle>
-            <CardDescription>
-              Chapter-wide point transactions with optional flagged-only filter.
-              {policyKnown ? (
-                <>
-                  {" "}
-                  Flags are raised automatically when a single adjustment
-                  reaches ±{pointsPolicy.anomaly_threshold} points, and one
-                  admin may make up to{" "}
-                  {pointsPolicy.adjustment_rate_limit_per_hour} adjustments per
-                  hour. Both limits are chapter-configurable, and a flag records
-                  the threshold in force when the adjustment was made. Changing
-                  it does not re-evaluate existing rows.
-                </>
-              ) : (
-                " Flags are raised automatically on large single adjustments, against a chapter-configurable threshold."
-              )}
-            </CardDescription>
+      <section aria-labelledby="points-audit-label" className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="min-w-0 space-y-0.5">
+            <SectionLabel id="points-audit-label">Audit</SectionLabel>
+            {/*
+              State, not policy narration: the two limits this chapter
+              enforces right now, then the one fact a moved threshold makes
+              visible. A flag is written when the adjustment lands and never
+              re-checked (`spec/behavior/points.md` § Anti-Fraud), so after a
+              chapter moves the dial the list holds rows the current line
+              wouldn't flag. Omitted rather than guessed when the config is
+              unreadable (see `policyKnown` above).
+            */}
+            {policyKnown ? (
+              <p className="text-caption text-muted-foreground">
+                {`Flags at ±${pointsPolicy.anomaly_threshold} points · ${pointsPolicy.adjustment_rate_limit_per_hour} adjustments per admin per hour`}
+                <span className="block">
+                  Each flag keeps the threshold it was raised under.
+                </span>
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={categoryFilter}
+              onValueChange={(value) => {
+                setCategoryFilter(value as "ALL" | Category);
+                resetPaging();
+              }}
+            >
+              <SelectTrigger
+                aria-label="Filter audit by category"
+                className={TOOLBAR_SELECT}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All categories</SelectItem>
+                {POINT_CATEGORIES.map((category) => (
+                  <SelectItem key={category} value={category}>
+                    {pointCategoryLabel(category)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={userFilter}
+              onValueChange={(value) => {
+                setUserFilter(value);
+                resetPaging();
+              }}
+            >
+              <SelectTrigger
+                aria-label="Filter audit by member"
+                className={TOOLBAR_SELECT}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All members</SelectItem>
+                {memberIds.map((userId) => (
+                  <SelectItem key={userId} value={userId}>
+                    {nameFor(userId) ?? memberFallbackLabel(userId)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {/*
+              A toggle, so its label stays put and `aria-pressed` carries the
+              state. On, it takes the accent tint rather than the solid fill:
+              a filter is never the row's primary action.
+            */}
             <Button
-              variant={flaggedOnly ? "default" : "secondary"}
-              size="sm"
+              variant={flaggedOnly ? "tinted" : "secondary"}
+              size="toolbar"
               onClick={() => {
                 setFlaggedOnly((prev) => !prev);
                 resetPaging();
@@ -214,12 +267,13 @@ export function PointsAuditCard() {
               aria-pressed={flaggedOnly}
               className="gap-2"
             >
-              <AlertTriangle className="h-4 w-4" />
-              {flaggedOnly ? "Showing flagged only" : "Show flagged only"}
+              <FlaggedGlyph className="h-4 w-4" active={flaggedOnly} />
+              Flagged only
             </Button>
             <Button
-              variant="secondary"
-              size="sm"
+              variant="ghost"
+              size="icon"
+              className={TOOLBAR_ICON}
               onClick={() => void transactionsQuery.refetch()}
               disabled={transactionsQuery.isFetching}
               aria-label="Refresh audit list"
@@ -233,155 +287,143 @@ export function PointsAuditCard() {
               />
             </Button>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-2">
-            <Select
-              value={categoryFilter}
-              onValueChange={(value) => {
-                setCategoryFilter(value as "ALL" | Category);
-                resetPaging();
-              }}
-            >
-              <SelectTrigger aria-label="Filter audit by category">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All categories</SelectItem>
-                <SelectItem value="ATTENDANCE">Attendance</SelectItem>
-                <SelectItem value="STUDY">Study</SelectItem>
-                <SelectItem value="SERVICE">Service</SelectItem>
-                <SelectItem value="ACADEMIC">Academic</SelectItem>
-                <SelectItem value="MANUAL">Manual</SelectItem>
-                <SelectItem value="FINE">Fine</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={userFilter}
-              onValueChange={(value) => {
-                setUserFilter(value);
-                resetPaging();
-              }}
-            >
-              <SelectTrigger aria-label="Filter audit by member">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All members</SelectItem>
-                {memberIds.map((userId) => (
-                  <SelectItem key={userId} value={userId}>
-                    {nameFor(userId) ?? memberFallbackLabel(userId)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        </div>
 
-          {transactionsQuery.isPending ? (
-            <NestedLoading message="Loading audit transactions..." />
-          ) : (
-            <>
-              {transactionsQuery.isError ? (
-                <NestedError
-                  title="Audit unavailable"
-                  description="Couldn't load chapter transactions. Retry or confirm your points:view_all access."
-                  onRetry={() => void transactionsQuery.refetch()}
-                />
-              ) : rows.length === 0 ? (
-                <NestedEmpty
-                  title={
-                    flaggedOnly
-                      ? "No flagged transactions in this window"
-                      : "No transactions match this filter"
+        {transactionsQuery.isPending ? (
+          <NestedLoading message="Loading audit transactions..." />
+        ) : (
+          <>
+            {transactionsQuery.isError ? (
+              <NestedError
+                title="Audit unavailable"
+                description="Couldn't load chapter transactions. Confirm your chapter access and retry."
+                onRetry={() => void transactionsQuery.refetch()}
+              />
+            ) : rows.length === 0 ? (
+              <NestedEmpty
+                title={
+                  flaggedOnly
+                    ? "No flagged transactions in this window"
+                    : "No transactions match this filter"
+                }
+                description={
+                  flaggedOnly
+                    ? policyKnown
+                      ? `Single adjustments of |amount| ≥ ${pointsPolicy.anomaly_threshold} are flagged here automatically.`
+                      : "Large single adjustments are flagged here automatically."
+                    : "Try relaxing the category or member filter."
+                }
+              />
+            ) : (
+              // `role="list"` restated: a flex `<li>` loses its `list-item`
+              // box, and WebKit then stops exposing the list semantics.
+              <ul role="list" className={denseListClassName}>
+                {rows.map((row) => {
+                  const flagged = row.metadata?.flagged === true;
+                  // The full id, not `memberFallbackLabel`, and deliberately
+                  // unlike the leaderboard: this is the audit record, where a
+                  // uuid is the operator's handle for a support ticket or a
+                  // direct lookup. It is the one surface on /points that still
+                  // shows one, which is what the leaderboard's pasted-id
+                  // search exists to receive.
+                  const name = row.user_id
+                    ? (nameFor(String(row.user_id)) ?? String(row.user_id))
+                    : "Unknown member";
+                  const amount = row.amount ?? 0;
+                  const sign = amount >= 0 ? "+" : "";
+                  const categoryLabel = pointCategoryLabel(row.category);
+                  const when = formatDayTime(row.created_at);
+                  // One `·`-joined meta line, bounded facts first and the
+                  // free-text reason last, so truncation eats the reason. An
+                  // absent fact drops out of the line.
+                  const meta: Array<{ key: string; node: ReactNode }> = [];
+                  if (categoryLabel) {
+                    meta.push({ key: "category", node: categoryLabel });
                   }
-                  description={
-                    flaggedOnly
-                      ? policyKnown
-                        ? `Single adjustments of |amount| ≥ ${pointsPolicy.anomaly_threshold} are flagged here automatically.`
-                        : "Large single adjustments are flagged here automatically."
-                      : "Try relaxing the category or member filter."
-                  }
-                />
-              ) : (
-                <ul className="divide-y divide-border">
-                  {rows.map((row) => {
-                    const flagged = row.metadata?.flagged === true;
-                    // The full id, not `memberFallbackLabel`, and deliberately
-                    // unlike the leaderboard: this is the audit record, where a
-                    // uuid is the operator's handle for a support ticket or a
-                    // direct lookup. It is the one surface on /points that still
-                    // shows one, which is what the leaderboard's pasted-id
-                    // search exists to receive.
-                    const name = row.user_id
-                      ? (nameFor(String(row.user_id)) ?? String(row.user_id))
-                      : "Unknown member";
-                    const sign = (row.amount ?? 0) >= 0 ? "+" : "";
-                    return (
-                      <li
-                        key={row.id}
-                        className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-semibold">
-                              {name}
-                            </span>
-                            <Badge variant="outline">
-                              {row.category ?? "UNKNOWN"}
-                            </Badge>
-                            {flagged ? (
-                              <Badge variant="destructive" className="gap-1">
-                                <AlertTriangle className="h-3 w-3" />
-                                Flagged
-                              </Badge>
-                            ) : null}
-                          </div>
-                          {row.description ? (
-                            <p className="truncate text-caption text-muted-foreground">
-                              {row.description}
-                            </p>
-                          ) : null}
-                          <p className="text-caption text-muted-foreground">
-                            {formatTimestamp(row.created_at)}
-                          </p>
-                        </div>
-                        <span
-                          className={amountToneClassName(row.amount ?? 0, "sm")}
+                  if (when) {
+                    meta.push({
+                      key: "when",
+                      node: (
+                        <time
+                          dateTime={row.created_at}
+                          title={
+                            formatTimestampFull(row.created_at) ?? undefined
+                          }
                         >
-                          {sign}
-                          {row.amount ?? 0} points
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              {canGoNewer || canGoOlder ? (
-                <div className="flex items-center justify-between gap-2 border-t border-border pt-4">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={!canGoNewer || transactionsQuery.isFetching}
-                    onClick={goNewer}
-                  >
-                    Newer transactions
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={!canGoOlder || transactionsQuery.isFetching}
-                    onClick={() => {
-                      if (olderCursor !== undefined) goOlder(olderCursor);
-                    }}
-                  >
-                    Older transactions
-                  </Button>
-                </div>
-              ) : null}
-            </>
-          )}
-        </CardContent>
-      </Card>
+                          {when}
+                        </time>
+                      ),
+                    });
+                  }
+                  if (row.description) {
+                    meta.push({ key: "reason", node: row.description });
+                  }
+                  return (
+                    <li
+                      key={row.id}
+                      className="flex min-h-11 flex-col gap-0.5 py-2 sm:flex-row sm:items-center sm:gap-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="min-w-0 truncate text-sm font-semibold text-foreground">
+                            {name}
+                          </span>
+                          {flagged ? (
+                            <Badge variant="destructive" className="gap-1">
+                              <AlertTriangle className="h-3 w-3" />
+                              Flagged
+                            </Badge>
+                          ) : null}
+                        </div>
+                        {meta.length > 0 ? (
+                          <p className="truncate text-caption text-muted-foreground">
+                            {meta.map((part, index) => (
+                              <span key={part.key}>
+                                {index > 0 ? " · " : null}
+                                {part.node}
+                              </span>
+                            ))}
+                          </p>
+                        ) : null}
+                      </div>
+                      <span
+                        className={cn(
+                          amountToneClassName(amount, "sm"),
+                          "shrink-0 sm:text-right",
+                        )}
+                      >
+                        {`${sign}${amount} points`}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {canGoNewer || canGoOlder ? (
+              <div className="flex items-center justify-between gap-2">
+                <Button
+                  variant="secondary"
+                  size="toolbar"
+                  disabled={!canGoNewer || transactionsQuery.isFetching}
+                  onClick={goNewer}
+                >
+                  Newer transactions
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="toolbar"
+                  disabled={!canGoOlder || transactionsQuery.isFetching}
+                  onClick={() => {
+                    if (olderCursor !== undefined) goOlder(olderCursor);
+                  }}
+                >
+                  Older transactions
+                </Button>
+              </div>
+            ) : null}
+          </>
+        )}
+      </section>
     </Can>
   );
 }

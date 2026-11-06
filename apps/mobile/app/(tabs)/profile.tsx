@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
   useCurrentUser,
@@ -9,9 +10,26 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
-import { ProfilePhoto } from "@/components/profile/profile-photo";
-import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
-import { ErrorState, SkeletonLines } from "@/components/state-block";
+import { PencilGlyph } from "@/components/control-glyphs";
+import { IconButton } from "@/components/icon-button";
+import { BACK_TO_MORE } from "@/components/back-row";
+import { EditProfileSheet } from "@/components/profile/edit-profile-sheet";
+import {
+  PROFILE_PHOTO_SIZE,
+  ProfilePhoto,
+} from "@/components/profile/profile-photo";
+import {
+  ListRow,
+  ListRowSkeleton,
+  ListSection,
+  SectionHeader,
+} from "@/components/list-section";
+import {
+  ErrorState,
+  SkeletonBlock,
+  SkeletonRegion,
+  SkeletonText,
+} from "@/components/state-block";
 import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -21,7 +39,7 @@ import {
   selectViewerProfile,
   sumApprovedServiceMinutes,
 } from "@/lib/more/profile";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * s15 — Profile (`canvas-screens.dc.html:497`).
@@ -43,12 +61,14 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * lets a member edit (graduation year, city, company); display name heads the
  * screen and bio gets its own card. Filed.
  *
- * ## The photo is editable here; the rest is not
+ * ## Editing
  *
- * Canvas draws an Edit action. The photo half is built (#732): `ProfilePhoto`
- * picks, uploads and confirms it. The text fields (name, bio, graduation,
- * city, company) still edit on the web dashboard, since a form here is a
- * separate slice. TODO-DESIGN: the Edit affordance and its sheet.
+ * Canvas draws an Edit action at the far end of the `‹ More` row, and that is
+ * where it sits: it opens `EditProfileSheet` for the name, bio, graduation
+ * year, city and company (#3387). The photo edits in place (#732):
+ * `ProfilePhoto` picks, uploads and confirms it. Edit appears only once the
+ * profile has loaded, because a sheet opened on the loading or error state
+ * would prefill blanks over fields the member has already set.
  */
 export default function ProfileScreen() {
   const { tokens } = useFrappTheme();
@@ -58,6 +78,7 @@ export default function ProfileScreen() {
   const chapterId = useActiveChapterId();
 
   const userQuery = useCurrentUser();
+  const editSheetRef = useRef<BottomSheetModal>(null);
   const viewerUserId = useViewerUserId();
   const pointsQuery = useMyPoints();
   // Scoped to the viewer for the same reason `service-hours.tsx` is: unscoped,
@@ -85,21 +106,19 @@ export default function ProfileScreen() {
 
   if (userQuery.isPending) {
     return (
-      <ScreenShell
-        title="Profile"
-        subtitle="Your membership and chapter record."
-      >
-        <SkeletonLines lines={4} showTile />
+      <ScreenShell back={BACK_TO_MORE} title="Profile">
+        <ProfileSkeleton />
       </ScreenShell>
     );
   }
 
-  if (userQuery.isError) {
+  // Only an error with nothing cached. TanStack keeps `data` through a failed
+  // background refetch (a return to the app refetches a stale profile), and
+  // bare `isError` would swap in this state over the Edit sheet and drop what
+  // was typed. The web panel has the same guard (`profile-panel.tsx`).
+  if (userQuery.isError && userQuery.data === undefined) {
     return (
-      <ScreenShell
-        title="Profile"
-        subtitle="Your membership and chapter record."
-      >
+      <ScreenShell back={BACK_TO_MORE} title="Profile">
         <ErrorState
           title="Couldn't load your profile"
           body="You're signed in, but we couldn't reach the server."
@@ -111,7 +130,22 @@ export default function ProfileScreen() {
   }
 
   return (
-    <ScreenShell title="Profile" subtitle="Your membership and chapter record.">
+    <ScreenShell
+      back={BACK_TO_MORE}
+      backAction={
+        // A pencil, not the board's "Edit" word: the same back-row slot
+        // Documents fills with its upload glyph (components.md § Icon-only
+        // actions).
+        <IconButton
+          label="Edit profile"
+          hint="Opens a sheet to edit your name and details."
+          onPress={() => editSheetRef.current?.present()}
+        >
+          <PencilGlyph color={accent} />
+        </IconButton>
+      }
+      title="Profile"
+    >
       <View style={styles.identity}>
         <ProfilePhoto
           photoUrl={profile?.photoUrl ?? null}
@@ -135,7 +169,9 @@ export default function ProfileScreen() {
 
       <View style={styles.statRow}>
         <View style={styles.statCard}>
-          <Text style={[styles.statValue, { color: accent }]}>
+          {/* Both stats in the foreground text: a number is never the chapter
+              accent (foundations.md §6, "Where the accent goes"). */}
+          <Text style={styles.statValue}>
             {pointsBalance === null ? "—" : pointsBalance.toLocaleString()}
           </Text>
           <Text style={styles.statLabel}>points</Text>
@@ -152,7 +188,7 @@ export default function ProfileScreen() {
         // a membership exists (and during a hook-off incident), so this is
         // the empty-prod case rather than an edge one.
         <Text style={styles.statNote}>
-          Choose a chapter from More → Chapter to see your points.
+          Choose a chapter from More → Switch chapter to see your points.
         </Text>
       ) : pointsQuery.isError || serviceQuery.isError ? (
         <Text style={styles.statNote}>
@@ -166,15 +202,24 @@ export default function ProfileScreen() {
 
       <SectionHeader>Details</SectionHeader>
       <ListSection>
-        <ListRow label="Email" value={email ?? "Not set"} />
+        <ListRow variant="detail" label="Email" value={email ?? "Not set"} />
         <ListRow
+          variant="detail"
           label="Graduation"
           value={
             profile?.graduationYear ? String(profile.graduationYear) : "Not set"
           }
         />
-        <ListRow label="City" value={profile?.currentCity ?? "Not set"} />
-        <ListRow label="Company" value={profile?.currentCompany ?? "Not set"} />
+        <ListRow
+          variant="detail"
+          label="City"
+          value={profile?.currentCity ?? "Not set"}
+        />
+        <ListRow
+          variant="detail"
+          label="Company"
+          value={profile?.currentCompany ?? "Not set"}
+        />
       </ListSection>
 
       {profile?.bio ? (
@@ -186,15 +231,63 @@ export default function ProfileScreen() {
         </>
       ) : null}
 
-      <Text style={styles.footnote}>
-        Edit your name and details on the web dashboard.
-      </Text>
+      <EditProfileSheet ref={editSheetRef} profile={profile} />
     </ScreenShell>
+  );
+}
+
+/** The four Details rows: Email, Graduation, City, Company. */
+const DETAIL_ROWS = 4;
+
+/**
+ * The screen's loading state, on the loaded screen's own styles: the photo's
+ * circle with the name and meta lines under it, the two stat cards, and the
+ * Details list. The Details caption is fixed text, so it is drawn as itself.
+ *
+ * Exported so `components/screen-skeletons.spec.tsx` can pin its shape.
+ */
+export function ProfileSkeleton() {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const { caption, headline } = tokens.typography.role;
+
+  return (
+    <SkeletonRegion label="Loading your profile" style={styles.skeletonStack}>
+      <View style={styles.identity}>
+        <SkeletonBlock
+          width={PROFILE_PHOTO_SIZE}
+          height={PROFILE_PHOTO_SIZE}
+          radius={avatarRadius(PROFILE_PHOTO_SIZE)}
+        />
+        <SkeletonText role={headline} width="44%" />
+        <SkeletonText role={caption} width="30%" />
+      </View>
+
+      <View style={styles.statRow}>
+        {[0, 1].map((index) => (
+          <View key={index} style={styles.statCard}>
+            <SkeletonText role={headline} width="36%" />
+            <SkeletonText role={caption} width="48%" />
+          </View>
+        ))}
+      </View>
+
+      <SectionHeader>Details</SectionHeader>
+      <ListSection>
+        {Array.from({ length: DETAIL_ROWS }, (_, index) => (
+          <ListRowSkeleton key={index} index={index} variant="detail" />
+        ))}
+      </ListSection>
+    </SkeletonRegion>
   );
 }
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    // `ScreenShell`'s gap, which spaces the loaded screen's blocks.
+    skeletonStack: {
+      gap: tokens.spacing.md,
+    },
     identity: {
       alignItems: "center",
       gap: tokens.spacing.sm,
@@ -217,6 +310,8 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
+      // The Details list's tone (`card`, as every grouped list since
+      // 2026-11-05), as s15 draws both in one.
       backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
       alignItems: "center",
@@ -236,20 +331,15 @@ function createStyles(tokens: SignetTokens) {
       paddingHorizontal: tokens.spacing.xs,
     },
     bioCard: {
-      borderRadius: tokens.radius.cardLarge,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
+      backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
     },
     bioText: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
-    },
-    footnote: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      paddingHorizontal: tokens.spacing.xs,
     },
   });
 }

@@ -13,10 +13,12 @@
     "./chat-client": "./src/chat-client.ts",
     "./realtime-manager": "./src/realtime-manager.ts",
     "./polls": "./src/polls.ts",
+    "./cards": "./src/cards.ts",
     "./reply-preview": "./src/reply-preview.ts",
     "./blocks": "./src/blocks.ts",
     "./block-copy": "./src/block-copy.ts",
     "./message-actions": "./src/message-actions.ts",
+    "./report-copy": "./src/report-copy.ts",
     "./grouping": "./src/grouping.ts",
     "./links": "./src/links.ts",
     "./markdown": "./src/markdown.ts",
@@ -33,13 +35,13 @@
     "@repo/api-sdk": "*",
     "@repo/formatting": "*",
     "@repo/validation": "*",
-    "@supabase/supabase-js": "^2.117.1",
-    "@tanstack/react-query": "^5.104.1"
+    "@supabase/supabase-js": "^2.118.0",
+    "@tanstack/react-query": "^5.105.0"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
-    "jsdom": "^30.1.2",
+    "jsdom": "^30.1.3",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vitest": "^4.1.10"
   }

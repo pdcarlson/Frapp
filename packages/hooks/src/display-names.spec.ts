@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  actorLabel,
   authorInitialsFallback,
   directChannelDisplayName,
   displayNameOrNull,
@@ -13,6 +14,7 @@ import {
   resolveDisplayName,
   type DisplayNameMap,
 } from "./display-names";
+import { SYSTEM_AUTHOR_LABEL, SYSTEM_SENDER_ID } from "@repo/validation";
 
 const VIEWER = "user-viewer";
 const DM_NAME =
@@ -371,6 +373,17 @@ describe("resolveAuthorName", () => {
     ).toBeNull();
   });
 
+  it("names the system actor without asking the roster (#3347)", () => {
+    // The system actor is never a chapter member, so the roster misses it, and
+    // the chapter welcome post used to read "Member 000000".
+    const nameFor = vi.fn(() => null);
+    expect(resolveAuthorName({ sender_id: SYSTEM_SENDER_ID }, nameFor)).toBe(
+      SYSTEM_AUTHOR_LABEL,
+    );
+    expect(SYSTEM_AUTHOR_LABEL).toBe("Frapp");
+    expect(nameFor).not.toHaveBeenCalled();
+  });
+
   it("never calls the resolver for a null sender", () => {
     // The resolver signature takes a string; passing null through would be a
     // runtime type error in any caller that indexes with it.
@@ -477,6 +490,12 @@ describe("resolveAuthorLabel", () => {
     ).toBe("Marcus Reid");
   });
 
+  it("labels the system actor's posts, never as a truncated id (#3347)", () => {
+    expect(
+      resolveAuthorLabel({ sender_id: SYSTEM_SENDER_ID }, roster({}), "u1"),
+    ).toBe("Frapp");
+  });
+
   it("falls back to a truncated id only when the sender is unresolvable", () => {
     expect(
       resolveAuthorLabel(
@@ -520,5 +539,30 @@ describe("resolveAuthorLabel", () => {
     expect(resolveAuthorLabel({ sender_id: null }, roster({}), null)).toBe(
       "Unknown member",
     );
+  });
+});
+
+describe("actorLabel", () => {
+  const names: Record<string, string> = { "user-a": "Paul Carlson" };
+  const nameFor = (id: string) => names[id] ?? null;
+
+  it("names a member from the roster", () => {
+    expect(actorLabel("user-a", nameFor)).toBe("Paul Carlson");
+  });
+
+  it("names the system actor without a lookup", () => {
+    const lookup = vi.fn(nameFor);
+    expect(actorLabel(SYSTEM_SENDER_ID, lookup)).toBe(SYSTEM_AUTHOR_LABEL);
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the member label, never a bare id prefix", () => {
+    expect(actorLabel("2f4a1c9e-0000", nameFor)).toBe("Member 2f4a1c");
+  });
+
+  it("is null for a row with no actor", () => {
+    expect(actorLabel(null, nameFor)).toBe(null);
+    expect(actorLabel(undefined, nameFor)).toBe(null);
+    expect(actorLabel("", nameFor)).toBe(null);
   });
 });

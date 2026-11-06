@@ -64,7 +64,7 @@ The outbox carries `chapterId` and drafts do not, which is not an oversight eith
 | Chat messages | `Infinity` | _(default)_ | Realtime, not polling, keeps this cache fresh, so it opts out of staleness entirely — owned by [`web-dashboard/README.md` § Surviving data contracts](../web-dashboard/README.md#surviving-data-contracts). `use-chat-channel.ts` sets only `staleTime`, on web and mobile alike, so `gcTime` falls through to each app's own default: **10 minutes on web** (`query-provider.tsx`) and **TanStack's 5-minute default on mobile**, whose `query-client.ts` sets no `gcTime`. Recorded as-is rather than as an intent nothing implements |
 | Chat channels | 60s | 10min | Channel list changes rarely |
 | Notifications | 10s | 5min | Time-sensitive, refresh often |
-| Backwork | 60s | 10min | Content changes infrequently |
+| Backwork | 60s | 10min | Content changes infrequently. The single-resource read behind Download (`useFetchBackworkResource`) is `staleTime: 0`, since its signed URL expires |
 | Settings | 5min | 30min | Very rarely changes |
 | Invoices | 30s | 5min | Status transitions are time-sensitive |
 | Service entries | 30s | 5min | Approval queue is time-sensitive |
@@ -81,6 +81,7 @@ The outbox carries `chapterId` and drafts do not, which is not an oversight eith
 | User adjusts points | `['points', chapterId]` (the leaderboard lives under it) |
 | User changes roles | `['members', chapterId]`, `['roles', chapterId]` |
 | Supabase Realtime event | Relevant query key (auto-updated) |
+| Member pulls a mobile list | The screen's enabled queries, fresh or not; one already in flight is cancelled and sent again, since the pull is how a member gets past a hung request. A disabled query is skipped, because `refetch` ignores `enabled` ([`pull-to-refresh.tsx`](../../../apps/mobile/components/pull-to-refresh.tsx)) |
 | Window focus (tab switch) | All stale queries (TanStack built-in) |
 | Network reconnect | Mounted, enabled queries. Web forces even fresh ones (`refetchOnReconnect: "always"`); mobile leaves the default, so only stale ones refetch. Separately, a fetch the drop left paused resumes regardless of observers |
 
@@ -92,8 +93,8 @@ specifics: `DEGRADED` is published as **online**, because requests there are slo
 intermittent rather than impossible and telling TanStack otherwise would pause every
 retry exactly when a retry is what recovers; and there is no window, so `focusManager`
 is driven by `AppState` — `"active"` only, since iOS `inactive` is Control Center and
-the app switcher, not a background. The explicit retry controls on s04/s06 stay
-regardless: they are still the only recovery from a *server* error, which no amount of
-connectivity signalling fixes.
+the app switcher, not a background. A *server* error, which no amount of
+connectivity signalling fixes, is recovered by a pull; the explicit retry controls on
+s04/s06 stay as the recovery a member can see without knowing the gesture.
 
 ---

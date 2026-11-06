@@ -9,7 +9,8 @@ import {
   isAllowedUploadExtension,
   isAllowedUploadMime,
   isWithinUploadSizeLimit,
-  MAX_UPLOAD_LABEL,
+  MAX_BACKWORK_UPLOAD_BYTES,
+  MAX_BACKWORK_UPLOAD_LABEL,
 } from '@repo/validation';
 import {
   BACKWORK_RESOURCE_REPOSITORY,
@@ -38,6 +39,8 @@ import { assertSafeStoragePath } from '#domain/utils/storage-path';
 import { safeObjectFilename } from '#domain/constants/storage';
 
 const BACKWORK_BUCKET = 'backwork';
+/** Long enough to fetch 50 files one after another on a slow connection. */
+const ZIP_LINK_TTL_SECONDS = 15 * 60;
 
 export interface RequestUploadUrlInput {
   chapterId: string;
@@ -94,10 +97,10 @@ export class BackworkService {
 
     if (
       input.sizeBytes !== undefined &&
-      !isWithinUploadSizeLimit(input.sizeBytes)
+      !isWithinUploadSizeLimit(input.sizeBytes, MAX_BACKWORK_UPLOAD_BYTES)
     ) {
       throw new BadRequestException(
-        `File exceeds the ${MAX_UPLOAD_LABEL} upload limit`,
+        `File exceeds the ${MAX_BACKWORK_UPLOAD_LABEL} upload limit`,
       );
     }
 
@@ -200,6 +203,36 @@ export class BackworkService {
     );
 
     return { ...resource, downloadUrl };
+  }
+
+  /**
+   * Signed links for the files a member zips on `/backwork`, in the order
+   * asked. An id that isn't in this chapter, or whose object couldn't be
+   * signed, is left out rather than failing the batch; the web client says
+   * how many it couldn't add. The cap on how many ids one call takes lives
+   * on the DTO (`MAX_BACKWORK_ZIP_FILES`).
+   *
+   * Forced downloads, like every link a member could open directly: the
+   * bucket can't pin a content type (`IStorageProvider.getSignedDownloadUrls`).
+   */
+  async getDownloadUrls(
+    ids: string[],
+    chapterId: string,
+  ): Promise<Array<{ id: string; download_url: string }>> {
+    const resources = await this.resourceRepo.findByIds(ids, chapterId);
+    if (resources.length === 0) return [];
+    const signed = await this.storageProvider.getSignedDownloadUrls(
+      BACKWORK_BUCKET,
+      resources.map((resource) => resource.storage_path),
+      ZIP_LINK_TTL_SECONDS,
+      true,
+    );
+    const byId = new Map(resources.map((resource) => [resource.id, resource]));
+    return ids.flatMap((id) => {
+      const resource = byId.get(id);
+      const url = resource ? signed[resource.storage_path] : undefined;
+      return url ? [{ id, download_url: url }] : [];
+    });
   }
 
   async findByChapter(

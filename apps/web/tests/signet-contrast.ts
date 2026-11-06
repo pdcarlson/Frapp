@@ -220,6 +220,13 @@ export const AA_NON_TEXT = 3;
  * it again since #2153 re-exported the mark. See
  * `spec/ui/web-dashboard/tokens.md` L-08. The hue argument here holds either
  * way: achromatic beside warm is the point, not which achromatic.)
+ *
+ * (neutral ladder, 2026-11-05) The ladder is now pure neutral and darker
+ * (`#0A0A0A` / `#111111` / `#171717` / `#1E1E1E`), so the hue argument above no
+ * longer applies: every step is achromatic and luminance is the whole
+ * difference. Adjacencies now: `--surface-1`/`--background` 1.0485,
+ * `--card`/`--surface-1` 1.0533, `--popover`/`--card` 1.0754. All still sit
+ * under 1.15, so the bound stands.
  */
 export const INDISTINGUISHABLE = 1.15;
 
@@ -264,11 +271,3 @@ export function accentRolesFor(seed: string) {
  */
 export const accentFour = (roles: Record<string, string>) =>
   mixHex(roles["--accent-subtle"]!, roles["--accent-border"]!, 0.22);
-
-/** The channel spread of a fill's delta from a surface — its hue shift. */
-export function chromaShift(fill: string, base: string) {
-  const a = parseHex(fill)!;
-  const b = parseHex(base)!;
-  const deltas = [a.r - b.r, a.g - b.g, a.b - b.b];
-  return Math.max(...deltas) - Math.min(...deltas);
-}

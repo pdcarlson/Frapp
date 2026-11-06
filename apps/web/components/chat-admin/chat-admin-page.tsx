@@ -30,7 +30,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardDescription, CardHeader } from "@/components/ui/card";
 import { EYEBROW } from "@/components/ui/typography";
 import { SectionLabel } from "@/components/shared/section-label";
 import {
@@ -40,25 +39,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Sheet, SheetDescription, SheetTrigger } from "@/components/ui/sheet";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  PanelBody,
+  PanelContent,
+  PanelFooter,
+  PanelHeader,
+} from "@/components/shared/panel";
 import {
   anyReadUncached,
   readIsOffline,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
-import { PageHeader } from "@/components/layout/page-header";
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import {
@@ -77,6 +72,10 @@ import {
   type PermissionCatalogEntry,
 } from "@/components/shared/permission-checkbox-grid";
 import { useGateCatalog } from "@/components/shared/use-gate-catalog";
+import {
+  ChannelsSkeleton,
+  ChatAdminBodySkeleton,
+} from "@/components/chat-admin/chat-admin-skeleton";
 
 type ChannelType = "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
 
@@ -90,6 +89,8 @@ interface AdminChannel {
   is_read_only: boolean;
   /** Officer-set default push level (#2771); `null` = the built-in default. */
   default_notification_level: ChatNotificationLevel | null;
+  /** The chapter's default channel, where Chat opens with no last channel. */
+  is_default?: boolean;
 }
 
 interface AdminCategory {
@@ -154,28 +155,30 @@ function useToggleSet(
   );
 }
 
-export function ChatAdminPage() {
+/**
+ * `initialChannelId` is `?channel=<id>`: the channel start's Edit channel
+ * shortcut (`components/chat/channel-start.tsx`) opens this page with that
+ * channel selected and its description field focused.
+ */
+export function ChatAdminPage({
+  initialChannelId = null,
+}: {
+  initialChannelId?: string | null;
+} = {}) {
   return (
     <>
       {/*
-        Outside the `<Can>` so the permission-denied and offline branches keep
-        the route's heading — the shell no longer supplies one (#2141). The
-        denied card's own `<CardTitle>Chat Admin</CardTitle>`, and the body's
-        `<h2>`, were that same title said twice.
+        The denied line sits under the top bar's title bare, like every other
+        denied page: the card it used to sit in framed one sentence.
       */}
-      <PageHeader title="Chat Admin" />
       <Can
         permission="channels:manage"
+        fallback={<ChatAdminBodySkeleton />}
         deniedFallback={
-          <Card>
-            <CardHeader>
-              <CardDescription>
-                Managing channels and categories needs the{" "}
-                <code>channels:manage</code> permission. Ask your chapter
-                president to grant access.
-              </CardDescription>
-            </CardHeader>
-          </Card>
+          <p className="text-sm text-muted-foreground">
+            Your role can&apos;t manage channels. Ask your chapter president for
+            access.
+          </p>
         }
         offlineFallback={(retry) => (
           <PermissionsOfflineSurface
@@ -193,14 +196,18 @@ export function ChatAdminPage() {
         */}
         <div className="space-y-6">
           <ChatReportsCard />
-          <ChatAdminBody />
+          <ChatAdminBody initialChannelId={initialChannelId} />
         </div>
       </Can>
     </>
   );
 }
 
-function ChatAdminBody() {
+function ChatAdminBody({
+  initialChannelId,
+}: {
+  initialChannelId: string | null;
+}) {
   const { isOffline } = useNetwork();
   const { toast } = useToast();
   const { confirm, confirmDialog } = useConfirmDialog();
@@ -322,8 +329,16 @@ function ChatAdminBody() {
 
   const [nameDraft, setNameDraft] = useState("");
   const [descriptionDraft, setDescriptionDraft] = useState("");
+  // What the draft was seeded with, so a save can tell an officer's edit from
+  // the server row moving underneath an untouched draft.
+  const [descriptionSeed, setDescriptionSeed] = useState("");
   const [categoryDraft, setCategoryDraft] = useState(NO_CATEGORY);
   const [readOnlyDraft, setReadOnlyDraft] = useState(false);
+  const [isDefaultDraft, setIsDefaultDraft] = useState(false);
+  // What the switch was seeded with, for the reason `descriptionSeed` exists:
+  // another officer moving the default refetches the live row under an
+  // untouched switch, and comparing with that row would send it back.
+  const [isDefaultSeed, setIsDefaultSeed] = useState(false);
   const [defaultLevelDraft, setDefaultLevelDraft] = useState<string>(
     BUILT_IN_DEFAULT_LEVEL,
   );
@@ -331,12 +346,35 @@ function ChatAdminBody() {
     new Set(),
   );
 
+  // `?channel=` from the channel start. Applied once, during render rather
+  // than in an effect, so the editor's first paint already shows the channel.
+  // The description field takes focus as the editor mounts (`autoFocus`), so
+  // the officer lands where the channel start sent them. Any later pick
+  // clears it (`selectChannel`), so the field doesn't take focus again when
+  // the editor remounts.
+  const [initialApplied, setInitialApplied] = useState(false);
+  const [focusDescription, setFocusDescription] = useState(false);
+  if (!initialApplied && initialChannelId) {
+    const initial = channels.find((c) => c.id === initialChannelId);
+    if (initial) {
+      setInitialApplied(true);
+      selectChannel(initial);
+      setFocusDescription(true);
+    } else if (channelsQuery.isSuccess) {
+      setInitialApplied(true);
+    }
+  }
+
   function selectChannel(channel: AdminChannel) {
+    setFocusDescription(false);
     setSelectedChannelId(channel.id);
     setNameDraft(channel.name);
     setDescriptionDraft(channel.description ?? "");
+    setDescriptionSeed((channel.description ?? "").trim());
     setCategoryDraft(channel.category_id ?? NO_CATEGORY);
     setReadOnlyDraft(channel.is_read_only);
+    setIsDefaultDraft(channel.is_default === true);
+    setIsDefaultSeed(channel.is_default === true);
     setDefaultLevelDraft(
       channel.default_notification_level ?? BUILT_IN_DEFAULT_LEVEL,
     );
@@ -360,16 +398,31 @@ function ChatAdminBody() {
       });
       return;
     }
+    // The description goes out only when the officer changed it. Sending the
+    // blank draft on every save turned a never-set description (null) into
+    // `''`, which reads the same on screen but is what a deliberate clear
+    // looks like to the default-description backfill (20261105210000). The
+    // draft is compared with what it was seeded from, not the live row: a
+    // refetch that brings in the backfill or another officer's text while
+    // this draft sits untouched must not send the stale draft over it.
+    const description = descriptionDraft.trim();
+    const descriptionChanged = description !== descriptionSeed;
     try {
       await updateChannel.mutateAsync({
         id: selectedChannel.id,
         body: {
           name,
-          description: descriptionDraft.trim(),
+          ...(descriptionChanged ? { description } : {}),
           // `null` clears the category; `NO_CATEGORY` selected means "make this
           // uncategorized," which is a real write, not "leave it alone."
           category_id: categoryDraft === NO_CATEGORY ? null : categoryDraft,
           is_read_only: readOnlyDraft,
+          // Sent only when the officer flipped it: setting it moves the
+          // chapter default off another channel, which a save of an unrelated
+          // field must not.
+          ...(isDefaultDraft !== isDefaultSeed
+            ? { is_default: isDefaultDraft }
+            : {}),
           // `null` clears an officer's choice; the built-in default applies.
           default_notification_level:
             defaultLevelDraft === BUILT_IN_DEFAULT_LEVEL
@@ -380,6 +433,8 @@ function ChatAdminBody() {
             : {}),
         },
       });
+      if (descriptionChanged) setDescriptionSeed(description);
+      setIsDefaultSeed(isDefaultDraft);
       toast({ description: `#${name} saved.` });
     } catch (error) {
       toast({
@@ -409,7 +464,7 @@ function ChatAdminBody() {
     }
   }
 
-  // ── Create-channel dialog ───────────────────────────────────────────────
+  // ── Create-channel panel ────────────────────────────────────────────────
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createDescription, setCreateDescription] = useState("");
@@ -430,6 +485,12 @@ function ChatAdminBody() {
     setCreateCategoryId(NO_CATEGORY);
     setCreateReadOnly(false);
     setCreatePermissions(new Set());
+  }
+
+  /** Every way the create panel closes (X, Escape, scrim, Cancel) drops the draft. */
+  function handleCreateOpenChange(open: boolean) {
+    setCreateDialogOpen(open);
+    if (!open) resetCreateDraft();
   }
 
   async function handleCreateChannel(event: FormEvent<HTMLFormElement>) {
@@ -522,7 +583,7 @@ function ChatAdminBody() {
     );
   }
   if (channelsQuery.isLoading || categoriesQuery.isLoading || paused) {
-    return <NestedLoading sole message="Loading channels..." />;
+    return <ChannelsSkeleton />;
   }
   // `data === undefined`, not `isError` alone: a failed background refetch
   // keeps the rows TanStack already holds, and an officer part-way through an
@@ -600,22 +661,25 @@ function ChatAdminBody() {
           >
             Channels
           </SectionLabel>
-          <Dialog
-            open={createDialogOpen}
-            onOpenChange={(open) => {
-              setCreateDialogOpen(open);
-              if (!open) resetCreateDraft();
-            }}
-          >
-            <DialogTrigger asChild>
+          <Sheet open={createDialogOpen} onOpenChange={handleCreateOpenChange}>
+            <SheetTrigger asChild>
               <Button className="gap-2">
                 <Plus className="h-4 w-4" />
                 New channel
               </Button>
-            </DialogTrigger>
-            <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-lg">
-              <DialogHeader>
-                <DialogTitle>Create a channel</DialogTitle>
+            </SheetTrigger>
+            {/*
+              A panel, not a dialog (`components.md` § Surface size): a
+              role-gated channel carries the whole permission grid, so this
+              scrolled inside a 512px dialog capped at 80vh.
+            */}
+            <PanelContent>
+              <PanelHeader>Create a channel</PanelHeader>
+              <PanelBody
+                as="form"
+                id="channel-create-form"
+                onSubmit={handleCreateChannel}
+              >
                 {/*
                   Kept, because it is the one place the three types are told
                   apart, and the last place to choose one: the update route
@@ -625,19 +689,13 @@ function ChatAdminBody() {
                   Channels): only the ids in `member_ids` read it, and the
                   create route seeds that with its creator alone.
                 */}
-                <DialogDescription>
+                <SheetDescription>
                   Public channels are open to every member. A private channel is
                   readable only by its members, and you are its first. A
                   role-gated channel is readable by members holding at least one
                   of the selected permissions. A channel&apos;s type can&apos;t
                   be changed after it&apos;s created.
-                </DialogDescription>
-              </DialogHeader>
-              <form
-                id="channel-create-form"
-                className="space-y-4"
-                onSubmit={handleCreateChannel}
-              >
+                </SheetDescription>
                 <div className="grid gap-1">
                   <Label htmlFor="ca-create-name">Name</Label>
                   <Input
@@ -720,6 +778,7 @@ function ChatAdminBody() {
                       A member needs at least one of these to read or post.
                     </p>
                     <PermissionCheckboxGrid
+                      inPanel
                       catalog={catalog}
                       catalogLoading={catalogLoading}
                       catalogUnavailable={catalogUnavailable}
@@ -729,11 +788,14 @@ function ChatAdminBody() {
                     />
                   </div>
                 ) : null}
-              </form>
-              <DialogFooter>
+              </PanelBody>
+              <PanelFooter>
                 <Button
                   variant="secondary"
-                  onClick={() => setCreateDialogOpen(false)}
+                  // Through the same handler as the X and Escape: Radix fires no
+                  // `onOpenChange` for a close made by setting state, so a bare
+                  // `setCreateDialogOpen(false)` would keep the draft.
+                  onClick={() => handleCreateOpenChange(false)}
                   disabled={createChannel.isPending}
                 >
                   Cancel
@@ -753,9 +815,9 @@ function ChatAdminBody() {
                   ) : null}
                   Create channel
                 </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              </PanelFooter>
+            </PanelContent>
+          </Sheet>
         </div>
 
         {channels.length === 0 ? (
@@ -781,7 +843,7 @@ function ChatAdminBody() {
                       FOCUS_RING_OFFSET,
                       selectedChannelId === channel.id
                         ? "bg-accent-subtle-hover text-accent-text"
-                        : "hover:bg-accent-subtle",
+                        : "hover:bg-card-hover",
                     )}
                     aria-pressed={selectedChannelId === channel.id}
                     onClick={() => selectChannel(channel)}
@@ -793,6 +855,11 @@ function ChatAdminBody() {
                     <Badge variant="outline" className="shrink-0">
                       {CHANNEL_TYPE_LABEL[channel.type]}
                     </Badge>
+                    {channel.is_default ? (
+                      <Badge variant="secondary" className="shrink-0">
+                        Default
+                      </Badge>
+                    ) : null}
                     {channel.is_read_only ? (
                       <Badge variant="secondary" className="shrink-0">
                         Read-only
@@ -822,7 +889,7 @@ function ChatAdminBody() {
               list by a hairline rather than lifted onto a card. Its heading
               carries the channel's type as a badge, and the form has no type
               field. That replaces a description that said "Type is set at
-              creation and can't be changed here"; the create dialog, where
+              creation and can't be changed here"; the create panel, where
               the type is chosen, now says it is final.
             */}
             <div className="lg:border-l lg:border-border lg:pl-6">
@@ -873,6 +940,7 @@ function ChatAdminBody() {
                   <div className="grid gap-1">
                     <Label htmlFor="ca-description">Description</Label>
                     <Textarea
+                      autoFocus={focusDescription}
                       id="ca-description"
                       value={descriptionDraft}
                       onChange={(event) =>
@@ -890,6 +958,20 @@ function ChatAdminBody() {
                       Read-only (only officers with permission can post)
                     </span>
                   </label>
+                  <div className="grid gap-1">
+                    <label className="flex items-center gap-3">
+                      <Switch
+                        checked={isDefaultDraft}
+                        onCheckedChange={setIsDefaultDraft}
+                      />
+                      <span className="text-sm">Chapter default channel</span>
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      Chat opens here when a member&apos;s device has no last
+                      channel. Turning this on moves it off any other channel.
+                      Members who can&apos;t see this channel open #general.
+                    </p>
+                  </div>
                   <div className="grid gap-1">
                     <Label htmlFor="ca-default-level">
                       Default notifications

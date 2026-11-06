@@ -1,21 +1,25 @@
 import { useMemo, type ReactNode } from "react";
 import {
+  Image,
+  Keyboard,
   Pressable,
   StyleSheet,
   Text,
   View,
   type AccessibilityActionEvent,
   type AccessibilityActionInfo,
+  type StyleProp,
+  type TextStyle,
 } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { emojiFromActionType } from "@repo/chat-core/types";
 import { DELETED_MESSAGE_PLACEHOLDER } from "@repo/chat-core/reply-preview";
 import {
   EDITED_MARKER,
-  isOwnMessage,
   showsEditedMarker,
 } from "@repo/chat-core/message-actions";
 import { formatTimeOfDay } from "@repo/formatting";
+import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -54,9 +58,11 @@ import { ReplyQuote } from "./reply-quote";
  * draws a 32pt avatar and an author line (name, then the time of day); a
  * follow-on row draws only its body. The runs are decided once, for web and
  * mobile alike, by `@repo/chat-core/grouping`; the thread passes the answer in
- * as `startsRun`. The viewer's own name reads "You" in the chapter's accent
- * text, which replaced the self bubble's accent fill as the way a member spots
- * their own run. (The Pinned marker takes the accent too, on anyone's row.)
+ * as `startsRun`. The viewer's own name reads "You", which replaced the self
+ * bubble's accent fill as the way a member spots their own run, and is colored
+ * like anyone else's: their role color, or the foreground text. Neither it nor
+ * the Pinned marker takes the chapter accent: names and labels are neutral
+ * (foundations.md §6, "Where the accent goes").
  *
  * A phone has no hover, so a follow-on row shows no time. Long-press opens the
  * actions sheet, whose header says who sent it and when, and a screen reader
@@ -65,7 +71,9 @@ import { ReplyQuote } from "./reply-quote";
  * Everything the bubble carried has a home here: the delivery state is a line
  * under the body (`deliveryChrome` is exhaustive over `MessageStatus`, #1910),
  * `(edited)` and Pinned trail the body's last line on every row, the reply quote
- * sits above the author line, and reactions sit under the body.
+ * sits above the author line, and reactions sit under the body. A row nobody
+ * has reacted to draws no reaction row at all: the first reaction starts from
+ * the long-press sheet's quick picks (`message-actions-sheet.tsx`).
  */
 
 export interface MessageItemProps {
@@ -84,6 +92,12 @@ export interface MessageItemProps {
    * is the state this replaced.
    */
   nameFor: (userId: string) => string | null;
+  /**
+   * Resolves a `users.id` to the palette color of the member's top colored
+   * role (#3485), which paints their name on the author line. Optional: a
+   * surface without a roster draws plain names, which is a fine degradation.
+   */
+  roleColorFor?: (userId: string) => string | null;
   /**
    * Whether this row starts a run (`@repo/chat-core/grouping`), and so draws
    * the avatar and author line.
@@ -111,7 +125,7 @@ export interface MessageItemProps {
   /**
    * Opens the message actions sheet (reply, edit, delete, report, block —
    * #2257, #2775). Passed only for a row that offers them
-   * (`canOpenMessageActions` in `lib/chat/blocks.ts`): a confirmed, undeleted
+   * (`canOpenMessageActions` in `@repo/chat-core/message-actions`): a confirmed, undeleted
    * message, the viewer's own included.
    */
   onOpenActions?: () => void;
@@ -123,8 +137,8 @@ export interface MessageItemProps {
   onJumpToParent?: () => void;
 }
 
-/** The drawn quick reaction. A fuller picker is not in this slice. */
-export const QUICK_REACTION = "👍";
+/** The add chip's accessible name: it opens the sheet that holds the picks. */
+export const ADD_REACTION_A11Y_LABEL = "Add reaction";
 
 /** Long-press is the gesture; this is its screen-reader twin. */
 export const MESSAGE_ACTIONS_A11Y_LABEL = "Message actions";
@@ -226,19 +240,26 @@ export function groupReactions(
 /**
  * The frame every s05 row shares: the reply quote above, the 32pt gutter with
  * the avatar on a run's first row, and the author line. `MessageItem` fills it
- * with a message body; the thread fills it with a `PollCard` for a poll, so a
- * card carries the same author line as any other row (a card always starts a
- * run).
+ * with a message body; the thread fills it with a card (`cardFor` in
+ * `thread-message-row.tsx`), so a card carries the same author line as any
+ * other row (a card always starts a run).
  *
  * Its root is the long-press target, so a press anywhere on the row — gutter,
  * author line, photo — opens the actions. It is `accessible={false}` for the
  * reason `messageActionsA11yProps` gives, and the screen-reader half of the
  * long-press rides the author line, or the gutter on a follow-on row.
+ *
+ * A plain tap on the row puts the keyboard away. On a card row that holds
+ * only for the gutter, avatar and author line: a tap on the card's body
+ * doesn't (#3461), because the card wraps its body in a long-press
+ * `Pressable` of its own (`ChatCardShell`), which takes the tap before this
+ * one sees it.
  */
 export function MessageRowFrame({
   message,
   viewerId,
   nameFor,
+  roleColorFor,
   startsRun,
   quote,
   onOpenActions,
@@ -248,6 +269,8 @@ export function MessageRowFrame({
   message: ChatMessage;
   viewerId: string;
   nameFor: (userId: string) => string | null;
+  /** `users.id` → role color for the author line (#3485); see `MessageItemProps`. */
+  roleColorFor?: (userId: string) => string | null;
   startsRun: boolean;
   /** The reply quote, when the row is a reply; drawn above the author line. */
   quote?: ReactNode;
@@ -272,14 +295,25 @@ export function MessageRowFrame({
   const headerA11y = messageActionsA11yProps(onOpenActions, {
     onJumpToParent: quote ? onJumpToParent : undefined,
   });
-  // `isOwnMessage` checks the sender before comparing: an imported archive row
-  // has no `sender_id`, and `null === null` would otherwise make it "mine".
-  const isMine = isOwnMessage(message, viewerId);
+  // Every name, the viewer's own "You" included, takes the author's role
+  // color (a contrast-checked palette value) or else the foreground text, and
+  // never the chapter accent (foundations.md §6, "Where the accent goes").
+  const roleColor = message.sender_id
+    ? (roleColorFor?.(message.sender_id) ?? null)
+    : null;
 
   return (
     <Pressable
       accessible={false}
       onLongPress={onOpenActions}
+      // The thread's list lets a tap reach a control with the keyboard up
+      // (`keyboardShouldPersistTaps="handled"`), and this Pressable claims a
+      // tap anywhere on the row, so without this a tap on a message no longer
+      // put the keyboard away. The row has no tap action of its own; its
+      // controls (chips, links, photos, Retry) claim their own taps first,
+      // and so does a card's own Pressable, so a tap on a card's body leaves
+      // the keyboard up (#3461, see above).
+      onPress={Keyboard.dismiss}
       disabled={!onOpenActions}
       style={[styles.row, startsRun ? styles.rowStartsRun : styles.rowFollows]}
     >
@@ -293,13 +327,33 @@ export function MessageRowFrame({
       ) : null}
       <View style={styles.main}>
         {startsRun ? (
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {authorName
-                ? initialsFor(authorName)
-                : authorInitialsFallback(message)}
-            </Text>
-          </View>
+          message.sender_id === SYSTEM_SENDER_ID ? (
+            // Frapp's own posts (the welcome, the audit bridge, a poll's
+            // closing notice, an invite-accept DM) wear the crest, not
+            // initials: the sender is the product, not a member (#3347).
+            <View
+              style={[styles.avatar, styles.systemAvatar]}
+              testID="system-avatar"
+            >
+              <Image
+                // Metro asset id; a static import fails `tsc` (no `*.png`
+                // module declaration), as in `(auth)/sign-in.tsx`.
+                // eslint-disable-next-line @typescript-eslint/no-require-imports
+                source={require("../../assets/images/system-avatar.png")}
+                style={styles.systemAvatarImage}
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+              />
+            </View>
+          ) : (
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {authorName
+                  ? initialsFor(authorName)
+                  : authorInitialsFallback(message)}
+              </Text>
+            </View>
+          )
         ) : (
           // A follow-on row draws no author or time, so its gutter is where a
           // screen reader hears them — and where the long-press action rides
@@ -318,13 +372,14 @@ export function MessageRowFrame({
               accessible={"accessibilityActions" in headerA11y}
               {...headerA11y}
             >
-              {isMine ? (
-                <SelfName label={authorLabel} style={styles.name} />
-              ) : (
-                <Text style={styles.name} numberOfLines={1}>
-                  {authorLabel}
-                </Text>
-              )}
+              <Text
+                style={
+                  roleColor ? [styles.name, { color: roleColor }] : styles.name
+                }
+                numberOfLines={1}
+              >
+                {authorLabel}
+              </Text>
               <Text style={styles.time}>{time}</Text>
             </View>
           ) : null}
@@ -336,37 +391,9 @@ export function MessageRowFrame({
 }
 
 /**
- * The viewer's own name in the chapter's accent text (`--signet-accent-text`,
- * step 11, the engine's text role). Split out so `useChapterBranding()` is only
- * called where the accent is drawn: the hook reaches for `FrappClientProvider`
- * (#1007), which a row by anyone else needs only when it is pinned
- * (`PinnedMarker`).
- *
- * Keep the hook in here, never behind `isMine` in `MessageRowFrame`: an
- * imported row's `sender_id` changes when its author links or unlinks their
- * Discord account (#2878), so the same row can flip between mine and not. As
- * its own component it just mounts or unmounts; a hook behind the branch in
- * the parent would change that component's hook order and crash it.
- */
-function SelfName({
-  label,
-  style,
-}: {
-  label: string;
-  style: ReturnType<typeof createStyles>["name"];
-}) {
-  const { accent } = useChapterBranding();
-  return (
-    <Text style={[style, { color: accent }]} numberOfLines={1}>
-      {label}
-    </Text>
-  );
-}
-
-/**
- * `· Pinned` in the chapter's accent text, like web's marker. A component of its
- * own for the reason `SelfName` is: only a pinned row pulls in the branding
- * hook.
+ * `· Pinned` in the muted trailing text, like `(edited)` beside it. A marker
+ * is metadata, so it never takes the chapter accent (foundations.md §6,
+ * "Where the accent goes").
  */
 export function PinnedMarker({
   style,
@@ -376,12 +403,7 @@ export function PinnedMarker({
   /** Whether it follows text on its line, and so needs the " · " before it. */
   lead?: boolean;
 }) {
-  const { accent } = useChapterBranding();
-  return (
-    <Text style={[style, { color: accent }]}>
-      {lead ? " · Pinned" : "Pinned"}
-    </Text>
-  );
+  return <Text style={style}>{lead ? " · Pinned" : "Pinned"}</Text>;
 }
 
 /**
@@ -413,6 +435,7 @@ export function MessageItem({
   message,
   viewerId,
   nameFor,
+  roleColorFor,
   startsRun,
   onRetry,
   onDiscard,
@@ -431,7 +454,8 @@ export function MessageItem({
   const reactions = groupReactions(message, viewerId);
   const chrome = deliveryChrome(message);
   // A send still in flight or failed reads as not yet posted.
-  const muted = chrome.status === "pending" || chrome.status === "failed";
+  const pending = chrome.status === "pending";
+  const muted = pending || chrome.status === "failed";
 
   // Mount the renderer only when the message actually has files. The query hook
   // inside reaches for `FrappClientProvider`, so mounting unconditionally would
@@ -516,6 +540,7 @@ export function MessageItem({
       message={message}
       viewerId={viewerId}
       nameFor={nameFor}
+      roleColorFor={roleColorFor}
       startsRun={startsRun}
       quote={quote}
       onOpenActions={onOpenActions}
@@ -524,11 +549,24 @@ export function MessageItem({
       onJumpToParent={text ? undefined : quoteJump(message, onJumpToParent)}
     >
       {text ? (
-        <View accessible={"accessibilityActions" in bodyA11y} {...bodyA11y}>
+        <View
+          // Accessible while pending too, so the hint below is heard: a
+          // pending row has no actions, and a hint on a view that is not an
+          // accessibility element is ignored.
+          accessible={"accessibilityActions" in bodyA11y || pending}
+          // The gray body is the whole pending state on screen (§11 § What
+          // rides the row); a screen reader hears it here instead.
+          accessibilityHint={pending ? "Sending" : undefined}
+          {...bodyA11y}
+        >
           {text}
         </View>
       ) : null}
-      {attachments}
+      {attachments && pending ? (
+        <View style={styles.pendingFiles}>{attachments}</View>
+      ) : (
+        attachments
+      )}
       {text ? null : <OwnLineMarkers message={message} />}
       <DeliveryLine
         chrome={chrome}
@@ -590,7 +628,10 @@ function DeliveryLine({
     case "confirmed":
       return null;
     case "pending":
-      return <Text style={styles.metaText}>Sending…</Text>;
+      // Nothing under the row: the body draws gray until the server confirms
+      // it, so a send never pushes the thread up a line and back
+      // (components.md §11 § What rides the row, owner decision 2026-11-06).
+      return null;
     case "failed":
       return (
         <View style={styles.failedRow}>
@@ -601,7 +642,7 @@ function DeliveryLine({
             hitSlop={8}
             onPress={() => onRetry(clientMessageId)}
           >
-            <Text style={styles.retryText}>Retry</Text>
+            <AccentText style={styles.retryText}>Retry</AccentText>
           </Pressable>
           <Pressable
             accessibilityRole="button"
@@ -628,10 +669,110 @@ function DeliveryLine({
 }
 
 /**
+ * Text in the chapter's accent (step 11). Its own component so that only a
+ * row that draws the accent calls `useChapterBranding()`: the hook reaches for
+ * `FrappClientProvider` (#1007), so a row that never fails never needs it.
+ */
+function AccentText({
+  style,
+  children,
+}: {
+  style: StyleProp<TextStyle>;
+  children: ReactNode;
+}) {
+  const { accent } = useChapterBranding();
+  return <Text style={[style, { color: accent }]}>{children}</Text>;
+}
+
+/** A reaction chip's reach: up to the 44pt floor above and below its 26pt. */
+const CHIP_HIT_SLOP = { top: 9, bottom: 9 } as const;
+
+type ReactionChipStyles = Pick<
+  ReturnType<typeof createStyles>,
+  "reactionChip" | "reactionChipMine" | "reactionText" | "reactionTextMine"
+>;
+
+/**
+ * One reaction chip. The viewer's own reaction wears the chapter accent.
+ *
+ * One component whether or not the reaction is the viewer's: a chip that
+ * flips between the two keeps its native view, so a screen reader stays on
+ * the chip it just toggled and hears its new state. That means every chip
+ * calls `useChapterBranding()`, which only a row with reactions renders; a
+ * row without any (most of them) still never reaches for the client
+ * provider (see `AccentText`).
+ */
+function ReactionChip({
+  group,
+  disabled,
+  styles,
+  onPress,
+  onLongPress,
+}: {
+  group: ReactionGroup;
+  disabled: boolean;
+  styles: ReactionChipStyles;
+  onPress: () => void;
+  onLongPress?: () => void;
+}) {
+  const { accent, accentSubtle, accentBorder } = useChapterBranding();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: group.mine, disabled }}
+      accessibilityLabel={`${group.emoji}, ${group.count}`}
+      disabled={disabled}
+      // A 26pt chip against the 44pt floor: hitSlop closes the gap without
+      // inflating the drawn chip, vertically only (components.md §11). Chips
+      // sit 6pt apart, so 9pt to the side would let each chip's later
+      // neighbour, the `+` included, take the taps on its right edge.
+      hitSlop={CHIP_HIT_SLOP}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      style={[
+        styles.reactionChip,
+        group.mine
+          ? [
+              styles.reactionChipMine,
+              { backgroundColor: accentSubtle, borderColor: accentBorder },
+            ]
+          : null,
+      ]}
+    >
+      <Text
+        style={
+          group.mine
+            ? [styles.reactionTextMine, { color: accent }]
+            : styles.reactionText
+        }
+      >
+        {`${group.emoji} ${group.count}`}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
  * Exported so a card (e.g. `PollCard`, #528) can carry the same reaction
  * affordance `MessageItem` gives every other kind — `styles` is narrowed to
  * just the keys this component reads so a caller with its own `createStyles`
  * only has to match that slice, not `MessageItem`'s full style sheet.
+ *
+ * **Nothing at all until someone reacts.** The row used to draw a `👍 +` chip
+ * under every message the viewer hadn't reacted to, which was nearly every
+ * row: a 26pt pill plus its margin, repeated down the whole thread, and the
+ * main reason it read loose and busy next to s05's board. No messenger puts a
+ * reaction control on every line; they start the first reaction from a long
+ * press. So the first one starts in the message actions sheet, whose top row
+ * is the quick picks (`message-actions-sheet.tsx`), and a message without
+ * reactions costs no height here.
+ *
+ * Once a message has reactions, a `+` chip follows them, as the board draws it
+ * (s05: the `5` chip, then `+`). It opens that same sheet, where the picks
+ * live; it is not a one-tap reaction of its own. It needs the sheet, so it is
+ * drawn only when the row offers its actions (`onLongPress`), and not while
+ * the message is unconfirmed, since a reaction addresses a server id a pending
+ * placeholder does not have yet.
  */
 export function ReactionRow({
   reactions,
@@ -651,7 +792,7 @@ export function ReactionRow({
    * The row's long-press (the message actions), forwarded to every chip. A
    * chip is its own `Pressable` and claims the touch, so without this a long
    * press on one ends as a tap — a reaction toggled — instead of opening the
-   * actions the rest of the message opens.
+   * actions the rest of the message opens. It is also the `+` chip's tap.
    */
   onLongPress?: () => void;
   styles: Pick<
@@ -663,60 +804,46 @@ export function ReactionRow({
     | "reactionTextMine"
   >;
 }) {
-  // The add chip is what makes the *first* reaction on a message possible.
-  // Without it the row only rendered when reactions already existed, so
-  // `onReact` was unreachable and nobody could ever start one — the Canvas
-  // draws this chip (s05, `canvas-screens.dc.html:181`) for that reason.
-  // Hidden while the message is unconfirmed, since a reaction addresses a
-  // server id a pending placeholder does not have yet.
+  if (reactions.length === 0) return null;
   return (
     <View style={styles.reactionRow}>
-      {reactions.map((group) => (
-        <Pressable
-          key={group.actionType}
-          accessibilityRole="button"
-          accessibilityState={{ selected: group.mine, disabled }}
-          accessibilityLabel={`${group.emoji}, ${group.count}`}
-          disabled={disabled}
-          // A 26pt chip against the 44pt floor: hitSlop closes the gap without
-          // inflating the drawn chip (components.md §11).
-          hitSlop={9}
-          onPress={() =>
+      {reactions.map((group) => {
+        const chip = {
+          group,
+          disabled,
+          styles,
+          onLongPress,
+          onPress: () =>
             group.mine
               ? onUnreact(messageId, group.emoji)
-              : onReact(messageId, group.emoji)
-          }
-          onLongPress={onLongPress}
-          style={[
-            styles.reactionChip,
-            group.mine ? styles.reactionChipMine : null,
-          ]}
-        >
-          <Text
-            style={group.mine ? styles.reactionTextMine : styles.reactionText}
-          >
-            {`${group.emoji} ${group.count}`}
-          </Text>
-        </Pressable>
-      ))}
+              : onReact(messageId, group.emoji),
+        };
+        return <ReactionChip key={group.actionType} {...chip} />;
+      })}
 
-      {!disabled && !reactions.some((group) => group.mine) ? (
+      {!disabled && onLongPress ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`React with ${QUICK_REACTION}`}
-          hitSlop={9}
-          onPress={() => onReact(messageId, QUICK_REACTION)}
+          accessibilityLabel={ADD_REACTION_A11Y_LABEL}
+          hitSlop={CHIP_HIT_SLOP}
+          onPress={onLongPress}
           onLongPress={onLongPress}
           style={styles.reactionChip}
         >
-          <Text style={styles.reactionText}>{`${QUICK_REACTION} +`}</Text>
+          <Text style={styles.reactionText}>+</Text>
         </Pressable>
       ) : null}
     </View>
   );
 }
 
-const AVATAR_SIZE = 32;
+/**
+ * The 32pt avatar, and the gutter it sets (components.md §11). Exported for
+ * the thread's loading shapes (`thread-skeleton.tsx`), which mirror the row.
+ */
+export const MESSAGE_AVATAR_SIZE = 32;
+/** The crest raster's field colour (`spec/ui/brand-identity.md` §2, "Mark field"). */
+const CREST_FIELD = "#1A1A1A";
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
@@ -734,7 +861,7 @@ function createStyles(tokens: SignetTokens) {
       marginBottom: 2,
     },
     elbow: {
-      marginLeft: AVATAR_SIZE / 2,
+      marginLeft: MESSAGE_AVATAR_SIZE / 2,
       marginTop: 10,
       width: 24,
       height: 10,
@@ -751,12 +878,22 @@ function createStyles(tokens: SignetTokens) {
       gap: tokens.spacing.md,
     },
     avatar: {
-      width: AVATAR_SIZE,
-      height: AVATAR_SIZE,
-      borderRadius: avatarRadius(AVATAR_SIZE),
+      width: MESSAGE_AVATAR_SIZE,
+      height: MESSAGE_AVATAR_SIZE,
+      borderRadius: avatarRadius(MESSAGE_AVATAR_SIZE),
       backgroundColor: tokens.color.surface.popover,
       alignItems: "center",
       justifyContent: "center",
+    },
+    // The crest's own field, so its corners match the raster's while it loads.
+    // The mark never takes the chapter accent (brand-identity.md §2).
+    systemAvatar: {
+      backgroundColor: CREST_FIELD,
+      overflow: "hidden",
+    },
+    systemAvatarImage: {
+      width: MESSAGE_AVATAR_SIZE,
+      height: MESSAGE_AVATAR_SIZE,
     },
     // Initials at caption / 700 (§11 Row anatomy), as web's avatar draws them.
     // Weight comes from the Figtree family, never `fontWeight` (see `typeRole`).
@@ -768,7 +905,7 @@ function createStyles(tokens: SignetTokens) {
     // Held open on every row of a run, so a follow-on's text lines up under
     // the first row's. Stretches to the row's height so a screen reader's
     // focus ring on it covers the row.
-    gutter: { width: AVATAR_SIZE, alignSelf: "stretch" },
+    gutter: { width: MESSAGE_AVATAR_SIZE, alignSelf: "stretch" },
     column: { flex: 1, minWidth: 0 },
     authorLine: {
       flexDirection: "row",
@@ -790,6 +927,8 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
     },
     bodyMuted: { color: tokens.color.text.mutedForeground },
+    // A photo still uploading dims like the gray text beside it.
+    pendingFiles: { opacity: 0.5 },
     trailing: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
@@ -816,9 +955,9 @@ function createStyles(tokens: SignetTokens) {
       gap: tokens.spacing.md,
       marginTop: 2,
     },
+    // Colored with the chapter accent at render (`AccentText`).
     retryText: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.gold.askText,
     },
     discardText: {
       ...typeRole(tokens.typography.role.caption),
@@ -838,10 +977,9 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       justifyContent: "center",
     },
+    // Colors come from the chapter accent at render (`ReactionChip`).
     reactionChipMine: {
-      backgroundColor: tokens.color.gold.askFill,
       borderWidth: 1,
-      borderColor: tokens.color.gold.askBorder,
     },
     reactionText: {
       ...typeRole(tokens.typography.role.caption),
@@ -849,7 +987,6 @@ function createStyles(tokens: SignetTokens) {
     },
     reactionTextMine: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.gold.askText,
     },
   });
 }

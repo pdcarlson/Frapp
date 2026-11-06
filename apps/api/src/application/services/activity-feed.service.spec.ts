@@ -8,6 +8,7 @@ import { MemberService, RecentMemberJoin } from './member.service';
 import { ChatService } from './chat.service';
 import { RbacService } from './rbac.service';
 import { SystemPermissions } from '#domain/constants/permissions';
+import { SYSTEM_SENDER_ID } from '@repo/validation';
 import type { Event } from '#domain/entities/event.entity';
 import type { PointTransaction } from '#domain/entities/point-transaction.entity';
 import type { BackworkResource } from '#domain/entities/backwork.entity';
@@ -45,6 +46,7 @@ describe('ActivityFeedService', () => {
     created_at: '2026-01-01T00:00:00.000Z',
     archived_at: null,
     default_notification_level: null,
+    is_default: false,
     // Read-only, and this member is not an officer.
     can_post: false,
   };
@@ -293,6 +295,22 @@ describe('ActivityFeedService', () => {
     expect(item?.actor).toEqual({
       user_id: '',
       display_name: 'jkslayer',
+      avatar_url: null,
+    });
+  });
+
+  it('names the system actor Frapp, not an unnamed actor (#3347)', async () => {
+    mockChatService.getChannels.mockResolvedValue([announcementsChannel]);
+    mockChatService.getMessages.mockResolvedValue([
+      messageFixture({ id: 'msg-system', sender_id: SYSTEM_SENDER_ID }),
+    ]);
+
+    const result = await service.getFeed(CHAPTER_ID, USER_ID);
+    const item = result.find((entry) => entry.id === 'announcement:msg-system');
+
+    expect(item?.actor).toEqual({
+      user_id: SYSTEM_SENDER_ID,
+      display_name: 'Frapp',
       avatar_url: null,
     });
   });

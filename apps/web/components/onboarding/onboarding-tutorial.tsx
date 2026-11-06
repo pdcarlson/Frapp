@@ -50,7 +50,7 @@ type Step = {
 };
 
 /** §2's inline size, matching what the shared state family draws. */
-const GLYPH = "h-5 w-5 text-accent-text";
+const GLYPH = "h-5 w-5 text-muted-foreground";
 
 const STEPS: Step[] = [
   {

@@ -2,6 +2,7 @@
 
 import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
+import { createReportOnce } from "@repo/observability";
 import { ErrorState } from "@/components/shared/async-states";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { isChunkLoadError } from "@/lib/chunk-load-error";
@@ -19,8 +20,8 @@ import { isChunkLoadError } from "@/lib/chunk-load-error";
  * 260px raster: dropped into the shell's content column it would paint a second
  * full-viewport takeover inside a viewport that is not gone. `components.md`
  * §10's Error variant is the surface for a region that failed, and
- * `(dashboard)/loading.tsx` already reaches for its sibling `LoadingState` for
- * the same slot. So this renders §10's card and `app/error.tsx` keeps the
+ * `(dashboard)/loading.tsx` fills the same slot with a page skeleton rather
+ * than a takeover. So this renders §10's card and `app/error.tsx` keeps the
  * crest; the two are different objects because they stand in for different
  * amounts of missing product.
  *
@@ -79,11 +80,17 @@ import { isChunkLoadError } from "@/lib/chunk-load-error";
  * single mount, and this fallback remounts often: React tears the subtree down
  * and rebuilds it on every boundary reset, so each press of Retry re-reported
  * the identical error, and the gate's copy re-reported on every dashboard
- * navigation, unbounded in session length. The `WeakSet` makes one error one
- * event however many times it is re-thrown, and being weak it holds nothing
- * alive.
+ * navigation, unbounded in session length. `createReportOnce` (in
+ * `@repo/observability`, shared with mobile's route boundaries) makes one error
+ * one event however many times it is re-thrown.
  */
-const REPORTED = new WeakSet<object>();
+const reportSegmentError = createReportOnce<{ isChunkError: boolean }>(
+  (error, { isChunkError }) => {
+    Sentry.captureException(error, {
+      tags: { chunk_load_error: isChunkError },
+    });
+  },
+);
 /**
  * The one spelling of the title, written once.
  *
@@ -122,7 +129,8 @@ function segmentErrorCopy(
     // connection returns.
     return {
       title: SEGMENT_ERROR_TITLE,
-      description: "You're offline, so part of this page couldn't load. Retry once you're back.",
+      description:
+        "You're offline, so part of this page couldn't load. Retry once you're back.",
       actionLabel: "Retry",
       isChunkError,
       shouldReload: false,
@@ -153,7 +161,6 @@ export function SegmentError({
   error,
   retry,
   title,
-  headingLevel,
 }: {
   error: unknown;
   retry: () => void;
@@ -167,7 +174,6 @@ export function SegmentError({
    * those do not depend on which surface failed.
    */
   title?: string;
-  headingLevel?: "h1" | "h2";
 }) {
   // `linkOnline`, not `isOffline`: the question here is whether a reload
   // could fetch the document, which is a browser-link question. `isOffline`
@@ -180,17 +186,8 @@ export function SegmentError({
   const { description, actionLabel, isChunkError, shouldReload } = copy;
 
   useEffect(() => {
-    // Keyed on the error rather than the mount — see the docstring. A
-    // non-object (a thrown string, which a boundary can be handed) cannot go in
-    // a WeakSet, so it is reported unconditionally; those are rare enough that
-    // the duplicate is cheaper than the bookkeeping to dedupe them.
-    if (typeof error === "object" && error !== null) {
-      if (REPORTED.has(error)) return;
-      REPORTED.add(error);
-    }
-    Sentry.captureException(error, {
-      tags: { chunk_load_error: isChunkError },
-    });
+    // Keyed on the error rather than the mount — see the docstring.
+    reportSegmentError(error, { isChunkError });
   }, [error, isChunkError]);
 
   return (
@@ -198,7 +195,6 @@ export function SegmentError({
       title={title ?? copy.title}
       description={description}
       actionLabel={actionLabel}
-      headingLevel={headingLevel}
       onRetry={shouldReload ? () => window.location.reload() : retry}
     />
   );

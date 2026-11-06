@@ -278,6 +278,31 @@ describe("send() re-entry", () => {
     });
     expect(mocks.sendMessage).toHaveBeenCalledTimes(2);
   });
+
+  // The composer reads this on the tap to skip its jump for a message `send`
+  // would refuse, a second tap inside the same render included, so it has to
+  // hold from the call itself rather than from a later render.
+  it("reports a send in flight from the moment it is called until it settles", async () => {
+    const gate = deferred();
+    mocks.sendMessage.mockImplementation(async () => {
+      await gate.promise;
+    });
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    expect(result.current.sendInFlight()).toBe(false);
+
+    let sent!: Promise<boolean>;
+    act(() => {
+      sent = result.current.send("hello");
+      expect(result.current.sendInFlight()).toBe(true);
+    });
+
+    await act(async () => {
+      gate.resolve();
+      await sent;
+    });
+    expect(result.current.sendInFlight()).toBe(false);
+  });
 });
 
 describe("send() failure", () => {

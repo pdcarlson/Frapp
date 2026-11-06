@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 /**
- * The Ask dialog offers Documents only where the chapter has it (#1982).
+ * The Ask popover offers Documents only where the chapter has it (#1982).
  *
  * Documents can be switched off per chapter. Offering it anyway sends a member
  * to a screen whose reads the API refuses. The gate is the same member-readable
@@ -11,8 +11,19 @@ import userEvent from "@testing-library/user-event";
  * member below President fails, so it never gated at all.
  */
 
-const { gate } = vi.hoisted(() => ({
+const { gate, hidden, setupArgs } = vi.hoisted(() => ({
   gate: { current: undefined as ((key: string) => boolean) | undefined },
+  hidden: { current: new Set<string>() },
+  setupArgs: [] as unknown[][],
+}));
+
+vi.mock("@repo/hooks", () => ({
+  useMyPermissions: () => ({ data: { permissions: ["members:view"] } }),
+  // The rule itself is pinned in `@repo/hooks` (`unset-features.spec.tsx`).
+  useHiddenUnsetFeatures: (...args: unknown[]) => {
+    setupArgs.push(args);
+    return hidden.current;
+  },
 }));
 
 vi.mock("@/lib/hooks/use-chapter-module-gate", () => ({
@@ -42,12 +53,28 @@ describe("AskPill", () => {
     gate.current = (key) => key !== "documents";
     await openAsk();
     expect(screen.queryByRole("link", { name: "Open Documents" })).toBeNull();
-    expect(screen.queryByText(/live under Documents/)).toBeNull();
+    expect(screen.queryByText(/live in Documents/)).toBeNull();
   });
 
   it("keeps Documents while the chapter read is in flight, so nothing flashes out", async () => {
     gate.current = undefined;
     await openAsk();
     expect(screen.getByRole("link", { name: "Open Documents" })).toBeInTheDocument();
+  });
+
+  it("does not point at Documents nobody has uploaded to, for a member who can't", async () => {
+    gate.current = () => true;
+    hidden.current = new Set(["documents"]);
+    try {
+      await openAsk();
+      expect(
+        screen.queryByRole("link", { name: "Open Documents" }),
+      ).not.toBeInTheDocument();
+      expect(setupArgs.at(-1)?.[0]).toEqual(["members:view"]);
+      expect(setupArgs.at(-1)?.[1]).toBe(gate.current);
+    } finally {
+      hidden.current = new Set();
+      gate.current = undefined;
+    }
   });
 });

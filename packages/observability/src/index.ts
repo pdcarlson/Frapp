@@ -71,7 +71,7 @@ export {
   DEFAULT_POSTHOG_LOGS_SAMPLE_RATE,
 } from "./policy";
 
-export { pathOnlyAnalyticsPath } from "./analytics-path";
+export { analyticsRouteTemplate, pathOnlyAnalyticsPath } from "./analytics-path";
 
 export {
   FIRST_PARTY_API_ORIGINS,
@@ -81,3 +81,18 @@ export {
 export { createNoPseudonymScrubHooks } from "./sentry-scrub-hooks";
 
 export { headerValue, httpStatusClass } from "./sentry-http";
+
+export {
+  createQueryErrorReporter,
+  DEFAULT_REPORT_INTERVAL_MS,
+  UNKEYED_ROOT,
+} from "./query-errors";
+export { createReportOnce } from "./report-once";
+export type {
+  QueryErrorKind,
+  QueryErrorReport,
+  QueryErrorReporter,
+  QueryErrorReporterOptions,
+  ReportedMutation,
+  ReportedQuery,
+} from "./query-errors";

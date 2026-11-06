@@ -81,7 +81,7 @@ spans through `@opentelemetry/api`, which is the only thing a provider would add
 itself stands: `@opentelemetry/sdk-node` is still not a dependency, and under v11 a
 user-installed provider would not compete with Sentry so much as be ignored by it (its spans
 never reach Sentry). v11 also streams spans by default, which skips `beforeSendTransaction`;
-every surface pins `traceLifecycle: 'static'` so the transaction scrubber keeps running. Static
+every v11 surface (API, web, landing) pins `traceLifecycle: 'static'` so the transaction scrubber keeps running. Static
 does not cover the browser's INP span, which v11 (like v10) sends standalone past both event hooks,
 named after the clicked element's selector. INP was therefore off on both Next browsers
 (`webVitals: { ignore: ['inp'] }`) until selector text was scrubbed (#2736); the other web vitals were unaffected
@@ -110,6 +110,12 @@ hex `$groups`. Landing still uses the anonymous sanitizer that drops `$set`.
 **Correction (2026-09-10):** identified PostHog RN on mobile uses the same
 helper as `before_send` (`posthog-react-native` core CaptureEvent matches
 the web envelope; the helper is DOM-free). Replay stays off.
+**Correction (2026-11-05):** web and mobile now send route views from the
+SDK (#3382): web a hand-captured `$pageview`, mobile `screen()`, each naming
+the route's template (`analyticsRouteTemplate`: path-only, record-id
+segments as `[id]`), never a raw id. Mobile also turns on app lifecycle
+events. Both stay inside the chapter opt-out; `capture_pageview` and
+autocapture stay off. Rule: `spec/behavior/observability.md` § Route views.
 **Correction (2026-09-09):** `apps/landing` initializes anonymous Sentry
 (`NEXT_PUBLIC_LANDING_SENTRY_DSN` → `frapp-landing`) and PostHog JS for
 path-only pageviews and CTA clicks. No identity call, no alias, no chapter

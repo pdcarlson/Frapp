@@ -12,6 +12,7 @@ import {
 import {
   DISCORD_BOT_GATEWAY,
   DISCORD_MESSAGE_PAGE_LIMIT,
+  DiscordImportStoppedError,
   type IDiscordBotGateway,
 } from '#domain/adapters/discord.interface';
 import {
@@ -24,7 +25,11 @@ import {
   CHAT_ARCHIVE_BUCKET,
   archiveMediaObjectPath,
 } from '#domain/constants/storage';
-import { isAllowedUploadMime } from '@repo/validation';
+import {
+  contentTypeByExtension,
+  fileExtension,
+  isAllowedUploadMime,
+} from '@repo/validation';
 import {
   MAX_ARCHIVE_CHAPTER_BYTES,
   MAX_ARCHIVE_IMPORT_BYTES,
@@ -248,7 +253,7 @@ export class DiscordExportWorkerService {
     // another chapter's server.
     const connection = await this.connectionRepo.findByChapter(job.chapter_id);
     if (!connection) {
-      throw new Error(
+      throw new DiscordImportStoppedError(
         'This chapter no longer has a Discord server connected, so the import cannot continue. Reconnect Discord and start a new import.',
       );
     }
@@ -259,7 +264,7 @@ export class DiscordExportWorkerService {
     // mid-import, and in both cases the honest outcome is to stop rather than
     // quietly import a different server's history under the old job's consent.
     if (job.guild_id && job.guild_id !== guildId) {
-      throw new Error(
+      throw new DiscordImportStoppedError(
         `This import was created for Discord server ${job.guild_id}, but the chapter is now connected to ${guildId}. Start a new import for the current server.`,
       );
     }
@@ -650,7 +655,7 @@ export class DiscordExportWorkerService {
       // are counted apart: this slice's tally never saw them.
       totals.tally = tallyMessageContent(totals.tally, rawPage);
       if (isLikelyMissingMessageContentIntent(totals.tally)) {
-        throw new Error(
+        throw new DiscordImportStoppedError(
           missingMessageContentIntentError({
             thisRun: totals.imported - job.imported_messages,
             earlierRuns: job.imported_messages,
@@ -724,7 +729,7 @@ export class DiscordExportWorkerService {
       totals.skipped += outcome.skipped;
       totals.attachmentsImported += outcome.attachmentsImported;
       totals.attachmentsSkipped += outcome.attachmentsSkipped;
-      // The batch writer emits a bare "No uploaded file for attachment: <key>"
+      // The batch writer emits a generic "<key> wasn't in the upload" line
       // for every key it cannot resolve — including the ones this slice
       // deliberately rejected a moment ago and already explained by name and
       // reason. Both lines compete for a 50-entry buffer that keeps the tail,
@@ -797,7 +802,9 @@ export class DiscordExportWorkerService {
       return;
     }
     if (intent === 'disabled') {
-      throw new Error(messageContentIntentOffError(alreadyImported));
+      throw new DiscordImportStoppedError(
+        messageContentIntentOffError(alreadyImported),
+      );
     }
     if (intent === null) {
       this.logger.warn(
@@ -890,10 +897,18 @@ export class DiscordExportWorkerService {
         // `text/plain` is allowlisted; the parameterised spelling is not, so
         // without this every one of those is dropped with a warning that
         // contradicts itself.
-        const contentType = normaliseMimeType(attachment.content_type);
-        if (contentType && !isAllowedUploadMime('archive', contentType)) {
+        const contentType = attachmentContentType(attachment);
+        if (!contentType) {
           totals.warnings.push(
-            `"${attachment.filename ?? key}" is a file type the archive does not accept (${contentType}) and was not imported. The message it belongs to was.`,
+            `"${attachment.filename ?? key}" has no file type Frapp could tell, so it was not imported. The message it belongs to was.`,
+          );
+          reported.push(key);
+          skipped += 1;
+          continue;
+        }
+        if (!isAllowedUploadMime('archive', contentType)) {
+          totals.warnings.push(
+            `"${attachment.filename ?? key}" is a file type Frapp doesn't store (${contentType}) and was not imported. The message it belongs to was.`,
           );
           reported.push(key);
           skipped += 1;
@@ -916,9 +931,9 @@ export class DiscordExportWorkerService {
       bucket: CHAT_ARCHIVE_BUCKET,
       // Shared with the upload path, so the purge's prefix sweep finds both.
       storage_path: archiveMediaObjectPath(job.chapter_id, job.id, key),
+      // Never null here: an attachment with no type was refused above.
       content_type:
-        normaliseMimeType(attachment.content_type) ??
-        'application/octet-stream',
+        attachmentContentType(attachment) ?? 'application/octet-stream',
       byte_size: typeof attachment.size === 'number' ? attachment.size : null,
     }));
 
@@ -950,7 +965,9 @@ export class DiscordExportWorkerService {
         // avoid elsewhere (see the manifest-paging note in the repository), and
         // quietly dropping attachments once a chapter is full would tell the
         // admin their history imported when it did not.
-        throw new Error(archiveQuotaMessage(error, job.source));
+        throw new DiscordImportStoppedError(
+          archiveQuotaMessage(error, job.source),
+        );
       }
       throw error;
     }
@@ -985,7 +1002,7 @@ export class DiscordExportWorkerService {
           url,
           bucket: file.bucket,
           path: file.storage_path,
-          contentType: normaliseMimeType(attachment.content_type),
+          contentType: attachmentContentType(attachment),
           declaredSize:
             typeof attachment.size === 'number' ? attachment.size : null,
         })),
@@ -1007,14 +1024,19 @@ export class DiscordExportWorkerService {
             // A deleted or expired attachment is a warning on one message,
             // not a failed import — the message still has its text.
             totals.warnings.push(
-              `Attachment "${name}" is no longer available from Discord and was not imported.`,
+              `"${name}" is no longer available from Discord, so it was not imported. The message it belongs to was.`,
             );
             break;
           default:
-            totals.warnings.push(
-              `Could not import attachment "${name}": ${
+            // The storage service's own text (one was a chunk of an HTML
+            // error page) is for the log, not the admin's warning list.
+            this.logger.warn(
+              `Attachment copy failed for import ${job.id}: ${
                 result.reason ?? result.status
               }`,
+            );
+            totals.warnings.push(
+              `Storage couldn't take "${name}", so it was not imported. The message it belongs to was.`,
             );
         }
         reported.push(entry.key);
@@ -1071,6 +1093,23 @@ export class DiscordExportWorkerService {
 function normaliseMimeType(value: string | null | undefined): string | null {
   const bare = value?.split(';')[0]?.trim().toLowerCase();
   return bare && bare.length > 0 ? bare : null;
+}
+
+/**
+ * The type an attachment is stored as: Discord's own, unless it sent none or
+ * only the generic `application/octet-stream`, in which case the file's
+ * extension decides, the way the upload path decides every file. Discord
+ * reports no useful type for an iPhone `.heic` photo, and storing it as a
+ * generic binary got it refused by the bucket. Null when neither says.
+ */
+export function attachmentContentType(
+  attachment: Pick<DiscordApiAttachment, 'content_type' | 'filename'>,
+): string | null {
+  const reported = normaliseMimeType(attachment.content_type);
+  if (reported && reported !== 'application/octet-stream') return reported;
+  const byExtension =
+    contentTypeByExtension('archive')[fileExtension(attachment.filename ?? '')];
+  return byExtension ?? null;
 }
 
 /** An attachment with a manifest row, waiting for the copier. */

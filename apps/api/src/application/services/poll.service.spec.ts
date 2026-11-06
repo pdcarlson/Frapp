@@ -5,6 +5,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { PollService } from './poll.service';
 import { ChannelAccessService } from './channel-access.service';
 import { ChatBlockService } from './chat-block.service';
@@ -23,6 +24,13 @@ import type { ChatChannel } from '#domain/entities/chat.entity';
 import type { PollVote } from '#domain/entities/poll-vote.entity';
 import type { Member } from '#domain/entities/member.entity';
 
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(() => 'event-exception'),
+  captureMessage: jest.fn(() => 'event-message'),
+}));
+
+const captureException = jest.mocked(Sentry.captureException);
+
 describe('PollService', () => {
   let service: PollService;
   let mockMessageRepo: jest.Mocked<IChatMessageRepository>;
@@ -35,6 +43,7 @@ describe('PollService', () => {
   };
   let mockChatBlocks: { listBlockedUserIds: jest.Mock };
   let loggerErrorSpy: jest.SpyInstance;
+  let loggerWarnSpy: jest.SpyInstance;
 
   const baseChannel: ChatChannel = {
     id: 'ch-1',
@@ -49,6 +58,7 @@ describe('PollService', () => {
     created_at: '2026-01-01T00:00:00.000Z',
     archived_at: null,
     default_notification_level: null,
+    is_default: false,
   };
 
   const basePollMessage: ChatMessage = {
@@ -79,8 +89,12 @@ describe('PollService', () => {
   };
 
   beforeEach(async () => {
+    jest.clearAllMocks();
     loggerErrorSpy = jest
       .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    loggerWarnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
       .mockImplementation(() => undefined);
 
     mockMessageRepo = {
@@ -113,6 +127,7 @@ describe('PollService', () => {
       addPrivateChannelMember: jest.fn(),
       removePrivateChannelMember: jest.fn(),
       removeUserFromPrivateChannels: jest.fn(),
+      setDefault: jest.fn(),
     };
 
     mockVoteRepo = {
@@ -194,6 +209,7 @@ describe('PollService', () => {
 
   afterEach(() => {
     loggerErrorSpy.mockRestore();
+    loggerWarnSpy.mockRestore();
   });
 
   describe('createPoll', () => {
@@ -935,10 +951,10 @@ describe('PollService', () => {
       // shown" this degrade has always served.
       expect(result).toHaveLength(1);
       expect(result[0].userVotes).toEqual([]);
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('userVotes omitted'),
-        expect.stringContaining('user votes down'),
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/userVotes omitted: user votes down$/),
       );
+      expect(loggerErrorSpy).not.toHaveBeenCalled();
     });
 
     // #2495 moved the block-list read into the same round as the tally and
@@ -981,6 +997,18 @@ describe('PollService', () => {
       expect(loggerErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining('chapter-xyz'),
         expect.stringContaining('postgrest timeout'),
+      );
+      expect(captureException).toHaveBeenCalledTimes(1);
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'postgrest timeout' }),
+        expect.objectContaining({
+          level: 'error',
+          tags: { caught_at: 'poll-list-vote-totals' },
+          fingerprint: ['caught-failure', 'poll-list-vote-totals', 'Error'],
+        }),
+      );
+      expect(JSON.stringify(captureException.mock.calls)).not.toContain(
+        'chapter-xyz',
       );
     });
 

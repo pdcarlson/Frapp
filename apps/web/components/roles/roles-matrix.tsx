@@ -6,6 +6,7 @@ import { cn, getErrorMessage, initials } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useToast } from "@/lib/hooks/use-toast";
+import { permissionLabel } from "@/lib/permission-labels";
 
 export type MatrixRole = {
   id: string;
@@ -53,18 +54,23 @@ type Props = {
  *
  * **Rows group by module** (`4e` pin 3). The group is derived from the
  * permission string's prefix (`events:create` → Events) rather than from
- * `entry.key`, because the catalog's `key` is a display label and several
- * modules spell theirs differently from the permission namespace. A permission
- * with no prefix lands under "Chapter", which is where the ungrouped
- * chapter-wide permissions belong anyway.
+ * `entry.key`, because the catalog's `key` is the API constant's name
+ * (`EVENTS_CREATE`) and several modules spell theirs differently from the
+ * permission namespace. A permission with no prefix lands under "Chapter",
+ * which is where the ungrouped chapter-wide permissions belong anyway. A row
+ * reads as `permission-labels.ts` words it ("Create events"), never as the
+ * constant or the raw string; the tooltip repeats the words for a label the
+ * column truncates.
  *
  * **The marks take no opacity modifier.** `●` and `○` are characters, so
  * §6's 4.5:1 text floor applies rather than the 3:1 glyph one, and
  * `text-muted-foreground/60` measures under it — the exact defect
  * `settings-roles-tab.spec.tsx` guards at the call site, because a value-level
- * contrast spec cannot see which class a component reached for. Granted takes
- * `--accent-text` rather than `--success` for `pro-chip.tsx`'s reason: a held
- * permission is an entitlement, not a status.
+ * contrast spec cannot see which class a component reached for. A granted cell
+ * the viewer can toggle takes `--accent-text`, because it is a control they
+ * switched on (`foundations.md` §6), not `--success`: a held permission is an
+ * entitlement, not a status. A locked cell reads `--foreground`: nobody can act
+ * on it, so it does not take the accent.
  *
  * **The wildcard column is not editable, and that is an API rule, not a style
  * choice.** A role holding `*` (the President) shows every cell granted and
@@ -166,7 +172,7 @@ export function RolesMatrix({
         title: `Couldn't update ${role.name}`,
         description: getErrorMessage(
           error,
-          "The permission was not changed. Retry, or check you still hold roles:manage.",
+          "The permission was not changed. Try again in a moment.",
         ),
         variant: "destructive",
       });
@@ -225,20 +231,12 @@ export function RolesMatrix({
               >
                 <span
                   aria-hidden
-                  className={cn(
-                    "mx-auto mb-1 grid h-7 w-7 place-items-center rounded-full text-[10px] font-bold",
-                    role.permissions.includes("*")
-                      ? "border border-accent-border bg-accent-subtle text-accent-text"
-                      : "bg-muted text-foreground",
-                  )}
+                  className="mx-auto mb-1 grid h-7 w-7 place-items-center rounded-full bg-muted text-[10px] font-bold text-foreground"
                 >
                   {initials(role.name)}
                 </span>
                 <span
-                  className={cn(
-                    "block truncate text-xs font-semibold",
-                    permissionsOf(role).includes("*") && "text-accent-text",
-                  )}
+                  className="block truncate text-xs font-semibold"
                   title={role.name}
                 >
                   {role.name}
@@ -288,16 +286,16 @@ export function RolesMatrix({
                 <span
                   role="rowheader"
                   className="truncate pr-2"
-                  title={entry.permission}
+                  title={permissionLabel(entry.permission)}
                 >
-                  {entry.key || entry.permission}
+                  {permissionLabel(entry.permission)}
                 </span>
                 {columns.map((role) => {
                   const wildcard = role.permissions.includes("*");
                   const held =
                     wildcard || role.permissions.includes(entry.permission);
                   const locked = wildcard || !canManage;
-                  const label = `${entry.key || entry.permission} for ${role.name}`;
+                  const label = `${permissionLabel(entry.permission)} for ${role.name}`;
 
                   if (locked) {
                     return (
@@ -311,7 +309,7 @@ export function RolesMatrix({
                         }
                         className={cn(
                           "text-center",
-                          held ? "text-accent-text" : "text-muted-foreground",
+                          held ? "text-foreground" : "text-muted-foreground",
                         )}
                       >
                         <span aria-hidden="true">{held ? "●" : "○"}</span>
@@ -382,6 +380,12 @@ const MODULE_LABELS: Record<string, string> = {
   invoices: "Money",
   dues: "Money",
   points: "Money",
+  // The product's names for these, not the API namespace's.
+  chapter_docs: "Documents",
+  geofences: "Study zones",
+  "chapter-config": "Settings",
+  "chapter-directory": "Chapter directory",
+  service: "Service hours",
 };
 
 /**

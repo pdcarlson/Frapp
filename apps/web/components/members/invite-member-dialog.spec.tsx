@@ -14,7 +14,13 @@ const {
   mockToast,
   mockBatchCreate,
   mockCreateInvite,
+  mockRefetchRoles,
+  mockRefetchInvites,
+  activeChapterId,
 } = vi.hoisted(() => ({
+  activeChapterId: { current: "chapter-1" as string | null },
+  mockRefetchRoles: vi.fn(),
+  mockRefetchInvites: vi.fn(),
   mockCurrentChapter: vi.fn(),
   mockBatchCreate: vi.fn(),
   mockCreateInvite: vi.fn(),
@@ -32,9 +38,15 @@ const INVITE = {
 };
 
 vi.mock("@repo/hooks", () => ({
-  useRoles: () => mockRoles(),
+  useActiveChapterId: () => activeChapterId.current,
+  // `refetch`: opening the panel re-reads invites and roles.
+  useRoles: () => ({ refetch: mockRefetchRoles, ...mockRoles() }),
   useOrgConfig: () => mockOrgConfig(),
-  useInvites: () => ({ data: [INVITE], isError: false }),
+  useInvites: () => ({
+    data: [INVITE],
+    isError: false,
+    refetch: mockRefetchInvites,
+  }),
   useCreateInvite: () => ({
     mutateAsync: mockCreateInvite,
     isPending: false,
@@ -304,7 +316,7 @@ describe("InviteMemberDialog default role", () => {
     expect(rolePicker().value).toBe("Member");
   });
 
-  it("re-adopts the default after the dialog is closed with Done", async () => {
+  it("re-adopts the default after the panel is closed", async () => {
     mockRoles.mockReturnValue({ data: ROLES, isError: false });
     mockOrgConfig.mockReturnValue({
       data: { default_invite_role_id: "role-pledge" },
@@ -314,9 +326,9 @@ describe("InviteMemberDialog default role", () => {
     await userEvent.selectOptions(rolePicker(), "Alumni");
     expect(rolePicker().value).toBe("Alumni");
 
-    // Done sets state directly rather than going through Radix's dismiss
-    // path, so it is the close route most likely to skip the reset.
-    await userEvent.click(screen.getByRole("button", { name: /^done$/i }));
+    // The panel's X is its only close control now that the Done footer is
+    // gone; it goes through `handleOpenChange`, which owns the reset.
+    await userEvent.click(screen.getByRole("button", { name: /^close$/i }));
     await userEvent.click(screen.getByRole("button", { name: /^invite$/i }));
 
     expect(rolePicker().value).toBe("New Member");
@@ -341,6 +353,46 @@ describe("InviteMemberDialog default role", () => {
   });
 });
 
+// The panel has no Refresh button: opening it re-reads both lists (invites are
+// cached for a minute, so another officer's revoke would otherwise show as
+// live), and a failed read offers its retry beside the reason.
+describe("InviteMemberDialog live data", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    primeHooks();
+    chapter.active();
+  });
+
+  it("re-reads invites and roles each time the panel opens", async () => {
+    await openDialog();
+    expect(mockRefetchInvites).toHaveBeenCalledTimes(1);
+    expect(mockRefetchRoles).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads nothing before a chapter is active, since refetch skips the hooks' guard", async () => {
+    activeChapterId.current = null;
+    try {
+      await openDialog();
+      expect(mockRefetchInvites).not.toHaveBeenCalled();
+      expect(mockRefetchRoles).not.toHaveBeenCalled();
+    } finally {
+      activeChapterId.current = "chapter-1";
+    }
+  });
+
+  it("offers Try again beside a failed read, and it re-reads both lists", async () => {
+    mockRoles.mockReturnValue({ data: undefined, isError: true });
+    await openDialog();
+    vi.clearAllMocks();
+    mockRoles.mockReturnValue({ data: undefined, isError: true });
+
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(mockRefetchInvites).toHaveBeenCalledTimes(1);
+    expect(mockRefetchRoles).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("InviteMemberDialog copy payload", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -354,10 +406,17 @@ describe("InviteMemberDialog copy payload", () => {
 
   it("copies a /join?token= URL with role and expiry, not a bare code", async () => {
     await openDialog();
-    const copyButton = screen.getAllByRole("button", { name: /copy link/i })[0];
+    // Icon-only (components.md § Icon-only actions): the label names the
+    // invite by its token's tail, and no word is drawn beside the glyph.
+    const copyButton = screen.getAllByRole("button", {
+      name: /^copy the .* invite link ending C123$/i,
+    })[0];
     if (!copyButton) {
-      throw new Error("expected a Copy link button on an active invite");
+      throw new Error("expected a copy-link button on an active invite");
     }
+    expect(copyButton.textContent).toBe("");
+    expect(revoke().textContent).toBe("");
+    expect(revoke()).toHaveAccessibleName(/ending C123$/);
     await userEvent.click(copyButton);
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);

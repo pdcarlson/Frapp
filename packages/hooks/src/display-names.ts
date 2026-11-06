@@ -4,7 +4,9 @@
  * Deliberately pure: no `"use client"`, no React, no react-query. Mobile's
  * `lib/chat/channel-list.ts` selectors are plain functions with a plain-node
  * spec, and they must be able to import this rule without dragging a query
- * client into that graph.
+ * client into that graph. Its one import is `@repo/validation`'s
+ * `SYSTEM_SENDER_ID` and `SYSTEM_AUTHOR_LABEL` (#3347), constants from a
+ * package with no React in it.
  *
  * ## Why names are resolved by id rather than joined onto the message
  *
@@ -20,6 +22,8 @@
  * life of the session. Resolving by `sender_id` against a cached roster is the
  * only path-independent option.
  */
+
+import { SYSTEM_AUTHOR_LABEL, SYSTEM_SENDER_ID } from "@repo/validation";
 
 /** `users.id` → `display_name`, as served by `GET /v1/members/roster`. */
 export type DisplayNameMap = Record<string, string>;
@@ -222,7 +226,7 @@ export function directChannelDisplayName(
  * The identity fields a chat message carries about whoever wrote it.
  *
  * Structural rather than an import of `@repo/chat-core`'s `ChatMessage`: this
- * module is deliberately dependency-free (see the header), and every caller —
+ * module deliberately imports almost nothing (see the header), and every caller —
  * the web timeline, the pins popover, the mobile message row — passes a different
  * concrete row shape.
  */
@@ -241,6 +245,8 @@ export type NameResolver = (userId: string) => string | null;
 /**
  * The best available human name for a message's author, or `null`.
  *
+ * The system actor is named {@link SYSTEM_AUTHOR_LABEL} before any lookup.
+ *
  * `sender_id` is consulted first and `author_name` is the fallback, not the
  * other way round: a roster hit is the *current* name, while `author_name` is a
  * snapshot of whatever the source system recorded at export time. Preferring the
@@ -253,12 +259,32 @@ export function resolveAuthorName(
   author: MessageAuthor,
   nameFor: NameResolver,
 ): string | null {
+  if (author.sender_id === SYSTEM_SENDER_ID) return SYSTEM_AUTHOR_LABEL;
   if (author.sender_id) {
     const resolved = nameFor(author.sender_id);
     if (resolved) return resolved;
   }
   const authored = author.author_name?.trim();
   return authored ? authored : null;
+}
+
+/**
+ * The name a card gives the member behind a change it records, such as the
+ * actor on a `#chapter-audit` row, or `null` for a row with no actor.
+ *
+ * {@link resolveAuthorLabel} for an id alone, so an actor reads as the same
+ * member does above their own messages: the system actor is
+ * {@link SYSTEM_AUTHOR_LABEL}, a member their roster name or, when the roster
+ * can't name them, {@link memberFallbackLabel}, never a bare id prefix. No
+ * viewer is passed, so an officer's own change reads under their name, as it
+ * does for everyone else reading the record.
+ */
+export function actorLabel(
+  userId: string | null | undefined,
+  nameFor: NameResolver,
+): string | null {
+  if (!userId) return null;
+  return resolveAuthorLabel({ sender_id: userId }, nameFor, null);
 }
 
 /** Resolves a `users.id` to the member's signed photo URL, or `null`. */

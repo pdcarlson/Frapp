@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   CHECK_IN_GRACE_MINUTES,
   formatCountdown,
-  formatEventRowTime,
+  formatEventClock,
+  formatEventDateBlock,
   formatEventWindow,
   isCurrentOrUpcoming,
   resolveCheckInWindow,
@@ -89,24 +90,64 @@ describe("formatEventWindow", () => {
   });
 });
 
-describe("formatEventRowTime", () => {
+describe("formatEventDateBlock", () => {
+  // A Tuesday.
   const now = at(2026, 3, 10, 14, 0);
+  const block = (date: Date) => formatEventDateBlock(iso(date), now);
 
-  it("labels today, tomorrow, this week and later", () => {
-    expect(formatEventRowTime(iso(at(2026, 3, 10, 18, 0)), now)).toMatch(
-      /^Today · /,
-    );
-    expect(formatEventRowTime(iso(at(2026, 3, 11, 18, 0)), now)).toMatch(
-      /^Tomorrow · /,
-    );
-    expect(formatEventRowTime(iso(at(2026, 3, 13, 18, 0)), now)).toMatch(
-      /^Friday · /,
-    );
-    expect(formatEventRowTime(iso(at(2026, 4, 21, 18, 0)), now)).toMatch(/Apr/);
+  it("says today and tomorrow in words", () => {
+    expect(block(at(2026, 3, 10, 18, 0))).toMatchObject({
+      label: "Today",
+      day: "10",
+      isToday: true,
+    });
+    expect(block(at(2026, 3, 11, 18, 0))).toMatchObject({
+      label: "Tmrw",
+      day: "11",
+      isToday: false,
+    });
   });
 
-  it("returns an empty string for unusable input", () => {
-    expect(formatEventRowTime("nope", now)).toBe("");
+  it("uses the weekday inside the week and the month beyond it", () => {
+    expect(block(at(2026, 3, 13, 18, 0))).toMatchObject({
+      label: "Fri",
+      day: "13",
+    });
+    // A week out, "Tue" would name the same weekday as today.
+    expect(block(at(2026, 3, 17, 18, 0))).toMatchObject({
+      label: "Mar",
+      day: "17",
+    });
+    expect(block(at(2026, 4, 21, 18, 0))).toMatchObject({
+      label: "Apr",
+      day: "21",
+    });
+  });
+
+  it("keeps the weekday for an event that started yesterday", () => {
+    // Still listed while its check-in window runs past midnight.
+    expect(block(at(2026, 3, 9, 23, 0))).toMatchObject({
+      label: "Mon",
+      day: "9",
+    });
+  });
+
+  it("takes the month for a multi-day event that started a week or more ago", () => {
+    // Still listed while it runs; "Tue 3" would read as a Tuesday to come.
+    expect(block(at(2026, 3, 3, 9, 0))).toMatchObject({
+      label: "Mar",
+      day: "3",
+    });
+  });
+
+  it("carries the start clock for the meta line", () => {
+    expect(block(at(2026, 3, 10, 18, 0))?.clock).toBe(
+      formatEventClock(at(2026, 3, 10, 18, 0)),
+    );
+  });
+
+  it("returns null for unusable input", () => {
+    expect(formatEventDateBlock("nope", now)).toBeNull();
   });
 });
 
@@ -150,8 +191,11 @@ describe("resolveCheckInWindow", () => {
       ).state,
     ).toBe("closed");
     expect(
-      resolveCheckInWindow(iso(start), iso(end), at(2026, 3, 10, 18, 30))
-        .closesAt?.getTime(),
+      resolveCheckInWindow(
+        iso(start),
+        iso(end),
+        at(2026, 3, 10, 18, 30),
+      ).closesAt?.getTime(),
     ).toBe(graceEnd.getTime());
   });
 

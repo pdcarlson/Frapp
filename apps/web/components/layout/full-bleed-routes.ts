@@ -4,9 +4,11 @@
  * `<main>` gives every route `px-4 py-4 sm:px-6` and its own `overflow-y-auto`.
  * That is right for a page of stacked cards and wrong for chat, which the
  * framework board draws as "three flush columns, 100vh, independent scroll"
- * (`1b`): the channels column has to sit flush against the nav's right border
- * with no gutter between them, and the composer has to be pinned to the bottom
- * of the viewport rather than to the bottom of a document that scrolls.
+ * (`1b`): its columns sit flush against the left column with no gutter between
+ * them, and the composer has to be pinned to the bottom of the viewport rather
+ * than to the bottom of a document that scrolls. (From `lg` up the channel
+ * list is the shell's left column itself since 2026-11-05,
+ * `chat-nav-column.tsx`; below it, the list is in `<main>` with the thread.)
  *
  * A full-bleed route therefore gets a `<main>` with no padding and no scroll of
  * its own, and takes responsibility for both. It is still the same `<main>`

@@ -25,8 +25,12 @@ import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { ErrorState, SkeletonLines } from "@/components/state-block";
 import {
   SheetGrabber,
-  SheetHeader,
+  SheetScrim,
+  TallSheetHeader,
   useSheetBackgroundStyle,
+  useTallSheetProps,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 import {
   resolveCustomRoleNames,
@@ -65,6 +69,14 @@ import {
  * because the directory is where a member you have blocked is still listed and
  * so where you would look for them.
  *
+ * ## A tall sheet
+ *
+ * It opens at full height (`useTallSheetProps`,
+ * `spec/ui/design-system/components.md` § Surface size): it holds a whole
+ * profile, and the 65% box it used to open in cut the bio and Block off below
+ * the fold. No "Member" title and no "Done": the member's name heads the
+ * body, and the header's X closes it.
+ *
  * ## Fixed snap points, not `enableDynamicSizing`
  *
  * A bio has no length cap (the API's `UpdateUserDto` bounds none of its
@@ -75,25 +87,30 @@ import {
  * spells out at its second modal: nested inside a `BottomSheetView`, the view
  * and the scrollable write competing heights to the same animated value.
  */
-const SNAP_POINTS = ["65%"];
-
 export interface MemberDetailSheetProps {
-  /** `null` while no row is selected; the sheet stays mounted regardless. */
-  userId: string | null;
+  /**
+   * The tapped row's ids, or `null` while no row is selected; the sheet stays
+   * mounted regardless. The profile is fetched by `memberId` (the route takes
+   * the member row's id) and the stale-DM guard keys on `userId`.
+   */
+  member: { memberId: string; userId: string } | null;
   onDismiss?: () => void;
 }
 
 export const MemberDetailSheet = forwardRef<
   BottomSheetModal,
   MemberDetailSheetProps
->(function MemberDetailSheet({ userId, onDismiss }, ref) {
+>(function MemberDetailSheet({ member, onDismiss }, ref) {
+  const userId = member?.userId ?? null;
+  const closeSheet = useSheetClose(ref);
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
+  const tallSheet = useTallSheetProps();
 
   // `useMember` is already `enabled: !!id`, so this stays idle until a row is
   // actually tapped rather than firing for every mounted-but-closed sheet.
-  const memberQuery = useMember(userId ?? "");
+  const memberQuery = useMember(member?.memberId ?? "");
   const rolesQuery = useRoles();
 
   // Custom roles (`chapter_custom_roles` — chapter-specific titles like
@@ -167,11 +184,6 @@ export const MemberDetailSheet = forwardRef<
     openUserIdRef.current = userId;
   }, [userId]);
 
-  function dismiss() {
-    if (typeof ref === "function" || !ref?.current) return;
-    ref.current.dismiss();
-  }
-
   async function startDm(memberUserId: string, name: string) {
     if (dmInFlightRef.current.has(memberUserId)) return;
     dmInFlightRef.current.add(memberUserId);
@@ -182,7 +194,7 @@ export const MemberDetailSheet = forwardRef<
       );
       if (openUserIdRef.current !== memberUserId) return;
       if (!channelId) throw new Error("No channel id returned");
-      dismiss();
+      closeSheet();
       router.push({ pathname: "/chat-thread", params: { channelId } });
     } catch {
       if (openUserIdRef.current !== memberUserId) return;
@@ -196,19 +208,28 @@ export const MemberDetailSheet = forwardRef<
   return (
     <BottomSheetModal
       ref={ref}
-      enableDynamicSizing={false}
-      snapPoints={SNAP_POINTS}
+      {...tallSheet}
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
+      backdropComponent={SheetScrim}
       onDismiss={onDismiss}
     >
+      <SheetBackToClose onClose={closeSheet} />
       <BottomSheetScrollView
+        onAccessibilityEscape={closeSheet}
         style={styles.scroll}
         contentContainerStyle={styles.body}
+        // The X stays pinned while a long profile scrolls under it: at full
+        // height there is no scrim to tap, and the grabber scrolls away too.
+        stickyHeaderIndices={[0]}
       >
-        <SheetHeader title="Member" onCancel={dismiss} cancelLabel="Done" />
+        <View style={styles.stickyHeader}>
+          <TallSheetHeader onClose={closeSheet} />
+        </View>
 
-        {memberQuery.isPending ? <SkeletonLines lines={4} showTile /> : null}
+        {memberQuery.isPending ? (
+          <SkeletonLines lines={4} showTile tone="list" />
+        ) : null}
 
         {/* A cached member still renders through a background-refetch
             failure (TanStack keeps `data` on an errored refetch) — the error
@@ -250,10 +271,15 @@ export const MemberDetailSheet = forwardRef<
                 <ListRow
                   label="Message"
                   description={messageRowDescription(messageRow)}
+                  // Busy while the DM opens, so the row keeps its look and
+                  // shows a spinner; disabled only while the block list
+                  // can't vouch for a DM yet, which is the row being
+                  // unavailable rather than working.
+                  busy={
+                    messageRow.kind === "ready" && dmPending.has(detail.userId)
+                  }
                   disabled={
-                    messageRow.kind === "ready"
-                      ? dmPending.has(detail.userId)
-                      : messageRow.kind !== "retry"
+                    messageRow.kind !== "ready" && messageRow.kind !== "retry"
                   }
                   onPress={() => {
                     if (messageRow.kind === "retry") blockList.retry();
@@ -264,8 +290,13 @@ export const MemberDetailSheet = forwardRef<
             ) : null}
 
             <ListSection>
-              <ListRow label="Email" value={detail.email ?? "Not set"} />
               <ListRow
+                variant="detail"
+                label="Email"
+                value={detail.email ?? "Not set"}
+              />
+              <ListRow
+                variant="detail"
                 label="Role"
                 value={
                   rolesStillLoading
@@ -275,7 +306,11 @@ export const MemberDetailSheet = forwardRef<
                       : "—"
                 }
               />
-              <ListRow label="Joined" value={detail.joinedLabel ?? "—"} />
+              <ListRow
+                variant="detail"
+                label="Joined"
+                value={detail.joinedLabel ?? "—"}
+              />
             </ListSection>
 
             {detail.customFields.length > 0 ? (
@@ -285,6 +320,7 @@ export const MemberDetailSheet = forwardRef<
                   {detail.customFields.map((field) => (
                     <ListRow
                       key={field.fieldId}
+                      variant="detail"
                       label={field.label}
                       value={field.value}
                     />
@@ -305,6 +341,7 @@ export const MemberDetailSheet = forwardRef<
                   <ListRow
                     label={`Unblock ${blockTarget.displayName}`}
                     description={UNBLOCK_ROW_DESCRIPTION}
+                    action
                     disabled={blockActions.isPending}
                     onPress={() =>
                       confirmUnblockMember({
@@ -317,6 +354,7 @@ export const MemberDetailSheet = forwardRef<
                   <ListRow
                     label={`Block ${blockTarget.displayName}`}
                     description={BLOCK_ROW_DESCRIPTION}
+                    action
                     destructive
                     disabled={blockActions.isPending}
                     onPress={() =>
@@ -343,6 +381,10 @@ function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     scroll: {
       flex: 1,
+    },
+    stickyHeader: {
+      // Sticky, so it paints the sheet's own fill over the rows passing under.
+      backgroundColor: tokens.color.surface.popover,
     },
     body: {
       paddingHorizontal: tokens.spacing.lg,
@@ -375,10 +417,11 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.muted,
     },
     bioCard: {
-      borderRadius: tokens.radius.cardLarge,
+      // The ListSection recipe beside it, as Profile's own bio card draws it.
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
+      backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
     },
     bioText: {

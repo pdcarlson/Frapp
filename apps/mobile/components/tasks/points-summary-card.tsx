@@ -16,6 +16,9 @@ import type { HouseRank, PointsSummary } from "@/lib/tasks/points-card";
  * `app/(tabs)/service-hours.tsx` states: a "0" headlined at a member who has
  * 1,240 points is worse than saying nothing yet. A *real* zero still renders 0 —
  * `selectPointsSummary` keeps the two apart.
+ *
+ * The balance is the foreground text: a number is a stat, never the chapter
+ * accent (foundations.md §6, "Where the accent goes", 2026-11-05).
  */
 
 export interface PointsSummaryCardProps {
@@ -88,7 +91,7 @@ function createStyles(tokens: SignetTokens) {
       // on a role token is banned by foundations.md §7, so the nearest role wins.
       ...typeRole(tokens.typography.role.display),
       letterSpacing: -0.5,
-      color: tokens.color.gold.askText,
+      color: tokens.color.text.foreground,
       marginTop: 2,
     },
     rank: {

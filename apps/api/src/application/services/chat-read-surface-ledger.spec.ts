@@ -142,6 +142,9 @@ const HTTP_LEDGER: Record<string, Entry> = {
   // `channels:manage` holder is managing; no message content.
   ChatController_addChannelMember_v1: CHANNEL_METADATA,
   ChatController_removeChannelMember_v1: CHANNEL_METADATA,
+  // Who can read a channel (#3536): ids and role ranks, no message content.
+  // Lists a member the caller blocked, as the Directory does.
+  ChatController_listChannelMembers_v1: CHANNEL_METADATA,
   ChatController_listCategories_v1: CHANNEL_METADATA,
   ChatController_createCategory_v1: CHANNEL_METADATA,
   ChatController_updateCategory_v1: CHANNEL_METADATA,
@@ -547,6 +550,15 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 12,
     entries: [MEMBER_TEXT],
   },
+  'application/workers/discord-import-worker.service.ts': {
+    calls: 1,
+    entries: [
+      {
+        status: 'no-foreign-content',
+        why: "A Discord import ended (`importFinishedNotification`), to the admin who set it up: a message count and the Discord server's name. No chapter member's text.",
+      },
+    ],
+  },
 };
 
 /**
@@ -573,6 +585,10 @@ const BUCKET_WRITERS = new Set([
   '20260805133000_reports_bucket.sql',
   '20260808204500_declare_dashboard_created_buckets.sql',
   '20260823124000_chat_archive_bucket.sql',
+  // Only `file_size_limit` on the `backwork` bucket (#3499); never `chat`.
+  '20261105230000_backwork_bucket_50mb.sql',
+  // Same: only `backwork`'s `file_size_limit`, raised to 100 MB.
+  '20261106153000_backwork_bucket_100mb.sql',
 ]);
 
 // ── Readers ──────────────────────────────────────────────────────────────

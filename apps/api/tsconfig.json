@@ -11,6 +11,14 @@
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
     "target": "ES2023",
+    // ES2022+ targets default this to true, which emits every declared field,
+    // so `class-transformer` builds each DTO with an own `undefined` for every
+    // optional key the request left out. Code reading a DTO as parsed JSON
+    // then sees keys nobody sent: the config PATCH's branding merge wrote them
+    // over the stored values and wiped a chapter's accent, letters and
+    // founding year with a Save mark. False keeps a DTO to the keys the
+    // client sent.
+    "useDefineForClassFields": false,
     "sourceMap": true,
     "outDir": "./dist",
     // Do not set `rootDir` here. This program includes `src/` and `test/`

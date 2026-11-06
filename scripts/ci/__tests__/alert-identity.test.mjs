@@ -13,6 +13,7 @@ import {
 } from "../lib/alert-issue.mjs";
 import * as checkMigrationDrift from "../check-migration-drift.mjs";
 import * as deployAlert from "../deploy-alert.mjs";
+import * as npmAuditWatch from "../npm-audit-watch.mjs";
 import * as prBaseSync from "../pr-base-sync.mjs";
 import * as productionAuthConformance from "../production-auth-conformance.mjs";
 import * as productionBackupEnv from "../production-backup-env.mjs";
@@ -21,6 +22,7 @@ import * as productionGuardrails from "../production-guardrails.mjs";
 import * as productionReleasePin from "../production-release-pin.mjs";
 import * as productionUptime from "../production-uptime.mjs";
 import * as routineHeartbeat from "../routine-heartbeat.mjs";
+import * as scheduledRunSweep from "../scheduled-run-sweep.mjs";
 import * as sentrySourcemapsAlert from "../sentry-sourcemaps-alert.mjs";
 import * as stagingConformance from "../staging-conformance.mjs";
 import * as supabaseQuota from "../supabase-quota.mjs";
@@ -63,6 +65,7 @@ const FLAT = {
   "production-release-pin": productionReleasePin,
   "production-uptime": productionUptime,
   "routine-heartbeat": routineHeartbeat,
+  "scheduled-run-sweep": scheduledRunSweep,
   "staging-conformance": stagingConformance,
   "supabase-quota": supabaseQuota,
 };
@@ -79,6 +82,11 @@ const ALERTS = [
     script: "production-backup-freshness",
     alert: watch.alert,
   })),
+  // The audit failing, and an allowlist entry about to expire (#3367).
+  ...[
+    ["audit", npmAuditWatch.AUDIT_ALERT],
+    ["expiry", npmAuditWatch.EXPIRY_ALERT],
+  ].map(([key, alert]) => ({ name: `npm-audit-watch:${key}`, script: "npm-audit-watch", alert })),
   // One alert per Sentry project and environment (#2489).
   ...Object.entries(sentrySourcemapsAlert.ALERTS).map(([key, alert]) => ({
     name: `sentry-sourcemaps-alert:${key}`,

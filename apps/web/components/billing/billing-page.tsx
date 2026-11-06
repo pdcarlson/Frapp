@@ -3,18 +3,16 @@
 import { Suspense } from "react";
 import { AlertTriangle } from "lucide-react";
 import { useCurrentUser, useInvoices } from "@repo/hooks";
-import { PageHeader } from "@/components/layout/page-header";
+import { isBetaOffModule } from "@repo/validation";
 import { anyReadUncached } from "@/components/shared/async-states";
-import {
-  NestedLoading,
-  NestedOffline,
-} from "@/components/shared/nested-states";
+import { NestedOffline } from "@/components/shared/nested-states";
 import { PlanPanel } from "@/components/billing/plan-panel";
 import { PlanMatrix } from "@/components/billing/plan-matrix";
 import { InvoiceList } from "@/components/billing/invoice-list";
 import { subscriptionStatusKind } from "@/components/billing/invoice-status";
 import { useChapterSubscription } from "@/lib/hooks/use-subscription-write-state";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { PlanPanelSkeleton } from "@/components/billing/billing-skeleton";
 
 const INVOICES_ANCHOR = "invoices";
 
@@ -49,7 +47,7 @@ const INVOICES_ANCHOR = "invoices";
  * and a Danger zone. Building that rail is Admin, the third of
  * [#2146](https://github.com/pdcarlson/Frapp/issues/2146) and not this PR — so
  * what is taken here is `4d`'s **page body**, on the route the product already
- * has, with `PageHeader` supplying the title the board's rail would have. The
+ * has, with the top bar supplying the title the board's rail would have. The
  * sub-nav, and whether `/billing` eventually redirects into it, belong to the
  * Admin lane. `4d`'s sub-line, "Billed to the chapter card. Members never see
  * this page", is therefore **not** taken either: it is narration, and it is
@@ -59,7 +57,14 @@ const INVOICES_ANCHOR = "invoices";
  */
 export function BillingPage() {
   const { isOffline } = useNetwork();
-  const invoicesQuery = useInvoices();
+  /*
+   * The invoice list leaves only while dues is beta-off. A chapter's own dues
+   * switch doesn't hide it: a member must still be able to pay an invoice
+   * the chapter already sent (`spec/product/modules.md` § Module disabling
+   * behavior).
+   */
+  const duesOn = !isBetaOffModule("dues");
+  const invoicesQuery = useInvoices(undefined, { enabled: duesOn });
   const currentUserQuery = useCurrentUser();
   const { status } = useChapterSubscription();
 
@@ -75,10 +80,12 @@ export function BillingPage() {
    * `invoice.user_id === currentUserId`, so without it a member sees their own
    * OPEN invoice with no way to pay it and nothing saying why.
    */
-  if (isOffline && anyReadUncached(invoicesQuery, currentUserQuery)) {
+  const offlineUncached = duesOn
+    ? anyReadUncached(invoicesQuery, currentUserQuery)
+    : anyReadUncached(currentUserQuery);
+  if (isOffline && offlineUncached) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Billing" />
         {/*
           The **nested** offline state, not the whole-screen one, and on a page
           with no cards left that is the point rather than a technicality.
@@ -92,15 +99,19 @@ export function BillingPage() {
 
           The one exception both lanes kept — a whole-screen variant for a
           branch that genuinely replaces a *page* rather than a list — is the
-          no-chapter state, and this is not that: `PageHeader` is still above
-          it and the route is still the route.
+          no-chapter state, and this is not that: the top bar's title is still
+          above it and the route is still the route.
         */}
         <NestedOffline
           sole
           title="Billing unavailable offline"
-          description="Reconnect to sync subscription status and invoice balances."
+          description={
+            duesOn
+              ? "Reconnect to sync subscription status and invoice balances."
+              : "Reconnect to sync subscription status."
+          }
           onRetry={() => {
-            void invoicesQuery.refetch();
+            if (duesOn) void invoicesQuery.refetch();
             void currentUserQuery.refetch();
           }}
         />
@@ -111,37 +122,29 @@ export function BillingPage() {
   return (
     <div className="space-y-6">
       {/*
-        `PageHeader` on every path the route can take, including the offline
-        one above — the shell no longer supplies a title (#2141), and a page
-        that mounts its heading only on the success path loses it exactly when
-        the member is most lost.
-
-        No `actions`: `1f` pin 2 puts a route's primary action in this row, and
+        No `PageActions` row: `1f` pin 2 puts a route's primary action there, and
         this route's is Create invoice — which is gated on both
         `billing:manage` and the subscription, and lives in the invoice list's
         own toolbar beside the filter it shares state with. Hoisting it here
         would put a subscription-gated control above the notice that explains
         why it is disabled.
       */}
-      <PageHeader title="Billing" />
 
       <PastDueBanner status={status} />
 
       {/*
         `PlanPanel` reads `?checkout=` via `useSearchParams`, which Next
-        requires under a Suspense boundary. The fallback is the nested loading
-        state rather than the whole-screen one, for the reason
-        `members-directory.tsx` gives at its own import: the whole-screen family
-        paints `--card`, and this route has one framed block left and it is not
-        a card.
+        requires under a Suspense boundary. The fallback is the panel's own
+        skeleton, in the panel's own `--surface-1` frame, so reading the param
+        does not swap a placeholder for the panel.
       */}
-      <Suspense fallback={<NestedLoading message="Loading plan..." />}>
-        <PlanPanel invoicesHref={`#${INVOICES_ANCHOR}`} />
+      <Suspense fallback={<PlanPanelSkeleton />}>
+        <PlanPanel invoicesHref={duesOn ? `#${INVOICES_ANCHOR}` : undefined} />
       </Suspense>
 
       <PlanMatrix />
 
-      <InvoiceList id={INVOICES_ANCHOR} />
+      {duesOn ? <InvoiceList id={INVOICES_ANCHOR} /> : null}
     </div>
   );
 }

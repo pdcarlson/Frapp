@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle2, Loader2, Plus, Undo2 } from "lucide-react";
+import { CheckCircle2, Loader2, Plus, Trash2, Undo2 } from "lucide-react";
 import {
   useConfirmTask,
   useCreateTask,
@@ -14,16 +14,8 @@ import {
 } from "@repo/hooks";
 import type { TaskStatus } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
-import { formatBareDate as formatDate } from "@repo/formatting";
+import { formatWeekdayDay } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Label } from "@/components/ui/label";
@@ -31,7 +23,6 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -45,31 +36,32 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { NestedEmpty } from "@/components/shared/nested-states";
-import { TasksGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
-  EmptyState,
-  ErrorState,
-  anyReadUncached,
-  LoadingState,
-  OfflineState,
-} from "@/components/shared/async-states";
+  NestedEmpty,
+  NestedError,
+  NestedOffline,
+} from "@/components/shared/nested-states";
+import { SectionLabel } from "@/components/shared/section-label";
+import { anyReadUncached } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
-import { PageHeader } from "@/components/layout/page-header";
+import { PageActions } from "@/components/layout/page-actions";
 import {
   SubscriptionNotice,
+  type SubscriptionGate,
   useGatedDialog,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { actionStatus } from "@/lib/task-action-status";
+import { actionStatus } from "@repo/hooks";
 import {
   asArray,
   getErrorMessage,
   guardIntDraft,
   parseGuardedInt,
 } from "@/lib/utils";
+import { taskDueClause } from "./task-due";
+import { TasksPageSkeleton } from "@/components/tasks/tasks-skeleton";
 
 type Task = {
   id: string;
@@ -96,41 +88,21 @@ type Task = {
   created_at: string;
 };
 
+/*
+ * The four columns, each named by its section label and count. The
+ * per-column descriptions ("Assignee is working on it.") and the empty-column
+ * paragraphs are gone: the label already says what the column holds, and an
+ * empty column needs one quiet line, not a tile explaining the workflow.
+ */
 const COLUMNS: {
   status: TaskStatus;
   label: string;
-  description: string;
-  /**
-   * Per-column empty copy. §10's Empty slot wants one line that says what puts
-   * something here, and a column is not the screen — four identical "No tasks
-   * yet" cards would say less than the four the board actually needs.
-   */
-  emptyDescription: string;
+  empty: string;
 }[] = [
-  {
-    status: "TODO",
-    label: "To do",
-    description: "Assigned but not started yet.",
-    emptyDescription: "New tasks land here when an admin assigns them.",
-  },
-  {
-    status: "IN_PROGRESS",
-    label: "In progress",
-    description: "Assignee is working on it.",
-    emptyDescription: "A task moves here once its assignee starts work.",
-  },
-  {
-    status: "COMPLETED",
-    label: "Awaiting confirmation",
-    description: "Assignee marked done; admin confirms to award points.",
-    emptyDescription: "Tasks an assignee marked done wait here for an admin.",
-  },
-  {
-    status: "OVERDUE",
-    label: "Overdue",
-    description: "Past due date and not yet complete.",
-    emptyDescription: "Nothing is past its due date. The good kind of empty.",
-  },
+  { status: "TODO", label: "To do", empty: "No tasks" },
+  { status: "IN_PROGRESS", label: "In progress", empty: "No tasks" },
+  { status: "COMPLETED", label: "Awaiting confirmation", empty: "No tasks" },
+  { status: "OVERDUE", label: "Overdue", empty: "Nothing overdue" },
 ];
 
 export function TasksBoard() {
@@ -270,10 +242,7 @@ export function TasksBoard() {
     } catch (error) {
       toast({
         title: "Couldn't confirm task",
-        description: getErrorMessage(
-          error,
-          "Only admins with tasks:manage can confirm completions.",
-        ),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }
@@ -300,13 +269,13 @@ export function TasksBoard() {
         body: { comment: result.comment || undefined },
       });
       toast({
-        title: "Task reverted to IN_PROGRESS",
-        description: "The assignee was notified to continue working.",
+        title: "Task moved back to In progress",
+        description: "The assignee was told to keep working on it.",
       });
     } catch (error) {
       toast({
         title: "Couldn't reject task",
-        description: getErrorMessage(error, "Retry or check your permissions."),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }
@@ -329,7 +298,7 @@ export function TasksBoard() {
     } catch (error) {
       toast({
         title: "Couldn't delete task",
-        description: getErrorMessage(error, "Retry or check your permissions."),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }
@@ -351,9 +320,9 @@ export function TasksBoard() {
    */
   if (isOffline && anyReadUncached(tasksQuery, membersQuery, currentUser)) {
     return (
-      <>
-        <PageHeader title="Tasks" />
-        <OfflineState
+      <div className="space-y-6">
+        <NestedOffline
+          sole
           title="Tasks unavailable offline"
           description="Reconnect to load the chapter board and move tasks through it."
           onRetry={() => {
@@ -362,17 +331,18 @@ export function TasksBoard() {
             void currentUser.refetch();
           }}
         />
-      </>
+      </div>
     );
   }
 
+  /*
+   * The board's states come from the nested family with `sole`: the
+   * whole-screen family paints `--card`, which on a flush route redraws the
+   * card the board deleted (README § Page grammar). `sole` keeps the live
+   * region and the heading each state is this page's only one of.
+   */
   if (tasksQuery.isPending) {
-    return (
-      <>
-        <PageHeader title="Tasks" />
-        <LoadingState message="Loading chapter tasks..." />
-      </>
-    );
+    return <TasksPageSkeleton />;
   }
 
   // Only swap the whole board out when there is nothing to show. v5 keeps the
@@ -383,14 +353,14 @@ export function TasksBoard() {
   // error page every time.
   if (tasksQuery.isError && !tasksQuery.data) {
     return (
-      <>
-        <PageHeader title="Tasks" />
-        <ErrorState
+      <div className="space-y-6">
+        <NestedError
+          sole
           title="Couldn't load tasks"
-          description="Confirm your chapter access and retry. Assignees see only their own tasks; admins need tasks:manage to see every task."
+          description="Confirm your chapter access and retry."
           onRetry={() => void tasksQuery.refetch()}
         />
-      </>
+      </div>
     );
   }
 
@@ -398,151 +368,143 @@ export function TasksBoard() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Tasks"
-        actions={
-          <Can permission="tasks:manage">
-            <Dialog {...createDialog.dialogProps}>
-              <DialogTrigger asChild>
-                <Button className="gap-2" {...gate.controlProps()}>
-                  <Plus className="h-4 w-4" /> New task
-                </Button>
-              </DialogTrigger>
-              <DialogContent
-                className="sm:max-w-lg"
-                {...createDialog.contentProps}
+      <PageActions>
+        <Can permission="tasks:manage">
+          <Dialog {...createDialog.dialogProps}>
+            <DialogTrigger asChild>
+              <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
+                <Plus className="h-4 w-4" /> New task
+              </Button>
+            </DialogTrigger>
+            {/*
+              No description: the old one restated the fields below it, and
+              the one fact it carried (points are optional) now sits on the
+              Points label. `aria-describedby={undefined}` tells Radix the
+              omission is deliberate, so it does not warn.
+            */}
+            <DialogContent
+              className="sm:max-w-lg"
+              aria-describedby={undefined}
+              {...createDialog.contentProps}
+            >
+              <DialogHeader>
+                <DialogTitle>Create a task</DialogTitle>
+              </DialogHeader>
+              <form
+                onSubmit={submitDraft}
+                className="space-y-4"
+                id="tasks-create-form"
               >
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2">
-                    <TasksGlyph className="h-4 w-4" />
-                    Create a task
-                  </DialogTitle>
-                  <DialogDescription>
-                    Assign it to a chapter member with a due date. Point rewards
-                    are optional.
-                  </DialogDescription>
-                </DialogHeader>
-                <form
-                  onSubmit={submitDraft}
-                  className="space-y-4"
-                  id="tasks-create-form"
-                >
+                <div className="grid gap-1">
+                  <Label htmlFor="task-title">Title</Label>
+                  <Input
+                    id="task-title"
+                    value={draft.title}
+                    onChange={(event) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        title: event.target.value,
+                      }))
+                    }
+                    required
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <Label htmlFor="task-description">Description</Label>
+                  <Textarea
+                    id="task-description"
+                    rows={3}
+                    value={draft.description}
+                    onChange={(event) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        description: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
                   <div className="grid gap-1">
-                    <Label htmlFor="task-title">Title</Label>
+                    <Label htmlFor="task-assignee">Assignee</Label>
+                    <Select
+                      value={draft.assignee_id}
+                      onValueChange={(value) =>
+                        setDraft((prev) => ({ ...prev, assignee_id: value }))
+                      }
+                    >
+                      <SelectTrigger id="task-assignee">
+                        <SelectValue placeholder="Select a member" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {members.map((member) => (
+                          <SelectItem
+                            key={member.user_id ?? "unknown"}
+                            value={String(member.user_id ?? "")}
+                          >
+                            {memberLabel(member.display_name, member.user_id)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="task-due-date">Due date</Label>
                     <Input
-                      id="task-title"
-                      value={draft.title}
+                      id="task-due-date"
+                      type="date"
+                      value={draft.due_date}
                       onChange={(event) =>
                         setDraft((prev) => ({
                           ...prev,
-                          title: event.target.value,
+                          due_date: event.target.value,
                         }))
                       }
                       required
                     />
                   </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="task-description">Description</Label>
-                    <Textarea
-                      id="task-description"
-                      rows={3}
-                      value={draft.description}
-                      onChange={(event) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          description: event.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="grid gap-1">
-                      <Label htmlFor="task-assignee">Assignee</Label>
-                      <Select
-                        value={draft.assignee_id}
-                        onValueChange={(value) =>
-                          setDraft((prev) => ({ ...prev, assignee_id: value }))
-                        }
-                      >
-                        <SelectTrigger id="task-assignee">
-                          <SelectValue placeholder="Select a member" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {members.map((member) => (
-                            <SelectItem
-                              key={member.user_id ?? "unknown"}
-                              value={String(member.user_id ?? "")}
-                            >
-                              {memberLabel(member.display_name, member.user_id)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="task-due-date">Due date</Label>
-                      <Input
-                        id="task-due-date"
-                        type="date"
-                        value={draft.due_date}
-                        onChange={(event) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            due_date: event.target.value,
-                          }))
-                        }
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div className="grid gap-1 sm:max-w-xs">
-                    <Label htmlFor="task-points">Point reward (optional)</Label>
-                    <Input
-                      id="task-points"
-                      type="number"
-                      min={0}
-                      value={draft.point_reward}
-                      onChange={(event) => {
-                        const next = guardIntDraft(event.target.value);
-                        if (next === undefined) return;
-                        setDraft((prev) => ({ ...prev, point_reward: next }));
-                      }}
-                    />
-                  </div>
-                </form>
-                <DialogFooter>
-                  {/*
-                    Cancel is not gated: it only closes the dialog, and a lapsed
-                    chapter still needs a way out of a form it can't submit.
-                  */}
-                  <Button
-                    variant="secondary"
-                    onClick={() => createDialog.setOpen(false)}
-                    disabled={createTask.isPending}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    form="tasks-create-form"
-                    type="submit"
-                    {...gate.controlProps(createTask.isPending)}
-                  >
-                    {createTask.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : null}
-                    Create task
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </Can>
-        }
-      />
-      <p className="text-sm text-muted-foreground">
-        Admins create and confirm chapter tasks; assignees move them through the
-        workflow.
-      </p>
-
+                </div>
+                <div className="grid gap-1 sm:max-w-xs">
+                  <Label htmlFor="task-points">Points (optional)</Label>
+                  <Input
+                    id="task-points"
+                    type="number"
+                    min={0}
+                    value={draft.point_reward}
+                    onChange={(event) => {
+                      const next = guardIntDraft(event.target.value);
+                      if (next === undefined) return;
+                      setDraft((prev) => ({ ...prev, point_reward: next }));
+                    }}
+                  />
+                </div>
+              </form>
+              <DialogFooter>
+                {/*
+                  Cancel is not gated: it only closes the dialog, and a lapsed
+                  chapter still needs a way out of a form it can't submit.
+                */}
+                <Button
+                  variant="secondary"
+                  onClick={() => createDialog.setOpen(false)}
+                  disabled={createTask.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  form="tasks-create-form"
+                  type="submit"
+                  {...gate.controlProps(createTask.isPending)}
+                >
+                  {createTask.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : null}
+                  Create task
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </Can>
+      </PageActions>
       {/*
         Outside the `tasks:manage` <Can>: the assignee-facing Start / Mark
         complete controls are gated too, so a member with no manage permission
@@ -551,186 +513,231 @@ export function TasksBoard() {
       <SubscriptionNotice gate={gate} feature="managing tasks" />
 
       {tasks.length === 0 ? (
-        <EmptyState
+        <NestedEmpty
+          sole
           title="No tasks yet"
           description="Admins can create the first chapter task to assign ownership and award points."
         />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        /*
+          Flush, not carded. Each column used to be a `<Card>` with a title,
+          a description and (under Awaiting confirmation) a footer explaining
+          the confirm rule. A column is now a section on the page surface,
+          named by its label and count; the tiles inside keep a hairline frame,
+          because a kanban tile is a block with its own controls, not a row.
+        */
+        <div className="grid gap-x-6 gap-y-8 md:grid-cols-2 xl:grid-cols-4">
           {COLUMNS.map((column) => {
             const list = columns.get(column.status) ?? [];
+            const labelId = `tasks-column-${column.status.toLowerCase()}`;
             return (
-              <Card
+              <section
                 key={column.status}
-                className={
-                  column.status === "OVERDUE"
-                    ? "border-destructive/40"
-                    : "border-border"
-                }
+                aria-labelledby={labelId}
+                className="min-w-0 space-y-3"
               >
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between text-base">
-                    <span>{column.label}</span>
-                    <Badge variant="secondary">{list.length}</Badge>
-                  </CardTitle>
-                  <CardDescription>{column.description}</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {list.length === 0 ? (
-                    <NestedEmpty
-                      title="Nothing here yet"
-                      description={column.emptyDescription}
-                    />
-                  ) : (
-                    list.map((task) => {
-                      const assigneeName =
-                        membersByUserId.get(task.assignee_id) ??
-                        memberFallbackLabel(task.assignee_id);
-                      // Fails closed. `myUserId` is "" while `useCurrentUser`
-                      // is in flight or errored, which would otherwise make
-                      // `isMine` false for every row and put Confirm back on
-                      // your own task — the flip-and-revert this gate exists to
-                      // stop. Treat an unknown viewer as "might be me".
-                      //
-                      // Note the cost, which is deliberate but not free: the
-                      // board has no early return for `currentUser`, so if
-                      // `GET /v1/users/me` fails terminally, Confirm stays
-                      // hidden on *every* row with no notice saying why, and an
-                      // officer may read it as a revoked grant. Hiding a
-                      // control the server would accept is the safer failure
-                      // than offering one it will refuse, but the missing
-                      // explanation is tracked in #1346.
-                      const viewerUnknown = myUserId === "";
-                      const isMine = task.assignee_id === myUserId;
-                      const cannotConfirm = isMine || viewerUnknown;
-                      return (
-                        <div
-                          key={task.id}
-                          className="rounded-lg border border-border p-3"
-                        >
-                          <p className="text-sm font-semibold">{task.title}</p>
-                          {task.description ? (
-                            <p className="mt-1 text-caption text-muted-foreground line-clamp-2">
-                              {task.description}
-                            </p>
-                          ) : null}
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
-                            <span>Due {formatDate(task.due_date)}</span>
-                            <span aria-hidden="true">·</span>
-                            <span>{assigneeName}</span>
-                            {task.point_reward ? (
-                              <Badge>+{task.point_reward} pts</Badge>
-                            ) : null}
-                          </div>
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {/*
-                              The inline status controls are writes too
-                              (`PATCH /v1/tasks/:id/status`), so they mirror the
-                              same gate as Create — gating only the header
-                              trigger would claim writes are blocked while
-                              still offering four of them.
-                            */}
-                            {isMine && actionStatus(task) === "TODO" ? (
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                {...gate.controlProps(lifecycleWritePending)}
-                                onClick={() =>
-                                  void changeStatus(task, "IN_PROGRESS")
-                                }
-                              >
-                                Start
-                              </Button>
-                            ) : null}
-                            {isMine && actionStatus(task) === "IN_PROGRESS" ? (
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                {...gate.controlProps(lifecycleWritePending)}
-                                onClick={() =>
-                                  void changeStatus(task, "COMPLETED")
-                                }
-                              >
-                                Mark complete
-                              </Button>
-                            ) : null}
-                            <Can permission="tasks:manage">
-                              {actionStatus(task) === "COMPLETED" ? (
-                                <>
-                                  {/*
-                                   * The *live* Confirm is hidden on your own
-                                   * task: the API refuses a self-confirmation
-                                   * (#1056), so rendering it would offer an
-                                   * action guaranteed to 403 — and the optimistic
-                                   * write would flip the label to "Confirmed"
-                                   * and snap back. The already-awarded button is
-                                   * kept: it is disabled and reads "Confirmed",
-                                   * so it reports state rather than offering an
-                                   * action, and an assignee-admin would
-                                   * otherwise lose any sign their task was
-                                   * confirmed. Reject stays throughout: it
-                                   * withholds points rather than awarding them,
-                                   * so the server rule does not cover it.
-                                   */}
-                                  {cannotConfirm &&
-                                  !task.points_awarded ? null : (
-                                    <Button
-                                      size="sm"
-                                      onClick={() =>
-                                        void confirmCompletion(task)
-                                      }
-                                      {...gate.controlProps(
-                                        task.points_awarded ||
-                                          lifecycleWritePending,
-                                      )}
-                                    >
-                                      <CheckCircle2 className="h-4 w-4" />
-                                      {task.points_awarded
-                                        ? "Confirmed"
-                                        : "Confirm"}
-                                    </Button>
-                                  )}
-                                  <Button
-                                    size="sm"
-                                    variant="secondary"
-                                    {...gate.controlProps(
-                                      lifecycleWritePending,
-                                    )}
-                                    onClick={() => void rejectCompletion(task)}
-                                  >
-                                    <Undo2 className="h-4 w-4" />
-                                    Reject
-                                  </Button>
-                                </>
-                              ) : null}
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                {...gate.controlProps()}
-                                onClick={() => void removeTask(task)}
-                              >
-                                Delete
-                              </Button>
-                            </Can>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </CardContent>
-                {column.status === "COMPLETED" ? (
-                  <CardFooter className="text-caption text-muted-foreground">
-                    Confirming a task awards its point reward (when set) to the
-                    assignee. You cannot confirm a task assigned to you. Another
-                    admin has to.
-                  </CardFooter>
-                ) : null}
-              </Card>
+                <SectionLabel id={labelId} count={list.length}>
+                  {column.label}
+                </SectionLabel>
+                {list.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    {column.empty}
+                  </p>
+                ) : (
+                  <ul className="space-y-2">
+                    {list.map((task) => (
+                      <TaskTile
+                        key={task.id}
+                        task={task}
+                        assigneeName={
+                          membersByUserId.get(task.assignee_id) ??
+                          memberFallbackLabel(task.assignee_id)
+                        }
+                        myUserId={myUserId}
+                        gate={gate}
+                        lifecycleWritePending={lifecycleWritePending}
+                        onChangeStatus={(next) => void changeStatus(task, next)}
+                        onConfirm={() => void confirmCompletion(task)}
+                        onReject={() => void rejectCompletion(task)}
+                        onDelete={() => void removeTask(task)}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </section>
             );
           })}
         </div>
       )}
       {confirmDialog}
     </div>
+  );
+}
+
+function TaskTile({
+  task,
+  assigneeName,
+  myUserId,
+  gate,
+  lifecycleWritePending,
+  onChangeStatus,
+  onConfirm,
+  onReject,
+  onDelete,
+}: {
+  task: Task;
+  assigneeName: string;
+  myUserId: string;
+  gate: SubscriptionGate;
+  lifecycleWritePending: boolean;
+  onChangeStatus: (next: TaskStatus) => void;
+  onConfirm: () => void;
+  onReject: () => void;
+  onDelete: () => void;
+}) {
+  // Fails closed. `myUserId` is "" while `useCurrentUser` is in flight or
+  // errored, which would otherwise make `isMine` false for every row and put
+  // Confirm back on your own task — the flip-and-revert this gate exists to
+  // stop. Treat an unknown viewer as "might be me".
+  //
+  // Note the cost, which is deliberate but not free: the board has no early
+  // return for `currentUser`, so if `GET /v1/users/me` fails terminally,
+  // Confirm stays hidden on *every* row with no notice saying why, and an
+  // officer may read it as a revoked grant. Hiding a control the server would
+  // accept is the safer failure than offering one it will refuse, but the
+  // missing explanation is tracked in #1346.
+  const viewerUnknown = myUserId === "";
+  const isMine = !viewerUnknown && task.assignee_id === myUserId;
+  const cannotConfirm = isMine || viewerUnknown;
+  const due = taskDueClause(task);
+  const status = actionStatus(task);
+
+  return (
+    <li className="rounded-[14px] border border-border p-3">
+      <p className="text-sm font-semibold text-foreground">{task.title}</p>
+      {task.description ? (
+        <p className="mt-1 line-clamp-2 text-caption text-muted-foreground">
+          {task.description}
+        </p>
+      ) : null}
+      {/*
+        One `·`-joined meta line. An absent fact drops out of it rather than
+        leaving a separator behind (README § Page grammar).
+      */}
+      <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-caption text-muted-foreground">
+        {due ? (
+          <>
+            <span
+              className={due.overdue ? "text-destructive-text" : undefined}
+              title={formatWeekdayDay(task.due_date) ?? undefined}
+            >
+              {due.text}
+            </span>
+            <span aria-hidden="true">·</span>
+          </>
+        ) : null}
+        <span className="min-w-0 truncate">{assigneeName}</span>
+        {task.point_reward ? (
+          <Badge className="ml-1">+{task.point_reward} pts</Badge>
+        ) : null}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {/*
+          The inline status controls are writes too
+          (`PATCH /v1/tasks/:id/status`), so they mirror the same gate as
+          Create — gating only the header trigger would claim writes are
+          blocked while still offering four of them.
+        */}
+        {isMine && status === "TODO" ? (
+          <Button
+            size="toolbar"
+            variant="secondary"
+            {...gate.controlProps(lifecycleWritePending)}
+            onClick={() => onChangeStatus("IN_PROGRESS")}
+          >
+            Start
+          </Button>
+        ) : null}
+        {isMine && status === "IN_PROGRESS" ? (
+          <Button
+            size="toolbar"
+            variant="secondary"
+            {...gate.controlProps(lifecycleWritePending)}
+            onClick={() => onChangeStatus("COMPLETED")}
+          >
+            Mark complete
+          </Button>
+        ) : null}
+        <Can permission="tasks:manage">
+          {status === "COMPLETED" ? (
+            <>
+              {/*
+               * The *live* Confirm is hidden on your own task: the API refuses
+               * a self-confirmation (#1056), so rendering it would offer an
+               * action guaranteed to 403 — and the optimistic write would flip
+               * the label to "Confirmed" and snap back. The already-awarded
+               * button is kept: it is disabled and reads "Confirmed", so it
+               * reports state rather than offering an action, and an
+               * assignee-admin would otherwise lose any sign their task was
+               * confirmed. Reject stays throughout: it withholds points rather
+               * than awarding them, so the server rule does not cover it.
+               */}
+              {cannotConfirm && !task.points_awarded ? null : (
+                <Button
+                  size="toolbar"
+                  className="gap-1.5"
+                  onClick={onConfirm}
+                  {...gate.controlProps(
+                    task.points_awarded || lifecycleWritePending,
+                  )}
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  {task.points_awarded ? "Confirmed" : "Confirm"}
+                </Button>
+              )}
+              <Button
+                size="toolbar"
+                variant="secondary"
+                className="gap-1.5"
+                {...gate.controlProps(lifecycleWritePending)}
+                onClick={onReject}
+              >
+                <Undo2 className="h-4 w-4" />
+                Reject
+              </Button>
+            </>
+          ) : null}
+          {/*
+            A square icon at the trailing edge, so the tile's lifecycle
+            actions lead and Delete never reads as one of them, and Confirm,
+            Reject and Delete fit one row of a narrow column. Named for the
+            task, since every tile has one.
+          */}
+          <Button
+            size="toolbar"
+            variant="ghost"
+            className="ml-auto w-9 px-0 pointer-coarse:w-11 pointer-coarse:px-0"
+            aria-label={`Delete ${task.title}`}
+            {...gate.controlProps()}
+            onClick={onDelete}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </Can>
+      </div>
+      {/*
+        The one rule from the old column footer worth keeping: it explains a
+        missing control, so it sits on the tile whose control is missing. Only
+        on a known own task; while the viewer is unresolved the sentence would
+        be a guess (#1346).
+      */}
+      <Can permission="tasks:manage">
+        {isMine && status === "COMPLETED" && !task.points_awarded ? (
+          <p className="mt-2 text-caption text-muted-foreground">
+            You can&apos;t confirm your own task.
+          </p>
+        ) : null}
+      </Can>
+    </li>
   );
 }

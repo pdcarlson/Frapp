@@ -1,3 +1,56 @@
 {
-  "builds": []
+  "builds": [
+    {
+      "platform": "android",
+      "version": "0.9.0",
+      "build": "2",
+      "sha": "ea9bc12c836d3bbfb4c111ef0f4b9bdd00dc9211",
+      "recorded": "2026-11-03",
+      "note": "First Play upload, built by hand from tag v0.8.1 (EAS f9cfec8e) and released to the internal track on 2026-11-03."
+    },
+    {
+      "platform": "ios",
+      "version": "0.9.1",
+      "build": "8",
+      "sha": "cca52decb010887544fa21523e8d06041136b4b7",
+      "recorded": "2026-11-05",
+      "note": "Deploy production run 42069025825 (tag v0.9.0). EAS build 7d0f5107; its TestFlight submission finished in Expo's free queue after the CI step timed out (#3483), so the record job skipped it and this entry is by hand. App Store Connect then rejected the binary in processing (ITMS-90683, no NSMotionUsageDescription), so no tester can install it; kept as the upload record."
+    },
+    {
+      "platform": "android",
+      "version": "0.9.1",
+      "build": "3",
+      "sha": "cca52decb010887544fa21523e8d06041136b4b7",
+      "recorded": "2026-11-05",
+      "note": "Deploy production run 42069025825 (tag v0.9.0). EAS build 193f435b; its Play internal-track submission finished in Expo's free queue after the CI step timed out (#3483), so the record job skipped it and this entry is by hand."
+    },
+    {
+      "platform": "ios",
+      "version": "0.9.2",
+      "build": "9",
+      "sha": "5e43a27b406f26c153d7f8192478fdafaf6b0b7b",
+      "recorded": "2026-11-05"
+    },
+    {
+      "platform": "android",
+      "version": "0.9.2",
+      "build": "4",
+      "sha": "5e43a27b406f26c153d7f8192478fdafaf6b0b7b",
+      "recorded": "2026-11-05"
+    },
+    {
+      "platform": "ios",
+      "version": "0.10.0",
+      "build": "10",
+      "sha": "55922eab6037b1416ce23a25089105938c49c5c9",
+      "recorded": "2026-11-06"
+    },
+    {
+      "platform": "android",
+      "version": "0.10.0",
+      "build": "5",
+      "sha": "55922eab6037b1416ce23a25089105938c49c5c9",
+      "recorded": "2026-11-06"
+    }
+  ]
 }

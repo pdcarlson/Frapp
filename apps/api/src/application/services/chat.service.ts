@@ -44,6 +44,7 @@ import type {
 } from '#domain/entities/chat.entity';
 import {
   ChannelAccessService,
+  type ChannelMemberEntry,
   type ReportedMessageGrant,
 } from './channel-access.service';
 import { assertModuleEnabled, type EnabledModules } from './module-gate';
@@ -276,6 +277,18 @@ export class ChatService {
   }
 
   /**
+   * Who can read a channel, for the member list beside it (#3536). The rule
+   * and its cost live in `ChannelAccessService.listChannelMembers`.
+   */
+  listChannelMembers(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChannelMemberEntry[]> {
+    return this.channelAccess.listChannelMembers(channelId, chapterId, userId);
+  }
+
+  /**
    * Route-facing single-channel read: 404 outside the caller's chapter, 403 for
    * one inside it they cannot see. Mutations use
    * {@link requireChannelInChapter} instead — see the note there.
@@ -371,10 +384,19 @@ export class ChatService {
         | 'category_id'
         | 'is_read_only'
         | 'default_notification_level'
+        | 'is_default'
       >
     >,
   ): Promise<ChatChannel> {
     const existing = await this.requireChannelInChapter(id, chapterId);
+
+    // Chat opens on the chapter default for everyone who can see it; a DM is
+    // two members' conversation, not somewhere to send the whole chapter.
+    if (isDirectChannel(existing) && data.is_default === true) {
+      throw new BadRequestException(
+        "A DM or group DM can't be the chapter's default channel",
+      );
+    }
 
     // A DM has no officer, and the push worker defaults every DM to `all`
     // whatever this column holds (`defaultLevelFor`), so a stored value there
@@ -396,7 +418,19 @@ export class ChatService {
       throw new BadRequestException(ROLE_GATED_REQUIRES_PERMISSIONS_MESSAGE);
     }
 
-    const updated = await this.channelRepo.update(id, chapterId, data);
+    // Setting the default goes last, through its own transaction that also
+    // unsets the old one, so a save refused above or failing in the update
+    // below never leaves the chapter without the default it had.
+    const { is_default: isDefault, ...fields } = data;
+    const plain =
+      isDefault === false ? { ...fields, is_default: false } : fields;
+    let updated =
+      Object.keys(plain).length > 0
+        ? await this.channelRepo.update(id, chapterId, plain)
+        : existing;
+    if (isDefault === true && !existing.is_default) {
+      updated = (await this.channelRepo.setDefault(id, chapterId)) ?? updated;
+    }
     // `required_permissions` is a push-audience authorization input (see
     // `ChannelCacheService`), not display data — evict unconditionally rather
     // than only when that field is present in `data`, so a future field this

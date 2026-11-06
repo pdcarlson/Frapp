@@ -346,6 +346,108 @@ describe("shared rules hold regardless of which app binds them", () => {
     }
   });
 
+  /**
+   * #3380: Sentry pairs a frame with its uploaded source map through
+   * `debug_meta.images`, matching `code_file` to the frame's `abs_path`. While
+   * this key was missing from the allowlist, every API, web and landing event
+   * arrived compiled, with the maps sitting in Sentry unused.
+   */
+  describe("debug_meta", () => {
+    const DEBUG_ID = "a3b6cd64-a72a-5413-98eb-0a4276527093";
+    /**
+     * The event must survive: a guard that throws instead of skipping a bad
+     * image would drop the whole event through the fail-closed catch, and
+     * `?.debug_meta` alone would read that as a pass.
+     */
+    const scrubbedDebugMeta = (event: Record<string, unknown>) => {
+      const scrubbed = browser.scrubSentryEvent({ level: "error", ...event });
+      expect(scrubbed).not.toBeNull();
+      return (scrubbed as Record<string, unknown>).debug_meta;
+    };
+
+    it("keeps each source-map image, and only its three fields", () => {
+      expect(
+        scrubbedDebugMeta({
+          debug_meta: {
+            images: [
+              {
+                type: "sourcemap",
+                code_file: "/app/apps/api/dist/main.js",
+                debug_id: DEBUG_ID,
+                extra: CHAT_BODY,
+              },
+            ],
+            sdk_info: { sdk_name: "x" },
+          },
+        }),
+      ).toEqual({
+        images: [
+          {
+            type: "sourcemap",
+            code_file: "/app/apps/api/dist/main.js",
+            debug_id: DEBUG_ID,
+          },
+        ],
+      });
+    });
+
+    it("sweeps code_file as it sweeps the frame path, so the two still match", () => {
+      const path = ["/uploads/member", "example.com/app.js"].join("@");
+      const scrubbed = browser.scrubSentryEvent({
+        exception: {
+          values: [
+            {
+              type: "Error",
+              stacktrace: { frames: [{ abs_path: path, filename: path }] },
+            },
+          ],
+        },
+        debug_meta: {
+          images: [{ type: "sourcemap", code_file: path, debug_id: DEBUG_ID }],
+        },
+      }) as {
+        exception: { values: { stacktrace: { frames: { abs_path: string }[] } }[] };
+        debug_meta: { images: { code_file: string }[] };
+      };
+      const frame = scrubbed.exception.values[0].stacktrace.frames[0];
+      expect(frame.abs_path).not.toContain("example.com");
+      expect(scrubbed.debug_meta.images[0].code_file).toBe(frame.abs_path);
+    });
+
+    it("drops an image that is not a source map or has no UUID debug ID", () => {
+      expect(
+        scrubbedDebugMeta({
+          debug_meta: {
+            images: [
+              { type: "macho", code_file: "/x", debug_id: DEBUG_ID },
+              { type: "sourcemap", code_file: "/x", debug_id: CHAT_BODY },
+              { type: "sourcemap", debug_id: DEBUG_ID },
+              "not an image",
+            ],
+          },
+        }),
+      ).toBeUndefined();
+    });
+
+    it("leaves debug_meta off a transaction, which carries no frames to pair", () => {
+      const scrubbed = browser.scrubSentryTransaction({
+        type: "transaction",
+        debug_meta: {
+          images: [{ type: "sourcemap", code_file: "/x", debug_id: DEBUG_ID }],
+        },
+      }) as Record<string, unknown> | null;
+      expect(scrubbed).not.toBeNull();
+      expect(scrubbed).not.toHaveProperty("debug_meta");
+    });
+
+    it("drops a debug_meta that is not the expected shape", () => {
+      expect(scrubbedDebugMeta({ debug_meta: CHAT_BODY })).toBeUndefined();
+      expect(
+        scrubbedDebugMeta({ debug_meta: { images: CHAT_BODY } }),
+      ).toBeUndefined();
+    });
+  });
+
   it("drops non-allowlisted top-level keys and contexts", () => {
     const scrubbed = browser.scrubSentryEvent({
       level: "error",
@@ -1191,7 +1293,8 @@ describe("reduceTouchBreadcrumb (#2982)", () => {
 });
 
 /**
- * Breadcrumbs as `@sentry/browser` 10.75's breadcrumbs integration records
+ * Breadcrumbs as the `@sentry/browser` 10.x that `@sentry/react-native` 8
+ * nests (10.75 when written, 10.77 since #3335) records
  * them in React Native (#3104): `_getFetchBreadcrumbHandler` (the app's
  * `fetch` is `expo/fetch`), `_getXhrBreadcrumbHandler` and
  * `_getConsoleBreadcrumbHandler`, after `@sentry/core`'s `addBreadcrumb` has

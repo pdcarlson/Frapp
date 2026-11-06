@@ -81,7 +81,8 @@ export function relativeLuminance({ r, g, b }: Rgb): number {
  * the math, and the distinction is load-bearing. `resolveChapterAccentColor`
  * has always compared a 2dp-rounded ratio, which lets a value in `[4.495, 4.5)`
  * pass — 9,074 hex colors sit in that band against white, `#006FFB` among them,
- * and a different 9,686 against Signet's dark card (`#211E1A`). The second band
+ * and a different 9,686 against Signet's greenfield dark card (`#211E1A`; the card
+ * is `#171717` since 2026-11-05 and the count was not re-run). The second band
  * is the one that matters today: the web Settings accent preview, the
  * resolver's one remaining caller, measures against that card, and chapters
  * choose arbitrary accents there, so silently tightening the comparison would

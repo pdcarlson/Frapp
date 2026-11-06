@@ -1,13 +1,7 @@
 import { useState } from "react";
 import { Redirect, useRouter } from "expo-router";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   termsPromptErrorCopy,
   useAcceptLegalTerms,
@@ -16,6 +10,8 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { TERMS_PROMPT_COPY } from "@repo/validation";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
+import { OnboardingPrimaryButton } from "@/components/onboarding/onboarding-primary-button";
+import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -79,93 +75,94 @@ export default function TermsPrompt() {
   const deleting = deleteAccount.isPending || deleteAccount.isSuccess;
   // `isSuccess` on accept too: the gate moves the member on once the cache
   // updates, and the button must not re-enable in between.
-  const submitting =
-    acceptTerms.isPending || acceptTerms.isSuccess || deleting;
+  const submitting = acceptTerms.isPending || acceptTerms.isSuccess || deleting;
 
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={styles.container}
+    // Safe area on every edge (#3345): `(auth)` renders with `headerShown:
+    // false`, and Android draws the app edge to edge, so nothing else keeps
+    // this screen off the status bar or its last control off the swipe bar.
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={["top", "right", "bottom", "left"]}
     >
-      <Text style={styles.title}>{TERMS_PROMPT_COPY.title}</Text>
-      <Text style={styles.subtitle}>{TERMS_PROMPT_COPY.body}</Text>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.container}
+      >
+        <Text style={styles.title}>{TERMS_PROMPT_COPY.title}</Text>
+        <Text style={styles.subtitle}>{TERMS_PROMPT_COPY.body}</Text>
 
-      <View style={styles.card}>
-        <TermsAcceptance
-          accepted={accepted}
-          onAcceptedChange={(next) => {
-            setAccepted(next);
-            setError(null);
-          }}
-          disabled={submitting}
-        />
+        <View style={styles.card}>
+          <TermsAcceptance
+            accepted={accepted}
+            onAcceptedChange={(next) => {
+              setAccepted(next);
+              setError(null);
+            }}
+            disabled={submitting}
+          />
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ disabled: submitting }}
-          disabled={submitting}
-          onPress={() => {
-            void handleAccept();
-          }}
-          style={[
-            styles.primaryButton,
-            submitting ? styles.primaryButtonDisabled : null,
-          ]}
-        >
-          {acceptTerms.isPending ? (
-            <ActivityIndicator color={tokens.color.gold.onHouse} />
-          ) : (
-            <Text style={styles.primaryButtonText}>
-              {TERMS_PROMPT_COPY.cta}
+          <OnboardingPrimaryButton
+            label={TERMS_PROMPT_COPY.cta}
+            disabled={submitting}
+            busy={acceptTerms.isPending}
+            onPress={() => {
+              void handleAccept();
+            }}
+          />
+
+          <OnboardingPressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: submitting }}
+            disabled={submitting}
+            onPress={() => {
+              void handleSignOut();
+            }}
+            quiet
+            style={styles.secondaryButton}
+          >
+            <Text
+              style={[
+                styles.secondaryButtonText,
+                submitting ? styles.disabledButtonText : null,
+              ]}
+            >
+              Sign out
             </Text>
-          )}
-        </Pressable>
+          </OnboardingPressable>
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ disabled: submitting }}
-          disabled={submitting}
-          onPress={() => {
-            void handleSignOut();
-          }}
-          style={styles.secondaryButton}
-        >
-          <Text
-            style={[
-              styles.secondaryButtonText,
-              submitting ? styles.disabledButtonText : null,
-            ]}
+          <OnboardingPressable
+            accessibilityRole="button"
+            accessibilityHint="Permanently deletes your account. You'll be asked to confirm."
+            accessibilityState={{ disabled: submitting, busy: deleting }}
+            disabled={submitting}
+            onPress={handleDeleteAccount}
+            quiet
+            style={styles.secondaryButton}
           >
-            Sign out
-          </Text>
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityHint="Permanently deletes your account. You'll be asked to confirm."
-          accessibilityState={{ disabled: submitting, busy: deleting }}
-          disabled={submitting}
-          onPress={handleDeleteAccount}
-          style={styles.secondaryButton}
-        >
-          <Text
-            style={[
-              styles.destructiveButtonText,
-              submitting ? styles.disabledButtonText : null,
-            ]}
-          >
-            {deleting ? "Deleting account…" : "Delete account"}
-          </Text>
-        </Pressable>
-      </View>
-    </ScrollView>
+            <Text
+              style={[
+                styles.destructiveButtonText,
+                submitting ? styles.disabledButtonText : null,
+              ]}
+            >
+              {deleting ? "Deleting account…" : "Delete account"}
+            </Text>
+          </OnboardingPressable>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: tokens.color.surface.background,
+    },
     // On the scroll view as well as its content, as on the join screen: an
     // iOS overscroll bounce otherwise shows react-navigation's light default.
     scroll: {
@@ -200,20 +197,6 @@ function createStyles(tokens: SignetTokens) {
     errorText: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
-    },
-    primaryButton: {
-      borderRadius: tokens.radius.control,
-      backgroundColor: tokens.color.gold.house,
-      minHeight: tokens.touch.button,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    primaryButtonDisabled: {
-      opacity: 0.55,
-    },
-    primaryButtonText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.onHouse,
     },
     secondaryButton: {
       minHeight: tokens.touch.button,

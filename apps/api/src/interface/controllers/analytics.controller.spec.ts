@@ -101,6 +101,7 @@ describe('AnalyticsController', () => {
         name: 'opened-channel',
         chapter_id: 'chapter-1',
         properties: { channel_kind: 'general' },
+        app: 'web',
       };
       analytics.trackFromClient.mockResolvedValue(undefined);
 
@@ -109,7 +110,11 @@ describe('AnalyticsController', () => {
       expect(analytics.trackFromClient).toHaveBeenCalledWith(
         'opened-channel',
         USER_ID,
-        { chapterId: 'chapter-1', properties: { channel_kind: 'general' } },
+        {
+          chapterId: 'chapter-1',
+          properties: { channel_kind: 'general' },
+          app: 'web',
+        },
       );
       expect(result).toEqual({ success: true });
     });

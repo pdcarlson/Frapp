@@ -20,6 +20,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { AccentSwatches } from "@/components/settings/accent-swatches";
+import { EYEBROW } from "@/components/ui/typography";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -109,9 +111,15 @@ export function SettingsAccentTab({
   draft,
   canEditProfile,
   updateChapter,
+  orgName,
 }: {
   draft: AccentDraft;
   canEditProfile: boolean;
+  /**
+   * The chapter's name, which is its organization's on the directory path:
+   * its official colors lead the swatches.
+   */
+  orgName?: string | null;
   /**
    * The page's instance, shared with the profile save: one `isPending` covers
    * both writes to `PATCH /v1/chapters/current`, as it did before the split.
@@ -163,7 +171,7 @@ export function SettingsAccentTab({
     resolver on `--card`, ink under AA; the figures are pinned in
     `settings-contrast.spec.ts`. The original `#0080FD` stopped reaching this
     branch when the greenfield ladder lightened `--card` and the resolver
-    began substituting it.)
+    began substituting it, and reaches it again on the darker neutral ladder.)
 
     The docstring's excuse was wrong too: `resolveChapterAccentColor` does not
     reject that accent. It asks whether the accent is legible **as text on the
@@ -259,22 +267,26 @@ export function SettingsAccentTab({
           `settings-accent.spec.tsx` pins it against the tokens.
         */}
         <CardDescription>
-          Paints primary buttons, your own name in chat and the nav&apos;s
-          active item, lightened where it needs to stand out. Saving derives the
-          rest of the palette from it, and contrast is checked against the dark
-          surfaces it lands on. The Frapp mark, the Ask pill and the scrollbars
-          never change.
+          Paints primary buttons, your own name in chat and the active nav
+          item. The Frapp mark and the Ask pill keep their own colors.
         </CardDescription>
       </CardHeader>
       <form onSubmit={saveAccent}>
         <CardContent className="space-y-4">
+          <AccentSwatches
+            value={accentDraftHex}
+            orgName={orgName}
+            onPick={draft.update}
+            disabled={!canEditProfile}
+          />
+          <p className={`${EYEBROW} text-muted-foreground`}>Custom color</p>
           <div className="flex flex-wrap items-center gap-4">
             <Input
               type="color"
               aria-label="Accent color picker"
               value={accentDraftHex || accent.resolvedAccent}
               onChange={(event) => draft.update(event.target.value)}
-              className="h-12 w-24 p-1"
+              className="h-10 w-24 p-1 pointer-coarse:h-11"
             />
             <Input
               aria-label="Accent color hex value"
@@ -309,7 +321,7 @@ export function SettingsAccentTab({
               drawing an illegible word and calling it a preview.
             */}
             <div
-              className="flex h-12 w-36 items-center justify-center rounded-md text-sm font-semibold"
+              className="flex h-10 w-36 items-center justify-center rounded-md text-sm font-semibold pointer-coarse:h-11"
               style={{
                 backgroundColor: accent.resolvedAccent,
                 color: previewInk,

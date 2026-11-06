@@ -4,7 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
-import { screenText } from "@/test/screen-text";
+import { drawnText, screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { moduleDisabledMessage } from "@repo/validation";
@@ -63,6 +63,7 @@ const FAILED = {
 const TRY_AGAIN = "That didn't save. Your task is still here — try again.";
 
 let failure: unknown = REFUSED;
+let createPending = false;
 const mutate = vi.fn(
   (_body: unknown, options: { onError: (error: unknown) => void }) =>
     options.onError(failure),
@@ -72,11 +73,16 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useViewerUserId: () => "user-1",
   useChapterRoster: () => ({ data: [] }),
-  useCreateTask: () => ({ mutate, isPending: false }),
+  useCreateTask: () => ({ mutate, isPending: createPending }),
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
+}));
+
+const successHaptic = vi.fn();
+vi.mock("@/lib/haptics", () => ({
+  successHaptic: () => successHaptic(),
 }));
 
 import { NewTaskSheet } from "./new-task-sheet";
@@ -110,6 +116,8 @@ function submitTask(tree: ReactTestRenderer) {
 
 beforeEach(() => {
   mutate.mockClear();
+  successHaptic.mockReset();
+  createPending = false;
 });
 
 describe("New task on a subscription refusal (#2297)", () => {
@@ -122,6 +130,7 @@ describe("New task on a subscription refusal (#2297)", () => {
     expect(mutate).toHaveBeenCalledTimes(1);
     expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.task);
     expect(screenText(tree)).not.toContain(TRY_AGAIN);
+    expect(successHaptic).not.toHaveBeenCalled();
     expect(createButton(tree).props.disabled).toBe(true);
     // A screen reader lands on the disabled button, so the reason rides on it.
     expect(createButton(tree).props.accessibilityHint).toBe(
@@ -177,6 +186,27 @@ const sheetModal = (tree: ReactTestRenderer) =>
       typeof node.props.onDismiss === "function",
   );
 
+describe("New task assignee picker", () => {
+  it("opens as a tall sheet with its header pinned (components.md § Surface size)", () => {
+    const tree = render();
+    const picker = tree.root.find(
+      (node) =>
+        node.type === ("BottomSheetModal" as never) &&
+        typeof node.props.onDismiss !== "function",
+    );
+    expect(picker.props.snapPoints).toEqual(["100%"]);
+    // Without this, @gorhom adds a content-height detent and the sheet opens
+    // short again.
+    expect(picker.props.enableDynamicSizing).toBe(false);
+    expect(picker.props.topInset).toBeGreaterThan(0);
+    const list = picker.find(
+      (node) => node.props.stickyHeaderIndices !== undefined,
+    );
+    expect(list.props.stickyHeaderIndices).toEqual([0]);
+    act(() => tree.unmount());
+  });
+});
+
 describe("New task after a gate refusal", () => {
   const REFUSALS = [
     ["a subscription refusal", REFUSED, SUBSCRIPTION_REFUSAL_COPY.task],
@@ -200,6 +230,25 @@ describe("New task after a gate refusal", () => {
     },
   );
 
+  it("sends one create for two taps in one batch", () => {
+    // Both presses run before `isPending` reaches a render, so both see the
+    // same render's `canSubmit`; only the in-flight ref stops the second.
+    mutate.mockImplementationOnce(() => {});
+    const tree = render();
+    const title = tree.root.find(
+      (node) => node.props.accessibilityLabel === "Task title",
+    );
+    act(() => title.props.onChangeText("Sweep the porch"));
+    act(() => {
+      const button = createButton(tree);
+      button.props.onPress();
+      button.props.onPress();
+    });
+
+    expect(mutate).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
   it.each(REFUSALS)(
     "offers Create again once the sheet is dismissed after %s",
     (_label, error, copy) => {
@@ -221,3 +270,369 @@ describe("New task after a gate refusal", () => {
     },
   );
 });
+
+/**
+ * The draft and the close: a swipe or a scrim tap keeps the draft for the next
+ * visit, Cancel gives it up (the rule s20 and s21 follow), and a create that
+ * settles after the sheet closed neither dismisses a closed modal (which
+ * wedges its next `present()`, #3405) nor closes a visit reopened since.
+ */
+describe("New task draft across visits", () => {
+  /** Stands in for gorhom's modal instance, so a spec can see `dismiss()`. */
+  const dismiss = vi.fn();
+  const ref = React.createRef<never>();
+  const sheetAt = (now: Date) => (
+    <FrappThemeProvider>
+      <NewTaskSheet ref={ref} now={now} />
+    </FrappThemeProvider>
+  );
+
+  function renderWithRef(
+    now = new Date("2026-09-27T12:00:00Z"),
+  ): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(sheetAt(now), {
+        // The create sheet is the modal with `onDismiss`; the assignee
+        // picker's own modal gets a stand-in of its own, so its Done is
+        // never counted as the sheet closing.
+        createNodeMock: (element) =>
+          (element.type as unknown) === "BottomSheetModal"
+            ? typeof (element.props as { onDismiss?: unknown }).onDismiss ===
+              "function"
+              ? { dismiss, present: vi.fn() }
+              : { dismiss: vi.fn(), present: vi.fn() }
+            : null,
+      });
+    });
+    // What gorhom reports as `present()` starts bringing the sheet up.
+    act(() => sheetModal(tree).props.onAnimate(-1, 0));
+    return tree;
+  }
+
+  const titleValue = (tree: ReactTestRenderer) =>
+    tree.root.find((node) => node.props.accessibilityLabel === "Task title")
+      .props.value;
+
+  const typeTitle = (tree: ReactTestRenderer) =>
+    act(() =>
+      tree.root
+        .find((node) => node.props.accessibilityLabel === "Task title")
+        .props.onChangeText("Sweep the porch"),
+    );
+
+  beforeEach(() => {
+    dismiss.mockReset();
+  });
+
+  it("keeps the draft through a swipe or scrim close", () => {
+    const tree = renderWithRef();
+    typeTitle(tree);
+
+    act(() => sheetModal(tree).props.onDismiss());
+
+    expect(titleValue(tree)).toBe("Sweep the porch");
+    act(() => tree.unmount());
+  });
+
+  it("gives the draft up on Cancel", () => {
+    const tree = renderWithRef();
+    typeTitle(tree);
+
+    act(() => pressCancel(tree));
+
+    expect(titleValue(tree)).toBe("");
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("closes and clears the draft when the task saves", () => {
+    mutate.mockImplementationOnce((_body, options) =>
+      (options as unknown as { onSuccess: () => void }).onSuccess(),
+    );
+    const tree = renderWithRef();
+    submitTask(tree);
+
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(titleValue(tree)).toBe("");
+    // The confirming action's haptic (`spec/ui/mobile/README.md`).
+    expect(successHaptic).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("doesn't dismiss again when a create lands after the sheet closed", () => {
+    let succeed = () => {};
+    mutate.mockImplementationOnce((_body, options) => {
+      succeed = (options as unknown as { onSuccess: () => void }).onSuccess;
+    });
+    const tree = renderWithRef();
+    submitTask(tree);
+    act(() => sheetModal(tree).props.onDismiss());
+    act(() => succeed());
+
+    expect(dismiss).not.toHaveBeenCalled();
+    // The task was created, so its draft goes with it rather than inviting
+    // a duplicate.
+    expect(titleValue(tree)).toBe("");
+    act(() => tree.unmount());
+  });
+
+  it("leaves a sheet reopened mid-create open when the create lands", () => {
+    let succeed = () => {};
+    mutate.mockImplementationOnce((_body, options) => {
+      succeed = (options as unknown as { onSuccess: () => void }).onSuccess;
+    });
+    const tree = renderWithRef();
+    submitTask(tree);
+    act(() => sheetModal(tree).props.onDismiss());
+    act(() => sheetModal(tree).props.onAnimate(-1, 0)); // reopened
+    act(() => succeed());
+
+    expect(dismiss).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("doesn't latch a refusal that lands after the sheet closed", () => {
+    let refuse = () => {};
+    mutate.mockImplementationOnce((_body, options) => {
+      refuse = () => options.onError(REFUSED);
+    });
+    const tree = renderWithRef();
+    submitTask(tree);
+    act(() => sheetModal(tree).props.onDismiss());
+    act(() => sheetModal(tree).props.onAnimate(-1, 0)); // reopened
+    act(() => refuse());
+
+    expect(screenText(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.task);
+    expect(createButton(tree).props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  const titleField = (tree: ReactTestRenderer) =>
+    tree.root.find((node) => node.props.accessibilityLabel === "Task title");
+  const pointsField = (tree: ReactTestRenderer) =>
+    tree.root.find((node) => node.props.accessibilityLabel === "Point reward");
+  const assigneeRow = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.type === ("Pressable" as never) &&
+        /^Assignee: /.test(String(node.props.accessibilityLabel)),
+    );
+  const cancelButton = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.type === ("Pressable" as never) && drawnText(node) === "Cancel",
+    );
+  const chip = (tree: ReactTestRenderer, label: string) =>
+    tree.root.find(
+      (node) =>
+        node.type === ("Pressable" as never) && drawnText(node) === label,
+    );
+  const sentBody = () =>
+    mutate.mock.calls.at(-1)?.[0] as { title: string; due_date: string };
+  /**
+   * Picks a member in the assignee picker. Its list is a string stand-in that
+   * never draws rows (vitest.setup.ts), so the row is built from `renderItem`.
+   */
+  const pickAssignee = (tree: ReactTestRenderer, userId: string) => {
+    const list = tree.root.find(
+      (node) => node.type === ("BottomSheetFlatList" as never),
+    );
+    const row = list.props.renderItem({ item: { userId, name: null } });
+    act(() => row.props.onPress());
+  };
+  const isSelected = (tree: ReactTestRenderer, label: string) =>
+    chip(tree, label).props.accessibilityState.selected as boolean;
+
+  it("holds the draft and Cancel still while a create is in flight", () => {
+    mutate.mockImplementationOnce(() => {});
+    const tree = renderWithRef();
+    typeTitle(tree);
+    act(() => createButton(tree).props.onPress());
+    createPending = true;
+    act(() => tree.update(sheetAt(new Date("2026-09-27T12:00:00Z"))));
+
+    expect(titleField(tree).props.editable).toBe(false);
+    expect(pointsField(tree).props.editable).toBe(false);
+    expect(assigneeRow(tree).props.disabled).toBe(true);
+    expect(cancelButton(tree).props.disabled).toBe(true);
+    act(() => chip(tree, "Tomorrow").props.onPress());
+    expect(chip(tree, "Today").props.accessibilityState).toEqual({
+      selected: true,
+    });
+
+    createPending = false;
+    act(() => tree.update(sheetAt(new Date("2026-09-27T12:00:00Z"))));
+    expect(titleField(tree).props.editable).toBe(true);
+    expect(cancelButton(tree).props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("does nothing on a Cancel in the same batch as Create", () => {
+    // Both presses run before `isPending` reaches a render, so the Cancel the
+    // member reached was not drawn disabled yet; `sending` holds it instead.
+    let fail = () => {};
+    mutate.mockImplementationOnce((_body, options) => {
+      fail = () => options.onError(FAILED);
+    });
+    const tree = renderWithRef();
+    typeTitle(tree);
+    const cancel = cancelButton(tree);
+    act(() => {
+      createButton(tree).props.onPress();
+      cancel.props.onPress();
+    });
+
+    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(dismiss).not.toHaveBeenCalled();
+    expect(titleValue(tree)).toBe("Sweep the porch");
+
+    // The create fails: the visit hears of it, and the draft is still there
+    // for the retry, or for a Cancel that now gives it up.
+    act(() => fail());
+    expect(screenText(tree)).toContain(TRY_AGAIN);
+    expect(titleValue(tree)).toBe("Sweep the porch");
+    act(() => cancelButton(tree).props.onPress());
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(titleValue(tree)).toBe("");
+    act(() => tree.unmount());
+  });
+
+  // 2026-09-28 is a Monday.
+  const monday = new Date(2026, 8, 28, 12);
+  const tuesday = new Date(2026, 8, 29, 12);
+
+  it("locks a visit reopened mid-create, and clears it when the create lands", () => {
+    let succeed = () => {};
+    mutate.mockImplementationOnce((_body, options) => {
+      succeed = (options as unknown as { onSuccess: () => void }).onSuccess;
+    });
+    const tree = renderWithRef(monday);
+    typeTitle(tree);
+    act(() => pointsField(tree).props.onChangeText("5"));
+    act(() => chip(tree, "Friday").props.onPress());
+    pickAssignee(tree, "user-2");
+    expect(assigneeRow(tree).props.accessibilityLabel).not.toBe(
+      "Assignee: You",
+    );
+    act(() => createButton(tree).props.onPress());
+    createPending = true;
+    act(() => tree.update(sheetAt(monday)));
+    act(() => sheetModal(tree).props.onDismiss());
+    act(() => sheetModal(tree).props.onAnimate(-1, 0)); // reopened
+
+    // The sheet stays mounted across the swipe, so the reopened visit reads
+    // the same pending create: nothing in it can be edited or given up.
+    expect(titleValue(tree)).toBe("Sweep the porch");
+    expect(titleField(tree).props.editable).toBe(false);
+    expect(pointsField(tree).props.editable).toBe(false);
+    expect(assigneeRow(tree).props.disabled).toBe(true);
+    expect(cancelButton(tree).props.disabled).toBe(true);
+    act(() => chip(tree, "Tomorrow").props.onPress());
+    expect(isSelected(tree, "Friday")).toBe(true);
+
+    // TanStack runs the call's `onSuccess` before the render that drops
+    // `isPending`, so the fields are still locked when the clear lands.
+    act(() => succeed());
+    createPending = false;
+    act(() => tree.update(sheetAt(monday)));
+
+    expect(titleValue(tree)).toBe("");
+    expect(pointsField(tree).props.value).toBe("");
+    expect(isSelected(tree, "Today")).toBe(true);
+    expect(assigneeRow(tree).props.accessibilityLabel).toBe("Assignee: You");
+    expect(titleField(tree).props.editable).toBe(true);
+    // A visit reopened since stays open.
+    expect(dismiss).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("keeps a kept draft's Today meaning today", () => {
+    const tree = renderWithRef(monday);
+    typeTitle(tree);
+    act(() => sheetModal(tree).props.onDismiss());
+
+    // The host re-reads its clock the next day and reopens the sheet.
+    act(() => tree.update(sheetAt(tuesday)));
+    act(() => sheetModal(tree).props.onAnimate(-1, 0));
+
+    expect(chip(tree, "Today").props.accessibilityState).toEqual({
+      selected: true,
+    });
+    act(() => createButton(tree).props.onPress());
+    expect(sentBody().due_date).toBe("2026-09-29");
+    act(() => tree.unmount());
+  });
+
+  it("keeps a kept draft's other chip relative too", () => {
+    const tree = renderWithRef(monday);
+    typeTitle(tree);
+    act(() => chip(tree, "Tomorrow").props.onPress());
+    act(() => sheetModal(tree).props.onDismiss());
+
+    act(() => tree.update(sheetAt(tuesday)));
+    act(() => sheetModal(tree).props.onAnimate(-1, 0));
+
+    act(() => createButton(tree).props.onPress());
+    expect(sentBody().due_date).toBe("2026-09-30");
+    act(() => tree.unmount());
+  });
+
+  // 2026-09-30 is a Wednesday, and its Friday is 2026-10-02.
+  const wednesday = new Date(2026, 8, 30, 12);
+  const thursday = new Date(2026, 9, 1, 12);
+  const saturday = new Date(2026, 9, 3, 12);
+
+  /** Picks `label` on `pickedOn`, swipes the draft away, reopens on `filedOn`. */
+  function keepChip(label: string, pickedOn: Date, filedOn: Date) {
+    const tree = renderWithRef(pickedOn);
+    typeTitle(tree);
+    act(() => chip(tree, label).props.onPress());
+    act(() => sheetModal(tree).props.onDismiss());
+    act(() => tree.update(sheetAt(filedOn)));
+    act(() => sheetModal(tree).props.onAnimate(-1, 0));
+    return tree;
+  }
+
+  it("files a kept Friday on its Friday, shown as Tomorrow on the Thursday", () => {
+    // Thursday draws no Friday chip: Tomorrow is that day.
+    const tree = keepChip("Friday", wednesday, thursday);
+
+    expect(isSelected(tree, "Tomorrow")).toBe(true);
+    expect(isSelected(tree, "Today")).toBe(false);
+    act(() => createButton(tree).props.onPress());
+    expect(sentBody().due_date).toBe("2026-10-02");
+    act(() => tree.unmount());
+  });
+
+  it("files a kept Friday that has passed as Today", () => {
+    const tree = keepChip("Friday", wednesday, saturday);
+
+    expect(isSelected(tree, "Today")).toBe(true);
+    // Saturday's Friday chip is the next week's, not the one picked.
+    expect(isSelected(tree, "Friday")).toBe(false);
+    act(() => createButton(tree).props.onPress());
+    expect(sentBody().due_date).toBe("2026-10-03");
+    act(() => tree.unmount());
+  });
+
+  it("keeps a kept Next week's date when no chip draws it", () => {
+    const tree = keepChip("Next week", monday, tuesday);
+
+    for (const label of ["Today", "Tomorrow", "Friday", "Next week"]) {
+      expect(isSelected(tree, label)).toBe(false);
+    }
+    act(() => createButton(tree).props.onPress());
+    expect(sentBody().due_date).toBe("2026-10-05");
+    act(() => tree.unmount());
+  });
+});
+
+/** The header's Cancel, which `SheetHeader` draws as a bare pressable. */
+function pressCancel(tree: ReactTestRenderer) {
+  const cancel = tree.root.find(
+    (node) =>
+      node.type === ("Pressable" as never) && drawnText(node) === "Cancel",
+  );
+  cancel.props.onPress();
+}

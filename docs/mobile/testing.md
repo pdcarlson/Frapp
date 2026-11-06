@@ -28,7 +28,7 @@ Per-environment values are in
 `EXPO_PUBLIC_API_URL` is the **bare API origin** — the SDK paths already carry
 `/v1`, so a trailing `/v1` doubles it.
 
-Without the two Supabase values the sign-in card renders
+Without the two Supabase values the sign-in screen renders
 "EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are not set for this
 build, so sign-in is unavailable." and every auth row in the smoke checklist
 fails by construction.
@@ -73,11 +73,13 @@ except the on-screen readout of the keyboard path, which a unit test covers:
 - [ ] **Figtree** renders visibly different weights for 400, 600 and 700 on
       the sign-in screen (s01): its title is 700, its button labels 600 and its body
       copy 400. Android is the honest test, because it can't fake weights from
-      one file. Screens built on `ScreenShell` show no 700 text, so they can't
-      prove it. The invite field on the join screen (s02), which an account
-      with no chapter lands on, renders in a monospace face.
-- [ ] **Sheets and the keyboard.** More → Service hours, then **Log** in the
-      header, presents the s20 "Log service hours" sheet with its grabber,
+      one file. A `ScreenShell` title (More, Settings) is 700 too. The invite
+      field on the join screen (s02), behind its "I have an invite" answer (an
+      account with no chapter lands on the question first), renders in a
+      monospace face.
+- [ ] **Sheets and the keyboard.** More → Service hours, then the header's
+      **+** tile (labelled "Log service hours" for a screen reader), presents
+      the s20 "Log service hours" sheet with its grabber,
       header and Cancel. It drags and
       dismisses, and typing in its description field keeps the field visible
       above the keyboard. In Expo Go that is the fallback keyboard path;
@@ -111,7 +113,7 @@ device run, check:
       must not require the claim (the hook is on in both hosted projects; the
       playbook still disables it as incident mitigation). Force-quit and reopen:
       straight to the tabs, no picker flash.
-- [ ] **Chapter picker** (More → Chapter): opens for any member, lists their
+- [ ] **Chapter picker** (More → Switch chapter): opens for any member, lists their
       chapters, and Sign out works from it even mid-selection.
 - [ ] **Multi-chapter switch** (needs an account in 2+ chapters): pick a chapter
       and land back in the tabs with that chapter's data. If a test token has no
@@ -125,17 +127,23 @@ the native modules most specs reach, plus `react-native` with the stand-ins in
 `test/react-native-stub.ts` (the platform globals, `StyleSheet`, and string
 component stand-ins for Signet token-factory tests). Read the files for which
 ones: they don't cover them all. A spec that
-loads a native module it leaves out, such as `expo-secure-store` or
-`expo-constants`, mocks that module itself, as `lib/auth-session.spec.tsx` does;
-otherwise the import fails under Vitest.
+loads a native module it leaves out, such as `expo-secure-store`, mocks that
+module itself, as `lib/auth-session.spec.tsx` does; otherwise the import fails
+under Vitest. `expo-constants` is mocked for the whole suite as Expo Go
+(`storeClient`), so anything gated on `isExpoGo` takes its Expo Go path by
+default. A spec that tests a store-build path re-mocks it with another
+`executionEnvironment`, as `lib/keyboard-avoiding-area.spec.tsx` does.
 
 A tab screen renders under test like any component: `lib/events/check-in-screen.spec.tsx`
 and `lib/study/study-screen.spec.tsx` show how, and the spec lives under `lib/`
 (see [§ Gotchas](#gotchas)). A tab screen is never unmounted, so state that
 must clear when the member comes back is tested with `__refocus()`, inside
-`act`, which re-runs every mounted `useFocusEffect`. It is an export of the
-mocked `expo-router` module, not a method on the router, so the specs reach it
-through `import * as expoRouter from "expo-router"`.
+`act`, which re-runs every mounted `useFocusEffect`. Its other half is
+`__blur()`, which runs only the cleanups, for a screen that must go quiet while
+another is pushed over it (`lib/onboarding/join-screen.spec.tsx` holds Android
+back that way). Both are exports of the mocked `expo-router` module, not
+methods on the router, so the specs reach them through
+`import * as expoRouter from "expo-router"`.
 
 The suite's `FlatList` is a string stand-in that never calls `renderItem`, so a
 spec that asserts on one row renders that row's component directly. A spec

@@ -1,5 +1,6 @@
 "use client";
 
+import { permissionLabel } from "@/lib/permission-labels";
 import { useMemo } from "react";
 import Link from "next/link";
 import { usePermissionsCatalog, useRoles } from "@repo/hooks";
@@ -14,7 +15,7 @@ import {
 type Role = { id: string; name: string; permissions?: string[] };
 
 /**
- * Board `4c` on Study Zones.
+ * Board `4c` on Study zones.
  *
  * **Access only, and the omission is the honest part.** `4c` draws three
  * sections — Access, Defaults, and Posts to chat — on Events, and pin 4 scopes
@@ -52,12 +53,12 @@ export function StudyZonesSettingsDrawer() {
     ).filter((entry) => entry.permission?.startsWith("geofences:"));
     return entries.map((entry) => ({
       permission: entry.permission!,
-      label: entry.key || entry.permission!,
+      label: permissionLabel(entry.permission!),
     }));
   }, [catalogQuery.data]);
 
   return (
-    <PageSettingsDrawer pageTitle="Study Zones">
+    <PageSettingsDrawer pageTitle="Study zones">
       <PageSettingsSection
         label="Access"
         footer={

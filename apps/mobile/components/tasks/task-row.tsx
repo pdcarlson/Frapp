@@ -1,7 +1,10 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
+import { gutterBleed, PressableRow } from "@/components/list-section";
+import { AccentChip } from "@/components/status-chip";
+import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 import {
   formatDoneSubtitle,
   formatDueSubtitle,
@@ -13,9 +16,14 @@ import type { TaskRowModel } from "@/lib/tasks/board";
 /**
  * One row of the s08 board — `canvas-screens.dc.html:282-324`.
  *
- * A card with a leading checkbox, a title, a due/done subtitle, and an optional
- * trailing points chip. The finished row is drawn at `opacity:.62` with a
- * line-through title and a gold-filled box.
+ * A flush row on the screen background, split from the one above by a
+ * hairline, with a leading checkbox, a title, a due/done subtitle, and an
+ * optional trailing points chip.
+ * The finished row is drawn at `opacity:.62` with a line-through title and a
+ * box in the raised neutral fill with a muted check. Canvas draws that box
+ * gold; foundations.md §6 ("Where the accent goes", 2026-11-05) overrides it:
+ * finished work is the quietest thing on a list, so a done state takes a muted
+ * fill or check, never the accent.
  *
  * ## The checkbox is a three-state control, not a two-state one
  *
@@ -25,9 +33,10 @@ import type { TaskRowModel } from "@/lib/tasks/board";
  * them the row sits at `IN_PROGRESS`, and reusing the empty box there would make
  * the member's first tap look like it did nothing.
  *
- * TODO-DESIGN: the started state is drawn nowhere. Nearest pattern used — the
- * accent hairline outline the drawn empty box already implies, with no fill, so
- * it reads as "between" the two states Canvas does draw.
+ * TODO-DESIGN: the started state is drawn nowhere. Nearest pattern used — a
+ * firmer neutral outline (`text.mutedForeground`) than the empty box's faint
+ * one, with no fill, so it reads as "between" the empty and done boxes while
+ * staying off the accent (foundations.md §6).
  */
 
 export interface TaskRowProps {
@@ -35,14 +44,25 @@ export interface TaskRowProps {
   now: Date;
   /** Omitted entirely when the server allows no transition — never a no-op handler. */
   onToggle?: () => void;
-  /** True while this row's own PATCH sequence is in flight. */
+  /**
+   * True while this row's own PATCH sequence is in flight. The Tasks screen
+   * drops `onToggle` for that time, so an in-flight row takes the plain branch;
+   * it dims and reads busy whichever branch it takes.
+   */
   isPending?: boolean;
+  /** The first row of its group draws no hairline above it. */
+  isFirst?: boolean;
 }
 
-export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps) {
+export function TaskRow({
+  row,
+  now,
+  onToggle,
+  isPending = false,
+  isFirst = false,
+}: TaskRowProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-
   const chip = formatPointsChip(row.pointReward, row.pointsAwarded);
   const started = row.storedStatus === "IN_PROGRESS";
 
@@ -68,7 +88,9 @@ export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps)
               : null,
         ]}
       >
-        {row.isDone ? <CheckGlyph color={tokens.color.gold.onHouse} /> : null}
+        {row.isDone ? (
+          <CheckGlyph color={tokens.color.text.mutedForeground} />
+        ) : null}
       </View>
 
       <View style={styles.body}>
@@ -95,24 +117,35 @@ export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps)
         chip.tone === "awarded" ? (
           <Text style={styles.awardedChip}>{chip.label}</Text>
         ) : (
-          <View style={styles.offeredChip}>
-            <Text style={styles.offeredChipText}>{chip.label}</Text>
-          </View>
+          <AccentChip label={chip.label} />
         )
       ) : null}
     </>
   );
 
+  // A row in flight is dimmed less than a finished one; the finished dim comes
+  // second so it wins if the optimistic write lands mid-sequence.
+  const rowStyle = [
+    styles.row,
+    isFirst ? null : styles.rowDivider,
+    isPending ? styles.rowPending : null,
+    row.isDone ? styles.rowDone : null,
+  ];
+
   // No `onPress` at all rather than a handler that returns early: a Pressable
   // that silently swallows taps reads as broken, and the server allows this row
-  // nothing.
+  // nothing, or its own PATCH sequence is still running.
   if (!onToggle) {
     return (
       <View
         accessibilityRole="checkbox"
-        accessibilityState={{ checked: row.isDone, disabled: true }}
+        accessibilityState={{
+          checked: row.isDone,
+          disabled: true,
+          busy: isPending,
+        }}
         accessibilityLabel={`${row.title}${subtitle ? `, ${subtitle}` : ""}`}
-        style={[styles.row, row.isDone ? styles.rowDone : null]}
+        style={rowStyle}
       >
         {body}
       </View>
@@ -120,7 +153,7 @@ export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps)
   }
 
   return (
-    <Pressable
+    <PressableRow
       accessibilityRole="checkbox"
       accessibilityState={{ checked: row.isDone, busy: isPending }}
       accessibilityLabel={`${row.title}${subtitle ? `, ${subtitle}` : ""}`}
@@ -131,14 +164,39 @@ export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps)
       // no reject affordance — only an officer could undo it.
       accessibilityHint="Mark this task done."
       onPress={onToggle}
-      style={({ pressed }) => [
-        styles.row,
-        pressed ? styles.rowPressed : null,
-        isPending ? styles.rowPending : null,
-      ]}
+      style={rowStyle}
     >
       {body}
-    </Pressable>
+    </PressableRow>
+  );
+}
+
+/** Title widths, cycled, so the placeholder rows don't read as a grid. */
+const SKELETON_TITLE_WIDTHS = ["58%", "44%", "52%"] as const;
+
+/**
+ * A {@link TaskRow} that hasn't loaded, on the row's own styles: the row and
+ * its hairline (none on a section's first row), a block in the checkbox's
+ * square, the title and due lines, and a chip where the points land. Placed
+ * inside a `SkeletonRegion` (`components/state-block.tsx`).
+ */
+export function TaskRowSkeleton({ index = 0 }: { index?: number }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const { caption, label } = tokens.typography.role;
+
+  return (
+    <View style={[styles.row, index === 0 ? null : styles.rowDivider]}>
+      <SkeletonBlock width={tokens.spacing.xl} height={tokens.spacing.xl} />
+      <View style={styles.body}>
+        <SkeletonText
+          role={label}
+          width={SKELETON_TITLE_WIDTHS[index % SKELETON_TITLE_WIDTHS.length]!}
+        />
+        <SkeletonText role={caption} width="32%" />
+      </View>
+      <SkeletonBlock width={tokens.spacing["3xl"]} height={tokens.spacing.xl} />
+    </View>
   );
 }
 
@@ -148,21 +206,23 @@ function createStyles(tokens: SignetTokens) {
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.md,
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      // Flush on the floor, as web lists sit (owner pick 2026-11-05). It was a
+      // bordered card per task, which stacked eight boxes down the tab.
       paddingVertical: tokens.spacing.md,
-      paddingHorizontal: tokens.spacing.lg,
       minHeight: tokens.touch.minimum,
+      // Square and hairline-split like the Directory's member rows, so it
+      // bleeds the same way: content on the gutter line, press feedback clear
+      // of it.
+      ...gutterBleed(tokens, { rounded: false }),
+    },
+    rowDivider: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: tokens.color.border.hairline,
     },
     rowDone: {
       // The drawn `opacity:.62`. A raw number because no token carries a
-      // de-emphasis ramp — the same call the existing `pressed` blocks make.
+      // de-emphasis ramp.
       opacity: 0.62,
-    },
-    rowPressed: {
-      opacity: 0.7,
     },
     rowPending: {
       opacity: 0.8,
@@ -180,11 +240,11 @@ function createStyles(tokens: SignetTokens) {
       justifyContent: "center",
     },
     checkboxStarted: {
-      borderColor: tokens.color.gold.house,
+      borderColor: tokens.color.text.mutedForeground,
     },
     checkboxDone: {
-      borderColor: tokens.color.gold.house,
-      backgroundColor: tokens.color.gold.house,
+      borderColor: tokens.color.border.input,
+      backgroundColor: tokens.color.surface.popover,
     },
     body: {
       flex: 1,
@@ -207,22 +267,11 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.mutedForeground,
     },
     subtitleUrgent: {
-      color: tokens.color.semantic.destructive,
+      // Danger as text takes the lift, as web's overdue label does.
+      color: tokens.color.semantic.destructiveText,
     },
     subtitleDone: {
       color: tokens.color.text.muted,
-    },
-    offeredChip: {
-      borderRadius: tokens.radius.chip,
-      borderWidth: 1,
-      borderColor: tokens.color.gold.askBorder,
-      backgroundColor: tokens.color.gold.askFill,
-      paddingHorizontal: tokens.spacing.sm,
-      paddingVertical: 2,
-    },
-    offeredChipText: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.gold.askText,
     },
     awardedChip: {
       ...typeRole(tokens.typography.role.caption),

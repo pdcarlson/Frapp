@@ -221,6 +221,19 @@ describe("DocumentsPage subscription gating", () => {
     }
   });
 
+  // components.md § Icon-only actions: Download and Delete are glyphs, named
+  // for the document, with the name as the tooltip.
+  it("draws the row's download and delete as icons named for the document", () => {
+    chapter.active();
+    render(<DocumentsPage />);
+
+    for (const name of ["Download Chapter bylaws", "Delete Chapter bylaws"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveAttribute("title", name);
+      expect(button.textContent).toBe("");
+    }
+  });
+
   it("never gates reading the library", () => {
     // `enforceSubscription` returns early for GET, so downloads and the folder
     // filters keep working for a lapsed chapter.
@@ -409,7 +422,10 @@ describe("DocumentsPage upload metadata", () => {
     await userEvent.click(uploadTrigger());
 
     const dialog = screen.getByRole("dialog");
-    await userEvent.type(within(dialog).getByLabelText(/title/i), "Bylaws 2026");
+    await userEvent.type(
+      within(dialog).getByLabelText(/title/i),
+      "Bylaws 2026",
+    );
     await userEvent.type(
       within(dialog).getByLabelText(/document type/i),
       "Bylaws",
@@ -556,7 +572,7 @@ describe("DocumentsPage state ordering", () => {
       screen.getByText(/documents unavailable offline/i),
     ).toBeInTheDocument();
     expect(
-      screen.queryByText("Loading chapter documents..."),
+      screen.queryByText("Loading chapter documents"),
     ).not.toBeInTheDocument();
   });
 
@@ -571,7 +587,7 @@ describe("DocumentsPage state ordering", () => {
     render(<DocumentsPage />);
 
     const live = screen.getByRole("status");
-    expect(live).toHaveTextContent("Loading chapter documents...");
+    expect(live).toHaveTextContent("Loading chapter documents");
     expect(live).toHaveAttribute("aria-live", "polite");
   });
 
@@ -598,9 +614,7 @@ describe("DocumentsPage state ordering", () => {
     render(<DocumentsPage />);
 
     expect(uploadTrigger()).toBeInTheDocument();
-    expect(
-      screen.getByText("Loading chapter documents..."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Loading chapter documents")).toBeInTheDocument();
   });
 });
 
@@ -754,6 +768,9 @@ describe("DocumentsPage folder management (#791)", () => {
 
   const folderRow = (name: string) =>
     screen.getByRole("button", { name: new RegExp(`^${name}$`) });
+  // Management is a mode: the per-folder controls render only after Edit.
+  const editFolders = (user: ReturnType<typeof userEvent.setup>) =>
+    user.click(screen.getByRole("button", { name: /^edit folders$/i }));
 
   it("renders folders the endpoint returns, including empty ones", () => {
     // The regression #791 exists for: deriving the rail over `documents` could
@@ -762,6 +779,26 @@ describe("DocumentsPage folder management (#791)", () => {
 
     expect(folderRow("Governance")).toBeInTheDocument();
     expect(folderRow("Rush")).toBeInTheDocument();
+  });
+
+  it("keeps the management controls put away until Edit, and back after Done", async () => {
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+    expect(
+      screen.queryByRole("button", { name: /rename governance/i }),
+    ).toBeNull();
+
+    await editFolders(user);
+    expect(
+      screen.getByRole("button", { name: /rename governance/i }),
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: /^done editing folders$/i }),
+    );
+    expect(
+      screen.queryByRole("button", { name: /rename governance/i }),
+    ).toBeNull();
   });
 
   it("honors sort_order rather than sorting alphabetically", () => {
@@ -794,7 +831,11 @@ describe("DocumentsPage folder management (#791)", () => {
     const user = userEvent.setup();
     render(<DocumentsPage />);
 
-    await user.click(screen.getByRole("button", { name: /rename governance/i }));
+    await editFolders(user);
+
+    await user.click(
+      screen.getByRole("button", { name: /rename governance/i }),
+    );
     const input = await screen.findByLabelText(/folder name/i);
     expect(input).toHaveValue("Governance");
 
@@ -817,7 +858,10 @@ describe("DocumentsPage folder management (#791)", () => {
     render(<DocumentsPage />);
 
     await user.click(folderRow("Governance"));
-    await user.click(screen.getByRole("button", { name: /rename governance/i }));
+    await editFolders(user);
+    await user.click(
+      screen.getByRole("button", { name: /rename governance/i }),
+    );
     const input = await screen.findByLabelText(/folder name/i);
     await user.clear(input);
     await user.type(input, "Charter");
@@ -840,6 +884,8 @@ describe("DocumentsPage folder management (#791)", () => {
     const user = userEvent.setup();
     render(<DocumentsPage />);
 
+    await editFolders(user);
+
     await user.click(screen.getByRole("button", { name: /move rush up/i }));
 
     await waitFor(() =>
@@ -853,8 +899,10 @@ describe("DocumentsPage folder management (#791)", () => {
     );
   });
 
-  it("cannot move the first folder up or the last one down", () => {
+  it("cannot move the first folder up or the last one down", async () => {
+    const user = userEvent.setup();
     render(<DocumentsPage />);
+    await editFolders(user);
 
     expect(
       screen.getByRole("button", { name: /move governance up/i }),
@@ -869,6 +917,8 @@ describe("DocumentsPage folder management (#791)", () => {
     const user = userEvent.setup();
     render(<DocumentsPage />);
 
+    await editFolders(user);
+
     await user.click(
       screen.getByRole("button", { name: /delete folder governance/i }),
     );
@@ -879,7 +929,9 @@ describe("DocumentsPage folder management (#791)", () => {
     expect(nativeConfirm).not.toHaveBeenCalled();
     // The server moves them to root — saying "cannot be undone" here would be
     // a false claim about the member's files.
-    expect(within(dialog).getByText(/move to the root level/i)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/move to the root level/i),
+    ).toBeInTheDocument();
 
     await user.click(
       within(dialog).getByRole("button", { name: /delete folder/i }),
@@ -895,6 +947,8 @@ describe("DocumentsPage folder management (#791)", () => {
     // "Governance" itself is ambiguous — it is the rail row and the card
     // heading — so assert the heading it replaced is gone instead.
     expect(screen.queryByText("All documents")).not.toBeInTheDocument();
+
+    await editFolders(user);
 
     await user.click(
       screen.getByRole("button", { name: /delete folder governance/i }),
@@ -912,11 +966,14 @@ describe("DocumentsPage folder management (#791)", () => {
     );
   });
 
-  it("gates every folder write behind the subscription, like upload", () => {
+  it("gates every folder write behind the subscription, like upload", async () => {
     // Each folder route carries chapter_docs:manage and no @FreeTier, so they
-    // are paid ops on the same gate the rest of this page's writes use.
+    // are paid ops on the same gate the rest of this page's writes use. Edit
+    // itself is not a write, so it opens on a lapsed chapter too.
     chapter.pastDue();
+    const user = userEvent.setup();
     render(<DocumentsPage />);
+    await user.click(screen.getByRole("button", { name: /^edit folders$/i }));
 
     expect(screen.getByRole("button", { name: /new folder/i })).toBeDisabled();
     expect(
@@ -983,7 +1040,9 @@ describe("DocumentsPage search and folder resilience", () => {
     expect(
       screen.getByRole("button", { name: /^Governance$/ }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/couldn't load the folder list/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/couldn't load the folder list/i),
+    ).toBeInTheDocument();
   });
 
   it("offers no folder management for a derived fallback row", () => {
@@ -1038,10 +1097,12 @@ describe("DocumentsPage search and folder resilience", () => {
     expect(documentsArgs.value).toEqual({ search: "bylaws" });
   });
 
-  it("keeps folder controls at the 44px touch floor", () => {
+  it("keeps folder controls at the 44px touch floor", async () => {
     // `button.tsx` sizes `icon` at 44 deliberately; these four sit adjacent in
     // a 200px rail, where an undersized target puts delete next to move-down.
+    const user = userEvent.setup();
     render(<DocumentsPage />);
+    await user.click(screen.getByRole("button", { name: /^edit folders$/i }));
 
     const move = screen.getByRole("button", { name: /move governance down/i });
     expect(move.className).toContain("pointer-coarse:h-11");
@@ -1120,9 +1181,10 @@ describe("DocumentsPage offline write gating", () => {
       "title",
       "Reconnect to make changes.",
     );
+    // An icon-only control keeps its name ahead of the reason.
     expect(deleteButton()).toHaveAttribute(
       "title",
-      "Reconnect to make changes.",
+      "Delete Chapter bylaws. Reconnect to make changes.",
     );
     expect(uploadTrigger()).not.toHaveAttribute("aria-describedby");
     // Finding 3: the page-level SubscriptionNotice sits outside the dialog
@@ -1268,6 +1330,9 @@ describe("DocumentsPage wiring across its split components (#3273)", () => {
     mockUpdateFolder.mockRejectedValueOnce(new Error("network down"));
     render(<DocumentsPage />);
 
+    await userEvent.click(
+      screen.getByRole("button", { name: /^edit folders$/i }),
+    );
     await userEvent.click(
       screen.getByRole("button", { name: /move rush up/i }),
     );

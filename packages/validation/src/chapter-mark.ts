@@ -1,8 +1,10 @@
 /**
  * The chapter mark: what stands for a chapter wherever the product shows its
- * identity in a small space (#2876). The web nav's chapter tile, Chat home's
- * title row on mobile, and the welcome message onboarding posts all read it
- * from here, so the precedence can't drift between them.
+ * identity in a small space (#2876). The web nav's chapter tile and Chat
+ * home's title row on mobile read it from here, so the precedence can't drift
+ * between them. The welcome message onboarding posts is deliberately not a
+ * mark surface: it names the chapter in words and never shows its letters
+ * (`welcomeGreeting` in the API's chapter onboarding service, #3347).
  *
  * Precedence, owned by `spec/behavior/branding.md` § Chapter mark:
  *
@@ -66,7 +68,12 @@ export function greekLettersShown(branding: ChapterMarkBranding): boolean {
  * The chapter's Greek letters, or null when it has none or has turned them off.
  * `chapterTextMark` reads the letters only through this, and every surface that
  * shows the mark reads it through `chapterTextMark` or `resolveChapterMark`,
- * which is what makes the opt-out hold everywhere.
+ * which is what makes the chapter's own opt-out hold everywhere. An
+ * organization that never displays its letters is not decided here: each
+ * caller that shows a live chapter's mark sets the switch off first by the
+ * chapter's name (`orgHidingGreekLettersIn`); the "Where it's set" paragraph
+ * of spec/behavior/branding.md#chapter-mark lists them (one shared helper:
+ * #3459).
  */
 export function displayedGreekLetters(
   branding: ChapterMarkBranding,
@@ -77,8 +84,8 @@ export function displayedGreekLetters(
 
 /**
  * Steps 2 and 3: the text mark a chapter chose, or null when it has neither a
- * short name nor Greek letters it shows. For a surface with no image slot (the
- * welcome message), or one that shows nothing rather than initials.
+ * short name nor Greek letters it shows. For a surface with no image slot, or
+ * one that shows nothing rather than initials (mobile's Chat home title row).
  */
 export function chapterTextMark(
   branding: ChapterMarkBranding,

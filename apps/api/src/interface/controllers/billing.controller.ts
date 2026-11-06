@@ -9,6 +9,7 @@ import { SubscriptionExempt } from '../decorators/subscription.decorator';
 import { CurrentChapterId } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { CreateCheckoutDto, CreatePortalDto } from '../dtos/billing.dto';
+import { FeatureEvent } from '../decorators/feature-event.decorator';
 
 @ApiTags('Billing')
 @ApiBearerAuth()
@@ -28,6 +29,7 @@ export class BillingController {
   @Post('checkout')
   @RequirePermissions(SystemPermissions.BILLING_MANAGE)
   @ApiOperation({ summary: 'Create Stripe Checkout session' })
+  @FeatureEvent('checkout-started')
   async createCheckout(
     @CurrentChapterId() chapterId: string,
     @Body() dto: CreateCheckoutDto,

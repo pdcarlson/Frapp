@@ -124,6 +124,56 @@ describe("BalanceCard", () => {
     ).toBe(false);
   });
 
+  it("keeps the footnote as a live CTA's hint under a pending line", () => {
+    // The pending line is about a payment already made; the hint says what a
+    // tap pays. A disabled CTA's hint stays the line, which is why it's off.
+    const footnote = "Pays Fall 2026 dues — $425.00 of your balance.";
+    const status = { text: "Payment received.", tone: "neutral" as const };
+    const button = (tree: ReactTestRenderer) =>
+      tree.root.findByType("Pressable" as unknown as React.ComponentType);
+
+    const live = render(
+      <BalanceCard
+        {...baseProps}
+        footnote={footnote}
+        status={status}
+        isPending
+      />,
+    );
+    expect(texts(live)).toContain("Payment received.");
+    expect(button(live).props.accessibilityHint).toBe(footnote);
+
+    const confirming = render(
+      <BalanceCard
+        {...baseProps}
+        footnote={footnote}
+        status={status}
+        isPending
+        isConfirming
+      />,
+    );
+    expect(button(confirming).props.accessibilityHint).toBe(
+      "Payment received.",
+    );
+
+    // A failure is the hint either way.
+    const failed = render(
+      <BalanceCard
+        {...baseProps}
+        footnote={footnote}
+        status={{ text: "Declined.", tone: "destructive" }}
+      />,
+    );
+    expect(button(failed).props.accessibilityHint).toBe("Declined.");
+  });
+
+  it("draws each receipt as its own line", () => {
+    const tree = render(
+      <BalanceCard {...baseProps} receipts={["Paid A.", "Paid B."]} />,
+    );
+    expect(texts(tree)).toEqual(expect.arrayContaining(["Paid A.", "Paid B."]));
+  });
+
   it("lets the blocker win over the footnote", () => {
     const tree = render(
       <BalanceCard

@@ -62,11 +62,16 @@ const {
   // below render the page exactly as before — the claim banner opts itself
   // out via `needs_president: false`.
   currentChapter: {
-    data: { needs_president: false } as { needs_president: boolean } | undefined,
+    data: { needs_president: false } as
+      { needs_president: boolean } | undefined,
   },
   presidencyClaimStatus: {
     data: undefined as
-      | { needs_president: boolean; eligible: boolean; next_role_name: string | null }
+      | {
+          needs_president: boolean;
+          eligible: boolean;
+          next_role_name: string | null;
+        }
       | undefined,
     isLoading: false,
     isError: false,
@@ -104,7 +109,9 @@ vi.mock("@/lib/stores/chapter-store", () => ({
   ) => selector({ activeChapterId: "chapter-1" }),
 }));
 
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 
 import { RolesAndPermissionsPage } from "@/components/roles/roles-page";
 
@@ -172,7 +179,9 @@ describe("permission, then network, then data", () => {
     Object.assign(roles, { isPending: true, isLoading: true, data: undefined });
     render(<RolesAndPermissionsPage />);
     expect(screen.queryByText(/loading roles and permissions/i)).toBeNull();
-    expect(screen.getByText(/requires the/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/your role can't manage roles/i),
+    ).toBeInTheDocument();
   });
 
   it("shows the offline state, which this screen did not have", () => {
@@ -220,7 +229,9 @@ describe("the confirmations that replaced window.confirm", () => {
     // Verb plus object, never a bare "Confirm" — `writing.md` §2, and it also
     // keeps this query unambiguous against the row's own Delete control.
     await user.click(screen.getByRole("button", { name: /^delete role$/i }));
-    await waitFor(() => expect(deleteRole.mutateAsync).toHaveBeenCalledWith("r2"));
+    await waitFor(() =>
+      expect(deleteRole.mutateAsync).toHaveBeenCalledWith("r2"),
+    );
   });
 
   it("abandons the delete when the confirmation is cancelled", async () => {
@@ -246,7 +257,9 @@ describe("the confirmations that replaced window.confirm", () => {
 
   it("offers no delete on a system role", () => {
     render(<RolesAndPermissionsPage />);
-    expect(screen.queryByRole("button", { name: /delete president/i })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /delete president/i }),
+    ).toBeNull();
   });
 });
 
@@ -338,19 +351,29 @@ describe("the orphan-president claim banner", () => {
     permissions.value = [];
     Object.assign(currentChapter, { data: { needs_president: true } });
     Object.assign(presidencyClaimStatus, {
-      data: { needs_president: true, eligible: true, next_role_name: "Treasurer" },
+      data: {
+        needs_president: true,
+        eligible: true,
+        next_role_name: "Treasurer",
+      },
       isLoading: false,
     });
     render(<RolesAndPermissionsPage />);
     expect(screen.getByText(/needs a new president/i)).toBeInTheDocument();
     // The gated body underneath still shows its denied fallback.
-    expect(screen.getByText(/requires the/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/your role can't manage roles/i),
+    ).toBeInTheDocument();
   });
 
   it("offers a claim button and names the eligible role when the caller is eligible", () => {
     Object.assign(currentChapter, { data: { needs_president: true } });
     Object.assign(presidencyClaimStatus, {
-      data: { needs_president: true, eligible: true, next_role_name: "Treasurer" },
+      data: {
+        needs_president: true,
+        eligible: true,
+        next_role_name: "Treasurer",
+      },
       isLoading: false,
     });
     render(<RolesAndPermissionsPage />);
@@ -363,7 +386,11 @@ describe("the orphan-president claim banner", () => {
   it("names the eligible role but offers no claim button when the caller is ineligible", () => {
     Object.assign(currentChapter, { data: { needs_president: true } });
     Object.assign(presidencyClaimStatus, {
-      data: { needs_president: true, eligible: false, next_role_name: "Treasurer" },
+      data: {
+        needs_president: true,
+        eligible: false,
+        next_role_name: "Treasurer",
+      },
       isLoading: false,
     });
     render(<RolesAndPermissionsPage />);
@@ -384,7 +411,9 @@ describe("the orphan-president claim banner", () => {
       isError: true,
     });
     render(<RolesAndPermissionsPage />);
-    expect(screen.getByText(/couldn't check who can claim it/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/couldn't check who can claim it/i),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/contact frapp support/i)).toBeNull();
     expect(
       screen.queryByRole("button", { name: /claim presidency/i }),
@@ -408,7 +437,11 @@ describe("the orphan-president claim banner", () => {
     const user = userEvent.setup();
     Object.assign(currentChapter, { data: { needs_president: true } });
     Object.assign(presidencyClaimStatus, {
-      data: { needs_president: true, eligible: true, next_role_name: "Treasurer" },
+      data: {
+        needs_president: true,
+        eligible: true,
+        next_role_name: "Treasurer",
+      },
       isLoading: false,
     });
     render(<RolesAndPermissionsPage />);
@@ -464,5 +497,79 @@ describe("display order guard (#2206)", () => {
     expect(
       updateRole.mutateAsync.mock.calls[0]![0].body.display_order,
     ).toBeUndefined();
+  });
+});
+
+describe("role color swatches (#3485)", () => {
+  async function selectPresident() {
+    const user = userEvent.setup();
+    render(<RolesAndPermissionsPage />);
+    await user.click(screen.getByRole("button", { name: /president/i }));
+    return user;
+  }
+
+  it("offers the palette instead of a free color input", async () => {
+    await selectPresident();
+    const group = screen.getAllByRole("group", { name: /^color$/i })[0]!;
+    // "No color" plus the ten palette swatches.
+    expect(within(group).getAllByRole("button")).toHaveLength(11);
+    expect(
+      within(group).getByRole("button", { name: "No color" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(document.querySelector('input[type="color"]')).toBeNull();
+  });
+
+  it("saves the picked swatch's palette hex", async () => {
+    const user = await selectPresident();
+    const group = screen.getAllByRole("group", { name: /^color$/i })[0]!;
+    await user.click(within(group).getByRole("button", { name: "Orange" }));
+    await user.click(screen.getByRole("button", { name: /save role/i }));
+
+    await waitFor(() => expect(updateRole.mutateAsync).toHaveBeenCalled());
+    expect(updateRole.mutateAsync.mock.calls[0]![0].body.color).toBe("#F2994A");
+  });
+
+  it("clears a color with null, and leaves an untouched one out", async () => {
+    Object.assign(roles, {
+      data: [{ ...SYSTEM_ROLE, color: "#F2994A" }, CUSTOM_ROLE],
+    });
+    const user = await selectPresident();
+    await user.click(screen.getByRole("button", { name: /save role/i }));
+    await waitFor(() => expect(updateRole.mutateAsync).toHaveBeenCalled());
+    expect(updateRole.mutateAsync.mock.calls[0]![0].body.color).toBeUndefined();
+
+    const group = screen.getAllByRole("group", { name: /^color$/i })[0]!;
+    await user.click(within(group).getByRole("button", { name: "No color" }));
+    await user.click(screen.getByRole("button", { name: /save role/i }));
+    await waitFor(() =>
+      expect(updateRole.mutateAsync).toHaveBeenCalledTimes(2),
+    );
+    expect(updateRole.mutateAsync.mock.calls[1]![0].body.color).toBeNull();
+  });
+
+  it("reads an off-palette stored color as none and does not rewrite it", async () => {
+    Object.assign(roles, {
+      data: [{ ...SYSTEM_ROLE, color: "#FFD700" }, CUSTOM_ROLE],
+    });
+    const user = await selectPresident();
+    const group = screen.getAllByRole("group", { name: /^color$/i })[0]!;
+    expect(
+      within(group).getByRole("button", { name: "No color" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: /save role/i }));
+    await waitFor(() => expect(updateRole.mutateAsync).toHaveBeenCalled());
+    expect(updateRole.mutateAsync.mock.calls[0]![0].body.color).toBeUndefined();
+  });
+
+  it("clears an off-palette stored color when the officer picks No color", async () => {
+    Object.assign(roles, {
+      data: [{ ...SYSTEM_ROLE, color: "#123456" }, CUSTOM_ROLE],
+    });
+    const user = await selectPresident();
+    const group = screen.getAllByRole("group", { name: /^color$/i })[0]!;
+    await user.click(within(group).getByRole("button", { name: "No color" }));
+    await user.click(screen.getByRole("button", { name: /save role/i }));
+    await waitFor(() => expect(updateRole.mutateAsync).toHaveBeenCalled());
+    expect(updateRole.mutateAsync.mock.calls[0]![0].body.color).toBeNull();
   });
 });

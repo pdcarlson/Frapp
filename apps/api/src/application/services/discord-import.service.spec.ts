@@ -329,6 +329,45 @@ describe('DiscordImportService — upload URLs', () => {
   });
 });
 
+describe('DiscordImportService — one import per chapter', () => {
+  it.each([
+    'ready',
+    'running',
+    'completed',
+    'failed',
+    'cancelled',
+    'purging',
+  ] as const)('refuses a new import while another is %s', async (status) => {
+    await build();
+    repo.findByChapter.mockResolvedValue([job({ id: 'other', status })]);
+    await expect(
+      service.create(CHAPTER, USER, { consent_acknowledged: true }),
+    ).rejects.toThrow(ConflictException);
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it('allows a new import once the other is deleted, or never started', async () => {
+    await build();
+    repo.findByChapter.mockResolvedValue([
+      job({ id: 'gone', status: 'purged' }),
+      job({ id: 'abandoned', status: 'draft' }),
+    ]);
+    await service.create(CHAPTER, USER, { consent_acknowledged: true });
+    expect(repo.create).toHaveBeenCalled();
+  });
+
+  it('refuses to start a draft once another import holds messages', async () => {
+    await build();
+    repo.findByChapter.mockResolvedValue([
+      job(),
+      job({ id: 'other', status: 'failed' }),
+    ]);
+    await expect(service.start(IMPORT_ID, CHAPTER, USER, true)).rejects.toThrow(
+      /already has a Discord import/,
+    );
+  });
+});
+
 describe('DiscordImportService — starting', () => {
   it('refuses to start with no uploaded export', async () => {
     await build();
@@ -548,7 +587,7 @@ describe('DiscordImportService — lifecycle guards', () => {
 });
 
 describe('DiscordImportService — progress and clearing (#2816, #2817)', () => {
-  it.each(['ready', 'running', 'failed', 'cancelled'] as const)(
+  it.each(['ready', 'running', 'completed', 'failed', 'cancelled'] as const)(
     'counts progress for a %s bot import, which the list shows part-way',
     async (status) => {
       await build(job({ source: 'bot', status }));
@@ -603,8 +642,8 @@ describe('DiscordImportService — progress and clearing (#2816, #2817)', () => 
     expect(repo.countChannels).not.toHaveBeenCalled();
   });
 
-  it.each(['draft', 'completed', 'purged'] as const)(
-    'skips the counts for a %s bot import, which has no progress to show',
+  it.each(['draft', 'purged'] as const)(
+    'skips the counts for a %s bot import, which has nothing to count',
     async (status) => {
       await build(job({ source: 'bot', status }));
       expect(await service.get(IMPORT_ID, CHAPTER)).toMatchObject({
@@ -860,5 +899,161 @@ describe('DiscordImportService — starting a bot import', () => {
     await expect(svc.start(IMPORT_ID, CHAPTER, USER, true)).rejects.toThrow(
       /different Discord server/,
     );
+  });
+});
+
+describe('DiscordImportService — keeping Discord categories as channel groups', () => {
+  let categoryRepo: DiscordImportFixture['categoryRepo'];
+
+  async function buildBot() {
+    const fixture = await createDiscordImportFixture(
+      job({ source: 'bot', guild_id: GUILD }),
+    );
+    ({ repo, service } = fixture);
+    categoryRepo = fixture.categoryRepo;
+    return service;
+  }
+
+  function newChannel(
+    id: string,
+    group: string | null,
+    overrides: Record<string, unknown> = {},
+  ) {
+    return botChannel({
+      id,
+      discord_channel_id: `9000000000000000${id.slice(-2)}`,
+      discord_channel_name: id,
+      mapping_action: 'create_new',
+      new_channel_name: id,
+      status: 'pending',
+      new_channel_group: group,
+      ...overrides,
+    });
+  }
+
+  it("makes the groups the chapter lacks after its own, in Discord's order, and joins the ones it has", async () => {
+    const svc = await buildBot();
+    categoryRepo.findByChapter.mockResolvedValue([
+      { id: 'group-existing', name: 'committees', display_order: 2 },
+    ]);
+    repo.findChannels.mockResolvedValue([
+      newChannel('map-01', 'Secret', { discord_category_position: 9 }),
+      newChannel('map-02', 'Generic', { discord_category_position: 1 }),
+      newChannel('map-03', 'Committees', { discord_category_position: 4 }),
+      // A thread of map-02: same group, same channel.
+      newChannel('map-04', 'Generic', {
+        parent_discord_channel_id: '900000000000000002',
+      }),
+      newChannel('map-05', null),
+    ]);
+
+    await svc.start(IMPORT_ID, CHAPTER, USER, true);
+
+    expect(categoryRepo.create.mock.calls.map(([data]) => data)).toEqual([
+      { chapter_id: CHAPTER, name: 'Generic', display_order: 3 },
+      { chapter_id: CHAPTER, name: 'Secret', display_order: 4 },
+    ]);
+    expect(repo.recordCreatedCategory.mock.calls).toEqual([
+      [IMPORT_ID, 'group-generic'],
+      [IMPORT_ID, 'group-secret'],
+    ]);
+    expect(repo.assignChannelGroup.mock.calls).toEqual(
+      expect.arrayContaining([
+        [IMPORT_ID, CHAPTER, ['map-01'], 'group-secret'],
+        [IMPORT_ID, CHAPTER, ['map-02', 'map-04'], 'group-generic'],
+        [IMPORT_ID, CHAPTER, ['map-03'], 'group-existing'],
+      ]),
+    );
+    expect(repo.assignChannelGroup).toHaveBeenCalledTimes(3);
+  });
+
+  it('records each group it makes before any row points at it', async () => {
+    const svc = await buildBot();
+    repo.findChannels.mockResolvedValue([newChannel('map-01', 'Secret')]);
+
+    await svc.start(IMPORT_ID, CHAPTER, USER, true);
+
+    expect(repo.recordCreatedCategory.mock.invocationCallOrder[0]).toBeLessThan(
+      repo.assignChannelGroup.mock.invocationCallOrder[0],
+    );
+    expect(repo.assignChannelGroup.mock.invocationCallOrder[0]).toBeLessThan(
+      repo.update.mock.invocationCallOrder.at(-1)!,
+    );
+  });
+
+  it('leaves a restart alone where the group is resolved or the channel already exists', async () => {
+    const svc = await buildBot();
+    repo.findChannels.mockResolvedValue([
+      newChannel('map-01', 'Secret', { new_channel_category_id: 'group-1' }),
+      newChannel('map-02', 'Generic', { target_channel_id: OWN_CHANNEL }),
+    ]);
+
+    await svc.start(IMPORT_ID, CHAPTER, USER, true);
+
+    expect(categoryRepo.findByChapter).not.toHaveBeenCalled();
+    expect(categoryRepo.create).not.toHaveBeenCalled();
+    expect(repo.assignChannelGroup).not.toHaveBeenCalled();
+  });
+
+  it('makes no group on a restart for a thread whose channel its parent already made', async () => {
+    // An officer deleted the group mid-import, which cleared both rows; the
+    // parent's channel exists, and the thread lands in it.
+    const svc = await buildBot();
+    repo.findChannels.mockResolvedValue([
+      newChannel('map-01', 'Secret', {
+        new_channel_name: 'vault',
+        target_channel_id: OWN_CHANNEL,
+      }),
+      newChannel('map-02', 'Secret', {
+        new_channel_name: 'vault',
+        parent_discord_channel_id: '900000000000000001',
+      }),
+    ]);
+
+    await svc.start(IMPORT_ID, CHAPTER, USER, true);
+
+    expect(categoryRepo.create).not.toHaveBeenCalled();
+    expect(repo.assignChannelGroup).not.toHaveBeenCalled();
+  });
+
+  it('leaves the groups a remap stopped using to the purge, which an officer may have adopted', async () => {
+    const svc = await buildBot();
+    repo.findChannels.mockResolvedValue([newChannel('map-01', 'Secret')]);
+
+    await svc.start(IMPORT_ID, CHAPTER, USER, true);
+
+    expect(repo.deleteEmptyCreatedCategories).not.toHaveBeenCalled();
+  });
+
+  it('touches no group when no channel names one', async () => {
+    const svc = await buildBot();
+    repo.findChannels.mockResolvedValue([newChannel('map-01', null)]);
+
+    await svc.start(IMPORT_ID, CHAPTER, USER, true);
+
+    expect(categoryRepo.findByChapter).not.toHaveBeenCalled();
+    expect(repo.update).toHaveBeenCalledWith(
+      IMPORT_ID,
+      CHAPTER,
+      expect.objectContaining({ status: 'ready' }),
+    );
+  });
+
+  it('makes no group for an import refused before it starts', async () => {
+    const svc = await buildBot();
+    repo.findChannels.mockResolvedValue([
+      newChannel('map-01', 'Secret', {
+        mapping_action: 'use_existing',
+        target_channel_id: null,
+        new_channel_name: null,
+        new_channel_group: null,
+      }),
+      newChannel('map-02', 'Generic'),
+    ]);
+
+    await expect(svc.start(IMPORT_ID, CHAPTER, USER, true)).rejects.toThrow(
+      /was deleted/,
+    );
+    expect(categoryRepo.create).not.toHaveBeenCalled();
   });
 });

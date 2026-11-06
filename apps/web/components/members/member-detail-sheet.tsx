@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, MessageSquare, Trash2 } from "lucide-react";
-import { DirectoryGlyph, RolesGlyph } from "@/components/members/directory-glyphs";
+import { RolesGlyph } from "@/components/members/directory-glyphs";
+import { SectionSkeleton } from "@/components/shared/page-skeletons";
+import { SkeletonText } from "@/components/shared/async-states";
 import {
   useCustomRoles,
   useGetOrCreateDm,
@@ -14,19 +16,19 @@ import {
   useUpdateMemberRoles,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
-import { formatLocaleDate as formatDate } from "@repo/formatting";
+import { formatDay } from "@repo/formatting";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/lib/hooks/use-toast";
 import { chatDeepLink } from "@/lib/chat/chat-links";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Sheet } from "@/components/ui/sheet";
 import {
-  Sheet,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  PanelBody,
+  PanelContent,
+  PanelFooter,
+  PanelHeader,
+} from "@/components/shared/panel";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
 import { asArray, getErrorMessage } from "@/lib/utils";
@@ -57,27 +59,29 @@ function formatCustomValue(field: CustomFieldValue): string {
 }
 
 function parseCustomFields(member: MemberRecord | null): CustomFieldValue[] {
-  return asArray<Record<string, unknown>>(member?.custom_fields).flatMap((entry) => {
-    if (
-      !entry ||
-      typeof entry.field_id !== "string" ||
-      typeof entry.label !== "string" ||
-      typeof entry.type !== "string" ||
-      typeof entry.visibility !== "string"
-    ) {
-      return [];
-    }
-    return [
-      {
-        field_id: entry.field_id,
-        key: typeof entry.key === "string" ? entry.key : entry.field_id,
-        label: entry.label,
-        type: entry.type,
-        visibility: entry.visibility,
-        value: typeof entry.value === "string" ? entry.value : null,
-      },
-    ];
-  });
+  return asArray<Record<string, unknown>>(member?.custom_fields).flatMap(
+    (entry) => {
+      if (
+        !entry ||
+        typeof entry.field_id !== "string" ||
+        typeof entry.label !== "string" ||
+        typeof entry.type !== "string" ||
+        typeof entry.visibility !== "string"
+      ) {
+        return [];
+      }
+      return [
+        {
+          field_id: entry.field_id,
+          key: typeof entry.key === "string" ? entry.key : entry.field_id,
+          label: entry.label,
+          type: entry.type,
+          visibility: entry.visibility,
+          value: typeof entry.value === "string" ? entry.value : null,
+        },
+      ];
+    },
+  );
 }
 
 type MemberDetailSheetProps = {
@@ -106,7 +110,7 @@ function RoleChecklistItem({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition-colors hover:bg-accent-subtle">
+    <label className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition-colors hover:bg-card-hover">
       <div>
         <p className="text-sm font-semibold">{title}</p>
         <p
@@ -174,11 +178,14 @@ export function MemberDetailSheet({
   const removeMemberMutation = useRemoveMember();
   const dmMutation = useGetOrCreateDm();
   const router = useRouter();
-  const { userId: currentUserId, isLoading: isCurrentUserLoading } = useFrappUser();
+  const { userId: currentUserId, isLoading: isCurrentUserLoading } =
+    useFrappUser();
   const { toast } = useToast();
   const { confirm, confirmDialog } = useConfirmDialog();
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
-  const [selectedCustomRoleIds, setSelectedCustomRoleIds] = useState<string[]>([]);
+  const [selectedCustomRoleIds, setSelectedCustomRoleIds] = useState<string[]>(
+    [],
+  );
 
   const resolvedMember = useMemo(() => {
     if (!member) return null;
@@ -195,7 +202,9 @@ export function MemberDetailSheet({
     if (!resolvedMember) return [];
     const roleIds = resolvedMember.role_ids;
     if (!Array.isArray(roleIds)) return [];
-    return roleIds.filter((roleId): roleId is string => typeof roleId === "string");
+    return roleIds.filter(
+      (roleId): roleId is string => typeof roleId === "string",
+    );
   }, [resolvedMember]);
 
   const memberCustomRoleIds = useMemo(() => {
@@ -208,7 +217,11 @@ export function MemberDetailSheet({
   const customRoleOptions = useMemo(() => {
     const data = customRolesQuery.data;
     if (!Array.isArray(data)) return [];
-    return data.map((role) => ({ id: role.id, label: role.label, key: role.key }));
+    return data.map((role) => ({
+      id: role.id,
+      label: role.label,
+      key: role.key,
+    }));
   }, [customRolesQuery.data]);
 
   const roleOptions = useMemo(() => {
@@ -241,12 +254,15 @@ export function MemberDetailSheet({
     resolvedMember?.user_id,
   );
   const userId =
-    typeof resolvedMember?.user_id === "string" ? resolvedMember.user_id : "unknown-user";
+    typeof resolvedMember?.user_id === "string"
+      ? resolvedMember.user_id
+      : "unknown-user";
   // Distinct from the display-formatted `userId` above: this is null rather
   // than the "unknown-user" placeholder, so the Message button and its
   // handler can never fire a DM request at a fallback string.
   const dmTargetUserId =
-    typeof resolvedMember?.user_id === "string" && resolvedMember.user_id.length > 0
+    typeof resolvedMember?.user_id === "string" &&
+    resolvedMember.user_id.length > 0
       ? resolvedMember.user_id
       : null;
   // members-directory.tsx keeps one MemberDetailSheet instance mounted and
@@ -258,13 +274,20 @@ export function MemberDetailSheet({
   useEffect(() => {
     dmTargetUserIdRef.current = dmTargetUserId;
   }, [dmTargetUserId]);
-  const email = typeof resolvedMember?.email === "string" ? resolvedMember.email : "Unavailable";
+  const email =
+    typeof resolvedMember?.email === "string"
+      ? resolvedMember.email
+      : "Unavailable";
   const hasCompletedOnboarding =
     typeof resolvedMember?.has_completed_onboarding === "boolean"
       ? resolvedMember.has_completed_onboarding
       : false;
-  const customFields = useMemo(() => parseCustomFields(resolvedMember), [resolvedMember]);
-  const canMutate = !usingPreviewData && !rolesQuery.isError && !memberQuery.isError;
+  const customFields = useMemo(
+    () => parseCustomFields(resolvedMember),
+    [resolvedMember],
+  );
+  const canMutate =
+    !usingPreviewData && !rolesQuery.isError && !memberQuery.isError;
   // The writes' own gates (`PATCH /members/:id/roles` needs `roles:manage`,
   // `DELETE /members/:id` needs `members:remove`), mirrored so a viewer who
   // holds only `members:view` isn't offered controls that can only 403. Every
@@ -299,7 +322,10 @@ export function MemberDetailSheet({
     } catch (error) {
       toast({
         title: "Could not update roles",
-        description: getErrorMessage(error, "Something went wrong. Please retry."),
+        description: getErrorMessage(
+          error,
+          "Something went wrong. Please retry.",
+        ),
         variant: "destructive",
       });
     }
@@ -338,7 +364,10 @@ export function MemberDetailSheet({
     } catch (error) {
       toast({
         title: "Could not remove member",
-        description: getErrorMessage(error, "Something went wrong. Please retry."),
+        description: getErrorMessage(
+          error,
+          "Something went wrong. Please retry.",
+        ),
         variant: "destructive",
       });
     }
@@ -352,7 +381,11 @@ export function MemberDetailSheet({
     // `currentUserId` is null until /v1/users/me resolves; treating that as
     // "not the viewer" would let a self-DM through during that window, so
     // require the load to finish before comparing.
-    if (!dmTargetUserId || isCurrentUserLoading || dmTargetUserId === currentUserId) {
+    if (
+      !dmTargetUserId ||
+      isCurrentUserLoading ||
+      dmTargetUserId === currentUserId
+    ) {
       return;
     }
     const requestedUserId = dmTargetUserId;
@@ -363,7 +396,9 @@ export function MemberDetailSheet({
       // was in flight — ignore a result that's no longer for the open member.
       if (dmTargetUserIdRef.current !== requestedUserId) return;
       const channelId =
-        dm && typeof dm === "object" && typeof (dm as { id?: unknown }).id === "string"
+        dm &&
+        typeof dm === "object" &&
+        typeof (dm as { id?: unknown }).id === "string"
           ? (dm as { id: string }).id
           : null;
       if (!channelId) {
@@ -406,147 +441,155 @@ export function MemberDetailSheet({
         rendered, Radix warns on every open for a `Content` that points at a
         description id that does not exist.
       */}
-      <SheetContent
-        side="right"
-        aria-describedby={undefined}
-        className="w-full overflow-y-auto sm:max-w-xl"
-      >
-        <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
-            <DirectoryGlyph className="h-5 w-5" />
-            {displayName}
-          </SheetTitle>
-        </SheetHeader>
-
-        {!usingPreviewData &&
-        dmTargetUserId &&
-        !isCurrentUserLoading &&
-        dmTargetUserId !== currentUserId ? (
-          <div className="mt-4">
-            <Button
-              variant="secondary"
-              onClick={handleMessage}
-              disabled={dmMutation.isPending}
-            >
-              {dmMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <MessageSquare className="h-4 w-4" />
-              )}
-              Message
-            </Button>
-          </div>
-        ) : null}
-
-        {memberQuery.isLoading && !usingPreviewData ? (
-          <div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading member profile...
-          </div>
-        ) : null}
-
-        {memberQuery.isError && !usingPreviewData ? (
-          <div className="mt-6 rounded-md border border-destructive/[.28] bg-destructive-tint p-3 text-sm text-destructive-text">
-            Could not load the latest member profile. Retry from the directory to re-open this member.
-          </div>
-        ) : null}
-
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-md border border-border p-3">
-            <p className="text-caption text-muted-foreground">User ID</p>
-            <p className="mt-1 font-mono text-caption">{userId}</p>
-          </div>
-          <div className="rounded-md border border-border p-3">
-            <p className="text-caption text-muted-foreground">Onboarding</p>
-            <div className="mt-1">
-              <Badge variant={hasCompletedOnboarding ? "success" : "warning"}>
-                {hasCompletedOnboarding ? "Complete" : "Pending"}
-              </Badge>
+      <PanelContent aria-describedby={undefined}>
+        <PanelHeader>{displayName}</PanelHeader>
+        {/* `gap-0`: the blocks below carry their own top margins. */}
+        <PanelBody className="gap-0">
+          {!usingPreviewData &&
+          dmTargetUserId &&
+          !isCurrentUserLoading &&
+          dmTargetUserId !== currentUserId ? (
+            <div className="mt-4">
+              <Button
+                variant="secondary"
+                onClick={handleMessage}
+                disabled={dmMutation.isPending}
+              >
+                {dmMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <MessageSquare className="h-4 w-4" />
+                )}
+                Message
+              </Button>
             </div>
-          </div>
-          <div className="rounded-md border border-border p-3 sm:col-span-2">
-            <p className="text-caption text-muted-foreground">Email</p>
-            <p className="mt-1 text-sm">{email}</p>
-          </div>
-          <div className="rounded-md border border-border p-3">
-            <p className="text-caption text-muted-foreground">Joined chapter</p>
-            <p className="mt-1 text-sm">{formatDate(resolvedMember?.created_at)}</p>
-          </div>
-          <div className="rounded-md border border-border p-3">
-            <p className="text-caption text-muted-foreground">Points</p>
-            <p className="mt-1 text-sm">
-              {/* Same rule as `formatCustomValue` above: a word, not a mark. */}
-              {typeof points === "number" ? points : "Not recorded"}
-            </p>
-          </div>
-        </div>
+          ) : null}
 
-        {customFields.length > 0 ? (
-          <section className="mt-6 space-y-3">
-            <p className="text-sm font-semibold">Custom fields</p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {customFields.map((field) => (
-                <div key={field.field_id} className="rounded-md border border-border p-3">
-                  <p className="text-caption text-muted-foreground">{field.label}</p>
-                  <p className="mt-1 text-sm">{formatCustomValue(field)}</p>
-                </div>
-              ))}
+          {memberQuery.isLoading && !usingPreviewData ? (
+            // A skeleton, not a spinner and caption (`components.md` §10).
+            <SectionSkeleton label="Loading member profile" className="mt-6">
+              <SkeletonText lines={4} />
+            </SectionSkeleton>
+          ) : null}
+
+          {memberQuery.isError && !usingPreviewData ? (
+            <div className="mt-6 rounded-md border border-destructive/[.28] bg-destructive-tint p-3 text-sm text-destructive-text">
+              Could not load the latest member profile. Retry from the directory
+              to re-open this member.
             </div>
-          </section>
-        ) : null}
+          ) : null}
 
-        <section className="mt-6 space-y-3">
-          <div className="flex items-center gap-2">
-            <RolesGlyph className="h-4 w-4 text-muted-foreground" />
-            <p className="text-sm font-semibold">Role access</p>
-          </div>
-          <div className="space-y-2">
-            {roleOptions.length === 0 ? (
-              <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
-                No roles are available for this chapter yet.
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-md border border-border p-3">
+              <p className="text-caption text-muted-foreground">User ID</p>
+              <p className="mt-1 font-mono text-caption">{userId}</p>
+            </div>
+            <div className="rounded-md border border-border p-3">
+              <p className="text-caption text-muted-foreground">Onboarding</p>
+              <div className="mt-1">
+                <Badge variant={hasCompletedOnboarding ? "success" : "warning"}>
+                  {hasCompletedOnboarding ? "Complete" : "Pending"}
+                </Badge>
               </div>
-            ) : roleOptions.map((role) => (
-              <RoleChecklistItem
-                key={role.id}
-                title={role.name}
-                subtitle={role.id}
-                checked={selectedRoleIds.includes(role.id)}
-                disabled={!canEditRoles}
-                onChange={(isChecked) => handleRoleChange(role.id, isChecked)}
-              />
-            ))}
+            </div>
+            <div className="rounded-md border border-border p-3 sm:col-span-2">
+              <p className="text-caption text-muted-foreground">Email</p>
+              <p className="mt-1 text-sm">{email}</p>
+            </div>
+            <div className="rounded-md border border-border p-3">
+              <p className="text-caption text-muted-foreground">
+                Joined chapter
+              </p>
+              <p className="mt-1 text-sm">
+                {formatDay(resolvedMember?.created_at) ?? "Not recorded"}
+              </p>
+            </div>
+            <div className="rounded-md border border-border p-3">
+              <p className="text-caption text-muted-foreground">Points</p>
+              <p className="mt-1 text-sm">
+                {/* Same rule as `formatCustomValue` above: a word, not a mark. */}
+                {typeof points === "number" ? points : "Not recorded"}
+              </p>
+            </div>
           </div>
-        </section>
 
-        {customRoleOptions.length > 0 ? (
+          {customFields.length > 0 ? (
+            <section className="mt-6 space-y-3">
+              <p className="text-sm font-semibold">Custom fields</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {customFields.map((field) => (
+                  <div
+                    key={field.field_id}
+                    className="rounded-md border border-border p-3"
+                  >
+                    <p className="text-caption text-muted-foreground">
+                      {field.label}
+                    </p>
+                    <p className="mt-1 text-sm">{formatCustomValue(field)}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
           <section className="mt-6 space-y-3">
             <div className="flex items-center gap-2">
               <RolesGlyph className="h-4 w-4 text-muted-foreground" />
-              <p className="text-sm font-semibold">Custom roles</p>
+              <p className="text-sm font-semibold">Role access</p>
             </div>
-            <p className="text-caption text-muted-foreground">
-              Capabilities from assigned custom roles apply on the member&apos;s
-              next request, alongside their live-role permissions.
-            </p>
             <div className="space-y-2">
-              {customRoleOptions.map((role) => (
-                <RoleChecklistItem
-                  key={role.id}
-                  title={role.label}
-                  subtitle={role.key}
-                  monoSubtitle
-                  checked={selectedCustomRoleIds.includes(role.id)}
-                  disabled={!canEditRoles}
-                  onChange={(isChecked) =>
-                    handleCustomRoleChange(role.id, isChecked)
-                  }
-                />
-              ))}
+              {roleOptions.length === 0 ? (
+                <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
+                  No roles are available for this chapter yet.
+                </div>
+              ) : (
+                roleOptions.map((role) => (
+                  <RoleChecklistItem
+                    key={role.id}
+                    title={role.name}
+                    subtitle={role.id}
+                    checked={selectedRoleIds.includes(role.id)}
+                    disabled={!canEditRoles}
+                    onChange={(isChecked) =>
+                      handleRoleChange(role.id, isChecked)
+                    }
+                  />
+                ))
+              )}
             </div>
           </section>
-        ) : null}
 
-        <SheetFooter className="mt-8 gap-2">
+          {customRoleOptions.length > 0 ? (
+            <section className="mt-6 space-y-3">
+              <div className="flex items-center gap-2">
+                <RolesGlyph className="h-4 w-4 text-muted-foreground" />
+                <p className="text-sm font-semibold">Custom roles</p>
+              </div>
+              <p className="text-caption text-muted-foreground">
+                Capabilities from assigned custom roles apply on the
+                member&apos;s next request, alongside their live-role
+                permissions.
+              </p>
+              <div className="space-y-2">
+                {customRoleOptions.map((role) => (
+                  <RoleChecklistItem
+                    key={role.id}
+                    title={role.label}
+                    subtitle={role.key}
+                    monoSubtitle
+                    checked={selectedCustomRoleIds.includes(role.id)}
+                    disabled={!canEditRoles}
+                    onChange={(isChecked) =>
+                      handleCustomRoleChange(role.id, isChecked)
+                    }
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </PanelBody>
+
+        <PanelFooter>
           <Button
             variant="secondary"
             onClick={() => {
@@ -578,7 +621,7 @@ export function MemberDetailSheet({
             )}
             Remove member
           </Button>
-        </SheetFooter>
+        </PanelFooter>
         {/*
           Inside `SheetContent` so the confirmation renders above the sheet that
           opened it rather than behind its overlay.
@@ -590,7 +633,7 @@ export function MemberDetailSheet({
           `<body>` behind this modal sheet.
         */}
         {confirmDialog}
-      </SheetContent>
+      </PanelContent>
     </Sheet>
   );
 }

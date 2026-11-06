@@ -23,7 +23,8 @@ import {
   subscriptionStatusKind,
   subscriptionStatusLabel,
 } from "@/components/billing/invoice-status";
-import { formatBareDate } from "@repo/formatting";
+import { formatDay } from "@repo/formatting";
+import { PlanPanelSkeleton } from "@/components/billing/billing-skeleton";
 
 /**
  * Stripe confirms the subscription over a webhook, not on the redirect, so the
@@ -71,7 +72,8 @@ function readOutcome(value: string | null): CheckoutOutcome {
  */
 function planName(status: string | null): string {
   if (status === "active" || status === "past_due") return "Pro";
-  if (status === "incomplete" || status === "canceled") return "No subscription";
+  if (status === "incomplete" || status === "canceled")
+    return "No subscription";
   return "Subscription";
 }
 
@@ -156,7 +158,11 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
   // the chip reads the chapter record — the same source every *gate* reads —
   // and falls back to the billing payload only when the chapter record has not
   // established anything. The fallback is display-only: no gate reads it.
-  const { status, pastDueSince } = useChapterSubscription();
+  const {
+    status,
+    pastDueSince,
+    isPending: subscriptionPending,
+  } = useChapterSubscription();
   const statusQuery = useBillingStatus();
   const billingStatus = statusQuery.data as BillingStatusPreview | undefined;
   const shownStatus = status ?? billingStatus?.subscription_status;
@@ -299,10 +305,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
     } catch (error) {
       toast({
         title: "Couldn't start checkout",
-        description: getErrorMessage(
-          error,
-          "Confirm billing:manage permission and retry.",
-        ),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }
@@ -322,10 +325,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
     } catch (error) {
       toast({
         title: "Couldn't open billing portal",
-        description: getErrorMessage(
-          error,
-          "Confirm billing:manage permission and an active Stripe customer.",
-        ),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }
@@ -333,11 +333,29 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
 
   const exhausted = attempt >= ACTIVATION_POLL_ATTEMPTS;
 
+  /*
+    Neither read has answered yet: draw the panel's own skeleton rather than
+    the panel with an "Unknown" chip, which states a fact about the
+    subscription that nobody has read yet. Once either read lands, the panel
+    renders with what it has, as before.
+
+    Not while the read is paused: offline, neither query will answer until the
+    connection returns, and a skeleton then would spin indefinitely in place of
+    the panel's own offline handling.
+  */
+  if (
+    subscriptionPending &&
+    statusQuery.isPending &&
+    statusQuery.fetchStatus !== "paused"
+  ) {
+    return <PlanPanelSkeleton />;
+  }
+
   return (
     /*
       `--surface-1` at radius 16 with a hairline, which is `4d`'s own
       `#1A1A1A` / `rgba(255,255,255,.08)` / `border-radius:16px` and **not** the
-      `<Card>` primitive: `card.tsx` paints `--card` (`#211E1A`), one rung up
+      `<Card>` primitive: `card.tsx` paints `--card`, one rung up
       the ladder from what the board draws here. This is the only framed block
       the board puts on the page, and it earns the frame by being the one thing
       on the screen that is not a list.
@@ -355,9 +373,9 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
             on the 24px *page title* one line up (`:244`, the word
             "Subscription"), and its 22px plan name has no `letter-spacing` at
             all. The title that tracking belongs to is not rendered on this
-            route anyway; `PageHeader` supplies the heading, at `label`/700.
+            route anyway; the top bar supplies the heading, at `label`/700.
 
-            An `<h2>`, not the route's `<h1>`: `PageHeader` owns that, and one
+            An `<h2>`, not the route's `<h1>`: the top bar owns that, and one
             typographic anchor per screen is its whole contract.
           */}
           <h2
@@ -399,7 +417,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
             <Button
               variant="link"
               size="sm"
-              className="h-auto px-0"
+              className="h-auto px-0 pointer-coarse:h-auto"
               onClick={() => void statusQuery.refetch()}
             >
               Retry
@@ -425,8 +443,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
               void queryClient.invalidateQueries({ queryKey: ["billing"] });
             }}
           />
-        ) : status === null ? (
-          /*
+        ) : status === null /*
             Fail open, matching `useSubscriptionWriteState`. An unresolved
             status is most likely a paying chapter behind a slow or failed
             fetch, and offering it a checkout button that 400s with "already has
@@ -435,9 +452,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
             already has data and then fails a background refetch reports
             `isError` while retaining that data, and blanking the control there
             would remove the only thing that unlocks the chapter (§5 rule 3).
-          */
-          null
-        ) : status === "active" ? (
+          */ ? null : status === "active" ? (
           <>
             {outcome === "success" ||
             (outcome === "returned" && sawActivation) ? (
@@ -478,7 +493,11 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
           />
         ) : (
           <StripeAction
-            label={status === "canceled" ? "Restart subscription" : "Complete checkout"}
+            label={
+              status === "canceled"
+                ? "Restart subscription"
+                : "Complete checkout"
+            }
             variant="default"
             pending={createCheckout.isPending}
             onRun={startCheckout}
@@ -518,9 +537,7 @@ function PlanMeta({
   invoicesHref?: string;
 }) {
   const lapsedOn =
-    status === "past_due" && pastDueSince
-      ? formatBareDate(pastDueSince)
-      : null;
+    status === "past_due" && pastDueSince ? formatDay(pastDueSince) : null;
   const customerId = billingStatus?.stripe_customer_id ?? null;
   const subscriptionId = billingStatus?.subscription_id ?? null;
 
@@ -702,11 +719,17 @@ function ActivationWait({
       <Button variant="secondary" onClick={onRecheck}>
         Check again
       </Button>
-      {/* `h-auto px-0` cancels the size's box classes, which `link` does not
-          reset — without them the anchor renders as a 44px padded block beside
-          the button rather than as inline text. Same pairing as
-          `service-page.tsx`'s proof link. */}
-      <Button asChild variant="link" size="sm" className="h-auto px-0">
+      {/* `h-auto px-0 pointer-coarse:h-auto` cancels the size's box classes,
+          which `link` does not reset — without them the anchor renders as a
+          padded block beside the button rather than as inline text. The
+          `pointer-coarse:` half is needed because `cn()` cannot merge a plain
+          class over a variant one. */}
+      <Button
+        asChild
+        variant="link"
+        size="sm"
+        className="h-auto px-0 pointer-coarse:h-auto"
+      >
         <a href="/billing">I haven&apos;t paid yet</a>
       </Button>
     </>

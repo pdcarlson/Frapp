@@ -1,9 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   isOpsNudgeModuleKey,
   OPS_NUDGE_MODULES,
   selectOpsNudge,
 } from "./ops-nudges";
+
+// These pin the nudge rule itself, so the beta list is emptied: `dues` leads
+// the priority order and would otherwise never be offered while it is beta-off.
+// What a beta-off module does to the nudge is `beta-off-modules.spec.ts`'s.
+vi.mock("./beta-off-modules", () => ({
+  BETA_OFF_MODULES: [],
+  isBetaOffModule: () => false,
+}));
 
 describe("OPS_NUDGE_MODULES", () => {
   // Pinned as an ordered list, not a set. `spec/product/modules.md` § "Ops-setup

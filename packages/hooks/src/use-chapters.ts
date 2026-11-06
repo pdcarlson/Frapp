@@ -13,7 +13,8 @@ export interface ChapterMembershipSummary {
   has_completed_onboarding: boolean;
   /**
    * `MODULE_CATALOG` keys whose ops-setup nudge this member has dismissed in
-   * this chapter (#492). Optional here for the same reason the rest of this
+   * this chapter (#492), plus `setup-checklist` once they hide the setup
+   * checklist (`MEMBER_DISMISSAL_KEYS`). Optional here for the same reason the rest of this
    * interface warns about: `useListChapters` *asserts* the response into this
    * type, so a server older than the column returns `undefined` at runtime with
    * nothing failing to say so. `selectOpsNudge` defaults it.
@@ -175,13 +176,36 @@ export function useActivateChapter() {
  * What every write to the current chapter does on success: refetch the
  * chapter queries, so the shell (the nav tile, the accent) repaints. The
  * `["chapters"]` prefix covers `["chapters", "current", id]` and the
- * memberships list alike.
+ * memberships list alike. Returns the refetch, for a caller that must not
+ * resolve before it lands; the others fire and forget.
  */
 function useInvalidateCurrentChapter() {
   const queryClient = useQueryClient();
-  return () => {
-    void queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
-  };
+  return () => queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
+}
+
+type FrappClient = ReturnType<typeof useFrappClient>;
+
+/** Mint a signed upload URL for the active chapter's next logo. */
+async function mintChapterLogoUpload(
+  client: FrappClient,
+  filename: string,
+  contentType: string,
+) {
+  const { data, error } = await client.POST("/v1/chapters/current/logo-url", {
+    body: { filename, content_type: contentType },
+  });
+  if (error) throw error;
+  return data;
+}
+
+/** Make an uploaded object the active chapter's logo. */
+async function confirmChapterLogo(client: FrappClient, storagePath: string) {
+  const { data, error } = await client.POST("/v1/chapters/current/logo", {
+    body: { storage_path: storagePath },
+  });
+  if (error) throw error;
+  return data;
 }
 
 export function useUpdateChapter() {
@@ -200,7 +224,9 @@ export function useUpdateChapter() {
       if (error) throw error;
       return data;
     },
-    onSuccess: invalidate,
+    onSuccess: () => {
+      void invalidate();
+    },
   });
 }
 
@@ -211,7 +237,6 @@ export interface ChapterLogoUpload {
   /** The type `inspectUploadFile` resolved, not the browser's `file.type`. */
   contentType: string;
 }
-
 
 /**
  * Upload or replace the active chapter's logo (#2591): mint a signed URL, PUT
@@ -229,11 +254,7 @@ export function useUploadChapterLogo() {
   const invalidate = useInvalidateCurrentChapter();
   return useMutation({
     mutationFn: async ({ body, filename, contentType }: ChapterLogoUpload) => {
-      const { data: signed, error: mintError } = await client.POST(
-        "/v1/chapters/current/logo-url",
-        { body: { filename, content_type: contentType } },
-      );
-      if (mintError) throw mintError;
+      const signed = await mintChapterLogoUpload(client, filename, contentType);
       const { signedUrl, storagePath } = readSignedUpload(signed);
       await putSignedUpload({
         signedUrl,
@@ -241,13 +262,42 @@ export function useUploadChapterLogo() {
         contentType,
         describeRejection: (status) => `Logo upload failed (${status})`,
       });
-      const { data, error } = await client.POST("/v1/chapters/current/logo", {
-        body: { storage_path: storagePath },
-      });
-      if (error) throw error;
-      return data;
+      return confirmChapterLogo(client, storagePath);
     },
-    onSuccess: invalidate,
+    onSuccess: () => {
+      void invalidate();
+    },
+  });
+}
+
+/**
+ * Step 1 of 3 for a client that PUTs the bytes itself: mobile holds a
+ * `file://` URI, not a DOM `Blob`, so it can't use {@link useUploadChapterLogo}
+ * (the same split as `useRequestAvatarUploadUrl`). The route declares only
+ * these two fields and the API forbids any other, so a caller must not pass
+ * `size_bytes` through.
+ */
+export function useRequestChapterLogoUploadUrl() {
+  const client = useFrappClient();
+  return useMutation({
+    mutationFn: (body: { filename: string; content_type: string }) =>
+      mintChapterLogoUpload(client, body.filename, body.content_type),
+  });
+}
+
+/**
+ * Step 3 of 3: make the uploaded object the chapter's logo. Resolves once the
+ * current chapter has refetched, so a caller that clears its busy state on
+ * resolve already has the new signed `logo_url`.
+ */
+export function useConfirmChapterLogo() {
+  const client = useFrappClient();
+  const invalidate = useInvalidateCurrentChapter();
+  return useMutation({
+    mutationFn: (storagePath: string) =>
+      confirmChapterLogo(client, storagePath),
+    // Returned, so the mutation resolves only once the refetch lands.
+    onSuccess: () => invalidate(),
   });
 }
 
@@ -261,6 +311,8 @@ export function useRemoveChapterLogo() {
       if (error) throw error;
       return data;
     },
-    onSuccess: invalidate,
+    onSuccess: () => {
+      void invalidate();
+    },
   });
 }

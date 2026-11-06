@@ -11,7 +11,7 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  * Every hook here takes `options.enabled` and defaults the query to disabled
  * until a chapter is known: the routes require `channels:manage`, so a mount
  * for an ordinary member would otherwise fire a guaranteed-403 that the query
- * client retries and refires on focus.
+ * client refires on focus. The web client no longer retries it (#3141).
  */
 
 /** The contract's status union, so a status the API adds reaches here (#2860). */
@@ -26,16 +26,23 @@ export const DISCORD_IMPORT_ACTIVE_STATUSES: readonly DiscordImportStatus[] = [
 ];
 
 /**
- * How often the detail route is polled while an import is moving.
+ * The notification target for an import that ended (the API's
+ * `importFinishedNotification`), which web routes to `/discord-import`.
+ */
+export const DISCORD_IMPORT_NOTIFICATION_SCREEN = "discord_import";
+
+/**
+ * How often the chapter's import list is polled while an import in it is
+ * moving (`discordImportListPollMs`).
  *
  * The worker checkpoints roughly once a minute, so a shorter interval does not
- * surface progress sooner — but an import runs for minutes to tens of minutes
- * and a page that looks frozen for a minute reads as broken. Three seconds is
- * the compromise: cheap (the row, plus two row counts for a bot import's
- * channel progress), and the bar visibly moves.
+ * surface progress sooner, but an import runs for minutes to hours and a page
+ * that looks frozen for a minute reads as broken. Three seconds is the
+ * compromise: the chapter's few import rows, plus two row counts for each bot
+ * import's channel progress, and the bar visibly moves.
  *
- * Polling stops entirely on a terminal status, so an idle admin sitting on a
- * finished import costs nothing.
+ * Polling stops entirely once nothing is moving, so an idle admin sitting on
+ * a finished import costs nothing.
  */
 export const DISCORD_IMPORT_POLL_MS = 3_000;
 
@@ -43,8 +50,6 @@ export const discordImportKeys = {
   all: ["discord-imports"] as const,
   list: (chapterId: string | null) =>
     ["discord-imports", chapterId, "list"] as const,
-  detail: (chapterId: string | null, id: string) =>
-    ["discord-imports", chapterId, "detail", id] as const,
   channels: (chapterId: string | null, id: string) =>
     ["discord-imports", chapterId, "channels", id] as const,
   progress: (chapterId: string | null, id: string) =>
@@ -54,21 +59,24 @@ export const discordImportKeys = {
 };
 
 /**
- * How often the list is polled: only while an import on it is being deleted.
+ * How often the list is polled: while an import on it is moving (queued,
+ * running or being deleted), and not at all otherwise.
  *
- * A purge runs in the background, and Clear is offered only once a row reads
- * `purged`, so a list that never asked again would leave a deleted row at
- * `purging` with nothing to click. The detail poll can't carry it: it follows
- * the one import the admin is watching, often a running one. The same poll
- * carries a deleting row's `purged_messages` countdown (#2944): a purge is not
- * short on a large import (staging's 145,574-message one still had about
- * 139,700 left several minutes in), and the list goes back to not polling
- * once it lands.
+ * The page shows the chapter's one import from this list, so the list is what
+ * carries a running import's counts and a deleting one's `purged_messages`
+ * countdown (#2944). A purge is not short on a large import (staging's
+ * 145,574-message one still had about 139,700 left several minutes in), and an
+ * import runs for hours. Once nothing on it moves, an admin sitting on a
+ * finished import costs nothing.
  */
 export function discordImportListPollMs(
   rows: ReadonlyArray<{ status?: string }> | undefined,
 ): number | false {
-  return rows?.some((row) => row.status === "purging")
+  return rows?.some((row) =>
+    (DISCORD_IMPORT_ACTIVE_STATUSES as readonly string[]).includes(
+      row.status ?? "",
+    ),
+  )
     ? DISCORD_IMPORT_POLL_MS
     : false;
 }
@@ -90,47 +98,20 @@ export function useDiscordImports(options?: { enabled?: boolean }) {
   });
 }
 
-export function useDiscordImport(
-  id: string | null,
-  options?: { enabled?: boolean },
-) {
-  const client = useFrappClient();
-  const chapterId = useActiveChapterId();
-
-  return useQuery({
-    queryKey: discordImportKeys.detail(chapterId, id ?? ""),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/discord-imports/{id}", {
-        params: { path: { id: id as string } },
-      });
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!chapterId && !!id && (options?.enabled ?? true),
-    staleTime: 0,
-    // A 403 (not an officer) or a 404 (purged elsewhere) will not fix itself by
-    // asking again on a timer.
-    retry: false,
-    refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status && DISCORD_IMPORT_ACTIVE_STATUSES.includes(status)
-        ? DISCORD_IMPORT_POLL_MS
-        : false;
-    },
-  });
-}
-
 /**
- * How often the Watch view's progress is polled while an import runs (#2857).
+ * How often an import's channel-by-channel progress is polled while it runs
+ * (#2857): the page's "Now importing" line and per-category tiles on a bot
+ * import, and the channel panel, which share the one query.
  *
- * Slower than the detail poll: it names channels, and the worker moves to the
- * next one at most once a page of messages. Eight small reads a tick, whatever
- * the server's size, because the full channel list is too large to poll.
+ * Slower than the import's own poll: it names channels, and the worker moves to the
+ * next one at most once a page of messages. Nine small reads a tick (eight
+ * table reads and one per-category sum), whatever the server's size, because
+ * the full channel list is too large to poll.
  */
 export const DISCORD_IMPORT_PROGRESS_POLL_MS = 5_000;
 
 /**
- * One import's progress channel by channel, for the Watch view (#2857):
+ * One import's progress channel by channel, for the channel panel (#2857):
  * counts by status, the rows running now, the last ones finished, and the
  * failures. `active` is whether the import is still moving; a finished one
  * is read once and not polled.
@@ -250,10 +231,7 @@ export function useCancelDiscordImport() {
       if (error) throw error;
       return data;
     },
-    onSuccess: (_data, vars) => {
-      void queryClient.invalidateQueries({
-        queryKey: discordImportKeys.detail(chapterId, vars.id),
-      });
+    onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: discordImportKeys.list(chapterId),
       });
@@ -389,8 +367,6 @@ export function useSetDiscordChannelMapping() {
 
 export function useSetDiscordRoleMapping() {
   const client = useFrappClient();
-  const queryClient = useQueryClient();
-  const chapterId = useActiveChapterId();
 
   return useMutation({
     mutationFn: async (vars: {
@@ -410,11 +386,6 @@ export function useSetDiscordRoleMapping() {
       );
       if (error) throw error;
       return data;
-    },
-    onSuccess: (_data, vars) => {
-      void queryClient.invalidateQueries({
-        queryKey: discordImportKeys.detail(chapterId, vars.id),
-      });
     },
   });
 }
@@ -443,10 +414,7 @@ export function useStartDiscordImport() {
       if (error) throw error;
       return data;
     },
-    onSuccess: (_data, vars) => {
-      void queryClient.invalidateQueries({
-        queryKey: discordImportKeys.detail(chapterId, vars.id),
-      });
+    onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: discordImportKeys.list(chapterId),
       });
@@ -467,10 +435,7 @@ export function useDeleteDiscordImport() {
       if (error) throw error;
       return data;
     },
-    onSuccess: (_data, vars) => {
-      void queryClient.invalidateQueries({
-        queryKey: discordImportKeys.detail(chapterId, vars.id),
-      });
+    onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: discordImportKeys.list(chapterId),
       });

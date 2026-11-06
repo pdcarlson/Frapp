@@ -25,7 +25,7 @@ import {
   useReportMessage,
   type ChatReportReason,
 } from "@repo/hooks";
-import { UNNAMED_MEMBER } from "@repo/chat-core/block-copy";
+import { UNNAMED_MEMBER, blockActionLabel } from "@repo/chat-core/block-copy";
 import { dayDividerLabel } from "@repo/chat-core/grouping";
 import { formatTimeOfDay } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
@@ -36,6 +36,8 @@ import {
   SheetPrimaryButton,
   SheetScrim,
   useSheetBackgroundStyle,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -50,23 +52,36 @@ import {
   REPORT_REASON_OPTIONS,
   REPORT_SENT_BODY,
   REPORT_SENT_TITLE,
+  REPORT_FORM_PROMPT,
+  REPORT_FORM_TITLE,
+  REPORT_SEND_LABEL,
   reportFailureBody,
-} from "@/lib/chat/report-reasons";
+} from "@repo/chat-core/report-copy";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * The actions on one message: reply to it, edit or delete it (#2775), and the
- * member-safety pair, report it or block its sender (#2257, App Store
- * Guideline 1.2). Opened by long-pressing a message or poll card in s05, or by
- * the "Message actions" accessibility action on either.
+ * The actions on one message: react to it, reply to it, edit or delete it
+ * (#2775), and the member-safety pair, report it or block its sender (#2257,
+ * App Store Guideline 1.2). Opened by long-pressing a message or card in s05,
+ * by the `+` chip after its reactions, or by the "Message actions"
+ * accessibility action.
+ *
+ * **Quick reactions come first.** The thread draws no reaction control on a
+ * message nobody has reacted to (`ReactionRow` in `message-item.tsx`), so this
+ * row is where the first reaction starts, as it does in every messenger's
+ * long-press. The four picks are web's (`QUICK_REACTIONS` in
+ * `apps/web/components/chat/reaction-bar.tsx`). One the viewer already used is
+ * drawn selected, and tapping it takes the reaction back off, the toggle
+ * `spec/behavior/chat/README.md` § Reactions describes. Either way the sheet
+ * closes: the chip under the message is the confirmation.
  *
  * **Reply, Edit and Delete hand off to the thread.** Reply and Edit stage in
  * the composer and Delete asks for confirmation in a native alert, so each row
  * closes the sheet and tells the screen which message it was for.
  *
- * **Two sheets, not one with panes.** The menu is at most four rows (Reply,
- * Edit and Delete on your own message; Reply, Delete, Report and Block on
- * someone else's) and sizes to its content; the report form is seven reasons, a text field and a button, which
+ * **Two sheets, not one with panes.** The menu is the quick reactions and at
+ * most four rows (Reply, Edit and Delete on your own message; Reply, Delete,
+ * Report and Block on someone else's) and sizes to its content; the report form is seven reasons, a text field and a button, which
  * on a small phone with the keyboard up is taller than the screen. A bounded
  * sheet takes `enableDynamicSizing`, and one with a scrollable body takes a
  * fixed detent with the sheet-aware scroll view as its direct child
@@ -75,7 +90,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * `stackBehavior="replace"`), where s19 stacks its assignee picker on top.
  *
  * **Which rows show is decided by the caller**, from `messageActionsFor` in
- * `lib/chat/blocks.ts`: Report and Block never show on the viewer's own
+ * `@repo/chat-core/message-actions`: Report and Block never show on the viewer's own
  * message, and `canBlock` is false for the system actor, imported rows and a
  * sender a block attempt already proved has left the chapter — never merely
  * because the cached roster does not list them yet.
@@ -91,6 +106,19 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  */
 
 const REPORT_SNAP_POINTS = ["85%"];
+
+/**
+ * The sheet's quick reactions, in web's order (`QUICK_REACTIONS` in
+ * `apps/web/components/chat/reaction-bar.tsx`). A copy rather than a shared
+ * export: the list lives in a web component, not in `@repo/chat-core`, so
+ * the two must move together until it is hoisted there.
+ */
+export const QUICK_REACTIONS: readonly string[] = ["👍", "🙏", "✅", "🔥"];
+
+/** A quick reaction's accessible name, by whether it adds or takes back. */
+export function quickReactionLabel(emoji: string, mine: boolean): string {
+  return mine ? `Remove ${emoji} reaction` : `React with ${emoji}`;
+}
 
 export interface MessageActionsTarget {
   /** Server id — the sheet only opens on confirmed rows. */
@@ -118,6 +146,14 @@ export interface MessageActionsTarget {
    * not — not loaded yet, or not listing them.
    */
   senderInDirectory: boolean;
+  /**
+   * The emoji the viewer has already reacted with on this message, so the
+   * quick reactions can draw them selected and take them back on a tap. The
+   * caller reads it from the current message on every render, not once at the
+   * long-press, so it follows a rollback or another device while the sheet is
+   * open.
+   */
+  reactedWith: readonly string[];
 }
 
 /** What the report form shows once a request has come back. */
@@ -130,6 +166,8 @@ function announce(message: string) {
 
 export interface MessageActionsSheetHandle {
   present: () => void;
+  /** Closes the menu. The report form, once open, is the member's to close. */
+  dismiss: () => void;
 }
 
 export interface MessageActionsSheetProps {
@@ -145,25 +183,37 @@ export interface MessageActionsSheetProps {
   onEdit?: (messageId: string) => void;
   /** Confirm, then delete, this message. */
   onDelete?: (messageId: string) => void;
+  /**
+   * Add a reaction from the quick row. Omit it, with `onUnreact`, and the row
+   * is not drawn.
+   */
+  onReact?: (messageId: string, emoji: string) => void;
+  /** Take back a reaction the viewer already made, from the quick row. */
+  onUnreact?: (messageId: string, emoji: string) => void;
 }
 
 export const MessageActionsSheet = forwardRef<
   MessageActionsSheetHandle,
   MessageActionsSheetProps
 >(function MessageActionsSheet(
-  { target, onSenderDeparted, onReply, onEdit, onDelete },
+  { target, onSenderDeparted, onReply, onEdit, onDelete, onReact, onUnreact },
   ref,
 ) {
   const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
+  const { accent, accentSubtle, accentBorder } = useChapterBranding();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
   const menuRef = useRef<BottomSheetModal>(null);
   const reportRef = useRef<BottomSheetModal>(null);
+  const closeMenu = useSheetClose(menuRef);
+  const closeReport = useSheetClose(reportRef);
 
   useImperativeHandle(
     ref,
-    () => ({ present: () => menuRef.current?.present() }),
+    () => ({
+      present: () => menuRef.current?.present(),
+      dismiss: () => menuRef.current?.dismiss(),
+    }),
     [],
   );
 
@@ -222,6 +272,18 @@ export const MessageActionsSheet = forwardRef<
       if (messageId && run) run(messageId);
     },
     [target],
+  );
+
+  /** Closes the menu, then adds the reaction, or takes back one already made. */
+  const pickReaction = useCallback(
+    (emoji: string, mine: boolean) => {
+      const messageId = target?.messageId;
+      menuRef.current?.dismiss();
+      if (!messageId) return;
+      if (mine) onUnreact?.(messageId, emoji);
+      else onReact?.(messageId, emoji);
+    },
+    [onReact, onUnreact, target],
   );
 
   // The report sheet's `stackBehavior="replace"` dismisses the menu as it
@@ -292,27 +354,66 @@ export const MessageActionsSheet = forwardRef<
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
       >
-        <BottomSheetView style={styles.body}>
-          <SheetHeader
-            title="Message"
-            onCancel={() => menuRef.current?.dismiss()}
-          />
+        <SheetBackToClose onClose={closeMenu} />
+        <BottomSheetView onAccessibilityEscape={closeMenu} style={styles.body}>
+          {/* No title and no Cancel: this is a menu of actions, not a form.
+              The line naming the message is its heading, and the grabber,
+              the scrim, Android back and VoiceOver's escape close it
+              (components.md § Chrome weight). Its rows act in place, so they
+              carry no chevron. */}
           {target ? (
             <Text style={styles.sentLine} numberOfLines={1}>
               {`${target.senderLabel} · ${sentAtLabel(target.sentAt)}`}
             </Text>
           ) : null}
+          {target && onReact && onUnreact ? (
+            <View style={styles.reactions}>
+              {QUICK_REACTIONS.map((emoji) => {
+                const mine = target.reactedWith.includes(emoji);
+                return (
+                  <Pressable
+                    key={emoji}
+                    accessibilityRole="button"
+                    accessibilityLabel={quickReactionLabel(emoji, mine)}
+                    accessibilityState={{ selected: mine }}
+                    onPress={() => pickReaction(emoji, mine)}
+                    style={({ pressed }) => [
+                      styles.reaction,
+                      mine
+                        ? {
+                            backgroundColor: accentSubtle,
+                            borderColor: accentBorder,
+                          }
+                        : null,
+                      pressed ? styles.pressed : null,
+                    ]}
+                  >
+                    <Text style={styles.reactionEmoji}>{emoji}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
           {target?.canReply || target?.canEdit || target?.canDelete ? (
             <ListSection>
               {target.canReply ? (
-                <ListRow label="Reply" onPress={() => handOff(onReply)} />
+                <ListRow
+                  label="Reply"
+                  action
+                  onPress={() => handOff(onReply)}
+                />
               ) : null}
               {target.canEdit ? (
-                <ListRow label="Edit message" onPress={() => handOff(onEdit)} />
+                <ListRow
+                  label="Edit message"
+                  action
+                  onPress={() => handOff(onEdit)}
+                />
               ) : null}
               {target.canDelete ? (
                 <ListRow
                   label="Delete message"
+                  action
                   destructive
                   onPress={() => handOff(onDelete)}
                 />
@@ -322,14 +423,15 @@ export const MessageActionsSheet = forwardRef<
           {target?.canReport ? (
             <ListSection>
               <ListRow
-                label="Report message"
+                label={REPORT_FORM_TITLE}
                 description="Your chapter's officers will be able to see it."
                 onPress={openReport}
               />
               {canBlock ? (
                 <ListRow
-                  label={`Block ${senderLabel}`}
+                  label={blockActionLabel(senderLabel)}
                   description={BLOCK_ROW_DESCRIPTION}
+                  action
                   destructive
                   onPress={() => startBlock("menu")}
                 />
@@ -350,7 +452,9 @@ export const MessageActionsSheet = forwardRef<
         backdropComponent={SheetScrim}
         onDismiss={resetReport}
       >
+        <SheetBackToClose onClose={closeReport} />
         <BottomSheetScrollView
+          onAccessibilityEscape={closeReport}
           contentContainerStyle={styles.body}
           keyboardShouldPersistTaps="handled"
         >
@@ -362,8 +466,6 @@ export const MessageActionsSheet = forwardRef<
                     ? REPORT_ALREADY_TITLE
                     : REPORT_SENT_TITLE
                 }
-                onCancel={() => reportRef.current?.dismiss()}
-                cancelLabel="Done"
               />
               <Text style={styles.bodyText} accessibilityLiveRegion="polite">
                 {outcome === "already" ? REPORT_ALREADY_BODY : REPORT_SENT_BODY}
@@ -371,8 +473,9 @@ export const MessageActionsSheet = forwardRef<
               {canBlock ? (
                 <ListSection>
                   <ListRow
-                    label={`Block ${senderLabel}`}
+                    label={blockActionLabel(senderLabel)}
                     description={BLOCK_ROW_DESCRIPTION}
+                    action
                     destructive
                     onPress={() => startBlock("report")}
                   />
@@ -388,10 +491,10 @@ export const MessageActionsSheet = forwardRef<
           ) : (
             <>
               <SheetHeader
-                title="Report message"
+                title={REPORT_FORM_TITLE}
                 onCancel={() => reportRef.current?.dismiss()}
               />
-              <Text style={styles.caption}>Why are you reporting it?</Text>
+              <Text style={styles.caption}>{REPORT_FORM_PROMPT}</Text>
               <View accessibilityRole="radiogroup" style={styles.reasons}>
                 {REPORT_REASON_OPTIONS.map((option) => {
                   const selected = option.reason === reason;
@@ -443,7 +546,7 @@ export const MessageActionsSheet = forwardRef<
                 </Text>
               ) : null}
               <SheetPrimaryButton
-                label={report.isPending ? "Sending…" : "Send report"}
+                label={report.isPending ? "Sending…" : REPORT_SEND_LABEL}
                 onPress={submitReport}
                 disabled={!reason || report.isPending || !target}
                 accent={accent}
@@ -484,15 +587,37 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
+    // Four equal 44pt cells across the sheet, in the ListSection's surface
+    // recipe so the row reads as part of the same menu. A selected one swaps
+    // in the chapter's quiet fill and border at render, the reacted chip's
+    // recipe under the message (components.md §11).
+    reactions: {
+      flexDirection: "row",
+      gap: tokens.spacing.sm,
+    },
+    reaction: {
+      flex: 1,
+      height: tokens.touch.minimum,
+      borderRadius: tokens.radius.control,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.card,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    reactionEmoji: {
+      ...typeRole(tokens.typography.role.title),
+    },
     bodyText: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
     },
     reasons: {
-      borderRadius: tokens.radius.cardLarge,
+      // The ListSection recipe, so the reasons read as the same grouped list.
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
+      backgroundColor: tokens.color.surface.card,
       overflow: "hidden",
     },
     reasonRow: {

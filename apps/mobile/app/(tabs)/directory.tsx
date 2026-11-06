@@ -13,9 +13,24 @@ import {
   EmptyState,
   ErrorState,
   NoChapterState,
-  SkeletonLines,
+  SkeletonBlock,
+  SkeletonRegion,
+  SkeletonText,
 } from "@/components/state-block";
-import { FilterChips, SearchField } from "@/components/filter-chips";
+import {
+  BACK_TO_MORE,
+  PinnedBackRow,
+  pinnedBackClearance,
+} from "@/components/back-row";
+import { Chip, FilterChips, SearchField } from "@/components/filter-chips";
+import { gutterBleed, usePressFeedback } from "@/components/list-section";
+import { DirectoryGlyph } from "@/components/more/more-glyphs";
+import { SearchGlyph } from "@/components/search-glyph";
+import { screenTitleStyle } from "@/components/screen-shell";
+import {
+  ThemedRefreshControl,
+  useRefetchAll,
+} from "@/components/pull-to-refresh";
 import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import {
   type DirectoryRow,
@@ -23,6 +38,7 @@ import {
   selectDirectoryRows,
 } from "@/lib/more/directory";
 import { records, str } from "@/lib/more/narrow";
+import { useTabBarClearance } from "@/lib/floating-chrome";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -60,9 +76,10 @@ type Tab = "actives" | "alumni";
 export default function DirectoryScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const tabBarClearance = useTabBarClearance();
   const chapterId = useActiveChapterId();
   const detailSheetRef = useRef<BottomSheetModal>(null);
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<DirectoryRow | null>(null);
 
   const [tab, setTab] = useState<Tab>("actives");
   const [query, setQuery] = useState("");
@@ -75,9 +92,10 @@ export default function DirectoryScreen() {
   // same `useAlumni` params. Filters persist across a tab switch (the fields
   // are only shown on the Alumni tab, but staying applied means returning to
   // it doesn't silently drop what was typed). Held as one object, rather than
-  // three parallel `useState`s, so `hasAlumniFilters` and the `useAlumni` call
-  // below can both derive from the exact same value instead of two
-  // hand-written copies of "is any filter set" drifting apart.
+  // three parallel `useState`s, so `hasAlumniFilters`, the Filters chip's
+  // count and the `useAlumni` call below all derive from the same value, by
+  // the one rule in `countSetFilters`, instead of hand-written copies of "is
+  // any filter set" drifting apart.
   const [alumniFilterInputs, setAlumniFilterInputs] = useState({
     gradYear: "",
     city: "",
@@ -92,11 +110,16 @@ export default function DirectoryScreen() {
     [alumniFilterInputs],
   );
   const deferredAlumniFilters = useDeferredValue(alumniFilters);
-  const hasAlumniFilters = Boolean(
-    deferredAlumniFilters.graduation_year ||
-    deferredAlumniFilters.city ||
-    deferredAlumniFilters.company,
-  );
+  // The three fields sit behind a Filters chip rather than always stacking
+  // under the tabs, where they pushed the alumni list down by three field
+  // heights before a member had typed anything. The chip counts the fields
+  // that are set, so a filter left on while the fields are folded away still
+  // shows; the count reads the typed values, so it moves with the keystroke.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const alumniFilterCount = countSetFilters(alumniFilters);
+  // The deferred value, as the query reads: this picks the empty state for
+  // the list that query returns.
+  const hasAlumniFilters = countSetFilters(deferredAlumniFilters) > 0;
 
   const membersQuery = useMembers();
   const alumniQuery = useAlumni(deferredAlumniFilters);
@@ -108,6 +131,9 @@ export default function DirectoryScreen() {
     : tab === "actives"
       ? membersQuery
       : alumniQuery;
+  // Both lists, since the tab chips count each, and the search results
+  // while there is a term (that query is off without one).
+  const refresh = useRefetchAll([membersQuery, alumniQuery, searchQuery]);
 
   // `GET /v1/members` is the whole chapter; the Actives tab is the part of it
   // that isn't on the Alumni tab (#2484). Search stays directory-wide: it hides
@@ -142,11 +168,10 @@ export default function DirectoryScreen() {
   );
 
   const header = (
-    <View style={styles.header}>
+    <View style={[styles.header, { paddingTop: pinnedBackClearance(tokens) }]}>
       <Text accessibilityRole="header" style={styles.title}>
         Directory
       </Text>
-      <Text style={styles.subtitle}>Actives and alumni.</Text>
 
       <SearchField
         value={query}
@@ -158,16 +183,37 @@ export default function DirectoryScreen() {
       {isSearching ? null : (
         <FilterChips
           accessibilityLabel="Actives or alumni"
+          scroll
           selected={tab}
           onSelect={(value) => setTab((value as Tab) ?? "actives")}
           chips={[
             { value: "actives", label: "Actives", count: activesCount },
             { value: "alumni", label: "Alumni", count: alumniCount },
           ]}
+          trailing={
+            tab === "alumni" ? (
+              <Chip
+                accessibilityRole="button"
+                accessibilityState={{ expanded: filtersOpen }}
+                accessibilityLabel={
+                  alumniFilterCount > 0
+                    ? `Filters, ${alumniFilterCount} set`
+                    : "Filters"
+                }
+                label={
+                  alumniFilterCount > 0
+                    ? `Filters · ${alumniFilterCount}`
+                    : "Filters"
+                }
+                on={filtersOpen}
+                onPress={() => setFiltersOpen((open) => !open)}
+              />
+            ) : null
+          }
         />
       )}
 
-      {isSearching || tab !== "alumni" ? null : (
+      {isSearching || tab !== "alumni" || !filtersOpen ? null : (
         <View style={styles.alumniFilters}>
           <SearchField
             value={alumniFilterInputs.gradYear}
@@ -203,7 +249,6 @@ export default function DirectoryScreen() {
 
   function renderBody() {
     if (!chapterId) return <NoChapterState noun="the member directory" />;
-    if (activeQuery.isPending) return <SkeletonLines lines={4} showTile />;
     if (activeQuery.isError) {
       return (
         <ErrorState
@@ -217,26 +262,28 @@ export default function DirectoryScreen() {
     if (isSearching) {
       return (
         <EmptyState
-          glyph="⌕"
+          glyph={SearchGlyph}
           title="No matches"
           body={`Nobody in this chapter matches “${deferredQuery}”.`}
         />
       );
     }
+    // writing.md § Alumni's no-results row, with "filter" for its "field":
+    // the fields are behind a chip named Filters here.
     if (tab === "alumni" && hasAlumniFilters) {
       return (
         <EmptyState
-          glyph="⌕"
-          title="No alumni match these filters"
-          body="Graduation year, city, and company are self-reported — try loosening a filter."
+          glyph={SearchGlyph}
+          title="No alumni match the filters"
+          body="Clear a filter to see more."
         />
       );
     }
+    // A title alone: there is nothing to do about an empty roster from here.
     return (
       <EmptyState
-        glyph="☺"
+        glyph={DirectoryGlyph}
         title={tab === "actives" ? "No actives yet" : "No alumni yet"}
-        body="Members appear here once they join the chapter."
       />
     );
   }
@@ -248,29 +295,55 @@ export default function DirectoryScreen() {
       style={styles.safeArea}
       edges={["top", "left", "right", "bottom"]}
     >
-      <FlatList
-        data={rows}
-        keyExtractor={(row) => row.userId}
-        ListHeaderComponent={header}
-        ListEmptyComponent={
-          <View style={styles.emptyWrap}>{renderBody()}</View>
-        }
-        renderItem={({ item }) => (
-          <MemberRow
-            row={item}
-            onPress={() => {
-              setSelectedUserId(item.userId);
-              detailSheetRef.current?.present();
-            }}
-          />
-        )}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      />
+      {/* Pinned, as every screen's back capsule is (`ScreenShell`), inside an
+          unpadded View so it sits where the content starts. */}
+      <View style={styles.listFrame}>
+        <PinnedBackRow back={BACK_TO_MORE} />
+        <FlatList
+          data={rows}
+          keyExtractor={(row) => row.userId}
+          ListHeaderComponent={header}
+          ListEmptyComponent={
+            // The skeleton stands in for the rows themselves, so it takes no
+            // inset: the empty and error cards do.
+            !!chapterId && activeQuery.isPending ? (
+              <MemberListSkeleton
+                label={
+                  // A search looks across both lists and hides the tabs, so it
+                  // names neither tab's list.
+                  isSearching
+                    ? "Searching chapter members"
+                    : tab === "alumni"
+                      ? "Loading alumni directory"
+                      : "Loading chapter members"
+                }
+              />
+            ) : (
+              <View style={styles.emptyWrap}>{renderBody()}</View>
+            )
+          }
+          renderItem={({ item }) => (
+            <MemberRow
+              row={item}
+              onPress={() => {
+                setSelected(item);
+                detailSheetRef.current?.present();
+              }}
+            />
+          )}
+          contentContainerStyle={[
+            styles.content,
+            // Clear of the floating tab bar (`lib/floating-chrome.tsx`).
+            { paddingBottom: tokens.spacing.xl + tabBarClearance },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={<ThemedRefreshControl refresh={refresh} />}
+        />
+      </View>
       <MemberDetailSheet
         ref={detailSheetRef}
-        userId={selectedUserId}
-        onDismiss={() => setSelectedUserId(null)}
+        member={selected}
+        onDismiss={() => setSelected(null)}
       />
     </SafeAreaView>
   );
@@ -289,6 +362,7 @@ export function MemberRow({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const feedback = usePressFeedback();
 
   return (
     <Pressable
@@ -304,7 +378,11 @@ export function MemberRow({
           : undefined
       }
       onPress={onPress}
-      style={styles.row}
+      android_ripple={onPress ? feedback.ripple : undefined}
+      style={({ pressed }) => [
+        styles.row,
+        onPress ? feedback.lift(pressed) : null,
+      ]}
     >
       <View style={styles.avatar}>
         <Text style={styles.avatarText}>{row.initials}</Text>
@@ -317,14 +395,74 @@ export function MemberRow({
   );
 }
 
+/** Name widths, cycled, so the placeholder roster doesn't read as a grid. */
+const SKELETON_NAME_WIDTHS = [
+  "46%",
+  "34%",
+  "52%",
+  "40%",
+  "30%",
+  "44%",
+] as const;
+
+/**
+ * The roster's loading state: member rows on {@link MemberRow}'s own styles,
+ * an avatar-sized circle and the name and meta lines, split by the same
+ * hairlines, so the real rows land in place.
+ */
+export function MemberListSkeleton({
+  label,
+  rows = 6,
+}: {
+  /** writing.md §7's string for the tab that is loading. */
+  label: string;
+  rows?: number;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const { role } = tokens.typography;
+
+  return (
+    <SkeletonRegion label={label}>
+      {Array.from({ length: rows }, (_, index) => (
+        <View key={index} style={styles.row}>
+          <SkeletonBlock
+            width={AVATAR_SIZE}
+            height={AVATAR_SIZE}
+            radius={avatarRadius(AVATAR_SIZE)}
+          />
+          <View style={styles.rowText}>
+            <SkeletonText
+              role={role.label}
+              width={SKELETON_NAME_WIDTHS[index % SKELETON_NAME_WIDTHS.length]!}
+            />
+            <SkeletonText role={role.caption} width="28%" />
+          </View>
+        </View>
+      ))}
+    </SkeletonRegion>
+  );
+}
+
+/** How many of the alumni filters hold a value: a new key counts with no edit here. */
+function countSetFilters(filters: Record<string, string | undefined>): number {
+  return Object.values(filters).filter(Boolean).length;
+}
+
 /** Rows the directory would draw, without the map-and-sort of a full select. */
 function countMembers(data: unknown): number {
   return records(data).filter((row) => str(row, "user_id")).length;
 }
 
+/** The member row's avatar, which its skeleton draws at the same size. */
+const AVATAR_SIZE = 40;
+
 function createStyles(tokens: SignetTokens) {
-  const avatarSize = 40;
+  const avatarSize = AVATAR_SIZE;
   return StyleSheet.create({
+    listFrame: {
+      flex: 1,
+    },
     safeArea: {
       flex: 1,
       backgroundColor: tokens.color.surface.background,
@@ -344,20 +482,16 @@ function createStyles(tokens: SignetTokens) {
     alumniFilters: {
       gap: tokens.spacing.sm,
     },
-    title: {
-      ...typeRole(tokens.typography.role.title),
-      color: tokens.color.text.foreground,
-      letterSpacing: -0.4,
-    },
-    subtitle: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.mutedForeground,
-    },
+    // ScreenShell's own title style: this screen draws its own header only
+    // because its body is a FlatList.
+    title: screenTitleStyle(tokens),
     row: {
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.md,
       paddingVertical: tokens.spacing.md,
+      // A square row: hairlines split the list, so no radius.
+      ...gutterBleed(tokens, { rounded: false }),
       minHeight: tokens.touch.minimum,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: tokens.color.border.hairline,

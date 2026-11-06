@@ -70,12 +70,20 @@ describe("the status tints", () => {
   });
 
   it("need the lift for danger text", () => {
-    // Solid danger misses on its own tint from `--surface-1` up, so danger
-    // text on a tint is always `--destructive-text`, at every call site, and
-    // `status-tint-call-sites.spec.ts` holds them to it.
+    // Solid danger misses on its own tint over `--popover` (4.26), and on the
+    // 20% hover tint from `--surface-1` up, so danger text on a tint is always
+    // `--destructive-text`, at every call site, and
+    // `status-tint-call-sites.spec.ts` holds them to it. (neutral ladder,
+    // 2026-11-05: the darker steps let it clear the 13% tint over `--card`
+    // (4.60), which is where this used to measure, so it now measures the
+    // steps where it still misses.)
     const { hue, alpha } = STATUS_TINT.destructive;
     expect(
-      ratio(SEMANTIC.destructive, tint(hue, SURFACE.card, alpha)),
+      ratio(SEMANTIC.destructive, tint(hue, SURFACE.popover, alpha)),
+    ).toBeLessThan(AA_TEXT);
+    const hover = STATUS_TINT.destructiveHover;
+    expect(
+      ratio(SEMANTIC.destructive, tint(hover.hue, SURFACE.card, hover.alpha)),
     ).toBeLessThan(AA_TEXT);
   });
 });

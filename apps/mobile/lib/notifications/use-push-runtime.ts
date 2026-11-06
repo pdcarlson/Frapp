@@ -48,7 +48,13 @@
  * a member who can do nothing about it.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "expo-router";
 import {
   useMarkNotificationRead,
@@ -67,6 +73,7 @@ import {
   isPushAvailable,
   takeLastNotificationResponse,
 } from "./push";
+import { settleChatLaunch } from "@/lib/chat/last-channel";
 import {
   clearStoredPushTokenRow,
   readStoredPushTokenRow,
@@ -126,6 +133,9 @@ export function usePushRuntime(): void {
   }, [registerToken, removeToken, markRead, isAuthenticated, status]);
 
   const handleResponse = useCallback((response: PushNotificationResponse) => {
+    // A tap decides where the member goes, so chat home's launch jump to the
+    // last channel stands aside (`lib/chat/last-channel.ts`).
+    settleChatLaunch();
     const data = response.notification.request.content.data;
     setPendingTap({
       target: resolveNotificationTarget(data),
@@ -141,9 +151,9 @@ export function usePushRuntime(): void {
     handlerConfigured = true;
     configureForegroundPresentation();
     // The Android channel is created here, not only inside
-    // `requestPushPermission()`. Its other caller is the primer's "Turn on"
-    // (`PushPrimerCard`, hosted on the welcome screen since #958), which a
-    // member may never tap — so relying on that alone would leave the
+    // `requestPushPermission()`. Its other callers are the primer's "Turn on"
+    // (`PushPrimerCard`, hosted on the welcome screen since #958) and
+    // Settings' push switch, which a member may never tap — so relying on that alone would leave the
     // `"default"` channel uncreated for them, while `app.json`'s plugin
     // config points FCM's `default_notification_channel_id` at it. The
     // study-pause notice (#1065) is a **local** notification that needs no

@@ -1,10 +1,18 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
 import type { ErrorEvent } from '@sentry/nestjs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import Stripe from 'stripe';
 import { buildSentryOptions } from './sentry-options';
 import { scrubSentryEvent } from './sentry-scrubbing';
 import { reportSwallowed } from './report-swallowed';
+import {
+  SENTRY_CLI_INJECT_TIMEOUT_MS,
+  cliSucceeded,
+  defaultRunSentryCli,
+} from './upload-sentry-sourcemaps';
 
 /**
  * End-to-end wiring test for the **real** Sentry SDK (issue #682).
@@ -174,6 +182,7 @@ describe('Sentry SDK integration', () => {
         urlQueryParams: false,
         graphQL: { document: false, variables: false },
         genAI: { inputs: false, outputs: false },
+        mcp: { inputs: false, outputs: false },
         databaseQueryData: false,
         queues: false,
         stackFrameVariables: false,
@@ -473,6 +482,68 @@ describe('Sentry SDK integration', () => {
     expect(value).not.toContain(USER_UUID);
     expect(value).toContain('[redacted:email]');
     expect(value).toMatch(/\[id:[0-9a-f]{64}\]/);
+  });
+
+  /**
+   * #3380: maps were uploaded for every API, web and landing release, and no
+   * event could use them, because the scrubber dropped `debug_meta`, the one
+   * key Sentry pairs a frame with its uploaded map by. The deploy check only
+   * asks whether a bundle exists, so it stayed green throughout.
+   *
+   * This runs the same `sentry-cli sourcemaps inject` the Docker build runs,
+   * on a one-function module, loads the injected file, throws from it, and
+   * asserts the shipped event names that file with the debug ID inject wrote.
+   * That is the match Sentry needs, end to end: the CLI's snippet format, the
+   * SDK's filename-to-ID lookup, and every hook between them and the
+   * transport.
+   */
+  it('ships the debug ID sentry-cli injected, for the frame it belongs to (#3380)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'frapp-debug-id-'));
+    try {
+      const file = join(dir, 'injected-module.js');
+      writeFileSync(
+        file,
+        'exports.fail = function fail() { throw new Error("from injected"); };\n' +
+          '//# sourceMappingURL=injected-module.js.map\n',
+      );
+      writeFileSync(
+        `${file}.map`,
+        JSON.stringify({
+          version: 3,
+          file: 'injected-module.js',
+          sources: ['injected-module.ts'],
+          names: [],
+          mappings: 'AAAA',
+        }),
+      );
+      const inject = defaultRunSentryCli(['sourcemaps', 'inject', dir], {
+        timeoutMs: SENTRY_CLI_INJECT_TIMEOUT_MS,
+      });
+      expect(cliSucceeded(inject)).toBe(true);
+      const debugId = /debugId=([0-9a-f-]{36})/.exec(
+        readFileSync(file, 'utf8'),
+      )?.[1];
+      expect(debugId).toBeDefined();
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const injected = require(file) as { fail: () => never };
+      try {
+        injected.fail();
+      } catch (error) {
+        Sentry.captureException(error);
+      }
+      await Sentry.flush(2000);
+
+      expect(sent).toHaveLength(1);
+      const frames = sent[0].exception?.values?.[0]?.stacktrace?.frames ?? [];
+      const top = frames[frames.length - 1];
+      expect(top?.abs_path ?? top?.filename).toBe(file);
+      expect(sent[0].debug_meta?.images).toEqual([
+        { type: 'sourcemap', code_file: file, debug_id: debugId },
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   describe('a rethrown 5xx and its cause (#2131)', () => {

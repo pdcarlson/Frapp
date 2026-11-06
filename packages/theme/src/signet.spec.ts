@@ -351,8 +351,8 @@ describe("Signet scales match foundations.md", () => {
     const steps = numbers(body.match(/Steps:\s*([\d\s/]+)/)?.[1] ?? "");
     expect(Object.values(signetDarkTokens.spacing)).toEqual(steps);
 
-    // "Touch targets MUST be ≥ 44px. Buttons run 46–48px tall. Tab bar items
-    // are 56px tall."
+    // "Touch targets MUST be ≥ 44px. Buttons run 44–48px tall. Tab bar items
+    // are 50px tall, inside the 62px floating bar."
     const [minimum] = numbers(body.match(/≥\s*(\d+)px/)?.[0] ?? "");
     const buttons = numbers(body.match(/Buttons run ([\d–-]+)px/)?.[1] ?? "");
     const [tabBar] = numbers(body.match(/Tab bar items are (\d+)px/)?.[1] ?? "");
@@ -399,11 +399,11 @@ describe("getSignetCssVars", () => {
    * `apps/mobile` reads — 63 files import it — and shipping one there would
    * claim a mobile treatment that no mobile screen implements.
    *
-   * The first two are AA text lifts of a semantic hue (§5), not semantics of
-   * their own: the solid token stays the fill and the border, and only the
-   * *text* tone moves. `--destructive-text` predates this list and was already
-   * CSS-only for the same reason; `--info-text` joined it when the greenfield
-   * ladder pushed solid `--info` under the gate.
+   * `--info-text` is an AA text lift of a semantic hue (§5), not a semantic
+   * of its own: the solid token stays the fill and the border, and only the
+   * *text* tone moves. `--destructive-text` sat here too until 2026-11-05, when
+   * mobile's StatusChip started drawing danger text in it, so it now ships in
+   * `signetDarkTokens` and is emitted like any other semantic.
    *
    * The mention-chip pair is here for the mobile half of that reason only — it
    * is **not** a lift. It is a second fixed semantic family (§5's table, and
@@ -414,7 +414,6 @@ describe("getSignetCssVars", () => {
    * list for tokens that were forgotten.
    */
   const CSS_ONLY = [
-    "--destructive-text",
     "--info-text",
     "--mention-chip",
     "--mention-chip-text",
@@ -494,7 +493,11 @@ describe("getSignetCssVars", () => {
     // accent-engine.md, so the day this list gains `--primary-500` a
     // digit-blind pattern would drop it and quietly stop checking the very
     // token most likely to be hard-coded to house gold.
-    const listed = section("Accent Slot").match(/`--[a-z0-9-]+`/g);
+    // The slot's own lead only: its `### Where the accent goes` subsection
+    // names neutral tokens (`--foreground`, `--card-hover`) as what the
+    // accent is NOT, and those are fixed tokens by design.
+    const lead = section("Accent Slot").split(/^### /m)[0] ?? "";
+    const listed = lead.match(/`--[a-z0-9-]+`/g);
     expect(
       listed,
       'foundations.md "Accent Slot" no longer names the accent-slot tokens in backticks — ' +

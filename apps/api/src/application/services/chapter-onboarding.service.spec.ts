@@ -58,10 +58,20 @@ jest.mock('@repo/chapter-theme', () => ({
 jest.mock('#domain/constants/legal', () => ({
   LEGAL_POLICY_VERSION: 'test-version',
 }));
+jest.mock('@sentry/nestjs', () => ({
+  ...jest.requireActual<typeof import('@sentry/nestjs')>('@sentry/nestjs'),
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
+
+import * as Sentry from '@sentry/nestjs';
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { buildChapterConfigFromArchetype } from '@repo/org-archetypes';
-import { ChapterOnboardingService } from './chapter-onboarding.service';
+import {
+  ChapterOnboardingService,
+  welcomeGreeting,
+} from './chapter-onboarding.service';
 import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
 import { LegalAcceptanceService } from './legal-acceptance.service';
@@ -388,7 +398,7 @@ describe('ChapterOnboardingService', () => {
         sender_id: SYSTEM_SENDER_ID,
         kind: 'system_audit',
         content:
-          'Welcome to ΣΦΕ California Eta. Invite your chapter to get the conversation started.',
+          'Welcome to the California Eta chapter of Sigma Phi Epsilon. Invite your chapter to get the conversation started.',
       }),
     );
   });
@@ -437,16 +447,29 @@ describe('ChapterOnboardingService', () => {
       expect(payload.config.branding).not.toHaveProperty('short_name');
     });
 
-    it('welcomes an opted-out chapter without its Greek letters', async () => {
-      await service.onboard('user-1', {
-        ...fijiDto,
-        branding: { ...fijiDto.branding, show_greek_letters: false },
-      });
+    // Some organizations (Phi Gamma Delta among them) don't allow their
+    // letters to be shown, so a system post names the chapter in words only,
+    // whatever the letters setting (#3347).
+    it.each([
+      ['an opted-out chapter', false],
+      ['a chapter that keeps its letters', true],
+    ])(
+      'welcomes %s by name, never by its Greek letters',
+      async (_, showLetters) => {
+        chapterService.create.mockResolvedValueOnce(
+          chapterFixture({ name: 'Phi Gamma Delta' }),
+        );
+        await service.onboard('user-1', {
+          ...fijiDto,
+          branding: { ...fijiDto.branding, show_greek_letters: showLetters },
+        });
 
-      expect(welcomeContent()).toBe(
-        'Welcome to Tau Nu. Invite your chapter to get the conversation started.',
-      );
-    });
+        expect(welcomeContent()).toBe(
+          'Welcome to the Tau Nu chapter of Phi Gamma Delta. Invite your chapter to get the conversation started.',
+        );
+        expect(welcomeContent()).not.toContain('ΦΓΔ');
+      },
+    );
 
     it('welcomes a chapter by its short name ahead of its letters', async () => {
       await service.onboard('user-1', {
@@ -455,7 +478,7 @@ describe('ChapterOnboardingService', () => {
       });
 
       expect(welcomeContent()).toBe(
-        'Welcome to FIJI Tau Nu. Invite your chapter to get the conversation started.',
+        'Welcome to the Tau Nu chapter of FIJI. Invite your chapter to get the conversation started.',
       );
     });
   });
@@ -498,12 +521,12 @@ describe('ChapterOnboardingService', () => {
     );
   });
 
-  it('still onboards, and warns, when the directory request insert fails', async () => {
+  it('still onboards, and logs at error level, when the directory request insert fails', async () => {
     // The repository throws on a PostgREST error now, so `onboard`'s catch is
     // the only thing between a failed backfill row and a 500 for a chapter
     // that already exists.
-    const warned = jest
-      .spyOn(service['logger'], 'warn')
+    const logged = jest
+      .spyOn(service['logger'], 'error')
       .mockImplementation(() => undefined);
     requestInsert.mockRejectedValueOnce(
       new SupabaseQueryError({ message: 'boom' }),
@@ -517,8 +540,9 @@ describe('ChapterOnboardingService', () => {
       }),
     ).resolves.toMatchObject({ id: 'ch-1' });
 
-    expect(warned).toHaveBeenCalledWith(
+    expect(logged).toHaveBeenCalledWith(
       'Failed to record chapter directory request: boom',
+      expect.stringMatching(/\n\s+at /),
     );
   });
 
@@ -639,6 +663,41 @@ describe('ChapterOnboardingService', () => {
       );
     });
 
+    it('reports a failed seed to Sentry once, grouped by its site', async () => {
+      const captureException = jest.mocked(Sentry.captureException);
+      captureException.mockClear();
+      jest
+        .spyOn(service['logger'], 'error')
+        .mockImplementation(() => undefined);
+      seedFields([
+        {
+          id: 'cf_1',
+          label: 'Major',
+          type: 'text',
+          required: true,
+          visibleTo: 'chapter',
+        },
+      ]);
+      fieldsUpsert.mockRejectedValueOnce(
+        new SupabaseQueryError({ message: 'boom' }),
+      );
+
+      await expect(
+        service.onboard('user-1', directoryDto),
+      ).resolves.toMatchObject({ id: 'ch-1' });
+
+      expect(captureException).toHaveBeenCalledTimes(1);
+      expect(captureException.mock.calls[0]?.[1]).toEqual(
+        expect.objectContaining({
+          level: 'error',
+          fingerprint: expect.arrayContaining([
+            'caught-failure',
+            'onboarding-custom-field-seed',
+          ]),
+        }),
+      );
+    });
+
     it('warns about — and does not seed — a malformed seed entry', async () => {
       // The `skipped` channel exists only to be logged. Without this assertion
       // the whole branch can be deleted and the suite stays green, so a field
@@ -702,5 +761,25 @@ describe('ChapterOnboardingService', () => {
         expect.stringMatching(/\n\s+at /),
       );
     });
+  });
+});
+
+describe('welcomeGreeting', () => {
+  it.each([
+    ['FIJI', 'Tau Nu', 'Welcome to the Tau Nu chapter of FIJI.'],
+    ['FIJI', ' Tau Nu Chapter ', 'Welcome to the Tau Nu chapter of FIJI.'],
+    ['ΦΓΔ', undefined, 'Welcome to your chapter.'],
+    ['ΦΓΔ', 'Tau Nu', 'Welcome to the Tau Nu chapter.'],
+    ['Phi Gamma Delta (ΦΓΔ)', 'Tau Nu', 'Welcome to the Tau Nu chapter.'],
+    ['FIJI Tau Nu', 'Tau Nu', 'Welcome to the Tau Nu chapter of FIJI.'],
+    ['Tau Nu FIJI', 'Tau Nu', 'Welcome to the Tau Nu chapter of FIJI.'],
+    ['Tau Nu', 'tau nu', 'Welcome to the tau nu chapter.'],
+    ['FIJI', 'Tau Nu Chapter.', 'Welcome to the Tau Nu chapter of FIJI.'],
+    ['FIJI', 'ΤΝ', 'Welcome to FIJI.'],
+    [undefined, 'Tau Nu', 'Welcome to the Tau Nu chapter.'],
+    [undefined, 'Chapter', 'Welcome to your chapter.'],
+    [' ', '  ', 'Welcome to your chapter.'],
+  ])('mark %p, designation %p reads %p', (mark, designation, expected) => {
+    expect(welcomeGreeting(mark, designation)).toBe(expected);
   });
 });

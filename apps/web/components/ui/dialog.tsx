@@ -34,7 +34,7 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 bg-black/55 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      "fixed inset-0 z-50 bg-black/55 backdrop-blur-[6px] [@media(prefers-reduced-transparency:reduce)]:backdrop-blur-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
       className
     )}
     {...props}
@@ -145,6 +145,9 @@ DialogDescription.displayName = DialogPrimitive.Description.displayName
 export {
   Dialog,
   DialogTrigger,
+  // For a dialog that builds its own Content (the Find dialog) but owes §9's
+  // scrim, so the scrim is stated once.
+  DialogOverlay,
   DialogContent,
   DialogHeader,
   DialogFooter,

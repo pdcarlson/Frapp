@@ -46,6 +46,33 @@ vi.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: vi.fn().mockResolvedValue({ canceled: true }),
 }));
 
+// The chat event card (#3185) imports `lib/location.ts`, so every spec that
+// renders a chat thread loads it, and the native module can't. Default-denied
+// on purpose, as the image picker above is: a spec that wants a fix mocks
+// `lib/location` (or this module) with the path it means to exercise.
+vi.mock("expo-location", () => ({
+  getForegroundPermissionsAsync: vi
+    .fn()
+    .mockResolvedValue({ granted: false, canAskAgain: true }),
+  requestForegroundPermissionsAsync: vi
+    .fn()
+    .mockResolvedValue({ granted: false, canAskAgain: true }),
+  getCurrentPositionAsync: vi.fn(),
+  Accuracy: { Balanced: 3, High: 4 },
+}));
+
+// Chapter setup marks the chapter going live with a tap (#3351), and a
+// reaction ticks (`lib/haptics.ts`).
+vi.mock("expo-haptics", () => ({
+  notificationAsync: vi.fn().mockResolvedValue(undefined),
+  selectionAsync: vi.fn().mockResolvedValue(undefined),
+  NotificationFeedbackType: {
+    Success: "success",
+    Warning: "warning",
+    Error: "error",
+  },
+}));
+
 vi.mock("expo-image-manipulator", () => ({
   ImageManipulator: {
     manipulate: vi.fn(() => ({
@@ -87,14 +114,38 @@ vi.mock("expo-router", () => {
     replace: vi.fn(),
     navigate: vi.fn(),
     back: vi.fn(),
+    // Nothing behind the screen unless a spec says otherwise
+    // (`mockReturnValue(true)`, as the chapter picker's does).
+    canGoBack: vi.fn(() => false),
   };
   // Every mounted focus effect, re-runnable as one "the member came back"
   // event. A tab screen is never unmounted, so state that must not outlive a
   // visit (a subscription refusal, #2297) is cleared on refocus, and a spec
-  // can only prove that by refocusing: `act(() => __refocus())`.
+  // can only prove that by refocusing: `act(() => __refocus())`. `__blur` is
+  // the half before it, for a screen that must go quiet while another screen
+  // is pushed over it: `act(() => __blur())`, then `__refocus` brings it back.
   const refocusers = new Set<() => void>();
+  const blurrers = new Set<() => void>();
+  // What `useIsFocused` reads: true from the first render, as the real hook is
+  // on a focused screen, false after `__blur` and true again after
+  // `__refocus`. One flag for the whole file, so a spec that blurs refocuses
+  // before its test ends.
+  let focused = true;
+  const focusListeners = new Set<() => void>();
+  const setFocused = (next: boolean) => {
+    focused = next;
+    for (const listener of [...focusListeners]) listener();
+  };
+  const subscribeFocus = (listener: () => void) => {
+    focusListeners.add(listener);
+    return () => {
+      focusListeners.delete(listener);
+    };
+  };
   return {
     useRouter: () => router,
+    useIsFocused: () =>
+      React.useSyncExternalStore(subscribeFocus, () => focused),
     // Runs the effect on mount and on every callback-identity change, which
     // is the focused-screen behavior. `__refocus` below is the rest of it: the
     // real hook runs the cleanup on blur and the effect again on focus.
@@ -105,17 +156,29 @@ vi.mock("expo-router", () => {
           cleanup?.();
           cleanup = callback();
         };
+        const blur = () => {
+          cleanup?.();
+          cleanup = undefined;
+        };
         refocusers.add(refocus);
+        blurrers.add(blur);
         return () => {
           refocusers.delete(refocus);
+          blurrers.delete(blur);
           cleanup?.();
         };
       }, [callback]);
     },
     __refocus: () => {
+      setFocused(true);
       for (const refocus of [...refocusers]) refocus();
     },
+    __blur: () => {
+      setFocused(false);
+      for (const blur of [...blurrers]) blur();
+    },
     useLocalSearchParams: vi.fn(() => ({})),
+    useGlobalSearchParams: vi.fn(() => ({})),
     usePathname: vi.fn(() => "/"),
     Link: "Link",
     Redirect: "Redirect",
@@ -212,37 +275,64 @@ vi.mock("react-native-gesture-handler", () => {
   };
 });
 
-// Only the chat image viewer animates directly (the sheets' own use is behind
-// the `@gorhom/bottom-sheet` mock). A shared value is a plain box read and
-// written through `get`/`set`, the React Compiler-safe accessors the viewer
-// uses. An animated style re-runs its updater on every read, the way the UI
-// thread does, so a spec that runs a gesture callback can read the result.
-vi.mock("react-native-reanimated", () => ({
-  default: { Image: "Animated.Image", View: "Animated.View" },
-  useSharedValue: <T>(initial: T) =>
-    React.useRef(
-      (() => {
-        let value = initial;
-        return {
-          get: () => value,
-          set: (next: T) => {
-            value = next;
-          },
-        };
-      })(),
-    ).current,
-  useAnimatedStyle: <T extends object>(updater: () => T) =>
-    new Proxy({} as T, {
-      get: (_target, key) => updater()[key as keyof T],
-      ownKeys: () => Reflect.ownKeys(updater()),
-      getOwnPropertyDescriptor: (_target, key) => ({
-        configurable: true,
-        enumerable: true,
-        value: updater()[key as keyof T],
+// The chat image viewer and the skeleton blocks' pulse animate directly (the
+// sheets' own use is behind the `@gorhom/bottom-sheet` mock). A shared value is
+// a plain box read and written through `get`/`set`, the React Compiler-safe
+// accessors both use. An animated style re-runs its updater on every read, the
+// way the UI thread does, so a spec that runs a gesture callback can read the
+// result. An animation resolves to its target at once, so a pulse reads as its
+// low point; `useReducedMotion` is a mock a spec can flip.
+vi.mock("react-native-reanimated", () => {
+  // Entering animations are builders: each modifier returns a new builder
+  // that keeps what it was given, so a spec can read which animation a view
+  // was handed (`entering.animation`, "ZoomIn" or "FadeIn") and its
+  // reduced-motion setting (`entering.reduceMotionMode`). One builder for
+  // every entering animation the app uses, so a modifier a screen starts
+  // calling is added once.
+  const entering = (config: object): object => ({
+    ...config,
+    duration: (ms: number) => entering({ ...config, durationMs: ms }),
+    reduceMotion: (mode: string) =>
+      entering({ ...config, reduceMotionMode: mode }),
+  });
+  return {
+    default: { Image: "Animated.Image", View: "Animated.View" },
+    useSharedValue: <T>(initial: T) =>
+      React.useRef(
+        (() => {
+          let value = initial;
+          return {
+            get: () => value,
+            set: (next: T) => {
+              value = next;
+            },
+          };
+        })(),
+      ).current,
+    useAnimatedStyle: <T extends object>(updater: () => T) =>
+      new Proxy({} as T, {
+        get: (_target, key) => updater()[key as keyof T],
+        ownKeys: () => Reflect.ownKeys(updater()),
+        getOwnPropertyDescriptor: (_target, key) => ({
+          configurable: true,
+          enumerable: true,
+          value: updater()[key as keyof T],
+        }),
       }),
-    }),
-  withTiming: <T>(value: T) => value,
-}));
+    withTiming: <T>(value: T) => value,
+    withRepeat: vi.fn(<T>(value: T) => value),
+    cancelAnimation: vi.fn(),
+    useReducedMotion: vi.fn(() => false),
+    Easing: {
+      ease: (t: number) => t,
+      inOut: (easing: (t: number) => number) => easing,
+    },
+    // Setup's live mark zooms in; join's views and setup's steps fade in.
+    ZoomIn: entering({ animation: "ZoomIn" }),
+    FadeIn: entering({ animation: "FadeIn" }),
+    ReduceMotion: { System: "system", Always: "always", Never: "never" },
+  };
+});
 
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaProvider: "SafeAreaProvider",
@@ -269,6 +359,16 @@ vi.mock("expo-web-browser", () => ({
   openBrowserAsync: vi.fn().mockResolvedValue({ type: "dismiss" }),
 }));
 
+// expo-router's own copy of React Navigation, which app code reaches only as
+// `expo-router/react-navigation`: Metro refuses an app import of
+// `@react-navigation/*` since SDK 56. Its real module graph doesn't parse here,
+// for the reason the `expo-router` mock above gives. Only the screen's
+// navigation context is stood in. Unprovided it reads `undefined`, as it does
+// in a sheet on a device, and a spec that needs a screen provides one.
+vi.mock("expo-router/react-navigation", () => ({
+  NavigationContext: React.createContext(undefined),
+}));
+
 vi.mock("expo-font", () => ({
   useFonts: vi.fn(() => [true, null]),
   loadAsync: vi.fn().mockResolvedValue(undefined),
@@ -290,6 +390,21 @@ vi.mock("expo-splash-screen", () => ({
 
 vi.mock("react-native-keyboard-controller", () => ({
   KeyboardProvider: "KeyboardProvider",
+}));
+
+// `lib/keyboard.tsx` reads the execution environment through `lib/expo-go.ts`,
+// so every screen inside `KeyboardAvoidingArea` (#3346) loads `expo-constants`,
+// whose real module needs a native bridge. The suite runs as Expo Go, the path
+// that never loads the keyboard library, so anything gated on `isExpoGo` takes
+// its Expo Go path by default. A spec that tests a store-build path mocks
+// `expo-constants` itself with another `executionEnvironment`.
+vi.mock("expo-constants", () => ({
+  default: { executionEnvironment: "storeClient" },
+  ExecutionEnvironment: {
+    Bare: "bare",
+    Standalone: "standalone",
+    StoreClient: "storeClient",
+  },
 }));
 
 // `expo-notifications` is reached only through `lib/notifications/push.ts`,
@@ -345,6 +460,7 @@ vi.mock("posthog-react-native", () => {
     optIn() {}
     stopSessionRecording() {}
     capture() {}
+    async screen() {}
     getSessionId() {
       return "";
     }
@@ -363,7 +479,23 @@ vi.mock("@sentry/react-native", () => ({
   init: vi.fn(),
   wrap: (component: unknown) => component,
   setUser: vi.fn(),
+  // Both QueryClients report failures through it (`lib/sentry/query-errors.ts`).
+  captureException: vi.fn(),
   mobileReplayIntegration: vi.fn(),
+}));
+
+// The glass layer's native pieces (`components/glass-surface.tsx`). String
+// stand-ins, so a spec can find them by type; the suite's stub runs as iOS,
+// where Liquid Glass is reported unavailable unless a spec says otherwise.
+vi.mock("expo-blur", () => ({
+  BlurView: "BlurView",
+  BlurTargetView: "BlurTargetView",
+}));
+vi.mock("expo-glass-effect", () => ({
+  GlassView: "GlassView",
+  GlassContainer: "GlassContainer",
+  isLiquidGlassAvailable: vi.fn(() => false),
+  isGlassEffectAPIAvailable: vi.fn(() => false),
 }));
 
 vi.mock("react-native-svg", () => ({

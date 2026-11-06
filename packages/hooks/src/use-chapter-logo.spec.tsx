@@ -4,7 +4,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFrappClient } from "@repo/api-sdk";
-import { useRemoveChapterLogo, useUploadChapterLogo } from "./use-chapters";
+import {
+  useConfirmChapterLogo,
+  useRemoveChapterLogo,
+  useRequestChapterLogoUploadUrl,
+  useUploadChapterLogo,
+} from "./use-chapters";
 import { FrappClientProvider } from "./use-frapp-client";
 
 /**
@@ -21,7 +26,10 @@ describe("chapter logo hooks", () => {
 
   beforeEach(() => {
     queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
     });
     fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -37,7 +45,9 @@ describe("chapter logo hooks", () => {
         client={client as ReturnType<typeof createFrappClient>}
         chapterId={CHAPTER_ID}
       >
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
       </FrappClientProvider>
     );
     Wrapper.displayName = "ChapterLogoWrapper";
@@ -103,9 +113,9 @@ describe("chapter logo hooks", () => {
       wrapper: wrapper(clientWith(post)),
     });
 
-    await expect(
-      act(() => result.current.mutateAsync(upload)),
-    ).rejects.toThrow("Logo upload failed (413)");
+    await expect(act(() => result.current.mutateAsync(upload))).rejects.toThrow(
+      "Logo upload failed (413)",
+    );
     expect(post).toHaveBeenCalledTimes(1);
   });
 
@@ -118,9 +128,11 @@ describe("chapter logo hooks", () => {
       wrapper: wrapper(clientWith(post)),
     });
 
-    await expect(act(() => result.current.mutateAsync(upload))).rejects.toEqual({
-      message: "Invalid content type",
-    });
+    await expect(act(() => result.current.mutateAsync(upload))).rejects.toEqual(
+      {
+        message: "Invalid content type",
+      },
+    );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -148,5 +160,73 @@ describe("chapter logo hooks", () => {
       message: "403",
     });
     expect(invalidate).not.toHaveBeenCalled();
+  });
+  it("mints for a client that PUTs itself, sending only the two declared fields", async () => {
+    const post = vi.fn(async () => ({
+      data: {
+        upload_url: "https://storage.example/signed",
+        storage_path: STORAGE_PATH,
+      },
+      error: null,
+    }));
+    const { result } = renderHook(() => useRequestChapterLogoUploadUrl(), {
+      wrapper: wrapper(clientWith(post)),
+    });
+
+    // Mobile's upload pipeline hands every caller `size_bytes`; the route
+    // forbids it, so the hook drops it.
+    await act(() =>
+      result.current.mutateAsync({
+        filename: "crest.png",
+        content_type: "image/png",
+        size_bytes: 1234,
+      } as { filename: string; content_type: string }),
+    );
+
+    expect(post).toHaveBeenCalledWith("/v1/chapters/current/logo-url", {
+      body: { filename: "crest.png", content_type: "image/png" },
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("confirms the path and refetches the current chapter before resolving", async () => {
+    const post = vi.fn(async () => ({
+      data: { id: CHAPTER_ID, logo_path: STORAGE_PATH },
+      error: null,
+    }));
+    // A refetch that lands only when the test says so.
+    let landRefetch!: () => void;
+    const invalidate = vi
+      .spyOn(queryClient, "invalidateQueries")
+      .mockImplementation(
+        () => new Promise<void>((resolve) => (landRefetch = resolve)),
+      );
+    const { result } = renderHook(() => useConfirmChapterLogo(), {
+      wrapper: wrapper(clientWith(post)),
+    });
+
+    let resolved = false;
+    let pending!: Promise<unknown>;
+    act(() => {
+      pending = result.current
+        .mutateAsync(STORAGE_PATH)
+        .then(() => (resolved = true));
+    });
+    await vi.waitFor(() => expect(invalidate).toHaveBeenCalled());
+
+    expect(post).toHaveBeenCalledWith("/v1/chapters/current/logo", {
+      body: { storage_path: STORAGE_PATH },
+    });
+    // The current-chapter query, which the `["chapters"]` prefix covers.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["chapters"] });
+    // Still waiting on the refetch, so a caller's busy state holds.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(resolved).toBe(false);
+
+    await act(async () => {
+      landRefetch();
+      await pending;
+    });
+    expect(resolved).toBe(true);
   });
 });

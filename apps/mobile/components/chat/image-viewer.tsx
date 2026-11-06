@@ -6,8 +6,16 @@ import {
   useMemo,
   useRef,
   useState,
+  type RefObject,
 } from "react";
-import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Keyboard,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, {
@@ -18,7 +26,7 @@ import Animated, {
 import { isViewableImage } from "@repo/chat-core/attachments";
 import { useMessageAttachments } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
+import { useBackToClose, useFocusOnOpen, type FocusTarget } from "@/lib/overlay";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import {
   UNZOOMED,
@@ -30,12 +38,28 @@ import {
   type ZoomState,
 } from "@/lib/chat/image-zoom";
 import { shareAttachment } from "@/lib/chat/share-attachment";
+import { CloseGlyph } from "@/components/control-glyphs";
+import {
+  ChevronGlyph,
+  ShareGlyph,
+  VIEWER_GLYPH_SIZE,
+} from "./viewer-glyphs";
+
+/**
+ * The backdrop is black in both themes, so its controls are white rather than
+ * a theme text role (and never the chapter accent): at 80%, so nothing in the
+ * corner draws the eye before the image does.
+ */
+const BACKDROP = "rgba(0,0,0,0.92)";
+const CONTROL_COLOR = "rgba(255,255,255,0.8)";
+const COUNTER_COLOR = "rgba(255,255,255,0.6)";
 
 /**
  * The chat thread's image viewer (#2874): tapping an image in a message opens
  * it over the whole thread, with pinch, pan and double-tap to zoom and a share
- * action. It covers the thread, not the tab bar, which the frozen tab layout
- * draws (#2889). Web's counterpart is `apps/web/components/chat/image-viewer.tsx`.
+ * action. The thread takes the whole window, with no tab bar under it (#2889),
+ * so the viewer does too. Web's counterpart is
+ * `apps/web/components/chat/image-viewer.tsx`.
  *
  * It draws the attachment's signed URL in an `Image`, which never runs a
  * response as a document, so it keeps the trust rule the forced download
@@ -164,7 +188,7 @@ function ViewerBody({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const titleRef = useRef<React.ComponentRef<typeof Text>>(null);
+  const imageRef = useRef<FocusTarget>(null);
   const [isSharing, setIsSharing] = useState(false);
   // Which image a share failed on: the message is about that image, so
   // stepping to another one clears it without an effect to reset it.
@@ -204,9 +228,10 @@ function ViewerBody({
   );
 
   // Opening hides the image that had a screen reader's focus, which clears
-  // that focus rather than moving it, so put it on the viewer's title. Open
-  // for as long as this is mounted: `ImageViewer` draws it only while open.
-  useFocusOnOpen(titleRef, true);
+  // that focus rather than moving it, so put it on the image, whose name is
+  // the file's. Open for as long as this is mounted: `ImageViewer` draws it
+  // only while open.
+  useFocusOnOpen(imageRef, true);
 
   // A refetch that no longer lists the image (the attachment was removed)
   // closes the viewer rather than leaving it open on nothing.
@@ -242,56 +267,59 @@ function ViewerBody({
   return (
     <View accessibilityViewIsModal style={styles.fill}>
       {/*
-        The backdrop covers the thread edge to edge, status bar included, but
-        its controls must not. The thread's own inset is padding, which an
-        absolute child ignores, and since #2485 the thread starts at the top
-        of the window. The native view applies only the part of the inset its
-        own frame overlaps, so it stays right under the network banner too.
+        The backdrop covers the thread edge to edge, status bar and home
+        indicator included, but its controls must not. The thread's own inset
+        is padding, which an absolute child ignores: since #2485 the thread
+        starts at the top of the window, and since it hid the tab bar (#2889)
+        it ends at the bottom, so the step bar would otherwise sit under the
+        home indicator or Android's navigation buttons. The native view
+        applies only the part of the inset its own frame overlaps, so it
+        stays right under the network banner too.
       */}
-      <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
-        <View style={styles.bar}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Close image"
-            hitSlop={8}
-            onPress={viewer.close}
-            style={({ pressed }) => [
-              styles.control,
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={styles.controlLabel}>Close</Text>
-          </Pressable>
-          <Text
-            ref={titleRef}
-            accessibilityRole="header"
-            numberOfLines={1}
-            style={styles.title}
-          >
-            {image.filename}
-          </Text>
+      <SafeAreaView
+        style={styles.safe}
+        edges={["top", "left", "right", "bottom"]}
+      >
+        {/*
+          Icons only, together in the top corner: the image is the content,
+          and nothing around it should compete with it (Paul, 2026-11-05).
+          The filename is never drawn; it is the image's accessible name.
+        */}
+        <View style={styles.corner}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Share image"
             accessibilityState={{ busy: isSharing, disabled: isSharing }}
             disabled={isSharing}
-            hitSlop={8}
+            hitSlop={4}
             onPress={() => void share(image)}
             style={({ pressed }) => [
               styles.control,
               pressed ? styles.pressed : null,
             ]}
           >
-            <Text
-              style={isSharing ? styles.controlLabelBusy : styles.controlLabel}
-            >
-              {isSharing ? "Preparing…" : "Share"}
-            </Text>
+            {isSharing ? (
+              <ActivityIndicator size="small" color={CONTROL_COLOR} />
+            ) : (
+              <ShareGlyph color={CONTROL_COLOR} />
+            )}
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close image"
+            hitSlop={4}
+            onPress={viewer.close}
+            style={({ pressed }) => [
+              styles.control,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <CloseGlyph color={CONTROL_COLOR} size={VIEWER_GLYPH_SIZE} />
           </Pressable>
         </View>
 
         {/* Keyed, so stepping to another image starts it fitted. */}
-        <ZoomableImage key={image.id} image={image} />
+        <ZoomableImage key={image.id} image={image} focusRef={imageRef} />
 
         {failedId === image.id ? (
           <Text accessibilityLiveRegion="polite" style={styles.error}>
@@ -300,7 +328,7 @@ function ViewerBody({
         ) : null}
 
         {total > 1 ? (
-          <View style={styles.bar}>
+          <View style={styles.stepBar}>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Previous image"
@@ -311,7 +339,7 @@ function ViewerBody({
                 pressed ? styles.pressed : null,
               ]}
             >
-              <Text style={styles.chevron}>‹</Text>
+              <ChevronGlyph color={CONTROL_COLOR} direction="left" />
             </Pressable>
             <Text style={styles.counter}>
               {index + 1} of {total}
@@ -326,7 +354,7 @@ function ViewerBody({
                 pressed ? styles.pressed : null,
               ]}
             >
-              <Text style={styles.chevron}>›</Text>
+              <ChevronGlyph color={CONTROL_COLOR} direction="right" />
             </Pressable>
           </View>
         ) : null}
@@ -341,7 +369,13 @@ function ViewerBody({
  * arithmetic is `lib/chat/image-zoom.ts`; this only feeds it gestures and
  * animates the settle.
  */
-function ZoomableImage({ image }: { image: ViewerImage }) {
+function ZoomableImage({
+  image,
+  focusRef,
+}: {
+  image: ViewerImage;
+  focusRef: RefObject<FocusTarget | null>;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const duration = tokens.motion.duration.standard;
@@ -462,6 +496,8 @@ function ZoomableImage({ image }: { image: ViewerImage }) {
         }}
       >
         <Animated.Image
+          ref={focusRef as never}
+          accessible
           source={{ uri: image.url }}
           accessibilityLabel={image.filename}
           accessibilityHint="Pinch or double-tap to zoom"
@@ -486,38 +522,31 @@ function createStyles(tokens: SignetTokens) {
       right: 0,
       bottom: 0,
       left: 0,
-      backgroundColor: tokens.color.surface.background,
+      backgroundColor: BACKDROP,
     },
     safe: {
       flex: 1,
     },
-    bar: {
+    corner: {
+      flexDirection: "row",
+      alignSelf: "flex-end",
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+      paddingHorizontal: tokens.spacing.sm,
+      paddingVertical: tokens.spacing.xs,
+    },
+    stepBar: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
-      gap: tokens.spacing.md,
-      paddingHorizontal: tokens.spacing.lg,
-      paddingVertical: tokens.spacing.sm,
+      justifyContent: "center",
+      gap: tokens.spacing.lg,
+      paddingVertical: tokens.spacing.xs,
     },
     control: {
-      minHeight: 44,
-      minWidth: 44,
+      width: 44,
+      height: 44,
       alignItems: "center",
       justifyContent: "center",
-    },
-    controlLabel: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-    },
-    controlLabelBusy: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.muted,
-    },
-    title: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-      flex: 1,
-      textAlign: "center",
     },
     stage: {
       flex: 1,
@@ -531,11 +560,8 @@ function createStyles(tokens: SignetTokens) {
     },
     counter: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    chevron: {
-      ...typeRole(tokens.typography.role.title),
-      color: tokens.color.text.foreground,
+      color: COUNTER_COLOR,
+      fontVariant: ["tabular-nums"],
     },
     error: {
       ...typeRole(tokens.typography.role.caption),

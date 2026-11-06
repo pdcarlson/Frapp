@@ -131,7 +131,7 @@ describe("FOCUS_RING_OFFSET is the whole indicator, so its ring must clear 3:1 a
       ),
     );
 
-    // accent-11's tightest seed is `#BF0A30` at 8.4806:1 against a 3.0 floor.
+    // accent-11's tightest seed is `#BF0A30` at 8.9731:1 against a 3.0 floor.
     //
     // The bound is deliberately well under the measurement rather than a hair
     // under it. This assertion previously read `> 3.04` against accent-8's
@@ -161,18 +161,23 @@ describe("FOCUS_RING_OFFSET is the whole indicator, so its ring must clear 3:1 a
     // `#8B4513` and `#BF0A30`. Since #2541 the engine holds the fill to 3:1 on
     // every ladder surface (accent-engine.md §8), so it no longer fails here.
     // It is still the wrong token for the whole indicator: the floor guarantees
-    // 3:1 and nothing more, and its worst seed, `#800000`, is one the engine
-    // leaves alone (its generated `#F42F22` already clears), at 4.70:1 with
-    // none of the 8:1 headroom the margin test above demands.
+    // 3:1 and nothing more, and its worst seed, `#BF0A30` (`#D83144`), is at
+    // 4.19:1 with none of the 8:1 headroom the margin test above demands.
+    // (`#800000`'s `#F42F22` at 4.70:1 was the worst before engine v2.)
     expect(failingSeeds("--primary")).toEqual([]);
     expect(worstOn("--primary", SURFACE.background)).toBeLessThan(8);
 
     // accent-8 worked on the previous surface ladder and stopped working when
-    // the greenfield ladder lifted `--background` to `#131211`. The three that
-    // still fail are the achromatic seeds, which all derive the same `#606060`
-    // ring. `#4B0082` failed too until #2541 lifted its fill, which moved its
-    // whole scale.
-    expect(failingSeeds("--ring")).toEqual(["#000000", "#C0C0C0", "#FFFFFF"]);
+    // the warm greenfield ladder lifted `--background` to `#131211`: the
+    // achromatic seeds, which all derive the same `#606060` ring, failed it.
+    // `#4B0082` failed too until #2541 lifted its fill, which moved its whole
+    // scale. (neutral ladder, 2026-11-05) The darker `#0A0A0A` floor brings
+    // `#606060` back over 3:1, but only to 3.15:1: no seed fails, and the
+    // worst is one palette nudge from failing again, which is the tripwire the
+    // margin test refuses to be. It is still wrong here for the same reason
+    // accent-9 is.
+    expect(failingSeeds("--ring")).toEqual([]);
+    expect(worstOn("--ring", SURFACE.background)).toBeLessThan(3.2);
   });
 });
 
@@ -243,7 +248,7 @@ describe("FOCUS_RING, FOCUS_RING_ALWAYS and FOCUS_RING_WITHIN carry focus on the
       ),
     );
 
-    // accent-11's tightest pair is `#BF0A30` over `--popover`, at 6.81:1.
+    // accent-11's tightest pair is `#BF0A30` over `--popover`, at 7.56:1.
     // The bound sits well under the measurement for the reason the offset
     // recipe's margin test gives.
     expect(worst).toBeGreaterThan(6);

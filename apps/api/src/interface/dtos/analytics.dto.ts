@@ -1,4 +1,5 @@
 import {
+  IsIn,
   IsObject,
   IsOptional,
   IsString,
@@ -10,6 +11,11 @@ import {
   type ValidatorConstraintInterface,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  CLIENT_ANALYTICS_APPS,
+  RESERVED_ANALYTICS_PROPERTY_KEYS_TEXT,
+  type ClientAnalyticsApp,
+} from '@repo/validation';
 
 /**
  * Rejects analytics properties whose values are not scalars. `@IsObject` only
@@ -38,8 +44,8 @@ export class ScalarsOnlyConstraint implements ValidatorConstraintInterface {
 export class TrackEventDto {
   @ApiProperty({
     description:
-      'Behavioral event name in kebab-case, e.g. "opened-channel", "ran-slash-command". Must describe behavior, never content.',
-    example: 'opened-channel',
+      'Behavioral event name in kebab-case, e.g. "search-completed", "outbox-queued". Must describe behavior, never content.',
+    example: 'search-completed',
   })
   @IsString()
   @MaxLength(100)
@@ -58,7 +64,15 @@ export class TrackEventDto {
 
   @ApiPropertyOptional({
     description:
-      'Behavioral, content-free properties. Values must be scalars (string/number/boolean/null); keys that look like content/PII (content, body, email, name, …) are rejected.',
+      'The app sending the event, as the client reports it. The API stamps it on the event as the `app` property; a client may not set `app` in `properties`.',
+    enum: CLIENT_ANALYTICS_APPS,
+  })
+  @IsOptional()
+  @IsIn(CLIENT_ANALYTICS_APPS)
+  app?: ClientAnalyticsApp;
+
+  @ApiPropertyOptional({
+    description: `Behavioral, content-free properties. Values must be scalars (string/number/boolean/null); keys that look like content/PII (content, body, email, name, …) are rejected, and so are ${RESERVED_ANALYTICS_PROPERTY_KEYS_TEXT} and \`$\`-prefixed keys, which the API sets itself.`,
     type: 'object',
     additionalProperties: {
       nullable: true,

@@ -38,6 +38,14 @@ import { ChannelCacheService } from '../services/channel-cache.service';
 import type { CachedChannelRow } from '../services/channel-cache.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportSwallowed } from '../../infrastructure/observability/report-swallowed';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import {
+  backgroundTimer,
+  releaseChannel,
+  WORKER_SUBSCRIPTION_DOWN_AFTER_MS,
+  WorkerSubscription,
+} from './worker-subscription';
+import { isAuditMirrorRow } from './chat-bridge-worker.service';
 
 interface ChatMessageRow {
   id: string;
@@ -55,6 +63,8 @@ interface ChatMessageRow {
    * not set it.
    */
   mentions: string[] | null;
+  /** `audit:<id>` on an audit mirror (`isAuditMirrorRow`); a UUID or null otherwise. */
+  client_message_id?: string | null;
   created_at: string;
 }
 
@@ -102,8 +112,20 @@ export const MAX_PRESENCE_CHANNELS = 80;
  */
 const FANOUT_START_MAX_AGE_MS = 10 * 60 * 1000;
 
-/** Sentry reports for a refused or timed-out presence join, at most one per window. */
+/**
+ * Sentry reports for a presence join still failing after its grace period, at
+ * most one per window.
+ */
 const PRESENCE_REPORT_INTERVAL_MS = 10 * 60 * 1000;
+
+/**
+ * How long a presence channel may stay unjoined after a `CHANNEL_ERROR` or
+ * `TIMED_OUT` before Sentry hears of it (#3473). It is the message
+ * subscription's outage threshold, for the same reason: a routine socket blip
+ * rejoins within seconds, so a channel still unjoined after this is a refusal
+ * or an outage.
+ */
+export const PRESENCE_JOIN_GRACE_MS = WORKER_SUBSCRIPTION_DOWN_AFTER_MS;
 
 /**
  * Where a fan-out span starts: the message's insert, unless that is unreadable,
@@ -158,7 +180,8 @@ export class ChatPushWorkerService
   implements OnApplicationBootstrap, OnApplicationShutdown
 {
   private readonly logger = new Logger(ChatPushWorkerService.name);
-  private messagesChannel: RealtimeChannel | null = null;
+  /** The `chat_messages` INSERT subscription, opened at bootstrap. */
+  private messages: WorkerSubscription | null = null;
   /**
    * Open presence channels by chat channel id, least recently used first:
    * `ensurePresenceChannel` re-inserts on every use, so eviction takes the
@@ -172,6 +195,14 @@ export class ChatPushWorkerService
    */
   private readonly releasingPresence = new Set<string>();
   private lastPresenceReportAt = Number.NEGATIVE_INFINITY;
+  /**
+   * Presence channels whose join failed and hasn't landed since, each with its
+   * grace timer and latest failing status ({@link PRESENCE_JOIN_GRACE_MS}).
+   */
+  private readonly unjoinedPresence = new Map<
+    RealtimeChannel,
+    { timer: ReturnType<typeof setTimeout>; status: string }
+  >();
   private readonly bundler = new BurstBundler();
 
   constructor(
@@ -210,10 +241,14 @@ export class ChatPushWorkerService
   ) {}
 
   onApplicationBootstrap(): void {
-    try {
-      this.messagesChannel = this.supabase
-        .channel('chat-push-worker:messages')
-        .on(
+    // Survives the server closing the channel (#3365): see `WorkerSubscription`.
+    this.messages = new WorkerSubscription(this.supabase, {
+      topic: 'chat-push-worker:messages',
+      worker: 'chat-push',
+      impact: 'chat pushes',
+      logger: this.logger,
+      bind: (channel) =>
+        channel.on(
           'postgres_changes',
           {
             event: 'INSERT',
@@ -223,39 +258,16 @@ export class ChatPushWorkerService
           (payload: RealtimePostgresInsertPayload<ChatMessageRow>) => {
             void this.handleMessage(payload.new);
           },
-        )
-        .subscribe((status) => {
-          const s = status as string;
-          if (s === 'SUBSCRIBED') {
-            this.logger.log('chat-push subscribed to chat_messages');
-          } else if (s === 'CHANNEL_ERROR' || s === 'CLOSED') {
-            this.logger.warn(`chat-push channel state: ${s}`);
-          }
-        });
-    } catch (err) {
-      logThrowable(
-        this.logger,
-        'error',
-        'chat-push failed to start; chat pushes will not fire',
-        err,
-      );
-    }
+        ),
+    });
+    this.messages.start();
   }
 
   async onApplicationShutdown(): Promise<void> {
-    if (this.messagesChannel) {
-      try {
-        await this.supabase.removeChannel(this.messagesChannel);
-      } catch (err) {
-        logThrowable(
-          this.logger,
-          'warn',
-          'chat-push: error removing messages channel',
-          err,
-        );
-      }
-      this.messagesChannel = null;
-    }
+    await this.messages?.stop();
+    this.messages = null;
+    for (const { timer } of this.unjoinedPresence.values()) clearTimeout(timer);
+    this.unjoinedPresence.clear();
     // Let go of every presence channel before removing any, so each leave's
     // `CLOSED` echo reads as this worker's own (see `onPresenceStatus`), not a
     // server close to log and release a second time.
@@ -279,8 +291,9 @@ export class ChatPushWorkerService
    * Drop dispatch claims older than {@link CHAT_PUSH_CLAIM_RETENTION_MS}.
    *
    * Hourly, on every instance: a delete is idempotent, so the instance that
-   * runs second finds nothing. Caught here because an unhandled rejection out
-   * of a `@Cron` takes the process down; a failed purge costs one tick.
+   * runs second finds nothing. Caught here because a rejection out of a
+   * `@Cron` reaches only Nest's raw `logger.error`; a failed purge costs one
+   * tick and reports to Sentry.
    */
   @Cron(CronExpression.EVERY_HOUR)
   async handleDispatchClaimPurge(): Promise<void> {
@@ -297,12 +310,12 @@ export class ChatPushWorkerService
         this.logger.log(`chat-push: purged ${purged} expired dispatch claims`);
       }
     } catch (err) {
-      logThrowable(
-        this.logger,
-        'error',
-        'chat-push: dispatch claim purge failed; retrying next hour',
-        err,
-      );
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chat-push-dispatch-claim-purge',
+        message: 'chat-push: dispatch claim purge failed; retrying next hour',
+        error: err,
+      });
     }
   }
 
@@ -347,12 +360,14 @@ export class ChatPushWorkerService
 
       await this.traceFanOut(row, () => this.fanOut(row));
     } catch (err) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `chat-push: unexpected error for message ${row.id}`,
-        err,
-      );
+      // Past the claim this drops the message's remaining pushes: the claim
+      // stops every other instance from sending them.
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'chat-push-fan-out-failed',
+        message: `chat-push: unexpected error for message ${row.id}`,
+        error: err,
+      });
     }
   }
 
@@ -482,6 +497,7 @@ export class ChatPushWorkerService
     // messages in a `mentions` channel push nobody.
     let senderName: Promise<string | null> | null = null;
 
+    const isAuditMirror = isAuditMirrorRow(row);
     for (const recipientId of recipientIds) {
       const prefs = prefsByUser.get(recipientId) ?? [];
       const decision = decidePush({
@@ -490,6 +506,7 @@ export class ChatPushWorkerService
         recipientIsPresent: presenceMap.has(recipientId),
         hasMention: mentions.includes(recipientId),
         preferences: prefs,
+        isAuditMirror,
       });
       if (decision !== 'send') continue;
 
@@ -517,12 +534,12 @@ export class ChatPushWorkerService
         );
         outcome.sent += 1;
       } catch (err) {
-        logThrowable(
-          this.logger,
-          'warn',
-          `chat-push: notify failed for recipient ${recipientId}`,
-          err,
-        );
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'chat-push-notify-recipient',
+          message: `chat-push: notify failed for recipient ${recipientId}`,
+          error: err,
+        });
       }
     }
     return outcome;
@@ -569,12 +586,12 @@ export class ChatPushWorkerService
             ] as const;
           } catch (err) {
             // Fail closed: an unresolved permission set must not become a push.
-            logThrowable(
-              this.logger,
-              'warn',
-              `chat-push: permission lookup failed for ${userId}; skipping`,
-              err,
-            );
+            reportCaughtFailure(this.logger, {
+              level: 'warning',
+              site: 'chat-push-permission-lookup',
+              message: `chat-push: permission lookup failed for ${userId}; skipping`,
+              error: err,
+            });
             return [userId, null] as const;
           }
         }),
@@ -616,12 +633,12 @@ export class ChatPushWorkerService
     try {
       data = await this.channels.findPushRouting(channelId);
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        'chat-push: channel lookup failed',
-        error,
-      );
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'chat-push-channel-lookup',
+        message: 'chat-push: channel lookup failed',
+        error: error,
+      });
       return null;
     }
     if (!data) return null;
@@ -707,12 +724,17 @@ export class ChatPushWorkerService
    *
    * `CHANNEL_ERROR` and `TIMED_OUT` are the join being refused or never
    * answered: a channel over Supabase's per-client limit is refused that way,
-   * and so is every channel while the socket is down. Both are logged and
-   * reported, and the channel is kept: `realtime-js` retries the join itself
-   * and the roster reads empty until it lands, which costs extra pushes, never
-   * a missed one. `CLOSED` on a channel this worker still holds is the server
-   * ending it, which nothing retries, so it is dropped and the channel's next
-   * message reopens it.
+   * and so is every channel while the socket is down. Both are logged, and the
+   * channel is kept: `realtime-js` retries the join itself and the roster reads
+   * empty until it lands, which costs extra pushes, never a missed one. Sentry
+   * hears of it only if the channel is still unjoined after
+   * {@link PRESENCE_JOIN_GRACE_MS} (#3473): the socket drops and comes back
+   * every few hours in production (`socket closed: 1006`), and each drop was
+   * an alert about realtime-js doing its job.
+   *
+   * `CLOSED` on a channel this worker still holds is the server ending it,
+   * which nothing retries, so it is dropped and the channel's next message
+   * reopens it.
    *
    * A status from a channel this worker already let go of (evicted, dropped,
    * shut down) is its own teardown echoing back, and is ignored.
@@ -723,7 +745,10 @@ export class ChatPushWorkerService
     status: string,
     err?: Error,
   ): void {
-    if (status === 'SUBSCRIBED') return;
+    if (status === 'SUBSCRIBED') {
+      this.clearUnjoined(ch);
+      return;
+    }
     if (this.presenceChannels.get(channelId) !== ch) return;
     if (status === 'CLOSED') {
       this.logger.warn(
@@ -735,12 +760,43 @@ export class ChatPushWorkerService
     this.logger.warn(
       `chat-push: presence join ${status} for ${channelId} (${this.presenceChannels.size} open); pushes there ignore who is reading until it joins${err ? `: ${err.message}` : ''}`,
     );
-    this.reportPresenceRefusal(status);
+    this.awaitRejoin(ch, status);
   }
 
   /**
-   * Sentry hears about a refused or timed-out join at most once per
-   * {@link PRESENCE_REPORT_INTERVAL_MS}: a dropped socket fails every open
+   * Start a failed join's grace period, or note its newer status if one is
+   * running. When it ends with the channel still held and unjoined, Sentry
+   * hears of it.
+   */
+  private awaitRejoin(ch: RealtimeChannel, status: string): void {
+    const pending = this.unjoinedPresence.get(ch);
+    if (pending) {
+      pending.status = status;
+      return;
+    }
+    // Dropping the channel (eviction, a server close, shutdown) and a
+    // SUBSCRIBED both clear this timer, so when it fires the worker still
+    // holds the channel and its entry is still here.
+    const entry = {
+      status,
+      timer: backgroundTimer(() => {
+        this.unjoinedPresence.delete(ch);
+        this.reportPresenceRefusal(entry.status);
+      }, PRESENCE_JOIN_GRACE_MS),
+    };
+    this.unjoinedPresence.set(ch, entry);
+  }
+
+  private clearUnjoined(ch: RealtimeChannel): void {
+    const pending = this.unjoinedPresence.get(ch);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this.unjoinedPresence.delete(ch);
+  }
+
+  /**
+   * Sentry hears about a join still failing after its grace period at most
+   * once per {@link PRESENCE_REPORT_INTERVAL_MS}: an outage fails every open
    * channel at once, and one event says as much as eighty.
    */
   private reportPresenceRefusal(status: string): void {
@@ -759,32 +815,19 @@ export class ChatPushWorkerService
   }
 
   /**
-   * Forget a presence channel and free its topic.
-   *
-   * `unsubscribe()` and then an unconditional `teardown()`: `removeChannel()`
-   * only tears down when the leave is acknowledged `ok`, and a channel left
-   * registered hands itself back to the next `supabase.channel()` on its topic
-   * (`realtime-resilience` rule 1). That is chat-core's `releaseTopic`, which
-   * this process can't import: chat-core ships TypeScript source for the
-   * bundler-built clients, and the API's compiled output can't load it.
+   * Forget a presence channel and free its topic with `releaseChannel`
+   * (`realtime-resilience` rule 1), marking the topic as releasing until it
+   * lands.
    */
   private dropPresenceChannel(channelId: string, ch: RealtimeChannel): void {
+    this.clearUnjoined(ch);
     if (this.presenceChannels.get(channelId) === ch) {
       this.presenceChannels.delete(channelId);
     }
     this.releasingPresence.add(channelId);
-    void (async () => {
-      try {
-        await ch.unsubscribe();
-      } catch {
-        // Already gone, or the socket is down; the teardown is what counts.
-      }
-      try {
-        ch.teardown();
-      } catch {
-        // Already torn down.
-      }
-    })().finally(() => this.releasingPresence.delete(channelId));
+    void releaseChannel(ch).finally(() =>
+      this.releasingPresence.delete(channelId),
+    );
   }
 
   /**

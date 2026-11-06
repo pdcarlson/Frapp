@@ -77,7 +77,7 @@ export class DiscordDiscoveredRoleDto {
 export class DiscordDiscoveryResponseDto {
   @ApiProperty({
     description:
-      'Every channel in the server, and the threads of each channel the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. Each row carries `readable` (whether the bot can read its history; false rows can only be skipped, null means the scan could not tell) and `private_in_discord` (some member could not read its history in Discord; a thread is true when it is a private thread or its channel is private; null means the scan could not tell). A channel that is private, holds a private thread, or whose privacy is null needs an explicit `new_channel_visibility` to be created. A top-level channel that was private also carries `discord_reader_role_ids`: the Discord roles (from `roles`) that could read it, each on its own, which is what `new_channel_visibility: discord` copies. Empty when `@everyone` alone could read it (a deny hid it from someone); null when unknown.',
+      'Every channel in the server, and the threads of each channel the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. Each row carries `readable` (whether the bot can read its history; false rows can only be skipped, null means the scan could not tell) and `private_in_discord` (some member could not read its history in Discord; a thread is true when it is a private thread or its channel is private; null means the scan could not tell). A channel that is private, holds a private thread, or whose privacy is null needs an explicit `new_channel_visibility` to be created. A top-level channel that was private also carries `discord_reader_role_ids`: the Discord roles (from `roles`) that could read it, each on its own, which is what `new_channel_visibility: discord` copies. Empty when `@everyone` alone could read it (a deny hid it from someone); null when unknown. A top-level channel in a Discord category carries `discord_category` (its name) and `discord_category_position` (its place in the server), which is how the admin keeps categories as channel groups (`new_channel_group`).',
     type: 'array',
     items: { type: 'object', additionalProperties: true },
   })
@@ -218,6 +218,18 @@ export class DiscordChannelMappingDto {
   @IsString({ each: true })
   @MaxLength(100, { each: true })
   new_channel_required_permissions?: string[];
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    maxLength: 100,
+    description:
+      "The Frapp channel group the channel `create_new` makes goes into, by name: usually its Discord category, when the admin keeps categories as groups. Starting the import puts it in the chapter's group of that name (compared trimmed, in any case), or creates one, after the chapter's own groups and, on a bot import, in Discord's category order. Omitted, null or blank means no group. Ignored unless `mapping_action` is `create_new`: a merge leaves its channel where it is.",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  new_channel_group?: string | null;
 
   @ApiPropertyOptional({ type: Number, maximum: INT4_MAX })
   @IsOptional()
@@ -360,6 +372,33 @@ export class DiscordImportProgressCountsDto {
   skipped: number;
 }
 
+export class DiscordImportCategoryProgressDto {
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'The Discord category; null for the channels in none.',
+  })
+  category: string | null;
+
+  @ApiProperty({ description: 'Channels being imported: rows with no parent.' })
+  channels: number;
+
+  @ApiProperty({
+    description:
+      "Threads being imported, each counted under its parent channel's category.",
+  })
+  threads: number;
+
+  @ApiProperty({
+    description:
+      'Channels and threads finished: imported, or skipped because Discord no longer showed them to the bot.',
+  })
+  done: number;
+
+  @ApiProperty({ description: 'Channels and threads that failed.' })
+  failed: number;
+}
+
 export class DiscordImportProgressDto {
   @ApiProperty({
     type: DiscordImportProgressCountsDto,
@@ -367,6 +406,13 @@ export class DiscordImportProgressDto {
       'Channel and thread rows being imported, by status. Rows mapped to skip are in no count.',
   })
   counts: DiscordImportProgressCountsDto;
+
+  @ApiProperty({
+    type: [DiscordImportCategoryProgressDto],
+    description:
+      "The same rows added up per Discord category, by name (two categories of one name are one line, as they become one group): the channels in no category first, then the categories in Discord's order on a bot import, and on an upload, whose export records no order, in the order the import reaches them. A thread counts under its channel's category. `channels + threads` is the category's total; `done` of that total is finished. Rows mapped to skip are in no count. Empty when the sums could not be read; the rest of the progress still answers.",
+  })
+  categories: DiscordImportCategoryProgressDto[];
 
   @ApiProperty({
     type: [DiscordImportChannelProgressRowDto],
@@ -453,6 +499,15 @@ export class DiscordImportResponseDto {
     format: 'date-time',
     nullable: true,
     description:
+      'When the import finished. Null until then, and for one that failed or was stopped.',
+  })
+  completed_at: string | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
       "A bot import's date cutoff (#2858): only messages sent at or after it. Null imports all history.",
   })
   messages_after: string | null;
@@ -470,7 +525,7 @@ export class DiscordImportWithProgressResponseDto extends DiscordImportResponseD
     type: Number,
     nullable: true,
     description:
-      'Channel and thread rows being imported. Null for an upload, and for a bot import that is not queued, running, failed or cancelled.',
+      'Channel and thread rows being imported. Null for an upload, and for a bot import that is not queued, running, completed, failed or cancelled.',
   })
   channels_total: number | null;
 

@@ -41,11 +41,12 @@ import {
   glyphCoverage,
 } from "./lib/brand-pixels.mjs";
 import {
-  IOS_ICON_CREST,
-  IOS_ICON_JSON,
-  crestSvg,
-  glyphPath,
-  iconJson,
+  IOS_ICON_LIGHT,
+  IOS_ICON_TINTED,
+  assertLightIcon,
+  assertTintedIcon,
+  lightFromGlyph,
+  tintedFromGlyph,
 } from "./lib/ios-icon.mjs";
 import {
   PLAY_FEATURE_GRAPHIC,
@@ -258,6 +259,12 @@ async function audit(buffer, label, kind) {
       glyphCoverage(data, info.channels, info.width, info.height),
       label,
     );
+  } else if (kind === "tinted") {
+    const rgb = await sharp(buffer).raw().toBuffer({ resolveWithObject: true });
+    assertTintedIcon(rgb.data, meta.channels, rgb.info.width, rgb.info.height, label);
+  } else if (kind === "light") {
+    const rgb = await sharp(buffer).raw().toBuffer({ resolveWithObject: true });
+    assertLightIcon(rgb.data, meta.channels, rgb.info.width, rgb.info.height, label);
   }
   return stats;
 }
@@ -326,9 +333,10 @@ async function main() {
   assertIcoShape(favicon, "signet-emblem-B.ico", ICO_SIZES);
   await write("packages/brand-assets/assets/signet-emblem-B.ico", favicon);
 
+  const glyph1024 = await transparent(glyphHi, 1024);
   await emit(
     "packages/brand-assets/assets/signet-emblem-B-glyph-1024.png",
-    await transparent(glyphHi, 1024),
+    glyph1024,
     "glyph",
   );
 
@@ -351,17 +359,28 @@ async function main() {
     "monochrome",
   );
 
-  // ── iOS: the Icon Composer bundle `expo.ios.icon` names ───────────────────
-  // Not a raster: iOS renders the bundle itself, in Liquid Glass, and derives
-  // its dark, clear and tinted appearances from it. What is written here is the
-  // document and the crest it draws, copied from the glyph vector; why each
-  // field is what it is lives in `lib/ios-icon.mjs`.
-  const crest = crestSvg(
-    glyphPath(readFileSync(GLYPH_SVG, "utf8"), "signet-emblem-B-glyph.svg"),
-  );
-  assertSvgLocked(crest, IOS_ICON_CREST, { requireField: false });
-  await write(IOS_ICON_JSON, Buffer.from(iconJson()));
-  await write(IOS_ICON_CREST, Buffer.from(crest));
+  // ── iOS: `expo.ios.icon`'s light and tinted appearances ──────────────────
+  // Dark is `icon.png` above. Light and tinted are the same full-bleed crest,
+  // its coverage the alpha of the canonical glyph render above: ink on cream
+  // for light, grey on black for tinted. Why each appearance is what it is
+  // lives in `lib/ios-icon.mjs`.
+  const glyphRaw = await sharp(glyph1024)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const tinted = await sharp(tintedFromGlyph(glyphRaw.data, glyphRaw.info.channels), {
+    raw: { width: glyphRaw.info.width, height: glyphRaw.info.height, channels: 3 },
+  })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+  await emit(IOS_ICON_TINTED, tinted, "tinted");
+
+  const light = await sharp(lightFromGlyph(glyphRaw.data, glyphRaw.info.channels), {
+    raw: { width: glyphRaw.info.width, height: glyphRaw.info.height, channels: 3 },
+  })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+  await emit(IOS_ICON_LIGHT, light, "light");
 
   // ── Google Play listing: apps/mobile/store/graphics ───────────────────────
   // Not read by any build: the owner uploads them in Play Console. Rendered

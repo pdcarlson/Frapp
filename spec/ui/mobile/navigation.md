@@ -16,36 +16,42 @@ Visual truth: [`../design-system/reference/canvas-screens.dc.html`](../design-sy
 - There is **no Home tab**. This is a locked decision; do not reintroduce one.
 - Known stale reference: panel 4g ("Mobile chrome") of [`../design-system/reference/signet-design-system.dc.html`](../design-system/reference/signet-design-system.dc.html) draws a 5-tab bar. It is wrong — the Canvas header and all 23 screens lock 4 tabs, and Canvas wins per the precedence rules in [`../README.md`](../README.md).
 - The bar previously showed six tabs — Home, Chat, Events, Points, Profile, More. It now shows these four; Home and Points are gone as screens, and Profile moved to the More hub per [`screens.md`](screens.md).
-- Tab icons are duotone per [`../design-system/iconography.md`](../design-system/iconography.md); active/inactive treatment and colors per [`../design-system/foundations.md`](../design-system/foundations.md). They are custom `react-native-svg` components in `apps/mobile/components/tab-glyphs.tsx`, transcribed from the tab bar drawn in the Canvas reference — not an off-the-shelf icon pack.
+- Tab icons are duotone per [`../design-system/iconography.md`](../design-system/iconography.md); active/inactive treatment and colors per [`../design-system/foundations.md`](../design-system/foundations.md). They are `react-native-svg` components in `apps/mobile/components/tab-glyphs.tsx` drawing the shared nav set (`@repo/theme/nav-glyphs`, Phosphor duotone shapes; iconography §1.1), the same shapes as the web sidebar. Since 2026-11-05 they no longer copy the Canvas tab bar's geometry: its hand-drawn set read as plain outlines on charcoal.
 - Every route outside these four is hidden from the bar (`href: null`) and reached by navigation.
-- **No screen draws the tab navigator's header** (`headerShown: false`, [#2485](https://github.com/pdcarlson/Frapp/issues/2485)). The board draws none: each screen's top is its own, through `ScreenShell` or its own bar (s05's `‹ #name`, s22's `✕ End`), so the header only said the screen's title again above it. It supplied no way back either, because a tab route's header renders without a `back`. A pushed route's way back is whatever it draws itself: s05's `‹`, and the close controls on s18 and s22. The board also draws a `‹ More` row on s10–s16 and `‹ Events` on s07; the app doesn't draw those yet ([#3022](https://github.com/pdcarlson/Frapp/issues/3022)), so on iOS the tab bar is their only way back. `apps/mobile/lib/tab-layout.spec.tsx` renders the layout and fails if the layout turns the header back on, for the whole navigator or for any registration in it, whether its options are an object or a function. It renders no route, so an override a route sets for itself (a `<Tabs.Screen options>` inside the route file, or `navigation.setOptions`) is outside what it can see; don't add one.
-- **Chat home (s04) is the one title the board doesn't draw.** The board opens s04 on its UP NEXT row. The app titles it with the chapter's name and mark instead, because [`../../behavior/branding.md`](../../behavior/branding.md) § Chapter mark makes that row the mark's one mobile surface. That is a recorded departure, not drift to restore from the board. Before #2485 the screen drew two title rows there, the header's chapter name and the shell's "Chat".
+- **The bar floats, as glass** (owner pick 2026-11-05, "Floating bar, no glow"). It is a capsule 62pt tall and fully round, inset 14pt from each side and lifted off the bottom edge (`floatingTabBarBottom` in `apps/mobile/lib/floating-chrome.tsx`): over a home indicator or gesture bar it tucks 8pt into the inset, as iOS's own floating bar does (26pt off the edge on an iPhone), it keeps 12pt off an edge with no inset, and it sits 4pt above Android's taller three-button bar. It is drawn by `GlassSurface` over the content, per [`foundations.md` § 15. Glass](../design-system/foundations.md#15-glass), with no shadow and no glow. The content scrolls under it, so every screen it sits over ends its scroll the bar's height plus 14pt above the bar's top (`useTabBarClearance`, which `ScreenShell` and s13's list apply), and a `FULL_WINDOW` screen gets none. The board draws a flat bar on the bottom edge; this is a recorded departure, made so the mobile chrome reads like web's. `lib/tab-layout.spec.tsx` pins the geometry, `lib/floating-chrome.spec.tsx` the offsets and the clearance, and `components/screen-shell.spec.tsx` that the shell pads by it.
+- **s05, s18 and s22 take the whole window, with no tab bar** (`FULL_WINDOW` in `app/(tabs)/_layout.tsx`, 2026-11-05). The board draws all three without one. A conversation's composer is the last thing on screen, as in every messaging app, and an officer projecting s22's QR has no tabs under it to tap away mid-hosting. Each draws its own way out (s05's `‹`, the ✕ on s18 and s22) and takes the bottom safe-area inset itself, and Android's back button still leads out. s05's image viewer covers the whole window with it ([#2889](https://github.com/pdcarlson/Frapp/issues/2889)). Every other route keeps the bar, which is a recorded departure: the board also draws s07 and s10–s16 without one, but those are places a member browses through, and the four tabs stay one tap away rather than behind a back row. A hidden route lights no tab, so the bar says where a member can go, not where they are. `apps/mobile/lib/tab-layout.spec.tsx` pins both halves and that each of the three screens takes the bottom inset.
+- **No screen draws the tab navigator's header** (`headerShown: false`, [#2485](https://github.com/pdcarlson/Frapp/issues/2485)). The board draws none: each screen's top is its own, through `ScreenShell` or its own bar (s05's `‹ #name`, s22's `✕ End`), so the header only said the screen's title again above it. It supplied no way back either, because a tab route's header renders without a `back`. A pushed route's way back is whatever it draws itself: s05's `‹`, and the close controls on s18 and s22. The board also draws a `‹ More` row on s10–s16 and `‹ Events` on s07, and the app draws them, except that s14 now draws `‹ Chat` ([§ Back rows](#back-rows)). `apps/mobile/lib/tab-layout.spec.tsx` renders the layout and fails if the layout turns the header back on, for the whole navigator or for any registration in it, whether its options are an object or a function. It renders no route, so an override a route sets for itself (a `<Tabs.Screen options>` inside the route file, or `navigation.setOptions`) is outside what it can see; don't add one.
+- **Chat home (s04) is the one title the board doesn't draw.** The board opens s04 on its UP NEXT row. The app titles it with the chapter's name and mark instead, because [`../../behavior/branding.md`](../../behavior/branding.md) § Chapter mark makes that row the mark's one mobile surface inside a chapter (chapter setup previews it before the chapter exists, #3351). That is a recorded departure, not drift to restore from the board. Before #2485 the screen drew two title rows there, the header's chapter name and the shell's "Chat".
 
 ## More hub (s09)
 
-Rows as drawn, top to bottom. Row anatomy: duotone icon, label, trailing status, chevron.
+Row anatomy, as drawn: duotone glyph, label, trailing status, chevron. No row carries a description line. The screen opens on a profile card (avatar, name, points balance, chevron to s15) and groups its rows below it.
 
-| Row | Destination | Trailing status as drawn |
-| --- | ----------- | ------------------------ |
-| Profile card (avatar, name, role chip, points) | `profile.tsx` (s15) | chevron |
-| Study hours | `study.tsx` (s10) | progress, e.g. "4.0 / 6.0" |
-| Dues | `dues.tsx` (s11) | warning chip, e.g. "Due Sept 15" |
-| Documents | `documents.tsx` (s12) | — |
-| Directory | `directory.tsx` (s13) | — |
-| Notifications | `notifications.tsx` (s14) | unread-count badge |
-| Service hours | `service-hours.tsx` (host of the s20 sheet) | — |
-| Settings | `preferences.tsx` (s16) | — |
-| Chapter | `(auth)/chapter-picker.tsx` | — |
-| **Admin section** (role-gated, labeled with the viewer's role, e.g. "ADMIN · PRESIDENT") | | |
-| Host check-in | `host-check-in.tsx` (s22) | — |
-| Adjust points | s23 sheet — **not rendered** until the sheet ships (#2300) | — |
+The app groups the rows differently from the board, by owner decision on 2026-11-04 (#1048): the board draws one group from Study hours to Settings, while the app splits it into chapter tools and then your own settings and chapter switcher, so the two rows the board never drew sit with their kind instead of trailing the list.
 
-The admin section renders only for members whose role grants the underlying permissions; ordinary members never see it.
+The board's Notifications row is not in the app's More: the inbox is the bell on Chat home ([§ Global entries outside the tab bar](#global-entries-outside-the-tab-bar), #3362).
+
+| Group | Row | Destination | Trailing status |
+| ----- | --- | ----------- | --------------- |
+| — | Profile card (avatar, name, points) | `profile.tsx` (s15) | chevron |
+| Chapter tools | Study hours | `study.tsx` (s10) | this week's total, e.g. "4.0 hrs" |
+| | Service hours | `service-hours.tsx` (host of the s20 sheet) | — |
+| | Dues | `dues.tsx` (s11) | the next bill's chip: warning hue for "Due Sept 15", destructive for "Past due Sept 15" |
+| | Documents | `documents.tsx` (s12) | — |
+| | Directory | `directory.tsx` (s13) | — |
+| You | Settings | `preferences.tsx` (s16) | — |
+| | Switch chapter | `(auth)/chapter-picker.tsx` | the current chapter's name. When `GET /v1/chapters` is empty the slot is **Create a chapter** instead, opening `(auth)/create-chapter.tsx` (#1084) |
+| **Admin** (role-gated, captioned "Admin") | Host check-in | `host-check-in.tsx` (s22) | the next hostable event |
+| | Adjust points | s23 sheet — **not rendered** until the sheet ships (#2300) | — |
+
+Study hours leaves the list while the chapter has no active study zone, and Documents leaves it for a viewer who can't upload while there are no documents; each comes back once the first one exists ([`modules.md` § Not-set-up features](../../product/modules.md#not-set-up-features)).
+
+The admin section renders only for members whose role grants the underlying permissions; ordinary members never see it. The board captions it with the viewer's role ("ADMIN · PRESIDENT") and draws a role chip on the profile card; neither is drawn, because no role name is readable on mobile (`/v1/users/me/permissions` returns permissions only).
 
 Two rows above are not drawn in Canvas and exist for reachability:
 
 - **Service hours** — `service-hours.tsx` is a live route hosting the s20 sheet, and without a row it would be unreachable.
-- **Chapter** — the only entry to `(auth)/chapter-picker.tsx`. The picker is deliberately *not* forced on members whose token lacks an `active_chapter_id` claim (`apps/mobile/lib/auth-gate.ts` explains why claim-absence is not a destination), so it needs a door.
+- **Switch chapter** — the only in-app entry to `(auth)/chapter-picker.tsx` (a `frapp://chapter-picker` link also opens it). The picker is deliberately *not* forced on members whose token lacks an `active_chapter_id` claim (`apps/mobile/lib/auth-gate.ts` explains why claim-absence is not a destination), so it needs a door.
 
 **Implementation status.** Every row above except Adjust points is routed, the admin section included — its gate landed with C4 of #937. The gate is `usePermissionList()` (a thin wrapper over `useMyPermissions()`) plus `can` from `@repo/validation` (`canAny` when a gate is composite), never a bare `permissions.includes(…)`: an owner's grant is the wildcard `*`, so a membership test would hide these rows from exactly the people they exist for. Today the section's gate is `events:update` alone — see Host check-in below.
 
@@ -54,11 +60,12 @@ Two things about that section are worth knowing before reading a device:
 - **It renders for nobody until a token carries a chapter claim.** `useMyPermissions` is `enabled: !!chapterId`. The hook is on in both hosted projects; production still has no memberships, so issued tokens have no `active_chapter_id` and the permission set stays empty — Presidents included — until the first onboard. It fails closed, which is the right direction. Local (`supabase/config.toml`) and staging (seeded members) already show the section.
 - **Host check-in resolves an event.** s22 reads an `eventId` param, so the row cannot be a bare link: it picks the next upcoming-or-still-checkable-in event and passes its id, and renders inert when there is none. **There is no Adjust points row.** The s23 sheet needs a member picker plus amount/category/reason and is unbuilt, and a row that renders disabled with nothing behind it is the "coming soon" shape App Review Guideline 2.1 rejects, so it was removed rather than drawn (#2300). It returns with the sheet; until then awarding and fining points is web-only. The section is gated on `events:update` alone for the same reason — gating it on `points:adjust` too would draw an empty Admin header for an officer who holds only that.
 
-The drawn s16 also carries an inline `CHAPTER · ADMIN` group, gated on `chapter-config:view` and read-only; its "Join code" row is omitted because chapters have no join code (joining runs through single-use, expiring invite tokens — see [`screens.md`](screens.md)).
+The drawn s16 also carries an inline `CHAPTER · ADMIN` group, gated on `chapter-config:view` and read-only except for its accent row (see [`screens.md`](screens.md) s16); its "Join code" row is omitted because chapters have no join code (joining runs through single-use, expiring invite tokens — see [`screens.md`](screens.md)).
 
 ## Global entries outside the tab bar
 
 - **UP NEXT strip** (s04): the top of Chat home carries an UP NEXT section — the next event and the nearest due task as compact rows, each tapping through to its detail (event detail s07, task board s08). It is a pulse affordance: chat is home, so the one glanceable "what's next" surface rides above the channel list rather than living in a Home tab.
+- **Notifications bell** (s04): a bell on Chat home's title row, beside the ✦ Ask pill when the build has Ask, opens the notification inbox (s14, `notifications.tsx`). It badges the unread count in fixed house gold, never the chapter accent, as the web bell does ([`../design-system/components.md`](../design-system/components.md) § App bar chips): it sits beside the channel rows' mention-red badges, and an accent-filled count could read as a mention. It counts unread rows whose target is not chat, because the channel rows below already badge those messages and reading a thread does not clear its inbox row (the same split as the app-icon badge, `lib/notifications/use-badge-sync.ts`). It reads the count in its accessibility value, and it is in every build. The board draws no bell; it draws Notifications as a row in More (s09). The bell replaced that row by owner decision on 2026-11-04 ([#3362](https://github.com/pdcarlson/Frapp/issues/3362)): Chat is the home tab, so the count belongs where the member lands, and that is where the web keeps it too (the top bar's bell). Because the bell now means "inbox", a channel's alert-level control drew a speaker instead; since 2026-11-06 it sits behind the thread header's `⋯` (`components/chat/notification-level-control.tsx`, [`../design-system/components.md`](../design-system/components.md) § Chrome weight), so the header draws no notification glyph at all. `components/chat/notifications-bell.tsx`; `lib/chat/chat-home.spec.tsx` and `lib/ask/entry-points.spec.tsx` (Ask on and off) pin it.
 - **✦ Ask pill** (s04, s06): a sparkle pill in the top bar of Chat home and Events opens the Ask sheet (s17). Ask is a global entry, not a tab — it MUST NOT become a fifth tab. Answer behavior and corpus rules: [`../../behavior/ai.md`](../../behavior/ai.md). Both halves now exist: the s06 pill landed with C7 (#998), which is also when the pill stopped navigating and started **presenting** — s17 is a sheet its host screen owns, so the pill takes an `onPress` and the host holds the `BottomSheetModal` ref ([`patterns.md`](patterns.md) § Bottom sheets). **The pill exists only in a build that has Ask.** With `EXPO_PUBLIC_ASK_ENABLED` off (the default; `apps/mobile/lib/ask/flag.ts`) neither host draws it, the sheet renders nothing, and the `ask` route redirects to Chat home, so a build without Ask shows no Ask surface anywhere.
 
   > **Reversed 2026-09-22, owner decision ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)).** This bullet used to require the opposite: the pill "presses through even when Ask is switched off … the sheet states the reason, because a control that silently does nothing is the dead end §5 bans". The sheet then read "Ask isn't switched on for this build yet". That argument holds for a member who knows Ask is coming, but App Review is the other reader: a prominent control on the first screen after sign-in whose only function is to announce that its feature is off is the placeholder Guideline 2.1 rejects. Nor is it the dead end the old rule was guarding against. That rule bans a control that is *present* and does nothing; a control that is not drawn has nothing to discover. The line between the two is [`../design-system/README.md`](../design-system/README.md) §5 rule 4, *disable, don't hide, for recoverable states*, which names this pill as one of the things to hide: no member can switch Ask on, and the pill has no function but Ask, so it is hidden, like a module the chapter has switched off. That is the Ask pill's case, not a rule for every build-time switch. The push primer, also gated at build time, was left open here and has since followed it: s03 omits the card when the build cannot push ([#2299](https://github.com/pdcarlson/Frapp/issues/2299), 2026-09-24; [`patterns.md`](patterns.md#push-notifications) § Push notifications). (The old text also cited `components.md` §5, which is Badges and chips; the rule was always in the design-system README.)
@@ -68,6 +75,32 @@ The drawn s16 also carries an inline `CHAPTER · ADMIN` group, gated on `chapter
   > The board (`canvas-screens.dc.html`) draws s04 and s06 with the pill. That is the with-Ask state, so a build without Ask showing no pill is not drift from the board.
   >
   > `apps/mobile/lib/ask/entry-points.spec.tsx` pins the behaviour: no pill on s04 or s06 and a redirect from `ask` with the flag off, and the pill presenting the sheet with it on.
+
+## Back rows
+
+A screen reached from another one draws a back row above its title, as the board draws `‹ Events` on s07 and `‹ More` on s10–s16 ([#3022](https://github.com/pdcarlson/Frapp/issues/3022)). A tab's own screen draws none. The row is `BackRow` in `apps/mobile/components/back-row.tsx`, passed to `ScreenShell` as `back`; s13, which draws its own header, draws it itself through `PinnedBackRow`.
+
+- **It is a glass capsule, pinned** (Paul, 2026-11-05: "like a bubble around ‹ Events"). The `‹` and the label sit in a `GlassSurface` 36pt tall and fully round, sized to its label, the same glass as the tab bar, centred in a 44pt touch target (the target is the row itself, since a hit slop outside the clipping glass takes no touches). It is pinned to the top of the screen's content (`PinnedBackRow`, inside the safe area rather than offset by the inset, so it moves down with the content when the offline banner takes the top), stays in reach while the page scrolls under it, and the page's title starts below it. The `‹` is a drawn chevron, not a typed character. A press lifts the capsule to `popover`, as a list row does. The board draws a bare text row; this follows the tab bar's departure.
+
+| Screen | Row | Goes to |
+| ------ | --- | ------- |
+| s07 Event detail | `‹ Events` | Events |
+| s10 Study hours, s11 Dues, s12 Documents, s13 Directory, s15 Profile, s16 Settings, Service hours | `‹ More` | More |
+| s14 Notifications | `‹ Chat` | Chat home |
+
+- **It goes to the place it names, not back through history.** These routes are hidden tabs (`href: null`), and a notification tap or a `frapp://` link can open one with nothing behind it, so `router.back()` could land nowhere or somewhere the label doesn't say. The row calls `router.navigate` with its fixed destination, as s05's `‹` goes to Chat home. Android's back button keeps the history behavior: the tab navigator sets `backBehavior="history"` (2026-11-05), because its default, `firstRoute`, sent back from every hidden route to Chat home, so back from an event opened on Events landed on Chat.
+- **s15 draws Edit at the row's far end**, as the board does (`‹ More` … `Edit`), through `ScreenShell`'s `backAction` ([#3387](https://github.com/pdcarlson/Frapp/issues/3387)). It appears only over a loaded profile.
+- **s12's upload moved off the row** (2026-11-05). It is s12's floating create button, bottom right above the tab bar, for a viewer holding `chapter_docs:upload` only, opening s21 ([#3399](https://github.com/pdcarlson/Frapp/issues/3399), [`patterns.md` § Create actions](patterns.md#create-actions)).
+- **Every state of a screen draws it**, the loading and error states included: a link to an event that's gone lands on s07's error state, and that state still needs a way out.
+- **A screen's render-error fallback is the one exception** ([#3378](https://github.com/pdcarlson/Frapp/issues/3378)). It replaces the whole screen, its own back row included, and it is one component for every route, so it doesn't draw each screen's row. Where the screen hides the tab bar (s05, s18 and s22, through `FULL_WINDOW`) it draws `‹ Chat`, since nothing else leads out; everywhere else the tab bar is the way out and it draws none. `apps/mobile/components/route-error.tsx` reads the screen's `tabBarStyle` to tell them apart, and `components/route-error.spec.tsx` pins both cases. Copy: [`writing.md` § Mobile render errors](../design-system/writing.md#mobile-render-errors).
+- **s14 draws `‹ Chat`, not the board's `‹ More`**, because its entry moved to the bell on Chat home ([§ Global entries outside the tab bar](#global-entries-outside-the-tab-bar), [#3362](https://github.com/pdcarlson/Frapp/issues/3362)). Service hours, which the board never drew, opens from a More row and draws `‹ More` like its neighbours.
+- It is drawn in the chapter accent (`useChapterBranding().accent`), as s05's `‹` is. The board draws it gold because its chapter is gold; inside a chapter every back arrow and inline action takes the chapter's accent ([`branding.md` § Accent Color](../../behavior/branding.md#accent-color), owner rule 2026-11-04). It was fixed `gold.askText` until 2026-11-05, which read as a stray gold control beside a purple or red chapter.
+- **`(auth)` draws the same row in house gold** (`BackRow house`, `gold.askText`), because nothing there is inside a chapter. Sign-in's email form, s02's invite and confirm steps and chapter setup draw `‹ Back`, which steps back one view inside their own route (`onPress`) and holds while a request is in flight (`disabled`). On setup's find step, its first, the row leaves the route instead: `router.back()` to what opened it, or `router.replace('/join')` when nothing is behind it. The chapter picker draws `‹ More` only when More's Switch chapter opened it, which passes `from: "more"` to say so, and goes back with `router.back()` rather than navigating, because `(tabs)` is already under it. Opened by a link it draws no row: `(auth)`'s anchor puts sign-in under a linked screen, so "something to go back to" (`router.canGoBack()`) can't tell the two apart. Like the `‹ Back` rows, it holds while a chapter switch is in flight.
+- Pinned by `components/back-row.spec.tsx` and `components/screen-shell.spec.tsx`, and per screen by the screen specs (`lib/events/event-details-screen.spec.tsx`, `lib/more/back-rows.spec.tsx` and the other `lib/**/*-screen.spec.tsx` files, s07's and s15's loading and error states included), through `test/back-row.ts`.
+
+## Launch
+
+Launch opens the last channel the member was in, then back goes to chat home (s04), the way Discord does (owner, 2026-11-05). Once per app process and only at launch (a list that answers late, or a member who has already left chat home, gets no jump), and a notification tap that launched the app wins. The rule and its fallbacks: [`spec/behavior/chat/README.md` § Where Chat opens](../../behavior/chat/README.md#where-chat-opens). Implementation: [`apps/mobile/lib/chat/last-channel.ts`](../../../apps/mobile/lib/chat/last-channel.ts).
 
 ## Deep links
 
@@ -103,7 +136,7 @@ A missing `active_chapter_id` claim is still not a destination — see `lib/auth
 - `typedRoutes` is enabled (`experiments.typedRoutes` in `apps/mobile/app.json`), so route strings are compile-checked against the file tree **during local development**.
 - **They are not checked in CI.** The generated types live in `.expo/types` and `expo-env.d.ts`, both gitignored (`apps/mobile/.gitignore`) and written only by `expo start`. CI runs a bare `tsc`, and with those files absent `Href` widens back to `string` — a nonexistent path assigned to `Href` type-checks clean. Do not rely on the compiler to catch a bad route on a branch.
 - **`apps/mobile/lib/routes.spec.ts` is the guard that actually runs.** It walks the real route tree and resolves route literals against it, and asserts the tab bar registers exactly the four locked tabs with a backing file behind every registration. A rename that misses a call site fails there.
-- **Know what that guard does not cover.** It matches *double-quoted string literals* at `href="…"`, `href: "…"`, `asRoute("…")`, `router.replace|push|navigate("…")`, and `pathname: "…"` — the last added with C1 (#937), whose chat list is the first screen to navigate with a param and therefore the first to use the object form `router.push({ pathname: "/chat-thread", params: { channelId } })`, which every other pattern misses. A route built from a template literal, a variable, or a prop is still invisible to it — `components/nav-tile.tsx` takes `href` as a prop, so only its call sites are checked, not the component. It also only checks that literals resolve, never that a route has an inbound link, so an orphaned route stays green. When you add a route, add its entry point in the same change; neither gate will remind you.
+- **Know what that guard does not cover.** It matches *double-quoted string literals* at `href="…"`, `href: "…"`, `asRoute("…")`, `router.replace|push|navigate("…")`, and `pathname: "…"` — the last added with C1 (#937), whose chat list is the first screen to navigate with a param and therefore the first to use the object form `router.push({ pathname: "/chat-thread", params: { channelId } })`, which every other pattern misses. A route built from a template literal, a variable, or a prop is still invisible to it, which is why the More hub's rows navigate with literal `router.push("…")` calls rather than passing a route through a prop. It also only checks that literals resolve, never that a route has an inbound link, so an orphaned route stays green. When you add a route, add its entry point in the same change; neither gate will remind you.
 - All renames and removals in [`screens.md`](screens.md) MUST still land in **one PR** — a partial rename leaves half the app's links broken whether or not a compiler notices.
 - `asRoute()` in `apps/mobile/lib/href.ts` is the sanctioned escape hatch for static paths that typed-route generation misses. It MUST NOT be used to paper over a route the type-checker correctly rejects. Note it takes a plain `string`, so it defeats the dev-time check entirely — `routes.spec.ts` is what keeps its call sites honest.
 
@@ -146,7 +179,14 @@ already asks for camera access separately for check-in scanning and image-picker
 camera capture is not used); `expo-document-picker`'s plugin only touches iCloud
 entitlements behind `ios.usesIcloudStorage`, which this app does not set, so it needs no
 `plugins` entry. Same integrator carve-out as the rest of this section — the three
-surfaces themselves are still unbuilt and land as their own slices.
+surfaces themselves were still unbuilt then and landed as their own slices.
+*Corrected 2026-11-05 (this sentence used to call them still unbuilt):* all three have
+since shipped as photo-library picks, s15's avatar photo (#2897), s21's upload (#3399)
+and, last, s20's proof attachment (2026-11-05), each dated below. What is still unbuilt
+is the file half of the last two: a PDF or Office file on s21 needs
+`expo-document-picker`, which can only ship in a store build, and
+[#3401](https://github.com/pdcarlson/Frapp/issues/3401) adds it there and decides
+whether s20's proof takes a PDF from Files too.
 
 **Both were removed again** (#2296) — the three surfaces were still unbuilt a month
 later, and the declarations were not merely premature but actively harmful. The
@@ -187,6 +227,36 @@ as an integrator change so `photosPermission` names both uses ("set your profile
 and send photos in chapter chat"), with the privacy policy and the store records in the
 same PR.
 
+*2026-11-04:* chapter setup's live step (#3351,
+`lib/onboarding/chapter-wizard/chapter-logo.ts`) is the third caller, adding the chapter's
+logo. `photosPermission` names it too ("add your chapter's logo"), as do the store records
+and the privacy policy's permissions clause. The owner ruled that policy edit non-material
+([#3395](https://github.com/pdcarlson/Frapp/issues/3395)), so it moved only the page's pin
+(`legal.md` § Acceptance record).
+
+*2026-11-04:* s21's document upload (#3399, `lib/more/document-upload.ts`) is the fourth
+caller, through `pickImage`, the pick half of the same pipeline. It needs no native
+change, so it ships over the air, but the compiled `photosPermission` text can only
+widen in a store build: #3401 does that with `expo-document-picker`, and the store
+records with it *(superseded 2026-11-05: widened on its own, see below)*. The privacy policy is a web page, so it names the new use in the
+same PR (ruled non-material by the owner, 2026-11-04).
+
+*2026-11-05:* s20's photo proof (`lib/more/service-proof.ts`) is the fifth caller,
+through `pickImage` and the PUT half of the same pipeline, attaching a photo to a
+service entry. Like the fourth it needs no native change and ships over the air, and
+`photosPermission` can only widen in a store build, so
+[#3401](https://github.com/pdcarlson/Frapp/issues/3401) widens it to name service-hour
+proof alongside document uploads, with the store records *(superseded 2026-11-05: widened
+on its own, see below)*. The privacy policy's
+permissions clause names it in the same change, moving only the page's pin on the
+#3395 precedent; whether that edit is material, and what each ruling does, is
+[`legal.md` § Acceptance record](../../behavior/legal.md#acceptance-record)'s.
+
+*2026-11-05, later:* the purpose string was widened on its own, ahead of #3401's Files
+picker, so the 0.9.1 store build carries it. `photosPermission` now names all five
+callers ("send photos in chapter chat, add photos to your chapter's documents, and attach
+photo proof to service hours"). #3401 keeps the picker and #2620.
+
 Both #2296 defects stay fixed, and the plugin entry is the place that proves it. It
 sets `photosPermission` and `microphonePermission: false`, and **no `cameraPermission`
 key at all**. Each of those three is load-bearing:
@@ -210,6 +280,20 @@ key at all**. Each of those three is load-bearing:
   unread-pin note above. `scripts/check-mobile-native-declarations.mjs` pins its text
   in `IOS_PURPOSE_STRINGS` with the call that requests it, so declining it fails CI.
   *(Moved 2026-09-30, #2343, from `app.config.spec.ts`'s `REQUESTED_AT_RUNTIME` list.)*
+
+*Corrected 2026-11-05:* "decline what nothing requests" is not the whole rule on iOS.
+App Store Connect's upload scan flags some APIs a linked library references and rejects
+the binary when their key is missing (ITMS-90683), whether or not the app ever asks.
+`expo-location` links `CMMotionActivityManager` for its motion permission requester, so
+its `motionUsagePermission: false` got iOS 0.9.1 (8) rejected. The option now carries a
+string that says Frapp never asks, and `IOS_PURPOSE_STRINGS` pins it as a linked-only
+entry: `requestedBy: null` and a `linkedBy` naming the pod, the symbol and the JS request.
+The gate fails if the key is declined again, asks for its removal once that pod stops
+linking the symbol, and fails if the app ever makes the request the text disowns. The
+scan doesn't flag every linked API: the same upload named only the motion key, though
+`expo-camera` links microphone access and `expo-secure-store` links Face ID, and both of
+those stay declined as above. So a linked-only entry is added when Apple names its key,
+and the declines above stand until it does.
 
 The pairing is also pinned from the other side: `app.config.spec.ts` asserts a media
 picker is depended on **only while a non-spec source file imports one**, which is the
@@ -290,7 +374,35 @@ lost the header styling and Chat home's `headerTitle` with it. The shell took ov
 the header had been doing: it takes the top safe-area inset, marks its title as the
 screen's heading, and gained an optional `titleMark` slot before the title. Chat home
 fills that slot with the chapter mark, which had been the header's title and is the mark's
-one mobile surface ([`../../behavior/branding.md`](../../behavior/branding.md) § Chapter
+one mobile surface inside a chapter (chapter setup previews it too, #3351) ([`../../behavior/branding.md`](../../behavior/branding.md) § Chapter
 mark). Four screens opt out of the shell. s05 and s13 took the top inset themselves in
 this change. s18 (`check-in.tsx`) and s22 (`host-check-in.tsx`) already took it, and
 their own titles took the heading role the header's title used to carry.
+
+**#3344 touched `app/(tabs)/_layout.tsx`, as an integrator change** (2026-11-04). The
+first Play build drew the tab bar under Android's swipe bar: a fixed
+`tabBarStyle.height` replaces the height React Navigation computes, so the bottom inset
+it would have added was lost, and Android draws edge to edge. The layout now reads
+`useSafeAreaInsets()` and adds the bottom inset to the bar's height and bottom padding,
+so the 62pt row sits above the system bar. `lib/tab-layout.spec.tsx` pins the sum.
+
+**Paul's Android pass touched `app/(tabs)/_layout.tsx`, as an integrator change** (2026-11-05). The chat thread, check-in and host check-in registrations hide the tab bar (`tabBarStyle`, through `FULL_WINDOW`), for the reason [§ Tab bar](#tab-bar--4-tabs-locked) gives, and the navigator takes `backBehavior="history"` so Android's back button returns to the screen a member came from ([§ Back rows](#back-rows)). No route or tab was added, removed or renamed, and no header option changed.
+
+**#3023 touched `components/screen-shell.tsx`, as an integrator change.** `subtitle`
+became optional and the shell draws no line when it is absent, and every caller was reviewed in
+the same change. The lines that only said what a screen is for ("What you owe the
+chapter, and what it has earned you.") were deleted (owner decision, 2026-11-04), and so
+was the same kind of line in s13's own header, Directory's "Actives and alumni.". The board
+draws neither. Event details is the one screen that still passes a subtitle, the event's
+time (and its place, since 2026-11-05), because s07 is the one screen the board draws one on. Its loading, empty and error
+states pass none. The rule itself lives in [`patterns.md` § Screen headers](patterns.md#screen-headers).
+
+**#3022 touched `components/screen-shell.tsx`, as an integrator change.** The shell gained an optional `back` prop that draws `BackRow` above the title, and every screen the board draws a back row on passes one in the same change, each of their state screens included. It also edited `app/(tabs)/_layout.tsx`, comment only: the header comment that said the rows weren't drawn yet now points at the rule, which lives in [§ Back rows](#back-rows).
+
+**#3450 touched `components/screen-shell.tsx`, as an integrator change** (2026-11-05, from Paul's 2026-11-04 Android notes). The title moved from the 18/600 title role to the 24/700 headline at -0.3 tracking, as the board draws s06, s08–s14 and s16, so a page title sits a level above the cards on it. s13's own header moved with it. No prop changed. The shell now exports `screenTitleStyle`, which s13 spreads instead of copying the values. The rule itself lives in [`patterns.md` § Screen headers](patterns.md#screen-headers).
+
+**#3385 touched `components/screen-shell.tsx`, as an integrator change** (2026-11-05). The shell gained an optional `refresh` prop that puts a themed `RefreshControl` (`components/pull-to-refresh.tsx`) on its scroll view, and the nine list screens the issue names pass one in the same change: Directory, which draws its own `FlatList`, attaches the same control there. The issue asked for the prop on the shell rather than per screen, so the prop and its callers landed together. A screen that passes `refresh` passes it for its whole life, because adding or removing a scroll view's `refreshControl` remounts the list under it; a pull with nothing enabled to refetch does nothing.
+
+**#3378 touched `app/_layout.tsx` and `app/(tabs)/_layout.tsx`, as an integrator change** (2026-11-05). Each exports expo-router's `ErrorBoundary`, which renders `AppErrorScreen` from `components/route-error.tsx` in place of the layout when it fails, and the tab navigator takes `screenLayout={screenErrorLayout}`, which puts every tab screen in its own boundary so one that fails leaves the tab bar working. No route, tab, header or screen option changed. The copy lives in [`writing.md` § Mobile render errors](../design-system/writing.md#mobile-render-errors); `components/route-error.spec.tsx` pins that both layouts still mount their boundaries.
+
+**The glass change touched `app/(tabs)/_layout.tsx`, `components/screen-shell.tsx` and `package.json`, as an integrator change** (2026-11-05). `package.json` gained two native modules, `expo-blur` and `expo-glass-effect`, so the change ships in a store build, not over the air. The tab bar became the floating glass capsule [§ Tab bar](#tab-bar--4-tabs-locked) describes, through `tabBarStyle` and `tabBarBackground`, and `screenLayout` moved to `floatingScreenLayout` (`lib/floating-chrome.tsx`), which keeps #3378's boundary and tells each screen whether the bar sits over it. The shell pins the back row ([§ Back rows](#back-rows)), pads its scroll clear of the bar, and gained `createAction`, which draws the floating create button ([`patterns.md` § Create actions](patterns.md#create-actions)). No route or tab was added, removed or renamed.

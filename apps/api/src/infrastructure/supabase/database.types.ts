@@ -34,6 +34,7 @@ import type {
   DiscordImportChannel,
   DiscordImportFile,
   DiscordImportCreatedChannel,
+  DiscordImportCreatedCategory,
   DiscordOAuthState,
   DiscordAuthorLink,
   Event,
@@ -127,6 +128,7 @@ export interface Database {
       discord_import_channels: TableDefinition<DiscordImportChannel>;
       discord_import_files: TableDefinition<DiscordImportFile>;
       discord_import_created_channels: TableDefinition<DiscordImportCreatedChannel>;
+      discord_import_created_categories: TableDefinition<DiscordImportCreatedCategory>;
       message_reactions: TableDefinition<MessageReaction>;
       channel_read_receipts: TableDefinition<ChannelReadReceipt>;
       chat_message_bookmarks: TableDefinition<ChatMessageBookmark>;
@@ -187,6 +189,15 @@ export interface Database {
           unread_count: number;
           mention_count: number;
         }[];
+      };
+      /**
+       * `20261106190000` (#585). Backwork search over title, course,
+       * department, professor and tags, with trigram typo tolerance, ranked
+       * word matches first. One chapter only; at most 50 rows.
+       */
+      search_backwork_resources: {
+        Args: { p_chapter_id: string; p_query: string; p_limit?: number };
+        Returns: BackworkResource[];
       };
       get_poll_vote_option_totals: {
         Args: { p_message_ids: string[] };
@@ -334,6 +345,18 @@ export interface Database {
        * serialize correctly instead of losing an update. Empty result set
        * means the row didn't match (wrong id/chapter, or not a GROUP_DM).
        */
+      /**
+       * `20261106010000`. Makes one channel the chapter's default and unsets
+       * the old one in the same transaction. Empty when the channel is not
+       * in the chapter or is a DM.
+       */
+      set_chat_channel_default: {
+        Args: {
+          p_channel_id: string;
+          p_chapter_id: string;
+        };
+        Returns: ChatChannel[];
+      };
       leave_group_dm: {
         Args: {
           p_channel_id: string;
@@ -518,6 +541,29 @@ export interface Database {
       delete_empty_discord_import_channels: {
         Args: { p_import_id: string; p_chapter_id: string };
         Returns: string[];
+      };
+      /**
+       * `20261105220000`. Deletes the channel groups a `purging` import
+       * created that now hold no channel, and returns their ids. A no-op for
+       * any other status.
+       */
+      delete_empty_discord_import_categories: {
+        Args: { p_import_id: string; p_chapter_id: string };
+        Returns: string[];
+      };
+      /**
+       * `20261106170000`. An import's rows being imported, added up per
+       * Discord category, a thread under its parent's category.
+       */
+      discord_import_category_progress: {
+        Args: { p_import_id: string; p_chapter_id: string };
+        Returns: {
+          category: string | null;
+          channels: number;
+          threads: number;
+          done: number;
+          failed: number;
+        }[];
       };
       /**
        * `20260805150000`. `claim_outcome` is `text` in SQL, narrowed here to

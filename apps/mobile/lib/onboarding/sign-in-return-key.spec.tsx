@@ -60,6 +60,10 @@ function render(): ReactTestRenderer {
       },
     );
   });
+  // The email form sits behind "Continue with email" (#3349).
+  act(() => {
+    pressableLabelled(tree.root, "Continue with email").props.onPress();
+  });
   return tree;
 }
 
@@ -88,13 +92,19 @@ function hasField(root: Node, contentType: "username" | "password"): boolean {
   );
 }
 
+/**
+ * By the text drawn, or by the screen-reader label a busy button keeps while
+ * a spinner stands in for its text.
+ */
 function pressableLabelled(root: Node, label: string): Node {
   const found = root
     .findAll((node) => isHost(node, "Pressable"))
-    .find((pressable) =>
-      pressable
-        .findAll((node) => isHost(node, "Text"))
-        .some((text) => text.props.children === label),
+    .find(
+      (pressable) =>
+        pressable.props.accessibilityLabel === label ||
+        pressable
+          .findAll((node) => isHost(node, "Text"))
+          .some((text) => text.props.children === label),
     );
   if (!found) throw new Error(`no pressable labelled ${label}`);
   return found;
@@ -182,7 +192,7 @@ describe("sign-in return key, password mode", () => {
     expect(auth.signInWithPassword).toHaveBeenCalledTimes(1);
 
     // The button is disabled now; return must be held to the same guard.
-    expect(pressableLabelled(tree.root, "Signing in...").props.disabled).toBe(
+    expect(pressableLabelled(tree.root, "Signing in…").props.disabled).toBe(
       true,
     );
     pressReturn(field(tree.root, "password"));
@@ -196,7 +206,7 @@ describe("sign-in return key, magic-link mode", () => {
     const tree = render();
 
     act(() => {
-      pressableLabelled(tree.root, "Magic Link").props.onPress();
+      pressableLabelled(tree.root, "Magic link").props.onPress();
     });
     expect(hasField(tree.root, "password")).toBe(false);
 
@@ -214,5 +224,33 @@ describe("sign-in return key, magic-link mode", () => {
       email: "brother@westfield.edu",
     });
     expect(auth.signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it("names the wait as a link being sent, not a sign-in", async () => {
+    // Never settles, so the screen stays submitting.
+    auth.sendMagicLink.mockReturnValue(new Promise(() => {}));
+    const tree = render();
+    act(() => {
+      pressableLabelled(tree.root, "Magic link").props.onPress();
+    });
+    type(field(tree.root, "username"), "brother@westfield.edu");
+
+    await act(async () => {
+      field(tree.root, "username").props.onSubmitEditing();
+    });
+
+    const busy = pressableLabelled(tree.root, "Sending link…");
+    expect(busy.props.disabled).toBe(true);
+    expect(busy.props.accessibilityState).toEqual({
+      disabled: true,
+      busy: true,
+    });
+    expect(
+      tree.root.findAll(
+        (node) =>
+          isHost(node, "Pressable") &&
+          node.props.accessibilityLabel === "Signing in…",
+      ),
+    ).toHaveLength(0);
   });
 });

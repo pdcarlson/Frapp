@@ -28,7 +28,10 @@ import {
   type IStorageProvider,
 } from '#domain/adapters/storage.interface';
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
-import { safeObjectFilename } from '#domain/constants/storage';
+import {
+  isObjectKeySegment,
+  safeObjectFilename,
+} from '#domain/constants/storage';
 
 const DOCUMENTS_BUCKET = 'documents';
 
@@ -100,9 +103,8 @@ export class ChapterDocumentService {
   }
 
   async confirmUpload(input: ConfirmUploadInput): Promise<ChapterDocument> {
-    if (
-      !input.storage_path.startsWith(`chapters/${input.chapter_id}/documents/`)
-    ) {
+    const prefix = `chapters/${input.chapter_id}/documents/`;
+    if (!input.storage_path.startsWith(prefix)) {
       throw new BadRequestException(
         'storage_path must be within the chapter documents folder',
       );
@@ -122,6 +124,17 @@ export class ChapterDocumentService {
     } catch (error) {
       throw new BadRequestException((error as Error).message);
     }
+    // The rest must be the `{documentId}/{filename}` that `requestUploadUrl`
+    // mints. The traversal guard above lets `?`, `#`, `%` and a trailing space
+    // through, and a suffixed or percent-encoded spelling of a filed path names the same
+    // object while comparing unequal to it, so it would get past the filed-row
+    // read and the unique index below and file that object a second time.
+    const segments = input.storage_path.slice(prefix.length).split('/');
+    if (segments.length !== 2 || !segments.every(isObjectKeySegment)) {
+      throw new BadRequestException(
+        'storage_path must be a path the upload URL route minted',
+      );
+    }
 
     // `requestUploadUrl` validates the declared content type before minting a
     // signed URL, but that validation is not carried into this call — the two
@@ -140,6 +153,20 @@ export class ChapterDocumentService {
 
     const folder = normalizeFolderName(input.folder);
 
+    // Idempotent on the stored object (#3399): confirming a path that is
+    // already filed answers with that row, unchanged, instead of filing it
+    // twice. Two rows on one object would break delete, which removes the
+    // object. This read comes before the folder is registered, so a replay or
+    // a refusal answered here leaves no folder behind. Two confirms racing
+    // past it meet the unique index instead, and `create` hands the loser the
+    // winner's row; the loser has registered its folder by then, which at
+    // worst leaves one empty folder in the uploader's own chapter.
+    const filed = await this.documentRepo.findByStoragePath(
+      input.storage_path,
+      input.chapter_id,
+    );
+    if (filed) return this.filedFor(filed, input.uploaded_by);
+
     // Uploading into a folder that was never explicitly created is still
     // allowed — it is how every folder came into being before folders were
     // first-class. Register it so it shows up in the folder list and can be
@@ -148,7 +175,7 @@ export class ChapterDocumentService {
       await this.ensureFolder(folder, input.chapter_id);
     }
 
-    return this.documentRepo.create({
+    const document = await this.documentRepo.create({
       chapter_id: input.chapter_id,
       title: input.title,
       description: input.description ?? null,
@@ -160,6 +187,22 @@ export class ChapterDocumentService {
       document_type: input.document_type ?? null,
       effective_date: input.effective_date ?? null,
     });
+    return this.filedFor(document, input.uploaded_by);
+  }
+
+  /**
+   * A filed row goes back only to the member who filed it. Every member who
+   * can read the library sees a document's `storage_path`, so a confirm from
+   * anyone else is not a retry of their own upload.
+   */
+  private filedFor(
+    document: ChapterDocument,
+    uploadedBy: string,
+  ): ChapterDocument {
+    if (document.uploaded_by !== uploadedBy) {
+      throw new ConflictException('That upload has already been filed');
+    }
+    return document;
   }
 
   async findByChapter(

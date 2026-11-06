@@ -3,6 +3,7 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useRouter } from "expo-router";
 import { FrappThemeProvider } from "@/lib/theme";
 
 /**
@@ -49,10 +50,12 @@ const chapters = Array.from({ length: 12 }, (_, index) => ({
   chapter_id: `chapter-${index}`,
   chapter: { name: `Chapter ${index}`, university: "Westfield" },
 }));
+/** What `useListChapters` answers; the empty-state test swaps in none. */
+let listed: typeof chapters = chapters;
 
 vi.mock("@repo/hooks", () => ({
   useListChapters: () => ({
-    data: chapters,
+    data: listed,
     isPending: false,
     isError: false,
     refetch: vi.fn(),
@@ -140,6 +143,10 @@ describe("sign-in (s01)", () => {
 
   it("puts the whole form, down to the Sign in button, inside one scroll container", () => {
     const tree = render(<SignIn />);
+    // The email form sits behind "Continue with email" (#3349).
+    act(() => {
+      pressableLabelled(tree.root, "Continue with email")!.props.onPress();
+    });
 
     const signIn = pressableLabelled(tree.root, "Sign in");
     const email = tree.root.findAll(
@@ -162,6 +169,19 @@ describe("sign-in (s01)", () => {
     // iOS: insets the scroll view by the keyboard and scrolls the focused
     // field above it (the screen's comment has the RN source for that).
     expect(scroll.props.automaticallyAdjustKeyboardInsets).toBe(true);
+  });
+
+  it("keeps the folded view's actions inside the one scroll container", () => {
+    // The first view a person sees (#3349): on an iPhone SE or at a large
+    // text size it has to scroll, so the buttons can't be a pinned footer.
+    const tree = render(<SignIn />);
+    const actions = [
+      "Continue with Apple",
+      "Continue with Google",
+      "Continue with email",
+    ].map((label) => pressableLabelled(tree.root, label));
+    expect(actions.every((action) => action !== undefined)).toBe(true);
+    expectScrollingColumn(tree.root, actions as Node[]);
   });
 
   it("breaks the tagline after “needs”, whatever the screen width", () => {
@@ -187,6 +207,22 @@ describe("sign-in (s01)", () => {
 describe("chapter picker", () => {
   beforeEach(() => {
     session.status = "authenticated";
+    listed = chapters;
+  });
+
+  it("sends an account with no chapters to join's question, which covers both answers", () => {
+    // #3350: one way out, not "Join" and "Create" side by side. Join asks
+    // whether the member has an invite or is starting the chapter.
+    listed = [];
+    const tree = render(<ChapterPicker />);
+    const exit = pressableLabelled(tree.root, "Join or start a chapter");
+    expect(exit).toBeDefined();
+    expect(pressableLabelled(tree.root, "Sign out")).toBeDefined();
+
+    act(() => {
+      exit!.props.onPress();
+    });
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/join");
   });
 
   it("scrolls the whole column, so Sign out stays reachable under a long list", () => {

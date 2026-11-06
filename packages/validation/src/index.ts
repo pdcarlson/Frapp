@@ -7,6 +7,9 @@ import {
   ROLE_NAME_MAX_LENGTH,
   YEAR_MAX,
 } from "./field-limits";
+import { isBetaOffModule } from "./beta-off-modules";
+
+export { BETA_OFF_MODULES, isBetaOffModule } from "./beta-off-modules";
 
 // ── Legal / compliance ───────────────────────────────────────────────────────
 // The policy version itself is the API's (`apps/api/src/domain/constants/
@@ -401,7 +404,8 @@ export const PatchChapterConfigSchema = z.object({
  *
  * A module is enabled unless the chapter explicitly turned it off. Absence is
  * not disablement — a chapter created before a module existed has no key for
- * it, and must not be locked out of something it never disabled.
+ * it, and must not be locked out of something it never disabled. The one
+ * exception is a `BETA_OFF_MODULES` key, which is off for every chapter.
  *
  * @param enabledModules the chapter's `enabled_modules` map, if loaded
  * @param key a `MODULE_CATALOG` key, e.g. `"events"`
@@ -410,6 +414,7 @@ export function isModuleEnabled(
   enabledModules: Record<string, boolean> | null | undefined,
   key: string,
 ): boolean {
+  if (isBetaOffModule(key)) return false;
   return enabledModules?.[key] !== false;
 }
 
@@ -462,6 +467,24 @@ export function moduleRefusalFromServerMessage(
   return { moduleKey };
 }
 
+/**
+ * The 400 `POST /v1/service-entries` answers when the chapter's
+ * `wf_hours_receipt` workflow is on and the entry carries no `proof_path`.
+ * `ServiceEntryService.create` throws both, as `{ code, message }` (#1020).
+ * A member can't read the workflow itself (`GET /v1/chapters/:id/config`
+ * needs `chapter-config:view`), so this answer is how the phone learns of it:
+ * mobile s20 recognises the refusal by the code and asks for a photo.
+ *
+ * The code is the contract, not the message. A mobile build is matched
+ * against whatever the API sends for as long as it stays installed, so
+ * matching the English sentence would break every shipped build the day it
+ * is reworded. The code never changes; the message can, and web shows it as
+ * the toast's description.
+ */
+export const SERVICE_RECEIPT_REQUIRED_CODE = "service_entry.receipt_required";
+export const SERVICE_RECEIPT_REQUIRED_MESSAGE =
+  "This chapter requires a receipt (photo or signed slip) with service-hour submissions — attach proof and resubmit";
+
 // ── Chat message schemas (Chunk 02; hot-path moved to NestJS in #416)
 // Originally shared with the Deno Edge Functions; kept dependency-light
 // (zod only) so any future Deno consumer can still import this file
@@ -480,6 +503,22 @@ export function moduleRefusalFromServerMessage(
  * `domain/constants/chat.ts` re-exports this rather than keeping a copy.
  */
 export const SYSTEM_SENDER_ID = "00000000-0000-0000-0000-000000000000";
+
+/**
+ * The author name for a message the server posts as the system actor
+ * (`SYSTEM_SENDER_ID`): the chapter welcome post, the `#chapter-audit` bridge,
+ * poll-expiry notices and invite-accept DMs.
+ *
+ * The system actor is a real `users` row but never a chapter member, so the
+ * roster can't name it, and before this the clients' author line fell through
+ * to `memberFallbackLabel` and the welcome post every new chapter sees first read
+ * "Member 000000" beside a "00" avatar (#3347). It is the product speaking, so
+ * it takes the product's name. The row's own `display_name` ("Frapp System")
+ * is not used: it names the account, not the voice, and the roster never
+ * serves it anyway. `@repo/hooks`' `resolveAuthorName` and the API's activity
+ * feed both read this.
+ */
+export const SYSTEM_AUTHOR_LABEL = "Frapp";
 
 /**
  * Where a client's read of its own chat block list stands
@@ -556,11 +595,19 @@ export type UpdateCustomField = z.infer<typeof UpdateCustomFieldSchema>;
 
 // ── Analytics payload hygiene (issue #464) ───────────────────────────────────
 export {
+  ANALYTICS_APPS,
   assertContentFreeProperties,
+  CLIENT_ANALYTICS_APPS,
   ContentFreePropertyError,
   FORBIDDEN_ANALYTICS_PROPERTY_KEYS,
+  RESERVED_ANALYTICS_PROPERTY_KEYS_TEXT,
 } from "./analytics";
-export type { AnalyticsEvent, AnalyticsProperties } from "./analytics";
+export type {
+  AnalyticsApp,
+  AnalyticsEvent,
+  AnalyticsProperties,
+  ClientAnalyticsApp,
+} from "./analytics";
 
 // ── `@`-mention resolution (C1 of #937) ──────────────────────────────────────
 // Shared because the API's authoritative pass and any client-side preview must
@@ -594,6 +641,7 @@ export {
 // how two surfaces come to disagree about what a member's switches say.
 export {
   NOTIFICATION_CATEGORIES,
+  shownNotificationCategories,
   isNotificationCategoryKey,
   defaultNotificationCategoryState,
   rowsToNotificationCategoryState,
@@ -607,16 +655,23 @@ export type {
 // ── Ops-setup nudges (issue #492) ────────────────────────────────────────────
 // Shared for the same reason as the categories above: each `key` is written
 // verbatim into `members.dismissed_ops_nudges`, the column is an unconstrained
-// `text[]`, and `DismissOpsNudgeDto` validates against this catalog — so a
+// `text[]`, and `DismissOpsNudgeDto` validates against `MEMBER_DISMISSAL_KEYS`
+// (these keys plus the setup checklist's) — so a
 // per-surface copy would drift into dismissal entries that suppress nothing.
 // `selectOpsNudge` carries the spec's priority order, which is behavior rather
 // than presentation, so it is shared too rather than re-derived per surface.
 export {
+  MEMBER_DISMISSAL_KEYS,
   OPS_NUDGE_MODULES,
+  SETUP_CHECKLIST_DISMISS_KEY,
   isOpsNudgeModuleKey,
   selectOpsNudge,
 } from "./ops-nudges";
-export type { OpsNudgeModule, OpsNudgeModuleKey } from "./ops-nudges";
+export type {
+  MemberDismissalKey,
+  OpsNudgeModule,
+  OpsNudgeModuleKey,
+} from "./ops-nudges";
 
 // Client-side RBAC gates, shared by apps/web and apps/mobile. Moved out of
 // `apps/web/lib/auth/can.ts` with #994 so the wildcard rule has one definition.
@@ -672,7 +727,15 @@ export {
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
   CHAPTER_SHORT_NAME_MAX_LENGTH,
 };
-export { POLL_OPTIONS_MAX, POLL_OPTIONS_MIN, YEAR_MAX } from "./field-limits";
+export {
+  DOCUMENT_TITLE_MAX_LENGTH,
+  GRADUATION_YEAR_MAX,
+  GRADUATION_YEAR_MIN,
+  POLL_OPTIONS_MAX,
+  POLL_OPTIONS_MIN,
+  SERVICE_DESCRIPTION_MAX_LENGTH,
+  YEAR_MAX,
+} from "./field-limits";
 
 // ── Chapter mark (logo → short name → Greek letters → initials) ─────────────
 export {
@@ -688,10 +751,15 @@ export type {
   ChapterTextMarkSource,
 } from "./chapter-mark";
 
-// ── Upload MIME / extension allowlists + 25 MB size cap ─────────────────────
+// ── Upload MIME / extension allowlists + size caps (25 MB; backwork 100 MB) ──
 export {
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_LABEL,
+  MAX_BACKWORK_UPLOAD_BYTES,
+  MAX_BACKWORK_UPLOAD_LABEL,
+  MAX_BACKWORK_ZIP_FILES,
+  MAX_BACKWORK_ZIP_BYTES,
+  MAX_BACKWORK_ZIP_LABEL,
   DOCUMENT_UPLOAD_SURFACES,
   contentTypeByExtension,
   acceptAttribute,
@@ -768,3 +836,17 @@ export {
   isSidebarSectionKey,
 } from "./chat-sidebar";
 export type { SidebarFixedSectionKey, SidebarSectionKey } from "./chat-sidebar";
+
+export {
+  ROLE_COLOR_HEXES,
+  ROLE_COLOR_PALETTE,
+  roleColor,
+  roleColorOrNull,
+  topRoleColor,
+} from "./role-colors";
+export type {
+  RoleColorHex,
+  RoleColorKey,
+  RoleColorSource,
+  RoleColorSwatch,
+} from "./role-colors";

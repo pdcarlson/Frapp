@@ -11,8 +11,9 @@ vi.mock("./auth-session", () => ({
   useAuthSession: () => ({ chapterId: mockState.chapterId }),
 }));
 
-// `expo-constants`, which Expo Go detection reads, needs native modules this
-// environment doesn't have. The header value itself is `client-version.spec.ts`'s.
+// Forces the store-build path: the suite-wide `expo-constants` mock in
+// `vitest.setup.ts` runs as Expo Go. The header value itself is
+// `client-version.spec.ts`'s.
 vi.mock("./expo-go", () => ({ isExpoGo: () => false }));
 
 vi.mock("./auth-token", () => ({

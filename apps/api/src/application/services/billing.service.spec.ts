@@ -7,8 +7,12 @@ import {
 } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
 
-jest.mock('@sentry/nestjs', () => ({ captureMessage: jest.fn() }));
+jest.mock('@sentry/nestjs', () => ({
+  captureMessage: jest.fn(),
+  captureException: jest.fn(),
+}));
 const captureMessage = Sentry.captureMessage as jest.Mock;
+const captureException = Sentry.captureException as jest.Mock;
 
 /**
  * Put `ANALYTICS_HMAC_SALT` back exactly as it was.
@@ -81,6 +85,29 @@ import {
   memberFixture,
   roleFixture,
 } from '#test/helpers/entity-fixtures';
+
+/**
+ * An `invoice.paid` object in the shape Stripe has sent since API version
+ * 2025-03-31.basil: the subscription id sits under `parent.subscription_details`
+ * and there is no top-level `subscription` (#3204). The keys are trimmed from
+ * staging's evt_1UUCiw3Dzz3XLCb6DPDMNZ5O (api_version 2026-08-26.dahlia).
+ */
+function paidInvoice(
+  subscription: string,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    object: 'invoice',
+    billing_reason: 'subscription_cycle',
+    status: 'paid',
+    parent: {
+      quote_details: null,
+      subscription_details: { metadata: {}, subscription },
+      type: 'subscription_details',
+    },
+    ...extra,
+  };
+}
 
 /** One row of the fake `stripe_webhook_events` table (FRA-23). */
 interface WebhookEventRow {
@@ -209,6 +236,7 @@ describe('BillingService', () => {
     // all-exceptions.filter.spec.ts and covers anything added later.
     jest.clearAllMocks();
     captureMessage.mockReset();
+    captureException.mockReset();
 
     mockBillingProvider = {
       createCustomer: jest.fn(),
@@ -1148,17 +1176,129 @@ describe('BillingService', () => {
       loggerWarnSpy.mockRestore();
     });
 
-    it('should ignore invoice.paid for missing subscription', async () => {
+    it('should ignore invoice.paid for missing subscription, and say so (#3204)', async () => {
+      const loggerWarnSpy = jest
+        .spyOn(service['logger'], 'warn')
+        .mockImplementation(() => undefined);
       const event = {
         id: 'evt_inv_no_sub',
         type: 'invoice.paid',
         created: Date.now(),
         data: {
-          object: {},
+          object: {
+            parent: { type: 'quote_details', subscription_details: null },
+          },
         },
       };
       await service.handleWebhookEvent(event);
+      expect(mockChapterRepo.findBySubscriptionId).not.toHaveBeenCalled();
       expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('parent type: quote_details'),
+      );
+      loggerWarnSpy.mockRestore();
+    });
+
+    it('applies the invoice.paid that staging actually received (#3204)', async () => {
+      // evt_1UUCiw3Dzz3XLCb6DPDMNZ5O, read from the test-mode account on
+      // 2026-11-04 and trimmed to the keys that matter. It carries no
+      // top-level `subscription`, which the handler used to read, so before
+      // #3204 this event returned without touching the chapter.
+      const event = {
+        id: 'evt_1UUCiw3Dzz3XLCb6DPDMNZ5O',
+        type: 'invoice.paid',
+        created: 1792878213,
+        api_version: '2026-08-26.dahlia',
+        data: {
+          object: {
+            id: 'in_1UUBmi3Dzz3XLCb6aOk02Glw',
+            object: 'invoice',
+            billing_reason: 'subscription_cycle',
+            customer: 'cus_VEiDuZhCFubH9z',
+            status: 'paid',
+            parent: {
+              quote_details: null,
+              subscription_details: {
+                metadata: {},
+                subscription: 'sub_1UEEo73Dzz3XLCb6oinefcMK',
+              },
+              type: 'subscription_details',
+            },
+          },
+        },
+      };
+      const pastDueChapter = {
+        ...baseChapter,
+        subscription_status: 'past_due' as const,
+        subscription_id: 'sub_1UEEo73Dzz3XLCb6oinefcMK',
+      };
+      mockChapterRepo.findBySubscriptionId.mockResolvedValue(pastDueChapter);
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
+        ...pastDueChapter,
+        subscription_status: 'active',
+      });
+      const log = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => {});
+
+      await service.handleWebhookEvent(event);
+
+      // The payload version is logged per delivery: for an unpinned endpoint
+      // that is the only place the live version shows up (#3204).
+      expect(log).toHaveBeenCalledWith(
+        expect.stringContaining('API version 2026-08-26.dahlia'),
+      );
+      expect(mockChapterRepo.findBySubscriptionId).toHaveBeenCalledWith(
+        'sub_1UEEo73Dzz3XLCb6oinefcMK',
+      );
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+        'ch-1',
+        new Date(event.created * 1000).toISOString(),
+        { activate_if: ['past_due', 'incomplete'] },
+      );
+      log.mockRestore();
+    });
+
+    it('reads an expanded parent subscription object and still reads a pre-Basil top-level id (#3204)', async () => {
+      const activeChapter = {
+        ...baseChapter,
+        subscription_status: 'active' as const,
+        subscription_id: 'sub_123',
+      };
+      mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(activeChapter);
+
+      await service.handleWebhookEvent({
+        id: 'evt_inv_expanded',
+        type: 'invoice.paid',
+        created: Date.now(),
+        data: {
+          object: paidInvoice('unused', {
+            parent: {
+              type: 'subscription_details',
+              subscription_details: { subscription: { id: 'sub_123' } },
+            },
+          }),
+        },
+      });
+      // The fallback is deliberate: the live endpoint's api_version can't be
+      // read from here, and an endpoint pinned before Basil still sends this.
+      await service.handleWebhookEvent({
+        id: 'evt_inv_pre_basil',
+        type: 'invoice.paid',
+        created: Date.now(),
+        data: { object: { subscription: 'sub_123' } },
+      });
+
+      expect(mockChapterRepo.findBySubscriptionId).toHaveBeenNthCalledWith(
+        1,
+        'sub_123',
+      );
+      expect(mockChapterRepo.findBySubscriptionId).toHaveBeenNthCalledWith(
+        2,
+        'sub_123',
+      );
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledTimes(2);
     });
 
     it('should ignore invoice.paid for non-existent chapter', async () => {
@@ -1167,9 +1307,7 @@ describe('BillingService', () => {
         type: 'invoice.paid',
         created: Date.now(),
         data: {
-          object: {
-            subscription: 'sub_123',
-          },
+          object: paidInvoice('sub_123'),
         },
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
@@ -1639,6 +1777,58 @@ describe('BillingService', () => {
       logSpy.mockRestore();
     });
 
+    it('reports a replaced subscription to Sentry once, by site, and still acks', async () => {
+      const logSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      const event: WebhookEvent = {
+        id: 'evt_conflicting_sub_report',
+        type: 'checkout.session.completed',
+        created: Date.now(),
+        data: {
+          object: {
+            metadata: { chapter_id: CHECKOUT_CHAPTER_ID },
+            subscription: 'sub_new',
+            customer: 'cus_123',
+          },
+        },
+      };
+
+      mockChapterRepo.findById.mockResolvedValue({
+        ...checkoutChapter,
+        subscription_id: 'sub_old',
+      });
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
+        ...checkoutChapter,
+        subscription_status: 'active',
+        subscription_id: 'sub_new',
+      });
+
+      await expect(service.handleWebhookEvent(event)).resolves.toBeUndefined();
+
+      expect(captureMessage).toHaveBeenCalledTimes(1);
+      const [message, context] = captureMessage.mock.calls[0];
+      // The log line names the chapter and subscriptions; the event does not.
+      expect(message).toBe(
+        'caught failure: billing-checkout-replaced-subscription',
+      );
+      expect(context).toMatchObject({
+        level: 'error',
+        fingerprint: [
+          'caught-failure',
+          'billing-checkout-replaced-subscription',
+        ],
+        tags: { caught_at: 'billing-checkout-replaced-subscription' },
+      });
+      expect(captureException).not.toHaveBeenCalled();
+      expect(mockWebhookEventRepo.markProcessed).toHaveBeenCalledWith(
+        'evt_conflicting_sub_report',
+      );
+
+      logSpy.mockRestore();
+    });
+
     it('stays quiet when the checkout confirms the subscription already stored (#929)', async () => {
       // A Stripe redelivery of the same session must not read as a
       // reconciliation event, or the signal above is worthless.
@@ -1819,9 +2009,7 @@ describe('BillingService', () => {
         type: 'invoice.paid',
         created: Date.now(),
         data: {
-          object: {
-            subscription: 'sub_123',
-          },
+          object: paidInvoice('sub_123'),
         },
       };
 
@@ -1853,9 +2041,7 @@ describe('BillingService', () => {
         type: 'invoice.paid',
         created: Date.now(),
         data: {
-          object: {
-            subscription: 'sub_123',
-          },
+          object: paidInvoice('sub_123'),
         },
       };
 
@@ -1891,9 +2077,7 @@ describe('BillingService', () => {
         type: 'invoice.paid',
         created: Date.now(),
         data: {
-          object: {
-            subscription: 'sub_123',
-          },
+          object: paidInvoice('sub_123'),
         },
       };
 
@@ -2170,7 +2354,7 @@ describe('BillingService', () => {
           id: 'evt_inv_stale',
           type: 'invoice.paid',
           created: T_OLD,
-          data: { object: { subscription: 'sub_123' } },
+          data: { object: paidInvoice('sub_123') },
         });
 
         expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
@@ -2256,7 +2440,7 @@ describe('BillingService', () => {
           id: 'evt_inv_renewal',
           type: 'invoice.paid',
           created: T_NEW,
-          data: { object: { subscription: 'sub_123' } },
+          data: { object: paidInvoice('sub_123') },
         });
         expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
           'ch-1',
@@ -2561,7 +2745,7 @@ describe('BillingService', () => {
           id: 'evt_inv_race',
           type: 'invoice.paid',
           created: T_LATER,
-          data: { object: { subscription: 'sub_race', customer: 'cus_race' } },
+          data: { object: paidInvoice('sub_race', { customer: 'cus_race' }) },
         });
 
         expect(mockChapterRepo.claimSubscriptionId).toHaveBeenCalledWith(
@@ -2592,7 +2776,7 @@ describe('BillingService', () => {
           id: 'evt_inv_renewal',
           type: 'invoice.paid',
           created: T_LATER,
-          data: { object: { subscription: 'sub_race', customer: 'cus_race' } },
+          data: { object: paidInvoice('sub_race', { customer: 'cus_race' }) },
         });
 
         expect(mockChapterRepo.findByCustomerId).not.toHaveBeenCalled();
@@ -3666,7 +3850,7 @@ describe('BillingService', () => {
         id: 'evt_invoice_dup',
         type: 'invoice.paid',
         created: 1_760_000_000,
-        data: { object: { subscription: 'sub_dup' } },
+        data: { object: paidInvoice('sub_dup') },
       };
 
       await service.handleWebhookEvent(event);

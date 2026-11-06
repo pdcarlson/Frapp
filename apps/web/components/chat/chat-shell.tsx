@@ -1,12 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AuditGlyph,
-  DirectMessageGlyph,
-  LockGlyph,
-  MuteGlyph,
-} from "./chat-glyphs";
+import { createPortal } from "react-dom";
+import { MembersGlyph } from "./chat-glyphs";
+import { ChannelMemberList } from "./channel-member-list";
+import { channelDescription } from "@repo/hooks/channel-start";
+import { ChannelMark, ChannelStart } from "./channel-start";
 import { EmptyState, ErrorState } from "@/components/shared/async-states";
 import {
   canHideConversation,
@@ -33,6 +32,7 @@ import {
   useBookmarkMessage,
   useUnbookmarkMessage,
   resolveAuthorLabel,
+  resolveAuthorName,
   SIDEBAR_SAVE_FAILED_BODY,
   SIDEBAR_SAVE_FAILED_TITLE,
   sidebarMutedChannelIds,
@@ -41,10 +41,19 @@ import {
   useSetSidebarFilter,
   useSetSidebarSectionCollapsed,
   useSidebarPreferences,
+  landingChannelId,
 } from "@repo/hooks";
 import { can, isAnnouncementChannel } from "@repo/validation";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Sheet } from "@/components/ui/sheet";
+import { PanelContent, PanelHeader } from "@/components/shared/panel";
+import {
+  persistMembersHidden,
+  WIDE_CHAT_QUERY,
+} from "@/lib/chat/members-panel";
+import { useMediaQuery } from "@/lib/use-media-query";
+import { IconButton } from "@/components/ui/icon-button";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
@@ -54,11 +63,11 @@ import {
   useMaskedRefresh,
   useThreadBlockList,
 } from "@/lib/chat/use-thread-block-list";
-import { coldLoadDefaultChannelId } from "@/lib/chat/default-channel";
+import { readLastChannel, writeLastChannel } from "@/lib/chat/last-channel";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
-import { vocab } from "@/lib/vocabulary";
+import { vocab } from "@repo/org-archetypes";
 import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
@@ -72,37 +81,51 @@ import { FOCUS_RING, SKIP_LINK_CLASSES } from "@/components/ui/focus";
 import {
   ChannelFilters,
   ChannelList,
-  ChannelListSkeleton,
   type ChannelSidebarControls,
   type ChannelCategory,
   type ChatChannel,
 } from "./channel-list";
+import { ChannelListSkeleton } from "./channel-list-skeleton";
 import {
   MessageTimeline,
   MessageTimelineSkeleton,
   type MessageTimelineHandle,
 } from "./message-timeline";
+import { Composer, ComposerShell, notifyDispatchOutcome } from "./composer";
 import {
-  Composer,
-  ComposerShell,
-  notifyDispatchOutcome,
-} from "./composer";
-import {
+  canBlockSender,
   channelAllowsReplies,
   DELETE_MESSAGE_CONFIRM_BODY,
   DELETE_MESSAGE_CONFIRM_LABEL,
   DELETE_MESSAGE_CONFIRM_TITLE,
   replyTargetId,
+  departedIn,
+  noDepartedMembers,
+  rosterMembership,
+  withDeparted,
+  type DepartedMembers,
 } from "@repo/chat-core/message-actions";
+import { blockActionLabel } from "@repo/chat-core/block-copy";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
+import { SetupChecklistSection } from "./setup-checklist";
 import { ChannelMenu } from "./channel-menu";
 import type { ChatSearchHit } from "./chat-search-popover";
 import type { BookmarkEntry } from "./bookmarks-popover";
 import { ReconnectPill } from "./reconnect-pill";
 import { BlockListNotice } from "./block-list-notice";
 import { useUnblockFlow } from "./use-unblock-flow";
+import { useBlockFlow } from "./use-block-flow";
+import {
+  ReportMessageDialog,
+  type ReportTarget,
+} from "./report-message-dialog";
 import { compactControlClassName } from "@/components/shared/table-controls";
+import {
+  NavBackButton,
+  useIsDesktopShell,
+  useNavFace,
+} from "@/components/layout/nav-face";
 import type { SlashCommand } from "@repo/chat-core/integrations";
 import type { ChatNotificationLevel } from "@repo/hooks";
 
@@ -165,37 +188,6 @@ const UNREACHABLE_COPY: Record<UnreachableReason, string> = {
 };
 
 /**
- * Leading mark for the channel header.
- *
- * A plain channel takes a **text `#`**, not a glyph: `canvas-screens.dc.html`
- * s04/s05 draw the sigil as type (17px / 700), and the reference wins over a
- * tidier all-icons row. Everything the reference does not draw — audit, direct,
- * private — takes its duotone intent glyph at the 20px list-row size
- * (`iconography.md` §2).
- */
-function ChannelHeaderMark({
-  channel,
-  className,
-}: {
-  channel: ChatChannel | null;
-  className?: string;
-}) {
-  if (channel?.name === "chapter-audit")
-    return <AuditGlyph className={className} />;
-  if (channel?.type === "DM" || channel?.type === "GROUP_DM")
-    return <DirectMessageGlyph className={className} />;
-  if (channel?.type === "PRIVATE" || channel?.type === "ROLE_GATED")
-    return <LockGlyph className={className} />;
-  return (
-    <span aria-hidden="true" className="font-bold text-muted-foreground">
-      #
-    </span>
-  );
-}
-
-
-
-/**
  * The chat surface: channels column, then thread and composer.
  *
  * **Two columns, flush, full height** (`1b`). It was three, the third being a
@@ -223,9 +215,15 @@ function ChannelHeaderMark({
 export function ChatShell({
   initialChannelId = null,
   initialMessageId = null,
+  defaultMembersHidden = false,
 }: {
   initialChannelId?: string | null;
   initialMessageId?: string | null;
+  /**
+   * The member list column's remembered state, read from its cookie on the
+   * server (`lib/chat/members-panel.ts`) so the column paints right first time.
+   */
+  defaultMembersHidden?: boolean;
 } = {}) {
   const activeChapterId = useChapterStore((state) => state.activeChapterId);
   /*
@@ -276,7 +274,14 @@ export function ChatShell({
   const categoriesQuery = useCategories();
   // Names for message authors and DM titles. Shares its query key with the
   // roster read below, so react-query serves both from one fetch.
-  const { byId: memberNames, nameFor, avatarFor } = useMemberDisplayNames();
+  const {
+    byId: memberNames,
+    nameFor,
+    avatarFor,
+    roleColorFor,
+    isPending: rosterPending,
+    isError: rosterError,
+  } = useMemberDisplayNames();
   // Per-channel notification levels, from their own endpoint rather than the
   // channel payload — the same split unread counts use, and for the same
   // recorded reason (see `channel-list.tsx`, which explains how a `muted` field
@@ -335,8 +340,9 @@ export function ChatShell({
   //
   // **Nothing waits for it either.** Chat used to gate the whole shell on
   // `categoriesQuery.isPending`, which bought a rail that painted grouped on
-  // first render rather than flat-then-reflowed, and charged every cold load
-  // the query provider's `retry: 3` backoff for it. The framework board's
+  // first render rather than flat-then-reflowed, and made every cold load wait
+  // out the fetch, a failing one through the query provider's retry backoff
+  // (`spec/ui/resilience/api-retry.md` § Reads). The framework board's
   // first-paint contract (`1s`) prices that the other way round: it lists the
   // gate under "delete" and accepts the reflow in as many words, "Categories
   // regroup only below the fold or on next visit". So a pending fetch renders
@@ -400,9 +406,7 @@ export function ChatShell({
   } | null>(null);
   // The jump currently paging older history to reach its target, for the
   // "Finding that message..." line. Keyed like the notice, by message.
-  const [seekingMessageId, setSeekingMessageId] = useState<string | null>(
-    null,
-  );
+  const [seekingMessageId, setSeekingMessageId] = useState<string | null>(null);
   // Older pages this jump has asked for, bounded by `JUMP_MAX_OLDER_PAGES`.
   // Keyed on the attempt and the message, so a new request starts from zero.
   // `caughtUp` records the one forward read (`loadNewer`) each request makes
@@ -460,6 +464,30 @@ export function ChatShell({
    * the message rather than on a list the member then has to navigate out of.
    */
   const [narrowPane, setNarrowPane] = useState<"channels" | "thread">("thread");
+  /*
+    The member list (#3536). From 1280px it is a column beside the timeline,
+    shown unless the member hid it, which a cookie remembers. Below that there
+    is no room for a third column, so the same toggle opens it as a sheet.
+  */
+  const [membersHidden, setMembersHidden] = useState(defaultMembersHidden);
+  const [membersSheetOpen, setMembersSheetOpen] = useState(false);
+  const isWideChat = useMediaQuery(WIDE_CHAT_QUERY);
+  const toggleMembers = () => {
+    if (!isWideChat) {
+      setMembersSheetOpen(true);
+      return;
+    }
+    const next = !membersHidden;
+    setMembersHidden(next);
+    persistMembersHidden(next);
+  };
+  // Inside the dashboard shell, from `lg` up, the channels pane is the shell's
+  // left column (`components/layout/nav-face.tsx`); everywhere else it is
+  // inline beside the thread.
+  const navFace = useNavFace();
+  const isDesktopShell = useIsDesktopShell();
+  const channelsInNav = Boolean(navFace?.channelsSlot && isDesktopShell);
+  const showChannelsInNav = navFace?.showChannels;
 
   useEffect(() => {
     if (
@@ -487,7 +515,11 @@ export function ChatShell({
     // reading is not what "no target" should mean.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronizing to the URL, the external system this whole effect exists to follow; the six setState calls above it are the same act
     if (initialChannelId) setNarrowPane("thread");
-  }, [initialChannelId, initialMessageId]);
+    // The same from `lg` up: a link that lands while the left column shows
+    // the module nav brings the channel list back, so the channel it opened
+    // is on screen in the list too.
+    if (initialChannelId) showChannelsInNav?.();
+  }, [initialChannelId, initialMessageId, showChannelsInNav]);
 
   // `useChannels()` can serve a read up to its `staleTime` old. A channel
   // created moments ago (a fresh DM, a newly shared private channel) can
@@ -501,8 +533,8 @@ export function ChatShell({
   }, [initialChannelId, refetchChannels]);
 
   // A caller can pass a channel *name* (onboarding's completion redirect
-  // uses the literal `general`, matching `activeChannelId`'s own by-name
-  // fallback below) as well as an id — so "missing" means neither matches.
+  // uses the literal `general`) as well as an id, and `activeChannelId`
+  // resolves either, so "missing" means neither matches.
   const requestedChannelMissing =
     !channelTargetDismissed &&
     initialChannelId !== null &&
@@ -512,27 +544,97 @@ export function ChatShell({
     !channels.some(
       (ch) => ch.id === initialChannelId || ch.name === initialChannelId,
     );
+  /*
+    The member's last channel is remembered per browser, member and chapter.
+    A member whose token carries no chapter claim still has a working channel
+    list (sole membership resolves server-side), so they are keyed "sole",
+    as on mobile, rather than never being remembered.
+  */
+  const lastChannelChapter = activeChapterId ?? "sole";
   const activeChannelId = useMemo(() => {
     if (requestedChannelMissing) return null;
-    if (
-      selectedChannelId &&
-      channels.some((ch) => ch.id === selectedChannelId)
-    ) {
-      return selectedChannelId;
+    if (selectedChannelId) {
+      const selected =
+        channels.find((ch) => ch.id === selectedChannelId) ??
+        channels.find((ch) => ch.name === selectedChannelId);
+      if (selected) return selected.id;
     }
     if (channels.length === 0) return null;
-    // Shared with the first-chunk cache, which pins this channel's tail against
-    // eviction — the two rules have to be one rule or the cache misses here.
-    return coldLoadDefaultChannelId(channels);
-  }, [selectedChannelId, channels, requestedChannelMissing]);
+    /*
+      Landing waits for identity: the stored channel is keyed by member, and
+      landing on `#general` first would stamp its read cursor (the mark-read
+      effect below) over messages the member never saw, then jump a render
+      later. A selection or a link above never waits.
+
+      Read fresh, not once at mount: a fallback later in the visit (hiding
+      the open DM, the open channel deleted) reads the channel that was just
+      open, which `landingChannelId` skips as hidden or missing, so it lands
+      on `#general` rather than on a channel from page load.
+
+      Shared with the first-chunk cache, which pins this channel's tail
+      against eviction: the two rules have to be one rule or the cache
+      misses here.
+    */
+    if (!userId) return null;
+    return landingChannelId(
+      channels,
+      readLastChannel(userId, lastChannelChapter),
+    );
+  }, [
+    selectedChannelId,
+    channels,
+    requestedChannelMissing,
+    userId,
+    lastChannelChapter,
+  ]);
+  /*
+    On a chapter switch the new chapter id lands one commit before the old
+    chapter's channel list is cleared (`FrappProvider` drops the query cache
+    in an effect that runs after this one), so the open channel would be
+    written under the new chapter's key. Writes wait until the list changes.
+  */
+  const lastChannelWrite = useRef({
+    chapterId: lastChannelChapter,
+    list: channels,
+    staleList: null as typeof channels | null,
+  });
+  useEffect(() => {
+    const guard = lastChannelWrite.current;
+    if (guard.chapterId !== lastChannelChapter) {
+      // A claim arriving (null to an id) is not a switch: the list is the
+      // same chapter's.
+      if (activeChapterId !== null && guard.chapterId !== "sole") {
+        guard.staleList = guard.list;
+      }
+      guard.chapterId = lastChannelChapter;
+    }
+    guard.list = channels;
+    if (!activeChannelId || channels === guard.staleList) return;
+    guard.staleList = null;
+    writeLastChannel(userId, lastChannelChapter, activeChannelId);
+  }, [activeChannelId, userId, activeChapterId, lastChannelChapter, channels]);
 
   const activeChannel = useMemo(
     () => channels.find((ch) => ch.id === activeChannelId) ?? null,
     [channels, activeChannelId],
   );
 
+  // A 1:1 DM has no list worth showing: its two members are the header's own
+  // title and the viewer.
+  const showMemberList = !!activeChannel && activeChannel.type !== "DM";
+  // Radix never reports a close it did not cause, so a sheet the window
+  // outgrew, or whose channel became a 1:1 DM, is closed here, during render
+  // (React's pattern for state derived from a change). Left open in state, it
+  // would pop back up by itself on the next narrowing.
+  if (membersSheetOpen && (isWideChat || !showMemberList)) {
+    setMembersSheetOpen(false);
+  }
+
   // DM channels are stored as `dm-<uuidA>-<uuidB>`; the header, the composer
   // placeholder and the sidebar must all show the resolved title instead.
+  const activeChannelDescription = channelDescription(
+    activeChannel?.description,
+  );
   const activeChannelName = useMemo(() => {
     if (!activeChannel) return "";
     return directChannelDisplayName(
@@ -710,6 +812,55 @@ export function ChatShell({
     [reloadMaskedCopies],
   );
 
+  // Report and Block from a row's More menu (#2687), the rules mobile's
+  // actions sheet uses, with the same `DepartedMembers` bookkeeping.
+  const blockFlow = useBlockFlow();
+  const { requestBlock } = blockFlow;
+  const [departed, setDeparted] = useState<DepartedMembers>(() =>
+    noDepartedMembers(activeChapterId),
+  );
+  const departedIds = departedIn(departed, activeChapterId);
+  const isMember = useMemo(
+    () =>
+      rosterMembership(
+        { byId: memberNames, isPending: rosterPending, isError: rosterError },
+        departedIds,
+      ),
+    [memberNames, rosterPending, rosterError, departedIds],
+  );
+  const handleBlock = useCallback(
+    (message: ChatMessage) => {
+      const senderId = message.sender_id;
+      if (!senderId) return;
+      void requestBlock({
+        userId: senderId,
+        // The name the menu item showed, which falls back to an imported
+        // row's `author_name` where the roster has no entry yet.
+        name: resolveAuthorName(message, nameFor),
+        inDirectory: isMember(senderId) === true,
+      }).then((result) => {
+        if (result !== "not-a-member") return;
+        setDeparted((previous) =>
+          withDeparted(previous, activeChapterId, senderId),
+        );
+      });
+    },
+    [activeChapterId, isMember, nameFor, requestBlock],
+  );
+  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+  const handleReport = useCallback(
+    (message: ChatMessage) => {
+      const canBlock = !!userId && canBlockSender(message, userId, isMember);
+      const name = resolveAuthorName(message, nameFor);
+      setReportTarget({
+        messageId: message.id,
+        onBlock: canBlock ? () => handleBlock(message) : undefined,
+        blockLabel: canBlock ? blockActionLabel(name) : null,
+      });
+    },
+    [handleBlock, isMember, nameFor, userId],
+  );
+
   // A custom role can hold `channels:manage` without also being a chapter
   // admin — same gate `chat-admin-page.tsx` computes for its own page-level
   // `<Can>`, done inline here since this is a per-row boolean, not a whole
@@ -718,6 +869,20 @@ export function ChatShell({
   const canManageChannel = can(
     "channels:manage",
     permissionsPayload?.permissions,
+  );
+
+  // Memoised because the timeline hands it to the virtualizer's header
+  // context, and a new element every render would re-render that row.
+  const channelStartNode = useMemo(
+    () =>
+      activeChannel ? (
+        <ChannelStart
+          channel={activeChannel}
+          displayName={activeChannelName}
+          canEdit={canManageChannel}
+        />
+      ) : undefined,
+    [activeChannel, activeChannelName, canManageChannel],
   );
 
   // Bookmarks (#462). One chapter-wide query backs both the panel and every
@@ -1337,7 +1502,7 @@ export function ChatShell({
     const author =
       latest.sender_id === liveUserId
         ? "You"
-        : (nameFor(latest.sender_id ?? "") ?? "Someone");
+        : (resolveAuthorName(latest, nameFor) ?? "Someone");
     // eslint-disable-next-line react-hooks/set-state-in-effect -- announcing a real-time arrival by comparing against the previous render's last-seen id, not syncing render state
     setLiveAnnouncement(`New message from ${author}`);
   }, [channel.messages, activeChannelId, liveUserId, nameFor, blockState]);
@@ -1354,8 +1519,8 @@ export function ChatShell({
       payload into `[]`, so a pending fetch renders the flat rail and the groups
       land when they land. `1s` asks for precisely that ("Categories regroup only
       below the fold or on next visit"). The old gate bought a rail that never
-      reflowed, and charged every cold load the query provider's `retry: 3`
-      backoff for it.
+      reflowed, and made every cold load wait out the fetch, a failing one
+      through the query provider's retry backoff (`api-retry.md` § Reads).
     - **A whole-route loading card is the opposite of the contract**: it makes
       the channel column paint last rather than first. Channel rows shimmer in
       their own geometry instead, and the channel column's chrome is up
@@ -1423,7 +1588,11 @@ export function ChatShell({
           : !activeChapterId
             ? "no-chapter"
             : "empty";
-  const timelineReady = channelsPaneState === "ready" && !requestedChannelMissing;
+  const timelineReady =
+    channelsPaneState === "ready" && !requestedChannelMissing;
+  const memberColumnMounted =
+    !membersHidden &&
+    (showMemberList || (!activeChannel && channelsPaneState === "loading"));
 
   /**
    * Whether focus is in `ComposerShell` right now — the one thing the upgrade
@@ -1445,14 +1614,85 @@ export function ChatShell({
     return had;
   }, []);
 
+  // The channels pane's contents, rendered in exactly one place: the shell's
+  // left column from `lg` up, or inline beside the thread (`nav-face.tsx`).
+  const channelsPaneBody = (
+    <>
+      {/*
+            48px, matching the top bar and the channel header beside it, so the
+            three headers line up across the whole route (`3a` geometry: "Top bar,
+            column headers 48"). The "N channels" count that used to sit under the
+            title is deleted (`1t`) - it restated the length of a list already on
+            screen.
+          */}
+      <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-3">
+        {channelsInNav && navFace ? (
+          <NavBackButton onClick={navFace.showModules} />
+        ) : null}
+        <h2 className="text-sm font-semibold text-foreground">Channels</h2>
+        <ChannelFilters
+          filters={sidebarPreferences.filters}
+          onChange={sidebarControls.onSetFilters}
+        />
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        {/*
+              Only `loading` shimmers, and `no-chapter` deliberately does not.
+
+              `loading` is now the state a cold load actually renders — see
+              `channelsPaneState` above — so this is the placeholder that carries
+              the contract's "channel column chrome" clause, and it resolves the
+              moment the list arrives. `no-chapter` is terminal by construction:
+              the query has already settled with nothing, so a placeholder there
+              would have no exit and would shimmer for as long as the tab stayed
+              open. That is the same defect `profile-panel.tsx` rejects
+              `hasHydrated` for, reached from the other side.
+            */}
+        {channelsPaneState === "loading" ? <ChannelListSkeleton /> : null}
+        {/*
+          The officer setup checklist, above the channels where Discord puts
+          its server guide. Renders `null` for anyone with nothing to set up.
+        */}
+        {channelsPaneState === "ready" ? <SetupChecklistSection /> : null}
+        {channelsPaneState === "ready" ? (
+          <ChannelList
+            viewerId={userId}
+            memberNames={memberNames}
+            channels={channels}
+            categories={categories}
+            unreadByChannelId={unreadByChannelId}
+            activeChannelId={activeChannelId}
+            onHide={hideFromRail}
+            sidebar={sidebarControls}
+            onPick={(ch) => {
+              if (ch.hidden) {
+                const memberId = otherMemberId(ch, userId);
+                if (memberId) reopenDm.mutate({ member_id: memberId });
+              }
+              setSelectedChannelId(ch.id);
+              // Below `lg` the list and the thread are never both on screen,
+              // so picking has to navigate. Inert at `lg` and up.
+              setNarrowPane("thread");
+              // Deliberately leaves any pending jump target alone - it is
+              // gated on its own channel and will resolve if the member
+              // returns. Only the notice is channel-scoped for display.
+              setUnreachableTarget(null);
+            }}
+          />
+        ) : null}
+      </div>
+    </>
+  );
+
   return (
     /*
       Flush columns, 100vh, independent scroll (`1b` — the board counts the app
       nav as the third; this route owns the other two). The route is
       full-bleed (`layout/full-bleed-routes.ts`), so this sits directly in the
-      shell's `<main>` with no inset: the channels column hugs the nav's right
-      border, and `h-full` here is the shell's fixed frame rather than a
-      document that grows.
+      shell's `<main>` with no inset, and `h-full` here is the shell's fixed
+      frame rather than a document that grows. From `lg` up the channels
+      column is the shell's left column instead, in place of the module nav
+      (owner, 2026-11-05).
 
       The panes no longer carry `rounded-xl` card chrome, `gap-4` between them,
       or `md:sticky` rail positioning. They are flush columns divided by
@@ -1461,10 +1701,12 @@ export function ChatShell({
     <div className="flex h-full min-h-0">
       {/*
         `dashboard-shell.tsx`'s "Skip to main content" link lands the keyboard
-        user at the top of `/chat`, which is still the whole layout, including
-        the channel column this link exists to skip past. Every visit to this
-        route needs re-skipping, so it earns its own target. Only offered when
-        there is a timeline to land on.
+        user at the top of `/chat`'s `<main>`. Below `lg` that still holds the
+        channel list this link exists to skip past; from `lg` up the list is
+        the shell's left column, before `<main>`, and the link still lands past
+        the channel header and status strip. Every visit to this route needs
+        re-skipping, so it earns its own target. Only offered when there is a
+        timeline to land on.
       */}
       {timelineReady ? (
         <a href="#chat-timeline" className={SKIP_LINK_CLASSES}>
@@ -1506,75 +1748,40 @@ export function ChatShell({
       </div>
       {/*
         Channels: 240px, full height, its own scroll, no search field (`1b`
-        pin 5). `--surface-1` is the same step the app nav takes, so the two
-        columns read as one continuous piece of chrome with a hairline between
-        them rather than as a rail floating beside a page.
+        pin 5). From `lg` up inside the dashboard shell it is the left column
+        itself: the shell owns the column and its chapter header, and this pane
+        is portaled into it, beside a back arrow to the module nav
+        (`components/layout/nav-face.tsx`). Below `lg`, and outside the shell,
+        it stays inline, on `--surface-1`, the step the left column takes.
       */}
-      <section
-        aria-label="Channels"
-        className={cn(
-          "flex min-h-0 flex-col border-r border-border bg-surface-1",
-          // Full width below `lg`, where it is the only column on screen.
-          "w-full lg:w-60 lg:shrink-0",
-          narrowPane === "thread" && "max-lg:hidden",
-        )}
-      >
-        {/*
-          48px, matching the top bar and the channel header beside it, so the
-          three headers line up across the whole route (`3a` geometry: "Top bar,
-          column headers 48"). The "N channels" count that used to sit under the
-          title is deleted (`1t`) - it restated the length of a list already on
-          screen.
-        */}
-        <header className="flex h-12 shrink-0 items-center border-b border-border px-3">
-          <h2 className="text-sm font-semibold text-foreground">Channels</h2>
-          <ChannelFilters
-            filters={sidebarPreferences.filters}
-            onChange={sidebarControls.onSetFilters}
-          />
-        </header>
-        <div className="min-h-0 flex-1 overflow-y-auto p-2">
-          {/*
-            Only `loading` shimmers, and `no-chapter` deliberately does not.
-
-            `loading` is now the state a cold load actually renders — see
-            `channelsPaneState` above — so this is the placeholder that carries
-            the contract's "channel column chrome" clause, and it resolves the
-            moment the list arrives. `no-chapter` is terminal by construction:
-            the query has already settled with nothing, so a placeholder there
-            would have no exit and would shimmer for as long as the tab stayed
-            open. That is the same defect `profile-panel.tsx` rejects
-            `hasHydrated` for, reached from the other side.
-          */}
-          {channelsPaneState === "loading" ? <ChannelListSkeleton /> : null}
-          {channelsPaneState === "ready" ? (
-            <ChannelList
-              viewerId={userId}
-              memberNames={memberNames}
-              channels={channels}
-              categories={categories}
-              unreadByChannelId={unreadByChannelId}
-              activeChannelId={activeChannelId}
-              onHide={hideFromRail}
-              sidebar={sidebarControls}
-              onPick={(ch) => {
-                if (ch.hidden) {
-                  const memberId = otherMemberId(ch, userId);
-                  if (memberId) reopenDm.mutate({ member_id: memberId });
-                }
-                setSelectedChannelId(ch.id);
-                // Below `lg` the list and the thread are never both on screen,
-                // so picking has to navigate. Inert at `lg` and up.
-                setNarrowPane("thread");
-                // Deliberately leaves any pending jump target alone - it is
-                // gated on its own channel and will resolve if the member
-                // returns. Only the notice is channel-scoped for display.
-                setUnreachableTarget(null);
-              }}
-            />
-          ) : null}
-        </div>
-      </section>
+      {channelsInNav && navFace?.channelsSlot
+        ? createPortal(
+            <section
+              aria-label="Channels"
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              {channelsPaneBody}
+            </section>,
+            navFace.channelsSlot,
+          )
+        : null}
+      {channelsInNav ? null : (
+        <section
+          aria-label="Channels"
+          className={cn(
+            "flex min-h-0 flex-col border-r border-border bg-surface-1",
+            // Full width below `lg`, where it is the only column on screen.
+            "w-full lg:w-60 lg:shrink-0",
+            narrowPane === "thread" && "max-lg:hidden",
+            // Inside the shell the column is the shell's from `lg` up; until
+            // the client knows its width, this copy stays out of the way and
+            // the shell's placeholder holds the column.
+            navFace && "lg:hidden",
+          )}
+        >
+          {channelsPaneBody}
+        </section>
+      )}
 
       {/*
         The thread column is the app floor (s05); the cards posted into it are
@@ -1620,14 +1827,9 @@ export function ChatShell({
           ) : null}
           <div className="flex min-w-0 flex-1 items-baseline gap-2">
             {/*
-              `h1`, not `h2`. This was correctly a sub-heading while the
-              dashboard shell rendered an `<h1>Chat</h1>` above it; #2141
-              deleted that, so the channel name is now the top heading on
-              this route - and it IS the page's title here, the way a chat
-              app names a screen. Left as `h2` the route would start its
-              outline at level 2, and a screen-reader user jumping by
-              heading level 1 would land nowhere.
-              Styling is explicit, so the tag change is visually identical.
+              `h2`, under the top bar's `<h1>Chat</h1>` (`top-bar.tsx`). It was
+              the route's `h1` while no title sat above it (#2141 to
+              2026-11-05). Styling is explicit, so the tag is visually free.
             */}
             {/*
               `min-w-0`, and deliberately NOT `shrink-0`: the `truncate` on the
@@ -1635,50 +1837,58 @@ export function ChatShell({
               its content. With `shrink-0` a long channel name simply overflows
               and paints under the `⋯` trigger beside it.
             */}
-            <h1 className="flex min-w-0 items-center gap-2 text-label font-bold text-foreground">
+            <h2 className="flex min-w-0 items-center gap-2 text-label font-bold text-foreground">
               {activeChannel ? (
                 <>
-                  <ChannelHeaderMark
+                  <ChannelMark
                     channel={activeChannel}
                     className="h-4 w-4 shrink-0 text-muted-foreground"
                   />
                   <span className="truncate">{activeChannelName}</span>
-                  {/*
-                    Muting used to be readable without opening anything: the
-                    notification popover's trigger named it in its `aria-label`
-                    ("Notifications: muted"). That trigger is now behind `⋯`, so
-                    the state moves here rather than being lost - a muted
-                    channel must not look identical to an unmuted one.
-                  */}
-                  {activeChannelLevel === "off" ? (
-                    <>
-                      <MuteGlyph
-                        className="h-4 w-4 shrink-0 text-muted-foreground"
-                        active
-                      />
-                      {/*
-                        Every duotone glyph is `aria-hidden` (`ui/duotone.tsx`),
-                        so the mark alone would restate the deleted trigger's
-                        `aria-label` for sighted members only — which is most of
-                        the point missed. `channel-list.tsx` pairs its own
-                        `MuteGlyph` the same way.
-                      */}
-                      <span className="sr-only">Muted</span>
-                    </>
-                  ) : null}
                 </>
               ) : (
                 "Pick a channel"
               )}
-            </h1>
-            {activeChannel?.description ? (
-              <p className="truncate text-caption text-muted-foreground">
-                {activeChannel.description}
-              </p>
+            </h2>
+            {/*
+              "# name • description", the description muted and cut off on
+              one line (owner's reference, 2026-11-05). The dot is decoration:
+              the name is the heading and the description its own paragraph.
+            */}
+            {activeChannelDescription ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="shrink-0 text-caption text-muted-foreground"
+                >
+                  •
+                </span>
+                <p className="min-w-0 truncate text-caption text-muted-foreground">
+                  {activeChannelDescription}
+                </p>
+              </>
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <ReconnectPill status={channel.connection} />
+            {showMemberList ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className={compactControlClassName}
+                onClick={toggleMembers}
+                aria-label={
+                  isWideChat && !membersHidden ? "Hide members" : "Show members"
+                }
+                aria-pressed={isWideChat ? !membersHidden : undefined}
+                aria-haspopup={isWideChat ? undefined : "dialog"}
+              >
+                <MembersGlyph
+                  className="h-5 w-5"
+                  active={isWideChat && !membersHidden}
+                />
+              </Button>
+            ) : null}
             <ChannelMenu
               activeChannelId={activeChannelId}
               messages={shownMessages}
@@ -1778,10 +1988,8 @@ export function ChatShell({
                       ? UNREACHABLE_COPY[unreachableTarget.reason]
                       : "Finding that message..."}
                 </p>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="h-8"
+                <IconButton
+                  label="Dismiss"
                   onClick={() => {
                     // Abandons the target, not just the notice. Clearing only
                     // the message would leave it pending, so the effect would
@@ -1793,8 +2001,8 @@ export function ChatShell({
                     setPendingJumpChannelId(null);
                   }}
                 >
-                  Dismiss
-                </Button>
+                  <X />
+                </IconButton>
               </div>
             ) : null}
           </div>
@@ -1921,20 +2129,20 @@ export function ChatShell({
           </>
         ) : null}
         {timelineReady ? (
-        <>
-        {/*
+          <>
+            {/*
           Above the timeline rather than inside it: the timeline virtualizes,
           and this is the one line that says rows are being held off it while
           the block list cannot vouch for them (#2313).
         */}
-        <BlockListNotice
-          status={blockList.status}
-          heldCount={thread.heldCount}
-          onRetry={blockList.retry}
-          isRetrying={blockList.isRetrying}
-          isPaused={blockList.isPaused}
-        />
-        {/*
+            <BlockListNotice
+              status={blockList.status}
+              heldCount={thread.heldCount}
+              onRetry={blockList.retry}
+              isRetrying={blockList.isRetrying}
+              isPaused={blockList.isPaused}
+            />
+            {/*
           `role="log"` alone still carries an ARIA-spec *implicit* default of
           `aria-live="polite"` / `aria-relevant="additions text"` — so making
           this genuinely non-live takes an explicit `aria-live="off"`, not
@@ -1946,116 +2154,123 @@ export function ChatShell({
           below is the decoupled, non-virtualized replacement — it updates
           only when a genuinely new message lands, never on scroll.
         */}
-        <div
-          id="chat-timeline"
-          tabIndex={-1}
-          role="log"
-          aria-live="off"
-          aria-label="Chat timeline"
-          // `FOCUS_RING`, not `FOCUS_RING_ALWAYS`: this container is a large
-          // panel most of whose area is an ordinary mouse-click target (blank
-          // space below the last message), not a control reached only
-          // programmatically — `FOCUS_RING_ALWAYS`'s plain `focus:` would
-          // leave the ring painted after a routine click into that space.
-          // `focus-visible:` still shows it for the skip link's keyboard-
-          // driven jump, which is the case this needs to stay visible for.
-          className={cn(
-            "min-h-0 flex-1 overflow-hidden rounded-md",
-            FOCUS_RING,
-          )}
-        >
-          <MessageTimeline
-            ref={timeline}
-            channelId={activeChannel?.id}
-            nameFor={nameFor}
-            avatarFor={avatarFor}
-            messages={channel.messages}
-            blockList={{ blockState, thread }}
-            onUnblock={handleUnblock}
-            onReloadMasked={handleReloadMasked}
-            maskedRefresh={maskedRefresh}
-            viewerId={userId}
-            isLoading={channel.isLoading}
-            loadError={channel.loadError}
-            hasOlder={channel.hasOlder}
-            isLoadingOlder={channel.isLoadingOlder}
-            olderError={channel.olderError}
-            onLoadOlder={loadOlderHistory}
-            // Only while the jump is still working. Once it has settled on a
-            // notice the target stays pending (so a late arrival still lands),
-            // but holding follow through that would stop new messages
-            // scrolling into view until the member dismissed it.
-            holdFollow={
-              pendingMessageId !== null &&
-              (pendingJumpChannelId === null ||
-                pendingJumpChannelId === activeChannelId) &&
-              !showUnreachableNotice
-            }
-            onReact={channel.react}
-            onUnreact={channel.unreact}
-            onReply={canReplyHere ? startReply : undefined}
-            // The quote above a reply scrolls to the message it quotes. It used
-            // to open `ThreadPanel` in the Details rail; #2142 deleted both, and
-            // this is the same machinery pins and saved messages already use.
-            onJumpToParent={(message) => jumpToMessage(message.id)}
-            onRetry={channel.retry}
-            onDiscard={channel.discard}
-            // Heavy-command rows bypass the outbox, so `channel.retry` above
-            // cannot reach them. This replays the original request under its
-            // original idempotency key and toasts the outcome through the same
-            // three-way channel a first dispatch uses (#1733).
-            onRetryUnconfirmed={async (replay) => {
-              // Every path here must end in a toast. The first dispatch gets
-              // that guarantee from `runDispatch` in the composer (which also
-              // tags Sentry); this control sits in the timeline and had
-              // neither, so a throw produced a blinking spinner, no message,
-              // and no telemetry — and an officer who concludes Retry is broken
-              // re-types the command, mints a fresh key and double-grants.
-              try {
-                const result = await channel.retryUnconfirmed(replay);
-                notifyDispatchOutcome(toast, replay.command, result);
-              } catch (error) {
-                Sentry.captureException(error, {
-                  tags: { slash_command: `${replay.command}_retry` },
-                });
-                // Non-destructive on purpose: the retry failing says nothing
-                // about whether the original attempt committed, and a red
-                // "failed" is what invites the re-type.
-                toast({
-                  title: "Couldn't retry that command",
-                  description:
-                    "The retry didn't go through. Check the points ledger before running the command again. A second run would record the points twice.",
-                });
-              }
-            }}
-            onAct={(messageId, actionType, payload) =>
-              void channel.act(messageId, actionType, payload)
-            }
-            // An edit authorizes as a post (`spec/behavior/chat/README.md`
-            // § Channels → Channel-access enforcement), so a member who can't
-            // post here, such as an alumnus in an ordinary channel, isn't
-            // offered one (#2775).
-            onEdit={activeChannel?.can_post !== false ? channel.edit : undefined}
-            onDelete={handleDeleteMessage}
-            bookmarkedMessageIds={bookmarkedMessageIds}
-            onToggleBookmark={handleToggleBookmark}
-            canManageChannel={canManageChannel}
-          />
-        </div>
-        {/*
+            <div
+              id="chat-timeline"
+              tabIndex={-1}
+              role="log"
+              aria-live="off"
+              aria-label="Chat timeline"
+              // `FOCUS_RING`, not `FOCUS_RING_ALWAYS`: this container is a large
+              // panel most of whose area is an ordinary mouse-click target (blank
+              // space below the last message), not a control reached only
+              // programmatically — `FOCUS_RING_ALWAYS`'s plain `focus:` would
+              // leave the ring painted after a routine click into that space.
+              // `focus-visible:` still shows it for the skip link's keyboard-
+              // driven jump, which is the case this needs to stay visible for.
+              className={cn(
+                "min-h-0 flex-1 overflow-hidden rounded-md",
+                FOCUS_RING,
+              )}
+            >
+              <MessageTimeline
+                ref={timeline}
+                channelId={activeChannel?.id}
+                nameFor={nameFor}
+                roleColorFor={roleColorFor}
+                avatarFor={avatarFor}
+                messages={channel.messages}
+                blockList={{ blockState, thread }}
+                onUnblock={handleUnblock}
+                onReloadMasked={handleReloadMasked}
+                maskedRefresh={maskedRefresh}
+                viewerId={userId}
+                isLoading={channel.isLoading}
+                loadError={channel.loadError}
+                hasOlder={channel.hasOlder}
+                isLoadingOlder={channel.isLoadingOlder}
+                olderError={channel.olderError}
+                onLoadOlder={loadOlderHistory}
+                channelStart={channelStartNode}
+                // Only while the jump is still working. Once it has settled on a
+                // notice the target stays pending (so a late arrival still lands),
+                // but holding follow through that would stop new messages
+                // scrolling into view until the member dismissed it.
+                holdFollow={
+                  pendingMessageId !== null &&
+                  (pendingJumpChannelId === null ||
+                    pendingJumpChannelId === activeChannelId) &&
+                  !showUnreachableNotice
+                }
+                onReact={channel.react}
+                onUnreact={channel.unreact}
+                onReply={canReplyHere ? startReply : undefined}
+                // The quote above a reply scrolls to the message it quotes. It used
+                // to open `ThreadPanel` in the Details rail; #2142 deleted both, and
+                // this is the same machinery pins and saved messages already use.
+                onJumpToParent={(message) => jumpToMessage(message.id)}
+                onRetry={channel.retry}
+                onDiscard={channel.discard}
+                // Heavy-command rows bypass the outbox, so `channel.retry` above
+                // cannot reach them. This replays the original request under its
+                // original idempotency key and toasts the outcome through the same
+                // three-way channel a first dispatch uses (#1733).
+                onRetryUnconfirmed={async (replay) => {
+                  // Every path here must end in a toast. The first dispatch gets
+                  // that guarantee from `runDispatch` in the composer (which also
+                  // tags Sentry); this control sits in the timeline and had
+                  // neither, so a throw produced a blinking spinner, no message,
+                  // and no telemetry — and an officer who concludes Retry is broken
+                  // re-types the command, mints a fresh key and double-grants.
+                  try {
+                    const result = await channel.retryUnconfirmed(replay);
+                    notifyDispatchOutcome(toast, replay.command, result);
+                  } catch (error) {
+                    Sentry.captureException(error, {
+                      tags: { slash_command: `${replay.command}_retry` },
+                    });
+                    // Non-destructive on purpose: the retry failing says nothing
+                    // about whether the original attempt committed, and a red
+                    // "failed" is what invites the re-type.
+                    toast({
+                      title: "Couldn't retry that command",
+                      description:
+                        "The retry didn't go through. Check the points ledger before running the command again. A second run would record the points twice.",
+                    });
+                  }
+                }}
+                onAct={(messageId, actionType, payload) =>
+                  void channel.act(messageId, actionType, payload)
+                }
+                // An edit authorizes as a post (`spec/behavior/chat/README.md`
+                // § Channels → Channel-access enforcement), so a member who can't
+                // post here, such as an alumnus in an ordinary channel, isn't
+                // offered one (#2775).
+                onEdit={
+                  activeChannel?.can_post !== false ? channel.edit : undefined
+                }
+                onDelete={handleDeleteMessage}
+                bookmarkedMessageIds={bookmarkedMessageIds}
+                onToggleBookmark={handleToggleBookmark}
+                canManageChannel={canManageChannel}
+                onReport={handleReport}
+                onBlock={handleBlock}
+                isMember={isMember}
+              />
+            </div>
+            {/*
           Directly above the composer, which is where Discord and Slack both put
           it and where a 48px header has no room for it. Reserves no space when
           nobody is typing: it is transient status, and a permanently reserved
           strip would push the composer down by a line on every channel.
         */}
-        {typingUsers.length > 0 ? (
-          <p className="shrink-0 px-4 pb-1 text-caption text-muted-foreground">
-            {typingUsers.length === 1
-              ? "Someone is typing…"
-              : `${typingUsers.length} people are typing…`}
-          </p>
-        ) : null}
-        </>
+            {typingUsers.length > 0 ? (
+              <p className="shrink-0 px-4 pb-1 text-caption text-muted-foreground">
+                {typingUsers.length === 1
+                  ? "Someone is typing…"
+                  : `${typingUsers.length} people are typing…`}
+              </p>
+            ) : null}
+          </>
         ) : null}
         {activeChannel ? (
           <Composer
@@ -2140,8 +2355,51 @@ export function ChatShell({
         ) : null}
       </section>
 
+      {/*
+        Members, 240px on the right from 1280px (#3536), the same step as the
+        channels column so the timeline reads as the floor between two rails.
+        Hidden by CSS below `xl` rather than by the width hook, so the server's
+        markup is already right for the member's width and remembered choice.
+        Mounted while the channel list is still loading too (as a skeleton),
+        so the timeline does not lose 240px a beat after first paint; it only
+        goes away if the channel turns out to be a 1:1 DM.
+      */}
+      {memberColumnMounted ? (
+        <aside
+          aria-label="Members"
+          className="hidden w-60 shrink-0 flex-col border-l border-border bg-surface-1 xl:flex"
+        >
+          {/*
+            Reads only once the width hook confirms the column is on screen:
+            below 1280px CSS hides it, and the sheet has its own copy.
+          */}
+          <ChannelMemberList
+            channelId={activeChannel?.id ?? null}
+            enabled={isWideChat}
+          />
+        </aside>
+      ) : null}
+      <Sheet open={membersSheetOpen} onOpenChange={setMembersSheetOpen}>
+        {/*
+          A Panel, §9's surface for a list that grows: the member list is the
+          panel's whole body and owns its one scroll.
+        */}
+        <PanelContent>
+          <PanelHeader>Members</PanelHeader>
+          {activeChannel ? (
+            <ChannelMemberList channelId={activeChannel.id} />
+          ) : null}
+        </PanelContent>
+      </Sheet>
+
       {confirmDialog}
       {unblockFlow.confirmDialog}
+      {blockFlow.confirmDialog}
+      <ReportMessageDialog
+        key={reportTarget?.messageId ?? "closed"}
+        target={reportTarget}
+        onClose={() => setReportTarget(null)}
+      />
     </div>
   );
 }

@@ -4,7 +4,7 @@
 
 Chat is not a module — it is the spine of the app, and every other capability (events, tasks, dues, points, polls) is a **chat integration** surfaced inline in conversation rather than behind a separate nav tab. The mobile app opens directly into chat.
 
-- **Chat is non-optional. It cannot be disabled.** Every chapter always has, at minimum: `#general` (everyone, default landing), `#announcements` (exec-write, member-read, push by default), `#chapter-audit` (system-write only, member-read — the audit feed), and DMs / group DMs (always on).
+- **Chat is non-optional. It cannot be disabled.** Every chapter always has, at minimum: `#general` (everyone, the landing channel when a device has no last channel and the chapter has set no default), `#announcements` (exec-write, member-read, push by default), `#chapter-audit` (system-write only, member-read — the audit feed), and DMs / group DMs (always on).
 - **Modules-as-integrations.** When an ops module is enabled it does not get a top-level nav tab first. It gets: (1) one or more **slash commands** in chat, (2) a **rich message renderer** that turns the artifact into an inline card with primary actions (RSVP / Done / Vote / Pay / Confirm / Submit), and (3) *optionally* a secondary dashboard page for the longer-form view. The dashboard is secondary to the chat experience, never primary.
 - **Slash-command dispatch** is the entry point for module actions — a treasurer typing `/dues remind overdue` in `#general` gets a rich card inline, no tab-switching. The command catalog, dispatch path, and renderer registry are specified in [integrations.md](./integrations.md).
 - Disabling a paid module hides its slash commands and its dashboard page. A module gets no system channel of its own ([`../integrations.md`](../integrations.md#integration-pattern)).
@@ -47,6 +47,17 @@ Chat is not a module — it is the spine of the app, and every other capability 
 - **Welcome message on onboarding submit.** A chapter created through the onboarding wizard gets a one-time welcome `system_audit` message, the first message it sees. Its channel and text, and where each client lands after submit, are owned by [`../onboarding.md` § First-Officer Onboarding Wizard](../onboarding.md#first-officer-onboarding-wizard).
 - **Performance requirement:** chapter setup must seed default channels in one write operation to avoid N+1 insert latency.
 - **Failure behavior:** chapter setup must fail if default channel seeding fails; the API must not return chapter-create success when channel seeding errors.
+
+### Where Chat opens
+
+Added 2026-11-05, owner direction ("Mobile opens up to the last channel you were in. like discord").
+
+- **Chat opens on the member's last channel**, remembered per device, member and chapter: a phone and a laptop each open where they left off. It is device state, not a server preference.
+- **Mobile:** launching the app opens that channel's thread, with back going to chat home. It happens once per app process and only at launch: never on a later return to chat home, never once the member has left chat home, and never when the channel list only answers after launch (a slow or offline start). A notification tap that launched the app opens its own target instead. With no remembered channel, launch stays on chat home.
+- **Web:** `/chat` with no `?channel=` opens it, once the member's identity is known (so `#general` is never opened and marked read on the way). A link, by channel id or name, and a channel picked in this visit both win over it. A member whose token carries no chapter claim is remembered under a "sole" chapter key, as on mobile.
+- **Chapter default** (added 2026-11-06, owner decision: the chapter picks one, members do not get a pick of their own, because Chat already reopens their last channel). A `channels:manage` holder marks one channel as the chapter's default from the web chat admin page (`chat_channels.is_default`, at most one per chapter; never a DM or group DM). Marking another moves it. Web opens it, ahead of `#general`, whenever there is no remembered channel. A member who can't see it falls through to `#general`. Mobile does not use it: with no remembered channel, launch stays on chat home.
+- **Fallback:** a remembered channel that is deleted, no longer visible to the member, or a DM they hid is skipped. Web then opens the chapter default, else `#general`, else the first channel. The same applies in the middle of a visit: hiding the open DM, or the open channel disappearing, lands there.
+- One rule for both clients: `landingChannelId` / `lastChannelLandingId` in [`packages/hooks/src/landing-channel.ts`](../../../packages/hooks/src/landing-channel.ts). Web's first-chunk cache pins the same channel's tail against eviction.
 
 ## Direct Messages
 
@@ -116,10 +127,10 @@ A message that would take too long to format renders as its raw text too, decide
 - Allowed file types: the `document` kind in `@repo/validation`, the same list as chapter documents and Backwork; membership and rationale live in [`content-validation.md`](../../../docs/security/content-validation.md) § Validations Required.
 - Upload flow: client requests signed URL from API, uploads directly to Storage, then sends message with attachment metadata.
 - **The trust boundary is the `chat` bucket's `allowed_mime_types`, not the API's check.** `ChatAttachmentService.requestChatUploadUrl` validates the extension and MIME against the `document` kind before minting a URL, but a signed upload URL **cannot pin a content type** — the client sets its own `Content-Type` on the PUT, and the API never sees the bytes. So the service-layer check gates URL *issuance* only: it turns a rejection into a readable error rather than a failed PUT, and is not a second line of defence. The bucket gates the **declared header, never the bytes**, so a member can store HTML under an `image/png` declaration; it comes back typed `image/png`. What keeps that out of a renderer on this surface is the **download** side: `ChatAttachmentService.listMessageAttachments` signs every attachment with `IStorageProvider.getSignedDownloadUrls(..., forceDownload: true)`, which sets `Content-Disposition: attachment` for the whole batch (#1231 — batched into one provider call per bucket rather than one per row; the underlying batch API takes this option once for the call, not once per path, so it can no longer carry a per-file *filename* the way the old single-row `downloadAs` did — web restores the display name client-side via an `<a download>` attribute, which is UX only, not the mitigation). **Turning `forceDownload` off — for instance to render image previews inline — removes the mitigation**, so an inline-preview change must re-establish it another way; an `<img>` tag is the one exception, since it never executes a response as HTML/script regardless of `Content-Disposition` (`resolveAuthorAvatars` relies on exactly this to leave avatars undisposed, and the image viewer below on the same basis). Do not relax the bucket list on the belief that something server-side resolves types behind it. Measured request/response, and what was deliberately not measured, in `packages/validation/src/upload-allowlists.ts` § What the bucket allowlist actually enforces; see also [`../../../docs/security/content-validation.md`](../../../docs/security/content-validation.md).
-- **An attachment is a row, never text in the body.** It lands in `chat_message_attachments` (`message_id`, `channel_id`, `bucket`, `storage_path`, `filename`, `content_type`, `byte_size`, `width`, `height`, `external_url`), keyed unique on `(message_id, bucket, storage_path)` — per message, not per object — and cascading from the message. The composer sends the uploaded descriptors alongside the body; the server re-derives `channel_id` from the message and re-checks every `storage_path` against the `chapters/{chapter_id}/chat/{channel_id}/` prefix it minted, so a client can claim only objects it was given a URL for. Until #TBD this was appended into `content` as the literal string `📎 <filename> (<storagePath>)`, which left the object with no link back to the message — it could not be rendered, listed, or cleaned up on delete, and a member could edit the sigil out and orphan the file. `width`/`height` are nullable and unpopulated by every writer today, including this upload path — #1505 tracks deciding whether to add an image-dimension dependency to fill them in. `byte_size` has the same gap for legacy Discord-import rows specifically (the `20260823121000` backfill recovered `storage_path`/`filename` from message prose but could not recover a size — that requires a storage metadata call a SQL migration must not make); `scripts/backfill-chat-attachment-byte-size.mjs` closes it as a re-runnable one-off script (#1231), reading each object's stored size from `IStorageProvider`-equivalent listing metadata rather than downloading it.
+- **An attachment is a row, never text in the body.** It lands in `chat_message_attachments` (`message_id`, `channel_id`, `bucket`, `storage_path`, `filename`, `content_type`, `byte_size`, `width`, `height`, `external_url`), keyed unique on `(message_id, bucket, storage_path)` — per message, not per object — and cascading from the message. The composer sends the uploaded descriptors alongside the body; the server re-derives `channel_id` from the message and re-checks every `storage_path` against the `chapters/{chapter_id}/chat/{channel_id}/` prefix it minted, so a client can claim only objects it was given a URL for. Before attachments became rows, this was appended into `content` as the literal string `📎 <filename> (<storagePath>)`, which left the object with no link back to the message — it could not be rendered, listed, or cleaned up on delete, and a member could edit the sigil out and orphan the file. `width`/`height` are nullable and unpopulated by every writer today, including this upload path — #1505 tracks deciding whether to add an image-dimension dependency to fill them in. `byte_size` has the same gap for legacy Discord-import rows specifically (the `20260823121000` backfill recovered `storage_path`/`filename` from message prose but could not recover a size — that requires a storage metadata call a SQL migration must not make); `scripts/backfill-chat-attachment-byte-size.mjs` closes it as a re-runnable one-off script (#1231), reading each object's stored size from `IStorageProvider`-equivalent listing metadata rather than downloading it.
 - **A message may be nothing but a file.** An empty body with at least one attachment is a valid send.
 - **Attachments are fetched, not embedded in the message.** `GET /v1/channels/{id}/messages/{messageId}/attachments` returns the rows with a one-hour signed download URL each, batched into as few `getSignedDownloadUrls` calls as the attachments' buckets require (#1231) rather than one per row. They are a separate read for two reasons that point the same way: every bucket is private so a URL has to be minted per request and cannot be cached with the message, and the message cache is fed partly by Realtime rows, which cannot carry a join. `chat_messages.metadata.attachment_count` — a count, never a copy of the data — rides on the row so a client knows whether the call is worth making; without it a file-only message would render as an empty bubble for everyone except its sender.
-- **An image opens in a viewer, not as a download** (#2874). An attachment whose declared type is on `isViewableImage`'s raster list (`@repo/chat-core/attachments`: JPEG, PNG, GIF, WebP, BMP) previews inline, and clicking or tapping it opens it large. Web opens a dialog (`apps/web/components/chat/image-viewer.tsx`), hosted by the timeline above its virtualized rows so a row scrolling away can't take it with it. Esc, the backdrop or the close button dismisses it; focus stays inside while it is open and returns to the preview of the image it was showing, when that row is still on the page (the timeline may have scrolled it out of its window, and then Radix's default applies); the arrow keys step through the message's other images, wrapping at the ends. Its **Download** action is the same link to the same signed URL a file row is, so the download is still forced by the URL's `Content-Disposition`. Mobile opens an overlay over the whole thread (`apps/mobile/components/chat/image-viewer.tsx`, an in-tree overlay per [`../../ui/mobile/patterns.md`](../../ui/mobile/patterns.md) § Overlays) with pinch, pan and double-tap to zoom. It covers the thread but not the tab bar, which the frozen tab layout draws ([#2889](https://github.com/pdcarlson/Frapp/issues/2889)). Its **Share** action downloads the image and hands it to the system share sheet. The file keeps the sender's name as its stem, made safe to be one path segment, but its extension comes from the declared type, never from that name (`shareFileName`). On iOS that sheet offers Save to Files but not Save Image: saving to Photos needs a purpose string the app doesn't declare yet ([#2888](https://github.com/pdcarlson/Frapp/issues/2888)). On Android it lists the installed apps that accept an image. Both clients close the viewer when its message stops being shown in full (deleted, masked or held by the block list) or when a refetch no longer lists the image. The viewer holds only which message and image it shows and reads the images through the same attachments query as the row, so a refetch hands it fresh signed URLs; they last an hour. Every other attachment stays a file row that downloads, including SVG, TIFF and HEIC, and AVIF, which Android can't decode before Android 12.
+- **An image opens in a viewer, not as a download** (#2874). An attachment whose declared type is on `isViewableImage`'s raster list (`@repo/chat-core/attachments`: JPEG, PNG, GIF, WebP, BMP) previews inline, and clicking or tapping it opens it large. Both clients open it full screen over a dim backdrop, with no card around the image and no filename drawn (the filename is the image's accessible name). Every control is an icon with no words: close, download or share sit together in the top corner, and the step arrows (when the message has more than one image) sit at the sides on web and at the bottom on mobile (2026-11-05). Web draws the image at its own size, shrunk to fit and never enlarged past it; mobile fits it to the screen, as a phone's photo viewer does, and pinch zooms from there. Web's viewer (`apps/web/components/chat/image-viewer.tsx`) is hosted by the timeline above its virtualized rows so a row scrolling away can't take it with it. Esc, a press on the backdrop (one that starts and ends there) or the close icon dismisses it; focus stays inside while it is open and returns to the preview of the image it was showing, when that row is still on the page (the timeline may have scrolled it out of its window, and then Radix's default applies); the arrow keys step through the message's other images, wrapping at the ends. Its download icon is the same link to the same signed URL a file row is, so the download is still forced by the URL's `Content-Disposition`. Mobile opens an overlay over the whole thread (`apps/mobile/components/chat/image-viewer.tsx`, an in-tree overlay per [`../../ui/mobile/patterns.md`](../../ui/mobile/patterns.md) § Overlays) with pinch, pan and double-tap to zoom. The thread takes the whole window, with no tab bar ([#2889](https://github.com/pdcarlson/Frapp/issues/2889)), so the viewer does too, and its controls keep clear of the top and bottom safe-area insets. Its share icon downloads the image and hands it to the system share sheet. The file keeps the sender's name as its stem, made safe to be one path segment, but its extension comes from the declared type, never from that name (`shareFileName`). On iOS that sheet offers Save to Files but not Save Image: saving to Photos needs a purpose string the app doesn't declare yet ([#2888](https://github.com/pdcarlson/Frapp/issues/2888)). On Android it lists the installed apps that accept an image. Both clients close the viewer when its message stops being shown in full (deleted, masked or held by the block list) or when a refetch no longer lists the image. The viewer holds only which message and image it shows and reads the images through the same attachments query as the row, so a refetch hands it fresh signed URLs; they last an hour. Every other attachment stays a file row that downloads, including SVG, TIFF and HEIC, and AVIF, which Android can't decode before Android 12.
   - **Why this keeps the trust rule above.** The rule is that nothing member-uploaded is ever *served inline as a document*. The viewer never navigates to the file or embeds it as a document: it draws the signed URL in an `<img>` (web) or an `Image` (mobile), which decode it as an image or fail, and never run it as HTML or script, whatever its `Content-Disposition` or its real bytes. The URL is unchanged and still signed with `forceDownload: true`, so a member who opens it directly, or through the download action, gets a download. Mobile's Share hands a downloaded copy to another app, which types a file by its extension, so the extension comes from the declared type and never from the sender's unvalidated `filename`: HTML bytes typed `image/png` under the name `a.html` leave as `a.png`, never as a page. The type list is a rendering choice, not a second defence: the bucket gates the declared type and never the bytes, so a lying `image/png` reaches the viewer and shows as a broken image.
 - **Sending** an attachment works on both clients. Web attaches any `document`-kind file. Mobile sends photos from the library (#2464, `apps/mobile/lib/chat/attachment-upload.ts`), transcoding only a type the allowlist rejects, and has no picker for other files. **Reading** one works on both. Mobile briefly showed a count instead — "1 attachment · open on web" — as a deliberate stopgap, because web can send a message that is nothing but a file and the backfill removed the filename text from every historical attachment message, so those messages would otherwise have rendered as empty bubbles indistinguishable from a rendering bug. That was honest but it was a dead end, so it is gone: `apps/mobile/components/chat/message-attachments.tsx` now lists the files, previewing images inline and opening everything else through the signed URL.
 - **The renderer mounts only for a message that has attachments, on both clients.** Not merely "does not fetch" — the query hook reaches for the API client context on render, so mounting it for every plain-text row would make the overwhelming majority of messages depend on a context they have never needed. `attachment_count` is what decides, and it costs no request to read. A deleted message shows none either: the API 404s the list, but the client must not offer the affordance in the first place.
@@ -246,11 +257,17 @@ adding that filter would make the bookmark vanish, the opposite of this rule.
 - A sender broadcasts at most once every 3 seconds while typing. A typist expires 4 seconds after their last broadcast, and the indicator catches up on the next sweep of expired typists, which runs every 1.5 seconds, so it clears 4 to 5.5 seconds after that broadcast (`packages/chat-core/src/realtime-manager.ts`).
 - The viewer's own typing never counts, including typing from another of the viewer's devices, whose broadcasts do arrive.
 
+**Member list** (web and mobile, [#3536](https://github.com/pdcarlson/Frapp/issues/3536)):
+
+- Beside a channel, the list shows everyone who can read it, by the same rule that admits a read: the whole chapter for a public channel, the holders of a required permission (or the wildcard) for a role-gated one, and `member_ids` for a private channel or group DM. A 1:1 DM shows no list. Only a member who can read the channel can ask for its list (`GET /v1/channels/{id}/members`).
+- Grouped Online, then Idle, then Offline, from the chapter presence topic below. Within a group, members sort by their highest role's rank (lower `display_order` first, no role last), then by name. Names take the member's role color, as in the timeline. Until presence has resolved, the list is one ungrouped "Members" group rather than calling everyone Offline.
+- On mobile the list is a tall sheet from the thread header's members button, shown on every channel but a 1:1 DM. Mobile does not join the chapter presence topic, so the sheet is always that one ungrouped list, in the same order (`compareChannelMembers` in `@repo/hooks`, which web sorts with too), headed by its count.
+
 **Online/offline presence:**
 
 - Member online status is tracked via Supabase Realtime Presence.
 - Presence heartbeat: ~30 seconds. If no heartbeat is received, the user is marked offline.
-- Online status is visible in the member list sidebar and in DM conversations. The web **Directory** (`/members`) renders it today; the DM and channel member lists do not yet.
+- Online status is visible in the member list sidebar and in DM conversations. The web **Directory** (`/members`) and the web channel member list (§ Member list above) render it; the DM view and mobile do not yet.
 - Statuses: Online, Idle (app open but inactive for >5 minutes), Offline.
 
 **Two presence topics, deliberately.** They answer different questions and must not be merged:
@@ -258,7 +275,7 @@ adding that filter would make the bookmark vanish, the opposite of this rule.
 | Topic | Scope | Read by |
 | --- | --- | --- |
 | `chat:channel:<channelId>` | Who has *this channel* open | The push worker, via service role, to suppress pushes to members already looking (ADR-10) |
-| `presence:chapter:<chapterId>` | Who is present in the *chapter* at all | The web Directory |
+| `presence:chapter:<chapterId>` | Who is present in the *chapter* at all | The web Directory, and Chat's member list |
 
 The chat topic's channel config and its `{ userId, ts }` payload are a cross-service contract pinned by `packages/chat-core/src/presence-contract.spec.ts`. Re-keying it or widening its payload silently disables push suppression, so a surface needing chapter-wide presence takes the second topic rather than extending the first.
 
@@ -318,7 +335,7 @@ than pretending otherwise:**
 
 Signet ships chapter channels, **direct messages**, and file uploads. That is user-generated content, and **App Store Review Guideline 1.2** expects a UGC app to give a member a way to report objectionable content and to block an abusive user. Officer moderation (`channels:manage`, above) is real but on its own does not reach a private DM, which is the surface a reviewer probes and the one a harassed member actually needs. These two controls are the member-side answer (#2257); a report is also what lets an officer remove the one message it names, DM or not (§ Officer action below, #2311).
 
-**Status: schema, API, the mobile client, and on web the block list and the officer queue.** The tables exist (`20260915210000`) and the API is live: `POST|GET|PATCH /v1/chat/reports`, `GET /v1/chat/reports/{id}/attachments`, `POST /v1/chat/reports/{id}/remove-message`, and `GET|POST|DELETE /v1/chat/blocks` (`ChatReportController` / `ChatBlockController`, both `@SubscriptionExempt()`), and the API applies the caller's block list to the chat messages, reactions and attachments it serves and to whom chat notifies. The `chat_message_actions` read policy withholds a blocked member's reactions from the member who blocked them (`20260924170000`, #2494). [`chat-read-surface-ledger.spec.ts`](../../../apps/api/src/application/services/chat-read-surface-ledger.spec.ts) is the one list of where that holds and where it does not yet. It fails on anything it enumerates and has not classified: every route on the chat controllers, every RLS policy a client could read through, every notify-named call in the API, and every Realtime `postgres_changes` subscription the API opens. What it cannot see is listed at the top of that file; read that before treating a green run as coverage. Its `open` entries are the known gaps, server and client, each with its tracking issue. **The mobile app consumes the member half**: a long-press anywhere on someone else's message or poll — its text, a photo, a reaction chip — or the "Message actions" accessibility action opens Report and Block (Block for every sender who can be blocked at all — not the system actor or an imported row nobody has linked (§ Linking a member's Discord history) — unless a block attempt this session already came back as the API's 404 `Member not found`. A sender the cached roster does not list still gets Block: that is what a brand-new member looks like, and the long-press re-reads the roster); the thread tombstones a blocked member's messages, quotes and reactions, and holds unmaskable rows while the list is **loading or unavailable**, per § The masking contract (`packages/chat-core/src/blocks.ts`, which both clients classify through); and Settings → Blocked members and the directory's member sheet can undo a block. **The web dashboard applies the same list** (#2313): the `/chat` timeline tombstones, holds, and hides quotes and reactions through the same classifier, with the tombstone's Unblock (`apps/web/components/chat/`), and `/profile` → Blocked members is web's durable undo (`apps/web/components/profile/blocked-members-card.tsx`). Web does not yet offer Report or Block on a message (#2687). **It also renders the officer queue**: Chat Admin's Reported messages section (`apps/web/components/chat-admin/chat-reports-card.tsx`, gated on `members:view` and `channels:manage` like the routes), with the evidence snapshot, the status tabs, Mark reviewed / Dismiss, and the report-scoped Remove below (Mark actioned where the message no longer exists). **Still owed:** Report and Block from a web message (#2687), and the server-side gaps are the ledger's `open` entries. Whether a block hides a blocked member's words *quoted in someone else's reply* (#2312 §1) is settled by the fail-closed rule in the table below. Where the sections below describe the owed parts, they describe what is owed — [`AGENTS.md`](../../../AGENTS.md) § Spec vs code.
+**Status: schema, API, the mobile client, and on web the member half and the officer queue.** The tables exist (`20260915210000`) and the API is live: `POST|GET|PATCH /v1/chat/reports`, `GET /v1/chat/reports/{id}/attachments`, `POST /v1/chat/reports/{id}/remove-message`, and `GET|POST|DELETE /v1/chat/blocks` (`ChatReportController` / `ChatBlockController`, both `@SubscriptionExempt()`), and the API applies the caller's block list to the chat messages, reactions and attachments it serves and to whom chat notifies. The `chat_message_actions` read policy withholds a blocked member's reactions from the member who blocked them (`20260924170000`, #2494). [`chat-read-surface-ledger.spec.ts`](../../../apps/api/src/application/services/chat-read-surface-ledger.spec.ts) is the one list of where that holds and where it does not yet. It fails on anything it enumerates and has not classified: every route on the chat controllers, every RLS policy a client could read through, every notify-named call in the API, and every Realtime `postgres_changes` subscription the API opens. What it cannot see is listed at the top of that file; read that before treating a green run as coverage. Its `open` entries are the known gaps, server and client, each with its tracking issue. **The mobile app consumes the member half**: a long-press anywhere on someone else's message or card (a poll, an event, a task, a rush candidate, or any other card kind mobile draws) — its text, a photo, a reaction chip — or the "Message actions" accessibility action opens Report and Block (Block for every sender who can be blocked at all — not the system actor or an imported row nobody has linked (§ Linking a member's Discord history) — unless a block attempt this session already came back as the API's 404 `Member not found`. A sender the cached roster does not list still gets Block: that is what a brand-new member looks like, and the long-press re-reads the roster); the thread tombstones a blocked member's messages, quotes and reactions, and holds unmaskable rows while the list is **loading or unavailable**, per § The masking contract (`packages/chat-core/src/blocks.ts`, which both clients classify through); and Settings → Blocked members and the directory's member sheet can undo a block. **The web dashboard applies the same list** (#2313): the `/chat` timeline tombstones, holds, and hides quotes and reactions through the same classifier, with the tombstone's Unblock (`apps/web/components/chat/`), and `/profile` → Blocked members is web's durable undo (`apps/web/components/profile/blocked-members-card.tsx`). A web message offers Report and Block from its action bar's More menu (#2687), by the same rules as mobile's sheet (`canReportMessage` and `canBlockSender` in `packages/chat-core/src/message-actions.ts`), with the report form a dialog (`apps/web/components/chat/report-message-dialog.tsx`) that offers Block once the report is in. **It also renders the officer queue**: Chat Admin's Reported messages section (`apps/web/components/chat-admin/chat-reports-card.tsx`, gated on `members:view` and `channels:manage` like the routes), with the evidence snapshot, the status tabs, Mark reviewed / Dismiss, and the report-scoped Remove below (Mark actioned where the message no longer exists). **Still owed:** the server-side gaps, which are the ledger's `open` entries. Whether a block hides a blocked member's words *quoted in someone else's reply* (#2312 §1) is settled by the fail-closed rule in the table below. Where the sections below describe the owed parts, they describe what is owed — [`AGENTS.md`](../../../AGENTS.md) § Spec vs code.
 
 ### Report
 
@@ -389,7 +406,7 @@ The rules, `POST /v1/chat/reports/{id}/remove-message` (`channels:manage` on top
 | A blocked member's message **quoted in someone else's reply** | Hidden. The quote reads "Message from a member you blocked" in place of the parent's author and text, whoever wrote the reply; a parent held while the list is loading or unavailable quotes as "Message hidden". A block that hid the message but let a reply print it would hide nothing. *Settled 2026-09-22 by the fail-closed rule (#2312 §1); mobile applies it, and web since #2313* |
 | Poll votes | **Counted, not hidden.** A poll tally is chapter state, not a message; suppressing one vote would misreport the result to everyone |
 | The blocked member's **polls on the poll routes** (`GET /v1/polls`, `GET /v1/polls/{messageId}`) | Question and option text hidden, the poll itself kept. Each is masked in place, with its ids, timing, expiry and tallies intact and `sender_blocked` set, rather than left out of the list, since leaving it out would change the page's counts. The poll-expiry notice replies to the poll instead of quoting its question, so it does not bring the question back under the system actor, which cannot be blocked (#2495). Details: [`../polls.md`](../polls.md) |
-| Points / task / event cards **authored by** the blocked member | Hidden, like any other message they sent. These carry the acting member's `sender_id` (`PointsService`, `TaskService` and `EventService`, through `EventAnnouncementService`, each pass the actor, not the system id), so they are masked by the same `sender_id` predicate as ordinary text. That is deliberate: their templates interpolate member free text — a task title, an event name, a points reason — so exempting them would hand a blocked member an unmaskable channel into the blocker's timeline. The chapter record itself is unaffected; chat is a notification surface for it, and the points, tasks and events screens remain the system of record |
+| Points / task / event / service-hours / recruitment cards **authored by** the blocked member | Hidden, like any other message they sent. These carry the acting member's `sender_id` (`PointsService`, `TaskService`, `EventService` through `EventAnnouncementService`, `ServiceEntryService` and `RushService` each pass the actor, not the system id), so they are masked by the same `sender_id` predicate as ordinary text. That is deliberate: their templates interpolate member free text — a task title, an event name, a points reason, an hours description, a candidate's name — so exempting them would hand a blocked member an unmaskable channel into the blocker's timeline. The chapter record itself is unaffected; chat is a notification surface for it, and the points, tasks, events, service hours and recruitment screens remain the system of record |
 | Notifications from **non-chat modules** that quote the blocked member's text: a fine reason, a task title or rejection comment, a service-hours review comment, an event or invoice name, and the reminders built from them. Also the [activity feed](../activity-feed.md)'s event, backwork and points items | **Not hidden.** They arrive in full, as a push and as an in-app row, and the feed lists them, the same way the records themselves stay on their screens. A block is a chat control, and the chapter's own actions and records are unaffected by it. The cost is known: an officer a member has blocked can still reach them through a fine reason or a task title. The chat cards for those same actions are hidden (the row above), because chat is the surface a block governs. The feed's announcement items are chat, and are hidden. *Owner decision 2026-09-23 ([#2498](https://github.com/pdcarlson/Frapp/issues/2498))* |
 | Messages from the **system actor** that merely name the blocked member | Not hidden. `SYSTEM_SENDER_ID` is not blockable at all (above) |
 | Officer moderation surfaces | **Not hidden.** A `channels:manage` holder reviewing a report sees the content as filed; a personal block must not blind an officer acting in their role |
@@ -460,6 +477,8 @@ A member with no receipt for a channel has never opened it, so **every** message
 
 - **`kind = 'imported'` never counts.** An archive is history the chapter imported, not messages anyone sent them, and the rule above would otherwise hand every member a badge the size of the import that no amount of reading could clear. This is stated explicitly in `get_channel_unread_counts` rather than left to fall out of the nullable-sender comparison, which excluded it only as an artefact of `NULL <> uuid` being NULL.
 
+- **`#chapter-audit` entries never count** (owner decision, 2026-11-06: audit entries arrive silently). A `system_audit` row the audit mirror wrote, keyed `client_message_id = 'audit:<id>'` (`auditMirrorClientId`), is a log line, not a message to anyone. It never pushes either, whatever level the member set: `decidePush` refuses a mirror row ahead of every preference ([`../notifications.md`](../notifications.md#chat-notification-preferences)). The server's other `system_audit` notices (a poll closing, an invite accepted, the chapter welcome) are addressed to members and still count.
+
 Mention count is the subset of that same set which mentions the viewer.
 
 Both are computed server-side by `get_channel_unread_counts` and served from `GET /v1/channels/unread`, which returns one row per channel the caller can read — including channels with nothing unread, as zero. Clients MUST NOT re-derive either number locally: a second definition would disagree with this one on exactly the cases above.
@@ -512,13 +531,17 @@ chooses one at `/discord-import`; everything after the choice is identical.
 **An import may leave out old history (#2858).** *2026-09-29, owner's
 decision: a chapter need not import years it does not want, and every message
 left out is media not copied, stored or paid for.* A bot import's review step
-takes an optional **Import messages from** date, empty by default, meaning all
-history. The day starts at the admin's own midnight. The worker reads each
+asks **How far back should we go?** before anything else, with one-tap
+choices: Everything (the default, meaning all history), Last 4 years, Last 2
+years, Last year, or Pick a date, which opens an **Import messages from** date
+box. A preset counts back from today. The day starts at the admin's own
+midnight. *2026-11-05, owner's request: the date box sat at the bottom of the
+step and was easy to miss.* The worker reads each
 channel newest first and ends it at the first older message, so nothing older
 is read past that page, copied or stored. The date is fixed once the import
 starts: a restart keeps it, and changing it is refused, because the channels
 already done and the ones still to go would follow different rules. The
-import's row says "Messages since" the date, since a partial import must say
+import's page says "messages since" the date, since a partial import must say
 so. An upload has no such field, because its media is already uploaded by
 then. Its range is set when exporting, with DiscordChatExporter's own
 `--after <date>`, which the upload step suggests; the API refuses a cutoff on
@@ -528,22 +551,71 @@ an upload.
 keeps working if Discord ever throttles or refuses one shared bot across every
 chapter, and it is the only path for a chapter that cannot install apps in its
 own server. Either way a background job writes the rows, the admin sees
-per-import progress, and can delete the whole import afterwards. A bot import's
+its progress, and can delete the whole import afterwards. A bot import's
 progress is counted in channels and threads, a channel Discord no longer shows
 the bot counting as done: its message total is only known once Discord has been
 read, so a message count would read full from the first page (#2816). An upload's
 is counted in messages. Neither reads 100% until the import has completed.
 
-**Watching an import (#2857).** Watch, on a bot import that is queued or
-running, opens it channel by channel: how many channels and threads are done,
+**One import per chapter (2026-11-06).** *Owner's decision (the import
+redesign): a chapter moves off Discord once, so `/discord-import` is built
+around its one import rather than a list of jobs.* The API refuses to create
+or start an import (409, `Your chapter already has a Discord import. Delete it
+before starting another.`) while another of the chapter's imports is queued,
+running, finished, failed, stopped or being deleted: anything that holds, or
+may still hold, messages. A draft holds nothing and is not counted, and once
+an import is deleted the chapter may import again. Two creates racing each
+other can both pass the check; it guards the ordinary path, not a
+deliberate race. The page shows that one import in the state it is in:
+
+- **Nothing imported yet:** what comes over (messages, threads and forum
+  posts, files, reaction counts, categories if the admin wants them, private
+  channels kept private) and what stays behind (DMs, voice, and who holds
+  which role), with the two ways in as the wizard's first step. Picking one
+  opens the wizard past it. An abandoned draft reads as nothing imported, but
+  an upload's draft can hold its export, counted against the chapter's
+  archive space, so the newest one is named with a Delete. The import last
+  deleted is named in one line until the admin dismisses it.
+- **Importing:** the messages counted in so far, channels and threads done
+  out of the total, the percent, and Stop import. A bot import also names
+  the channel or thread importing now, with its message count so far, and
+  shows a tile per Discord category: its channels and threads done out of
+  its total, any that failed, turning green once all are done. The channels
+  in no category come first, then the categories in Discord's order; past
+  eight, the last tile sums the rest ("+ N more"). A thread counts under its
+  channel's category. The admin can leave: when
+  the import completes or fails, the admin who set it up (`created_by`) is
+  notified, if they still hold `channels:manage` in the chapter. One the
+  admin stopped sends nothing. The notice itself is in
+  [`../notifications.md`](../notifications.md#notification-triggers-complete-list).
+- **Finished, or stopped part-way:** the messages and files that came over,
+  and the channels and threads (all it read once completed, the ones it got
+  through otherwise; a completed bot import counts channels and threads
+  apart); Open chat, once it completed; Resume import, on one
+  that failed, which starts it again from where it stopped (#2947);
+  what didn't come over, grouped by reason in plain words, from the last 50
+  warnings the import keeps; and Delete import. A deletion that failed
+  part-way also leaves the import `failed`, and is titled as a failed
+  deletion, with no Resume. A completed bot import also lists what came
+  over by Discord category. A completed import shown within a week of
+  finishing plays the landing, the import's signature moment (about 1.8s,
+  never with reduced motion on), until it has played to the end once in
+  that browser; otherwise the page rests on the moment's final frame. The
+  rules and the catalog are in
+  [`../../ui/design-system/README.md`](../../ui/design-system/README.md#signature-moments)
+  § Signature moments (2026-11-06, #3493).
+- **Deleting:** the messages counted down (below).
+
+**Watching an import (#2857).** See every channel, on a bot import that is
+queued or running, opens it channel by channel: how many channels and threads are done,
 importing, waiting, failed or gone from Discord; the one importing now with its
 message count so far; the last few finished; and the failures with their
 reasons (at most 20 named), each linking to the Frapp channel it lands in once
 there is one. A channel the import fails on is marked failed with the reason,
-and a restart resumes it (through the API only today, #2947). The same panel is Details on a finished bot import,
+and a restart resumes it (Resume import on the page, for a failed import; #2947 tracks what a restart still gets wrong after a remap). The same panel opens on a finished bot import,
 read once when the import stops rather than polled, and there a channel still
-marked importing is where the import stopped. Hide closes the panel and keeps
-the row's own progress live. Imported messages never arrive live in an open
+marked importing is where the import stopped. Hide channels closes the panel
+and keeps the import's own progress live. Imported messages never arrive live in an open
 chat, so the panel says that opening a channel shows what has landed so far.
 An upload has no such panel: it works through export parts, and its channel
 rows record neither their order nor a part it had to skip, so its progress
@@ -645,13 +717,12 @@ channel that reports a different one fails the import rather than being skipped.
   qualifier: starting a *second* import of the same export into a *different*
   channel imports the history again, by design — that is an operator choosing to
   put it somewhere else, not a duplicate. Re-running the wizard from the start
-  therefore does not deduplicate against an earlier import; delete the first one
-  instead.
+  therefore does not deduplicate against an earlier import, which is one reason
+  a chapter holds one import at a time: delete the first one instead.
 - **Deleting an import is not the same as clearing it.** Delete purges what the
   import brought in and keeps the job row as the record that it happened.
   Clear takes that record off the chapter's list, and is offered only once the
-  import has been deleted (#2817): the list is where Delete lives, so an import
-  that still holds what it brought in stays on it.
+  import has been deleted (#2817), as Dismiss on the line that names it.
 - **Where it lands is the operator's choice, per channel, starting from a safe
   default.** Every channel the bot can read starts as a *new* Frapp channel
   with its Discord name, or as a merge into a like-named one (below), so a
@@ -678,6 +749,42 @@ channel that reports a different one fails the import rather than being skipped.
     worker reuses the channel the first of them created. Channels that share
     a name but not those settings would become separate channels of one
     name, so they are listed as something to resolve.
+  - **Discord's categories can come across as the chapter's channel
+    categories** (the sidebar's named sections, § Channels), when the admin
+    turns on "Keep Discord's categories". It is off by default, so a chapter
+    that arranged its sidebar finds nothing new; with it on, each category is
+    kept unless the admin unticks it. Each new channel goes into the category
+    named after its Discord one. Starting the import makes that name a
+    category: the chapter's own of that name, compared trimmed and in any
+    case, or else a new one, placed after the chapter's own. New ones keep
+    Discord's order on a bot import, which the scan reads; an upload, whose
+    export doesn't record it, places them A to Z. A merged channel stays
+    where it is, and a thread follows its channel. Like-named channels bound
+    for different categories don't share a channel, so they are listed as
+    something to resolve, as above. A category is a name every member sees,
+    which the switch says.
+
+    An officer may rename or delete one at any time. A channel the import
+    still has to make then lands in no category, until the import is started
+    again: a restart resolves the name again, making the category again if
+    it is gone, but never for a channel that already exists or will share
+    one that does. A category a remap stops using, as after unticking one,
+    stays until the import is deleted or an officer deletes it (#2882). *2026-11-05, owner's request: a
+    78-channel server landed as one flat list.*
+
+    Each Discord category on the step is one folded section with a summary
+    line (its channels, the threads they hold on a bot import, how many are
+    being imported, and what needs attention), so a server of 78 channels
+    reads as a dozen decisions; it opens on its own when something in it
+    needs attention. A thread never gets a row of its own. Above them, "What
+    chat will look like" lists the channels the import will make under the
+    sidebar sections they will land in, in the order starting the import
+    creates them (no category first, then Discord's order, then by name;
+    channels A to Z, marked private as the sidebar marks them), and re-groups
+    as the admin keeps or drops categories. A category named like one of the
+    chapter's own joins it, under the chapter's spelling and before the new
+    ones, as starting the import places it. Merges aren't listed: they make
+    nothing. *2026-11-06, the server map of the #2882 redesign.*
   - **A channel an import merges into stays an ordinary channel, which an
     officer can delete at any time (#2922)**: before the import starts, while
     it runs, or long after. Each import that merged into it keeps its mapping
@@ -860,6 +967,15 @@ channel that reports a different one fails the import rather than being skipped.
   revisits stays until an officer deletes it, which works for any channel
   since #2922 (before it, deleting a channel an import had merged into failed
   the `discord_import_channels_target_present` CHECK).
+
+  After its channels, the purge deletes each category the import created
+  that is left with no channel in it and that no mapping row of an import
+  that isn't being or hasn't been deleted points at; a finished import's row
+  counts, as its record of where its channels went. A category another
+  deleted import created, which this one's mapping still points at, goes
+  under the same rules, as channels do; one a remap stopped pointing at stays
+  until an officer deletes it. A category the chapter already had is never
+  deleted, even when the import put channels into it.
 
   Before #2905 every created channel stayed. A bot re-import then merged a
   public leftover by default (#2856). A channel private in Discord, or any
@@ -1135,9 +1251,9 @@ on their imported messages in that chapter are theirs.
 | `task` | Task assignment card |
 | `poll` | Poll (inline vote) |
 | `dues` | Dues reminder card — in the enum, but still renders the placeholder `ComingSoonCard` |
-| `points` | Points award notification |
+| `points` | Points grant or deduction notification (`/points`) |
 | `hours` | Service hours log confirmation (created by `/hours log`) |
-| `rush` | Recruitment candidate card (created by `/<vocab> add`; live vote/bid via GET) |
+| `rush` | Recruitment candidate card (created by `/<vocab> add`; live votes and bid via GET), on web and mobile |
 | `audio` | Voice memo (mobile-native): recorded, uploaded to Storage, sent with waveform metadata — **specified, not yet in `CHAT_MESSAGE_KINDS`** |
 | `pulse` | Chapter-health catch-up card — see [catch-up.md](./catch-up.md) — **specified, not yet in `CHAT_MESSAGE_KINDS`** (#821) |
 | `system_audit` | System-generated notice, never client-postable. Its server-side writers and where each posts: [integrations.md § Server-originated kinds](./integrations.md#server-originated-kinds-anti-forgery) |
@@ -1173,7 +1289,7 @@ These are the user-observable guarantees of the chat client (web and mobile), in
 - **Reconnect pill.** On loss of the realtime connection the client shows an unobtrusive "Reconnecting…" indicator near the channel header and retries with capped backoff.
 - **Resubscribe before backfill.** On reconnect the client resubscribes to realtime first and backfills only once the channel reaches `SUBSCRIBED`, reading from its last-seen message id. Backfilling first would drop every row written between the query and the listener attaching. Overlap is safe because the per-channel merge is idempotent on `client_message_id`, so nothing duplicates. Implementation: `packages/chat-core/src/realtime-manager.ts` (its test suite names this the subscribe-then-backfill gate).
 - **Empty states are explicit.** No visible channels, no messages in a channel, no DM threads, and no search results each render a purposeful empty state rather than a blank pane.
-- **Author and DM names resolve by id, client-side, from one narrow roster.** A message carries only `sender_id`; a DM channel carries only its server-generated `dm-<userA>-<userB>` / `group-dm-<epoch>` name plus `member_ids`. Both clients resolve those against a single cached chapter projection — `GET /v1/members/roster`, which returns `{ user_id, display_name, avatar_url }` and deliberately nothing else, so rendering a name never puts the chapter's contact details on a device. On web, a message author's avatar is their profile photo from that roster (`avatar_url`, signed by the API), else initials of the resolved name (#732); a DM row in the channel list still draws initials only; a row with a `sender_id`, a linked imported row included, draws only the member, never its Discord snapshot, and only an imported author nobody has linked draws their Discord avatar (`resolveAuthorAvatar`, #2878). Mobile still draws initials only ([#2884](https://github.com/pdcarlson/Frapp/issues/2884)). A 1:1 DM shows the other participant; a group DM keeps a chapter-supplied title and otherwise summarises participants. A sender that cannot be resolved — a deleted account, whose membership row `anonymize_user` purges — degrades to a truncated id rather than a blank name, and an empty stored `display_name` counts as unresolved because the column is `NOT NULL DEFAULT ''`.
+- **Author and DM names resolve by id, client-side, from one narrow roster.** A message carries only `sender_id`; a DM channel carries only its server-generated `dm-<userA>-<userB>` / `group-dm-<epoch>` name plus `member_ids`. Both clients resolve those against a single cached chapter projection — `GET /v1/members/roster`, which returns `{ user_id, display_name, avatar_url, role_color }` and deliberately nothing else, so rendering a name never puts the chapter's contact details on a device. `role_color` is the palette color of the member's highest-ranked colored role, or `null`, and paints the author's name on both clients ([`rbac.md` § Role Lifecycle](../rbac.md#role-lifecycle), #3485). On web, a message author's avatar is their profile photo from that roster (`avatar_url`, signed by the API), else initials of the resolved name (#732); a DM row in the channel list still draws initials only; a row with a `sender_id`, a linked imported row included, draws only the member, never its Discord snapshot, and only an imported author nobody has linked draws their Discord avatar (`resolveAuthorAvatar`, #2878). Mobile still draws initials only for members ([#2884](https://github.com/pdcarlson/Frapp/issues/2884)). A 1:1 DM shows the other participant; a group DM keeps a chapter-supplied title and otherwise summarises participants. A sender that cannot be resolved — a deleted account, whose membership row `anonymize_user` purges — degrades to a truncated id rather than a blank name, and an empty stored `display_name` counts as unresolved because the column is `NOT NULL DEFAULT ''`. The system actor (`SYSTEM_SENDER_ID`: the welcome, the audit bridge, a poll's closing notice, an invite-accept DM) is on no roster, so it is named before any lookup: it reads "Frapp" (`SYSTEM_AUTHOR_LABEL` in `@repo/validation`, which `@repo/hooks`' `resolveAuthorName` and the activity feed's announcement actor both use) on every surface that names an author, including web's new-message announcement, and on both clients its avatar is the Frapp crest on the crest's own field, never initials, even before the image loads (#3347). Before that it fell through to the truncated id and read "Member 000000".
 - **The name is deliberately not joined onto the message.** Messages reach the cache four ways, and the live one is a `postgres_changes` echo of the `chat_messages` row, which cannot carry a join. A join would therefore leave every live-arrived message unnamed for the whole session, not briefly: that handler advances the last-seen cursor, the `since` window below is exclusive, and both channel queries set `staleTime: Infinity`, so nothing re-fetches the row. Resolving by id is the only option that behaves the same on every path.
 
 ## Reconnect replay
@@ -1186,7 +1302,7 @@ Clients read it after resubscribing (Resubscribe before backfill, above). How th
 
 ## Web ↔ mobile parity
 
-The mobile (Expo) chat experience shares web's realtime transport and outbox, so **presence and the offline composer queue behave the same across platforms** — both run the same `@repo/chat-core` code. Reactions round-trip on both, but the affordance does not match: mobile draws a single quick reaction where web offers four plus a full picker. Inline rich-message cards are web-only apart from polls: web has a renderer registry (`apps/web/components/chat/renderers/`, `dues` still a stub), mobile branches on `poll` alone. Differences that are canonical:
+The mobile (Expo) chat experience shares web's realtime transport and outbox, so **the offline composer queue behaves the same across platforms**, both running the same `@repo/chat-core` code. Chapter presence does not yet: mobile neither publishes nor reads it (the presence bullet below), so its channel member list is one ungrouped list (§ Member list). Reactions round-trip on both, but the affordance does not match: mobile offers web's four quick reactions in its long-press actions sheet and has no full picker. Inline rich-message cards are at parity but for two kinds: web has a renderer registry (`apps/web/components/chat/renderers/`, `dues` still a stub), and mobile draws every card kind but `dues` and `loading` through `cardFor` in `apps/mobile/components/chat/thread-message-row.tsx` (#3185, #3383), with those two as their `content` text: web's `dues` card is a placeholder, and `loading` is web's stand-in for a slash command in flight, which mobile never sends ([`integrations.md`](integrations.md)). Differences that are canonical:
 
 - **Voice memos** would be mobile-native: recorded in the composer, uploaded to Storage, and sent as `kind="audio"` with waveform metadata, with web clients playing them back. **Specified, not built** — `audio` is not in `CHAT_MESSAGE_KINDS`, as the Message Kinds and Actions table above records, so this describes the intended behavior rather than a shipped one.
 - **Presence lifecycle on mobile** — **specified, not built.** The presence payload carries no status field: it is exactly `{ userId, ts }`, pinned by key-set equality in `presence-contract.spec.ts` because widening it silently breaks push suppression. Nothing binds `AppState` to presence. As designed it would map app state to presence: backgrounded → `idle`, force-quit → `offline` — statuses that today are derived from the age of `ts`, never written.

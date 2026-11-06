@@ -1,6 +1,7 @@
 "use client";
 
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { useHiddenUnsetFeatures } from "@repo/hooks";
 import { cn } from "@/lib/utils";
 import { ChapterNavHeader } from "@/components/layout/chapter-nav-header";
 import { DASHBOARD_NAV, type NavItem } from "@/components/layout/nav-config";
@@ -23,8 +24,13 @@ import { EYEBROW } from "@/components/ui/typography";
  * and the rail never appears there. Adding a viewport tier would be a spec
  * change; letting a desktop user narrow their own nav is not.
  *
+ * **On `/chat` it is a face, not the column** (`variant="face"`, 2026-11-05):
+ * from `lg` up the left column there is the channel list, and this nav slides
+ * in over it from a back arrow (`chat-nav-column.tsx`). The face has no chrome,
+ * no collapse toggle and no chapter header, which the column pins above both.
+ *
  * Section headings are derived, never declared — a heading renders only when at
- * least one of its items survives both the permission and module gates, so a
+ * least one of its items survives the permission, module and setup gates, so a
  * heading never announces a group the viewer cannot open. In the rail
  * there is no room for a heading at all, so grouping falls back to the hairline
  * dividers the board draws between rail groups (`1c` pin 1).
@@ -42,7 +48,13 @@ type AppNavProps = {
    * ("the drawer is the sidebar"). It supplies its own heading and scroll
    * container, so it suppresses the collapse toggle and the outer chrome.
    */
-  variant?: "sidebar" | "drawer";
+  variant?: "sidebar" | "drawer" | "face";
+  /**
+   * The module face of `/chat`'s left column (`nav-face.tsx`): the Chat row
+   * slides the channel list back instead of linking to the open route, and
+   * carries an unread dot while the channels are out of sight.
+   */
+  chatRow?: { onSelect: () => void; hasUnread: boolean };
   className?: string;
 };
 
@@ -54,7 +66,10 @@ const navIconClassName = "h-[18px] w-[18px]";
  * section when a route it owns is (`activeFor`: the Settings tools, which keep
  * their own pages but sit under the Settings row).
  */
-function currentFor(item: NavItem, pathname: string): "page" | "true" | undefined {
+function currentFor(
+  item: NavItem,
+  pathname: string,
+): "page" | "true" | undefined {
   if (item.href === pathname) return "page";
   if (item.activeFor?.includes(pathname)) return "true";
   return undefined;
@@ -68,16 +83,24 @@ export function AppNav({
   pathname,
   onNavigate,
   variant = "sidebar",
+  chatRow,
   className,
 }: AppNavProps) {
-  const isDrawer = variant === "drawer";
+  // The face shares the drawer's shape: no outer chrome and no collapse
+  // toggle. It also leaves the chapter header out, because the column it sits
+  // in keeps that header pinned above both faces.
+  const isFace = variant === "face";
+  const isDrawer = variant === "drawer" || isFace;
   // The drawer has no room to be a rail and no toggle to leave it, so it is
   // always expanded regardless of the stored preference.
   const isCollapsed = collapsed && !isDrawer;
+  // Study hours with no active zone, and Documents with nothing in it for a
+  // viewer who can't upload, leave the nav (`nav-config.ts`, Setup gating).
+  const hiddenFeatures = useHiddenUnsetFeatures(permissions, isModuleEnabled);
 
   const sections = DASHBOARD_NAV.map((section) => {
     const visibleItems = section.items.filter((item) =>
-      isNavItemVisible(item, permissions, isModuleEnabled),
+      isNavItemVisible(item, permissions, isModuleEnabled, hiddenFeatures),
     );
     if (visibleItems.length === 0) return null;
 
@@ -117,7 +140,30 @@ export function AppNav({
             onNavigate={onNavigate}
             focusClassName={FOCUS_RING_SHELL}
             isModuleEnabled={isModuleEnabled}
+            hiddenFeatures={hiddenFeatures}
             collapsed={isCollapsed}
+            {...(chatRow && item.id === "chat"
+              ? {
+                  onSelect: chatRow.onSelect,
+                  trailing: (
+                    <>
+                      {chatRow.hasUnread ? (
+                        <>
+                          <span
+                            aria-hidden="true"
+                            className="h-1.5 w-1.5 rounded-full bg-foreground"
+                          />
+                          <span className="sr-only">, unread messages</span>
+                        </>
+                      ) : null}
+                      <ChevronRight
+                        className="h-3.5 w-3.5 text-muted"
+                        aria-hidden="true"
+                      />
+                    </>
+                  ),
+                }
+              : {})}
           />
         ))}
       </div>
@@ -139,7 +185,9 @@ export function AppNav({
         className,
       )}
     >
-      <ChapterNavHeader collapsed={isCollapsed} onNavigate={onNavigate} />
+      {isFace ? null : (
+        <ChapterNavHeader collapsed={isCollapsed} onNavigate={onNavigate} />
+      )}
       <nav
         aria-label="Primary"
         className={cn(
@@ -159,7 +207,9 @@ export function AppNav({
           <button
             type="button"
             onClick={onToggleCollapsed}
-            aria-label={isCollapsed ? "Expand navigation" : "Collapse navigation"}
+            aria-label={
+              isCollapsed ? "Expand navigation" : "Collapse navigation"
+            }
             aria-expanded={!isCollapsed}
             title={isCollapsed ? "Expand navigation" : "Collapse navigation"}
             className={cn(

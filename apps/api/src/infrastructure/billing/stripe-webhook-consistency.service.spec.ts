@@ -1,11 +1,18 @@
 import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import Stripe from 'stripe';
 import { StripeWebhookConsistencyService } from './stripe-webhook-consistency.service';
 import { StripeWebhookEndpointMismatchError } from './stripe-webhook-consistency';
 import { HANDLED_WEBHOOK_EVENT_TYPES } from './stripe-webhook-events';
 
 jest.mock('stripe');
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
+
+const captureMessage = jest.mocked(Sentry.captureMessage);
 
 const StripeCtor = Stripe as unknown as jest.Mock;
 
@@ -90,6 +97,24 @@ describe('StripeWebhookConsistencyService', () => {
     );
   });
 
+  it('reports a missing or disabled endpoint to Sentry once, by site', async () => {
+    captureMessage.mockClear();
+    list.mockResolvedValue({ data: [endpoint({ status: 'disabled' })] });
+    const service = serviceWith({ secret: REAL_SECRET, apiUrl: API_URL });
+    await expect(service.assertRegisteredEndpoint()).resolves.toBeUndefined();
+    expect(captureMessage).toHaveBeenCalledTimes(1);
+    const [message, context] = captureMessage.mock.calls[0] as [
+      string,
+      { level: string; fingerprint: string[] },
+    ];
+    expect(message).toBe('caught failure: stripe-webhook-endpoint-mismatch');
+    expect(context.level).toBe('error');
+    expect(context.fingerprint).toEqual([
+      'caught-failure',
+      'stripe-webhook-endpoint-mismatch',
+    ]);
+  });
+
   it("matches an endpoint carrying a query string — Stripe's own versioning runbook adds one", async () => {
     // docs.stripe.com/webhooks/versioning says to register the replacement as
     // `…/webhooks?version=YYYY-MM-DD` and disable the old one. Whole-string
@@ -113,6 +138,28 @@ describe('StripeWebhookConsistencyService', () => {
     const service = serviceWith({ secret: REAL_SECRET, apiUrl: API_URL });
     await expect(service.assertRegisteredEndpoint()).resolves.toBeUndefined();
     expect(errorLog).not.toHaveBeenCalled();
+  });
+
+  it("logs the endpoint's payload API version, or that it follows the account default (#3204)", async () => {
+    const log = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => {});
+    list.mockResolvedValue({ data: [endpoint({ api_version: null })] });
+    const service = serviceWith({ secret: REAL_SECRET, apiUrl: API_URL });
+    await expect(service.assertRegisteredEndpoint()).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining('the account default (unpinned)'),
+    );
+
+    log.mockClear();
+    list.mockResolvedValue({
+      data: [endpoint({ api_version: '2026-08-26.dahlia' })],
+    });
+    await expect(service.assertRegisteredEndpoint()).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining('API version 2026-08-26.dahlia'),
+    );
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('WARNS but does not refuse boot on a missing event type', async () => {

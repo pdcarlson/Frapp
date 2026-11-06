@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useCurrentChapter } from "@repo/hooks";
+import { orgHidingGreekLettersIn } from "@repo/org-archetypes";
 import { chapterTextMark } from "@repo/validation";
 import { useFrappTheme } from "./theme";
 
@@ -28,6 +29,15 @@ export type ChapterBranding = {
    * back to `gold.onHouse` alongside {@link accentPrimary}.
    */
   accentOnPrimary: string;
+  /**
+   * A quiet accent-tinted fill and its border — `--signet-accent-subtle-bg`
+   * (step 3) and `--signet-accent-border` (step 7) — for a selected chip or a
+   * highlighted row that sits on a neutral surface and carries
+   * {@link accent} text. Fall back together to the house `gold.askFill` /
+   * `gold.askBorder` pair, and also whenever {@link accent} itself falls back.
+   */
+  accentSubtle: string;
+  accentBorder: string;
   /** Signed URL from `GET /v1/chapters/current`, or null when no logo is set. */
   logoUrl: string | null;
   /** Falls back to text branding when there is no logo (spec/behavior/branding.md). */
@@ -36,7 +46,9 @@ export type ChapterBranding = {
    * The chapter mark's text for when there is no logo: its short name, else
    * its Greek letters unless it turned them off, else null (#2876). From
    * `chapterTextMark`, the precedence every surface shares, so the opt-out
-   * holds here without this hook reading the letters itself.
+   * holds here without this hook reading the letters itself. An organization
+   * that never displays its letters (FIJI) counts as turned off whatever its
+   * stored switch says (#3421).
    */
   textMark: string | null;
 };
@@ -121,13 +133,25 @@ export function useChapterBranding(): ChapterBranding {
 
   const brandAccent = tokens.color.gold.house;
   const brandOnAccent = tokens.color.gold.onHouse;
+  const brandSubtle = tokens.color.gold.askFill;
+  const brandBorder = tokens.color.gold.askBorder;
   // `|| null` rather than `??`: an empty string means unset, as it does for
   // the palette's roles below.
   const logoUrl = data?.logo_url || null;
   const chapterName = data?.name || null;
+  // An organization that never displays its letters (FIJI) keeps them out of
+  // the mark even when its stored switch was never turned off, as for a
+  // chapter created before its org profile knew to (#3421). The match reads
+  // the organization's name inside the chapter's ("Phi Gamma Delta Tau Nu").
+  // Web's nav crest applies the same override (`chapter-nav-header.tsx`), and
+  // the invite preview does it for the join card (`InviteService.preview`).
+  const storedBranding = data?.branding as Record<string, unknown> | undefined;
   const textMark =
-    chapterTextMark(data?.branding as Record<string, unknown> | undefined)
-      ?.text ?? null;
+    chapterTextMark(
+      orgHidingGreekLettersIn(data?.name)
+        ? { ...storedBranding, show_greek_letters: false }
+        : storedBranding,
+    )?.text ?? null;
   const palette = data?.theme_palette;
   const generatedAccent = readString(palette, "--signet-accent-text");
   const generatedAccentPrimary = readString(palette, "--signet-accent-primary");
@@ -135,6 +159,14 @@ export function useChapterBranding(): ChapterBranding {
     palette,
     "--signet-accent-on-primary",
   );
+  const generatedSubtle = readString(palette, "--signet-accent-subtle-bg");
+  const generatedBorder = readString(palette, "--signet-accent-border");
+  // The pair is drawn under `accent` text, so it is the chapter's only when
+  // that text is too: house gold text never lands on a chapter tint. The one
+  // mix left, chapter text on the Ask fill, needs a palette holding step 11
+  // without steps 3 and 7, which the engine never writes (it emits every
+  // role together).
+  const subtlePair = generatedAccent && generatedSubtle && generatedBorder;
   // Both present or neither used — see the doc comment above.
   const accentPrimary =
     generatedAccentPrimary && generatedAccentOnPrimary
@@ -150,6 +182,8 @@ export function useChapterBranding(): ChapterBranding {
       accent: generatedAccent ?? brandAccent,
       accentPrimary,
       accentOnPrimary,
+      accentSubtle: subtlePair ? generatedSubtle : brandSubtle,
+      accentBorder: subtlePair ? generatedBorder : brandBorder,
       logoUrl,
       chapterName,
       textMark,
@@ -158,6 +192,11 @@ export function useChapterBranding(): ChapterBranding {
       accentOnPrimary,
       accentPrimary,
       brandAccent,
+      brandBorder,
+      brandSubtle,
+      generatedBorder,
+      generatedSubtle,
+      subtlePair,
       chapterName,
       generatedAccent,
       logoUrl,

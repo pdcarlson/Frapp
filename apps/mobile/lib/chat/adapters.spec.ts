@@ -140,6 +140,8 @@ describe("createMonitorNetworkState", () => {
 
   function monitorHarness() {
     let listener: LinkListener | null = null;
+    // The monitor's link-down grace, driven by hand.
+    const graceTimers: Array<() => void> = [];
     const fetchMock = vi.fn();
     const deps = {
       getState: vi
@@ -152,9 +154,25 @@ describe("createMonitorNetworkState", () => {
       fetch: fetchMock,
       setInterval: vi.fn(() => 1),
       clearInterval: vi.fn(),
+      setTimeout: vi.fn((fn: () => void) => {
+        graceTimers.push(fn);
+        return graceTimers.length;
+      }),
+      clearTimeout: vi.fn((handle: number) => {
+        graceTimers[handle - 1] = () => {};
+      }),
+      appState: {
+        currentState: "active",
+        addEventListener: vi.fn(() => ({ remove: vi.fn() })),
+      },
     } as unknown as MonitorDeps;
     const monitor = createConnectionMonitor(deps);
-    return { monitor, fetchMock, link: () => listener };
+    return {
+      monitor,
+      fetchMock,
+      link: () => listener,
+      endGrace: () => graceTimers.splice(0).forEach((fn) => fn()),
+    };
   }
 
   beforeEach(() => {
@@ -222,21 +240,24 @@ describe("createMonitorNetworkState", () => {
   });
 
   it("emits online=false when the link drops, and true when it returns via a healthy probe", async () => {
-    const { monitor, fetchMock, link } = monitorHarness();
+    const { monitor, fetchMock, link, endGrace } = monitorHarness();
     const net = createMonitorNetworkState(monitor);
     fetchMock.mockResolvedValue({ ok: true, status: 200 } as Response);
     await net.prime();
+    await Promise.resolve();
 
     const seen: boolean[] = [];
     net.subscribe((online) => seen.push(online));
 
+    fetchMock.mockRejectedValue(new Error("network unreachable"));
     link()?.({ isConnected: false });
-    expect(net.isOffline()).toBe(true);
+    endGrace();
+    await vi.waitFor(() => expect(net.isOffline()).toBe(true));
     expect(seen).toEqual([false]);
 
+    fetchMock.mockResolvedValue({ ok: true, status: 200 } as Response);
     link()?.({ isConnected: true, isInternetReachable: true });
-    await Promise.resolve();
-    expect(net.isOffline()).toBe(false);
+    await vi.waitFor(() => expect(net.isOffline()).toBe(false));
     expect(seen).toEqual([false, true]);
   });
 });

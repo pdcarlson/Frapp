@@ -125,6 +125,62 @@ describe("useSelectChapter", () => {
     expect(mockState.calls).toEqual(["activate:chapter-a", "refreshSession"]);
   });
 
+  it("says when the activate has landed, before the refresh", async () => {
+    // The chapter picker reads this to tell a refused switch (nothing moved)
+    // from one the server took while the token stayed put.
+    const selectChapter = renderSelect();
+    const onActivated = vi.fn(() => mockState.calls.push("onActivated"));
+
+    mockState.refreshError = { message: "network down" };
+    await expect(selectChapter("chapter-a", { onActivated })).resolves.toBe(
+      false,
+    );
+    expect(mockState.calls).toEqual([
+      "activate:chapter-a",
+      "onActivated",
+      "refreshSession",
+    ]);
+  });
+
+  it("doesn't say so when the activate fails or can't be sent", async () => {
+    const onActivated = vi.fn();
+    mockState.activateError = new Error("activate failed");
+    await expect(renderSelect()("chapter-a", { onActivated })).resolves.toBe(
+      false,
+    );
+
+    mockState.client = null;
+    await expect(renderSelect()("chapter-a", { onActivated })).resolves.toBe(
+      false,
+    );
+    expect(onActivated).not.toHaveBeenCalled();
+  });
+
+  it("says when the server refuses the activate, and only then", async () => {
+    // The picker reads this to keep a refused member (removed from that
+    // chapter) on the list rather than treating it as being offline.
+    const onRefused = vi.fn();
+    mockState.activateError = Object.assign(new Error("Forbidden"), {
+      statusCode: 403,
+    });
+    await expect(renderSelect()("chapter-a", { onRefused })).resolves.toBe(
+      false,
+    );
+    expect(onRefused).toHaveBeenCalledTimes(1);
+
+    onRefused.mockClear();
+    mockState.activateError = new Error("Failed to fetch");
+    await expect(renderSelect()("chapter-a", { onRefused })).resolves.toBe(
+      false,
+    );
+    mockState.activateError = null;
+    mockState.refreshError = { message: "network down" };
+    await expect(renderSelect()("chapter-a", { onRefused })).resolves.toBe(
+      false,
+    );
+    expect(onRefused).not.toHaveBeenCalled();
+  });
+
   it("never throws, so a caller cannot roll back a completed action", async () => {
     mockState.activateError = new Error("boom");
     const selectChapter = renderSelect();

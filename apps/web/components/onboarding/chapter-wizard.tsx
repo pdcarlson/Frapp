@@ -16,6 +16,10 @@ import {
 import {
   ARCHETYPES,
   getArchetype,
+  orgDefaultAccent,
+  orgHidesGreekLetters,
+  orgHidingGreekLettersIn,
+  orgMarkFieldsFor,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import {
@@ -47,6 +51,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AccentSwatches } from "@/components/settings/accent-swatches";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { CrestTile } from "@/components/layout/crest-tile";
@@ -68,6 +73,7 @@ import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { buildJoinUrl } from "@/lib/invite-link";
 import { inspectLogoFile } from "@/lib/chapter-logo";
 import { FERPA_URL } from "@/lib/legal-links";
+import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
 
 /**
  * Where a brand-new founder lands when the wizard finishes.
@@ -103,6 +109,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   const router = useRouter();
   const { toast } = useToast();
   const selectChapter = useSelectChapter();
+  const { confirmDrop, confirmDropDialog } = useConfirmDropBulkUploads();
 
   const onboardChapter = useOnboardChapter();
   const uploadLogo = useUploadChapterLogo();
@@ -114,6 +121,10 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   const debouncedQuery = useDebouncedValue(rawQuery, 250);
 
   const [directoryId, setDirectoryId] = useState<string | null>(null);
+  // The organization the picked directory row names. A chapter that came
+  // from FIJI's row is FIJI whatever its name field says later, so its
+  // letters stay hidden even after the founder edits the name.
+  const [matchedOrgName, setMatchedOrgName] = useState<string | null>(null);
   const [archetype, setArchetype] = useState<ArchetypeKey>("ifc");
   const [identity, setIdentity] = useState<ChapterIdentityForm>(
     EMPTY_CHAPTER_IDENTITY,
@@ -141,19 +152,25 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   function applyDirectoryMatch(row: ChapterDirectoryResult) {
     const resolvedArchetype = getArchetype(row.archetype).key;
     setDirectoryId(row.id);
+    setMatchedOrgName(row.org_name ?? null);
     setArchetype(resolvedArchetype);
+    const mark = orgMarkFieldsFor(row.org_name, identity.name, identity);
     setIdentity({
       name: row.org_name ?? "",
       university: row.university ?? "",
       greekLetters: row.org_letters ?? "",
-      // The directory knows letters, not whether an organization shows them,
-      // so these two keep whatever the founder already chose.
-      shortName: identity.shortName,
-      showGreekLetters: identity.showGreekLetters,
+      // The directory knows letters, not whether an organization shows them:
+      // FIJI's profile switches them off (`orgMarkFieldsFor`), and fills the
+      // short name only if the founder left it empty.
+      ...mark,
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",
-      colorAccent: normalizeAccentInput(row.default_colors?.accent),
+      // The organization's own first color wins over the directory's: most
+      // directory rows hold one placeholder gold (`orgDefaultAccent`).
+      colorAccent: normalizeAccentInput(
+        orgDefaultAccent(row.org_name) ?? row.default_colors?.accent,
+      ),
     });
     // A different chapter identity invalidates any prior consent — re-affirm.
     setAcceptedLegal(false);
@@ -162,11 +179,15 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
 
   function startManualEntry() {
     setDirectoryId(null);
+    setMatchedOrgName(null);
     setArchetype("ifc");
+    // Seed the chapter name from whatever the officer was searching for, and
+    // let a name that names FIJI fill its short name as typing it would.
+    const seeded = rawQuery.trim();
     setIdentity({
       ...EMPTY_CHAPTER_IDENTITY,
-      // Seed the chapter name from whatever the officer was searching for.
-      name: rawQuery.trim(),
+      name: seeded,
+      ...orgMarkFieldsFor(seeded, "", EMPTY_CHAPTER_IDENTITY),
     });
     setAcceptedLegal(false);
     setStep("archetype");
@@ -177,6 +198,14 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
     if (prev) setStep(prev);
   }
 
+  // The organization whose rule hides the letters, by the picked row first,
+  // then by the name typed ("Phi Gamma Delta Tau Nu" still names FIJI). Null
+  // when neither hides them.
+  const lettersHiddenBy =
+    orgHidingGreekLettersIn(matchedOrgName) ??
+    orgHidingGreekLettersIn(identity.name) ??
+    null;
+
   const identityValid = chapterIdentityIsValid(identity);
   // Gate "Create chapter" on the required Terms/Privacy acceptance as well as a
   // valid identity (spec/behavior/legal.md). The API enforces the same rule
@@ -185,6 +214,8 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
 
   async function submitChapter() {
     if (!canSubmit) return;
+    // The new chapter becomes the active one, which ends this tab's Bulk upload.
+    if (!(await confirmDrop("switch"))) return;
     try {
       const chapter = await onboardChapter.mutateAsync({
         name: identity.name.trim(),
@@ -192,7 +223,10 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
         org_archetype: archetype,
         directory_id: directoryId ?? undefined,
         accept_terms_privacy: true,
-        branding: chapterIdentityBranding(identity),
+        branding: {
+          ...chapterIdentityBranding(identity),
+          ...(lettersHiddenBy ? { show_greek_letters: false } : {}),
+        },
       });
       const id =
         chapter && typeof chapter === "object" && "id" in chapter
@@ -408,6 +442,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
                   logo={logo}
                   onLogoChange={setLogo}
                   isManual={directoryId === null}
+                  lettersHiddenBy={lettersHiddenBy}
                   accepted={acceptedLegal}
                   onAcceptedChange={setAcceptedLegal}
                 />
@@ -473,10 +508,44 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
               ) : null}
             </footer>
           </div>
+          {confirmDropDialog}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
   );
+}
+
+/**
+ * How a directory row reads in the results: the organization's letters before
+ * its name, except for an organization that never displays them (FIJI). The
+ * directory carries letters for every row, so the profile has to say no.
+ */
+function directoryRowTitle(row: ChapterDirectoryResult): string {
+  const name = row.org_name ?? "";
+  return row.org_letters && !orgHidesGreekLetters(row.org_name)
+    ? `${row.org_letters} · ${name}`
+    : name;
+}
+
+/**
+ * The identity after the organization's name is typed. On manual entry the
+ * short name and the letters switch follow `orgMarkFieldsFor`: a profile
+ * applies when the name comes to name its organization and is undone when the
+ * name leaves it, and a short name the founder typed is never replaced. After
+ * a directory pick the row decides the organization, so renaming the chapter
+ * ("Tau Nu Chapter") changes the name alone.
+ */
+function withOrgName(
+  identity: ChapterIdentityForm,
+  name: string,
+  fromDirectory: boolean,
+): ChapterIdentityForm {
+  if (fromDirectory) return { ...identity, name };
+  return {
+    ...identity,
+    name,
+    ...orgMarkFieldsFor(name, identity.name, identity),
+  };
 }
 
 function FindStep({
@@ -583,10 +652,7 @@ function FindStep({
                   onSelect={() => onSelect(row)}
                   className="flex-col items-start gap-0.5 py-2"
                 >
-                  <span className="font-medium">
-                    {row.org_letters ? `${row.org_letters} · ` : ""}
-                    {row.org_name}
-                  </span>
+                  <span className="font-medium">{directoryRowTitle(row)}</span>
                   <span className="text-xs text-muted-foreground">
                     {[row.chapter_designation, row.university]
                       .filter(Boolean)
@@ -674,7 +740,7 @@ function ArchetypeStep({
                 FOCUS_RING,
                 isActive
                   ? "border-accent-border bg-accent-subtle-hover text-accent-text"
-                  : "border-border hover:bg-accent-subtle",
+                  : "border-border hover:bg-card-hover",
               )}
             >
               {/*
@@ -703,6 +769,7 @@ function IdentityStep({
   logo,
   onLogoChange,
   isManual,
+  lettersHiddenBy,
   accepted,
   onAcceptedChange,
 }: {
@@ -711,6 +778,8 @@ function IdentityStep({
   logo: ChapterLogoUpload | null;
   onLogoChange: (next: ChapterLogoUpload | null) => void;
   isManual: boolean;
+  /** The organization that hides its letters (FIJI), or null. */
+  lettersHiddenBy: string | null;
   accepted: boolean;
   onAcceptedChange: (next: boolean) => void;
 }) {
@@ -735,7 +804,9 @@ function IdentityStep({
           <Input
             id="wiz-name"
             value={identity.name}
-            onChange={(e) => set("name", e.target.value)}
+            onChange={(e) =>
+              onChange(withOrgName(identity, e.target.value, !isManual))
+            }
             placeholder="Sigma Phi Epsilon"
             required
           />
@@ -750,15 +821,23 @@ function IdentityStep({
             required
           />
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="wiz-letters">Greek letters</Label>
-          <Input
-            id="wiz-letters"
-            value={identity.greekLetters}
-            onChange={(e) => set("greekLetters", e.target.value)}
-            placeholder="ΣΦΕ"
-          />
-        </div>
+        {/*
+          An organization that hides its letters (FIJI) gets neither this
+          field nor the show-letters switch, as on mobile: the directory still
+          fills them, and they stay stored and switched off, but setup never
+          draws them. The short name stands in.
+        */}
+        {lettersHiddenBy ? null : (
+          <div className="space-y-1.5">
+            <Label htmlFor="wiz-letters">Greek letters</Label>
+            <Input
+              id="wiz-letters"
+              value={identity.greekLetters}
+              onChange={(e) => set("greekLetters", e.target.value)}
+              placeholder="ΣΦΕ"
+            />
+          </div>
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="wiz-designation">Chapter designation</Label>
           <Input
@@ -792,6 +871,7 @@ function IdentityStep({
         </div>
         <ChapterMarkFields
           identity={identity}
+          lettersHiddenBy={lettersHiddenBy}
           onSet={set}
           logo={logo}
           onLogoChange={onLogoChange}
@@ -802,19 +882,24 @@ function IdentityStep({
           the #920 slice-9 cutover removed the second brand colour; five would
           leave this one alone beside an empty cell at `sm:` and above.
         */}
-        <div className="space-y-1.5 sm:col-span-2">
+        <div className="space-y-2 sm:col-span-2">
           <Label htmlFor="wiz-color-accent">Accent color</Label>
+          <AccentSwatches
+            value={identity.colorAccent}
+            orgName={identity.name}
+            onPick={(hex) => set("colorAccent", hex)}
+          />
           <div className="flex items-center gap-2">
             <input
               id="wiz-color-accent"
               type="color"
               value={identity.colorAccent}
               onChange={(e) => set("colorAccent", e.target.value)}
-              // 36px was under §2's 44px floor on a control that is nothing but
-              // a tap target. `rounded` already maps to `--radius` (12) via the
+              // The Field step: 40 to a mouse, 44 to a finger (§2's floor on a
+              // control that is nothing but a tap target). `rounded` already maps to `--radius` (12) via the
               // preset's `DEFAULT`; spelled `rounded-md` so the radius step is
               // named rather than inherited.
-              className="h-11 w-14 cursor-pointer rounded-md border border-border bg-background"
+              className="h-10 w-14 cursor-pointer pointer-coarse:h-11 rounded-md border border-border bg-background"
               aria-label="Accent color"
             />
             <span className="font-mono text-caption text-muted-foreground">
@@ -902,7 +987,7 @@ function InviteStep({
               aria-label="Copy invite link"
             >
               {copied ? (
-                <Check className="h-4 w-4 text-primary" />
+                <Check className="h-4 w-4" />
               ) : (
                 <Copy className="h-4 w-4" />
               )}
@@ -1008,11 +1093,13 @@ function InviteStep({
  */
 function ChapterMarkFields({
   identity,
+  lettersHiddenBy,
   onSet,
   logo,
   onLogoChange,
 }: {
   identity: ChapterIdentityForm;
+  lettersHiddenBy: string | null;
   onSet: <K extends keyof ChapterIdentityForm>(
     key: K,
     value: ChapterIdentityForm[K],
@@ -1043,7 +1130,7 @@ function ChapterMarkFields({
   const branding = {
     short_name: identity.shortName,
     greek_letters: identity.greekLetters,
-    show_greek_letters: identity.showGreekLetters,
+    show_greek_letters: identity.showGreekLetters && !lettersHiddenBy,
   };
   const mark = resolveChapterMark({ logoUrl, branding, name: identity.name });
 
@@ -1053,8 +1140,9 @@ function ChapterMarkFields({
       <div className="flex items-center gap-3">
         <CrestTile mark={mark} />
         <p className="text-xs text-muted-foreground">
-          How your chapter shows in the nav: your logo, else your short name,
-          else your Greek letters.
+          {lettersHiddenBy
+            ? `${lettersHiddenBy} doesn't display its Greek letters, so your logo or short name stands in for them.`
+            : "How your chapter shows in the nav: your logo, else your short name, else your Greek letters."}
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -1111,19 +1199,21 @@ function ChapterMarkFields({
           ) : null}
         </div>
       </div>
-      <div className="flex items-center justify-between gap-3">
-        <Label htmlFor="wiz-show-letters" className="font-normal">
-          Show Greek letters
-          <span className="block text-xs text-muted-foreground">
-            Turn off if your organization doesn&apos;t display its letters.
-          </span>
-        </Label>
-        <Switch
-          id="wiz-show-letters"
-          checked={identity.showGreekLetters}
-          onCheckedChange={(checked) => onSet("showGreekLetters", checked)}
-        />
-      </div>
+      {lettersHiddenBy ? null : (
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="wiz-show-letters" className="font-normal">
+            Show Greek letters
+            <span className="block text-xs text-muted-foreground">
+              Turn off if your organization doesn&apos;t display its letters.
+            </span>
+          </Label>
+          <Switch
+            id="wiz-show-letters"
+            checked={identity.showGreekLetters}
+            onCheckedChange={(checked) => onSet("showGreekLetters", checked)}
+          />
+        </div>
+      )}
     </fieldset>
   );
 }

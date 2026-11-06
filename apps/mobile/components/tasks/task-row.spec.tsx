@@ -10,8 +10,11 @@ import { FrappThemeProvider } from "@/lib/theme";
 // `useCurrentChapter` and would drag the API client and a QueryClient into a
 // spec about styling. The accent value is covered by `lib/chapter-branding.spec.tsx`.
 vi.mock("@/lib/chapter-branding", () => ({
+  // A purple stand-in, so a chip painted house gold fails instead of passing.
   useChapterBranding: () => ({
-    accent: "#F4CB63",
+    accent: "#CB9FFF",
+    accentSubtle: "#251A33",
+    accentBorder: "#5C3E8A",
     logoUrl: null,
     chapterName: null,
   }),
@@ -23,8 +26,8 @@ import type { TaskRowModel } from "@/lib/tasks/board";
 /**
  * These pin the four rules that are cheapest to break by copying a neighbouring
  * row component, and one of them is a literal acceptance criterion of #995:
- * an overdue date is `semantic.destructive`, never the mention red that
- * `foundations.md:67` reserves for direct address.
+ * an overdue date is `semantic.destructiveText` (danger's AA lift), never the
+ * mention red that `foundations.md:67` reserves for direct address.
  */
 
 const NOW = new Date(2026, 7, 17, 12, 0, 0, 0);
@@ -90,7 +93,7 @@ function styleOfText(tree: ReactTestRenderer, needle: string) {
 }
 
 describe("TaskRow — the overdue colour", () => {
-  it("draws an urgent due date in semantic.destructive, not the mention red", () => {
+  it("draws an urgent due date in semantic.destructiveText, not the mention red", () => {
     const tree = render(
       <TaskRow
         row={row({ dueDate: "2026-08-15", displayStatus: "OVERDUE", isOverdue: true })}
@@ -100,7 +103,7 @@ describe("TaskRow — the overdue colour", () => {
     );
 
     const style = styleOfText(tree, "Overdue by");
-    expect(style.color).toBe(signetDarkTokens.color.semantic.destructive);
+    expect(style.color).toBe(signetDarkTokens.color.semantic.destructiveText);
     expect(style.color).not.toBe(signetDarkTokens.color.semantic.mention);
   });
 
@@ -111,6 +114,91 @@ describe("TaskRow — the overdue colour", () => {
 
     expect(styleOfText(tree, "Due Sep 30").color).toBe(
       signetDarkTokens.color.text.mutedForeground,
+    );
+  });
+});
+
+// A task row is a list row, so it answers a press as every list row does
+// (`usePressFeedback`, through `PressableRow`): a ripple on Android and a lift
+// to the card step on iOS. Never the fade it used to give. Since 2026-11-05 the
+// row sits flush on the floor (web's list grammar), so it is square and lifts
+// from the floor, not from a card of its own.
+describe("TaskRow — press feedback", () => {
+  it("ripples on Android and lifts floor to card on iOS, never fading", () => {
+    const tree = render(
+      <TaskRow row={row()} now={NOW} onToggle={() => {}} />,
+    );
+    const pressable = tree.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    // The suite's react-native stub runs as iOS.
+    const held = flatten(pressable.props.style({ pressed: true }));
+    const resting = flatten(pressable.props.style({ pressed: false }));
+
+    expect(pressable.props.android_ripple?.color).toMatch(/^rgba\(/);
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    expect(held).not.toHaveProperty("opacity");
+    expect(resting).not.toHaveProperty("backgroundColor");
+    expect(resting).not.toHaveProperty("borderRadius");
+  });
+
+  it("draws a hairline above every row but the first in its group", () => {
+    const first = render(
+      <TaskRow row={row()} now={NOW} onToggle={() => {}} isFirst />,
+    );
+    const next = render(<TaskRow row={row()} now={NOW} onToggle={() => {}} />);
+    const style = (tree: typeof first) =>
+      flatten(
+        tree.root
+          .find((node) => (node.type as unknown) === "Pressable")
+          .props.style({ pressed: false }),
+      );
+    expect(style(first)).not.toHaveProperty("borderTopWidth");
+    expect(style(next).borderTopColor).toBe(
+      signetDarkTokens.color.border.hairline,
+    );
+  });
+});
+
+// The Tasks screen drops `onToggle` while a row's PATCH sequence runs, so the
+// row in flight is the plain branch. It still has to look and read in progress,
+// not merely disabled: dimmed, and `busy` to a screen reader.
+describe("TaskRow — a row in flight", () => {
+  it("dims and reads busy on the plain branch the screen gives it", () => {
+    const tree = render(<TaskRow row={row()} now={NOW} isPending />);
+    const node = tree.root.find(
+      (candidate) => candidate.props?.accessibilityRole === "checkbox",
+    );
+    expect(node.type as unknown).toBe("View");
+    expect(node.props.accessibilityState).toMatchObject({
+      busy: true,
+      disabled: true,
+    });
+    expect(flatten(node.props.style).opacity).toBe(0.8);
+  });
+
+  it("dims and reads busy as a pressable row too", () => {
+    const tree = render(
+      <TaskRow row={row()} now={NOW} isPending onToggle={() => {}} />,
+    );
+    const pressable = tree.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    expect(pressable.props.accessibilityState).toMatchObject({ busy: true });
+    // The dim is the row's own: `splitRowStyle` keeps opacity on the Pressable.
+    const resting = flatten(pressable.props.style({ pressed: false }));
+    expect(resting.opacity).toBe(0.8);
+    expect(flatten(pressable.parent!.props.style)).not.toHaveProperty("opacity");
+  });
+
+  it("is neither dimmed nor busy at rest", () => {
+    const tree = render(<TaskRow row={row()} now={NOW} onToggle={() => {}} />);
+    const pressable = tree.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    expect(pressable.props.accessibilityState).toMatchObject({ busy: false });
+    expect(flatten(pressable.props.style({ pressed: false }))).not.toHaveProperty(
+      "opacity",
     );
   });
 });
@@ -162,7 +250,7 @@ describe("TaskRow — the points chip", () => {
     expect(texts(tree).some((text) => text.startsWith("+"))).toBe(false);
   });
 
-  it("keeps a completed-but-unconfirmed reward on the gold chip", () => {
+  it("keeps a completed-but-unconfirmed reward on the accent chip", () => {
     const tree = render(
       <TaskRow
         row={row({
@@ -175,8 +263,54 @@ describe("TaskRow — the points chip", () => {
       />,
     );
     expect(texts(tree)).toContain("+15");
-    expect(styleOfText(tree, "+15").color).toBe(
-      signetDarkTokens.color.gold.askText,
+    expect(styleOfText(tree, "+15").color).toBe("#CB9FFF");
+  });
+});
+
+// foundations.md §6 "Where the accent goes" (2026-11-05): finished work is the
+// quietest thing on a list, so a done box is a muted neutral fill and check,
+// and a started box a neutral outline, never the chapter accent.
+describe("TaskRow — the checkbox stays off the accent", () => {
+  function box(tree: ReactTestRenderer): Record<string, unknown> {
+    const node = tree.root.find(
+      (candidate) =>
+        (candidate.type as unknown) === "View" &&
+        flatten(candidate.props.style).width === signetDarkTokens.spacing.xl &&
+        flatten(candidate.props.style).borderRadius ===
+          signetDarkTokens.radius.chip,
     );
+    return flatten(node.props.style);
+  }
+
+  it("fills a done box with the raised neutral and a muted check", () => {
+    const tree = render(
+      <TaskRow
+        row={row({ storedStatus: "COMPLETED", isDone: true, pointReward: null })}
+        now={NOW}
+      />,
+    );
+    const style = box(tree);
+    expect(style.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
+    expect(style.borderColor).toBe(signetDarkTokens.color.border.input);
+    const flat = JSON.stringify(tree.toJSON());
+    expect(flat).toContain(signetDarkTokens.color.text.mutedForeground);
+    expect(flat).not.toContain("#CB9FFF");
+    expect(flat).not.toContain(signetDarkTokens.color.gold.onHouse);
+  });
+
+  it("outlines a started box in a neutral, with no fill", () => {
+    const tree = render(
+      <TaskRow
+        row={row({ storedStatus: "IN_PROGRESS", pointReward: null })}
+        now={NOW}
+        onToggle={() => {}}
+      />,
+    );
+    const style = box(tree);
+    expect(style.borderColor).toBe(
+      signetDarkTokens.color.text.mutedForeground,
+    );
+    expect(style.backgroundColor).toBeUndefined();
+    expect(JSON.stringify(tree.toJSON())).not.toContain("#CB9FFF");
   });
 });

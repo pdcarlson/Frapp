@@ -2,9 +2,9 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
-import { AppState } from "react-native";
+import { AppState, StyleSheet } from "react-native";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
@@ -96,38 +96,61 @@ const mutateAsync = vi.fn(async () => {
   throw failure;
 });
 
+let chapterId: string | null = "chapter-1";
+
+/** Each query's `refetch`, kept across renders so a pull can be asserted on. */
+const refetch = vi.hoisted(() => ({
+  viewer: vi.fn(async () => undefined),
+  tasks: vi.fn(async () => undefined),
+  points: vi.fn(async () => undefined),
+  leaderboard: vi.fn(async () => undefined),
+}));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useActiveChapterId: () => "chapter-1",
+  useActiveChapterId: () => chapterId,
   useViewerUserId: () => "user-1",
-  useCurrentUser: () => ({ isError: false }),
+  useCurrentUser: () => ({ isError: false, refetch: refetch.viewer }),
   useTasks: () => ({
     data: TASKS,
     isPending: false,
     isError: false,
     isFetching: false,
-    refetch: vi.fn(),
+    refetch: refetch.tasks,
   }),
-  useMyPoints: () => ({ data: undefined }),
-  useLeaderboard: () => ({ data: undefined }),
+  useMyPoints: () => ({ data: undefined, refetch: refetch.points }),
+  useLeaderboard: () => ({ data: undefined, refetch: refetch.leaderboard }),
   usePermissionList: () => [],
   useUpdateTaskStatus: () => ({ mutateAsync }),
 }));
 
 // The sheet has its own rendered spec; here it would only bring its own hooks.
+// It keeps the clock it was handed, which is what its chips read, and the
+// instance it is, which is what holds a kept draft.
+let sheetNow: Date | undefined;
+let sheetInstance: object | undefined;
 vi.mock("@/components/tasks/new-task-sheet", () => ({
-  NewTaskSheet: () => null,
+  NewTaskSheet: ({ now }: { now?: Date }) => {
+    sheetNow = now;
+    const [instance] = React.useState(() => ({}));
+    sheetInstance = instance;
+    return null;
+  },
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
 
+const successHaptic = vi.fn();
+vi.mock("@/lib/haptics", () => ({
+  successHaptic: () => successHaptic(),
+}));
+
 import TasksScreen from "@/app/(tabs)/tasks";
 
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
-const refocus = (expoRouter as unknown as { __refocus: () => void })
-  .__refocus;
+const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
 
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -161,6 +184,48 @@ async function tapRow(tree: ReactTestRenderer) {
 
 beforeEach(() => {
   mutateAsync.mockClear();
+  successHaptic.mockReset();
+  chapterId = "chapter-1";
+});
+
+describe("A task in flight", () => {
+  it("dims the tapped row and reads it busy until its PATCH sequence ends", async () => {
+    // The first write is held open; the second then fails quietly, which ends
+    // the sequence and clears the busy flag.
+    failure = FAILED;
+    let release!: () => void;
+    mutateAsync.mockImplementationOnce(
+      () =>
+        new Promise<never>((_resolve, reject) => {
+          release = () => reject(FAILED);
+        }),
+    );
+    const tree = render();
+    await tapRow(tree);
+
+    // The host row: the screen drops `onToggle` while the sequence runs, so
+    // this is the plain branch, and it must still look and read in progress.
+    const host = () =>
+      row(tree).find(
+        (node) =>
+          typeof node.type === "string" &&
+          node.props.accessibilityRole === "checkbox",
+      );
+    expect(row(tree).props.onToggle).toBeUndefined();
+    expect(host().props.accessibilityState).toMatchObject({ busy: true });
+    expect(StyleSheet.flatten(host().props.style).opacity).toBe(0.8);
+    // The other row is untouched.
+    expect(rows(tree)[1]!.props.isPending).toBe(false);
+
+    await act(async () => release());
+
+    expect(row(tree).props.onToggle).toBeDefined();
+    expect(host().props.accessibilityState).toMatchObject({ busy: false });
+    expect(StyleSheet.flatten(host().props.style)).not.toHaveProperty(
+      "opacity",
+    );
+    act(() => tree.unmount());
+  });
 });
 
 describe("Task status toggle on a gate refusal (#2710)", () => {
@@ -176,7 +241,9 @@ describe("Task status toggle on a gate refusal (#2710)", () => {
     expect(screenText(tree)).toContain(copy);
     // The guard's own words: a checkout instruction the store declaration
     // forbids in the app, or a Settings → Modules instruction for an officer.
-    expect(screenText(tree)).not.toContain((error as { message: string }).message);
+    expect(screenText(tree)).not.toContain(
+      (error as { message: string }).message,
+    );
     // Every row, not just the one tapped: each would refuse the same way.
     expect(rows(tree)).toHaveLength(2);
     for (const each of rows(tree)) expect(each.props.onToggle).toBeUndefined();
@@ -195,7 +262,9 @@ describe("Task status toggle on a gate refusal (#2710)", () => {
     expect(row(tree).props.onToggle).toBeUndefined();
     act(() => appStateListener()("active"));
 
-    expect(screenText(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.taskStatus);
+    expect(screenText(tree)).not.toContain(
+      SUBSCRIPTION_REFUSAL_COPY.taskStatus,
+    );
     for (const each of rows(tree)) expect(each.props.onToggle).toBeDefined();
     act(() => tree.unmount());
   });
@@ -226,9 +295,179 @@ describe("Task status toggle on a gate refusal (#2710)", () => {
     const tree = render();
     await tapRow(tree);
 
-    expect(screenText(tree)).not.toContain(SUBSCRIPTION_REFUSAL_COPY.taskStatus);
+    expect(screenText(tree)).not.toContain(
+      SUBSCRIPTION_REFUSAL_COPY.taskStatus,
+    );
     expect(screenText(tree)).not.toContain(MODULE_REFUSAL_COPY.taskStatus);
     expect(row(tree).props.onToggle).toBeDefined();
+    act(() => tree.unmount());
+  });
+});
+
+/**
+ * Marking a task done is a confirming action (`spec/ui/mobile/README.md`
+ * § Native-feel rules), felt once the writes have landed: a TODO row writes
+ * two rungs, and a gate can refuse either.
+ */
+describe("Task status toggle haptic", () => {
+  afterEach(() => {
+    mutateAsync.mockImplementation(async () => {
+      throw failure;
+    });
+  });
+
+  it("taps once when a member marks a task done", async () => {
+    mutateAsync.mockImplementation(async () => undefined as never);
+    const tree = render();
+    await tapRow(tree);
+
+    expect(mutateAsync).toHaveBeenCalledTimes(2);
+    expect(successHaptic).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("waits for both rungs to land", async () => {
+    const releases: (() => void)[] = [];
+    mutateAsync.mockImplementation(
+      () =>
+        new Promise<never>((resolve) => {
+          releases.push(() => resolve(undefined as never));
+        }),
+    );
+    const tree = render();
+    act(() => {
+      (row(tree).props.onToggle as () => void)();
+    });
+
+    expect(successHaptic).not.toHaveBeenCalled();
+    // The first rung only draws the row in progress.
+    await act(async () => releases[0]?.());
+    expect(successHaptic).not.toHaveBeenCalled();
+    await act(async () => releases[1]?.());
+    expect(successHaptic).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it.each([
+    ["a gate refusal", () => REFUSED],
+    ["an ordinary failure", () => FAILED],
+  ])("stays still when the completion meets %s", async (_label, error) => {
+    failure = error();
+    const tree = render();
+    await tapRow(tree);
+
+    expect(mutateAsync).toHaveBeenCalled();
+    expect(successHaptic).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+});
+
+/**
+ * The board's clock, which the New task sheet's chips read: re-read when the
+ * member comes back, since a tab is never unmounted.
+ */
+describe("Tasks board clock", () => {
+  it("re-reads its clock when the member comes back to the app on this tab", () => {
+    // A board left open overnight: no navigation focus fires on the return,
+    // and the New task sheet's "Today" must mean the new day.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(2026, 8, 28, 22));
+      const tree = render();
+      expect(sheetNow?.getDate()).toBe(28);
+
+      vi.setSystemTime(new Date(2026, 8, 29, 8));
+      act(() => appStateListener()("background"));
+      expect(sheetNow?.getDate()).toBe(28);
+      act(() => appStateListener()("active"));
+
+      expect(sheetNow?.getDate()).toBe(29);
+      act(() => tree.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+/**
+ * The New task sheet is the host's per chapter: a kept draft's assignee is a
+ * member of the chapter it was started in, and the API refuses one who isn't.
+ * The Tasks tab stays mounted across a chapter switch, so only a new sheet
+ * drops the draft.
+ */
+describe("Tasks board's New task sheet across chapters", () => {
+  it("mounts a new sheet when the active chapter changes, and only then", () => {
+    const tree = render();
+    const first = sheetInstance;
+    const rerender = () =>
+      act(() =>
+        tree.update(
+          <FrappThemeProvider>
+            <TasksScreen />
+          </FrappThemeProvider>,
+        ),
+      );
+
+    rerender();
+    expect(sheetInstance).toBe(first);
+
+    chapterId = "chapter-2";
+    rerender();
+    expect(sheetInstance).not.toBe(first);
+    act(() => tree.unmount());
+  });
+});
+
+describe("Tasks board rows", () => {
+  // Flush rows split by hairlines: the screen tells each group's first row it
+  // is first, so no hairline floats above a group.
+  it("marks only the first row of a group as first", () => {
+    const tree = render();
+    expect(rows(tree).map((r) => r.props.isFirst)).toEqual([true, false]);
+  });
+});
+
+describe("Tasks board pull-to-refresh", () => {
+  it("refreshes the board, the viewer, the points and the leaderboard on a pull (#3385)", async () => {
+    for (const each of Object.values(refetch)) each.mockClear();
+    const tree = render();
+    // The ScrollView stand-in is a string, so it never renders the control it
+    // is handed: the pull is the control element's own `refresh`.
+    const control = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "ScrollView" && node.props.refreshControl,
+    ).props.refreshControl as React.ReactElement<{
+      refresh: () => Promise<unknown>;
+    }>;
+
+    await act(async () => {
+      await control.props.refresh();
+    });
+
+    for (const each of Object.values(refetch)) {
+      expect(each).toHaveBeenCalledTimes(1);
+      expect(each).toHaveBeenCalledWith({ cancelRefetch: true });
+    }
+    act(() => tree.unmount());
+  });
+
+  it("leaves the board out of a pull with no chapter, since its read has no gate (#3385)", async () => {
+    for (const each of Object.values(refetch)) each.mockClear();
+    chapterId = null;
+    const tree = render();
+    const control = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "ScrollView" && node.props.refreshControl,
+    ).props.refreshControl as React.ReactElement<{
+      refresh: () => Promise<unknown>;
+    }>;
+
+    await act(async () => {
+      await control.props.refresh();
+    });
+
+    expect(refetch.tasks).not.toHaveBeenCalled();
+    expect(refetch.viewer).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });
 });

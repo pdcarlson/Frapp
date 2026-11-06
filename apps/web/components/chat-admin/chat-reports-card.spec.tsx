@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { ChatReport, ChatReportStatus } from "@repo/hooks";
-import { formatLocaleDateTime } from "@repo/formatting";
+import { formatTimestampFull } from "@repo/formatting";
 import { networkMock } from "@/tests/network";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { cardFilledContainers } from "@/tests/card-surfaces";
@@ -141,7 +141,7 @@ const STALE =
   "Couldn't refresh the reports. These are the last ones that loaded.";
 
 /** The default report's filing time, as its accessible names read it. */
-const FILED = formatLocaleDateTime("2026-09-22T11:55:00Z");
+const FILED = formatTimestampFull("2026-09-22T11:55:00Z");
 
 const row = (text: RegExp | string) =>
   screen.getByText(text).closest("li") as HTMLElement;
@@ -440,7 +440,7 @@ describe("ChatReportsCard — async states", () => {
       open: { isPending: true, isLoading: true, fetchStatus: "fetching" },
     };
     const { container } = render(<ChatReportsCard />);
-    expect(screen.getByText("Loading reports...")).toBeInTheDocument();
+    expect(screen.getByText("Loading reports")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /dismiss/i })).toBeNull();
     expect(cardFilledContainers(container)).toEqual([]);
   });
@@ -585,7 +585,7 @@ describe("ChatReportsCard — accessible names", () => {
       .map((button) => button.getAttribute("aria-label"));
     expect(dismissals).toEqual([
       `Dismiss report on message from Harper Lane, “You should quit the chapter, nobody wan…” (Harassment, reported ${FILED}, with a reporter's note)`,
-      `Dismiss report on message from Harper Lane, “You should quit the chapter, nobody wan…” (Spam, reported ${formatLocaleDateTime("2026-09-22T10:00:00Z")})`,
+      `Dismiss report on message from Harper Lane, “You should quit the chapter, nobody wan…” (Spam, reported ${formatTimestampFull("2026-09-22T10:00:00Z")})`,
     ]);
   });
 
@@ -1037,7 +1037,7 @@ describe("ChatReportsCard — the gate", () => {
 
     expect(
       screen.getByText(
-        /needs the members:view and channels:manage permissions/,
+        /needs a role that can see the full directory and manage channels/,
       ),
     ).toBeInTheDocument();
     expect(requestedStatuses).toEqual([]);
@@ -1050,7 +1050,7 @@ describe("ChatReportsCard — the gate", () => {
 
     const region = screen.getByRole("region", { name: "Reported messages" });
     expect(
-      within(region).getByText(/needs the members:view and channels:manage/),
+      within(region).getByText(/see the full directory and manage channels/),
     ).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });

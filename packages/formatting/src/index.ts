@@ -9,6 +9,7 @@ export { formatPaddedStopwatch, formatTimer } from "./stopwatch";
 export { parseInstant } from "./instant";
 export {
   formatBareDate,
+  formatBareDateMedium,
   parseBareDateLocalMidnight,
   parseBareDateLocalNoon,
   parseInstantOrBareLocalNoon,
@@ -17,3 +18,13 @@ export { dayDelta } from "./calendar-days";
 export { formatMinutesExact, formatMinutesRounded } from "./minutes";
 export { formatBytes } from "./bytes";
 export { localIsoDate } from "./local-date";
+export {
+  formatDay,
+  formatDayRange,
+  formatDayTime,
+  formatDayTimeRange,
+  formatDueLabel,
+  formatRelativeDayTime,
+  formatTimestampFull,
+  formatWeekdayDay,
+} from "./display";

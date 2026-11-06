@@ -23,7 +23,9 @@
 // temporary directory and renamed into place only once it runs. So a bump never deletes a tree
 // an eas command started before the bump is still loading from, two first runs at once can't
 // interleave their installs, and an interrupted install is never mistaken for a finished one.
-// Old pins' directories stay until someone deletes `.cache/eas-cli/`.
+// Old pins' directories stay until someone deletes `.cache/eas-cli/`. On Windows an antivirus scan
+// can refuse that rename for a while: it is retried for a minute (renameWithRetry), and if it is
+// still refused, eas runs from the marked temporary tree and the next run adopts it (install).
 //
 // WHERE IT RUNS. eas reads `app.json`, `app.config.js` and `eas.json` from its working
 // directory, so the command always runs in `apps/mobile`, wherever npm was started. The
@@ -35,10 +37,12 @@
 // through cmd.exe on Windows, where `bash -c` can resolve to WSL's bash or to nothing.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
+import { parsePulledEnv, prepareUpdate, uploadSourceMaps } from "./eas-update.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 export const MOBILE_BUILD_WORKFLOW = path.join(ROOT, ".github", "workflows", "_mobile-build.yml");
@@ -151,34 +155,56 @@ function pidAlive(pid) {
 }
 
 /** Temporary trees whose install died (Ctrl-C, a closed terminal): never the one still running. */
-function sweepAbandoned(dir, { alive = pidAlive } = {}) {
+function abandoned(dir, { alive = pidAlive } = {}) {
   const base = path.basename(dir);
   let names = [];
   try {
     names = readdirSync(path.dirname(dir));
   } catch {
-    return;
+    return [];
   }
-  for (const name of names) {
-    const m = name.startsWith(`${base}.`) && name.match(/\.(?:tmp|broken)-(\d+)$/);
-    if (m && !alive(Number(m[1]))) removeQuietly(path.join(path.dirname(dir), name));
-  }
+  return names
+    .map((name) => ({ name, m: name.startsWith(`${base}.`) && name.match(/\.(tmp|broken)-(\d+)$/) }))
+    .filter(({ m }) => m && !alive(Number(m[2])))
+    .map(({ name, m }) => ({ path: path.join(path.dirname(dir), name), kind: m[1] }));
 }
 
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 /**
  * `renameSync`, retried while Windows refuses because an antivirus or indexer still holds one of
- * the files npm just wrote (EPERM / EACCES / EBUSY), as npm's own graceful-fs does. ENOTEMPTY or
- * EEXIST means the target is there: that is the caller's to judge, so it isn't retried.
+ * the files npm just wrote (EPERM / EACCES / EBUSY). Windows won't rename a directory while any
+ * file inside it is open, and a scan of a fresh 527-package tree can outlast a few seconds. Like
+ * npm's own graceful-fs (`polyfills.js`, its `rename`), this keeps trying for up to a minute, on
+ * Windows only, and only while the target is still absent: Windows also answers EPERM for a
+ * directory renamed onto one that exists, and a target that appeared (another run finished first)
+ * is the caller's to judge, so that throws at once. Unlike graceful-fs the wait grows by 100 ms a try up
+ * to a second, not 10 ms up to 100 ms, and `onWait` is told once when waiting starts so a person
+ * isn't left looking at a silent minute.
  */
-export function renameWithRetry(from, to, { rename = renameSync, wait = sleep, tries = 10 } = {}) {
+export function renameWithRetry(
+  from,
+  to,
+  {
+    rename = renameSync,
+    wait = sleep,
+    now = Date.now,
+    exists = existsSync,
+    budgetMs = 60_000,
+    onWait = () => {},
+    platform = process.platform,
+  } = {},
+) {
+  const start = now();
   for (let attempt = 1; ; attempt++) {
     try {
       return rename(from, to);
     } catch (err) {
-      if (attempt >= tries || !["EPERM", "EACCES", "EBUSY"].includes(err.code)) throw err;
-      wait(attempt * 100);
+      // Elsewhere these codes are lasting (a read-only parent, say), so a minute would only hang.
+      if (platform !== "win32" || !["EPERM", "EACCES", "EBUSY"].includes(err.code)) throw err;
+      if (now() - start >= budgetMs || exists(to)) throw err;
+      if (attempt === 1) onWait(err);
+      wait(Math.min(attempt * 100, 1000));
     }
   }
 }
@@ -187,14 +213,47 @@ function log(message) {
   process.stderr.write(`[eas-cli] ${message}\n`);
 }
 
+/** Marks a finished temporary install that a later run may adopt. */
+const PROVEN = ".frapp-proven";
+
+const waitNote = (dir) => (err) =>
+  log(`${err.code} moving the install into ${dir}, most likely an antivirus scan of its files. Retrying for up to a minute...`);
+
 /**
  * Install the pin into its directory, or confirm another run already did. Returns the eas entry
  * point, or `null` after saying why it failed.
  */
-export function install(pin, { cacheRoot = CACHE_ROOT, spawn = spawnSync, npm = npmCommand(), pid = process.pid } = {}) {
+export function install(
+  pin,
+  {
+    cacheRoot = CACHE_ROOT,
+    spawn = spawnSync,
+    npm = npmCommand(),
+    pid = process.pid,
+    rename = renameWithRetry,
+    alive = pidAlive,
+  } = {},
+) {
   const dir = pinDir(pin, cacheRoot);
   const tmp = `${dir}.tmp-${pid}`;
-  sweepAbandoned(dir);
+  const leftovers = abandoned(dir, { alive });
+  // A dead run's tree is adopted rather than installed again when that run fell back to it (below)
+  // and marked it PROVEN, so the cache still fills on a machine whose scanner outlasted that run's
+  // retries. Only the mark counts: a tree cut short by Ctrl-C mid-install can hold eas-cli's bin
+  // and still be missing dependencies.
+  if (!existsSync(dir)) {
+    for (const t of leftovers) {
+      if (t.kind !== "tmp" || !existsSync(path.join(t.path, PROVEN)) || !easBin(t.path, pin.version)) continue;
+      try {
+        rename(t.path, dir, { onWait: waitNote(dir) });
+        break;
+      } catch {
+        // Another run adopted it first, or it is still held: try the next, then install.
+      }
+    }
+  }
+  for (const t of leftovers) removeQuietly(t.path);
+  if (easBin(dir, pin.version)) return easBin(dir, pin.version);
   log(`Installing eas-cli ${pin.version} (dependencies published before ${pin.before}) into ${path.relative(ROOT, dir) || dir}...`);
   try {
     removeQuietly(tmp);
@@ -223,39 +282,147 @@ export function install(pin, { cacheRoot = CACHE_ROOT, spawn = spawnSync, npm = 
   // was damaged after the fact (a delete cut short, a quarantined file): move it aside first.
   if (existsSync(dir) && !easBin(dir, pin.version)) {
     try {
-      renameWithRetry(dir, `${dir}.broken-${pid}`);
+      rename(dir, `${dir}.broken-${pid}`, { onWait: waitNote(dir) });
       removeQuietly(`${dir}.broken-${pid}`);
     } catch {
       // Left for the rename below to report.
     }
   }
   try {
-    renameWithRetry(tmp, dir);
+    rename(tmp, dir, { onWait: waitNote(dir) });
   } catch (err) {
     // Another run finished first and its tree is in place: use it, drop ours.
-    removeQuietly(tmp);
-    if (!easBin(dir, pin.version)) {
-      log(`ERROR: could not move the install into ${dir}: ${err.message}. Delete ${dir} and run it again.`);
-      return null;
+    if (easBin(dir, pin.version)) {
+      removeQuietly(tmp);
+      return easBin(dir, pin.version);
     }
+    // Still refused after a minute, and nothing is in place: the tree we just proved runs, so run
+    // eas from it this once rather than throw away a good install. The next run adopts it.
+    if (!existsSync(dir)) {
+      try {
+        writeFileSync(path.join(tmp, PROVEN), "");
+      } catch {
+        // Unmarked, the next run installs again rather than adopting it.
+      }
+      log(
+        `WARNING: could not move the install into ${dir} (${err.code ?? err.message}). Running eas from ` +
+          `${path.basename(tmp)} this time; the next run moves it into place.`,
+      );
+      return easBin(tmp, pin.version);
+    }
+    removeQuietly(tmp);
+    log(`ERROR: could not move the install into ${dir}: ${err.message}. Delete ${dir} and run it again.`);
+    return null;
   }
   return easBin(dir, pin.version);
 }
 
-/** Run eas with `argv` in apps/mobile, installing the pin first if this machine lacks it. */
-export function main(argv, { pin = readEasCliPin(), cacheRoot = CACHE_ROOT, spawn = spawnSync, installer = install } = {}) {
+/**
+ * Run eas with `argv` in apps/mobile, installing the pin first if this machine lacks it.
+ *
+ * `update` (an OTA publish) goes through `scripts/eas-update.mjs` first, which refuses an unsafe
+ * publish and shapes the arguments and env eas-cli gets (#3472). Other commands, including the
+ * `update:*` ones that publish nothing new, pass straight through.
+ */
+export function main(
+  argv,
+  {
+    pin = readEasCliPin(),
+    cacheRoot = CACHE_ROOT,
+    spawn = spawnSync,
+    installer = install,
+    guardUpdate = prepareUpdate,
+    afterUpdate = uploadSourceMaps,
+  } = {},
+) {
   const bin = easBin(pinDir(pin, cacheRoot), pin.version) ?? installer(pin, { cacheRoot, spawn });
   if (!bin) return 1;
   if (!existsSync(MOBILE_DIR)) {
     log(`ERROR: ${MOBILE_DIR} is missing, so eas has no project to run against.`);
     return 1;
   }
-  const result = spawn(process.execPath, [bin, ...argv], { cwd: MOBILE_DIR, stdio: "inherit" });
+  let args = argv;
+  let env = process.env;
+  let publishedProduction = false;
+  if (argv[0] === "update") {
+    const guard = guardUpdate(argv.slice(1), { pullEnv: (environment) => pullEasEnv(bin, environment, { spawn }) });
+    if (!guard.ok) {
+      log("ERROR: refusing to publish this update:");
+      for (const e of guard.errors) log(`  - ${e}`);
+      log("How the by-hand OTA path works: docs/ops/deployment/mobile.md § 6.7.");
+      return 1;
+    }
+    for (const n of guard.notes) log(n);
+    args = ["update", ...guard.args];
+    env = guard.env;
+    publishedProduction = guard.profileName === "production";
+  }
+  // Each credential reaches only the tool that needs it: eas-cli (and the Metro export it runs)
+  // never sees the Sentry token, and the source-map uploader never sees EXPO_TOKEN.
+  const { easEnv, uploadEnv } = splitTokens(env);
+  const result = spawn(process.execPath, [bin, ...args], { cwd: MOBILE_DIR, stdio: "inherit", env: easEnv });
   if (result.error) {
     log(`ERROR: could not start eas: ${result.error.message}`);
     return 1;
   }
+  if (result.status === 0 && publishedProduction) afterUpdate({ env: uploadEnv, log });
   return result.status ?? 1;
+}
+
+/**
+ * The `EXPO_PUBLIC_*` variables of one EAS environment, read with `eas env:pull` into a temporary
+ * file that is deleted at once. `{ vars }`, or `{ error }`. eas's own output goes to stderr.
+ */
+export function pullEasEnv(
+  bin,
+  environment,
+  { spawn = spawnSync, tmp = tmpdir(), env = process.env, mobileDir = MOBILE_DIR, remove = removeQuietly } = {},
+) {
+  let dir;
+  let text = "";
+  try {
+    dir = mkdtempSync(path.join(tmp, "frapp-eas-env-"));
+    const file = path.join(dir, "pulled.env");
+    // env:pull evaluates app.config.js itself (to find the project), so it gets the same shell env
+    // the guard publishes with, minus what the guard drops and its own update markers.
+    const result = spawn(
+      process.execPath,
+      [bin, "env:pull", "--environment", environment, "--path", file, "--non-interactive"],
+      { cwd: mobileDir, stdio: ["inherit", 2, 2], env: pullEnvFor(env) },
+    );
+    if (result.error) return { error: result.error.message };
+    if (result.status !== 0) return { error: `eas env:pull exited ${result.status}; its output above says why` };
+    text = readFileSync(file, "utf8");
+    return { vars: parsePulledEnv(text) };
+  } catch (err) {
+    return { error: err.message };
+  } finally {
+    if (dir) remove(dir);
+    // A File variable is written beside the project, not into --path: delete each one it wrote.
+    const fileDir = path.join(mobileDir, ".eas", ".env");
+    for (const line of text.split(/\r?\n/)) {
+      const value = line.slice(line.indexOf("=") + 1);
+      if (line.includes("=") && path.dirname(value) === fileDir) remove(value);
+    }
+  }
+}
+
+function pullEnvFor(env) {
+  return Object.fromEntries(
+    Object.entries(env).filter(([k]) => !/^(EXPO_PUBLIC_|EAS_BUILD_|FRAPP_EAS_UPDATE_)/.test(k) && k !== SENTRY_TOKEN),
+  );
+}
+
+const SENTRY_TOKEN = "SENTRY_AUTH_TOKEN";
+const EXPO_TOKEN = "EXPO_TOKEN";
+
+/** `env` for eas-cli without the Sentry token, and for the source-map upload without EXPO_TOKEN. */
+export function splitTokens(env) {
+  const easEnv = { ...env };
+  delete easEnv[SENTRY_TOKEN];
+  const uploadEnv = { ...env };
+  delete uploadEnv[EXPO_TOKEN];
+  return { easEnv, uploadEnv };
 }
 
 if (isInvokedDirectly(import.meta.url)) {

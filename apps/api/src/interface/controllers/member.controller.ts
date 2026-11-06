@@ -36,6 +36,10 @@ import {
   MemberRosterEntryDto,
 } from '../dtos/member-profile.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
+import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
 
 @ApiTags('Members')
 @ApiBearerAuth()
@@ -79,7 +83,8 @@ export class MemberController {
   // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
   @Get('roster')
   @ApiOperation({
-    summary: 'Display roster for the chapter — id, name and avatar only',
+    summary:
+      'Display roster for the chapter — id, name, avatar and role color only',
   })
   @ApiOkResponse({ type: MemberRosterEntryDto, isArray: true })
   async roster(@CurrentChapterId() chapterId: string) {
@@ -115,6 +120,11 @@ export class MemberController {
 
   @Patch('me/onboarding')
   @ApiOperation({ summary: 'Update onboarding status' })
+  @FeatureEvent(
+    'member-onboarding-completed',
+    ({ body }: FeatureEventInput<UpdateOnboardingDto>) =>
+      body.has_completed_onboarding === true ? {} : null,
+  )
   async updateOnboarding(
     @CurrentMember() member: { id: string },
     @Body() dto: UpdateOnboardingDto,
@@ -142,8 +152,10 @@ export class MemberController {
    * `docs/security/authorization-model.md` § Chapter-scoped controllers.
    *
    * Whether the member can *act* on the nudge is a separate question the client
-   * answers — the card renders only behind `chapter-config:manage` — and
-   * dismissing a card one cannot act on is a legitimate thing to want.
+   * answers — the nudge renders only behind `chapter-config:manage`, and the
+   * setup checklist (`setup-checklist`) only to officers who can do one of its
+   * lines — and dismissing a card one cannot act on is a legitimate thing to
+   * want.
    */
   @Patch('me/ops-nudges/dismiss')
   @ApiOperation({ summary: 'Dismiss an ops-module setup nudge' })

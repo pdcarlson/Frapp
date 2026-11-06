@@ -12,6 +12,7 @@ import {
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { LEGAL_ACCEPTANCE_LABEL } from '@repo/validation';
+import type { InvitePreview } from '../../application/services/invite.service';
 
 /**
  * #422: `role` is optional on all three create routes. Omitting it falls back
@@ -80,4 +81,48 @@ export class RedeemInviteDto {
     message: 'Terms of Service and Privacy Policy must be accepted',
   })
   accept_terms_privacy?: boolean;
+}
+
+export class PreviewInviteDto {
+  @ApiProperty({ description: 'The invite token, as the join link carries it' })
+  @IsString()
+  token: string;
+}
+
+/** `InvitePreview` in `invite.service.ts`, for the contract (#3352). */
+export class InvitePreviewResponseDto implements InvitePreview {
+  @ApiProperty()
+  chapter_name: string;
+
+  @ApiProperty()
+  university: string;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      "The chapter's text mark: its short name, else its Greek letters if it shows them, else null. Never letters the chapter hides, nor those of an organization that never displays them (such as Phi Gamma Delta), whatever the chapter's stored switch says (#3421).",
+  })
+  mark_text: string | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  accent_color: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: "The inviter's display name, or null when it can't be read.",
+  })
+  invited_by: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role)',
+  })
+  role: string | null;
+
+  @ApiProperty()
+  expires_at: string;
 }

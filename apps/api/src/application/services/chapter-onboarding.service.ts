@@ -8,12 +8,11 @@ import {
   type ChapterBrandingInput,
 } from './chapter-palette';
 import { buildCustomFieldRows } from './custom-field-provisioning';
-import { chapterTextMark } from '@repo/validation';
 import { LEGAL_POLICY_VERSION } from '#domain/constants/legal';
 import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
 import { LegalAcceptanceService } from './legal-acceptance.service';
-import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import type { Chapter } from '#domain/entities/chapter.entity';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 import {
@@ -173,29 +172,31 @@ export class ChapterOnboardingService {
     // Best-effort: a failed custom-field / welcome / directory-request write
     // must not roll back an otherwise successfully created chapter, so each
     // rejection (a PostgREST error the repository threw, or fetch/DNS/TLS) is
-    // logged here and nowhere else.
-    // The field seed logs at `error`, not `warn`: a failure is silent from the
-    // officer's side — onboarding still returns 201 — and it fails for *every*
-    // chapter, not one, since the rows are identical each time. A wrong
-    // conflict target or a renamed column would otherwise seed nothing
+    // logged and reported to Sentry here, and nowhere else.
+    // The field seed and the directory request report at `error`, not `warn`:
+    // a failure is silent from the officer's side — onboarding still returns
+    // 201 — and nothing retries either write. The field seed also fails for
+    // *every* chapter, not one, since the rows are identical each time. A
+    // wrong conflict target or a renamed column would otherwise seed nothing
     // indefinitely with no signal above debug noise.
     await this.provisionCustomFields(chapter.id, seed.customFields).catch(
       (err) =>
-        logThrowable(
-          this.logger,
-          'error',
-          'Failed to provision archetype custom fields',
-          err,
-        ),
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'onboarding-custom-field-seed',
+          message: 'Failed to provision archetype custom fields',
+          error: err,
+        }),
     );
 
-    await this.postWelcomeMessage(chapter.id, branding).catch((err) =>
-      logThrowable(
-        this.logger,
-        'warn',
-        'Failed to post onboarding welcome message',
-        err,
-      ),
+    await this.postWelcomeMessage(chapter.id, chapter.name, branding).catch(
+      (err) =>
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'onboarding-welcome-message',
+          message: 'Failed to post onboarding welcome message',
+          error: err,
+        }),
     );
 
     if (!dto.directory_id) {
@@ -206,12 +207,12 @@ export class ChapterOnboardingService {
         branding,
         seed.archetype,
       ).catch((err) =>
-        logThrowable(
-          this.logger,
-          'warn',
-          'Failed to record chapter directory request',
-          err,
-        ),
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'onboarding-directory-request',
+          message: 'Failed to record chapter directory request',
+          error: err,
+        }),
       );
     }
 
@@ -296,19 +297,28 @@ export class ChapterOnboardingService {
     await this.customFieldRepo.seedDefaults(rows);
   }
 
-  private async postWelcomeMessage(chapterId: string, branding: Branding) {
+  private async postWelcomeMessage(
+    chapterId: string,
+    chapterName: string | null | undefined,
+    branding: Branding,
+  ) {
     const channel = await this.channelRepo.findByName(chapterId, 'general');
     if (!channel) return;
 
-    // The chapter mark's text, not `greek_letters` directly: a chapter that
-    // turned its letters off must not be welcomed by them (#2876), and one
-    // with a short name is welcomed by that ("Welcome to FIJI Tau Nu.").
-    const mark = chapterTextMark(branding)?.text;
-    const designation = (branding.designation as string | undefined)?.trim();
-    const identity = [mark, designation].filter(Boolean).join(' ').trim();
-    const welcome = identity
-      ? `Welcome to ${identity}. Invite your chapter to get the conversation started.`
-      : 'Welcome to your chapter. Invite your chapter to get the conversation started.';
+    // Names only, never Greek letters: some organizations (Phi Gamma Delta
+    // among them) don't allow their letters to be shown, and a system post is
+    // not where a chapter decides that (#2876, #3347). The short name ("FIJI")
+    // when the wizard set one, else the organization's name.
+    const shortName =
+      typeof branding.short_name === 'string' ? branding.short_name.trim() : '';
+    const designation =
+      typeof branding.designation === 'string'
+        ? branding.designation
+        : undefined;
+    const welcome = `${welcomeGreeting(
+      shortName || chapterName?.trim() || undefined,
+      designation,
+    )} Invite your chapter to get the conversation started.`;
 
     await this.messageRepo.create({
       channel_id: channel.id,
@@ -342,4 +352,57 @@ export class ChapterOnboardingService {
     };
     await this.directoryRepo.createRequest(request);
   }
+}
+
+/** Greek and Coptic, plus Greek Extended: any of them means letters. */
+const GREEK_LETTER = /[\u0370-\u03FF\u1F00-\u1FFF]/;
+
+/**
+ * The welcome post's first sentence: designation first, then the chapter's
+ * name, as "Welcome to the Tau Nu chapter of FIJI." (owner's call, #3347).
+ *
+ * `name` is free text (the short name, else the wizard's "Chapter /
+ * organization name", which manual entry seeds from the raw search), so it is
+ * cleaned rather than trusted:
+ * - a name (or designation) with any Greek letter in it is dropped, because
+ *   some organizations (Phi Gamma Delta) don't allow their letters to be shown;
+ * - a name that repeats the designation ("FIJI Tau Nu" with "Tau Nu") loses
+ *   it, and one that is only the designation is dropped.
+ * A designation typed as "Tau Nu Chapter" (or "Tau Nu chapter.") loses its own
+ * trailing "chapter", so the sentence doesn't say it twice.
+ */
+export function welcomeGreeting(
+  name: string | undefined,
+  rawDesignation: string | undefined,
+): string {
+  const cleaned = rawDesignation
+    ?.trim()
+    .replace(/(^|\s+)chapter[\s.,;:!]*$/i, '')
+    .trim();
+  // A designation typed in Greek ("ΤΝ") is letters too.
+  const designation =
+    cleaned && !GREEK_LETTER.test(cleaned) ? cleaned : undefined;
+  const nameText = cleanName(name, designation);
+  if (designation && nameText) {
+    return `Welcome to the ${designation} chapter of ${nameText}.`;
+  }
+  if (designation) return `Welcome to the ${designation} chapter.`;
+  if (nameText) return `Welcome to ${nameText}.`;
+  return 'Welcome to your chapter.';
+}
+
+function cleanName(
+  name: string | undefined,
+  designation: string | undefined,
+): string | undefined {
+  const text = name?.trim();
+  if (!text || GREEK_LETTER.test(text)) return undefined;
+  if (!designation) return text;
+  const lower = text.toLowerCase();
+  const d = designation.toLowerCase();
+  if (lower === d) return undefined;
+  let stripped = text;
+  if (lower.endsWith(` ${d}`)) stripped = text.slice(0, -d.length - 1);
+  else if (lower.startsWith(`${d} `)) stripped = text.slice(d.length + 1);
+  return stripped.trim() || undefined;
 }

@@ -6,6 +6,7 @@ import { reactionActionType, type ChatMessage } from "@repo/chat-core/types";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
 import { reducer } from "@/lib/hooks/use-toast";
 import { NOBODY_BLOCKED } from "@/tests/block-list";
+import { SYSTEM_SENDER_ID } from "@repo/validation";
 
 // The real list resolves signed URLs through `useFrappClient`, a provider this
 // suite does not stand up; a stand-in is enough to say where the list sits.
@@ -118,6 +119,22 @@ describe("MessageItem author rendering", () => {
     expect(screen.getByText("Member 222222")).toBeInTheDocument();
   });
 
+  it("names the system actor Frapp, not a truncated id (#3347)", () => {
+    // `SYSTEM_SENDER_ID`: on no roster, so the resolver misses it as it would
+    // here. The chapter welcome post used to read "Member 000000" beside "00".
+    renderItem(
+      message({ sender_id: "00000000-0000-0000-0000-000000000000" }),
+      () => null,
+    );
+
+    expect(screen.getByText("Frapp")).toBeInTheDocument();
+    expect(screen.queryByText(/^Member /)).not.toBeInTheDocument();
+    // The crest takes the avatar (#3357); no letter tile from either the id
+    // ("00") or the name ("F").
+    expect(screen.queryByText("00")).not.toBeInTheDocument();
+    expect(screen.queryByText("F")).not.toBeInTheDocument();
+  });
+
   it("says 'You' on the viewer's own card", () => {
     // A card starts a run, so it carries the author line whoever sent it.
     renderItem(message({ sender_id: VIEWER, kind: "announcement" }));
@@ -131,6 +148,56 @@ describe("MessageItem author rendering", () => {
  * #2873): no bubble, one shape for every row, and whose message it is carried
  * by the author line rather than by a side and a fill.
  */
+// Frapp's own posts (the welcome, poll results, the audit bridge) wear the
+// crest rather than initials (#3347). Radix renders the <img> only once it
+// loads, which jsdom never does, so the tile is read off the avatar root.
+describe("MessageItem system post avatar", () => {
+  it("marks the system sender's avatar as the crest, on its own field", () => {
+    const { container } = renderItem(
+      message({ sender_id: SYSTEM_SENDER_ID, kind: "system_audit" }),
+      () => null,
+    );
+
+    const avatar = container.querySelector("[data-system-avatar]");
+    expect(avatar).not.toBeNull();
+    expect((avatar as HTMLElement).style.backgroundColor).toBe(
+      "rgb(26, 26, 26)",
+    );
+    // jsdom never loads the image, so this is the fallback Radix draws until
+    // it does: the crest's field, never the id-prefix initials "00".
+    expect(avatar?.textContent).toBe("");
+    expect(screen.queryByText("00")).not.toBeInTheDocument();
+  });
+
+  it("draws an audit entry as a line: shield in the gutter, no author line", () => {
+    const { container } = renderItem(
+      message({
+        sender_id: SYSTEM_SENDER_ID,
+        author_name: "Frapp",
+        kind: "system_audit",
+        content: "chapter_profile_updated",
+        client_message_id: "audit:a1",
+        payload: {
+          action: "chapter_profile_updated",
+          actor_user_id: OTHER,
+          diff: { accent_color: { from: "#000", to: "#fff" } },
+        },
+      }),
+    );
+
+    expect(container.querySelector("[data-system-avatar]")).toBeNull();
+    expect(screen.queryByText("Frapp")).not.toBeInTheDocument();
+    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
+    expect(container.textContent).toContain("updated the chapter profile");
+  });
+
+  it("leaves a member's avatar alone", () => {
+    const { container } = renderItem(message());
+
+    expect(container.querySelector("[data-system-avatar]")).toBeNull();
+  });
+});
+
 describe("MessageItem compact layout (#2873)", () => {
   function bodyOf(container: HTMLElement): HTMLElement {
     const found = container.querySelector<HTMLElement>(
@@ -158,7 +225,9 @@ describe("MessageItem compact layout (#2873)", () => {
         "rounded-[18px]",
         "px-4",
       ]) {
-        expect(className, `${sender} ${bubbleClass}`).not.toContain(bubbleClass);
+        expect(className, `${sender} ${bubbleClass}`).not.toContain(
+          bubbleClass,
+        );
       }
       expect(className, sender).toContain("text-foreground");
       unmount();
@@ -175,15 +244,32 @@ describe("MessageItem compact layout (#2873)", () => {
     expect(screen.getByText("11")).toBeInTheDocument();
   });
 
-  it("marks only the viewer's own name in the chapter accent", () => {
+  it("draws no name in the chapter accent, the viewer's own included", () => {
     const own = renderItem(message({ sender_id: VIEWER }));
-    expect(screen.getByText("You").className).toContain("text-accent-text");
+    const you = screen.getByText("You");
+    expect(you.className).toContain("text-foreground");
+    expect(you.className).not.toContain("text-accent-text");
     own.unmount();
 
     renderItem(message({ sender_id: OTHER }));
     const name = screen.getByText("Alice Chen");
     expect(name.className).toContain("text-foreground");
     expect(name.className).not.toContain("text-accent-text");
+  });
+
+  it("paints every author's name in their role color, the viewer's too (#3485)", () => {
+    const other = renderItemWithProps({
+      message: message({ sender_id: OTHER }),
+      authorColor: "#6FD08C",
+    });
+    expect(screen.getByText("Alice Chen")).toHaveStyle({ color: "#6FD08C" });
+    other.unmount();
+
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER }),
+      authorColor: "#6FD08C",
+    });
+    expect(screen.getByText("You")).toHaveStyle({ color: "#6FD08C" });
   });
 
   it("puts the time of day on the author line, never the date", () => {
@@ -310,7 +396,11 @@ describe("MessageItem compact layout (#2873)", () => {
       message({ sender_id: VIEWER, _status: "pending" }),
     );
     expect(bodyOf(container).className).toContain("text-muted-foreground");
-    expect(screen.getByText("Sending…")).toBeInTheDocument();
+    // The gray text is the whole pending state on screen: no caption and no
+    // spinner under it (owner decision 2026-11-06). A screen reader hears it.
+    expect(screen.queryByText("Sending…")).not.toBeInTheDocument();
+    expect(screen.getByText("Sending")).toHaveClass("sr-only");
+    expect(container.querySelector(".animate-spin")).toBeNull();
   });
 
   it("dims a failed message's text and says so in the danger tone", () => {
@@ -378,9 +468,9 @@ describe("MessageItem action bar", () => {
       expect(button, name).toHaveAttribute("title");
       expect(button.textContent?.trim(), name).toBe("");
     }
-    expect(screen.getByRole("button", { name: "Open emoji picker" })).toHaveAttribute(
-      "title",
-    );
+    expect(
+      screen.getByRole("button", { name: "Open emoji picker" }),
+    ).toHaveAttribute("title");
   });
 });
 
@@ -485,7 +575,8 @@ describe("MessageItem tap-to-reveal (#1193)", () => {
     // is genuinely true — the scoped check this guards against a false
     // suppress from a *different* row's leftover selection (below).
     const anchorNode = row.querySelector("p, span") ?? row.firstElementChild;
-    if (!anchorNode) throw new Error("row has no child to anchor a selection on");
+    if (!anchorNode)
+      throw new Error("row has no child to anchor a selection on");
     const getSelectionSpy = vi.spyOn(window, "getSelection").mockReturnValue({
       toString: () => "hello",
       anchorNode,
@@ -579,7 +670,11 @@ describe("MessageItem reply-with-quote (#489)", () => {
 
   it("renders the parent's author and body above a reply", () => {
     renderItemWithProps({
-      message: message({ id: "child-1", reply_to_id: "parent-1", content: "agreed" }),
+      message: message({
+        id: "child-1",
+        reply_to_id: "parent-1",
+        content: "agreed",
+      }),
       replyParent: PARENT,
     });
     expect(screen.getByText("the original")).toBeInTheDocument();
@@ -624,7 +719,11 @@ describe("MessageItem reply-with-quote (#489)", () => {
     // A tombstone is not something anyone said, so it must not keep asserting
     // what it was answering.
     renderItemWithProps({
-      message: message({ id: "child-1", reply_to_id: "parent-1", is_deleted: true }),
+      message: message({
+        id: "child-1",
+        reply_to_id: "parent-1",
+        is_deleted: true,
+      }),
       replyParent: PARENT,
     });
     expect(screen.queryByText("the original")).not.toBeInTheDocument();
@@ -683,6 +782,12 @@ describe("MessageItem edited marker", () => {
     expect(
       container.querySelector('[data-slot="message-body"]'),
     ).toContainElement(pinned);
+    // A marker, not an action: the trailing captions' muted tone, never the
+    // chapter accent (`foundations.md` §6).
+    expect(pinned.closest("span")!.className).not.toContain("accent");
+    expect(
+      container.querySelector('[data-slot="message-trailing"]')!.className,
+    ).toContain("text-muted-foreground");
   });
 
   it("marks a photo-only message on a line of its own under the photo", () => {
@@ -699,9 +804,8 @@ describe("MessageItem edited marker", () => {
     const markers = container.querySelector('[data-slot="message-trailing"]')!;
     expect(markers).toHaveTextContent("(edited)Pinned");
     expect(
-      screen
-        .getByTestId("attachments")
-        .compareDocumentPosition(markers) & Node.DOCUMENT_POSITION_FOLLOWING,
+      screen.getByTestId("attachments").compareDocumentPosition(markers) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     // Flush with the column, not indented as if it trailed text.
     expect(markers.parentElement).toHaveClass("[&>span]:ml-0");
@@ -731,10 +835,7 @@ describe("MessageItem edited marker", () => {
     renderItem(message({ kind: "announcement", content: "Formal is Friday" }));
     expect(
       screen.getByText("Formal is Friday").closest(".rounded-lg"),
-    ).toHaveClass(
-      "w-fit",
-      "max-w-full",
-    );
+    ).toHaveClass("w-fit", "max-w-full");
     renderItem(message({ id: "dues-1", kind: "dues", content: "Pay up" }));
     expect(
       screen.getByText(/not built yet/).closest(".rounded-lg"),
@@ -743,7 +844,11 @@ describe("MessageItem edited marker", () => {
 
   it("marks an edited card under the card, not inside it", () => {
     const { container } = renderItem(
-      message({ ...edited, kind: "announcement", payload: { title: "Formal" } }),
+      message({
+        ...edited,
+        kind: "announcement",
+        payload: { title: "Formal" },
+      }),
     );
     const marker = screen.getByText("(edited)");
     expect(container.querySelector('[data-slot="message-body"]')).toBeNull();
@@ -812,9 +917,7 @@ describe("MessageItem edit and delete", () => {
       onDelete: vi.fn(),
     });
 
-    expect(
-      screen.getByRole("button", { name: /delete/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /delete/i })).toBeInTheDocument();
   });
 
   it("offers Delete on someone else's message only with channels:manage", () => {
@@ -918,7 +1021,11 @@ describe("MessageItem edit and delete", () => {
       <div role="list">
         <MessageItem
           blockState={NOBODY_BLOCKED}
-          message={message({ id: "msg-1", sender_id: VIEWER, content: "hello v2" })}
+          message={message({
+            id: "msg-1",
+            sender_id: VIEWER,
+            content: "hello v2",
+          })}
           viewerId={VIEWER}
           showHeader
           nameFor={nameFor}
@@ -949,7 +1056,11 @@ describe("MessageItem edit and delete", () => {
       <div role="list">
         <MessageItem
           blockState={NOBODY_BLOCKED}
-          message={message({ id: "msg-1", sender_id: VIEWER, content: "hello v2" })}
+          message={message({
+            id: "msg-1",
+            sender_id: VIEWER,
+            content: "hello v2",
+          })}
           viewerId={VIEWER}
           showHeader
           nameFor={nameFor}
@@ -980,7 +1091,11 @@ describe("MessageItem edit and delete", () => {
       <div role="list">
         <MessageItem
           blockState={NOBODY_BLOCKED}
-          message={message({ id: "msg-1", sender_id: VIEWER, content: "hello" })}
+          message={message({
+            id: "msg-1",
+            sender_id: VIEWER,
+            content: "hello",
+          })}
           viewerId={VIEWER}
           showHeader
           nameFor={nameFor}
@@ -1045,7 +1160,9 @@ describe("MessageItem edit and delete", () => {
       screen.getByLabelText(/🔥 reaction, 4\. From the imported archive/),
     ).toBeInTheDocument();
     expect(
-      screen.getByLabelText(/:party_blob: reaction, 2\. From the imported archive/),
+      screen.getByLabelText(
+        /:party_blob: reaction, 2\. From the imported archive/,
+      ),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /from the imported archive/i }),
@@ -1264,7 +1381,9 @@ describe("MessageItem unconfirmed rows (#1733)", () => {
       onRetryUnconfirmed: vi.fn(),
     });
 
-    expect(screen.getByText(/may or may not have been recorded/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/may or may not have been recorded/i),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/send failed/i)).not.toBeInTheDocument();
   });
 
@@ -1425,7 +1544,9 @@ describe("MessageItem recorded rows (#1789)", () => {
       onRetryUnconfirmed: vi.fn(),
     });
 
-    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /retry/i }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /discard/i }),
     ).not.toBeInTheDocument();
@@ -1458,7 +1579,9 @@ describe("MessageItem recorded rows (#1789)", () => {
       onDiscard: vi.fn(),
     });
 
-    expect(screen.getByText(/don't run this command again/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/don't run this command again/i),
+    ).toBeInTheDocument();
 
     // MessageItem does not subscribe to toast state — that independence is
     // the architecture (#1789). This half pins the eviction path itself:
@@ -1489,8 +1612,12 @@ describe("MessageItem recorded rows (#1789)", () => {
     expect(after.toasts[0]?.id).toBe("next");
     expect(after.toasts.some((t) => t.id === "warning")).toBe(false);
 
-    expect(screen.getByText(/don't run this command again/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/don't run this command again/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /retry/i }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -1564,7 +1691,9 @@ describe("MessageItem inline editor", () => {
 
     await user.click(screen.getByRole("button", { name: /cancel/i }));
 
-    expect(container.querySelector('[data-slot="message-body"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-slot="message-body"]'),
+    ).not.toBeNull();
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
@@ -1706,7 +1835,10 @@ describe("MessageItem inline editor keyboard", () => {
   it("saves on Enter and keeps Shift+Enter for a newline", async () => {
     const { user, onEdit } = await openEditor();
 
-    await user.type(screen.getByRole("textbox"), " one{Shift>}{Enter}{/Shift}two");
+    await user.type(
+      screen.getByRole("textbox"),
+      " one{Shift>}{Enter}{/Shift}two",
+    );
     expect(onEdit).not.toHaveBeenCalled();
     expect(screen.getByRole("textbox")).toHaveValue("hello one\ntwo");
 
@@ -1759,12 +1891,93 @@ describe("MessageItem reaction chip ownership (#2243)", () => {
       onUnreact,
     });
 
-    const chip = screen.getByRole("button", { name: /reaction, 1\. Click to react/i });
+    const chip = screen.getByRole("button", {
+      name: /reaction, 1\. Click to react/i,
+    });
     expect(chip).toHaveAttribute("aria-pressed", "false");
 
     await userEvent.click(chip);
 
     expect(onReact).toHaveBeenCalledWith("msg-1", "👍");
     expect(onUnreact).not.toHaveBeenCalled();
+  });
+});
+
+describe("MessageItem Report and Block (#2687)", () => {
+  const everyoneIsMember = () => true;
+
+  it("offers Report and Block on someone else's message, behind More", async () => {
+    const onReport = vi.fn();
+    const onBlock = vi.fn();
+    renderItemWithProps({ onReport, onBlock, isMember: everyoneIsMember });
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: "Report message" }),
+    );
+    expect(onReport).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "msg-1" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: "Block Alice Chen" }),
+    );
+    expect(onBlock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "msg-1" }),
+    );
+  });
+
+  it("does not pin the bar open when a menu item is chosen", async () => {
+    const onToggleTapReveal = vi.fn();
+    renderItemWithProps({
+      onReport: vi.fn(),
+      onBlock: vi.fn(),
+      isMember: everyoneIsMember,
+      onToggleTapReveal,
+    });
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: "Report message" }),
+    );
+    expect(onToggleTapReveal).not.toHaveBeenCalled();
+  });
+
+  it("offers neither on the viewer's own message", () => {
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER }),
+      onReport: vi.fn(),
+      onBlock: vi.fn(),
+      isMember: everyoneIsMember,
+    });
+    expect(
+      screen.queryByRole("button", { name: "More actions" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps Report but drops Block for a sender known to have left", async () => {
+    renderItemWithProps({
+      onReport: vi.fn(),
+      onBlock: vi.fn(),
+      isMember: () => false,
+    });
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(
+      screen.getByRole("menuitem", { name: "Report message" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: /^Block/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("drops Block for Frapp's own posts", async () => {
+    renderItemWithProps({
+      message: message({ sender_id: SYSTEM_SENDER_ID }),
+      onReport: vi.fn(),
+      onBlock: vi.fn(),
+      isMember: everyoneIsMember,
+    });
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(
+      screen.queryByRole("menuitem", { name: /^Block/ }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -38,7 +38,7 @@ import { cn } from "@/lib/utils";
  * issue first asked for, and a regex cannot evaluate it. It also isn't needed:
  * the old name is never the honest spelling, because a rest fill can name the
  * ladder step it means (`bg-popover`, `bg-card`) and a hover has state tokens
- * (`bg-card-hover`, `bg-accent-subtle`). So the four retired names are banned
+ * (`bg-card-hover`). So the four retired names are banned
  * outright, in each spelling known to reach them: a colour utility at any
  * variant and opacity (`@apply` included), a `var()` read, the `[--x]` /
  * `(--x)` / `(color:--x)` shorthands, a quoted token name handed to a call
@@ -193,8 +193,8 @@ describe("no Next surface reads the retired --accent or --secondary alias", () =
       hits,
       "never the retired alias: a rest fill names its ladder step (`bg-popover`, " +
         "`bg-card`), and a hover takes a state token above what it sits on " +
-        "(`bg-card-hover`, or §2's `bg-accent-subtle` for a row in a menu or " +
-        "table). Never hover to the surface the control already sits on.",
+        "(`bg-card-hover`, which a row in a menu or table takes too, §2). " +
+        "Never hover to the surface the control already sits on.",
     ).toEqual([]);
   });
 });
@@ -308,73 +308,46 @@ describe("codeWithoutComments", () => {
   });
 });
 
-/**
- * The double-quoted class list that rests on `fill` and states a background
- * hover: the drawer's per-state strings. Requiring the hover skips other
- * strings that merely share the fill (the "New" badge rests on accent-3 too),
- * and a row whose hover was deleted outright fails here, loudly.
- */
-function hoveredClassList(source: string, fill: string): string[] {
-  const literal = [...source.matchAll(/"([^"\n]*)"/g)]
-    .map((m) => m[1]!.split(/\s+/).filter(Boolean))
-    .find(
-      (classes) =>
-        classes.includes(fill) && classes.some((cls) => cls.startsWith("hover:bg-")),
-    );
-  expect(literal, `no class list resting on ${fill} with a hover`).toBeDefined();
-  return literal!;
-}
-
-describe("the notification drawer's row hovers (#1208)", () => {
+describe("the notification drawer's row hover (#1208)", () => {
   /*
-   * The drawer is a `SheetContent`, so every row sits on `--popover`. Each rest
-   * fill has its own hover, measured in `elevation-contrast.spec.ts`; pinned
-   * here because a hover rewritten to the sheet's own colour (`hover:bg-popover`)
-   * or to the row's own rest fill uses no alias and passes the ban above.
+   * The drawer is a `SheetContent`, so every row sits on `--popover`. Rows are
+   * flat and transparent since 2026-11-05 (components.md § Chrome weight), and
+   * unread is a dot, so read and unread share one hover: `--card-hover`,
+   * measured in `elevation-contrast.spec.ts`. Pinned here because a hover
+   * rewritten to the sheet's own colour (`hover:bg-popover`) uses no alias and
+   * passes the ban above, and because the gold-tinted unread card this
+   * replaced is exactly the decorative accent the audit took out.
    */
   const drawer = codeWithoutComments(
     join(WEB, "components", "layout", "dashboard-notification-drawer.tsx"),
   );
 
-  it("lifts a read row, which rests on --card, to --card-hover", () => {
-    const read = hoveredClassList(drawer, "bg-card");
-    expect(read.filter((cls) => cls.startsWith("hover:bg-"))).toEqual([
+  it("paints exactly one background hover, the neutral lift", () => {
+    expect(drawer.match(/(?<![\w-])hover:bg-[^\s"'`]+/g)).toEqual([
       "hover:bg-card-hover",
     ]);
   });
 
-  it("lifts an unread row, which rests on accent-3, to accent-4", () => {
-    const unread = hoveredClassList(drawer, "bg-accent-subtle");
-    expect(unread.filter((cls) => cls.startsWith("hover:bg-"))).toEqual([
-      "hover:bg-accent-subtle-hover",
-    ]);
-  });
-
-  it("paints no other background hover anywhere in the drawer", () => {
-    // A shared hover written into the row's template prefix would compete
-    // with the two above at the same specificity, and Tailwind's output order
-    // would decide which ships. So the file holds exactly these two.
-    expect(drawer.match(/(?<![\w-])hover:bg-[^\s"'`]+/g)?.sort()).toEqual([
-      "hover:bg-accent-subtle-hover",
-      "hover:bg-card-hover",
-    ]);
+  it("gives no row a card or accent rest fill", () => {
+    expect(drawer).not.toMatch(/(?<![\w:-])bg-(card|accent-subtle)(?![\w-])/);
   });
 });
 
-describe("a tinted row hover stays inside its rounded list", () => {
+describe("a filled row hover stays inside its rounded list", () => {
   /*
    * Settings' officer-tools list is a rounded card of link rows. Its row hover
-   * is a visible tint, so the end rows take the list's inner radius rather than
+   * is a visible fill (`--card-hover`), so the end rows take the list's inner radius rather than
    * painting square corners past the card's curve. The list doesn't clip with
    * `overflow-hidden`, which would clip the rows' focus ring too.
    */
   const settings = codeWithoutComments(
     join(WEB, "components", "settings", "settings-rail.tsx"),
   );
-  const tools = /function SettingsToolsOnly[\s\S]*?\n}\n/.exec(settings)?.[0] ?? "";
+  const tools =
+    /function SettingsToolsOnly[\s\S]*?\n}\n/.exec(settings)?.[0] ?? "";
 
   it("finds the tools list", () => {
-    expect(tools).toMatch(/hover:bg-accent-subtle/);
+    expect(tools).toMatch(/hover:bg-card-hover/);
   });
 
   it("rounds the first and last rows to the list's inner radius", () => {
@@ -400,17 +373,25 @@ describe("global-error's hand copy of the Secondary button", () => {
    * don't apply, since this button has no icon and is never disabled. And
    * `mt-1` is the copy's placement in its own layout, not part of the recipe.
    */
-  const globalError = readFileSync(join(WEB, "app", "global-error.tsx"), "utf8");
+  const globalError = readFileSync(
+    join(WEB, "app", "global-error.tsx"),
+    "utf8",
+  );
   const copy = /className="([^"]*\bborder-input\b[^"]*)"/
     .exec(globalError)?.[1]
     ?.split(/\s+/);
   const rendered = cn(buttonVariants({ variant: "secondary", size: "sm" }))
     .split(/\s+/)
-    .filter((cls) => !cls.startsWith("[&_svg]:") && !cls.startsWith("disabled:"));
+    .filter(
+      (cls) => !cls.startsWith("[&_svg]:") && !cls.startsWith("disabled:"),
+    );
   const PLACEMENT = new Set(["mt-1"]);
 
   it("finds the copy", () => {
-    expect(copy, "global-error.tsx no longer has the Secondary button").toBeDefined();
+    expect(
+      copy,
+      "global-error.tsx no longer has the Secondary button",
+    ).toBeDefined();
   });
 
   it("renders exactly what Button secondary sm renders", () => {
@@ -441,5 +422,23 @@ describe("the overlay close controls are text-toned and named (#1208)", () => {
     expect(classes).not.toMatch(/(?:^|\s)text-muted(?:\s|$)/);
     // The X is aria-hidden, so the control's name is this text.
     expect(close).toMatch(/<span className="sr-only">Close<\/span>/);
+  });
+});
+
+describe("the ghost button", () => {
+  /*
+   * Ghost painted `accent-11` until 2026-11-05, so every icon button in the
+   * composer, a row's Edit and Delete, and each wizard's Back and Cancel drew
+   * in the chapter accent (`components.md` §3, `foundations.md` §6).
+   */
+  const ghost = buttonVariants({ variant: "ghost" });
+
+  it("rests in the muted tone and hovers to a neutral fill", () => {
+    expect(ghost).toContain("text-muted-foreground");
+    expect(ghost).toContain("hover:bg-card-hover");
+    // Focus keeps the accent border (item 3 of the rule); nothing else does.
+    expect(ghost.replace("focus-visible:border-accent-text", "")).not.toMatch(
+      /accent/,
+    );
   });
 });

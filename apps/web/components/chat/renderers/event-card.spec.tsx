@@ -22,7 +22,9 @@ vi.mock("@/lib/providers/network-provider", async () => {
   return networkMock(mockOffline);
 });
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  // `countCheckedIn` stays real; only the data hooks are stubbed.
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
   // Paid-ops writes on this surface now read the chapter subscription (#841);
   // these cases predate the gate, so they run against an active chapter.
   useCurrentChapter: () => mockCurrentChapter(),
@@ -88,6 +90,15 @@ describe("EventCard", () => {
     expect(screen.getByText(/\+15 pts/)).toBeInTheDocument();
   });
 
+  it("draws Mandatory as the danger badge, never the accent", () => {
+    render(
+      <EventCard message={makeMessage({ is_mandatory: true })} isConfirmed />,
+    );
+    const badge = screen.getByText("Mandatory");
+    expect(badge.className).toContain("text-destructive-text");
+    expect(badge.className).not.toContain("text-accent-text");
+  });
+
   it("falls back to the content string on a malformed payload", () => {
     const message = makeMessage();
     (message as { payload: unknown }).payload = { nonsense: true };
@@ -108,9 +119,16 @@ describe("EventCard", () => {
     expect(screen.getByText("2 checked in")).toBeInTheDocument();
   });
 
-  it("renders an empty count cleanly when attendance is loading", () => {
+  it("draws no count until the roster is read", () => {
+    // "0 checked in" while the read is in flight would be a number that isn't
+    // true yet; an empty roster is the only thing that says 0.
     mockUseAttendance.mockReturnValue({ data: undefined });
-    render(<EventCard message={makeMessage()} isConfirmed />);
+    const { rerender } = render(
+      <EventCard message={makeMessage()} isConfirmed />,
+    );
+    expect(screen.queryByText(/checked in$/)).not.toBeInTheDocument();
+    mockUseAttendance.mockReturnValue({ data: [] });
+    rerender(<EventCard message={makeMessage()} isConfirmed />);
     expect(screen.getByText("0 checked in")).toBeInTheDocument();
   });
 

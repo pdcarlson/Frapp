@@ -30,6 +30,21 @@ import { useOpenImageViewer, viewerImages } from "./image-viewer";
  * message body, so degrading to nothing would read as data loss to anyone who
  * remembers seeing the file.
  *
+ * **Loading reserves a photo's room.** While the files are read, each one
+ * draws a bare tile where a preview goes, as tall as an unsized preview
+ * (`PREVIEW_FALLBACK_HEIGHT`), rather than a one-line caption that a photo up
+ * to 256pt tall then replaced, pushing the thread with every one that landed
+ * (components.md §10: the skeleton mirrors the layout it becomes).
+ *
+ * The count is all the row knows yet, not which files are photos: the message
+ * carries only `metadata.attachment_count`, and type, name and dimensions
+ * arrive with this query. So the tile is a bet, and it is placed on photos.
+ * Mobile's composer attaches only photos; web's attaches photos and documents
+ * (a PDF, say), and a document resolves to a one-line file row, so a web-sent
+ * document shrinks by about 150pt when it lands. A file-row-height placeholder
+ * would only move that jump onto every photo, which is the commoner case, and
+ * grow it, as a photo can be up to 256pt.
+ *
  * An image opens the thread's image viewer, stepping through the
  * message's other images (#2874). Any other file, and an image outside a
  * screen that hosts a viewer, opens through the signed URL in the browser.
@@ -61,15 +76,28 @@ export function MessageAttachments({
   const [openFailed, setOpenFailed] = useState(false);
   const [openingId, setOpeningId] = useState<string | null>(null);
 
-  const noteStyle = styles.note;
-
   if (count === 0) return null;
 
   if (query.isPending) {
     return (
-      <Text style={noteStyle}>
-        {count === 1 ? "Loading attachment…" : `Loading ${count} attachments…`}
-      </Text>
+      <View
+        accessible
+        accessibilityRole="progressbar"
+        accessibilityLabel={
+          count === 1 ? "Loading attachment…" : `Loading ${count} attachments…`
+        }
+        style={styles.list}
+      >
+        {Array.from({ length: count }, (_, index) => (
+          <View
+            key={index}
+            testID="attachment-loading-tile"
+            style={styles.imageRow}
+          >
+            <View style={styles.loadingTile} />
+          </View>
+        ))}
+      </View>
     );
   }
 
@@ -104,6 +132,15 @@ export function MessageAttachments({
     <View style={styles.list}>
       {query.data.map((attachment) => {
         const isImage = imageIds.has(attachment.id);
+        const aspect =
+          attachment.width && attachment.height
+            ? attachment.width / attachment.height
+            : null;
+        // A sized photo's row is the photo's own box: full column width at
+        // its aspect ratio, narrowed to the width at which it reaches the
+        // height cap. The row hugs the picture at every shape, so `contain`
+        // never leaves empty sides and the rounded corners land on the photo.
+        const sized = isImage && aspect !== null;
         return (
           <Pressable
             key={attachment.id}
@@ -121,7 +158,22 @@ export function MessageAttachments({
                 : void open(attachment.id, attachment.download_url)
             }
             onLongPress={onLongPress}
-            style={styles.row}
+            // A photo draws bare at the media radius; the framed row is for
+            // files (components.md § Chrome weight).
+            style={
+              !isImage
+                ? styles.row
+                : sized
+                  ? [
+                      styles.imageRow,
+                      styles.imageRowSized,
+                      {
+                        maxWidth: PREVIEW_MAX_HEIGHT * aspect,
+                        aspectRatio: aspect,
+                      },
+                    ]
+                  : styles.imageRow
+            }
           >
             {isImage ? (
               <Image
@@ -133,12 +185,13 @@ export function MessageAttachments({
                 // both to be null, so a fixed height is the fallback rather than
                 // an aspect ratio computed from nothing.
                 style={
-                  attachment.width && attachment.height
-                    ? [
+                  sized
+                    ? [styles.preview, styles.previewFill]
+                    : [
                         styles.preview,
-                        { aspectRatio: attachment.width / attachment.height },
+                        styles.previewFull,
+                        styles.previewUnsized,
                       ]
-                    : [styles.preview, styles.previewUnsized]
                 }
               />
             ) : (
@@ -165,6 +218,15 @@ export function MessageAttachments({
   );
 }
 
+/**
+ * An image preview's height when the attachment stores no dimensions, and the
+ * loading tile's, so a photo replaces a box of its own likely size.
+ */
+const PREVIEW_FALLBACK_HEIGHT = 180;
+
+/** The tallest a preview draws: web's `max-h-64`, 256px. */
+const PREVIEW_MAX_HEIGHT = 256;
+
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     list: {
@@ -178,6 +240,16 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: tokens.spacing.sm,
       paddingVertical: tokens.spacing.xs,
+    },
+    imageRow: {
+      alignSelf: "stretch",
+      borderRadius: tokens.radius.control,
+      overflow: "hidden",
+    },
+    // Its width, max width and aspect ratio come from the photo (above).
+    imageRowSized: {
+      alignSelf: "flex-start",
+      width: "100%",
     },
     fileRow: {
       flexDirection: "row",
@@ -195,24 +267,31 @@ function createStyles(tokens: SignetTokens) {
       flexShrink: 0,
     },
     preview: {
-      width: "100%",
-      // Capped, matching web's `max-h-64`. Without it a tall screenshot — a
-      // 400x2000 phone capture is the ordinary case — derives its height from
-      // the aspect ratio and renders many times the column's width, pushing the
-      // rest of the thread off screen. `contain` letterboxes inside the cap
-      // rather than distorting.
-      maxHeight: 240,
+      // Capped, matching web's `max-h-64`. Without it a tall screenshot (a
+      // 400x2000 phone capture is the ordinary case) would derive its height
+      // from the aspect ratio and render many times the column's width,
+      // pushing the rest of the thread off screen. A sized photo's row already
+      // stops at the cap; an unsized one letterboxes inside it rather than
+      // distorting.
+      maxHeight: PREVIEW_MAX_HEIGHT,
       borderRadius: tokens.radius.control,
     },
-    previewUnsized: {
-      height: 180,
+    previewFill: {
+      width: "100%",
+      height: "100%",
     },
-    // Same token pair as the body, one step quieter — a note about the message,
-    // not the message.
-    note: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-      marginTop: tokens.spacing.xs,
+    previewFull: {
+      width: "100%",
+    },
+    previewUnsized: {
+      height: PREVIEW_FALLBACK_HEIGHT,
+    },
+    // A preview's block, bare like the photo it stands in for, in the
+    // skeleton's neutral elevated fill (components.md §10: neutral only).
+    loadingTile: {
+      height: PREVIEW_FALLBACK_HEIGHT,
+      borderRadius: tokens.radius.control,
+      backgroundColor: tokens.color.surface.popover,
     },
     error: {
       ...typeRole(tokens.typography.role.caption),

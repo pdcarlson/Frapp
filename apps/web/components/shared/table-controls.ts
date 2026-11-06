@@ -15,14 +15,17 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * for the scanner — they do not, and re-typing them would have left a copy that
  * silently stops tracking the recipe.)
  *
- * The filter takes `components.md` §4's field recipe at the Inline height so it
- * lines up with the buttons in the same toolbar row. The checkbox takes §4's
- * 24x24 at radius 7 and paints through the browser's own `accent-color`, which
- * is what `accent-primary` sets — the previous 16px box was half that, and its
- * `text-primary` did nothing at all, since the text colour of a checkbox is not
- * what fills it.
+ * The filter takes `components.md` §4's field recipe at the toolbar height so
+ * it lines up with the buttons in the same toolbar row. The checkbox takes
+ * §4's box (20x20 at radius 6 to a mouse, 24x24 at radius 7 to a finger), and
+ * its paint is the `.signet-checkbox` rule in `app/globals.css`, which draws
+ * `components.md` § Checkbox by hand. It used to paint through the browser's
+ * own `accent-color` (`accent-primary`), which only reaches the checked fill:
+ * the unchecked box stayed the browser's own control, a white square per row
+ * before `color-scheme: dark` and a grey one after, and the `border-input` and
+ * `rounded-*` beside it did nothing to either (#3186).
  *
- * §2's ≥44px hit area is not satisfied by the control alone: the checkbox is
+ * §2's ≥44px hit area is not satisfied by the control alone: the checkbox was
  * 24px inside a `TableCell`, whose `p-2` brought the tappable area to 40px, and
  * the cells were pinned `w-10` so widening the padding overflowed the column
  * before it reached 44 (#1187). The Directory & Finance slice of #920 owns
@@ -35,15 +38,16 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * chat slice found under its reaction chips. So the `<label>` *is* 44x44, and
  * only where 44 is the rule: `pointer-coarse` is §2's own carve-out that
  * "compact 34px controls (§7) are web/pointer-only", read in the other direction.
- * A mouse keeps the 24px box and the 48px column; a finger gets a real 44px
+ * A mouse keeps the small box (20px since 2026-11-05) and the 48px column; a finger gets a real 44px
  * target and the column is already wide enough to hold it.
  *
- * The cell recipe is `w-12` (48), which is the width a *pointer* gets: 24px of
- * control plus `TableCell`'s 2x8px padding, with room to spare. It is not a
+ * The cell recipe is `w-12` (48), which is the width a *pointer* gets: the
+ * box plus `TableCell`'s 2x8px padding, with room to spare. It is not a
  * clamp — `width` on a `<td>` is a minimum hint to the table layout algorithm,
  * so on a coarse pointer the column simply grows to fit the 44px label rather
- * than clipping it. Measured in Chromium at a 375px viewport: 48px column with
- * a 24x24 label under `(pointer: fine)`, 60px column with a real 44x44 label
+ * than clipping it. Measured in Chromium at a 375px viewport (before the box
+ * shrank to 20 on a mouse): 48px column with a 24x24 label under
+ * `(pointer: fine)`, 60px column with a real 44x44 label
  * and the 24px box still centred under `(pointer: coarse)`. The table sits in
  * `Table`'s own `overflow-auto` wrapper, so those 12px scroll the table rather
  * than the page and the 375px floor is unaffected.
@@ -59,46 +63,60 @@ const NATIVE_SELECT = [
   "disabled:cursor-not-allowed disabled:border-border disabled:text-disabled",
 ].join(" ");
 
-/** A dashboard filter toolbar: §3's Inline height, per `components.md` §4. */
-export const dashboardFilterSelectClassName = `h-11 ${NATIVE_SELECT}`;
+/**
+ * A toolbar row's height: 36 to a mouse, 44 to a finger. The same rule the
+ * dense list rows below it take (`min-h-9 pointer-coarse:min-h-11`), and
+ * Button's `toolbar` size, so a filter, the search field and the route's
+ * primary action line up in one row on either pointer (`components.md` §4).
+ */
+export const dashboardToolbarHeightClassName = "h-9 pointer-coarse:h-11";
+const TOOLBAR_HEIGHT = dashboardToolbarHeightClassName;
+
+/** A dashboard filter toolbar's `<select>`, per `components.md` §4. */
+export const dashboardFilterSelectClassName = `${TOOLBAR_HEIGHT} ${NATIVE_SELECT}`;
+
+/** The search field in a toolbar row, leaving room for its glyph. */
+export const dashboardToolbarSearchClassName = `${TOOLBAR_HEIGHT} pl-9`;
+
+/** The search glyph inside {@link dashboardToolbarSearchClassName}, centred at either height. */
+export const dashboardToolbarSearchGlyphClassName =
+  "pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground";
 
 /**
  * A `<select>` that is a **form field** rather than filter chrome, at §4's
- * default 48.
+ * field height: 40 to a mouse, 44 to a finger, the same as `Input`.
  *
- * §4's 44 is a carve-out for filter rows specifically — "secondary chrome
+ * §4's toolbar height (36, 44 to a finger) is a carve-out for filter rows specifically — "secondary chrome
  * sitting above the thing it filters" — and reading it as the height for every
  * native select gets the same defect §4 was written about, one context over:
  * the event editor put two of these in a `sm:grid-cols-2` beside `Input`s,
- * which are `h-12`, so one form row rendered at two heights.
+ * so one form row rendered at two heights.
  */
-export const dashboardFormSelectClassName = `h-12 ${NATIVE_SELECT}`;
+export const dashboardFormSelectClassName = `h-10 pointer-coarse:h-11 ${NATIVE_SELECT}`;
 
+/**
+ * A native checkbox drawn as `components.md` § Checkbox: `.signet-checkbox`
+ * (`app/globals.css`) paints it, and the utilities here size it and ring it.
+ */
 export const dashboardTableCheckboxClassName = [
-  "h-6 w-6 rounded-[7px] border-input accent-primary",
+  "signet-checkbox h-5 w-5 rounded-[6px] transition-colors pointer-coarse:h-6 pointer-coarse:w-6 pointer-coarse:rounded-[7px]",
   FOCUS_RING,
 ].join(" ");
 
 /**
- * The `<th>`/`<td>` that hosts a row-select checkbox. Replaces the `w-10` these
- * cells used to pin; see the hit-area note above for why 48 and not 44.
- */
-export const dashboardCheckboxCellClassName = "w-12";
-
-/**
  * Wraps a `dashboardTableCheckboxClassName` input so the *tappable* area clears
- * §2's 44px floor on touch without changing the 24px box a pointer sees.
+ * §2's 44px floor on touch without changing the 20px box a pointer sees.
  */
 export const dashboardCheckboxHitAreaClassName = [
-  "flex h-6 w-6 cursor-pointer items-center justify-center",
+  "flex h-5 w-5 cursor-pointer items-center justify-center",
   "pointer-coarse:h-11 pointer-coarse:w-11",
 ].join(" ");
 
 /**
  * A compact icon control: 32px to a pointer, 44px to a finger.
  *
- * `Button`'s `size="icon"` is 44x44, which is §2's touch-target floor and right
- * for a control that stands alone. Two places want less where a mouse can aim:
+ * `Button`'s `size="icon"` is 36x36 to a pointer and 44x44 to a finger, §2's
+ * touch-target floor, which is right for a control that stands alone. Two places want less where a mouse can aim:
  *
  * - The trailing icon button of a **dense list row**: `/documents` after the
  *   greenfield lane flattened its cards away (`spec/ui/web-dashboard/README.md`
@@ -147,7 +165,9 @@ export const compactControlClassName =
  * four now import this.
  *
  * **What is deliberately NOT extracted with it: the row.** `/documents` and
- * `/backwork` draw a two-line `min-h-11` row that is not itself a control;
+ * `/backwork` draw a row that is not itself a control (`/documents` two lines
+ * at `min-h-11`; `/backwork` a column grid at `md:min-h-12`, two stacked lines
+ * below `md`);
  * `/members` draws a one-line `min-h-9 pointer-coarse:min-h-11` row that is the
  * member's whole hit target. They differ in line count, height and whether they
  * are interactive at all, so a shared parent would be a name over two things

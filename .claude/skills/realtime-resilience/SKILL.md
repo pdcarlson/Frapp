@@ -22,6 +22,7 @@ One implementation per concern; don't fork another:
 | Web subscriptions (`useRealtimeTable`) | `apps/web/lib/realtime/supabase-realtime.ts`, which queues attach/release per topic |
 | Mobile connection banner / write gating | `apps/mobile/lib/connection/` |
 | Chat outbox network port | Mobile: `createMonitorNetworkState(connectionMonitor)`. Web: chat-core `NetworkState`. |
+| API worker subscriptions (chat push, audit mirror) | `apps/api/src/application/workers/worker-subscription.ts`: `WorkerSubscription` reopens after `CLOSED` and reports outages, and `releaseChannel` is the API's `releaseTopic`. `realtime-js-contract.spec.ts` beside it pins what it assumes about realtime-js. |
 
 ## 1. Reopening a topic requires a completed teardown
 
@@ -39,7 +40,9 @@ This binds every subscription, not just chat. `useRealtimeTable` derives its top
 `scopeId` alone, so an effect re-run (new `queryClient`, StrictMode remount) reopens an unchanged
 topic. A `useEffect` cleanup is synchronous and freeing a topic is not, so serialize attach and
 release per topic through a queue; otherwise a cleanup's teardown lands after its successor
-registered and kills the live channel. Use the one `releaseTopic`; don't write a second.
+registered and kills the live channel. Use the one `releaseTopic`; don't write a second. The API's
+`releaseChannel` is its one counterpart, because the API's compiled output can't load chat-core's
+TypeScript source.
 
 ## 2. Do not re-key the chat topic to dodge a collision
 

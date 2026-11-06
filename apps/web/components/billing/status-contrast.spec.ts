@@ -53,12 +53,15 @@ describe("the Semantic badge kinds", () => {
   });
 
   it("still needs the lift for danger, on the two surfaces a badge lands on", () => {
+    // (neutral ladder, 2026-11-05) The darker `--card` lets the unlifted hue
+    // clear its tint there by a hair (4.60), but it still misses over
+    // `--popover` (4.26), so one badge recipe still needs the lift everywhere.
+    expect(
+      ratio(SEMANTIC.destructive, statusTint("destructive", SURFACE.popover)),
+      "unlifted --destructive on its own tint over popover",
+    ).toBeLessThan(AA_TEXT);
     for (const name of ["card", "popover"] as const) {
       const bg = SURFACE[name];
-      expect(
-        ratio(SEMANTIC.destructive, statusTint("destructive", bg)),
-        `unlifted --destructive on its own tint over ${name}`,
-      ).toBeLessThan(AA_TEXT);
       expect(
         ratio(DESTRUCTIVE_TEXT, statusTint("destructive", bg)),
         `--destructive-text on the danger tint over ${name}`,
@@ -123,34 +126,24 @@ describe("the #916 pair", () => {
     );
   });
 
-  it("keeps the negative branch on the solid, except on the step the greenfield ladder cost it", () => {
+  it("keeps the negative branch on the solid, on every ladder step", () => {
     // A negative points amount is danger text on a plain cell, not on a danger
-    // tint, and the solid used to clear the gate on every ladder step
-    // (4.72–5.79). Reaching for `--destructive-text` outside a tint
-    // over-applied §1's lift, so this assertion pinned the solid.
+    // tint, and the solid clears the gate on every ladder step. Reaching for
+    // `--destructive-text` outside a tint over-applies §1's lift, so this
+    // assertion pins the solid.
     //
-    // The greenfield surface ladder (foundations.md §2) took the top step below
-    // the gate: solid `--destructive` is now 5.58 / 5.19 / 4.95 on
-    // `--background` / `--surface-1` / `--card`, and **4.48 on `--popover`**.
-    // The three lower steps still hold, so the rule above is still right for
-    // them and is asserted as such rather than abandoned wholesale.
-    const { popover, ...holds } = SURFACE;
-
-    for (const [name, bg] of Object.entries(holds)) {
+    // (neutral ladder, 2026-11-05) The warm greenfield ladder had taken the top
+    // step below the gate (4.48 on `--popover`), so this used to pin that one
+    // step as a shortfall. The darker neutral ladder gave it back: solid
+    // `--destructive` is now 5.91 / 5.63 / 5.35 / 4.97 on `--background` /
+    // `--surface-1` / `--card` / `--popover`. `--popover` is still the
+    // thinnest margin, which is what this guard watches.
+    for (const [name, bg] of Object.entries(SURFACE)) {
       expect(
         ratio(SEMANTIC.destructive, bg),
         `--destructive on plain ${name}`,
       ).toBeGreaterThanOrEqual(AA_TEXT);
     }
-
-    // Pinned as a measured shortfall rather than deleted, so it cannot be
-    // rediscovered as a surprise and cannot be silently "fixed" by a rounding
-    // change. Danger text seated on `--popover` — a dialog, sheet or menu —
-    // must take `--destructive-text` (5.96 there). Migrating the `text-destructive`
-    // call sites that land on that step is tracked separately; this suite states
-    // the constraint, it does not enforce the call sites.
-    expect(ratio(SEMANTIC.destructive, popover)).toBeLessThan(AA_TEXT);
-    expect(ratio(DESTRUCTIVE_TEXT, popover)).toBeGreaterThanOrEqual(AA_TEXT);
   });
 });
 

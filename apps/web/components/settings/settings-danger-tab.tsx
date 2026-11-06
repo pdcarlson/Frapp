@@ -50,10 +50,7 @@ export function SettingsDangerTab({
     } catch (error) {
       toast({
         title: "Couldn't open billing portal",
-        description: getErrorMessage(
-          error,
-          "Confirm billing:manage permission and an active Stripe customer.",
-        ),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }
@@ -64,11 +61,10 @@ export function SettingsDangerTab({
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-destructive">
           <AlertTriangle className="h-4 w-4" />
-          Billing &amp; danger zone
+          Danger zone
         </CardTitle>
         <CardDescription>
-          Manage payment methods, download invoices, or cancel the subscription
-          from the Stripe-hosted portal.
+          Cancel or change the subscription in Stripe.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -76,8 +72,7 @@ export function SettingsDangerTab({
           permission="billing:manage"
           deniedFallback={
             <p className="text-sm text-muted-foreground">
-              Only users with <code>billing:manage</code> can open the Stripe
-              portal.
+              Your role can&apos;t open the billing portal.
             </p>
           }
         >

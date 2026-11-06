@@ -16,7 +16,7 @@ import {
 import type { ChatReport, ChatReportStatus } from "@repo/hooks";
 import { serverMessageOf, statusOf } from "@repo/api-sdk";
 import { isViewableImage } from "@repo/chat-core/attachments";
-import { formatBytes, formatLocaleDateTime } from "@repo/formatting";
+import { formatBytes, formatTimestampFull } from "@repo/formatting";
 import { CHAT_REPORT_QUEUE_PERMISSIONS } from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import { Badge } from "@/components/ui/badge";
@@ -32,7 +32,6 @@ import {
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -53,6 +52,7 @@ import {
   reportedMessageSubject,
 } from "./chat-report-copy";
 import type { ChatReportTab } from "./chat-report-copy";
+import { ReportRowsSkeleton } from "@/components/chat-admin/chat-admin-skeleton";
 
 /**
  * The officer report queue (#2257) and its one destructive action (#2311).
@@ -350,7 +350,7 @@ function ReportListBody({
     );
   }
   if (query.isLoading) {
-    return <NestedLoading message={copy.loading} />;
+    return <ReportRowsSkeleton />;
   }
   // `data === undefined`, not `isError` alone: a failed *background* refetch
   // keeps the rows v5 already holds, and a queue an officer is mid-way through
@@ -490,7 +490,7 @@ function ReportRow({
         <time
           className="ml-auto text-xs text-muted-foreground"
           dateTime={report.created_at}
-          title={formatLocaleDateTime(report.created_at)}
+          title={formatTimestampFull(report.created_at) ?? undefined}
         >
           Reported {age}
         </time>
@@ -530,7 +530,7 @@ function ReportRow({
             : ""}{" "}
           <time
             dateTime={report.resolved_at}
-            title={formatLocaleDateTime(report.resolved_at)}
+            title={formatTimestampFull(report.resolved_at) ?? undefined}
           >
             {reportAge(report.resolved_at, now)}
           </time>
@@ -622,7 +622,7 @@ function ReportAttachments({
 
   const rowClass = cn(
     "flex max-w-full items-center gap-2 rounded-md border border-border bg-surface-1 px-2 py-1.5",
-    "text-xs hover:bg-accent-subtle hover:text-accent-text",
+    "text-xs hover:bg-card-hover hover:text-foreground",
     FOCUS_RING,
   );
 

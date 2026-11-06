@@ -32,17 +32,29 @@ import { RequirePermissions } from '../decorators/permissions.decorator';
 import { FreeTier } from '../decorators/subscription.decorator';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
+import {
   CurrentChapterId,
   CurrentEnabledModules,
   CurrentUser,
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
+  CARD_VOTE_ACTION_TYPE,
+  cardPollChoiceMode,
+  cardPollOptionIds,
+  cardVoteSelection,
+  type CardPollPayload,
+} from '#domain/utils/poll-vote-rules';
+import {
   CreateChannelDto,
   UpdateChannelDto,
   CreateDmDto,
   CreateGroupDmDto,
   AddChannelMemberDto,
+  ChannelMemberDto,
   CreateCategoryDto,
   UpdateCategoryDto,
   SendMessageDto,
@@ -61,7 +73,18 @@ import {
   GetChannelMessagesQueryDto,
   ChatMessageDto,
 } from '../dtos/chat.dto';
-import type { ChannelType } from '#domain/entities/chat.entity';
+import type { ChannelType, ChatChannel } from '#domain/entities/chat.entity';
+
+/** What `POST :id/messages` answers with. */
+type SentMessage = Awaited<ReturnType<ChatService['sendMessage']>>;
+
+/** What `POST messages/:messageId/actions` answers with. */
+type RecordedMessageAction = Awaited<
+  ReturnType<ChatReactionService['recordMessageAction']>
+>;
+
+/** The prefix every emoji reaction's `action_type` carries (`reaction:<emoji>`). */
+const REACTION_ACTION_PREFIX = 'reaction:';
 
 @ApiTags('Chat')
 @ApiBearerAuth()
@@ -195,6 +218,14 @@ export class ChatController {
   @Post()
   @RequirePermissions(SystemPermissions.CHANNELS_CREATE)
   @ApiOperation({ summary: 'Create a channel' })
+  @FeatureEvent(
+    'channel-created',
+    ({ result }: FeatureEventInput<CreateChannelDto, ChatChannel>) => ({
+      type: result.type,
+      is_read_only: result.is_read_only,
+      has_category: result.category_id != null,
+    }),
+  )
   async createChannel(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -238,6 +269,9 @@ export class ChatController {
 
   @Post('dm')
   @ApiOperation({ summary: 'Get or create a 1-on-1 DM channel' })
+  // Get-or-create, and the result does not say which: reopening an existing
+  // DM counts the same as starting one.
+  @FeatureEvent('dm-opened')
   async getOrCreateDm(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -282,6 +316,24 @@ export class ChatController {
   ) {
     await this.chatService.leaveChannel(channelId, chapterId, userId);
     return { success: true };
+  }
+
+  /**
+   * Everyone who can read the channel, for the member list beside it (#3536).
+   * Any reader of the channel may ask; a non-reader gets 403, and a channel in
+   * another chapter 404, from the same check every channel read goes through.
+   */
+  @Get(':id/members')
+  @ApiOperation({
+    summary: 'Everyone who can read a channel, with their top role rank',
+  })
+  @ApiOkResponse({ type: ChannelMemberDto, isArray: true })
+  async listChannelMembers(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
+  ): Promise<ChannelMemberDto[]> {
+    return this.chatService.listChannelMembers(channelId, chapterId, userId);
   }
 
   /**
@@ -398,6 +450,44 @@ export class ChatController {
   @ApiOperation({
     summary: 'Send a message (hot path; idempotent on client_message_id)',
   })
+  // A retry on the same `client_message_id` answers `deduplicated: true`, and
+  // records nothing: the message was counted when it was first written.
+  @FeatureEvent(
+    'message-sent',
+    ({ body, result }: FeatureEventInput<SendMessageDto, SentMessage>) =>
+      result.deduplicated
+        ? null
+        : {
+            kind: result.message.kind ?? 'text',
+            is_reply: !!result.message.reply_to_id,
+            // From the request, not `metadata.attachment_count`: with no
+            // attachments the row's metadata is the client's own, verbatim.
+            attachment_count: Array.isArray(body.attachments)
+              ? body.attachments.length
+              : 0,
+          },
+  )
+  // `/poll` posts a `kind: 'poll'` message through this route
+  // (`@repo/chat-core/dispatch`).
+  @FeatureEvent(
+    'poll-created',
+    ({ body, result }: FeatureEventInput<SendMessageDto, SentMessage>) => {
+      if (result.deduplicated || result.message.kind !== 'poll') return null;
+      // Read as the card vote rules read it (`poll-vote-rules.ts`).
+      const poll = (body.payload ?? {}) as CardPollPayload;
+      return {
+        choice_mode: cardPollChoiceMode(poll),
+        option_count: cardPollOptionIds(poll)?.length ?? 0,
+        has_expiry: typeof poll.closes_at === 'string' && poll.closes_at !== '',
+      };
+    },
+  )
+  // `/announce` posts a `kind: 'announcement'` message through this route.
+  @FeatureEvent(
+    'announcement-posted',
+    ({ result }: FeatureEventInput<SendMessageDto, SentMessage>) =>
+      result.deduplicated || result.message.kind !== 'announcement' ? null : {},
+  )
   async sendMessage(
     @Param('id') channelId: string,
     @CurrentChapterId() chapterId: string,
@@ -567,6 +657,45 @@ export class ChatController {
     summary:
       'Record a reaction / vote / card action (hot path; atomic dedup; vote UPSERTS)',
   })
+  // Neither event carries the `action_type`: a reaction's holds the emoji, and
+  // any other is free-form. A repeated reaction answers `deduplicated: true`
+  // and records nothing. Removing one goes to `chat_message_actions` directly
+  // (`unreact` in `@repo/chat-core/chat-client`), so no event sees it.
+  @FeatureEvent(
+    'message-reacted',
+    ({
+      body,
+      result,
+    }: FeatureEventInput<ChatMessageActionDto, RecordedMessageAction>) =>
+      typeof body.action_type === 'string' &&
+      body.action_type.startsWith(REACTION_ACTION_PREFIX) &&
+      !result.deduplicated
+        ? {}
+        : null,
+  )
+  // The chat poll card's vote. A vote is never `deduplicated`: a second one
+  // replaces the first (ADR-07) and answers `updated: true`, even when it
+  // picks the same option again, so `is_revote` means "replaced an earlier
+  // vote", not "changed the answer". A multi-choice vote with nothing selected
+  // clears the vote, which is not a vote cast.
+  @FeatureEvent(
+    'poll-voted',
+    ({
+      body,
+      result,
+    }: FeatureEventInput<ChatMessageActionDto, RecordedMessageAction>) => {
+      if (body.action_type !== CARD_VOTE_ACTION_TYPE || result.deduplicated) {
+        return null;
+      }
+      const selectedCount = cardVoteSelection(body.payload).length;
+      if (selectedCount === 0) return null;
+      return {
+        surface: 'card',
+        selected_count: selectedCount,
+        is_revote: result.updated === true,
+      };
+    },
+  )
   async recordMessageAction(
     @Param('messageId') messageId: string,
     @CurrentChapterId() chapterId: string,

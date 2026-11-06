@@ -124,10 +124,10 @@ describe("ProfilePhotoControl", () => {
   it("labels the action by whether there is a photo, and removes one", async () => {
     const { rerender } = render(<ProfilePhotoControl hasPhoto={false} />);
     expect(screen.getByRole("button", { name: "Add photo" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remove photo" })).toBeNull();
 
     rerender(<ProfilePhotoControl hasPhoto />);
-    await userEvent.click(screen.getByRole("button", { name: "Remove" }));
+    await userEvent.click(screen.getByRole("button", { name: "Remove photo" }));
 
     await waitFor(() => expect(mocks.remove).toHaveBeenCalled());
     expect(screen.getByRole("button", { name: "Change photo" })).toBeTruthy();
@@ -142,7 +142,7 @@ describe("ProfilePhotoControl", () => {
         .disabled,
     ).toBe(true);
     expect(
-      (screen.getByRole("button", { name: "Remove" }) as HTMLButtonElement)
+      (screen.getByRole("button", { name: "Remove photo" }) as HTMLButtonElement)
         .disabled,
     ).toBe(false);
     expect(screen.getByText("Choose a chapter to add a photo.")).toBeTruthy();
@@ -151,7 +151,7 @@ describe("ProfilePhotoControl", () => {
   it("is inert offline", () => {
     render(<ProfilePhotoControl hasPhoto disabled />);
 
-    for (const name of ["Change photo", "Remove"]) {
+    for (const name of ["Change photo", "Remove photo"]) {
       expect(
         (screen.getByRole("button", { name }) as HTMLButtonElement).disabled,
       ).toBe(true);

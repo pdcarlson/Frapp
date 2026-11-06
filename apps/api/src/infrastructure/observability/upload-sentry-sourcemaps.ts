@@ -147,11 +147,13 @@ export function planSentrySourcemapUpload(options: {
  * declares, found by Node resolution from this module's directory, never
  * from `process.cwd()`.
  *
- * Hoisting decides where the package lands, and the API's copy is NOT at the
- * root: the lockfile nests it at `apps/api/node_modules/@sentry/cli` because
- * Sentry's bundler plugins (via `@sentry/nextjs`, `@sentry/react-native`)
- * claim the root slot for an older major, and the Docker deps stage
- * (`npm ci --workspace=apps/api ...`) does not install that root copy at all.
+ * Hoisting decides where the package lands, and it moves between lockfile
+ * re-resolutions. It has been nested at `apps/api/node_modules/@sentry/cli`,
+ * when Sentry's bundler plugins (via `@sentry/nextjs`, `@sentry/react-native`)
+ * claimed the root slot for an older major and the Docker deps stage
+ * (`npm ci --workspace=apps/api ...`) did not install that root copy at all.
+ * Since #3335 it is hoisted at the root, with React Native's older copy
+ * nested under its bundler plugins. Resolving from here finds either layout.
  * The old fixed path `/app/node_modules/.bin/sentry-cli` therefore did not
  * exist in the image, and spawnSync failed with ENOENT, which surfaced as
  * `inject failed (null):` (#2431).

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { RUSH_CARD_REFUSAL_COPY } from "@repo/hooks";
 import {
   SUBSCRIPTION_REFUSAL_COPY,
   subscriptionRefusalOf,
@@ -217,6 +218,7 @@ describe("SUBSCRIPTION_REFUSAL_COPY", () => {
     expect(SUBSCRIPTION_REFUSAL_COPY.checkIn).toMatch(/check-in/i);
     expect(SUBSCRIPTION_REFUSAL_COPY.study).toMatch(/study/i);
     expect(SUBSCRIPTION_REFUSAL_COPY.serviceHours).toMatch(/service hours/i);
+    expect(SUBSCRIPTION_REFUSAL_COPY.document).toMatch(/documents/i);
     // The in-session variant has to hold a narrow line, and it has been wrong
     // in both directions. It must not claim the time was lost (the session is
     // still live server-side and quick resolution credits it in full), and it
@@ -233,5 +235,26 @@ describe("SUBSCRIPTION_REFUSAL_COPY", () => {
       /may not be credited/i,
     );
     expect(new Set(all).size).toBe(all.length);
+  });
+});
+
+// A chat card web shares keeps its copy beside its rules in `@repo/hooks`
+// (`packages/hooks/src/rush-card.ts`), not in `./subscription-refusal`, and
+// mobile shows it as the card's refusal line. The store answers bind it all
+// the same, so the guard above runs on it here.
+describe("RUSH_CARD_REFUSAL_COPY, shown on the mobile rush card", () => {
+  const all = Object.values(RUSH_CARD_REFUSAL_COPY);
+
+  it("names no price, plan, purchase path or link", () => {
+    for (const copy of all) {
+      expect(copy).not.toMatch(PURCHASE_PATH);
+    }
+  });
+
+  it("points at an officer and never invites a retry", () => {
+    for (const copy of all) {
+      expect(copy).toMatch(/officer/i);
+      expect(copy).not.toMatch(INVITES_RETRY);
+    }
   });
 });

@@ -1,69 +1,49 @@
-import { useCallback, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AppState, StyleSheet, Text, View } from "react-native";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
-  BottomSheetModal,
-  BottomSheetTextInput,
-  BottomSheetView,
-} from "@gorhom/bottom-sheet";
-import {
-  useCreateServiceEntry,
+  useActiveChapterId,
   useCurrentUser,
   useServiceEntries,
   useViewerUserId,
+  type ServiceEntryStatus,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { formatMinutesRounded, localIsoDate } from "@repo/formatting";
 import { ScreenShell } from "@/components/screen-shell";
-import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
+import { useRefetchAll } from "@/components/pull-to-refresh";
+import { BACK_TO_MORE } from "@/components/back-row";
+import { HistoryRow, HistoryRowsSkeleton } from "@/components/history-row";
+import { SectionHeader } from "@/components/list-section";
+import { LogHoursSheet } from "@/components/service-hours/log-hours-sheet";
+import { StatusChip } from "@/components/status-chip";
 import {
   EmptyState,
   ErrorState,
-  SkeletonLines,
+  SkeletonRegion,
 } from "@/components/state-block";
-import { useChapterBranding } from "@/lib/chapter-branding";
 import {
-  parseDurationInput,
   selectServiceEntryRows,
+  serviceStatusHue,
   summarizeServiceEntries,
 } from "@/lib/more/service-hours";
-import { useConnection } from "@/lib/connection/use-connection";
-import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
-import {
-  SUBSCRIPTION_REFUSAL_COPY,
-  subscriptionRefusalOf,
-} from "@/lib/subscription-refusal";
-import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * Service hours, hosting the s20 "Log service hours" sheet
- * (`canvas-screens.dc.html:648`).
+ * Service hours: the member's approved total, their history, and the s20 "Log
+ * service hours" sheet (`components/service-hours/log-hours-sheet.tsx`).
  *
  * The list is the member's own history: `GET /v1/service-entries` pins a
  * non-admin's read to their own id server-side, so no client-side filter makes
  * that true and none pretends to.
  *
- * ## No proof attachment
- *
- * Canvas draws a proof upload in the sheet, and the API supports it
- * (`proof_path` plus a signed-upload endpoint). The field is still omitted
- * rather than rendered dead, but **the dependency blocker is gone**: #2464
- * added `expo-image-picker` for chat photo upload, so this is now ordinary
- * screen work rather than an integrator PR. `lib/chat/attachment-upload.ts` is
- * the working reference, though proof uploads use the `proof` kind, not
- * `document`. Entries submitted here are reviewed on their description. Filed.
- *
- * ## Sheet mechanics
- *
- * `@gorhom/bottom-sheet` v5 with `BottomSheetTextInput` and
- * `keyboardBehavior="interactive"`, both required by
- * `spec/ui/mobile/patterns.md` — a plain `TextInput` breaks the sheet's
- * keyboard coordination. The submit CTA is 50px as drawn, which wins over
- * `components.md`'s 48px under the reference-first precedence rule.
+ * Drawn like its sibling "my numbers" screens, s10 Study and s11 Dues: a
+ * sentence-case caption over a display-role figure, with a status chip on the
+ * caption row, then the board's unboxed history rows (`HistoryRow`). The board
+ * never drew this screen, so the siblings are the reference.
  */
 export default function ServiceHoursScreen() {
   const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
-  const styles = createStyles(tokens, accent);
+  const styles = createStyles(tokens);
   const sheetRef = useRef<BottomSheetModal>(null);
 
   // Scoped to the viewer on purpose. Unscoped, this endpoint returns the whole
@@ -76,14 +56,16 @@ export default function ServiceHoursScreen() {
   // The query behind `useViewerUserId`, for its error state: the helper reports a
   // failed `/v1/users/me` as `null`, the same value it means by "pending", and
   // the read below is gated on that id — so without this the screen shimmers
-  // forever on a dead call, with no pull-to-refresh to escape by
-  // (`ScreenShell` is a bare ScrollView). The C3 ruling, as dues and tasks
-  // already apply it.
+  // forever on a dead call, with no retry to escape by. The C3 ruling, as dues
+  // and tasks already apply it.
   const viewerQuery = useCurrentUser();
+  const chapterId = useActiveChapterId();
   const entriesQuery = useServiceEntries(viewerUserId ?? undefined, undefined, {
     enabled: !!viewerUserId,
   });
-  const createEntry = useCreateServiceEntry();
+  // The pull skips the entries while they wait on the id, as the read
+  // itself does: unscoped, it is the chapter-wide list above.
+  const refresh = useRefetchAll([viewerQuery, entriesQuery]);
 
   const rows = useMemo(
     () => selectServiceEntryRows(entriesQuery.data),
@@ -92,88 +74,22 @@ export default function ServiceHoursScreen() {
   const summary = useMemo(() => summarizeServiceEntries(rows), [rows]);
   const hasEntries = entriesQuery.isSuccess;
 
-  const [description, setDescription] = useState("");
-  const [duration, setDuration] = useState("");
-  const [submitFailed, setSubmitFailed] = useState(false);
-  /**
-   * The member copy for a refusal retrying cannot win, or `null`. A refusal is
-   * a different outcome from a failed save, and two gates refuse
-   * `POST /v1/service-entries` that way until an officer acts:
-   *
-   * - the subscription gate (#2410, the shape #2297 set on tasks): a
-   *   brand-new chapter is `incomplete` until checkout;
-   * - the module gate, `@RequireModule('hours')` (#2718), whose own message
-   *   tells an officer to go to Settings → Modules.
-   *
-   * Either way the sheet explains the state and withdraws Submit. The copy is
-   * the latch, so the two can't disagree. `submitFailed` keeps its exact old
-   * meaning: a save that might succeed.
-   */
-  const [refusal, setRefusal] = useState<string | null>(null);
-
-  /**
-   * s20 has **no outbox**. A submit posted with no network is simply lost, so
-   * this is one of the surfaces `spec/ui/resilience/connection-state.md` means when it says
-   * write actions are "Disabled with tooltip: 'Reconnect to make changes'"
-   * (#501). The chat composer deliberately does the opposite, because it has a
-   * queue — `lib/connection/state.ts` holds the split.
-   */
-  const { writeBlockedReason } = useConnection();
-
-  const durationMinutes = parseDurationInput(duration);
-  const canSubmit =
-    description.trim().length > 0 &&
-    durationMinutes !== null &&
-    writeBlockedReason === null &&
-    !createEntry.isPending &&
-    refusal === null;
-
+  // The clock the sheet's date chips read. Re-read each time the sheet opens,
+  // and when the app comes back to the foreground: a tab screen is never
+  // unmounted and the JS context survives days of backgrounding, so a clock
+  // read once would offer "Today" as the day the screen first mounted, and a
+  // sheet left up overnight would file the evening before under "Today".
+  const [now, setNow] = useState(() => new Date());
   const openSheet = useCallback(() => {
-    setSubmitFailed(false);
-    setRefusal(null);
+    setNow(new Date());
     sheetRef.current?.present();
   }, []);
-
-  const closeSheet = useCallback(() => {
-    sheetRef.current?.dismiss();
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (next) => {
+      if (next === "active") setNow(new Date());
+    });
+    return () => subscription.remove();
   }, []);
-
-  function submit() {
-    if (!canSubmit || durationMinutes === null) return;
-    setSubmitFailed(false);
-    createEntry.mutate(
-      {
-        date: localIsoDate(new Date()),
-        duration_minutes: durationMinutes,
-        description: description.trim(),
-      },
-      {
-        onSuccess: () => {
-          setDescription("");
-          setDuration("");
-          setSubmitFailed(false);
-          closeSheet();
-        },
-        onError: (error) => {
-          // Ordinary failures keep the retry they have always had; a gate
-          // refusal takes it away, because retrying cannot win. Both asked
-          // before `submitFailed`, and never as a bare 403: this route also
-          // 403s for a permission denial, which an officer's role grant clears
-          // on the next try, and for the `chapter.context.*` family, which
-          // clears itself.
-          if (subscriptionRefusalOf(error)) {
-            setRefusal(SUBSCRIPTION_REFUSAL_COPY.serviceHours);
-            return;
-          }
-          if (moduleRefusalOf(error)) {
-            setRefusal(MODULE_REFUSAL_COPY.serviceHours);
-            return;
-          }
-          setSubmitFailed(true);
-        },
-      },
-    );
-  }
 
   function renderList() {
     if (viewerQuery.isError) {
@@ -191,12 +107,20 @@ export default function ServiceHoursScreen() {
     // error case is already handled above. The entries query is disabled until
     // the id lands, so `isPending` alone would not cover it.
     if (viewerUserId === null || entriesQuery.isPending)
-      return <SkeletonLines lines={3} />;
+      return (
+        <SkeletonRegion label="Loading service entries">
+          {/* About an "Approved" chip's width, where each status lands. */}
+          <HistoryRowsSkeleton
+            rows={3}
+            trailingWidth={tokens.spacing["3xl"] + tokens.spacing.xl}
+          />
+        </SkeletonRegion>
+      );
     if (entriesQuery.isError) {
       return (
         <ErrorState
           title="Couldn't load your service hours"
-          body="If you belong to more than one chapter, pick one from More → Chapter first."
+          body="If you belong to more than one chapter, pick one from More → Switch chapter first."
           onRetry={() => void entriesQuery.refetch()}
           isRetrying={entriesQuery.isFetching}
         />
@@ -212,288 +136,103 @@ export default function ServiceHoursScreen() {
       );
     }
     return (
-      <ListSection>
-        {rows.map((row) => (
-          <ListRow
+      <View>
+        {rows.map((row, index) => (
+          <HistoryRow
             key={row.id}
-            label={row.description}
-            description={row.meta}
+            title={row.description}
+            meta={row.meta}
+            isLast={index === rows.length - 1}
             trailing={
-              <Text style={statusStyle(row.status, styles)}>
-                {STATUS_LABELS[row.status]}
-              </Text>
+              <StatusChip
+                label={STATUS_LABELS[row.status]}
+                hue={serviceStatusHue(row.status, tokens)}
+              />
             }
           />
         ))}
-      </ListSection>
+      </View>
     );
   }
 
   return (
     <ScreenShell
+      back={BACK_TO_MORE}
       title="Service hours"
-      subtitle="Philanthropy work you've logged, and where it stands."
-      headerAction={
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Log service hours"
-          hitSlop={tokens.spacing.sm}
-          onPress={openSheet}
-        >
-          <Text style={styles.headerAction}>Log</Text>
-        </Pressable>
-      }
+      refresh={refresh}
+      createAction={{ label: "Log service hours", onPress: openSheet }}
     >
       {/* Only stated once the entries are actually in hand. `summary` derives
           from `rows`, which is empty while the query is pending or errored — so
-          rendering it unconditionally would headline "0 hrs / nothing pending"
-          to a member with hours banked. */}
+          rendering it unconditionally would headline "0" to a member with
+          hours banked. */}
       <View style={styles.summaryCard}>
-        <Text style={styles.summaryLabel}>Approved</Text>
-        <Text style={styles.summaryValue}>
-          {hasEntries ? `${summary.approvedHours} hrs` : "—"}
-        </Text>
-        <Text style={styles.summaryMeta}>
-          {!hasEntries
-            ? "Waiting on your service history."
-            : summary.pendingCount === 0
-              ? "Nothing waiting on review."
-              : `${summary.pendingCount} ${
-                  summary.pendingCount === 1 ? "entry" : "entries"
-                } awaiting review.`}
+        <View style={styles.summaryLabelRow}>
+          <Text style={styles.summaryLabel}>Approved hours</Text>
+          {hasEntries && summary.pendingCount > 0 ? (
+            <StatusChip
+              label={`${summary.pendingCount} pending`}
+              hue={tokens.color.semantic.warning}
+            />
+          ) : null}
+        </View>
+        <Text
+          style={styles.summaryValue}
+          accessibilityLabel={
+            hasEntries
+              ? `${summary.approvedHours} approved hours`
+              : "Approved hours not available yet"
+          }
+        >
+          {hasEntries ? summary.approvedHours : "—"}
         </Text>
       </View>
 
       <SectionHeader>History</SectionHeader>
       {renderList()}
 
-      <BottomSheetModal
+      <LogHoursSheet
+        // A new sheet per chapter: a kept entry belongs to the chapter it was
+        // started in, and a photo path the sheet holds after a failed create
+        // names a path minted under the chapter it was sent from.
+        key={chapterId ?? "no-chapter"}
         ref={sheetRef}
-        enableDynamicSizing
-        keyboardBehavior="interactive"
-        backgroundStyle={styles.sheetBackground}
-        handleComponent={() => (
-          <View style={styles.grabberZone}>
-            <View style={styles.grabber} />
-          </View>
-        )}
-      >
-        <BottomSheetView style={styles.sheetBody}>
-          <View style={styles.sheetHeaderRow}>
-            <Text style={styles.sheetTitle}>Log service hours</Text>
-            {/* hitSlop meets the ≥44px floor while keeping §9's compact visual
-                (the #939 ruling pattern). */}
-            <Pressable
-              accessibilityRole="button"
-              onPress={closeSheet}
-              hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
-            >
-              <Text style={styles.sheetCancel}>Cancel</Text>
-            </Pressable>
-          </View>
-
-          <Text style={styles.fieldLabel}>What did you do?</Text>
-          <BottomSheetTextInput
-            value={description}
-            onChangeText={setDescription}
-            placeholder="Food bank volunteer shift"
-            placeholderTextColor={tokens.color.text.muted}
-            accessibilityLabel="Service description"
-            style={styles.sheetInput}
-          />
-
-          <Text style={styles.fieldLabel}>How long?</Text>
-          <BottomSheetTextInput
-            value={duration}
-            onChangeText={setDuration}
-            placeholder="2:30 or 2.5"
-            placeholderTextColor={tokens.color.text.muted}
-            accessibilityLabel="Duration in hours"
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="numbers-and-punctuation"
-            style={styles.sheetInput}
-          />
-          <Text style={styles.fieldHint}>
-            {duration.trim().length === 0
-              ? "Hours and minutes, or a decimal. Dated today."
-              : durationMinutes === null
-                ? "Enter a duration like 2:30 or 2.5, up to 24 hours."
-                : // Echoed back because a bare number reads as hours: "45"
-                  // means 45 hours, and the history has no way to correct it.
-                  `Logging ${formatMinutesRounded(durationMinutes)}, dated today.`}
-          </Text>
-
-          {refusal ? <Text style={styles.sheetError}>{refusal}</Text> : null}
-
-          {submitFailed ? (
-            <Text style={styles.sheetError}>
-              That didn&apos;t save. Your entry is still here — try again.
-            </Text>
-          ) : null}
-
-          {writeBlockedReason ? (
-            <Text style={styles.sheetError}>{writeBlockedReason}</Text>
-          ) : null}
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ disabled: !canSubmit }}
-            // Wired to the control, not merely printed above it: a screen
-            // reader lands on the disabled button, not on the sentence before.
-            // The refusal outranks the offline reason: reconnecting clears
-            // one and not the other, so naming only the offline reason would
-            // promise a fix that doesn't come.
-            accessibilityHint={refusal ?? writeBlockedReason ?? undefined}
-            disabled={!canSubmit}
-            onPress={submit}
-            style={[
-              styles.sheetPrimaryButton,
-              canSubmit ? null : styles.sheetPrimaryButtonDisabled,
-            ]}
-          >
-            <Text style={styles.sheetPrimaryButtonText}>
-              {createEntry.isPending ? "Submitting…" : "Submit for approval"}
-            </Text>
-          </Pressable>
-        </BottomSheetView>
-      </BottomSheetModal>
+        now={now}
+      />
     </ScreenShell>
   );
 }
 
-const STATUS_LABELS = {
+const STATUS_LABELS: Record<ServiceEntryStatus, string> = {
   PENDING: "Pending",
   APPROVED: "Approved",
   REJECTED: "Rejected",
-} as const;
+};
 
-function statusStyle(
-  status: keyof typeof STATUS_LABELS,
-  styles: ReturnType<typeof createStyles>,
-) {
-  if (status === "APPROVED") return styles.statusApproved;
-  if (status === "REJECTED") return styles.statusRejected;
-  return styles.statusPending;
-}
-
-function createStyles(tokens: SignetTokens, accent: string) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    headerAction: {
-      ...typeRole(tokens.typography.role.label),
-      color: accent,
-    },
     summaryCard: {
       borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
-      gap: tokens.spacing.xs,
     },
-    summaryLabel: {
-      ...typeRole(tokens.typography.role.caption),
-      textTransform: "uppercase",
-      letterSpacing: 0.6,
-      color: tokens.color.text.muted,
-    },
-    summaryValue: {
-      ...typeRole(tokens.typography.role.headline),
-      color: tokens.color.text.foreground,
-      letterSpacing: -0.3,
-    },
-    summaryMeta: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    statusPending: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.semantic.warning,
-    },
-    statusApproved: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.semantic.success,
-    },
-    statusRejected: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.semantic.destructive,
-    },
-    sheetBackground: {
-      backgroundColor: tokens.color.surface.popover,
-      borderTopLeftRadius: tokens.radius.sheet,
-      borderTopRightRadius: tokens.radius.sheet,
-    },
-    grabberZone: {
-      paddingTop: tokens.spacing.sm,
-      paddingBottom: tokens.spacing.md,
-      alignItems: "center",
-    },
-    grabber: {
-      width: 40,
-      height: 4.5,
-      borderRadius: tokens.radius.chip,
-      backgroundColor: tint(tokens.color.text.foreground, 0.18),
-    },
-    sheetBody: {
-      paddingHorizontal: tokens.spacing.lg,
-      paddingBottom: tokens.spacing.xl,
-      gap: tokens.spacing.sm,
-    },
-    sheetHeaderRow: {
+    summaryLabelRow: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
-      marginBottom: tokens.spacing.sm,
+      gap: tokens.spacing.sm,
     },
-    sheetTitle: {
-      ...typeRole(tokens.typography.role.title),
-      color: tokens.color.text.foreground,
-    },
-    sheetCancel: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.muted,
-    },
-    fieldLabel: {
+    summaryLabel: {
+      flex: 1,
       ...typeRole(tokens.typography.role.caption),
-      textTransform: "uppercase",
-      letterSpacing: 0.3,
       color: tokens.color.text.mutedForeground,
     },
-    sheetInput: {
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.sm,
-      minHeight: tokens.touch.minimum,
-      ...typeRole(tokens.typography.role.body),
+    summaryValue: {
+      ...typeRole(tokens.typography.role.display),
+      letterSpacing: -0.8,
       color: tokens.color.text.foreground,
-    },
-    fieldHint: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-    },
-    sheetError: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.semantic.destructive,
-    },
-    sheetPrimaryButton: {
       marginTop: tokens.spacing.sm,
-      // 50px as drawn (canvas-screens.dc.html:663); the reference wins over
-      // components.md §9's 48px per spec/ui/README.md's precedence rule.
-      height: 50,
-      borderRadius: tokens.radius.control,
-      backgroundColor: accent,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    sheetPrimaryButtonDisabled: {
-      opacity: 0.5,
-    },
-    sheetPrimaryButtonText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.onHouse,
     },
   });
 }

@@ -5,6 +5,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
+import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm";
 import { vector } from "@electric-sql/pglite-pgvector";
 import {
   CHANGE_EVENT,
@@ -96,7 +97,7 @@ const SUBSTRATE = `
 `;
 
 async function replayMigrations(): Promise<PGlite> {
-  const db = new PGlite({ extensions: { pgcrypto, vector } });
+  const db = new PGlite({ extensions: { pgcrypto, pg_trgm, vector } });
   await db.waitReady;
   await db.exec(SUBSTRATE);
   const files = readdirSync(MIGRATIONS_DIR)

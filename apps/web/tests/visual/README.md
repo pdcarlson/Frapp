@@ -1,6 +1,6 @@
 # Dashboard browser suite
 
-Playwright tests that drive the app's routes against a real `next dev`. Three
+Playwright tests that drive the app's routes against a real `next dev`. Four
 suites, all in the **required** `web-responsive-floor` job:
 
 | Suite | Covers |
@@ -8,6 +8,7 @@ suites, all in the **required** `web-responsive-floor` job:
 | `responsive-floor.spec.ts` | every `DASHBOARD_ROUTES` entry at 375px |
 | `pre-auth-floor.spec.ts` | every `PRE_AUTH_ROUTES` entry at 375px, plus one guard |
 | `nav-fit.spec.ts` | the sidebar fits a 1024×768 window with every row showing (#2946) |
+| `pre-auth-fit.spec.ts` | `/sign-in` and `/sign-up` fit a 1280×650 window without scrolling |
 
 The two floor suites read `routes.ts`. Add a screen there and the matching spec
 picks it up. `nav-fit.spec.ts` measures one route, because the sidebar is the
@@ -136,7 +137,7 @@ real.
 its whole-route early return was folded into a `no-chapter` state the frame
 renders, so the sessionless run now measures the real two-column layout — both
 48px column headers, the channels column and its hairline, the thread column's
-`h1`, its reconnect pill and its `⋯` menu — with a "No chapter selected" card
+`h2`, its reconnect pill and its `⋯` menu — with a "No chapter selected" card
 where the timeline goes. That is more coverage than before, not less, and it is
 why the floor number for this route is now measuring something worth measuring.
 

@@ -3,13 +3,21 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AppState } from "react-native";
+import { AppState, Platform } from "react-native";
 import * as expoRouter from "expo-router";
 import { FrappThemeProvider } from "@/lib/theme";
+import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { moduleDisabledMessage } from "@repo/validation";
-import { MODULE_OFF_COPY } from "@/lib/study/errors";
+import { MODULE_OFF_COPY, startErrorCopy } from "@/lib/study/errors";
+import { drawnText } from "@/test/screen-text";
+import { CardListSkeleton } from "@/components/card-list-skeleton";
+import { SkeletonLines } from "@/components/state-block";
+import { StartCard, StartCardSkeleton } from "@/components/study/start-card";
+import { SessionCard } from "@/components/study/session-card";
+import { ZonePickerSheet } from "@/components/study/zone-picker-sheet";
+import { readForegroundPermission } from "@/lib/location";
 
 /**
  * s10's refusal wiring (#2297, and the module gate #2393), rendered (#2416).
@@ -69,6 +77,19 @@ let chapter: unknown = HOURS_ON;
 /** The chapter query's `refetch`: a spec sets `chapter` from it to play the server's answer. */
 const refetchChapter = vi.fn();
 const ZONES = [{ id: "zone-1", name: "Library", is_active: true }];
+/** Sorted by name on arrival, so "Commons" is the first zone. */
+const TWO_ZONES = [
+  { id: "zone-1", name: "Library", is_active: true },
+  { id: "zone-2", name: "Commons", is_active: true },
+];
+/** What `useGeofences` answers with. */
+let zones: unknown[] = ZONES;
+/** Both reads still in flight, as on a cold open. */
+let isLoading = false;
+/** Only the sessions read in flight: zones can land first. */
+let sessionsLoading = false;
+/** The sessions read failed with nothing cached: not pending, no data. */
+let sessionsFailed = false;
 const NO_SESSIONS: unknown[] = [];
 const LIVE_SESSION = [
   {
@@ -89,23 +110,26 @@ const api = {
   stop: vi.fn(),
 };
 let sessions: unknown[] = NO_SESSIONS;
+/** The zones and sessions queries' `refetch`, hoisted so a pull can be asserted on. */
+const refetchZones = vi.fn();
+const refetchSessions = vi.fn();
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => ({ data: chapter, refetch: refetchChapter }),
   useGeofences: () => ({
-    data: ZONES,
-    isPending: false,
+    data: isLoading ? undefined : zones,
+    isPending: isLoading,
     isError: false,
     isFetching: false,
-    refetch: vi.fn(),
+    refetch: refetchZones,
   }),
   useStudySessions: () => ({
-    data: sessions,
-    isPending: false,
-    isError: false,
+    data: isLoading || sessionsLoading || sessionsFailed ? undefined : sessions,
+    isPending: isLoading || sessionsLoading,
+    isError: sessionsFailed,
     isFetching: false,
-    refetch: vi.fn().mockResolvedValue({ data: sessions }),
+    refetch: refetchSessions,
   }),
   useStartStudySession: () => ({ mutateAsync: api.start }),
   useStudyHeartbeat: () => ({ mutateAsync: api.heartbeat }),
@@ -140,8 +164,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 import StudyScreen from "@/app/(tabs)/study";
 
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
-const refocus = (expoRouter as unknown as { __refocus: () => void })
-  .__refocus;
+const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
 
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -177,8 +200,16 @@ function appStateListener(): (state: string) => void {
 beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset();
   sessions = NO_SESSIONS;
+  zones = ZONES;
+  isLoading = false;
+  sessionsLoading = false;
+  sessionsFailed = false;
   chapter = HOURS_ON;
   refetchChapter.mockReset().mockResolvedValue(undefined);
+  refetchZones.mockReset().mockResolvedValue(undefined);
+  refetchSessions
+    .mockReset()
+    .mockImplementation(async () => ({ data: sessions }));
 });
 
 /** Re-render, as the query does when a refetch lands. */
@@ -670,6 +701,354 @@ describe("Study with hours switched off (#2718)", () => {
 
       expect(screenText(tree)).toContain(MODULE_OFF_COPY.start);
       expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.runningSession);
+      act(() => tree.unmount());
+    });
+
+    it("reads the ended notice out above the screen, as a card would", async () => {
+      // No card here, but the line is the same outcome a card announces.
+      api.heartbeat.mockRejectedValue({ statusCode: 404, error: "Not Found" });
+      const tree = render();
+      sessions = NO_SESSIONS;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+
+      const notice = tree.root.find(
+        (node) =>
+          node.type === ("Text" as never) &&
+          drawnText(node).startsWith(
+            "That session has already been closed somewhere else.",
+          ),
+      );
+      expect(notice.props.accessibilityLiveRegion).toBe("polite");
+      expect(screenText(tree)).toContain(MODULE_OFF_TITLE);
+      act(() => tree.unmount());
+    });
+  });
+});
+
+describe("Study pull-to-refresh (#3385)", () => {
+  it("refreshes the chapter, its zones and the member's sessions on a pull (#3385)", async () => {
+    const tree = render();
+    // The stand-in ScrollView doesn't draw its `refreshControl`, so this calls
+    // the `refresh` that element was handed.
+    const scroll = tree.root.find(
+      (node) =>
+        node.type === ("ScrollView" as never) &&
+        node.props.refreshControl != null,
+    );
+    refetchChapter.mockClear();
+    refetchZones.mockClear();
+    refetchSessions.mockClear();
+    await act(async () => {
+      await scroll.props.refreshControl.props.refresh();
+    });
+
+    expect(refetchChapter).toHaveBeenCalledWith({ cancelRefetch: true });
+    expect(refetchZones).toHaveBeenCalledWith({ cancelRefetch: true });
+    expect(refetchSessions).toHaveBeenCalledWith({ cancelRefetch: true });
+    act(() => tree.unmount());
+  });
+});
+
+/** #3022. s10 opens from More's Study hours row and draws `‹ More`. */
+describe("Study back row (#3022)", () => {
+  it("draws ‹ More above the title", () => {
+    const tree = render();
+    expectBackRow(tree, "More", "/more");
+    tree.unmount();
+  });
+});
+
+/** A finished session in `zoneId`, as the history list reads it. */
+function finished(id: string, zoneId: string, startTime: string) {
+  return {
+    id,
+    geofence_id: zoneId,
+    status: "COMPLETED",
+    start_time: startTime,
+    end_time: startTime,
+    total_foreground_minutes: 45,
+  };
+}
+
+/** The zone the Start card names, off its zone row's label. */
+const selectedZoneLabel = (tree: ReactTestRenderer) =>
+  tree.root.find(
+    (node) =>
+      node.type === ("Pressable" as never) &&
+      typeof node.props.accessibilityLabel === "string" &&
+      /study zone/i.test(node.props.accessibilityLabel),
+  ).props.accessibilityLabel as string;
+
+describe("Study's default zone", () => {
+  it("opens on the zone of the member's last session, with Start ready", () => {
+    // Waiting for a choice opened every two-zone chapter on "Pick a zone" over
+    // a disabled Start, the screen's one action dead on arrival.
+    zones = TWO_ZONES;
+    sessions = [
+      finished("s-new", "zone-1", "2026-09-27T10:00:00Z"),
+      finished("s-old", "zone-2", "2026-09-20T10:00:00Z"),
+    ];
+    const tree = render();
+
+    expect(selectedZoneLabel(tree)).toBe("Study zone: Library");
+    expect(startButton(tree).props.disabled).toBe(false);
+    expect(screenText(tree)).not.toContain("Pick a zone");
+    act(() => tree.unmount());
+  });
+
+  it("opens on the first zone when there is no history", () => {
+    zones = TWO_ZONES;
+    const tree = render();
+
+    expect(selectedZoneLabel(tree)).toBe("Study zone: Commons");
+    expect(startButton(tree).props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("falls back to the first zone when the last session's zone is gone", () => {
+    zones = TWO_ZONES;
+    sessions = [finished("s-1", "zone-retired", "2026-09-27T10:00:00Z")];
+    const tree = render();
+
+    expect(selectedZoneLabel(tree)).toBe("Study zone: Commons");
+    act(() => tree.unmount());
+  });
+
+  it("waits for the history before choosing, so the last zone isn't beaten by the first", () => {
+    zones = TWO_ZONES;
+    sessions = [finished("s-1", "zone-1", "2026-09-27T10:00:00Z")];
+    sessionsLoading = true;
+    const tree = render();
+
+    sessionsLoading = false;
+    rerender(tree);
+
+    expect(selectedZoneLabel(tree)).toBe("Study zone: Library");
+    act(() => tree.unmount());
+  });
+
+  it("waits through a failed history read, so the retry's last zone still wins", () => {
+    // A failed read isn't pending either. Choosing then put the first zone in
+    // place, and a valid selection is kept, so the last zone never took over.
+    zones = TWO_ZONES;
+    sessions = [finished("s-1", "zone-1", "2026-09-27T10:00:00Z")];
+    sessionsFailed = true;
+    const tree = render();
+    expect(screenText(tree)).toContain("Couldn't load study hours");
+
+    sessionsFailed = false;
+    rerender(tree);
+
+    expect(selectedZoneLabel(tree)).toBe("Study zone: Library");
+    act(() => tree.unmount());
+  });
+
+  it("offers the zone of a session that ends on screen, not the one picked before it ran", async () => {
+    // Relaunched mid-session in Commons, with the last finished one in
+    // Library: the history holds finished sessions only, so Library was
+    // chosen under the running card, and a valid choice is kept.
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-09-27T12:01:00Z"));
+      zones = TWO_ZONES;
+      const running = { ...LIVE_SESSION[0]!, geofence_id: "zone-2" };
+      const library = finished("s-lib", "zone-1", "2026-09-26T10:00:00Z");
+      sessions = [running, library];
+      api.heartbeat.mockRejectedValue({ statusCode: 404, error: "Not Found" });
+      const tree = render();
+
+      // Closed elsewhere: the next beat 404s, and the list now has it closed.
+      sessions = [{ ...running, status: "COMPLETED" }, library];
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+      rerender(tree);
+
+      expect(selectedZoneLabel(tree)).toBe("Study zone: Commons");
+      act(() => tree.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the choice it had when the ended session's zone is gone", async () => {
+    // An officer deactivated Annex while the session ran in it. Offering
+    // Annex would name a zone the list no longer has, and Start would post
+    // its id.
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-09-27T12:01:00Z"));
+      const annex = { id: "zone-3", name: "Annex", is_active: true };
+      zones = [...TWO_ZONES, annex];
+      const running = { ...LIVE_SESSION[0]!, geofence_id: "zone-3" };
+      const library = finished("s-lib", "zone-1", "2026-09-26T10:00:00Z");
+      sessions = [running, library];
+      api.heartbeat.mockRejectedValue({ statusCode: 404, error: "Not Found" });
+      const tree = render();
+
+      zones = TWO_ZONES;
+      rerender(tree);
+      sessions = [{ ...running, status: "COMPLETED" }, library];
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+      rerender(tree);
+
+      expect(selectedZoneLabel(tree)).toBe("Study zone: Library");
+      expect(startButton(tree).props.disabled).toBe(false);
+      act(() => tree.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the member's own pick", () => {
+    zones = TWO_ZONES;
+    const tree = render();
+    expect(selectedZoneLabel(tree)).toBe("Study zone: Commons");
+
+    act(() => tree.root.findByType(ZonePickerSheet).props.onSelect("zone-1"));
+    rerender(tree);
+
+    expect(selectedZoneLabel(tree)).toBe("Study zone: Library");
+    act(() => tree.unmount());
+  });
+});
+
+describe("Study loading and empty states", () => {
+  it("loads as the card and the list it becomes, not one card of bars", () => {
+    isLoading = true;
+    const tree = render();
+
+    expect(tree.root.findAllByType(CardListSkeleton)).toHaveLength(1);
+    expect(tree.root.findAllByType(SkeletonLines)).toHaveLength(0);
+    // The start card's own skeleton, so the card doesn't grow in on load.
+    expect(tree.root.findAllByType(StartCardSkeleton)).toHaveLength(1);
+    // Its writing.md row, without the ellipsis, as the region's name.
+    expect(
+      tree.root.find(
+        (node) =>
+          (node.type as unknown) === "View" &&
+          node.props.accessibilityRole === "progressbar",
+      ).props.accessibilityLabel,
+    ).toBe("Loading study zones");
+    act(() => tree.unmount());
+  });
+
+  it("tells a member with no zones who to ask, without a permission key", () => {
+    zones = [];
+    const tree = render();
+
+    expect(screenText(tree)).toContain("No study zones yet");
+    expect(screenText(tree)).toContain(
+      "Ask an officer who manages study zones to add one.",
+    );
+    expect(screenText(tree)).not.toContain("geofences:manage");
+    act(() => tree.unmount());
+  });
+});
+
+describe("Study when location can't be read", () => {
+  const platform = Platform as { OS: string; Version?: string | number };
+  const { OS: os, Version: version } = platform;
+  afterEach(() => {
+    platform.OS = os;
+    platform.Version = version;
+  });
+
+  async function failedLocationLine(on: string, osVersion: string | number) {
+    platform.OS = on;
+    platform.Version = osVersion;
+    vi.mocked(readForegroundPermission).mockRejectedValueOnce(
+      new Error("location unavailable"),
+    );
+    const tree = render();
+    await tapStart(tree);
+    const text = drawnText(tree.root.findByType(StartCard));
+    act(() => tree.unmount());
+    return text;
+  }
+
+  it("spells out the iOS path on iPhone", async () => {
+    const line = await failedLocationLine("ios", "18.1");
+    expect(line).toContain("Turn it on in Settings → Apps → Frapp → Location.");
+  });
+
+  it("skips the Apps row before iOS 18, which has none", async () => {
+    // This line has no Open Settings button, so a row that isn't there is a
+    // dead end.
+    const line = await failedLocationLine("ios", "17.5.1");
+    expect(line).toContain("Turn it on in Settings → Frapp → Location.");
+  });
+
+  it("spells out Android's own path on Android", async () => {
+    // The iOS path was all this said, and Android has no such screen.
+    const line = await failedLocationLine("android", 34);
+    expect(line).toContain(
+      "Turn it on in Settings → Apps → Frapp → Permissions → Location.",
+    );
+  });
+
+  it("points at the browser on the web build, which has no Settings path", async () => {
+    // react-native-web's Platform.Version is "0.0.0", which read as iOS 0.
+    const line = await failedLocationLine("web", "0.0.0");
+    expect(line).toContain(
+      "so it needs location while you study. Allow location for this site in your browser.",
+    );
+    expect(line).not.toContain("Settings →");
+  });
+});
+
+describe("Study's notice and failure lines", () => {
+  it("draws a failed Start inside the Start card, not above it", async () => {
+    api.start.mockRejectedValue(FAILED);
+    const tree = render();
+    await tapStart(tree);
+
+    const copy = startErrorCopy(FAILED);
+    expect(drawnText(tree.root.findByType(StartCard))).toContain(copy);
+    expect(occurrences(tree, copy)).toBe(1);
+    act(() => tree.unmount());
+  });
+
+  describe("with a session running", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-27T12:01:00Z"));
+      sessions = LIVE_SESSION;
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("draws a refused heartbeat's line inside the session card", async () => {
+      api.heartbeat.mockRejectedValue(REFUSED);
+      const tree = render();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+
+      expect(drawnText(tree.root.findByType(SessionCard))).toContain(
+        SUBSCRIPTION_REFUSAL_COPY.studySession,
+      );
+      expect(occurrences(tree, SUBSCRIPTION_REFUSAL_COPY.studySession)).toBe(1);
+      act(() => tree.unmount());
+    });
+
+    it("hands the closed-elsewhere notice to the Start card that replaces the session", async () => {
+      api.heartbeat.mockRejectedValue({ statusCode: 404, error: "Not Found" });
+      const tree = render();
+      sessions = NO_SESSIONS;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 1_000);
+      });
+
+      expect(drawnText(tree.root.findByType(StartCard))).toContain(
+        "That session has already been closed somewhere else.",
+      );
       act(() => tree.unmount());
     });
   });

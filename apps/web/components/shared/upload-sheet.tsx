@@ -6,6 +6,7 @@ import { DocumentsGlyph } from "@/components/layout/nav-glyphs";
 import { DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { FOCUS_RING_OFFSET_WITHIN } from "@/components/ui/focus";
 import { Label } from "@/components/ui/label";
+import { dashboardToolbarHeightClassName } from "@/components/shared/table-controls";
 import { cn } from "@/lib/utils";
 
 /**
@@ -46,10 +47,12 @@ import { cn } from "@/lib/utils";
  */
 
 /**
- * A field inside the sheet, at the board's 44px.
+ * A field inside the sheet, at the Small step (36 to a mouse, 44 to a finger;
+ * the board drew 44), the same height as the dashboard toolbar row.
  *
- * `Input`, `Textarea` and `SelectTrigger` all ship §4's 48px default, which is
- * right for a form on a page and one step too tall for a sheet — the board
+ * `Input`, `Textarea` and `SelectTrigger` all ship §4's 40px default (44 to a
+ * finger), which is right for a form on a page and one step too tall for a
+ * sheet — the board
  * pitches sheet fields "one level below" deliberately, so the sheet reads as
  * secondary to the surface it sits over. Radius, fill, hairline and focus are
  * already the board's values on those primitives and are not respelled here.
@@ -57,16 +60,18 @@ import { cn } from "@/lib/utils";
  * `Textarea` is `min-h-24` rather than a fixed height, so this is the wrong
  * class for one — pass `rows` instead and leave its height alone.
  */
-export const UPLOAD_FIELD_CLASS = "h-11";
+export const UPLOAD_FIELD_CLASS = dashboardToolbarHeightClassName;
 
 /**
- * The sheet's own buttons: the board's 44px / r12 footer, its 15px label
- * rounded onto the `label` role (14), as `components.md` rounds a drawn size
- * (#2842). That leaves it one step from `size="sm"` (44px, `px-3.5`,
- * `text-sm`): the board pads the footer 16px, and `text-label` is the role
+ * The sheet's own buttons: the board's r12 footer at the Small step of
+ * foundations.md §9's scale (36 to a mouse, 44 to a finger; the board drew
+ * 44), its 15px label rounded onto the `label` role (14), as `components.md`
+ * rounds a drawn size (#2842). That leaves it one step from `size="sm"`
+ * (`px-3`, `text-sm`): the board pads the footer 16px, and `text-label` is the role
  * where `text-sm` is Tailwind's own 14px.
  */
-export const UPLOAD_SHEET_BUTTON_CLASS = "h-11 px-4 text-label";
+export const UPLOAD_SHEET_BUTTON_CLASS =
+  "h-9 px-4 text-label pointer-coarse:h-11";
 
 /**
  * The sheet container.
@@ -78,8 +83,9 @@ export const UPLOAD_SHEET_BUTTON_CLASS = "h-11 px-4 text-label";
  * the container carries none.
  *
  * The 56px title row is also what puts `DialogContent`'s built-in close button
- * where the board draws it: that control is a 24px box pinned at `top-4`, so
- * its centre lands at 28px, which is the centre of a 56px row.
+ * where the board draws it: that control is a 26px box (a 16px glyph, `p-1`
+ * and a 1px border) pinned at `top-4`, so its centre sits at 29px, a pixel
+ * under the 56px row's centre.
  *
  * **`aria-describedby={undefined}` is load-bearing, not a tidy-up.** The board
  * deletes the instructional paragraph, so there is no `DialogDescription` to
@@ -360,7 +366,7 @@ export function UploadFileField({
           <div className="flex items-center gap-3">
             <span
               aria-hidden
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-sm bg-accent-subtle text-accent-text"
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-sm bg-popover text-muted-foreground"
             >
               <DocumentsGlyph className="h-5 w-5" active />
             </span>

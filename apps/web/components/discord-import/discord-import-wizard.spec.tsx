@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useState } from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { cardFilledContainers } from "@/tests/card-surfaces";
 import { networkMock } from "@/tests/network";
 
@@ -91,6 +97,8 @@ vi.mock("@repo/hooks", () => ({
   useStartDiscordImport: () => ({ mutateAsync: startImport, isPending: false }),
   useDiscordImportFiles: () => ({ data: [] }),
   useChannels: () => channelsQuery.value,
+  // The chapter already has a "Secret" group, spelled its own way.
+  useCategories: () => ({ data: [{ id: "g-1", name: "secret" }] }),
   usePermissionsCatalog: () => ({
     data: [
       { key: "CHAPTER_CONFIG_MANAGE", permission: "chapter-config:manage" },
@@ -167,7 +175,9 @@ vi.mock("@repo/hooks", () => ({
   DISCORD_CONNECT_MESSAGES: {},
 }));
 
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
 import { ImportWizard } from "./import-wizard";
@@ -452,6 +462,10 @@ describe("ImportWizard — the bot path", () => {
     expect(await screen.findByText("#general")).toBeInTheDocument();
     expect(screen.queryByText(/planning/)).not.toBeInTheDocument();
     expect(screen.getAllByRole("radiogroup")).toHaveLength(1);
+    // Counted on the category its channel is in instead.
+    expect(
+      screen.getByRole("button", { name: /^No category/ }).textContent,
+    ).toMatch(/1 channel · 1 thread · /);
   });
 
   it("SHOWS what could not be read instead of swallowing it", async () => {
@@ -520,6 +534,134 @@ describe("ImportWizard — the bot path", () => {
     expect(setChannelMapping).not.toHaveBeenCalled();
   });
 
+  it("keeps Discord's categories as channel groups only when asked, and only the ones still ticked", async () => {
+    discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          discord_channel_id: "c1",
+          discord_channel_name: "random",
+          discord_category: "Generic",
+          discord_category_position: 2,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+        },
+        {
+          discord_channel_id: "c2",
+          discord_channel_name: "vault",
+          discord_category: "Secret",
+          discord_category_position: 5,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+        },
+        // Merges into the chapter's #general by default, so it stays put.
+        {
+          discord_channel_id: "c3",
+          discord_channel_name: "general",
+          discord_category: "Generic",
+          discord_category_position: 2,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+        },
+      ],
+      roles: [],
+      warnings: [],
+    });
+
+    await renderAtChannels();
+    await screen.findByText(/Nothing needs attention/);
+
+    const keep = screen.getByRole("switch", {
+      name: /Keep Discord.s categories/,
+    });
+    // Off until the admin turns it on, and no per-category choice until then.
+    expect(keep).not.toBeChecked();
+    expect(
+      screen.queryByRole("checkbox", { name: /as a category/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Every member can see category names/),
+    ).toBeVisible();
+
+    // The preview lists the new channels; the merge stays where it is.
+    const preview = () =>
+      within(screen.getByRole("region", { name: "What chat will look like" }))
+        .getAllByRole("list")
+        .map((list) => [
+          list.getAttribute("aria-label"),
+          within(list)
+            .getAllByRole("listitem")
+            .map((item) => item.textContent),
+        ]);
+    expect(preview()).toEqual([["Channels", ["#random", "#vault"]]]);
+
+    fireEvent.click(keep);
+    // Secret joins the chapter's own "secret", which comes before any group
+    // the import makes, under the chapter's spelling.
+    expect(preview()).toEqual([
+      ["secret", ["#vault"]],
+      ["Generic", ["#random"]],
+    ]);
+    const secret = screen.getByRole("checkbox", {
+      name: "Keep Secret as a category",
+    });
+    expect(secret).toBeChecked();
+    fireEvent.click(secret);
+    expect(preview()).toEqual([
+      ["Channels", ["#vault"]],
+      ["Generic", ["#random"]],
+    ]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => expect(setDiscoveredMapping).toHaveBeenCalled());
+    const { channels } = setDiscoveredMapping.mock.calls[0]![0] as {
+      channels: { discord_channel_id: string; new_channel_group?: string }[];
+    };
+    expect(
+      channels.map((row) => [row.discord_channel_id, row.new_channel_group]),
+    ).toEqual([
+      ["c1", "Generic"],
+      ["c2", undefined],
+      ["c3", undefined],
+    ]);
+    expect(await screen.findByText("Categories:")).toBeInTheDocument();
+    expect(
+      screen.getByText(/^Generic\. Where your chapter/),
+    ).toBeInTheDocument();
+  });
+
+  it("asks about like-named channels once keeping categories would send them to different ones", async () => {
+    const rush = (id: string, category: string) => ({
+      discord_channel_id: id,
+      discord_channel_name: "rush",
+      discord_category: category,
+      parent_discord_channel_id: null,
+      readable: true,
+      private_in_discord: false,
+    });
+    discoverChannels.mockResolvedValue({
+      channels: [rush("c1", "Actives"), rush("c2", "Alumni")],
+      roles: [],
+      warnings: [],
+    });
+
+    await renderAtChannels();
+    // Off: both land in one #rush, as before.
+    await screen.findByText(/Nothing needs attention/);
+
+    fireEvent.click(
+      screen.getByRole("switch", { name: /Keep Discord.s categories/ }),
+    );
+
+    expect(
+      (await screen.findAllByText(/which category they go into/)).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+  });
+
   it("holds Continue on a channel that was private in Discord until its visibility is chosen", async () => {
     discoverChannels.mockResolvedValue({
       channels: [
@@ -544,7 +686,7 @@ describe("ImportWizard — the bot path", () => {
     fireEvent.change(screen.getByLabelText("Who can read it"), {
       target: { value: "restricted" },
     });
-    fireEvent.click(screen.getByLabelText(/chapter-config:manage/));
+    fireEvent.click(screen.getByLabelText(/Change chapter settings/));
     await waitFor(() =>
       expect((continueButton as HTMLButtonElement).disabled).toBe(false),
     );
@@ -746,14 +888,48 @@ describe("ImportWizard — the bot path", () => {
     }
     const since = () =>
       screen.getByLabelText("Import messages from") as HTMLInputElement;
+    const preset = (name: string) =>
+      fireEvent.click(screen.getByRole("radio", { name }));
+    const startButton = () =>
+      screen.getByRole("button", { name: "Start import" }) as HTMLButtonElement;
 
-    it("imports all history when the date is left empty", async () => {
+    it("imports all history by default, with no date box", async () => {
       await renderAtReview();
-      expect(since().value).toBe("");
-      fireEvent.click(screen.getByRole("button", { name: "Start import" }));
+      expect(screen.getByRole("radio", { name: "Everything" })).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+      expect(screen.queryByLabelText("Import messages from")).toBeNull();
+      expect(
+        screen.getByText("The server's whole history comes over."),
+      ).toBeInTheDocument();
+      fireEvent.click(startButton());
       await waitFor(() =>
         expect(startImport).toHaveBeenCalledWith({ id: "import-1" }),
       );
+    });
+
+    it("sends a preset as the viewer's own midnight that many years back", async () => {
+      vi.stubEnv("TZ", "America/Denver");
+      try {
+        await renderAtReview();
+        preset("Last year");
+        const start = new Date();
+        start.setFullYear(start.getFullYear() - 1);
+        start.setHours(0, 0, 0, 0);
+        expect(
+          screen.getByText(/Messages before .* are left out\./),
+        ).toBeInTheDocument();
+        fireEvent.click(startButton());
+        await waitFor(() =>
+          expect(startImport).toHaveBeenCalledWith({
+            id: "import-1",
+            messagesAfter: start.toISOString(),
+          }),
+        );
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
 
     it("sends the chosen day as the viewer's own midnight", async () => {
@@ -762,13 +938,12 @@ describe("ImportWizard — the bot path", () => {
       vi.stubEnv("TZ", "America/Denver");
       try {
         await renderAtReview();
+        preset("Pick a date");
         fireEvent.change(since(), { target: { value: "2024-06-01" } });
         expect(
-          screen.getByText(
-            /Older messages, and their attachments, are left out/,
-          ),
+          screen.getByText("Messages before Jun 1, 2024 are left out."),
         ).toBeInTheDocument();
-        fireEvent.click(screen.getByRole("button", { name: "Start import" }));
+        fireEvent.click(startButton());
         await waitFor(() =>
           expect(startImport).toHaveBeenCalledWith({
             id: "import-1",
@@ -781,18 +956,24 @@ describe("ImportWizard — the bot path", () => {
       }
     });
 
+    it("holds Start on Pick a date until a date is picked", async () => {
+      await renderAtReview();
+      preset("Pick a date");
+      expect(
+        screen.getByText("Pick a date, or choose Everything."),
+      ).toBeInTheDocument();
+      expect(startButton().disabled).toBe(true);
+    });
+
     it("holds Start on a date in the future", async () => {
       await renderAtReview();
+      preset("Pick a date");
       const nextYear = new Date().getFullYear() + 1;
       fireEvent.change(since(), { target: { value: `${nextYear}-01-01` } });
-      expect(screen.getByText(/Choose a date in the past/)).toBeInTheDocument();
       expect(
-        (
-          screen.getByRole("button", {
-            name: "Start import",
-          }) as HTMLButtonElement
-        ).disabled,
-      ).toBe(true);
+        screen.getByText("Pick a date in the past, or choose Everything."),
+      ).toBeInTheDocument();
+      expect(startButton().disabled).toBe(true);
     });
   });
 
@@ -1294,6 +1475,44 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
     return { onChange, onRescan };
   }
 
+  it("offers to keep a Discord category named like the no-category heading, apart from channels in none", () => {
+    const named = [
+      {
+        channelId: "a",
+        channelName: "loose",
+        category: null,
+        readable: true,
+        privateInDiscord: false,
+      },
+      {
+        channelId: "b",
+        channelName: "odd",
+        category: "No category",
+        readable: true,
+        privateInDiscord: false,
+      },
+    ];
+    const choices = defaultChoices(named);
+    render(
+      <ChannelMappingStep
+        channels={named}
+        choices={choices}
+        onChange={vi.fn()}
+        issues={mappingIssues(named, choices, [])}
+        knowsPrivacy
+        sidebarGroups={{ keep: true, dropped: new Set() }}
+        onSidebarGroups={vi.fn()}
+      />,
+    );
+    // Two sections, and only the real category can be kept.
+    expect(
+      screen.getAllByRole("checkbox", { name: /as a category/ }),
+    ).toHaveLength(1);
+    expect(
+      screen.getByRole("checkbox", { name: "Keep No category as a category" }),
+    ).toBeChecked();
+  });
+
   it("groups channels by Discord category, and opens only the group that needs something", () => {
     renderStep();
     expect(screen.getByText("General")).toBeInTheDocument();
@@ -1413,7 +1632,7 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
       { target: { value: "restricted" } },
     );
     const box = () =>
-      screen.getByLabelText(/chapter-config:manage/) as HTMLInputElement;
+      screen.getByLabelText(/Change chapter settings/) as HTMLInputElement;
     expect(box().checked).toBe(true);
 
     // Another control (the server-level one, or a row) makes the channel
@@ -1433,7 +1652,7 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
       screen.getByLabelText("Who can read the new channels in Exec"),
       { target: { value: "restricted" } },
     );
-    fireEvent.click(screen.getByLabelText(/chapter-config:manage/));
+    fireEvent.click(screen.getByLabelText(/Change chapter settings/));
     const next = onChange.mock.calls.at(-1)![0] as Record<
       string,
       { action: string; visibility?: string; requiredPermissions?: string[] }
@@ -1501,10 +1720,10 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
       },
     };
     renderStep({ choices });
-    expect(screen.getByText("chapter-config:manage")).toBeInTheDocument();
+    expect(screen.getByText("Change chapter settings")).toBeInTheDocument();
     expect(screen.getByText("Treasurer")).toBeInTheDocument();
     // A role's custom permission is offered even though the catalog lacks it.
-    expect(screen.getByText("cabinet:read")).toBeInTheDocument();
+    expect(screen.getByText("Read cabinet")).toBeInTheDocument();
   });
 
   it("keeps the permission grid through a failed catalog refresh", () => {
@@ -1520,9 +1739,9 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
         },
       };
       renderStep({ choices });
-      expect(screen.getByText("chapter-config:manage")).toBeInTheDocument();
+      expect(screen.getByText("Change chapter settings")).toBeInTheDocument();
       expect(
-        screen.queryByText(/Couldn.t load the permission catalog/),
+        screen.queryByText(/Couldn.t load the permission list/),
       ).toBeNull();
     } finally {
       catalogStale.value = false;

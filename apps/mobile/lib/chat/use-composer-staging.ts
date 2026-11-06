@@ -19,8 +19,9 @@
  *
  * **A reply the send never took stays staged.** The strip clears as the send
  * goes out, as web's does, and comes back when `send` reports it did not
- * dispatch (an earlier send still in flight, or an outbox that refused the
- * row), so the words the member gets back are still a reply. A second tap on
+ * dispatch (an outbox that refused the row), so the words the member gets
+ * back are still a reply. A tap while an earlier send is still in flight
+ * never takes the strip down, since `send` would refuse it. A second tap on
  * the same staged reply, inside one render, is a duplicate of the send already
  * carrying it: it neither sends nor puts the reply back.
  *
@@ -106,9 +107,32 @@ export interface ComposerStagingInput {
   blockState: BlockState;
   draft: string;
   setDraft: (body: string) => void;
-  /** Resolves `true` once the message is queued, `false` when it was not. */
+  /**
+   * Whether a photo is staged, which makes an empty draft a message (an
+   * attachment-only send is a real one).
+   */
+  hasAttachments: boolean;
+  /**
+   * Resolves `true` once the message is queued, `false` when it was not.
+   * Online it settles only after the server has answered, so nothing that
+   * belongs to the tap waits on it.
+   */
   send: (content: string, options?: SendOptions) => Promise<boolean>;
+  /**
+   * Whether `send` would refuse a message now because an earlier one is still
+   * in flight (`UseChatChannelResult.sendInFlight`), read on the tap.
+   */
+  sendInFlight: () => boolean;
   edit: (messageId: string, content: string) => Promise<void>;
+  /**
+   * Runs on the tap, synchronously, once `submit` has decided a message goes
+   * out and just before it hands that message to `send`: not for an edit, a
+   * tap while an earlier send is still in flight (a second tap inside one
+   * render included), or a draft with nothing in it. So the thread can follow
+   * a send at once, rather than a network round-trip later and possibly in
+   * another channel.
+   */
+  onSending?: () => void;
 }
 
 export interface ComposerStaging {
@@ -158,8 +182,11 @@ export function useComposerStaging({
   blockState,
   draft,
   setDraft,
+  hasAttachments,
   send,
+  sendInFlight,
   edit,
+  onSending,
 }: ComposerStagingInput): ComposerStaging {
   // One staged reply and one open edit per channel, keyed by channel id: the
   // screen stays mounted across channels, and what a member left staged or
@@ -347,10 +374,20 @@ export function useComposerStaging({
     // the send didn't take it, unless the member has staged another since.
     const staged = activeReply;
     if (staged && replyInFlightRef.current === staged) return;
+    // Nothing to send: `send` would refuse it too, but deciding here is what
+    // lets `onSending` run on the tap only for a message that goes out. The
+    // composer already greys Send out on an empty draft; this is the belt.
+    if (!channelId || (!draft.trim() && !hasAttachments)) return;
+    // An earlier send still out (a slow POST): `send` refuses this one at its
+    // re-entry guard, so jumping would move the reader for nothing. That guard
+    // is claimed as `send` is called, so a second tap inside the same render
+    // stops here too, and the jump runs once per message that goes out.
+    if (sendInFlight()) return;
     if (staged) {
       replyInFlightRef.current = staged;
       setReplies((current) => withoutKey(current, staged.channelId));
     }
+    onSending?.();
     void send(draft, { replyToId: staged?.messageId ?? null }).then(
       (dispatched) => {
         if (!staged) return;
@@ -365,7 +402,18 @@ export function useComposerStaging({
         }
       },
     );
-  }, [activeEdit, activeReply, cancelEdit, draft, edit, send]);
+  }, [
+    activeEdit,
+    activeReply,
+    cancelEdit,
+    channelId,
+    draft,
+    edit,
+    hasAttachments,
+    onSending,
+    send,
+    sendInFlight,
+  ]);
 
   // An edit emptied of the text it had can't be saved, and the composer greys
   // Save out; this is what says why, rather than leaving a dead button. A

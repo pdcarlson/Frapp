@@ -14,49 +14,45 @@ import {
   type UserSettings as StoredUserSettings,
 } from "@repo/hooks";
 import {
+  GRADUATION_YEAR_MAX,
+  GRADUATION_YEAR_MIN,
   isNotificationCategoryKey,
   normalizeTimeZoneInput,
-  NOTIFICATION_CATEGORIES,
+  shownNotificationCategories,
   rowsToNotificationCategoryState,
   type NotificationCategoryKey,
 } from "@repo/validation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/lib/hooks/use-toast";
 import { BlockedMembersCard } from "@/components/profile/blocked-members-card";
 import { DiscordHistoryCard } from "@/components/profile/discord-history-card";
+import { ProfileSection } from "@/components/profile/profile-section";
 import { ProfilePhotoControl } from "@/components/profile/profile-photo-control";
 import {
   DELETE_ACCOUNT_FAILED,
   useDeleteAccountFlow,
 } from "@/components/profile/use-delete-account-flow";
-import {
-  ErrorState,
-  anyReadUncached,
-  LoadingState,
-  OfflineState,
-} from "@/components/shared/async-states";
+import { anyReadUncached } from "@/components/shared/async-states";
 import {
   NestedEmpty,
   NestedError,
-  NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
-import { PageHeader } from "@/components/layout/page-header";
+import { denseListClassName } from "@/components/shared/table-controls";
 import { Switch } from "@/components/ui/switch";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { signOutCurrentSession } from "@/lib/auth/session";
+import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
 import { getErrorMessage, initials, parseGuardedInt } from "@/lib/utils";
+import {
+  NotificationSettingsSkeleton,
+  ProfilePageSkeleton,
+  QuietHoursSkeleton,
+} from "@/components/profile/profile-skeleton";
 
 type CurrentUser = {
   id?: string;
@@ -72,7 +68,7 @@ type CurrentUser = {
 /**
  * The quiet-hour fields `PATCH /v1/settings` accepts and this screen edits.
  *
- * `theme` is deliberately absent. See the Preferences card below. Picked from
+ * `theme` is deliberately absent. See the Quiet hours section below. Picked from
  * the contract's type, so renaming one of these fields there fails to compile
  * here rather than seeding an empty input.
  */
@@ -102,6 +98,7 @@ export function ProfilePanel() {
     onFailed: () => toast({ ...DELETE_ACCOUNT_FAILED, variant: "destructive" }),
   });
   const isDeletingAccount = deleteFlow.isDeleting;
+  const { confirmDrop, confirmDropDialog } = useConfirmDropBulkUploads();
   // The notification categories are per-chapter — `notification_preferences` is
   // keyed `(user_id, chapter_id, category)` — so this card, unlike the rest of
   // /profile, has a tenant. With no active chapter there is nothing to read and
@@ -187,31 +184,26 @@ export function ProfilePanel() {
   if (isOffline && anyReadUncached(userQuery)) {
     return (
       <>
-        <PageHeader title="My Profile" />
-        <OfflineState
+        <NestedOffline
           title="Your profile is unavailable offline"
           description="Reconnect to load your directory entry and notification preferences."
           onRetry={() => void userQuery.refetch()}
+          sole
         />
       </>
     );
   }
   if (userQuery.isLoading || userPaused) {
-    return (
-      <>
-        <PageHeader title="My Profile" />
-        <LoadingState message="Loading your profile..." />
-      </>
-    );
+    return <ProfilePageSkeleton />;
   }
   if (userQuery.isError && anyReadUncached(userQuery)) {
     return (
       <>
-        <PageHeader title="My Profile" />
-        <ErrorState
+        <NestedError
           title="Couldn't load your profile"
-          description="Sign in succeeded but we couldn't reach the API. Retry in a moment."
+          description="You're signed in, but Frapp couldn't be reached. Try again in a moment."
           onRetry={() => void userQuery.refetch()}
+          sole
         />
       </>
     );
@@ -285,12 +277,12 @@ export function ProfilePanel() {
         quiet_hours_tz: tz,
       });
       toast({
-        title: "Preferences saved",
+        title: "Quiet hours saved",
         description: "Quiet hours updated.",
       });
     } catch (error) {
       toast({
-        title: "Couldn't save preferences",
+        title: "Couldn't save quiet hours",
         description: getErrorMessage(
           error,
           "Try again or check your connection.",
@@ -301,6 +293,7 @@ export function ProfilePanel() {
   }
 
   async function handleSignOut() {
+    if (!(await confirmDrop("sign-out"))) return;
     setIsSigningOut(true);
     try {
       await signOutCurrentSession();
@@ -331,17 +324,18 @@ export function ProfilePanel() {
   const displayName = storedName || "Your profile";
 
   /*
-   * The Preferences card is fed by a *second* query, so it needs a second set
+   * The Quiet hours section is fed by a *second* query, so it needs a second set
    * of states — it had none. A failed `/v1/settings` fetch rendered empty time
    * fields beside a live Save button, and because the submit maps an unloaded
    * field to `undefined` (so the PATCH omits it), pressing Save sent an empty
    * body and toasted "Preferences saved". That is #1209's "reports a failed
    * fetch as success", one screen over.
    *
-   * `sole` is deliberately NOT passed. The panel already owns a screen-scale
-   * `LoadingState` above, so the live region and the `<h2>` promotion belong to
-   * that one — which is exactly the case `nested-states.tsx` describes as the
-   * default, and the reason the prop defaults off.
+   * `sole` is deliberately NOT passed to the nested error and offline states:
+   * they sit inside an already-loaded profile page, which is exactly the case
+   * `nested-states.tsx` describes as the default, and the reason the prop
+   * defaults off. The loading branch is `QuietHoursSkeleton`, which carries
+   * its own one-line status.
    */
   const settingsPaused =
     settingsQuery.isPending && settingsQuery.fetchStatus === "paused";
@@ -355,9 +349,7 @@ export function ProfilePanel() {
       />
     );
   } else if (settingsQuery.isLoading || settingsPaused) {
-    preferencesState = (
-      <NestedLoading message="Loading your preferences..." lines={3} />
-    );
+    preferencesState = <QuietHoursSkeleton />;
   } else if (settingsQuery.isError && anyReadUncached(settingsQuery)) {
     preferencesState = (
       <NestedError
@@ -427,12 +419,7 @@ export function ProfilePanel() {
       />
     );
   } else if (preferencesQuery.isLoading || preferencesPaused) {
-    categoriesState = (
-      <NestedLoading
-        message="Loading your notification settings..."
-        lines={6}
-      />
-    );
+    categoriesState = <NotificationSettingsSkeleton />;
   } else if (preferencesQuery.isError && anyReadUncached(preferencesQuery)) {
     categoriesState = (
       <NestedError
@@ -505,59 +492,63 @@ export function ProfilePanel() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="My Profile" />
       {/*
-        s15's identity header, as far as the data goes.
-        `--accent-subtle` / `--accent-border` / `--accent-text` is the token
-        transcription of the board's `#251E0E` / `#6B5619` / `#F4CB63` — the
-        board draws one seed (its header says the demo tenant runs house gold)
-        and the engine ships nineteen, so the accent roles are what generalise.
-        Measured across all of them in `profile-contrast.spec.ts`.
-
-        s15's role badge and its three stat cards (points / service hrs /
-        attendance) are deliberately NOT here: `GET /v1/users/me` carries none
-        of those fields and no query this screen holds does either, so building
-        them is new feature work rather than a repaint. Filed, not smuggled in.
+        One column, capped at a form's width: a 1,100px name field is not a
+        form anyone reads. Each block is a section on the page surface under
+        its label, not a card (`spec/ui/web-dashboard/README.md` Page grammar).
       */}
-      <header className="flex items-center gap-4">
-        <Avatar className="h-[84px] w-[84px] border border-accent-border bg-accent-subtle">
-          {profile.avatar_url ? (
-            <AvatarImage src={profile.avatar_url} alt="" />
-          ) : null}
-          {/*
-            Sized off the 84px circle rather than off foundations §7's ladder,
-            for `signet-mark.tsx`'s reason: initials in an avatar are a drawn
-            mark, not a run of text. s15 draws them at 28 in an 84px circle.
-          */}
-          <AvatarFallback className="bg-accent-subtle text-[26px] font-bold text-accent-text">
-            {initials(storedName || profile.email || "")}
-          </AvatarFallback>
-        </Avatar>
-        <div className="min-w-0">
-          <h2 className="truncate text-2xl font-semibold tracking-tight">
-            {displayName}
-          </h2>
-          <p className="truncate text-sm text-muted-foreground">
-            {profile.email ??
-              "Update how your chapter sees you in the directory."}
-          </p>
-          <div className="mt-2">
-            <ProfilePhotoControl
-              hasPhoto={!!profile.avatar_url}
-              disabled={isOffline}
-            />
-          </div>
-        </div>
-      </header>
+      <div className="max-w-2xl space-y-10">
+        {/*
+          s15's identity header, as far as the data goes. The avatar is the
+          same neutral circle as everywhere else a member's face appears
+          (`--popover` fill, initials in `--muted-foreground`). s15 drew it in
+          the house-gold family and this transcribed that as the chapter accent
+          until 2026-11-05, when the accent came off people's avatars
+          (`foundations.md` §6). Measured in `profile-contrast.spec.ts`.
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Directory profile</CardTitle>
-          <CardDescription>
-            Visible to the members of your active chapter.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          s15's role badge and its three stat cards (points / service hrs /
+          attendance) are deliberately NOT here: `GET /v1/users/me` carries none
+          of those fields and no query this screen holds does either, so building
+          them is new feature work rather than a repaint. Filed, not smuggled in.
+        */}
+        <header className="flex items-center gap-4">
+          <Avatar className="h-[84px] w-[84px] border border-border bg-popover">
+            {profile.avatar_url ? (
+              <AvatarImage src={profile.avatar_url} alt="" />
+            ) : null}
+            {/*
+              Sized off the 84px circle rather than off foundations §7's ladder,
+              for `signet-mark.tsx`'s reason: initials in an avatar are a drawn
+              mark, not a run of text. s15 draws them at 28 in an 84px circle.
+            */}
+            <AvatarFallback className="bg-popover text-[26px] font-bold text-muted-foreground">
+              {initials(storedName || profile.email || "")}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <h2 className="truncate text-2xl font-semibold tracking-tight">
+              {displayName}
+            </h2>
+            {/* An absent email is absent, not a sentence standing in for it. */}
+            {profile.email ? (
+              <p className="truncate text-sm text-muted-foreground">
+                {profile.email}
+              </p>
+            ) : null}
+            <div className="mt-2">
+              <ProfilePhotoControl
+                hasPhoto={!!profile.avatar_url}
+                disabled={isOffline}
+              />
+            </div>
+          </div>
+        </header>
+
+        <ProfileSection
+          id="directory-profile"
+          title="Directory profile"
+          hint="Visible to the members of your active chapter."
+        >
           <form className="space-y-4" onSubmit={handleProfileSubmit}>
             <div className="grid gap-2">
               <Label htmlFor="display-name">Display name</Label>
@@ -594,13 +585,15 @@ export function ProfilePanel() {
                 <Input
                   id="graduation-year"
                   type="number"
-                  min={1900}
-                  max={2100}
+                  min={GRADUATION_YEAR_MIN}
+                  max={GRADUATION_YEAR_MAX}
                   value={profile.graduation_year ?? ""}
                   onChange={(event) => {
                     const raw = event.target.value;
-                    // Cleared means "no year". The 1900–2100 range is the
-                    // API's to refuse: guarding it here would refuse the "2"
+                    // Cleared means "no year". The range
+                    // (`GRADUATION_YEAR_MIN`–`GRADUATION_YEAR_MAX`) is refused
+                    // at submit, by the input's `min`/`max` and by the API,
+                    // not here: guarding it on change would refuse the "2"
                     // on the way to "2026".
                     const next =
                       raw.trim() === "" ? null : parseGuardedInt(raw);
@@ -650,12 +643,13 @@ export function ProfilePanel() {
               </Button>
             </div>
           </form>
-        </CardContent>
-      </Card>
+        </ProfileSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Preferences</CardTitle>
+        <ProfileSection
+          id="quiet-hours"
+          title="Quiet hours"
+          hint="Non-urgent notifications stay silent between these times."
+        >
           {/*
             The Theme select that used to live here is gone, and the copy that
             promised "theme controls the whole dashboard" with it.
@@ -667,16 +661,11 @@ export function ProfilePanel() {
             what makes it true. A control with no reader is deleted, not
             restyled.
           */}
-          <CardDescription>
-            Quiet hours silence non-urgent notifications.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
           {preferencesState ?? (
             <form className="space-y-4" onSubmit={handleSettingsSubmit}>
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="grid gap-2">
-                  <Label htmlFor="quiet-start">Quiet hours start</Label>
+                  <Label htmlFor="quiet-start">Start</Label>
                   <Input
                     id="quiet-start"
                     type="time"
@@ -690,7 +679,7 @@ export function ProfilePanel() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="quiet-end">Quiet hours end</Label>
+                  <Label htmlFor="quiet-end">End</Label>
                   <Input
                     id="quiet-end"
                     type="time"
@@ -733,113 +722,110 @@ export function ProfilePanel() {
                   {updateSettings.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : null}
-                  Save preferences
+                  Save quiet hours
                 </Button>
               </div>
             </form>
           )}
-        </CardContent>
-      </Card>
+        </ProfileSection>
 
-      {/*
-        Anchor target for the top-bar account menu's "Notification settings"
-        row. Notification preferences have no route of their own — they are a
-        section of this screen — so the menu links here rather than advertising
-        a settings page that does not exist. `scroll-mt` clears the sticky
-        48px top bar so the heading is not hidden under it on arrival.
-      */}
-      <Card id="notification-settings" className="scroll-mt-16">
-        <CardHeader>
-          <CardTitle>Notifications</CardTitle>
-          <CardDescription>
-            Choose what you hear about. These apply to this chapter on every
-            device you use.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+        {/*
+          Anchor target for the top-bar account menu's "Notification settings"
+          row. Notification preferences have no route of their own — they are a
+          section of this screen — so the menu links here rather than advertising
+          a settings page that does not exist. `scroll-mt` clears the sticky
+          48px top bar so the heading is not hidden under it on arrival.
+        */}
+        <ProfileSection
+          id="notification-settings"
+          title="Notifications"
+          hint="For this chapter, on every device you use."
+        >
           {categoriesState ?? (
             <div className="space-y-4">
-              {NOTIFICATION_CATEGORIES.map((category) => {
-                const switchId = `notification-category-${category.key}`;
-                const descriptionId = `${switchId}-description`;
-                return (
-                  <div
-                    key={category.key}
-                    className="flex items-center justify-between gap-4"
-                  >
-                    <div className="grid gap-1">
-                      <Label htmlFor={switchId}>{category.label}</Label>
-                      <p
-                        id={descriptionId}
-                        className="text-sm text-muted-foreground"
-                      >
-                        {category.description}
-                      </p>
-                    </div>
-                    <Switch
-                      id={switchId}
-                      checked={categories[category.key]}
-                      // The offline reason belongs on the control, not only in
-                      // the paragraph after the last row — `spec/ui/resilience/connection-state.md`'s
-                      // queueless rule is explicit that it wires to the control
-                      // itself. Without this a screen-reader member offline
-                      // hears "Points, switch, on, unavailable" and nothing
-                      // about why, with the explanation sitting six rows below
-                      // and the toast arriving only after they activate a
-                      // control their AT has just called unavailable.
-                      aria-describedby={
-                        isOffline
-                          ? `${descriptionId} ${OFFLINE_NOTE_ID}`
-                          : descriptionId
-                      }
-                      /*
-                       * Soft-disabled offline, NOT `disabled`.
-                       *
-                       * The write is refused up front rather than attempted.
-                       * Since #1754 the query client sets `networkMode:
-                       * "always"`, so an offline mutation no longer parks — it
-                       * starts, exhausts its two retries, and rejects in ~3s. That
-                       * is a real improvement over the pause-forever it
-                       * replaced, but it is still the wrong experience on a
-                       * *switch*: the optimistic `onMutate` moves it, it sits
-                       * wrong for three seconds while retries burn, then snaps
-                       * back under an error toast. Refusing costs the member
-                       * nothing and tells them immediately, and the switch
-                       * never shows a value the server was never told about.
-                       *
-                       * This is § 2's "disabled with 'Reconnect to make
-                       * changes'" on a control whose appearance carries
-                       * state. Queueless dashboard *buttons* go through
-                       * `useSubscriptionGate` (#1753) and take the real
-                       * `disabled` attribute; these switches cannot, for
-                       * the colour / tab-order reasons below. #1754's note
-                       * that an ungated offline member would get an error
-                       * toast is the backstop, not the intended path.
-                       *
-                       * But the real `disabled` attribute cost more than it
-                       * bought. `switch.tsx` scopes every state colour to
-                       * `enabled:`, and its thumb takes `group-data-[disabled]`
-                       * which outranks the `data-[state]` rules — so all six
-                       * switches render an identical track and thumb, and the
-                       * only surviving on/off cue is the thumb offset at about
-                       * 2.24:1, under WCAG 1.4.11's 3:1 for non-text. Reading
-                       * which categories are muted is the *more* common offline
-                       * need, and `disabled` also drops all six out of the tab
-                       * order. `aria-disabled` keeps the colours, the tab order
-                       * and the announced state while still refusing the write.
-                       */
-                      aria-disabled={isOffline || undefined}
-                      onCheckedChange={(checked) =>
-                        handleCategoryToggle(
-                          category.key,
-                          category.label,
-                          checked,
-                        )
-                      }
-                    />
-                  </div>
-                );
-              })}
+              <ul className={denseListClassName}>
+                {shownNotificationCategories().map((category) => {
+                  const switchId = `notification-category-${category.key}`;
+                  const descriptionId = `${switchId}-description`;
+                  return (
+                    <li
+                      key={category.key}
+                      className="flex items-center justify-between gap-4 py-3"
+                    >
+                      <div className="grid gap-1">
+                        <Label htmlFor={switchId}>{category.label}</Label>
+                        <p
+                          id={descriptionId}
+                          className="text-sm text-muted-foreground"
+                        >
+                          {category.description}
+                        </p>
+                      </div>
+                      <Switch
+                        id={switchId}
+                        checked={categories[category.key]}
+                        // The offline reason belongs on the control, not only in
+                        // the paragraph after the last row — `spec/ui/resilience/connection-state.md`'s
+                        // queueless rule is explicit that it wires to the control
+                        // itself. Without this a screen-reader member offline
+                        // hears "Points, switch, on, unavailable" and nothing
+                        // about why, with the explanation sitting six rows below
+                        // and the toast arriving only after they activate a
+                        // control their AT has just called unavailable.
+                        aria-describedby={
+                          isOffline
+                            ? `${descriptionId} ${OFFLINE_NOTE_ID}`
+                            : descriptionId
+                        }
+                        /*
+                         * Soft-disabled offline, NOT `disabled`.
+                         *
+                         * The write is refused up front rather than attempted.
+                         * Since #1754 the query client sets `networkMode:
+                         * "always"`, so an offline mutation no longer parks — it
+                         * starts, exhausts its two retries, and rejects in ~3s. That
+                         * is a real improvement over the pause-forever it
+                         * replaced, but it is still the wrong experience on a
+                         * *switch*: the optimistic `onMutate` moves it, it sits
+                         * wrong for three seconds while retries burn, then snaps
+                         * back under an error toast. Refusing costs the member
+                         * nothing and tells them immediately, and the switch
+                         * never shows a value the server was never told about.
+                         *
+                         * This is § 2's "disabled with 'Reconnect to make
+                         * changes'" on a control whose appearance carries
+                         * state. Queueless dashboard *buttons* go through
+                         * `useSubscriptionGate` (#1753) and take the real
+                         * `disabled` attribute; these switches cannot, for
+                         * the colour / tab-order reasons below. #1754's note
+                         * that an ungated offline member would get an error
+                         * toast is the backstop, not the intended path.
+                         *
+                         * But the real `disabled` attribute cost more than it
+                         * bought. `switch.tsx` scopes every state colour to
+                         * `enabled:`, and its thumb takes `group-data-[disabled]`
+                         * which outranks the `data-[state]` rules — so all six
+                         * switches render an identical track and thumb, and the
+                         * only surviving on/off cue is the thumb offset at about
+                         * 2.24:1, under WCAG 1.4.11's 3:1 for non-text. Reading
+                         * which categories are muted is the *more* common offline
+                         * need, and `disabled` also drops all six out of the tab
+                         * order. `aria-disabled` keeps the colours, the tab order
+                         * and the announced state while still refusing the write.
+                         */
+                        aria-disabled={isOffline || undefined}
+                        onCheckedChange={(checked) =>
+                          handleCategoryToggle(
+                            category.key,
+                            category.label,
+                            checked,
+                          )
+                        }
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
               {isOffline ? (
                 // Says only what is true. An earlier draft added "your current
                 // settings are still in force", which is false in exactly the
@@ -891,88 +877,101 @@ export function ProfilePanel() {
               )}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </ProfileSection>
 
-      {/*
-        The durable undo for a chat block (#2313): its own states, because the
-        block list is another query on this screen and a failed read of it must
-        not look like "nobody is blocked".
-      */}
-      <BlockedMembersCard />
+        {/*
+          The durable undo for a chat block (#2313): its own states, because the
+          block list is another query on this screen and a failed read of it must
+          not look like "nobody is blocked".
+        */}
+        <BlockedMembersCard />
 
-      <DiscordHistoryCard />
+        <DiscordHistoryCard />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Tutorial</CardTitle>
-          <CardDescription>
-            Replay the onboarding tour. It&apos;ll reopen on your next dashboard
-            visit.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button
-            variant="secondary"
-            disabled={updateOnboarding.isPending}
-            onClick={async () => {
-              try {
-                await updateOnboarding.mutateAsync({
-                  has_completed_onboarding: false,
-                });
-                toast({
-                  title: "Tutorial queued",
-                  description:
-                    "The onboarding tour will reappear the next time you open the dashboard.",
-                });
-              } catch (error) {
-                toast({
-                  title: "Couldn't reset onboarding",
-                  description: getErrorMessage(
-                    error,
-                    "Retry in a moment. Your permissions may need refreshing.",
-                  ),
-                  variant: "destructive",
-                });
-              }
-            }}
-          >
-            Replay tutorial
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Session</CardTitle>
-          <CardDescription>
-            Sign out of this device. Signing in again refreshes your permission
-            set.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Button
-            variant="secondary"
-            onClick={handleSignOut}
-            disabled={isSigningOut || isDeletingAccount}
-          >
-            {isSigningOut ? "Signing out..." : "Sign out"}
-          </Button>
-          <div className="space-y-1.5 border-t border-border pt-4">
-            <p className="text-sm text-muted-foreground">
-              Permanently deletes your account. You&apos;ll be asked to confirm.
-            </p>
-            <Button
-              variant="destructive"
-              onClick={() => void deleteFlow.start()}
-              disabled={isDeletingAccount || isSigningOut}
-            >
-              {isDeletingAccount ? "Deleting account…" : "Delete account…"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+        {/*
+          Tutorial, session and deletion were three cards with a paragraph each.
+          They are one list of rows now: what the row does on the left, its one
+          control on the right, the way the notification switches above read.
+        */}
+        <ProfileSection id="account" title="Account">
+          <ul className={denseListClassName}>
+            <li className="flex items-center justify-between gap-4 py-3">
+              <div className="grid min-w-0 gap-1">
+                <p className="text-sm font-semibold">Tutorial</p>
+                <p className="text-sm text-muted-foreground">
+                  The onboarding tour reopens on your next dashboard visit.
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                size="toolbar"
+                className="shrink-0"
+                disabled={updateOnboarding.isPending}
+                onClick={async () => {
+                  try {
+                    await updateOnboarding.mutateAsync({
+                      has_completed_onboarding: false,
+                    });
+                    toast({
+                      title: "Tutorial queued",
+                      description:
+                        "The onboarding tour will reappear the next time you open the dashboard.",
+                    });
+                  } catch (error) {
+                    toast({
+                      title: "Couldn't reset onboarding",
+                      description: getErrorMessage(
+                        error,
+                        "Retry in a moment. Your permissions may need refreshing.",
+                      ),
+                      variant: "destructive",
+                    });
+                  }
+                }}
+              >
+                Replay tutorial
+              </Button>
+            </li>
+            <li className="flex items-center justify-between gap-4 py-3">
+              <div className="grid min-w-0 gap-1">
+                <p className="text-sm font-semibold">Session</p>
+                <p className="text-sm text-muted-foreground">
+                  Signing in again refreshes your permissions.
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                size="toolbar"
+                className="shrink-0"
+                onClick={handleSignOut}
+                disabled={isSigningOut || isDeletingAccount}
+              >
+                {isSigningOut ? "Signing out..." : "Sign out"}
+              </Button>
+            </li>
+            <li className="flex items-center justify-between gap-4 py-3">
+              <div className="grid min-w-0 gap-1">
+                <p className="text-sm font-semibold">Delete account</p>
+                <p className="text-sm text-muted-foreground">
+                  Permanently deletes your account. You&apos;ll be asked to
+                  confirm.
+                </p>
+              </div>
+              <Button
+                variant="destructive"
+                size="toolbar"
+                className="shrink-0"
+                onClick={() => void deleteFlow.start()}
+                disabled={isDeletingAccount || isSigningOut}
+              >
+                {isDeletingAccount ? "Deleting account…" : "Delete account…"}
+              </Button>
+            </li>
+          </ul>
+        </ProfileSection>
+      </div>
       {deleteFlow.confirmDialog}
+      {confirmDropDialog}
     </div>
   );
 }

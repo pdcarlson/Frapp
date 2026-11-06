@@ -1,3 +1,4 @@
+import { isBlockableSender } from "./blocks";
 import { DELETED_MESSAGE_PLACEHOLDER } from "./reply-preview";
 import type { ChatMessage } from "./types";
 
@@ -22,10 +23,11 @@ import type { ChatMessage } from "./types";
  * `isCardMessage` reads this list. Web's renderer switch
  * (`apps/web/components/chat/renderers/index.tsx`) is a second statement of it,
  * and `registry.spec.tsx` there fails if the two disagree, which is what keeps
- * a kind from being a card on screen and editable here. Mobile draws
- * only `poll` as a card today and every other kind as text, but a card's
- * body lives in `payload`, so its `content` is not the member's words to edit
- * whichever way a client happens to draw it.
+ * a kind from being a card on screen and editable here. Mobile draws most
+ * of these as cards too (`cardFor` in
+ * `apps/mobile/components/chat/thread-message-row.tsx`) and the rest as text,
+ * but a card's body lives in `payload`, so its `content` is not the member's
+ * words to edit whichever way a client happens to draw it.
  */
 export const CARD_KINDS: ReadonlySet<string> = new Set([
   "poll",
@@ -178,3 +180,194 @@ export const DELETE_MESSAGE_CONFIRM_BODY =
   "This can't be undone. Everyone in the channel will see " +
   `"${DELETED_MESSAGE_PLACEHOLDER}" in its place.`;
 export const DELETE_MESSAGE_CONFIRM_LABEL = "Delete message";
+
+/**
+ * Which actions mobile's long-press sheet offers: React, Reply, Edit and
+ * Delete above, and Report and Block (#2257). Moved here from the mobile app
+ * when web gained Report and Block (#2687). Web's action bar gates Reply, Edit
+ * and Delete on its own callbacks and reads only {@link canReportMessage} and
+ * {@link canBlockSender}, which this composes, so the two clients still share
+ * one Report and one Block rule.
+ */
+export interface MessageActions {
+  /** Whether the long-press sheet opens at all. */
+  canOpen: boolean;
+  canReply: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  canReport: boolean;
+  canBlock: boolean;
+}
+
+const NO_ACTIONS: MessageActions = {
+  canOpen: false,
+  canReply: false,
+  canEdit: false,
+  canDelete: false,
+  canReport: false,
+  canBlock: false,
+};
+
+/** What the open channel and the viewer's permissions allow, beyond the row. */
+export interface MessageActionsContext {
+  isMember: MemberLookup;
+  /** `channelAllowsReplies` for the open channel. */
+  canReply: boolean;
+  /** The channel's `can_post`: an edit authorizes as a post. */
+  canPost: boolean;
+  /** The viewer holds `channels:manage`. */
+  canManageChannel: boolean;
+}
+
+/**
+ * Whether a `users.id` is a member of the active chapter:
+ *
+ * - `true` — the loaded roster lists them.
+ * - `false` — **positively known departed**: this session the API refused to
+ *   block them as not a member (`isMemberNotFound` in `block-copy.ts`), and
+ *   no roster read since lists them.
+ * - `null` — nothing can be said. Covers a roster that has not loaded or
+ *   failed, and a loaded one that does not list them — which is not evidence
+ *   they left: the roster is cached, and the sender it is likeliest to miss is
+ *   a member who joined after it was read.
+ */
+export type MemberLookup = (userId: string) => boolean | null;
+
+const NO_ONE: ReadonlySet<string> = new Set();
+
+/**
+ * The members a block attempt proved are not in the chapter (the API's 404
+ * `Member not found`), kept per chapter because membership and blocks are.
+ * That answer is the only positive evidence a sender left: a roster that merely
+ * does not list someone may be stale, and the likeliest sender it does not list
+ * yet is a brand-new member, exactly who Block is for. Both clients hold one in
+ * React state and read it through {@link departedIn}.
+ */
+export interface DepartedMembers {
+  chapterId: string | null;
+  ids: ReadonlySet<string>;
+}
+
+export function noDepartedMembers(chapterId: string | null): DepartedMembers {
+  return { chapterId, ids: NO_ONE };
+}
+
+/** The ids known departed from `chapterId`; none once the chapter changed. */
+export function departedIn(
+  departed: DepartedMembers,
+  chapterId: string | null,
+): ReadonlySet<string> {
+  return departed.chapterId === chapterId ? departed.ids : NO_ONE;
+}
+
+/** `departed` with `userId` added, starting over if the chapter changed. */
+export function withDeparted(
+  departed: DepartedMembers,
+  chapterId: string | null,
+  userId: string,
+): DepartedMembers {
+  const ids = new Set(departedIn(departed, chapterId));
+  ids.add(userId);
+  return { chapterId, ids };
+}
+
+export function rosterMembership(
+  roster: {
+    byId: Readonly<Record<string, string>>;
+    isPending: boolean;
+    isError: boolean;
+  },
+  departed: ReadonlySet<string> = NO_ONE,
+): MemberLookup {
+  const loaded = !roster.isPending && !roster.isError;
+  return (userId) => {
+    if (loaded && Object.prototype.hasOwnProperty.call(roster.byId, userId)) {
+      return true;
+    }
+    return departed.has(userId) ? false : null;
+  };
+}
+
+/**
+ * Whether a message offers the actions sheet at all, which is what a row's
+ * long-press is gated on. It needs no roster or channel: a confirmed,
+ * undeleted row always offers something. Your own message offers Delete, and
+ * anyone else's offers Report.
+ */
+export function canOpenMessageActions(
+  message: Pick<ChatMessage, "_status" | "is_deleted">,
+  viewerId: string | null,
+): boolean {
+  return viewerId !== null && canActOnMessage(message);
+}
+
+/**
+ * Which actions a message offers.
+ *
+ * - **Confirmed, undeleted rows only.** A pending or failed row carries a
+ *   client id the API has never seen, so any action on it would 404, and a
+ *   deleted row already reads `[message deleted]`.
+ * - **Reply** wherever the channel takes replies (`channelAllowsReplies`).
+ * - **Edit** on your own plain-text message (`canEditMessage`), where you can
+ *   still post.
+ * - **Delete** on your own message, or anyone's with `channels:manage`.
+ * - **Report and Block never on your own message.** There is nothing to
+ *   report or block. On anyone else's, Report always shows: an imported row
+ *   names its author in `author_name`, which the API snapshots into the report
+ *   for exactly that.
+ * - **Block needs a blockable sender not known to have left**: not the system
+ *   actor, not an imported row nobody has linked (a linked one carries the
+ *   member as its sender, #2878), and not someone `isMember` positively knows
+ *   departed. A sender the cached roster does not list still gets Block: that
+ *   is exactly what a brand-new member looks like, and App Review's block
+ *   control must not vanish for them. If they did leave,
+ *   `POST /v1/chat/blocks` answers 404 `Member not found` and the confirmation
+ *   says so.
+ *
+ * A tombstoned row never reaches this: the thread renders it without the sheet.
+ */
+export function messageActionsFor(
+  message: Pick<
+    ChatMessage,
+    "id" | "sender_id" | "kind" | "_status" | "is_deleted"
+  >,
+  viewerId: string | null,
+  context: MessageActionsContext,
+): MessageActions {
+  if (!canOpenMessageActions(message, viewerId)) return NO_ACTIONS;
+  return {
+    canOpen: true,
+    canReply: context.canReply,
+    canEdit: context.canPost && canEditMessage(message, viewerId),
+    canDelete: canDeleteMessage(message, viewerId, context.canManageChannel),
+    canReport: canReportMessage(message, viewerId),
+    canBlock: canBlockSender(message, viewerId, context.isMember),
+  };
+}
+
+/**
+ * Report, on its own: anyone else's confirmed, undeleted message. The web
+ * action bar asks this directly, since it gates Reply, Edit and Delete on its
+ * own callbacks rather than on a {@link MessageActionsContext}.
+ */
+export function canReportMessage(
+  message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted">,
+  viewerId: string | null,
+): boolean {
+  return (
+    canOpenMessageActions(message, viewerId) && !isOwnMessage(message, viewerId)
+  );
+}
+
+/** Block, on its own: the rule {@link messageActionsFor} states. */
+export function canBlockSender(
+  message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted">,
+  viewerId: string | null,
+  isMember: MemberLookup,
+): boolean {
+  return (
+    canReportMessage(message, viewerId) &&
+    isBlockableSender(message.sender_id) &&
+    isMember(message.sender_id) !== false
+  );
+}

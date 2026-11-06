@@ -39,8 +39,8 @@ function removesSentence(row: ImportRow): string {
 /**
  * The confirmation Delete import opens. It names the counts because a delete
  * of five thousand messages and one of a hundred and forty thousand look the
- * same from the button, and names the server because every row carries the
- * same control.
+ * same from the button, and names the server so the admin knows which
+ * Discord's history goes.
  */
 export function deleteImportConfirmation(row: ImportRow): ConfirmRequest {
   const removes = removesSentence(row);
@@ -48,26 +48,22 @@ export function deleteImportConfirmation(row: ImportRow): ConfirmRequest {
     title: row.guild_name
       ? `Delete the import from ${row.guild_name}?`
       : "Delete this Discord import?",
-    description: `${removes} It then deletes the channels it created, and any it merged into that another deleted import created, once they hold nothing. The roles and read permissions it created stay. This cannot be undone.`,
+    description: `${removes} It then deletes the channels it created, and any it merged into that another deleted import created, once they hold nothing, and the categories it created once they are empty. The roles and read permissions it created stay. This cannot be undone.`,
     confirmLabel: "Delete import",
     tone: "destructive",
   };
 }
 
 export const DELETE_IMPORT_STARTED =
-  "Deleting the import. Its row shows how far along it is.";
+  "Deleting the import. This page shows how far along it is.";
 
 /**
- * What a deleting or deleted row says in place of its import counts, or null
- * for any other status. A deleting row counts its messages down and then says
- * what it is doing once they are gone, since the channels and archive files
- * that follow take a while on a large import and a row stuck at "0 left"
- * would read as stalled.
+ * What a deleting import says, or null for any other status. It counts its
+ * messages down and then says what it is doing once they are gone, since the
+ * channels and archive files that follow take a while on a large import and a
+ * page stuck at "0 left" would read as stalled.
  */
 export function purgeLine(row: ImportRow): string | null {
-  if (row.status === "purged") {
-    return "Deleted. The messages, attachments and archive files it brought in are gone.";
-  }
   const progress = purgeProgress(row);
   if (!progress) return null;
   if (progress.left === 0) {

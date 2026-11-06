@@ -78,6 +78,7 @@ import {
   composerPlaceholder,
   notifyDispatchOutcome,
   runDispatch,
+  slashModuleRefusal,
   uploadFailureDescription,
 } from "./composer";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
@@ -510,6 +511,24 @@ describe("Composer typed slash dispatch respects the module gate (#2993)", () =>
       expect.objectContaining({ title: "Couldn't check /poll" }),
     );
     expect(onSlashDispatch).not.toHaveBeenCalled();
+  });
+
+  it("says it needs a connection when the module read can't run offline (#3160)", async () => {
+    // The channel can still read as connected while the member-view read is
+    // paused, so the gate's own offline state has to carry the reason.
+    const { onSlashDispatch } = typeAndSend(POLL, {
+      isModuleEnabled: () => false,
+      slashCommandsStatus: "offline",
+    });
+
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "/poll needs a connection" }),
+    );
+    expect(mockToast).not.toHaveBeenCalledWith(
+      expect.objectContaining({ title: "/poll isn't ready yet" }),
+    );
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+    expect(editor.getText()).toBe(POLL);
   });
 
   it("says it needs a connection while offline, not that the modules are loading", async () => {
@@ -1618,5 +1637,23 @@ describe("ComposerShell (#2176)", () => {
     for (const cls of COMPOSER_INPUT_CLASS.split(" ")) {
       expect(input.className).toContain(cls);
     }
+  });
+});
+
+describe("slashModuleRefusal for a beta-off module", () => {
+  // No chapter switched dues off and Settings → Modules has no switch for it,
+  // so the refusal must not send an officer looking for one.
+  it("says the module is off for the beta, not where to turn it on", () => {
+    const dues = {
+      name: "dues",
+      description: "Dues reminders and balances",
+      usage: "remind overdue",
+      requiredModule: "dues",
+      implemented: false,
+    } as SlashCommand;
+    expect(slashModuleRefusal(dues, "ready", () => false)).toEqual({
+      title: "/dues is turned off",
+      description: "Dues is off for every chapter during the beta.",
+    });
   });
 });

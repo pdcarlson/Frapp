@@ -81,6 +81,22 @@ export function formatDueSubtitle(
   if (days < 7) {
     return `Due ${due.toLocaleDateString(undefined, { weekday: "long" })}`;
   }
+  return dueOn(due);
+}
+
+/**
+ * The plain due date, "Due Nov 6", with no countdown. For a task whose
+ * countdown would not be true, such as one already done: the chat task card
+ * draws it once the live task is finished, or when the viewer can't read it.
+ * `null` for a date this module cannot read, as `formatDueSubtitle` returns.
+ */
+export function formatDueDate(dueDate: string | null): string | null {
+  if (!dueDate) return null;
+  const due = parseTaskDate(dueDate);
+  return due ? dueOn(due) : null;
+}
+
+function dueOn(due: Date): string {
   return `Due ${due.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
 }
 

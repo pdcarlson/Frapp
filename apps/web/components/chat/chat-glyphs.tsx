@@ -15,8 +15,9 @@
  *   a channel as a **text `#`** at 17px/700 and a DM as an initials avatar, not
  *   as icons. The reference wins over a tidier all-icons row.
  *
- * The five silhouettes chat shares with the shell's nav intents (events, tasks,
- * points, search, service hours) are re-exported rather than redrawn — a second
+ * The six silhouettes chat shares with the shell's nav intents (events, tasks,
+ * points, search, service hours, and the directory as the member list toggle)
+ * are re-exported rather than redrawn — a second
  * copy of the same path data is exactly the drift §1 rule 1 bans.
  */
 
@@ -24,6 +25,7 @@ import { Svg, detail, fillProps, stroke } from "@/components/ui/duotone";
 import type { DuotoneGlyphProps } from "@/components/ui/duotone";
 
 export {
+  DirectoryGlyph as MembersGlyph,
   EventsGlyph,
   PointsGlyph,
   SearchGlyph,
@@ -226,21 +228,33 @@ export function ThreadGlyph({ className }: ChatGlyphProps) {
 }
 
 /**
- * Notification level (#296). A bell; `active` means muted, and the slash is a
- * detail stroke so the muted state reads at a glance rather than only through
- * the label beside it. Same construction as {@link OfflineGlyph}, whose slash
- * carries the equivalent "this is off" meaning.
+ * Notification level (#296). A speaker (a box and its cone, split by a detail
+ * stroke) with two sound waves; `active` means muted, and an × replaces the
+ * waves so the muted state reads at a glance rather than only through the
+ * label beside it. The box, the split and the second wave are what tell it
+ * from {@link AnnouncementGlyph}, a single flared horn with one wave.
+ *
+ * A speaker, not a bell, since #3362: the bell is the notification inbox's
+ * glyph (`NotificationsGlyph` in the top bar, and on the phone's Chat home), so
+ * a channel's alert level must not draw the same silhouette.
  */
 export function MuteGlyph({ className, active }: ChatGlyphProps) {
   return (
     <Svg className={className}>
       <path
-        d="M6.5 10.5a5.5 5.5 0 0111 0c0 3.2.8 4.7 1.6 5.6.4.5.1 1.2-.6 1.2H5.5c-.7 0-1-.7-.6-1.2.8-.9 1.6-2.4 1.6-5.6z"
+        d="M4.5 9.5h3l4.5-4v13l-4.5-4h-3a1 1 0 01-1-1v-3a1 1 0 011-1z"
         {...stroke}
         {...fillProps(active)}
       />
-      <path d="M10.2 20a2 2 0 003.6 0" {...detail} />
-      {active ? <path d="M4.5 4.5l15 15" {...detail} /> : null}
+      <path d="M7.5 9.5v5" {...detail} />
+      {active ? (
+        <path d="M15.5 9.5l5 5M20.5 9.5l-5 5" {...detail} />
+      ) : (
+        <path
+          d="M15.5 9.2a4 4 0 010 5.6M18 6.8a7.4 7.4 0 010 10.4"
+          {...detail}
+        />
+      )}
     </Svg>
   );
 }

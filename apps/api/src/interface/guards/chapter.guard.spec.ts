@@ -1,4 +1,9 @@
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  ExecutionContext,
+  ForbiddenException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import { Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ChapterGuard } from './chapter.guard';
@@ -18,7 +23,7 @@ describe('ChapterGuard', () => {
   let mockFrom: jest.Mock;
 
   const buildRequest = (overrides: Record<string, unknown> = {}) => ({
-    headers: { 'x-chapter-id': 'chapter-1' },
+    headers: { 'x-chapter-id': '11111111-1111-4111-8111-111111111111' },
     method: 'GET',
     supabaseUser: { id: 'auth-123' },
     jwtClaims: undefined as unknown,
@@ -46,7 +51,15 @@ describe('ChapterGuard', () => {
     member,
     chapter,
     memberships,
+    errors = {},
   }: {
+    /** A lookup that fails rather than finding nothing (#3143), by table. */
+    errors?: Partial<
+      Record<
+        'users' | 'members' | 'chapters' | 'memberships',
+        { code: string; message: string }
+      >
+    >;
     appUser?: { id: string } | null;
     member?: {
       id: string;
@@ -73,11 +86,22 @@ describe('ChapterGuard', () => {
       const data =
         table === 'users' ? appUser : table === 'members' ? member : chapter;
       const eqMock: jest.Mock = jest.fn();
-      const single = jest.fn().mockResolvedValue({ data });
-      const limit = jest.fn().mockResolvedValue({ data: memberships ?? [] });
+      const error = errors[table as 'users' | 'members' | 'chapters'];
+      const maybeSingle = jest
+        .fn()
+        .mockResolvedValue(
+          error ? { data: null, error } : { data: data ?? null, error: null },
+        );
+      const limit = jest
+        .fn()
+        .mockResolvedValue(
+          errors.memberships
+            ? { data: null, error: errors.memberships }
+            : { data: memberships ?? [], error: null },
+        );
       // chapters and users use one .eq; members uses either two .eq calls
       // (explicit chapter) or one .eq + .limit (auto-resolve).
-      eqMock.mockReturnValue({ eq: eqMock, single, limit });
+      eqMock.mockReturnValue({ eq: eqMock, maybeSingle, limit });
       return {
         select: jest.fn().mockImplementation((columns: string) => {
           (selectArgs[table] ??= []).push(columns);
@@ -120,8 +144,10 @@ describe('ChapterGuard', () => {
       mockSupabaseChain({ appUser: { id: 'user-1' } });
       const ctx = mockExecutionContext(
         buildRequest({
-          headers: { 'x-chapter-id': 'chapter-header' },
-          jwtClaims: { active_chapter_id: 'chapter-jwt' },
+          headers: { 'x-chapter-id': 'abcdef00-0000-4000-8000-0000000000aa' },
+          jwtClaims: {
+            active_chapter_id: 'bcdef000-0000-4000-8000-0000000000bb',
+          },
         }),
       );
 
@@ -139,19 +165,21 @@ describe('ChapterGuard', () => {
       });
       const request = buildRequest({
         headers: {},
-        jwtClaims: { active_chapter_id: 'chapter-jwt' },
+        jwtClaims: {
+          active_chapter_id: 'bcdef000-0000-4000-8000-0000000000bb',
+        },
       });
 
       await expect(
         guard.canActivate(mockExecutionContext(request)),
       ).resolves.toBe(true);
-      expect(request.chapterId).toBe('chapter-jwt');
+      expect(request.chapterId).toBe('bcdef000-0000-4000-8000-0000000000bb');
     });
 
     it('auto-resolves a single-chapter user carrying no context at all', async () => {
       mockSupabaseChain({
         appUser: { id: 'user-1' },
-        memberships: [membership('chapter-sole')],
+        memberships: [membership('dddddddd-0000-4000-8000-000000000004')],
         chapter: { subscription_status: 'active' },
       });
       const request = buildRequest({ headers: {} });
@@ -159,13 +187,16 @@ describe('ChapterGuard', () => {
       await expect(
         guard.canActivate(mockExecutionContext(request)),
       ).resolves.toBe(true);
-      expect(request.chapterId).toBe('chapter-sole');
+      expect(request.chapterId).toBe('dddddddd-0000-4000-8000-000000000004');
     });
 
     it('requires explicit context from a multi-chapter user (chapter.context.required)', async () => {
       mockSupabaseChain({
         appUser: { id: 'user-1' },
-        memberships: [membership('chapter-a'), membership('chapter-b')],
+        memberships: [
+          membership('aaaaaaaa-0000-4000-8000-000000000001'),
+          membership('bbbbbbbb-0000-4000-8000-000000000002'),
+        ],
       });
       const ctx = mockExecutionContext(buildRequest({ headers: {} }));
 
@@ -188,13 +219,35 @@ describe('ChapterGuard', () => {
     it('rejects a chapter the caller is not a member of (chapter.context.invalid)', async () => {
       mockSupabaseChain({ appUser: { id: 'user-1' }, member: null });
       const ctx = mockExecutionContext(
-        buildRequest({ headers: { 'x-chapter-id': 'chapter-foreign' } }),
+        buildRequest({
+          headers: { 'x-chapter-id': 'ffffffff-0000-4000-8000-000000000003' },
+        }),
       );
 
       await expect(guard.canActivate(ctx)).rejects.toMatchObject({
         response: { code: 'chapter.context.invalid' },
         status: 403,
       });
+    });
+
+    // #3143: Postgres answers a malformed uuid comparison with an error, which
+    // the lookup now reports as a 503. A chapter id that is not a uuid names
+    // no chapter, so it is refused before any lookup runs.
+    it('refuses a chapter id that is not a uuid as chapter.context.invalid, before any lookup', async () => {
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        member: { id: 'member-1', role_ids: [] },
+        chapter: { subscription_status: 'active' },
+      });
+      const ctx = mockExecutionContext(
+        buildRequest({ headers: { 'x-chapter-id': 'not-a-chapter' } }),
+      );
+
+      await expect(guard.canActivate(ctx)).rejects.toMatchObject({
+        response: { code: 'chapter.context.invalid' },
+        status: 403,
+      });
+      expect(mockFrom).not.toHaveBeenCalledWith('members');
     });
 
     it('still accepts the header when the token predates the claim', async () => {
@@ -204,14 +257,14 @@ describe('ChapterGuard', () => {
         chapter: { subscription_status: 'active' },
       });
       const request = buildRequest({
-        headers: { 'x-chapter-id': 'chapter-header' },
+        headers: { 'x-chapter-id': 'abcdef00-0000-4000-8000-0000000000aa' },
         jwtClaims: undefined,
       });
 
       await expect(
         guard.canActivate(mockExecutionContext(request)),
       ).resolves.toBe(true);
-      expect(request.chapterId).toBe('chapter-header');
+      expect(request.chapterId).toBe('abcdef00-0000-4000-8000-0000000000aa');
     });
 
     // #688: Postgres `uuid` comparison is case-insensitive (an uppercase
@@ -226,14 +279,14 @@ describe('ChapterGuard', () => {
         chapter: { subscription_status: 'active' },
       });
       const request = buildRequest({
-        headers: { 'x-chapter-id': 'CHAPTER-HEADER' },
+        headers: { 'x-chapter-id': 'ABCDEF00-0000-4000-8000-0000000000AA' },
         jwtClaims: undefined,
       });
 
       await expect(
         guard.canActivate(mockExecutionContext(request)),
       ).resolves.toBe(true);
-      expect(request.chapterId).toBe('chapter-header');
+      expect(request.chapterId).toBe('abcdef00-0000-4000-8000-0000000000aa');
     });
 
     it('lowercases an uppercase JWT active_chapter_id claim before setting request.chapterId', async () => {
@@ -244,13 +297,15 @@ describe('ChapterGuard', () => {
       });
       const request = buildRequest({
         headers: {},
-        jwtClaims: { active_chapter_id: 'CHAPTER-JWT' },
+        jwtClaims: {
+          active_chapter_id: 'BCDEF000-0000-4000-8000-0000000000BB',
+        },
       });
 
       await expect(
         guard.canActivate(mockExecutionContext(request)),
       ).resolves.toBe(true);
-      expect(request.chapterId).toBe('chapter-jwt');
+      expect(request.chapterId).toBe('bcdef000-0000-4000-8000-0000000000bb');
     });
 
     it('treats a header and JWT claim that agree only up to case as a match, not a mismatch', async () => {
@@ -260,22 +315,26 @@ describe('ChapterGuard', () => {
         chapter: { subscription_status: 'active' },
       });
       const request = buildRequest({
-        headers: { 'x-chapter-id': 'Chapter-Same' },
-        jwtClaims: { active_chapter_id: 'chapter-same' },
+        headers: { 'x-chapter-id': 'CdEf0000-0000-4000-8000-0000000000Cc' },
+        jwtClaims: {
+          active_chapter_id: 'cdef0000-0000-4000-8000-0000000000cc',
+        },
       });
 
       await expect(
         guard.canActivate(mockExecutionContext(request)),
       ).resolves.toBe(true);
-      expect(request.chapterId).toBe('chapter-same');
+      expect(request.chapterId).toBe('cdef0000-0000-4000-8000-0000000000cc');
     });
 
     it('still rejects a header and JWT claim that disagree beyond case (chapter.context.mismatch)', async () => {
       mockSupabaseChain({ appUser: { id: 'user-1' } });
       const ctx = mockExecutionContext(
         buildRequest({
-          headers: { 'x-chapter-id': 'CHAPTER-HEADER' },
-          jwtClaims: { active_chapter_id: 'chapter-jwt' },
+          headers: { 'x-chapter-id': 'ABCDEF00-0000-4000-8000-0000000000AA' },
+          jwtClaims: {
+            active_chapter_id: 'bcdef000-0000-4000-8000-0000000000bb',
+          },
         }),
       );
 
@@ -330,7 +389,7 @@ describe('ChapterGuard', () => {
     expect(result).toBe(true);
     expect(request.appUser).toEqual(appUser);
     expect(request.member).toEqual(member);
-    expect(request.chapterId).toBe('chapter-1');
+    expect(request.chapterId).toBe('11111111-1111-4111-8111-111111111111');
     expect(request.subscriptionStatus).toBe('active');
   });
 
@@ -792,6 +851,95 @@ describe('ChapterGuard', () => {
         mockExecutionContext(buildRequest({ method: 'POST' })),
       );
       expect(selectArgs['chapters']?.[0]).toContain('enabled_modules');
+    });
+  });
+  // #3143: a lookup that failed is not an answer. "No row" keeps its 4xx; an
+  // error is a 503 carrying the query as its cause, so clients retry it.
+  describe('a failed lookup is a 503, not a refusal', () => {
+    const TIMEOUT = {
+      code: '57014',
+      message: 'canceling statement due to statement timeout',
+    };
+
+    async function failure(request: ReturnType<typeof buildRequest>) {
+      return guard
+        .canActivate(mockExecutionContext(request))
+        .catch((error: unknown) => error);
+    }
+
+    it('answers 503 when the user lookup errors, and 403 when it finds no one', async () => {
+      mockSupabaseChain({ errors: { users: TIMEOUT } });
+      const thrown = await failure(buildRequest());
+      expect(thrown).toBeInstanceOf(ServiceUnavailableException);
+      expect((thrown as Error).cause).toBeInstanceOf(SupabaseQueryError);
+      expect((thrown as Error).cause).toMatchObject({ code: '57014' });
+
+      mockSupabaseChain({ appUser: null });
+      await expect(
+        guard.canActivate(mockExecutionContext(buildRequest())),
+      ).rejects.toMatchObject({
+        status: 403,
+        message: 'User profile not found',
+      });
+    });
+
+    it('answers 503 when the membership lookup errors, and chapter.context.invalid when there is none', async () => {
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        errors: { members: TIMEOUT },
+      });
+      expect(await failure(buildRequest())).toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+
+      mockSupabaseChain({ appUser: { id: 'user-1' }, member: null });
+      await expect(
+        guard.canActivate(mockExecutionContext(buildRequest())),
+      ).rejects.toMatchObject({
+        status: 403,
+        response: { code: 'chapter.context.invalid' },
+      });
+    });
+
+    it('answers 503 when the auto-resolve lookup errors, not chapter.context.required', async () => {
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        errors: { memberships: TIMEOUT },
+      });
+      expect(await failure(buildRequest({ headers: {} }))).toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+
+      mockSupabaseChain({ appUser: { id: 'user-1' }, memberships: [] });
+      await expect(
+        guard.canActivate(mockExecutionContext(buildRequest({ headers: {} }))),
+      ).rejects.toMatchObject({
+        status: 400,
+        response: { code: 'chapter.context.required' },
+      });
+    });
+
+    it('answers 503 when the chapter lookup errors, and 403 when the chapter is gone', async () => {
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        member: { id: 'member-1', role_ids: [] },
+        errors: { chapters: TIMEOUT },
+      });
+      expect(await failure(buildRequest())).toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        member: { id: 'member-1', role_ids: [] },
+        chapter: null,
+      });
+      await expect(
+        guard.canActivate(mockExecutionContext(buildRequest())),
+      ).rejects.toMatchObject({
+        status: 403,
+        message: 'Chapter not found',
+      });
     });
   });
 });

@@ -1,6 +1,13 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { cardFilledContainers } from "@/tests/card-surfaces";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import {
   expectClearingEntriesEmpty,
@@ -94,7 +101,7 @@ const chapter = chapterSubscription(mockCurrentChapter);
 
 const createTrigger = () =>
   screen.getByRole("button", { name: /new study zone/i });
-const editButton = () => screen.getByRole("button", { name: /^edit$/i });
+const editButton = () => screen.getByRole("button", { name: /^edit /i });
 const disableButton = () => screen.getByRole("button", { name: /disable/i });
 const deleteButton = () => screen.getByRole("button", { name: /delete/i });
 
@@ -110,6 +117,23 @@ describe("GeofencesAdminPage subscription gating", () => {
     expect(disableButton()).toBeEnabled();
     expect(deleteButton()).toBeEnabled();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  // components.md § Icon-only actions: each row action is its glyph alone,
+  // named for the zone it acts on, with the same words as its tooltip.
+  it("draws the row actions as icons named for the zone", () => {
+    chapter.active();
+    render(<GeofencesAdminPage />);
+
+    for (const [button, name] of [
+      [editButton(), "Edit Main library"],
+      [disableButton(), "Disable Main library"],
+      [deleteButton(), "Delete Main library"],
+    ] as const) {
+      expect(button).toHaveAccessibleName(name);
+      expect(button).toHaveAttribute("title", name);
+      expect(button.textContent).toBe("");
+    }
   });
 
   it("disables the create trigger and names blocker plus recovery when incomplete", async () => {
@@ -231,6 +255,49 @@ describe("GeofencesAdminPage subscription gating", () => {
   });
 });
 
+describe("GeofencesAdminPage layout", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+  });
+
+  it("lists zones flush, with no --card panel", () => {
+    const { container } = render(<GeofencesAdminPage />);
+
+    expect(cardFilledContainers(container)).toEqual([]);
+    const rows = within(
+      screen.getByRole("list", { name: "Study zones" }),
+    ).getAllByRole("listitem");
+    expect(rows).toHaveLength(1);
+    expect(
+      within(rows[0]!).getByText(
+        "1 pt every 30 min · min 15 min session · 5 min pause grace",
+      ),
+    ).toBeInTheDocument();
+    expect(within(rows[0]!).getByText("Active")).toBeInTheDocument();
+  });
+
+  it("keeps the polygon behind Edit rather than on the row", async () => {
+    render(<GeofencesAdminPage />);
+
+    expect(document.body.textContent).not.toContain("30.286");
+    await userEvent.click(editButton());
+    expect(screen.getByLabelText(/vertices/i)).toHaveValue(
+      "30.286, -97.74\n30.287, -97.74\n30.287, -97.739",
+    );
+  });
+
+  it("puts New study zone in the action row, with no page h1", () => {
+    render(<GeofencesAdminPage />);
+
+    // The title, "Settings › Study zones", is the top bar's (`top-bar.tsx`).
+    expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /new study zone/i }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("GeofencesAdminPage study-rule guard (#2206)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -319,7 +386,10 @@ describe("GeofencesAdminPage study-rule guard (#2206)", () => {
     await openCreate();
     fireEvent.change(rate(/minutes per point/i), { target: { value: "45" } });
     fireEvent.change(rate(/minutes per point/i), { target: { value: "1.5" } });
-    submitCreate();
+    // Through the footer's button, which sits outside the form and reaches it
+    // only through `form=`. The refusal cases submit the form directly because
+    // a click runs the browser's own min/required check first.
+    fireEvent.click(screen.getByRole("button", { name: "Create study zone" }));
 
     await waitFor(() => expect(mockCreateMutate).toHaveBeenCalledTimes(1));
     expect(mockCreateMutate.mock.calls[0]![0]).toMatchObject({
@@ -364,5 +434,15 @@ describe("GeofencesAdminPage study-rule guard (#2206)", () => {
 
     await waitFor(() => expect(mockUpdateMutate).toHaveBeenCalledTimes(1));
     expect(mockUpdateMutate.mock.calls[0]![0].body.min_session_minutes).toBe(0);
+  });
+
+  it("saves from the panel footer's Save changes, outside the form", async () => {
+    // The footer is pinned below the scrolling body, so the button reaches
+    // its form through `form=`. Drop that and Save does nothing.
+    render(<GeofencesAdminPage />);
+    await userEvent.click(editButton());
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(mockUpdateMutate).toHaveBeenCalledTimes(1));
   });
 });

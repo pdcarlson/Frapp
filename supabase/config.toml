@@ -3,6 +3,8 @@ enabled = true
 port = 54321
 schemas = ["public"]
 extra_search_path = ["public"]
+# Restated as BACKWORK_LIST_CAP (apps/web/components/backwork/backwork-library.ts),
+# which tells /backwork its list was cut off (#3525). Change both together.
 max_rows = 1000
 
 [db]
@@ -44,7 +46,8 @@ enabled = true
 file_size_limit = "104857600" # 100MB -- the chat-archive bucket ceiling (Discord boosted-server per-file max).
 # This is a GLOBAL cap for the local stack and overrides a higher per-bucket
 # `storage.buckets.file_size_limit`; member-upload buckets stay pinned at 25MB
-# (MAX_UPLOAD_BYTES) by their own column and by `@repo/validation`.
+# (MAX_UPLOAD_BYTES) by their own column and by `@repo/validation`, except
+# `backwork` at 100MB (MAX_BACKWORK_UPLOAD_BYTES), so this must stay >= 100MB.
 
 [realtime]
 enabled = true

@@ -1,71 +1,130 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode, type Ref } from "react";
 import { Redirect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   Share,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
+  type TextInputProps,
 } from "react-native";
+import Animated, { ReduceMotion, ZoomIn } from "react-native-reanimated";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useQueryClient } from "@tanstack/react-query";
 import {
+  CHANNEL_LIST_KEY,
   DIRECTORY_MIN_QUERY_LENGTH,
   useChapterDirectorySearch,
+  useConfirmChapterLogo,
   useCreateInvite,
+  useCurrentChapter,
   useOnboardChapter,
+  useRequestChapterLogoUploadUrl,
   type ChapterDirectoryResult,
 } from "@repo/hooks";
 import {
   ARCHETYPES,
-  getArchetype,
+  orgColorsFor,
+  orgDefaultAccent,
+  orgHidingGreekLettersIn,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import { SignetTokens } from "@repo/theme/signet";
 import { serverMessageOf } from "@repo/api-sdk";
+import {
+  CHAPTER_SHORT_NAME_MAX_LENGTH,
+  resolveChapterMark,
+} from "@repo/validation";
 import { useAuthSession } from "@/lib/auth-session";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
+import { ChoiceRow } from "@/components/auth/choice-row";
+import { AccentPicker } from "@/components/chapter/accent-picker";
+import { PushPrimerCard } from "@/components/notifications/push-primer-card";
+import { BackRow } from "@/components/back-row";
+import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
 import {
-  DEFAULT_CHAPTER_ACCENT,
+  OnboardingFieldLabel,
+  OnboardingTextInput,
+} from "@/components/onboarding/onboarding-field";
+import {
+  ONBOARDING_COLUMN_WIDTH,
+  OnboardingPrimaryButton,
+} from "@/components/onboarding/onboarding-primary-button";
+import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
+import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
+import { JoinedChannelsCard } from "@/components/onboarding/joined-channels-card";
+import { Toggle } from "@/components/toggle";
+import {
   EMPTY_CHAPTER_IDENTITY,
   chapterIdentityBranding,
   chapterIdentityIsValid,
+  directoryMatchMarkFields,
+  lettersHiddenBy,
   normalizeAccentInput,
+  withOrgName,
   type ChapterIdentityForm,
 } from "@repo/hooks/chapter-identity";
-import { CHAPTER_SHORT_NAME_MAX_LENGTH } from "@repo/validation";
 import {
   inviteTokenOf,
   onboardedChapterId,
   webJoinUrl,
 } from "@/lib/onboarding/chapter-wizard/invite-link";
+import { pickAndSetChapterLogo } from "@/lib/onboarding/chapter-wizard/chapter-logo";
 import { useSelectChapter } from "@/lib/select-chapter";
+import { usePushPrimer } from "@/lib/notifications/use-push-primer";
+import { useBackToClose } from "@/lib/overlay";
+import { successHaptic } from "@/lib/haptics";
+import { KeyboardAvoidingArea } from "@/lib/keyboard";
+import { stepFadeIn } from "@/lib/onboarding/step-fade";
 import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * First-officer chapter creation (`spec/behavior/onboarding.md`).
+ * First-officer chapter setup (`spec/behavior/onboarding.md`, #3351).
  *
- * Web hosts this as a non-dismissable overlay. Mobile is a deliberate `(auth)`
- * route so the wizard can own its lifecycle after `POST /v1/chapters/onboard`
- * flips membership count to 1 — the gate must not yank the officer off the
- * invite step. Archetype keys, labels, shorts, and councils come from
- * `@repo/org-archetypes` (declared in `apps/mobile/package.json`); the
- * module/role seed is still applied server-side from the chosen key.
+ * Three steps make the chapter: **Find** it in the directory, **Confirm** the
+ * match (or describe it by hand), and pick its **Color**. Creating it opens
+ * three more: the **live** moment with its channels and an optional logo, the
+ * push primer when this build can push, and the **invite** link. Then chat.
+ *
+ * One route, with the steps as state: `POST /v1/chapters/onboard` flips the
+ * membership count to 1 mid-flow, and every gate exempts `/create-chapter` by
+ * its exact pathname (`(auth)/_layout.tsx`, `use-onboarding-redirect.ts`), so a
+ * sibling route for the later steps would be yanked into the tabs.
+ *
+ * The archetype comes from the directory match and is asked only when the
+ * chapter is entered by hand (or the match carries no known archetype), with
+ * nothing preselected. Some organizations don't display their Greek letters
+ * (Phi Gamma Delta): for them the letters appear nowhere here and the created
+ * chapter is sent with them off. The short name and the letters switch follow
+ * `orgMarkFieldsFor` through the glue both setups share in
+ * `@repo/hooks/chapter-identity` (`withOrgName`, `directoryMatchMarkFields`,
+ * `lettersHiddenBy`): naming such an organization, by its directory row or by
+ * hand ("FIJI", "Phi Gamma Delta Tau Nu"), turns the switch off and fills an
+ * empty short name, and picking another row undoes both. A chapter picked
+ * from its row keeps the letters hidden whatever its name field says later.
  */
 
-type WizardStep = "find" | "archetype" | "identity" | "invite";
-const STEP_ORDER: WizardStep[] = ["find", "archetype", "identity", "invite"];
-const STEP_LABELS: Record<WizardStep, string> = {
-  find: "Find your chapter",
-  archetype: "Pick your archetype",
-  identity: "Confirm identity",
-  invite: "Invite members",
-};
+type Step = "find" | "confirm" | "color" | "live" | "primer" | "invite";
+/** The steps before the chapter exists, which the progress ticks count. */
+const SETUP_STEPS: Step[] = ["find", "confirm", "color"];
 const INVITE_ROLE = "Member";
+
+/** Each step's screen title. The live one names the chapter. */
+export const SETUP_TITLES = {
+  find: "Find your chapter",
+  confirmMatch: "Is this your chapter?",
+  confirmManual: "Tell us about your chapter",
+  color: "Pick your color",
+  primer: "Stay in the loop",
+  invite: "Invite your chapter",
+} as const;
+
+export function liveTitle(displayName: string): string {
+  return `${displayName} is live`;
+}
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -76,22 +135,75 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
+/** A directory archetype this app knows, else `null`: the officer picks. */
+function knownArchetype(value: string | null | undefined): ArchetypeKey | null {
+  return value && Object.hasOwn(ARCHETYPES, value)
+    ? (value as ArchetypeKey)
+    : null;
+}
+
+/**
+ * The branding setup previews and sends. The form already holds the switch
+ * off for an organization that hides its letters (`withOrgName`); this is
+ * the last line for any form that doesn't. One does on purpose: a row from
+ * another organization renamed to FIJI changes the name alone, as on web,
+ * so the switch that row left on is overridden here. The letters themselves
+ * stay stored, as web's wizard stores them (branding.md: the switch hides,
+ * it doesn't delete); setup never draws them or sends them shown.
+ */
+function setupBranding(
+  identity: ChapterIdentityForm,
+  hiddenBy: string | null,
+) {
+  const branding = chapterIdentityBranding(identity);
+  return hiddenBy ? { ...branding, show_greek_letters: false } : branding;
+}
+
+/** How a directory row reads in the results: never letters a group hides. */
+export function directoryRowTitle(row: ChapterDirectoryResult): string {
+  return !orgHidingGreekLettersIn(row.org_name) && row.org_letters
+    ? `${row.org_letters} · ${row.org_name}`
+    : row.org_name;
+}
+
 export default function CreateChapter() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
   const { status } = useAuthSession();
+  const queryClient = useQueryClient();
   const selectChapter = useSelectChapter();
   const onboardChapter = useOnboardChapter();
   const createInvite = useCreateInvite();
+  const requestLogoUrl = useRequestChapterLogoUploadUrl();
+  const confirmLogo = useConfirmChapterLogo();
+  const primer = usePushPrimer();
 
-  const [step, setStep] = useState<WizardStep>("find");
+  const [step, setStep] = useState<Step>("find");
   const [rawQuery, setRawQuery] = useState("");
   const debouncedQuery = useDebouncedValue(rawQuery, 250);
   const [directoryId, setDirectoryId] = useState<string | null>(null);
-  const [archetype, setArchetype] = useState<ArchetypeKey>("ifc");
-  const [identity, setIdentity] = useState<ChapterIdentityForm>(EMPTY_CHAPTER_IDENTITY);
+  // The organization the picked directory row names, which keeps its letters
+  // hidden however the name is edited after (`lettersHiddenBy`).
+  const [matchedOrgName, setMatchedOrgName] = useState<string | null>(null);
+  const [archetype, setArchetype] = useState<ArchetypeKey | null>(null);
+  // Whether the confirm step asks for the archetype: by hand, or a match
+  // whose archetype this app doesn't know. Fixed when the step opens, so
+  // picking one doesn't hide the list it was picked from.
+  const [asksArchetype, setAsksArchetype] = useState(false);
+  const [identity, setIdentity] = useState<ChapterIdentityForm>(
+    EMPTY_CHAPTER_IDENTITY,
+  );
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [acceptedLegal, setAcceptedLegal] = useState(false);
+  // False while the accent's custom field holds a half-typed hex, which would
+  // otherwise submit the last whole color it held instead.
+  const [accentValid, setAccentValid] = useState(true);
+  // Whether the new chapter became the active one. The logo and invite
+  // routes act on the active chapter, so without it they can't run.
+  const [activated, setActivated] = useState(false);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoNote, setLogoNote] = useState<string | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -99,49 +211,88 @@ export default function CreateChapter() {
     enabled: step === "find",
   });
   const results = Array.isArray(searchQuery.data) ? searchQuery.data : [];
-  const stepIndex = STEP_ORDER.indexOf(step);
-  const canSubmit = chapterIdentityIsValid(identity) && acceptedLegal;
+  const current = useCurrentChapter({ enabled: activated });
+  const logoUrl = activated ? current.data?.logo_url || null : null;
+
+  const submitting = onboardChapter.isPending;
+  const isManual = directoryId === null;
+  const created = step === "live" || step === "primer" || step === "invite";
+  const displayName =
+    identity.shortName.trim() || identity.name.trim() || "Your chapter";
+  const canConfirm = chapterIdentityIsValid(identity) && archetype !== null;
+  const canSubmit = canConfirm && acceptedLegal && accentValid;
+  const lettersHidden = lettersHiddenBy(matchedOrgName, identity);
 
   function applyDirectoryMatch(row: ChapterDirectoryResult) {
+    const known = knownArchetype(row.archetype);
     setDirectoryId(row.id);
-    setArchetype(getArchetype(row.archetype ?? "").key);
+    setMatchedOrgName(row.org_name ?? null);
+    setArchetype(known);
+    setAsksArchetype(known === null);
     setIdentity({
       name: row.org_name ?? "",
       university: row.university ?? "",
       greekLetters: row.org_letters ?? "",
-      // The directory knows letters, not whether an organization shows them,
-      // so these two keep whatever the founder already chose.
-      shortName: identity.shortName,
-      showGreekLetters: identity.showGreekLetters,
+      // The directory knows letters, not whether an organization shows them:
+      // the row's profile decides, and a row picked before this one undoes
+      // what it set however the name was edited since.
+      ...directoryMatchMarkFields(row.org_name, matchedOrgName, identity),
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",
-      colorAccent: normalizeAccentInput(row.default_colors?.accent),
+      // The organization's own first color wins over the directory's: most
+      // directory rows hold one placeholder gold (`orgDefaultAccent`).
+      colorAccent: normalizeAccentInput(
+        orgDefaultAccent(row.org_name) ?? row.default_colors?.accent,
+      ),
     });
+    setDetailsOpen(false);
     setAcceptedLegal(false);
     setError(null);
-    setStep("archetype");
+    setStep("confirm");
   }
 
   function startManualEntry() {
     setDirectoryId(null);
-    setArchetype("ifc");
-    setIdentity({
-      ...EMPTY_CHAPTER_IDENTITY,
-      name: rawQuery.trim(),
-    });
+    setMatchedOrgName(null);
+    setArchetype(null);
+    setAsksArchetype(true);
+    // A name carried over from the search gets its profile, as a typed one does.
+    setIdentity(withOrgName(EMPTY_CHAPTER_IDENTITY, rawQuery.trim(), false));
+    setDetailsOpen(false);
     setAcceptedLegal(false);
     setError(null);
-    setStep("archetype");
+    setStep("confirm");
   }
 
   function goBack() {
-    const prev = STEP_ORDER[stepIndex - 1];
-    if (prev) setStep(prev);
+    if (submitting) return;
+    setError(null);
+    if (step === "confirm") {
+      setStep("find");
+    } else if (step === "color") {
+      // Leaving color unmounts the picker and drops a half-typed hex with it;
+      // it opens on swatches again, so the accent is valid again.
+      setAccentValid(true);
+      setStep("confirm");
+    } else if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/join");
+    }
   }
 
+  function finish() {
+    router.replace("/(tabs)");
+  }
+
+  // Android back steps back through setup, and once the chapter exists it
+  // leaves for chat: there is no going back to before the chapter was made.
+  useBackToClose(step === "confirm" || step === "color", goBack);
+  useBackToClose(created, finish);
+
   async function submitChapter() {
-    if (!canSubmit) return;
+    if (!canSubmit || submitting || archetype === null) return;
     setError(null);
     try {
       const chapter = await onboardChapter.mutateAsync({
@@ -150,18 +301,68 @@ export default function CreateChapter() {
         org_archetype: archetype,
         directory_id: directoryId ?? undefined,
         accept_terms_privacy: true,
-        branding: chapterIdentityBranding(identity),
+        branding: setupBranding(identity, lettersHidden),
       });
       const id = onboardedChapterId(chapter);
-      if (id) {
-        await selectChapter(id);
-      }
-      setStep("invite");
+      const active = id ? await selectChapter(id) : false;
+      setActivated(active);
+      // The channel list is keyed without the chapter, so a list read before
+      // the chapter existed would stand in for its seeded channels. Dropped,
+      // not just marked stale, so the live step never draws the old one.
+      queryClient.removeQueries({ queryKey: CHANNEL_LIST_KEY });
+      setStep("live");
+      successHaptic();
     } catch (caught) {
       setError(
         serverMessageOf(caught) ??
           "Couldn't create that chapter. Check the details and try again.",
       );
+    }
+  }
+
+  async function addLogo() {
+    if (logoBusy) return;
+    setLogoBusy(true);
+    setLogoNote(null);
+    const result = await pickAndSetChapterLogo({
+      requestUploadUrl: requestLogoUrl.mutateAsync,
+      confirm: confirmLogo.mutateAsync,
+    });
+    setLogoBusy(false);
+    if (result.status === "refused") setLogoNote(result.reason);
+  }
+
+  // The invite route acts on the active chapter, like the logo's: without
+  // the new chapter active it would mint for another chapter, or fail, so
+  // setup ends at chat and the officer invites from there.
+  function afterPrimer() {
+    if (activated) {
+      setStep("invite");
+    } else {
+      finish();
+    }
+  }
+
+  function leaveLive() {
+    setError(null);
+    if (primer.showPrimer) {
+      setStep("primer");
+    } else {
+      afterPrimer();
+    }
+  }
+
+  async function answerPrimer(answer: "on" | "not-now") {
+    try {
+      if (answer === "on") {
+        await primer.turnOn();
+      } else {
+        await primer.notNow();
+      }
+    } finally {
+      // Either answer moves on, even when the OS prompt failed: the primer
+      // step has no other way forward.
+      afterPrimer();
     }
   }
 
@@ -192,161 +393,422 @@ export default function CreateChapter() {
     }
   }
 
-  function finish() {
-    router.replace("/(tabs)");
-  }
-
   if (status === "unauthenticated") {
     return <Redirect href="/(auth)/sign-in" />;
   }
 
-  const submitting = onboardChapter.isPending;
+  const title =
+    step === "find"
+      ? SETUP_TITLES.find
+      : step === "confirm"
+        ? isManual
+          ? SETUP_TITLES.confirmManual
+          : SETUP_TITLES.confirmMatch
+        : step === "color"
+          ? SETUP_TITLES.color
+          : step === "live"
+            ? liveTitle(displayName)
+            : step === "primer"
+              ? SETUP_TITLES.primer
+              : SETUP_TITLES.invite;
+  const setupIndex = SETUP_STEPS.indexOf(step);
+  const mark = resolveChapterMark({
+    logoUrl,
+    branding: setupBranding(identity, lettersHidden),
+    name: identity.name,
+  });
+  const accent = normalizeAccentInput(identity.colorAccent);
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    // Safe area on every edge (#3345): `(auth)` renders with `headerShown:
+    // false`, and Android draws the app edge to edge, so nothing else keeps
+    // this screen off the status bar or its last control off the swipe bar.
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={["top", "right", "bottom", "left"]}
     >
-      <View style={styles.container}>
-        <Text style={styles.kicker}>Set up your chapter</Text>
-        <Text style={styles.title}>{STEP_LABELS[step]}</Text>
-        <View
-          accessibilityRole="progressbar"
-          accessibilityValue={{ min: 1, max: STEP_ORDER.length, now: stepIndex + 1 }}
-          style={styles.progressRow}
-        >
-          {STEP_ORDER.map((item, index) => (
-            <View
-              key={item}
-              style={[
-                styles.progressTick,
-                index <= stepIndex ? styles.progressTickOn : null,
-              ]}
-            />
-          ))}
-        </View>
+      <KeyboardAvoidingArea style={styles.flex}>
+        <View style={styles.container}>
+          {/*
+            The board's s02 `‹ Back` row, in house gold, with the progress
+            ticks at its far end. Once the chapter exists there is no going
+            back to before it was made, so the row goes and the header keeps
+            its height.
+          */}
+          <View style={styles.header}>
+            {created ? null : (
+              <BackRow
+                house
+                label="Back"
+                accessibilityLabel="Back"
+                disabled={submitting}
+                onPress={goBack}
+                trailing={
+                  setupIndex >= 0 ? (
+                    <View
+                      accessibilityRole="progressbar"
+                      accessibilityLabel="Chapter setup"
+                      accessibilityValue={{
+                        min: 1,
+                        max: SETUP_STEPS.length,
+                        now: setupIndex + 1,
+                      }}
+                      style={styles.progressRow}
+                    >
+                      {SETUP_STEPS.map((item, index) => (
+                        <View
+                          key={item}
+                          style={[
+                            styles.progressTick,
+                            index <= setupIndex ? styles.progressTickOn : null,
+                          ]}
+                        />
+                      ))}
+                    </View>
+                  ) : null
+                }
+              />
+            )}
+          </View>
 
-        <ScrollView
-          style={styles.flex}
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-        >
-          {step === "find" ? (
-            <FindStep
-              rawQuery={rawQuery}
-              onQueryChange={setRawQuery}
-              isFetching={searchQuery.isFetching}
-              isError={searchQuery.isError}
-              onRetry={() => {
-                void searchQuery.refetch();
-              }}
-              results={results}
-              debouncedQuery={debouncedQuery}
-              onSelect={applyDirectoryMatch}
-              onManual={startManualEntry}
-              styles={styles}
-              tokens={tokens}
-            />
-          ) : null}
+          <ScrollView
+            style={styles.flex}
+            contentContainerStyle={styles.scroll}
+            keyboardShouldPersistTaps="handled"
+          >
+            {step === "live" ? (
+              <Animated.View
+                entering={ZoomIn.duration(420).reduceMotion(
+                  ReduceMotion.System,
+                )}
+                style={styles.liveMark}
+              >
+                <ChapterMarkTile
+                  testID="setup-mark-text"
+                  logoUrl={mark.logoUrl}
+                  text={mark.text}
+                  accent={accent}
+                  size={72}
+                />
+              </Animated.View>
+            ) : null}
 
-          {step === "archetype" ? (
-            <ArchetypeStep
-              selected={archetype}
-              onSelect={setArchetype}
-              styles={styles}
-            />
-          ) : null}
-
-          {step === "identity" ? (
-            <IdentityStep
-              identity={identity}
-              onChange={setIdentity}
-              isManual={directoryId === null}
-              accepted={acceptedLegal}
-              onAcceptedChange={setAcceptedLegal}
-              styles={styles}
-              tokens={tokens}
-            />
-          ) : null}
-
-          {step === "invite" ? (
-            <InviteStep
-              inviteLink={inviteLink}
-              isGenerating={createInvite.isPending}
-              onGenerate={() => {
-                void generateInviteLink();
-              }}
-              onShare={() => {
-                void shareInviteLink();
-              }}
-              styles={styles}
-              tokens={tokens}
-            />
-          ) : null}
-
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-        </ScrollView>
-
-        <View style={styles.footer}>
-          {step !== "find" && step !== "invite" ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={goBack}
-              style={styles.secondaryButton}
+            {/*
+              Each step fades in (`stepFadeIn`, as join's views do), keyed so
+              the fade runs on every step change.
+            */}
+            <Animated.View
+              key={step}
+              entering={stepFadeIn(tokens)}
+              style={styles.stack}
             >
-              <Text style={styles.secondaryButtonText}>Back</Text>
-            </Pressable>
-          ) : null}
-
-          {step === "archetype" ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setStep("identity")}
-              style={styles.primaryButton}
-            >
-              <Text style={styles.primaryButtonText}>Continue</Text>
-            </Pressable>
-          ) : null}
-
-          {step === "identity" ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ disabled: !canSubmit || submitting }}
-              disabled={!canSubmit || submitting}
-              onPress={() => {
-                void submitChapter();
-              }}
-              style={[
-                styles.primaryButton,
-                !canSubmit || submitting ? styles.primaryButtonDisabled : null,
-              ]}
-            >
-              {submitting ? (
-                <ActivityIndicator color={tokens.color.gold.onHouse} />
-              ) : (
-                <Text style={styles.primaryButtonText}>Create chapter</Text>
-              )}
-            </Pressable>
-          ) : null}
-
-          {step === "invite" ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={finish}
-              style={styles.primaryButton}
-            >
-              <Text style={styles.primaryButtonText}>
-                {inviteLink ? "Go to chat" : "Skip for now"}
+              <Text accessibilityRole="header" style={styles.title}>
+                {title}
               </Text>
-            </Pressable>
-          ) : null}
+
+              {step === "find" ? (
+                <FindStep
+                  rawQuery={rawQuery}
+                  onQueryChange={setRawQuery}
+                  isFetching={searchQuery.isFetching}
+                  isError={searchQuery.isError}
+                  onRetry={() => {
+                    void searchQuery.refetch();
+                  }}
+                  results={results}
+                  debouncedQuery={debouncedQuery}
+                  onSelect={applyDirectoryMatch}
+                  onManual={startManualEntry}
+                  styles={styles}
+                  tokens={tokens}
+                />
+              ) : null}
+
+              {step === "confirm" ? (
+                <ConfirmStep
+                  identity={identity}
+                  onChange={setIdentity}
+                  isManual={isManual}
+                  lettersHidden={lettersHidden}
+                  detailsOpen={detailsOpen}
+                  onToggleDetails={() => setDetailsOpen((open) => !open)}
+                  asksArchetype={asksArchetype}
+                  archetype={archetype}
+                  onArchetype={setArchetype}
+                  mark={
+                    <ChapterMarkTile
+                      testID="setup-mark-text"
+                      logoUrl={null}
+                      text={mark.text}
+                      accent={accent}
+                      size={48}
+                    />
+                  }
+                  styles={styles}
+                />
+              ) : null}
+
+              {step === "color" ? (
+                <View style={styles.stack}>
+                  <Text style={styles.body}>
+                    Your color tints buttons, badges and your chapter mark. You
+                    can change it later in Settings.
+                  </Text>
+                  <View style={styles.previewRow}>
+                    <ChapterMarkTile
+                      testID="setup-mark-text"
+                      logoUrl={null}
+                      text={mark.text}
+                      accent={accent}
+                      size={48}
+                    />
+                    <Text style={styles.cardTitle} numberOfLines={2}>
+                      {identity.name}
+                    </Text>
+                  </View>
+                  <AccentPicker
+                    label="Chapter color"
+                    value={accent}
+                    onChange={(hex) =>
+                      setIdentity((prev) => ({ ...prev, colorAccent: hex }))
+                    }
+                    onValidityChange={setAccentValid}
+                    orgColors={orgColorsFor(identity.name)}
+                    // House gold on purpose, as setup's other fields are
+                    // (`OnboardingTextInput`): the chapter doesn't exist yet,
+                    // so there is no accent for the focus border to follow.
+                    focusColor={tokens.color.gold.askText}
+                  />
+                  {/*
+                  The officer's acceptance for the chapter and for themselves
+                  (#2302). No Backwork line: the app has no Backwork (#2258).
+                */}
+                  <TermsAcceptance
+                    accepted={acceptedLegal}
+                    onAcceptedChange={setAcceptedLegal}
+                  />
+                </View>
+              ) : null}
+
+              {step === "live" ? (
+                <View style={styles.stack}>
+                  {activated ? (
+                    <>
+                      <Text style={styles.body}>
+                        Your channels are ready. Invite your members next.
+                      </Text>
+                      <JoinedChannelsCard trailing="ready" />
+                    </>
+                  ) : (
+                    <Text style={styles.body}>
+                      Your chapter is ready. Open chat to see its channels and
+                      invite your members.
+                    </Text>
+                  )}
+                  {activated ? (
+                    <View style={styles.logoBlock}>
+                      <OnboardingSecondaryButton
+                        label={
+                          mark.logoUrl
+                            ? "Change logo"
+                            : "Add your chapter's logo"
+                        }
+                        disabled={logoBusy}
+                        busy={logoBusy}
+                        onPress={() => {
+                          void addLogo();
+                        }}
+                      />
+                      <Text style={styles.helperText}>
+                        Optional. A logo stands in for your letter mark
+                        everywhere.
+                      </Text>
+                      {logoNote ? (
+                        <Text
+                          accessibilityLiveRegion="polite"
+                          style={styles.errorText}
+                        >
+                          {logoNote}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ) : (
+                    <Text style={styles.helperText}>
+                      You can add a logo later from the web dashboard&apos;s
+                      Settings.
+                    </Text>
+                  )}
+                </View>
+              ) : null}
+
+              {/* No line over the card: the card makes its own case. */}
+              {step === "primer" ? (
+                <View style={styles.stack}>
+                  <PushPrimerCard
+                    isRequesting={primer.isRequesting}
+                    onTurnOn={() => {
+                      void answerPrimer("on");
+                    }}
+                    onNotNow={() => {
+                      void answerPrimer("not-now");
+                    }}
+                  />
+                </View>
+              ) : null}
+
+              {step === "invite" ? (
+                <InviteStep
+                  inviteLink={inviteLink}
+                  isGenerating={createInvite.isPending}
+                  onGenerate={() => {
+                    void generateInviteLink();
+                  }}
+                  styles={styles}
+                />
+              ) : null}
+            </Animated.View>
+
+            {error ? (
+              <Text accessibilityLiveRegion="polite" style={styles.errorText}>
+                {error}
+              </Text>
+            ) : null}
+          </ScrollView>
+
+          <Footer
+            step={step}
+            canConfirm={canConfirm}
+            canSubmit={canSubmit}
+            submitting={submitting}
+            logoBusy={logoBusy}
+            displayName={displayName}
+            inviteLink={inviteLink}
+            isGenerating={createInvite.isPending}
+            onConfirm={() => {
+              setError(null);
+              setStep("color");
+            }}
+            onSubmit={() => {
+              void submitChapter();
+            }}
+            onLeaveLive={leaveLive}
+            onGenerate={() => {
+              void generateInviteLink();
+            }}
+            onShare={() => {
+              void shareInviteLink();
+            }}
+            onFinish={finish}
+            styles={styles}
+          />
         </View>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingArea>
+    </SafeAreaView>
   );
 }
 
 type Styles = ReturnType<typeof createStyles>;
+
+/**
+ * The one primary button, pinned under the scroll. The find step has none
+ * (a result or "Not in our directory?" moves on) and the primer has its own
+ * pair of answers.
+ *
+ * On the invite step the gold button is the thing the step is for: `Create
+ * invite link`, then `Share invite` once a link exists. Leaving for chat is
+ * the quiet line under it (`Skip for now`, then `Go to chat`), so the step's
+ * one gold action points at inviting rather than away from it.
+ */
+function Footer({
+  step,
+  canConfirm,
+  canSubmit,
+  submitting,
+  logoBusy,
+  displayName,
+  inviteLink,
+  isGenerating,
+  onConfirm,
+  onSubmit,
+  onLeaveLive,
+  onGenerate,
+  onShare,
+  onFinish,
+  styles,
+}: {
+  step: Step;
+  canConfirm: boolean;
+  canSubmit: boolean;
+  submitting: boolean;
+  logoBusy: boolean;
+  displayName: string;
+  inviteLink: string | null;
+  isGenerating: boolean;
+  onConfirm: () => void;
+  onSubmit: () => void;
+  onLeaveLive: () => void;
+  onGenerate: () => void;
+  onShare: () => void;
+  onFinish: () => void;
+  styles: Styles;
+}) {
+  if (step === "invite") {
+    return (
+      <View style={styles.footer}>
+        <OnboardingPrimaryButton
+          label={inviteLink ? "Share invite" : "Create invite link"}
+          onPress={inviteLink ? onShare : onGenerate}
+          disabled={isGenerating}
+          busy={isGenerating}
+        />
+        <OnboardingPressable
+          accessibilityRole="button"
+          onPress={onFinish}
+          quiet
+          style={styles.quietButton}
+        >
+          <Text style={styles.quietButtonText}>
+            {inviteLink ? "Go to chat" : "Skip for now"}
+          </Text>
+        </OnboardingPressable>
+      </View>
+    );
+  }
+  let label: string;
+  let onPress: () => void;
+  let disabled = false;
+  let busy = false;
+  switch (step) {
+    case "confirm":
+      label = "Continue";
+      onPress = onConfirm;
+      disabled = !canConfirm;
+      break;
+    case "color":
+      label = `Create ${displayName}`;
+      onPress = onSubmit;
+      disabled = !canSubmit || submitting;
+      busy = submitting;
+      break;
+    case "live":
+      label = "Continue";
+      onPress = onLeaveLive;
+      disabled = logoBusy;
+      break;
+    default:
+      return null;
+  }
+  return (
+    <View style={styles.footer}>
+      <OnboardingPrimaryButton
+        label={label}
+        onPress={onPress}
+        disabled={disabled}
+        busy={busy}
+      />
+    </View>
+  );
+}
 
 function FindStep({
   rawQuery,
@@ -377,376 +839,409 @@ function FindStep({
   const hasQuery = trimmed.length >= DIRECTORY_MIN_QUERY_LENGTH;
   const showEmpty = hasQuery && !isFetching && !isError && results.length === 0;
 
+  // No line over the field: its placeholder already says what to type.
   return (
     <View style={styles.stack}>
-      <Text style={styles.body}>
-        Search the Greek-life directory by chapter letters, organization, or
-        school. We&apos;ll pre-fill the rest.
-      </Text>
-      <Text style={styles.inputLabel}>Search</Text>
-      <TextInput
+      <OnboardingTextInput
         value={rawQuery}
         onChangeText={onQueryChange}
-        placeholder="e.g. Sigma Phi Epsilon or UCLA"
-        placeholderTextColor={tokens.color.text.muted}
+        placeholder="Organization or school"
         autoCapitalize="none"
         autoCorrect={false}
+        autoFocus
+        returnKeyType="search"
         accessibilityLabel="Search the chapter directory"
-        style={styles.input}
       />
-
-      {!hasQuery ? (
-        <Text style={styles.helperText}>
-          Type at least {DIRECTORY_MIN_QUERY_LENGTH} characters to search.
-        </Text>
-      ) : null}
 
       {hasQuery && isFetching ? (
         <View style={styles.centerRow}>
-          <ActivityIndicator color={tokens.color.gold.house} />
-          <Text style={styles.helperText}>Searching the directory…</Text>
+          <ActivityIndicator color={tokens.color.text.muted} />
+          <Text style={styles.helperText}>Searching…</Text>
         </View>
       ) : null}
 
       {hasQuery && isError ? (
-        <View style={styles.stack}>
-          <Text style={styles.errorText}>
+        <View style={styles.centerRow}>
+          <Text style={[styles.errorText, styles.flex]}>
             We couldn&apos;t reach the directory.
           </Text>
-          <Pressable
+          <OnboardingPressable
             accessibilityRole="button"
             onPress={onRetry}
-            style={styles.secondaryButton}
+            quiet
+            style={styles.textButton}
           >
-            <Text style={styles.secondaryButtonText}>Retry search</Text>
-          </Pressable>
+            <Text style={styles.textButtonText}>Retry</Text>
+          </OnboardingPressable>
         </View>
       ) : null}
 
       {showEmpty ? (
         <Text style={styles.helperText}>
-          We couldn&apos;t find “{trimmed}” in our directory. Enter the details
-          by hand.
+          No match for “{trimmed}”. Add your chapter by hand below.
         </Text>
       ) : null}
 
       {!isFetching && !isError
         ? results.map((row) => (
-            <Pressable
+            <ChoiceRow
               key={row.id}
-              accessibilityRole="button"
-              accessibilityHint={`Use ${row.org_name} to pre-fill the wizard.`}
-              onPress={() => onSelect(row)}
-              style={styles.resultRow}
-            >
-              <Text style={styles.resultTitle}>
-                {row.org_letters ? `${row.org_letters} · ` : ""}
-                {row.org_name}
-              </Text>
-              <Text style={styles.resultMeta}>
-                {[row.chapter_designation, row.university]
+              title={directoryRowTitle(row)}
+              body={
+                [row.chapter_designation, row.university]
                   .filter(Boolean)
-                  .join(" · ")}
-              </Text>
-            </Pressable>
+                  .join(" · ") || undefined
+              }
+              accessibilityHint="Fills in your chapter's details."
+              onPress={() => onSelect(row)}
+            />
           ))
         : null}
 
-      <Pressable
-        accessibilityRole="button"
+      <ChoiceRow
+        title="Not in our directory?"
+        body="New colony or a smaller group. Add it by hand."
         onPress={onManual}
-        style={styles.dashedCard}
-      >
-        <Text style={styles.resultTitle}>Not in our directory?</Text>
-        <Text style={styles.helperText}>
-          New colony or a small org — enter your details by hand.
-        </Text>
-      </Pressable>
+      />
     </View>
   );
 }
 
-function ArchetypeStep({
-  selected,
-  onSelect,
-  styles,
-}: {
-  selected: ArchetypeKey;
-  onSelect: (key: ArchetypeKey) => void;
-  styles: Styles;
-}) {
-  return (
-    <View style={styles.stack}>
-      <Text style={styles.body}>
-        Your archetype sets sensible defaults for modules, roles, and
-        vocabulary. You can fine-tune everything later in Settings.
-      </Text>
-      {Object.values(ARCHETYPES).map((item) => {
-        const isActive = item.key === selected;
-        return (
-          <Pressable
-            key={item.key}
-            accessibilityRole="radio"
-            accessibilityState={{ selected: isActive }}
-            accessibilityLabel={`${item.label}, ${item.council}`}
-            onPress={() => onSelect(item.key)}
-            style={[styles.archetypeRow, isActive ? styles.archetypeRowOn : null]}
-          >
-            <Text style={styles.archetypeShort}>{item.short}</Text>
-            <Text style={styles.resultTitle}>{item.label}</Text>
-            <Text style={styles.resultMeta}>{item.council}</Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
-function IdentityStep({
+function ConfirmStep({
   identity,
   onChange,
   isManual,
-  accepted,
-  onAcceptedChange,
+  lettersHidden,
+  detailsOpen,
+  onToggleDetails,
+  asksArchetype,
+  archetype,
+  onArchetype,
+  mark,
   styles,
-  tokens,
 }: {
   identity: ChapterIdentityForm;
   onChange: (next: ChapterIdentityForm) => void;
   isManual: boolean;
-  accepted: boolean;
-  onAcceptedChange: (next: boolean) => void;
+  /** The organization whose letters this chapter hides, or `null`. */
+  lettersHidden: string | null;
+  detailsOpen: boolean;
+  onToggleDetails: () => void;
+  asksArchetype: boolean;
+  archetype: ArchetypeKey | null;
+  onArchetype: (key: ArchetypeKey) => void;
+  mark: ReactNode;
   styles: Styles;
-  tokens: SignetTokens;
 }) {
-  function set<K extends keyof ChapterIdentityForm>(key: K, value: ChapterIdentityForm[K]) {
+  function set<K extends keyof ChapterIdentityForm>(
+    key: K,
+    value: ChapterIdentityForm[K],
+  ) {
     onChange({ ...identity, [key]: value });
   }
+  const meta = [identity.designation.trim(), identity.university.trim()]
+    .filter(Boolean)
+    .join(" · ");
 
-  return (
-    <View style={styles.stack}>
-      <Text style={styles.body}>
-        {isManual
-          ? "Tell us about your chapter. We'll add it to our directory backlog so the next officer finds it."
-          : "Confirm your chapter details — everything is editable."}
-      </Text>
+  // Return moves to the next field on screen rather than dropping the
+  // keyboard after each one, and the last field's Return is Done. The order
+  // is the fields as drawn, so one the step hides is skipped. The mounted
+  // fields sit in one Map made once per mount (a `useState` initializer, not
+  // a `useRef`, so the ref callbacks built during render don't trip
+  // react-hooks/refs); only Return's handler reads it.
+  const [inputs] = useState(() => new Map<IdentityField, TextInput | null>());
+  const order: IdentityField[] = [
+    ...(isManual || detailsOpen ? (["name", "university"] as const) : []),
+    ...(detailsOpen
+      ? ([
+          "designation",
+          "shortName",
+          ...(lettersHidden ? [] : (["greekLetters"] as const)),
+          "schoolShort",
+          "foundedYear",
+        ] as const)
+      : []),
+  ];
+  function chain(
+    key: IdentityField,
+  ): Pick<
+    TextInputProps,
+    "returnKeyType" | "submitBehavior" | "onSubmitEditing"
+  > & { ref: (node: TextInput | null) => void } {
+    const next = order[order.indexOf(key) + 1];
+    return {
+      ref: (node) => {
+        inputs.set(key, node);
+      },
+      returnKeyType: next ? "next" : "done",
+      submitBehavior: next ? "submit" : "blurAndSubmit",
+      onSubmitEditing: next ? () => inputs.get(next)?.focus() : undefined,
+    };
+  }
 
+  const required = (
+    <>
       <Field
-        label="Chapter / organization name"
+        label="Organization"
         value={identity.name}
-        onChangeText={(value) => set("name", value)}
+        onChangeText={(value) =>
+          onChange(withOrgName(identity, value, !isManual))
+        }
         placeholder="Sigma Phi Epsilon"
+        autoCapitalize="words"
         styles={styles}
-        tokens={tokens}
+        {...chain("name")}
       />
       <Field
-        label="University"
+        label="School"
         value={identity.university}
         onChangeText={(value) => set("university", value)}
         placeholder="University of California, Los Angeles"
+        autoCapitalize="words"
         styles={styles}
-        tokens={tokens}
+        {...chain("university")}
+      />
+    </>
+  );
+
+  const optional = (
+    <>
+      <Field
+        label="Chapter"
+        value={identity.designation}
+        onChangeText={(value) => set("designation", value)}
+        placeholder="California Eta"
+        autoCapitalize="words"
+        styles={styles}
+        {...chain("designation")}
       />
       <Field
-        label="Greek letters"
-        value={identity.greekLetters}
-        onChangeText={(value) => set("greekLetters", value)}
-        placeholder="ΣΦΕ"
-        styles={styles}
-        tokens={tokens}
-      />
-      {/*
-        The chapter mark (#2876). A logo is added from the web dashboard's
-        Settings → Chapter for now; picking one here is #2883.
-      */}
-      <Field
-        label="Short name (optional)"
+        label="Short name"
         value={identity.shortName}
         onChangeText={(value) => set("shortName", value)}
         placeholder="FIJI"
         autoCapitalize="characters"
         maxLength={CHAPTER_SHORT_NAME_MAX_LENGTH}
         styles={styles}
-        tokens={tokens}
+        {...chain("shortName")}
       />
-      <View style={styles.switchRow}>
-        <View style={styles.switchText}>
-          <Text style={styles.inputLabel}>Show Greek letters</Text>
-          <Text style={styles.helperText}>
-            Turn off if your organization doesn&apos;t display its letters. Your
-            short name, or later a logo, stands in for them.
-          </Text>
-        </View>
-        <Switch
-          value={identity.showGreekLetters}
-          onValueChange={(value) => set("showGreekLetters", value)}
-          accessibilityLabel="Show Greek letters"
-          trackColor={{
-            false: tokens.color.border.input,
-            true: tint(tokens.color.gold.house, 0.3),
-          }}
-          thumbColor={
-            identity.showGreekLetters
-              ? tokens.color.gold.house
-              : tokens.color.surface.card
-          }
-        />
-      </View>
-      <Field
-        label="Chapter designation"
-        value={identity.designation}
-        onChangeText={(value) => set("designation", value)}
-        placeholder="California Eta"
-        styles={styles}
-        tokens={tokens}
-      />
+      {/*
+        An organization that hides its letters gets neither the field nor the
+        switch: its letters stay off (#3351). The short name stands in.
+      */}
+      {lettersHidden ? (
+        <Text style={styles.helperText}>
+          {lettersHidden} doesn&apos;t display its Greek letters, so your short
+          name stands in for them.
+        </Text>
+      ) : (
+        <>
+          <Field
+            label="Greek letters"
+            value={identity.greekLetters}
+            onChangeText={(value) => set("greekLetters", value)}
+            placeholder="ΣΦΕ"
+            autoCapitalize="characters"
+            styles={styles}
+            {...chain("greekLetters")}
+          />
+          <View style={styles.switchRow}>
+            <View style={styles.switchText}>
+              <Text style={styles.switchLabel}>Show Greek letters</Text>
+              <Text style={styles.helperText}>
+                Turn off if your organization doesn&apos;t display its letters.
+                Your short name or logo stands in for them.
+              </Text>
+            </View>
+            <Toggle
+              house
+              value={identity.showGreekLetters}
+              onValueChange={(value) => set("showGreekLetters", value)}
+              accessibilityLabel="Show Greek letters"
+            />
+          </View>
+        </>
+      )}
       <Field
         label="School short name"
         value={identity.schoolShort}
         onChangeText={(value) => set("schoolShort", value)}
         placeholder="UCLA"
+        autoCapitalize="characters"
         styles={styles}
-        tokens={tokens}
+        {...chain("schoolShort")}
       />
       <Field
-        label="Founded year"
+        label="Founded"
         value={identity.foundedYear}
         onChangeText={(value) => set("foundedYear", value)}
         placeholder="1948"
         keyboardType="number-pad"
+        // A year.
+        maxLength={4}
         styles={styles}
-        tokens={tokens}
+        {...chain("foundedYear")}
       />
-      <Field
-        label="Accent color"
-        value={identity.colorAccent}
-        onChangeText={(value) => set("colorAccent", value)}
-        placeholder={DEFAULT_CHAPTER_ACCENT}
-        autoCapitalize="characters"
-        mono
-        styles={styles}
-        tokens={tokens}
-        swatch={normalizeAccentInput(identity.colorAccent)}
-      />
+    </>
+  );
 
-      {/*
-        The officer's acceptance for the chapter and for themselves (#2302).
-        No Backwork line: the app has no Backwork (#2258).
-      */}
-      <TermsAcceptance accepted={accepted} onAcceptedChange={onAcceptedChange} />
+  // By hand, the title asks and the fields answer; no line between them.
+  return (
+    <View style={styles.stack}>
+      {isManual ? (
+        required
+      ) : (
+        <View style={styles.card} testID="confirm-card">
+          {mark}
+          <View style={styles.cardCopy}>
+            <Text style={styles.cardTitle}>{identity.name}</Text>
+            {meta ? <Text style={styles.body}>{meta}</Text> : null}
+          </View>
+        </View>
+      )}
+
+      <OnboardingPressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: detailsOpen }}
+        onPress={onToggleDetails}
+        quiet
+        style={styles.textButton}
+      >
+        <Text style={styles.textButtonText}>
+          {isManual
+            ? detailsOpen
+              ? "Hide more details"
+              : "More details (optional)"
+            : detailsOpen
+              ? "Hide details"
+              : "Edit details"}
+        </Text>
+      </OnboardingPressable>
+
+      {detailsOpen ? (
+        <View style={styles.stack}>
+          {isManual ? null : required}
+          {optional}
+        </View>
+      ) : null}
+
+      {asksArchetype ? (
+        <View style={styles.stack} accessibilityRole="radiogroup">
+          <OnboardingFieldLabel>
+            What kind of organization?
+          </OnboardingFieldLabel>
+          {Object.values(ARCHETYPES).map((item) => {
+            const isActive = item.key === archetype;
+            return (
+              <Pressable
+                key={item.key}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: isActive }}
+                accessibilityLabel={`${item.label}, ${item.council}`}
+                onPress={() => onArchetype(item.key)}
+                // ChoiceRow's press: the row steps down the surface ladder
+                // while it's held. A picked row keeps its gold tint.
+                style={({ pressed }) => [
+                  styles.archetypeRow,
+                  pressed && !isActive ? styles.archetypeRowPressed : null,
+                  isActive ? styles.archetypeRowOn : null,
+                ]}
+              >
+                <Text style={styles.cardTitle}>{item.label}</Text>
+                <Text style={styles.helperText}>{item.council}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
     </View>
   );
 }
 
+/** The identity fields setup's confirm step draws, in the order it draws them. */
+type IdentityField =
+  | "name"
+  | "university"
+  | "designation"
+  | "shortName"
+  | "greekLetters"
+  | "schoolShort"
+  | "foundedYear";
+
+/**
+ * One labelled identity field. Every other `TextInput` prop passes through,
+ * so the step can set each one's capitalization, its Return key and the ref
+ * the next field's focus moves through.
+ */
 function Field({
   label,
-  value,
-  onChangeText,
-  placeholder,
   styles,
-  tokens,
-  keyboardType,
-  autoCapitalize,
-  maxLength,
-  mono,
-  swatch,
+  ...input
 }: {
   label: string;
-  value: string;
-  onChangeText: (value: string) => void;
-  placeholder: string;
   styles: Styles;
-  tokens: SignetTokens;
-  keyboardType?: "number-pad";
-  autoCapitalize?: "characters" | "none";
-  maxLength?: number;
-  mono?: boolean;
-  swatch?: string;
-}) {
+  ref?: Ref<TextInput>;
+} & TextInputProps) {
   return (
     <View style={styles.field}>
-      <Text style={styles.inputLabel}>{label}</Text>
-      <View style={styles.swatchRow}>
-        {swatch ? (
-          <View
-            accessibilityLabel={`${label} preview`}
-            style={[styles.swatch, { backgroundColor: swatch }]}
-          />
-        ) : null}
-        <TextInput
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor={tokens.color.text.muted}
-          autoCapitalize={autoCapitalize ?? "sentences"}
-          autoCorrect={false}
-          keyboardType={keyboardType}
-          maxLength={maxLength}
-          accessibilityLabel={label}
-          style={[styles.input, styles.inputFlex, mono ? styles.mono : null]}
-        />
-      </View>
+      <OnboardingFieldLabel>{label}</OnboardingFieldLabel>
+      <OnboardingTextInput
+        autoCorrect={false}
+        accessibilityLabel={label}
+        {...input}
+      />
     </View>
   );
 }
 
+/**
+ * The invite step's body. `Create invite link` and `Share invite` are the
+ * footer's gold button; this draws what the link is and the link itself.
+ *
+ * An invite lets one person in and lapses after a day (`used_at`, 24 hours:
+ * `spec/behavior/onboarding.md`), so the copy says that rather than offering
+ * a link for the whole chapter, which a founder would drop in a group chat
+ * and see work once. `Create another link` makes the next one without
+ * leaving, for a founder inviting several people.
+ */
 function InviteStep({
   inviteLink,
   isGenerating,
   onGenerate,
-  onShare,
   styles,
-  tokens,
 }: {
   inviteLink: string | null;
   isGenerating: boolean;
   onGenerate: () => void;
-  onShare: () => void;
   styles: Styles;
-  tokens: SignetTokens;
 }) {
   return (
     <View style={styles.stack}>
       <Text style={styles.body}>
-        Share a join link so your chapter can hop into #general. This step is
-        optional — you can invite more members later from the web dashboard.
+        Each link lets one person join and expires after 24 hours.
       </Text>
       {inviteLink ? (
-        <View style={styles.dashedCard}>
-          <Text style={styles.inputLabel}>Your chapter invite link</Text>
-          <Text selectable style={styles.monoBody}>
-            {inviteLink}
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={onShare}
-            style={styles.secondaryButton}
-          >
-            <Text style={styles.secondaryButtonText}>Share invite</Text>
-          </Pressable>
-          <Text style={styles.helperText}>
-            Anyone with this link can join as a member. Invites expire after 24
-            hours and work once.
-          </Text>
+        <View style={styles.card}>
+          <View style={styles.cardCopy}>
+            <Text selectable style={styles.monoBody}>
+              {inviteLink}
+            </Text>
+            <OnboardingPressable
+              accessibilityRole="button"
+              accessibilityState={{
+                disabled: isGenerating,
+                busy: isGenerating,
+              }}
+              disabled={isGenerating}
+              onPress={onGenerate}
+              quiet
+              style={styles.textButton}
+            >
+              <Text style={styles.textButtonText}>Create another link</Text>
+            </OnboardingPressable>
+          </View>
         </View>
-      ) : (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ disabled: isGenerating }}
-          disabled={isGenerating}
-          onPress={onGenerate}
-          style={[
-            styles.primaryButton,
-            isGenerating ? styles.primaryButtonDisabled : null,
-          ]}
-        >
-          {isGenerating ? (
-            <ActivityIndicator color={tokens.color.gold.onHouse} />
-          ) : (
-            <Text style={styles.primaryButtonText}>Generate invite link</Text>
-          )}
-        </Pressable>
-      )}
+      ) : null}
     </View>
   );
 }
@@ -754,29 +1249,31 @@ function InviteStep({
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     flex: { flex: 1 },
-    container: {
+    safeArea: {
       flex: 1,
       backgroundColor: tokens.color.surface.background,
+    },
+    container: {
+      flex: 1,
+      width: "100%",
+      maxWidth: ONBOARDING_COLUMN_WIDTH + tokens.spacing.xl * 2,
+      alignSelf: "center",
       paddingHorizontal: tokens.spacing.xl,
-      paddingTop: tokens.spacing["3xl"],
     },
-    kicker: {
-      ...typeRole(tokens.typography.role.caption),
-      letterSpacing: 0.3,
-      textTransform: "uppercase",
-      color: tokens.color.text.muted,
-    },
-    title: {
-      marginTop: tokens.spacing.xs,
-      ...typeRole(tokens.typography.role.headline),
-      letterSpacing: -0.3,
-      color: tokens.color.text.foreground,
+    // A column, so `BackRow` spans it and its ticks can take the width the
+    // `‹ Back` leaves. The row's own bottom margin and this one's add up to
+    // the `md` under the header.
+    header: {
+      minHeight: tokens.touch.minimum,
+      justifyContent: "center",
+      marginTop: tokens.spacing.sm,
+      marginBottom: tokens.spacing.xs,
     },
     progressRow: {
+      flex: 1,
       flexDirection: "row",
       gap: tokens.spacing.xs,
-      marginTop: tokens.spacing.md,
-      marginBottom: tokens.spacing.lg,
+      marginLeft: tokens.spacing.lg,
     },
     progressTick: {
       flex: 1,
@@ -791,6 +1288,11 @@ function createStyles(tokens: SignetTokens) {
       gap: tokens.spacing.md,
       paddingBottom: tokens.spacing.lg,
     },
+    title: {
+      ...typeRole(tokens.typography.role.headline),
+      letterSpacing: -0.3,
+      color: tokens.color.text.foreground,
+    },
     stack: {
       gap: tokens.spacing.md,
     },
@@ -798,43 +1300,17 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
     },
-    inputLabel: {
+    // A setting's name beside its switch, as a Settings row's label reads.
+    switchLabel: {
       ...typeRole(tokens.typography.role.label),
-      letterSpacing: 0.3,
-      textTransform: "uppercase",
-      color: tokens.color.text.muted,
-    },
-    input: {
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.sm,
-      minHeight: tokens.touch.minimum,
-      ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },
-    inputFlex: { flex: 1 },
-    mono: { fontFamily: MONO_FONT_FAMILY },
     monoBody: {
       ...typeRole(tokens.typography.role.caption),
       fontFamily: MONO_FONT_FAMILY,
       color: tokens.color.text.foreground,
     },
-    field: { gap: tokens.spacing.xs },
-    swatchRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-    },
-    swatch: {
-      width: tokens.touch.minimum,
-      height: tokens.touch.minimum,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-    },
+    field: { gap: tokens.spacing.sm },
     switchRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -855,76 +1331,82 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       gap: tokens.spacing.sm,
     },
-    resultRow: {
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
-      padding: tokens.spacing.md,
-      gap: tokens.spacing.xs,
-      minHeight: tokens.touch.minimum,
-    },
-    resultTitle: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-    },
-    resultMeta: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    dashedCard: {
+    card: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
-      padding: tokens.spacing.md,
+      padding: tokens.spacing.lg,
+    },
+    cardCopy: {
+      flex: 1,
+      minWidth: 0,
       gap: tokens.spacing.sm,
+    },
+    cardTitle: {
+      flexShrink: 1,
+      ...typeRole(tokens.typography.role.title),
+      color: tokens.color.text.foreground,
+    },
+    previewRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+    },
+    liveMark: {
+      alignSelf: "flex-start",
+      marginTop: tokens.spacing.lg,
+      marginBottom: tokens.spacing.sm,
+    },
+    logoBlock: {
+      gap: tokens.spacing.sm,
+      marginTop: tokens.spacing.sm,
+    },
+    textButton: {
+      alignSelf: "flex-start",
+      minHeight: tokens.touch.minimum,
+      justifyContent: "center",
+    },
+    textButtonText: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.gold.askText,
+    },
+    // The invite step's way out under its gold button: a 44pt line of muted
+    // text, there when wanted and not competing with the invite.
+    quietButton: {
+      alignSelf: "center",
+      minHeight: tokens.touch.minimum,
+      paddingHorizontal: tokens.spacing.lg,
+      justifyContent: "center",
+      marginTop: tokens.spacing.xs,
+    },
+    quietButtonText: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.mutedForeground,
     },
     archetypeRow: {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
-      padding: tokens.spacing.md,
-      gap: tokens.spacing.xs,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
+      gap: 2,
       minHeight: tokens.touch.minimum,
+      justifyContent: "center",
+    },
+    archetypeRowPressed: {
+      backgroundColor: tokens.color.surface.surface1,
     },
     archetypeRowOn: {
       borderColor: tokens.color.gold.house,
       backgroundColor: tint(tokens.color.gold.house),
     },
-    archetypeShort: {
-      ...typeRole(tokens.typography.role.caption),
-      letterSpacing: 0.3,
-      textTransform: "uppercase",
-      color: tokens.color.text.muted,
-    },
     footer: {
       paddingVertical: tokens.spacing.lg,
-      gap: tokens.spacing.sm,
-    },
-    primaryButton: {
-      borderRadius: tokens.radius.control,
-      backgroundColor: tokens.color.gold.house,
-      minHeight: tokens.touch.button,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    primaryButtonDisabled: {
-      opacity: 0.55,
-    },
-    primaryButtonText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.onHouse,
-    },
-    secondaryButton: {
-      minHeight: tokens.touch.button,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    secondaryButtonText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.mutedForeground,
     },
   });
 }

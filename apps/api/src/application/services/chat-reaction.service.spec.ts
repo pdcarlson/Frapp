@@ -316,6 +316,38 @@ describe('ChatReactionService', () => {
         expect(mockActionRepo.create).not.toHaveBeenCalled();
       });
 
+      // A card with no options is left alone, but one whose options aren't a
+      // list can't be checked at all, so the vote is refused, not recorded.
+      it.each([{ options: 'opt-a,opt-b' }, { options: {} }])(
+        'refuses a vote on a card whose options are %j',
+        async ({ options }) => {
+          mockMessageRepo.findById.mockResolvedValue({
+            ...pollMessage,
+            payload: { ...pollMessage.payload, options },
+          });
+
+          await expect(vote({ option_id: 'opt-a' })).rejects.toThrow(
+            BadRequestException,
+          );
+          expect(mockActionRepo.create).not.toHaveBeenCalled();
+        },
+      );
+
+      it('records a vote on a card with no options, unchecked', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...pollMessage,
+          payload: { question: 'Formal venue?' },
+        });
+        mockActionRepo.create.mockResolvedValue({
+          ...baseAction,
+          action_type: 'vote',
+        });
+
+        await expect(vote({ option_id: 'opt-z' })).resolves.toMatchObject({
+          deduplicated: false,
+        });
+      });
+
       it('still records a valid vote', async () => {
         mockMessageRepo.findById.mockResolvedValue(pollMessage);
         mockActionRepo.create.mockResolvedValue({

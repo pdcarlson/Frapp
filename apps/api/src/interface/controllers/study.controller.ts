@@ -16,6 +16,10 @@ import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
 import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
+import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
@@ -27,6 +31,7 @@ import {
   ResumeStudySessionDto,
 } from '../dtos/study.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
+import type { StudySession } from '#domain/entities/study.entity';
 
 @ApiTags('Study Hours')
 @ApiBearerAuth()
@@ -46,6 +51,7 @@ export class StudyGeofenceController {
   @Post()
   @RequirePermissions(SystemPermissions.GEOFENCES_MANAGE)
   @ApiOperation({ summary: 'Create geofence (admin)' })
+  @FeatureEvent('geofence-created')
   async create(
     @CurrentChapterId() chapterId: string,
     @Body() dto: CreateGeofenceDto,
@@ -92,6 +98,7 @@ export class StudySessionController {
 
   @Post('start')
   @ApiOperation({ summary: 'Start study session (with lat/lng)' })
+  @FeatureEvent('study-session-started')
   async start(
     @CurrentUser('id') userId: string,
     @CurrentChapterId() chapterId: string,
@@ -151,6 +158,14 @@ export class StudySessionController {
 
   @Post('stop')
   @ApiOperation({ summary: 'Stop session and calculate points' })
+  @FeatureEvent(
+    'study-session-stopped',
+    ({ result }: FeatureEventInput<unknown, StudySession>) => ({
+      // COMPLETED, or EXPIRED / PAUSED_EXPIRED when stop settled a lapsed one.
+      outcome: result.status.toLowerCase(),
+      duration_minutes: result.total_foreground_minutes,
+    }),
+  )
   async stop(
     @CurrentUser('id') userId: string,
     @CurrentChapterId() chapterId: string,

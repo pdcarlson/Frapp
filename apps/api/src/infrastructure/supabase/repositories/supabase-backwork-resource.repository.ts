@@ -92,6 +92,20 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
     return data || [];
   }
 
+  async findByIds(
+    ids: string[],
+    chapterId: string,
+  ): Promise<BackworkResource[]> {
+    if (ids.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('backwork_resources')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .in('id', ids);
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
   async findByFileHash(
     chapterId: string,
     fileHash: string,

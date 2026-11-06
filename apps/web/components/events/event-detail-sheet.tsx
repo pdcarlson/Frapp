@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { AlertTriangle, CalendarPlus, Loader2, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarPlus,
+  Loader2,
+  Pencil,
+  Trash2,
+} from "lucide-react";
+import { SectionSkeleton } from "@/components/shared/page-skeletons";
+import { SkeletonText } from "@/components/shared/async-states";
 import {
   PointsGlyph,
   RolesGlyph,
@@ -16,21 +24,21 @@ import {
 } from "@repo/hooks";
 import { useToast } from "@/lib/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
+import { Sheet } from "@/components/ui/sheet";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  PanelBody,
+  PanelContent,
+  PanelHeader,
+} from "@/components/shared/panel";
 import { AttendancePanel } from "@/components/events/attendance-panel";
 import { normalizeRoleOptions } from "@/lib/roles";
-import { formatLocaleDateTime as formatDateTime } from "@repo/formatting";
+import { formatDayTimeRange } from "@repo/formatting";
+import { pointsLabel, recurrenceLabel } from "@/components/events/event-labels";
 import { downloadBlob, getErrorMessage } from "@/lib/utils";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 
@@ -93,11 +101,17 @@ export function EventDetailSheet({
     typeof resolvedEvent?.is_mandatory === "boolean"
       ? resolvedEvent.is_mandatory
       : false;
-  const recurrenceRule =
-    typeof resolvedEvent?.recurrence_rule === "string" &&
-    resolvedEvent.recurrence_rule.length > 0
-      ? resolvedEvent.recurrence_rule
-      : "One-time";
+  // `null` for a one-time event, which then shows no cadence badge at all.
+  const cadence = recurrenceLabel(resolvedEvent?.recurrence_rule);
+  const schedule = formatDayTimeRange(
+    resolvedEvent?.start_time,
+    resolvedEvent?.end_time,
+  );
+  const location =
+    typeof resolvedEvent?.location === "string" && resolvedEvent.location.trim()
+      ? resolvedEvent.location.trim()
+      : null;
+  const points = pointsLabel(resolvedEvent?.point_value);
   const description =
     typeof resolvedEvent?.description === "string"
       ? resolvedEvent.description
@@ -219,193 +233,214 @@ export function EventDetailSheet({
     }
   }
 
+  const editControl = gate.controlProps(!resolvedEvent);
+  const deleteControl = gate.controlProps(
+    !canMutate || deleteEventMutation.isPending,
+  );
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
-        <SheetHeader>
-          <SheetTitle>{eventName}</SheetTitle>
-          <SheetDescription>
-            Review scheduling details, recurrence settings, and attendance
-            policy.
-          </SheetDescription>
-        </SheetHeader>
-
-        {usingPreviewData ? (
-          <div className="mt-5 flex items-start gap-3 rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <div>
-              Showing preview event details. Sign in to edit and delete live
-              events.
-            </div>
-          </div>
-        ) : null}
-
-        {eventQuery.isLoading && !usingPreviewData ? (
-          <div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading event details...
-          </div>
-        ) : null}
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button
-            variant="secondary"
-            {...gate.controlProps(!resolvedEvent)}
-            onClick={() => {
-              if (!resolvedEvent) return;
-              onRequestEdit(resolvedEvent);
-            }}
-          >
-            Edit event
-          </Button>
-          <Button
-            variant="destructive"
-            {...gate.controlProps(!canMutate || deleteEventMutation.isPending)}
-            onClick={handleDelete}
-          >
-            {deleteEventMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Trash2 className="h-4 w-4" />
-            )}
-            Delete event
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={!canMutate || downloadIcsMutation.isPending}
-            onClick={handleAddToCalendar}
-          >
-            {downloadIcsMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <CalendarPlus className="h-4 w-4" />
-            )}
-            Add to calendar
-          </Button>
-        </div>
-
-        <SubscriptionNotice gate={gate} feature="editing events" />
-
-        <div className="mt-5 grid gap-3">
-          <div className="rounded-lg border border-border p-3">
-            <p className="mb-2 text-caption text-muted-foreground">
-              Attendance policy
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={isMandatory ? "default" : "secondary"}>
-                {isMandatory ? "Mandatory" : "Optional"}
-              </Badge>
-              <Badge variant="outline">{recurrenceRule}</Badge>
-            </div>
-            <div className="mt-3">
-              <p className="mb-1 flex items-center gap-1 text-caption text-muted-foreground">
-                <RolesGlyph className="h-3.5 w-3.5" />
-                Required roles
-              </p>
-              {requiredRoleIds.length === 0 ? (
-                <p className="text-sm text-muted-foreground">All members</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {requiredRoleIds.map((id) => (
-                    <Badge key={id} variant="outline">
-                      {roleNameById.get(id) ?? `Role ${id.slice(0, 8)}`}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="mt-3">
-              <p className="mb-1 flex items-center gap-1 text-caption text-muted-foreground">
-                <StudyZonesGlyph className="h-3.5 w-3.5" />
-                Check-in zone
-              </p>
-              {hasCheckInZone ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="default">
-                    {checkInZoneName ? checkInZoneName : "Zone set"}
-                  </Badge>
-                  <span className="text-sm text-muted-foreground">
-                    {checkInZonePoints} points. Members must be inside to check
-                    in
-                  </span>
-                </div>
-              ) : checkInZoneIsMalformed ? (
-                <div className="flex items-start gap-2 rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <div>
-                    This event&apos;s zone is incomplete, so every check-in is
-                    rejected. Edit the event to finish or clear it.
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  No zone, so members can check in from anywhere
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-border p-3">
-            <p className="mb-2 text-caption text-muted-foreground">Schedule</p>
-            <div className="space-y-2 text-sm">
-              <div className="flex items-start gap-2">
-                <ScheduleGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                <div>
-                  <p>Starts: {formatDateTime(resolvedEvent?.start_time)}</p>
-                  <p>Ends: {formatDateTime(resolvedEvent?.end_time)}</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-2">
-                <StudyZonesGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                <p>
-                  {typeof resolvedEvent?.location === "string"
-                    ? resolvedEvent.location
-                    : "TBD"}
-                </p>
-              </div>
-              <div className="flex items-start gap-2">
-                <PointsGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                <p>
-                  {typeof resolvedEvent?.point_value === "number"
-                    ? `${resolvedEvent.point_value} point(s)`
-                    : "0 points"}
-                </p>
+      {/*
+        No description: the one this had explained the sheet to someone already
+        reading it. `aria-describedby={undefined}` says so to Radix, which
+        otherwise warns about a missing Description.
+      */}
+      <PanelContent aria-describedby={undefined}>
+        {/*
+          The panel's actions are icons in its title row, beside the close
+          (components.md § Chrome weight). They were three full-width worded
+          buttons opening the body, which made the first thing in an event's
+          details a toolbar. The words live on as each control's accessible
+          name and tooltip (`IconButton`, components.md § Icon-only actions).
+        */}
+        <PanelHeader
+          actions={
+            <>
+              <IconButton
+                label="Add to calendar"
+                disabled={!canMutate || downloadIcsMutation.isPending}
+                onClick={handleAddToCalendar}
+              >
+                {downloadIcsMutation.isPending ? (
+                  <Loader2 className="animate-spin" aria-hidden="true" />
+                ) : (
+                  <CalendarPlus aria-hidden="true" />
+                )}
+              </IconButton>
+              <IconButton
+                label="Edit event"
+                {...editControl}
+                onClick={() => {
+                  if (!resolvedEvent) return;
+                  onRequestEdit(resolvedEvent);
+                }}
+              >
+                <Pencil aria-hidden="true" />
+              </IconButton>
+              <IconButton
+                label="Delete event"
+                className="hover:text-destructive-text"
+                {...deleteControl}
+                onClick={handleDelete}
+              >
+                {deleteEventMutation.isPending ? (
+                  <Loader2 className="animate-spin" aria-hidden="true" />
+                ) : (
+                  <Trash2 aria-hidden="true" />
+                )}
+              </IconButton>
+            </>
+          }
+        >
+          {eventName}
+        </PanelHeader>
+        {/* `gap-0`: the blocks below carry their own top margins. */}
+        <PanelBody className="gap-0">
+          {usingPreviewData ? (
+            <div className="mt-5 flex items-start gap-3 rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                Showing preview event details. Sign in to edit and delete live
+                events.
               </div>
             </div>
-          </div>
+          ) : null}
 
-          {description ? (
+          {eventQuery.isLoading && !usingPreviewData ? (
+            // A skeleton, not a spinner and caption (`components.md` §10).
+            <SectionSkeleton label="Loading event details" className="mt-6">
+              <SkeletonText lines={4} />
+            </SectionSkeleton>
+          ) : null}
+
+          <SubscriptionNotice gate={gate} feature="editing events" />
+
+          <div className="mt-5 grid gap-3">
             <div className="rounded-lg border border-border p-3">
-              <p className="mb-1 text-caption text-muted-foreground">
-                Description
+              <p className="mb-2 text-caption text-muted-foreground">
+                Attendance policy
               </p>
-              {/* Same fix as the minutes block below: the source is a
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={isMandatory ? "destructive" : "secondary"}>
+                  {isMandatory ? "Mandatory" : "Optional"}
+                </Badge>
+                {cadence ? <Badge variant="outline">{cadence}</Badge> : null}
+              </div>
+              <div className="mt-3">
+                <p className="mb-1 flex items-center gap-1 text-caption text-muted-foreground">
+                  <RolesGlyph className="h-3.5 w-3.5" />
+                  Required roles
+                </p>
+                {requiredRoleIds.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">All members</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {requiredRoleIds.map((id) => (
+                      <Badge key={id} variant="outline">
+                        {roleNameById.get(id) ?? `Role ${id.slice(0, 8)}`}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="mt-3">
+                <p className="mb-1 flex items-center gap-1 text-caption text-muted-foreground">
+                  <StudyZonesGlyph className="h-3.5 w-3.5" />
+                  Check-in zone
+                </p>
+                {hasCheckInZone ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="default">
+                      {checkInZoneName ? checkInZoneName : "Zone set"}
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      {checkInZonePoints} points. Members must be inside to
+                      check in
+                    </span>
+                  </div>
+                ) : checkInZoneIsMalformed ? (
+                  <div className="flex items-start gap-2 rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <div>
+                      This event&apos;s zone is incomplete, so every check-in is
+                      rejected. Edit the event to finish or clear it.
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No zone, so members can check in from anywhere
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border p-3">
+              <p className="mb-2 text-caption text-muted-foreground">
+                Schedule
+              </p>
+              {/*
+              One line for when, the mobile event header's shape, in place of
+              "Starts:" and "Ends:" lines. A fact the event does not have drops
+              out rather than reading "TBD" or "0 points".
+            */}
+              <div className="space-y-2 text-sm">
+                <div className="flex items-start gap-2">
+                  <ScheduleGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                  <p>{schedule ?? "Not set"}</p>
+                </div>
+                {location ? (
+                  <div className="flex items-start gap-2">
+                    <StudyZonesGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                    <p>{location}</p>
+                  </div>
+                ) : null}
+                {points ? (
+                  <div className="flex items-start gap-2">
+                    <PointsGlyph className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                    <p>{points}</p>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            {description ? (
+              <div className="rounded-lg border border-border p-3">
+                <p className="mb-1 text-caption text-muted-foreground">
+                  Description
+                </p>
+                {/* Same fix as the minutes block below: the source is a
                   multi-line Textarea, so preserve line breaks instead of
                   collapsing them. */}
-              <p className="whitespace-pre-wrap break-words text-sm">
-                {description}
-              </p>
-            </div>
-          ) : null}
+                <p className="whitespace-pre-wrap break-words text-sm">
+                  {description}
+                </p>
+              </div>
+            ) : null}
 
-          {notes ? (
-            <div className="rounded-lg border border-border p-3">
-              <p className="mb-1 text-caption text-muted-foreground">
-                Meeting minutes
-              </p>
-              {/* Same plain-text convention as chat's TextRenderer (#369 owns
+            {notes ? (
+              <div className="rounded-lg border border-border p-3">
+                <p className="mb-1 text-caption text-muted-foreground">
+                  Meeting minutes
+                </p>
+                {/* Same plain-text convention as chat's TextRenderer (#369 owns
                   a real markdown renderer if that lands later) — preserve the
                   line breaks admins typed instead of collapsing them. */}
-              <p className="whitespace-pre-wrap break-words text-sm">{notes}</p>
-            </div>
-          ) : null}
+                <p className="whitespace-pre-wrap break-words text-sm">
+                  {notes}
+                </p>
+              </div>
+            ) : null}
 
-          {eventId && !usingPreviewData ? (
-            <AttendancePanel eventId={eventId} />
-          ) : null}
-        </div>
+            {eventId && !usingPreviewData ? (
+              <AttendancePanel
+                eventId={eventId}
+                eventStart={resolvedEvent?.start_time}
+              />
+            ) : null}
+          </div>
+        </PanelBody>
         {confirmDialog}
-      </SheetContent>
+      </PanelContent>
     </Sheet>
   );
 }

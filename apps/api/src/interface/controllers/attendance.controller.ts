@@ -20,6 +20,11 @@ import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
 import {
+  FeatureEvent,
+  type FeatureEventInput,
+  hasText,
+} from '../decorators/feature-event.decorator';
+import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
@@ -29,6 +34,24 @@ import {
   UpdateAttendanceDto,
 } from '../dtos/attendance.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
+
+/**
+ * How a check-in was made, from the credential the request carried. The
+ * service admits a request on either credential when it carries both, so that
+ * case is its own value rather than a guess. A credential counts when it could
+ * have admitted the request, which is what `hasText` reads from the raw body:
+ * implicit conversion turns a number into the string the DTO wants (an
+ * all-digit manual code verifies), while a blank or `null` one never verifies.
+ */
+function checkInMethod(
+  body: CheckInDto | undefined,
+): 'qr' | 'manual_code' | 'plain' | 'qr_or_manual_code' {
+  const token = hasText(body?.token);
+  const manualCode = hasText(body?.manualCode);
+  if (token && manualCode) return 'qr_or_manual_code';
+  if (token) return 'qr';
+  return manualCode ? 'manual_code' : 'plain';
+}
 
 @ApiTags('Attendance')
 @ApiBearerAuth()
@@ -44,6 +67,14 @@ export class AttendanceController {
     description:
       'Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.',
   })
+  // The body is optional (a bare plain check-in), so it may be absent.
+  @FeatureEvent(
+    'attendance-checked-in',
+    ({ body }: FeatureEventInput<CheckInDto | undefined>) => ({
+      method: checkInMethod(body),
+      has_location: body?.lat != null && body?.lng != null,
+    }),
+  )
   async checkIn(
     @Param('eventId') eventId: string,
     @CurrentUser('id') userId: string,
@@ -60,9 +91,12 @@ export class AttendanceController {
 
   // GET, not POST: minting writes nothing — the code is derived from the event
   // id, the clock, and the signing secret. Beyond being the honest verb, it
-  // keeps the host screen's ~6 requests/minute of polling on the read throttle
-  // bucket (100/60s) instead of the write bucket (30/60s), which an officer
-  // running check-in also needs for everything else they are doing.
+  // keeps the host screen's requests on the read throttle bucket (100/60s)
+  // instead of the write bucket (30/60s), which an officer running check-in
+  // also needs for everything else they are doing. The screen asks about once
+  // per 30s rotation, again each time it regains focus, and every 10s only
+  // while a request is failing in a way that may clear (`useMintCheckInToken`
+  // in `@repo/hooks`).
   @Get('check-in-token')
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
@@ -93,6 +127,13 @@ export class AttendanceController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
   @ApiOperation({ summary: 'Update attendance status for a member' })
+  @FeatureEvent(
+    'attendance-marked',
+    ({ body }: FeatureEventInput<UpdateAttendanceDto>) => ({
+      status: body.status,
+      has_excuse: hasText(body.excuse_reason),
+    }),
+  )
   async updateStatus(
     @Param('eventId') eventId: string,
     @Param('userId') userId: string,

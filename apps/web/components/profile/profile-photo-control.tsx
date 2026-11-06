@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import {
   putSignedUpload,
   useActiveChapterId,
@@ -16,6 +16,7 @@ import {
   readSignedUpload,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -136,7 +137,7 @@ export function ProfilePhotoControl({
       <Button
         type="button"
         variant="secondary"
-        size="sm"
+        size="toolbar"
         disabled={uploadBlocked}
         onClick={() => inputRef.current?.click()}
       >
@@ -146,18 +147,21 @@ export function ProfilePhotoControl({
         {hasPhoto ? "Change photo" : "Add photo"}
       </Button>
       {hasPhoto ? (
-        <Button
+        // A trash glyph beside the worded "Change photo", which has no glyph
+        // that says it (components.md § Icon-only actions).
+        <IconButton
           type="button"
-          variant="ghost"
-          size="sm"
+          label="Remove photo"
           disabled={disabled || busy !== null}
+          aria-busy={busy === "remove"}
           onClick={() => void handleRemove()}
         >
           {busy === "remove" ? (
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-          ) : null}
-          Remove
-        </Button>
+            <Loader2 className="animate-spin" aria-hidden="true" />
+          ) : (
+            <Trash2 aria-hidden="true" />
+          )}
+        </IconButton>
       ) : null}
       {!chapterId ? (
         <p className="w-full text-caption text-muted-foreground">

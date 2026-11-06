@@ -1,4 +1,4 @@
-import { safeObjectFilename } from './storage';
+import { isObjectKeySegment, safeObjectFilename } from './storage';
 
 describe('safeObjectFilename', () => {
   it.each([
@@ -41,7 +41,47 @@ describe('safeObjectFilename', () => {
     expect(safeObjectFilename('..\\..\\x.pdf')).toBe('.._.._x.pdf');
   });
 
+  it('drops a trailing space, which the request URL would strip', () => {
+    expect(safeObjectFilename('bylaws.pdf  ')).toBe('bylaws.pdf');
+    expect(safeObjectFilename(' notes .pdf')).toBe(' notes .pdf');
+  });
+
   it('squashes percent-encoded separators, so they never reach storage as `/`', () => {
     expect(safeObjectFilename('..%2f..%2fx.pdf')).toBe('.._2f.._2fx.pdf');
+  });
+});
+
+describe('isObjectKeySegment', () => {
+  it.each([
+    'bylaws.pdf',
+    "Bob's notes (final), A&B $1=@;:+!*.pdf",
+    '4a5c1f0e-3d2b-4c8a-9f1e-2b7d6c5a4e3f',
+  ])('accepts a segment a minted key can hold (%p)', (segment) => {
+    expect(isObjectKeySegment(segment)).toBe(true);
+  });
+
+  it.each([
+    '',
+    ' ',
+    'a?b.pdf',
+    'a#b.pdf',
+    'a%41.pdf',
+    'a/b.pdf',
+    'Résumé.pdf',
+    'bylaws.pdf ',
+  ])('refuses a segment a minted key never holds (%p)', (segment) => {
+    expect(isObjectKeySegment(segment)).toBe(false);
+  });
+
+  it('accepts whatever safeObjectFilename produces', () => {
+    for (const name of [
+      'Rush #3.pdf',
+      'q?.pdf',
+      'Q1 50% growth.pdf',
+      'Résumé.pdf',
+      'bylaws.pdf ',
+    ]) {
+      expect(isObjectKeySegment(safeObjectFilename(name))).toBe(true);
+    }
   });
 });

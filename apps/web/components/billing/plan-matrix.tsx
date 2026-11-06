@@ -1,4 +1,5 @@
 import { MODULE_CATALOG } from "@repo/org-archetypes";
+import { isBetaOffModule } from "@repo/validation";
 import { DASHBOARD_NAV_ITEMS } from "@/components/layout/nav-config";
 import { SETTINGS_TOOLS } from "@/components/settings/settings-access";
 import { EYEBROW } from "@/components/ui/typography";
@@ -91,7 +92,7 @@ const SHIPPED_PAID_KEYS = new Set<string>([
 ]);
 
 const FREE_MODULES = MODULE_CATALOG.filter((entry) => entry.tier === "free");
-const PAID_MODULES = MODULE_CATALOG.filter(
+const SHIPPED_PAID_MODULES = MODULE_CATALOG.filter(
   (entry) => entry.tier === "paid" && SHIPPED_PAID_KEYS.has(entry.key),
 );
 
@@ -103,7 +104,7 @@ const PAID_MODULES = MODULE_CATALOG.filter(
  * semantic hue — a red dash would read as something having gone wrong — and it
  * is not `--disabled` either, which the first cut of this file used on
  * foundations §5's "present but not available" reading. That token is
- * `#57534C`, which measures **2.45:1** on `--background` and 2.28:1 on
+ * `#525252`, which measures **2.53:1** on `--background` and 2.42:1 on
  * `--surface-1`, under the 4.5:1 text minimum `design-system/README.md` §6
  * sets as a release gate. WCAG's inactive-control exemption does not cover it:
  * this is informational content, not a disabled control. `--muted-foreground`
@@ -181,7 +182,10 @@ export function PlanMatrix() {
           <Cell included column="Pro" />
         </div>
 
-        {PAID_MODULES.map((entry) => (
+        {/* A beta-off module is sold to nobody right now, so it gets no row. */}
+        {SHIPPED_PAID_MODULES.filter(
+          (entry) => !isBetaOffModule(entry.key),
+        ).map((entry) => (
           <div key={entry.key} className={ROW_CLASS}>
             <span className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
               <span className="truncate">{entry.label}</span>

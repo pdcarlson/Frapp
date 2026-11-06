@@ -4,7 +4,6 @@ import {
   BackHandler,
   Keyboard,
   Platform,
-  Pressable,
   StyleSheet,
   Text,
   View,
@@ -13,6 +12,7 @@ import * as Linking from "expo-linking";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
 import { useClientPolicy } from "@/lib/client-policy";
+import { OnboardingPrimaryButton } from "@/components/onboarding/onboarding-primary-button";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /** `spec/ui/design-system/writing.md` § Update required (mobile, global). */
@@ -110,15 +110,17 @@ function UpdateRequiredScreen({ updateUrl }: { updateUrl: string | null }) {
       <Text style={styles.body}>{UPDATE_REQUIRED_COPY.body}</Text>
 
       {updateUrl ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => {
-            void openUpdate(updateUrl);
-          }}
-          style={styles.primaryButton}
-        >
-          <Text style={styles.primaryButtonText}>{UPDATE_REQUIRED_COPY.cta}</Text>
-        </Pressable>
+        // The onboarding primary itself, so the gate's one button can't drift
+        // from it in paint or press. It is house gold on its own terms: the
+        // gate covers the whole app, chapter or none.
+        <View style={styles.primarySlot}>
+          <OnboardingPrimaryButton
+            label={UPDATE_REQUIRED_COPY.cta}
+            onPress={() => {
+              void openUpdate(updateUrl);
+            }}
+          />
+        </View>
       ) : (
         <Text style={styles.body}>{UPDATE_REQUIRED_COPY.noLink}</Text>
       )}
@@ -157,17 +159,8 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
     },
-    primaryButton: {
+    primarySlot: {
       marginTop: tokens.spacing.sm,
-      borderRadius: tokens.radius.control,
-      backgroundColor: tokens.color.gold.house,
-      minHeight: tokens.touch.button,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    primaryButtonText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.onHouse,
     },
     errorText: {
       ...typeRole(tokens.typography.role.caption),

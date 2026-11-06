@@ -61,6 +61,13 @@ export interface StagedChannel {
    * scan could not tell.
    */
   readerRoleIds?: string[] | null;
+  /**
+   * Bot path only: how many threads the channel holds (they follow it), and
+   * its category's place in Discord, which is the order kept categories come
+   * in. Absent on an upload.
+   */
+  threads?: number;
+  categoryPosition?: number | null;
 }
 
 export interface StagedRole {

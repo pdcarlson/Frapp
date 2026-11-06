@@ -22,9 +22,14 @@ import {
   type SweepPollRow,
   type SweepUpcomingEventRow,
 } from '#domain/repositories/scheduled-jobs.repository.interface';
-import type { DispatchEntityType, DispatchThreshold } from '#domain/entities';
-import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import {
+  dispatchSweepId,
+  type DispatchEntityType,
+  type DispatchThreshold,
+} from '#domain/entities';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { SIGNET_ENGINE_VERSION } from '@repo/chapter-theme';
+import { isBetaOffModule } from '@repo/validation';
 import {
   buildChapterPalette,
   chapterPaletteColumns,
@@ -69,9 +74,9 @@ const POLL_EXPIRY_LOOKBACK_HOURS = 24;
  *
  * The two ways to lose all six are not equally visible. A failing candidate
  * query logs `event-reminder sweep: event lookup failed` per tick from
- * `fetchAllPages` — that is the alertable signal. A worker that never ran
- * logs nothing, and neither does a healthy tick with no upcoming events, so
- * `{sent: 0}` on its own distinguishes nothing.
+ * `fetchAllPages` and reports it to Sentry — that is the alertable signal. A
+ * worker that never ran logs nothing, and neither does a healthy tick with no
+ * upcoming events, so `{sent: 0}` on its own distinguishes nothing.
  */
 const EVENT_REMINDER_LEAD_MINUTES = 30;
 
@@ -211,23 +216,27 @@ export class ScheduledJobsService {
    * reaches *storage*, and a failure listing the bucket root propagates.
    * A handler whose candidate query does not go through `fetchAllPages`, or
    * that awaits anything outside a per-item `try`, needs its own catch too.
-   * An unhandled
-   * rejection out of a `@Cron` handler is not a logged blip — Node's default
-   * `--unhandled-rejections=throw` turns it into an uncaught exception and
-   * takes the API process down, hourly. A sweep that cannot start must skip
-   * this tick loudly, not restart the service.
+   *
+   * The catch is not what keeps the process up: `@nestjs/schedule` wraps every
+   * `@Cron` method in its own try/catch and passes a rejection to Nest's
+   * `logger.error` as the raw object. That line reaches no alert, and for a
+   * PostgREST error it prints the `details` that `logThrowable` exists to keep
+   * out of the logs. The catch here reports the failure to Sentry under this
+   * sweep's own fingerprint and logs it scrubbed, so a sweep that cannot start
+   * skips the tick loudly.
    */
   @Cron(CronExpression.EVERY_HOUR)
   async handleReportRetentionSweep(): Promise<void> {
     try {
       await this.sweepExpiredReports(new Date());
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'error',
-        'report retention sweep: could not enumerate the reports bucket; skipping this tick',
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'report-retention-sweep-enumerate',
+        message:
+          'report retention sweep: could not enumerate the reports bucket; skipping this tick',
         error,
-      );
+      });
     }
   }
 
@@ -255,12 +264,13 @@ export class ScheduledJobsService {
         );
       }
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'error',
-        'chat report evidence sweep: could not read the pending releases; skipping this tick',
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'chat-report-evidence-sweep-read',
+        message:
+          'chat report evidence sweep: could not read the pending releases; skipping this tick',
         error,
-      );
+      });
     }
   }
 
@@ -345,12 +355,12 @@ export class ScheduledJobsService {
         else superseded += 1;
       } catch (error) {
         failed += 1;
-        logThrowable(
-          this.logger,
-          'error',
-          `palette sweep: chapter ${chapter.id} could not be recomputed; it stays stale until a later tick succeeds`,
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'palette-sweep-chapter-recompute',
+          message: `palette sweep: chapter ${chapter.id} could not be recomputed; it stays stale until a later tick succeeds`,
           error,
-        );
+        });
       }
     }
 
@@ -413,12 +423,12 @@ export class ScheduledJobsService {
           );
           processed += 1;
         } catch (error) {
-          logThrowable(
-            this.logger,
-            'error',
-            `auto-absent sweep: event ${event.id} failed`,
+          reportCaughtFailure(this.logger, {
+            level: 'warning',
+            site: 'auto-absent-sweep-mark',
+            message: `auto-absent sweep: event ${event.id} failed`,
             error,
-          );
+          });
           // Release so the next tick retries rather than leaving the event
           // permanently unprocessed.
           await this.repository.releaseDispatch(
@@ -430,12 +440,12 @@ export class ScheduledJobsService {
           );
         }
       } catch (error) {
-        logThrowable(
-          this.logger,
-          'error',
-          `auto-absent sweep: event ${event.id} could not be claimed`,
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'auto-absent-sweep-claim',
+          message: `auto-absent sweep: event ${event.id} could not be claimed`,
           error,
-        );
+        });
       }
     }
 
@@ -471,12 +481,12 @@ export class ScheduledJobsService {
       try {
         if (await this.notifyPollExpired(poll)) announced += 1;
       } catch (error) {
-        logThrowable(
-          this.logger,
-          'error',
-          `poll-expiry sweep: poll ${poll.id} failed`,
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'poll-expiry-sweep-poll',
+          message: `poll-expiry sweep: poll ${poll.id} failed`,
           error,
-        );
+        });
       }
     }
 
@@ -503,9 +513,11 @@ export class ScheduledJobsService {
     // lookback window and then drop with no diagnostic pointing at why.
     const expiresAt = new Date(poll.expires_at);
     if (Number.isNaN(expiresAt.getTime())) {
-      this.logger.error(
-        `poll-expiry sweep: poll ${poll.id} has an unparseable expires_at ("${poll.expires_at}"); skipping`,
-      );
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'poll-expiry-sweep-unparseable-expires-at',
+        message: `poll-expiry sweep: poll ${poll.id} has an unparseable expires_at ("${poll.expires_at}"); skipping`,
+      });
       return false;
     }
     const dueDate = toDateKey(expiresAt);
@@ -522,12 +534,12 @@ export class ScheduledJobsService {
       await this.pollService.announceExpiry(poll.id, poll.channel_id);
       return true;
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'error',
-        `poll-expiry sweep: announcement for poll ${poll.id} failed`,
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'poll-expiry-sweep-announce',
+        message: `poll-expiry sweep: announcement for poll ${poll.id} failed`,
         error,
-      );
+      });
       await this.repository.releaseDispatch(
         poll.chapter_id,
         'POLL',
@@ -568,12 +580,12 @@ export class ScheduledJobsService {
       try {
         if (await this.notifyEventStartingSoon(event, now)) sent += 1;
       } catch (error) {
-        logThrowable(
-          this.logger,
-          'error',
-          `event-reminder sweep: event ${event.id} failed`,
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'event-reminder-sweep-event',
+          message: `event-reminder sweep: event ${event.id} failed`,
           error,
-        );
+        });
       }
     }
 
@@ -673,8 +685,15 @@ export class ScheduledJobsService {
    * list. The threshold is per chapter and can only be applied after the rows
    * are known, so the query window is widened by the maximum configurable
    * grace and narrowed exactly, in code.
+   *
+   * Sends nothing while dues is a beta-off module (`BETA_OFF_MODULES`): a
+   * reminder would deep-link to a Dues screen no client shows. The open
+   * invoices stay as they are. Reminders are skipped, not queued: once dues
+   * returns, only an invoice whose due date or overdue day still falls in the
+   * windows below gets one.
    */
   async sweepInvoiceReminders(now: Date): Promise<{ sent: number }> {
+    if (isBetaOffModule('dues')) return { sent: 0 };
     const todayKey = toDateKey(now);
     const dueSoonKey = toDateKey(addDays(now, DUE_SOON_LEAD_DAYS));
     const windowStart = toDateKey(
@@ -706,12 +725,12 @@ export class ScheduledJobsService {
           if (await this.notifyInvoiceOverdue(invoice)) sent += 1;
         }
       } catch (error) {
-        logThrowable(
-          this.logger,
-          'error',
-          `invoice sweep: invoice ${invoice.id} failed`,
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'invoice-sweep-invoice',
+          message: `invoice sweep: invoice ${invoice.id} failed`,
           error,
-        );
+        });
       }
     }
 
@@ -742,12 +761,12 @@ export class ScheduledJobsService {
           sent += 1;
         }
       } catch (error) {
-        logThrowable(
-          this.logger,
-          'error',
-          `task sweep: task ${task.id} failed`,
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'task-sweep-task',
+          message: `task sweep: task ${task.id} failed`,
           error,
-        );
+        });
       }
     }
 
@@ -886,8 +905,9 @@ export class ScheduledJobsService {
    * - **Every send failed.** The claim is released so the next sweep retries;
    *   otherwise one transient error would suppress that reminder forever.
    * - **Some sends failed.** The claim is kept — retrying would re-notify the
-   *   recipients who already got it — and the shortfall is logged. Partial
-   *   delivery still counts as sent.
+   *   recipients who already got it — and the shortfall is reported under the
+   *   sweep's own site, not per recipient, at most once per window however
+   *   many entities fall short. Partial delivery still counts as sent.
    *
    * Recipients are deduped and delivered independently, so one member's
    * failure cannot silence another's; that matters for overdue tasks, where
@@ -921,6 +941,7 @@ export class ScheduledJobsService {
       params.dueDate,
     );
     if (!claimed) return false;
+    const sweep = dispatchSweepId(params.entityType, params.threshold);
 
     // Resolved after the claim, so a thunk's cost is paid only by the tick
     // that actually sends. A rejection here would strand the claim, so it is
@@ -932,12 +953,12 @@ export class ScheduledJobsService {
           ? await params.recipients()
           : params.recipients;
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'error',
-        `${params.entityType} ${params.entityId} (${params.threshold}): could not resolve recipients`,
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: `scheduled-reminder-resolve-recipients:${sweep}`,
+        message: `${params.entityType} ${params.entityId} (${params.threshold}): could not resolve recipients`,
         error,
-      );
+      });
       resolved = [];
     }
 
@@ -954,12 +975,12 @@ export class ScheduledJobsService {
         });
         delivered += 1;
       } catch (error) {
-        logThrowable(
-          this.logger,
-          'error',
-          `${params.entityType} ${params.entityId} (${params.threshold}): delivery to ${userId} failed`,
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: `scheduled-reminder-delivery:${sweep}`,
+          message: `${params.entityType} ${params.entityId} (${params.threshold}): delivery to ${userId} failed`,
           error,
-        );
+        });
       }
     }
 
@@ -975,9 +996,11 @@ export class ScheduledJobsService {
     }
 
     if (delivered < recipients.length) {
-      this.logger.warn(
-        `${params.entityType} ${params.entityId} (${params.threshold}): delivered to ${delivered}/${recipients.length} recipients; not retrying`,
-      );
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: `scheduled-reminder-partial-delivery:${sweep}`,
+        message: `${params.entityType} ${params.entityId} (${params.threshold}): delivered to ${delivered}/${recipients.length} recipients; not retrying`,
+      });
     }
     return true;
   }

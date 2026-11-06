@@ -72,6 +72,11 @@ Three things about it are load-bearing:
   `deriveSignetPalette` reports the substitution on `invalidSeed` and the API callers
   log it, but the log is the only signal — nothing rejects the save.
 
+  Neither wizard reads `default_colors.accent` first any more: `ORG_PROFILES` in
+  `@repo/org-archetypes` wins, and the column is only the fallback for an
+  organization that file doesn't list ([`branding.md` § Accent Color](../../spec/behavior/branding.md#accent-color)
+  says why; the seed's placeholder values are #3373).
+
   Each row's `default_colors` holds exactly one key, `accent` — one seed per chapter,
   per `spec/ui/design-system/accent-engine.md` §1. It was a `{ dark, accent }` pair
   until #1225: the #920 slice-9 cutover removed the second brand colour from chapter

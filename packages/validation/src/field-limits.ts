@@ -86,6 +86,29 @@ export const CHAPTER_SHORT_NAME_MAX_LENGTH = 6;
  */
 export const YEAR_MAX = 9_999;
 
+/**
+ * A member's graduation year (`users.graduation_year`), which they set
+ * themselves on web `/profile` and mobile s15 (#3387). The API refuses
+ * anything outside it, and both clients refuse it before sending.
+ */
+export const GRADUATION_YEAR_MIN = 1900;
+export const GRADUATION_YEAR_MAX = 2100;
+
+/**
+ * A chapter document's title (`chapter_documents.title`), set by whoever
+ * uploads it on web or mobile s21 (#3399). The API refuses a longer one, and
+ * the phone's field stops at it.
+ */
+export const DOCUMENT_TITLE_MAX_LENGTH = 255;
+
+/**
+ * What a member says they did on a service entry
+ * (`service_entries.description`), on web and mobile s20. The API's
+ * `CreateServiceEntryDto` refuses a longer one, and s20's field stops at it.
+ * Web's service dialog doesn't apply it yet (#3456).
+ */
+export const SERVICE_DESCRIPTION_MAX_LENGTH = 2_000;
+
 /** Options on one poll, and the fewest a poll may have. */
 export const POLL_OPTIONS_MAX = 10;
 export const POLL_OPTIONS_MIN = 2;

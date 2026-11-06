@@ -371,8 +371,8 @@ describe("MessageTimeline loading state (#2145)", () => {
 /**
  * The own-message mis-ID on load (#2243).
  *
- * `viewerId` decides whose message a row is (the "You" author line in the
- * chapter accent, and Edit and Delete), and it arrives on its own clock — `GET /v1/users/me`, which the first
+ * `viewerId` decides whose message a row is (the "You" author line, and Edit
+ * and Delete), and it arrives on its own clock — `GET /v1/users/me`, which the first
  * chunk's Dexie read (#2227) regularly beats. It used to arrive as `null` into a
  * row that treated `null` as "not mine", so on staging the signed-in member's
  * own messages painted as a stranger's: left, incoming chrome, and labelled with
@@ -430,8 +430,7 @@ describe("MessageTimeline identity gate (#2243)", () => {
     });
 
     expect(bodies()).toHaveLength(1);
-    const name = screen.getByText("Alice Chen");
-    expect(name.className).not.toContain("text-accent-text");
+    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
     expect(screen.queryByText("You")).not.toBeInTheDocument();
   });
 
@@ -493,10 +492,9 @@ describe("MessageTimeline identity gate (#2243)", () => {
     );
 
     expect(bodies()).toHaveLength(1);
-    // "You" in the chapter accent — never the viewer's own uuid read back to
-    // them as a stranger's name, which is what the row resolved to before the
-    // gate existed.
-    expect(screen.getByText("You").className).toContain("text-accent-text");
+    // "You", never the viewer's own uuid read back to them as a stranger's
+    // name, which is what the row resolved to before the gate existed.
+    expect(screen.getByText("You")).toBeInTheDocument();
     expect(screen.queryByText("Member 111111")).not.toBeInTheDocument();
   });
 });
@@ -613,12 +611,12 @@ describe("MessageTimeline — the viewer's block list (#2313)", () => {
     renderWithList(
       [message({ id: "m1", sender_id: BOB, content: "from the echo" })],
       blockState("unavailable"),
+      { channelStart: <p>Channel start</p> },
     );
 
     expect(screen.queryByText("from the echo")).not.toBeInTheDocument();
-    expect(
-      screen.queryByText("Nothing in this channel yet"),
-    ).not.toBeInTheDocument();
+    // A held row is not an empty channel, so the start does not stand in.
+    expect(screen.queryByText("Channel start")).not.toBeInTheDocument();
   });
 
   it("still shows the viewer's own message and a server-cleared row while the list is unavailable", () => {
@@ -1206,6 +1204,22 @@ describe("MessageTimeline older history (#1571)", () => {
   });
 });
 
+describe("MessageTimeline — role colors (#3485)", () => {
+  it("paints a member's name in the role color the roster resolves", () => {
+    renderTimeline([message({ id: "m-1", sender_id: ALICE })], {
+      roleColorFor: (id: string) => (id === ALICE ? "#B392F0" : null),
+    });
+
+    expect(screen.getByText("Alice Chen")).toHaveStyle({ color: "#B392F0" });
+  });
+
+  it("leaves the name plain without a resolver", () => {
+    renderTimeline([message({ id: "m-1", sender_id: ALICE })]);
+
+    expect(screen.getByText("Alice Chen").getAttribute("style")).toBeNull();
+  });
+});
+
 describe("MessageTimeline — member photos (#732)", () => {
   it("draws a member's photo from the roster beside their message", () => {
     renderTimeline([message({ id: "m-1", sender_id: ALICE })], {
@@ -1505,5 +1519,56 @@ describe("the image viewer", () => {
     );
 
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("MessageTimeline channel start", () => {
+  const rows = (count: number): ChatMessage[] =>
+    Array.from({ length: count }, (_, i) =>
+      message({
+        id: `msg-${i + 1}`,
+        client_message_id: `cm-${i + 1}`,
+        content: `message ${i + 1}`,
+        created_at: new Date(Date.UTC(2026, 8, 1) + (i + 1) * 60_000).toISOString(),
+      }),
+    );
+
+  it("stands the channel start in for an empty channel, not an empty-state card", () => {
+    renderTimeline([], { channelStart: <p>Welcome to #general</p> });
+
+    expect(screen.getByText("Welcome to #general")).toBeInTheDocument();
+    expect(screen.queryByText(/nothing in this channel/i)).toBeNull();
+  });
+
+  it("lets a channel start taller than the window scroll rather than clip", () => {
+    renderTimeline([], { channelStart: <p>Welcome to #general</p> });
+
+    // jsdom has no layout, so the contract is the boxes: a scrolling outer
+    // box, and a column at least its height that sits the start at the bottom.
+    const column = screen.getByText("Welcome to #general").parentElement!;
+    expect(column).toHaveClass("min-h-full", "justify-end");
+    expect(column.parentElement).toHaveClass("h-full", "overflow-y-auto");
+  });
+
+  it("draws the channel start above the oldest message once no older page is left", () => {
+    renderTimeline(rows(3), {
+      hasOlder: false,
+      channelStart: <p>Welcome to #general</p>,
+    });
+
+    const start = screen.getByText("Welcome to #general");
+    const oldest = screen.getByText("message 1");
+    expect(
+      start.compareDocumentPosition(oldest) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("holds the channel start back while older history is still to load", () => {
+    renderTimeline(rows(3), {
+      hasOlder: true,
+      channelStart: <p>Welcome to #general</p>,
+    });
+
+    expect(screen.queryByText("Welcome to #general")).toBeNull();
   });
 });

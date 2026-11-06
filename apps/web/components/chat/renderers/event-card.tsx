@@ -2,12 +2,18 @@
 
 import { Check } from "lucide-react";
 import { EventsGlyph, LocationGlyph } from "../chat-glyphs";
-import { useAttendance, useCheckIn, useMyPermissions, useNow } from "@repo/hooks";
+import {
+  countCheckedIn,
+  useAttendance,
+  useCheckIn,
+  useMyPermissions,
+  useNow,
+} from "@repo/hooks";
 import { EYEBROW, MESSAGE_CARD } from "../chip";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
-import type { EventPayload } from "@repo/chat-core/integrations";
+import { readEventPayload } from "@repo/chat-core/cards";
 import { can } from "@repo/validation";
 import { parseInstant } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
@@ -27,52 +33,6 @@ interface EventCardProps {
 
 /** Grace window (ms) after end_time during which check-in stays open (spec: 15 min). */
 const CHECK_IN_GRACE_MS = 15 * 60 * 1000;
-
-/**
- * Defensive read of an `event` payload. A malformed row returns `null` so the
- * renderer falls back to the hot-path `content` string instead of blanking the
- * timeline (master-plan guard-on-missing-key rule).
- */
-function readPayload(message: ChatMessage): EventPayload | null {
-  const raw = message.payload;
-  if (!raw || typeof raw !== "object") return null;
-  const r = raw as Record<string, unknown>;
-  if (
-    typeof r.event_id !== "string" ||
-    typeof r.name !== "string" ||
-    typeof r.start_time !== "string" ||
-    typeof r.end_time !== "string"
-  ) {
-    return null;
-  }
-  return {
-    event_id: r.event_id,
-    name: r.name,
-    start_time: r.start_time,
-    end_time: r.end_time,
-    location: typeof r.location === "string" ? r.location : null,
-    point_value:
-      typeof r.point_value === "number" && Number.isFinite(r.point_value)
-        ? r.point_value
-        : 0,
-    is_mandatory: r.is_mandatory === true,
-    created_at: typeof r.created_at === "string" ? r.created_at : "",
-  };
-}
-
-/**
- * Count attendance rows that represent a present member (PRESENT or LATE).
- * Guards a non-array result to `0` so an empty/loading query renders cleanly
- * (integrations.md first-match/empty-state rule).
- */
-function countCheckedIn(data: unknown): number {
-  if (!Array.isArray(data)) return 0;
-  return data.reduce((acc: number, row) => {
-    if (!row || typeof row !== "object") return acc;
-    const status = (row as Record<string, unknown>).status;
-    return status === "PRESENT" || status === "LATE" ? acc + 1 : acc;
-  }, 0);
-}
 
 function formatRange(startIso: string, endIso: string): string {
   const start = parseInstant(startIso);
@@ -118,7 +78,7 @@ function isAlreadyCheckedIn(error: unknown): boolean {
  * treated as an idempotent "already checked in".
  */
 export function EventCard({ message, isConfirmed }: EventCardProps) {
-  const payload = readPayload(message);
+  const payload = readEventPayload(message);
   const { toast } = useToast();
   const checkIn = useCheckIn();
   // `POST /v1/events/:eventId/attendance/check-in` sits on `AttendanceController`,
@@ -140,9 +100,7 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   // Hooks must run before any early return; `useAttendance` no-ops on an empty
   // id, so a viewer without attendance access never fires the (403-ing) request.
   const eventId = payload?.event_id ?? "";
-  const { data: attendance } = useAttendance(
-    canViewAttendance ? eventId : "",
-  );
+  const { data: attendance } = useAttendance(canViewAttendance ? eventId : "");
   const now = useNow();
 
   if (!payload) {
@@ -191,11 +149,18 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   return (
     <Card className={cn(MESSAGE_CARD)}>
       <div className="flex items-center justify-between gap-2">
-        <div className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}>
+        <div
+          className={cn(
+            EYEBROW,
+            "flex items-center gap-1.5 text-muted-foreground",
+          )}
+        >
           <EventsGlyph className="h-4 w-4" /> Event
         </div>
         {payload.is_mandatory ? (
-          <Badge variant="default">Mandatory</Badge>
+          // A status, so the danger badge, never the accent (components.md §5),
+          // as the Events list and detail sheet draw it.
+          <Badge variant="destructive">Mandatory</Badge>
         ) : null}
       </div>
       <p className="mt-2 text-base font-bold">{payload.name}</p>
@@ -214,9 +179,9 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
           <Badge variant="outline">+{payload.point_value} pts</Badge>
         ) : null}
       </div>
-      {canViewAttendance ? (
+      {canViewAttendance && checkedIn !== null ? (
         <p className="mt-2 text-caption text-muted-foreground">
-          {checkedIn === 1 ? "1 checked in" : `${checkedIn} checked in`}
+          {checkedIn} checked in
         </p>
       ) : null}
       {windowOpen ? (

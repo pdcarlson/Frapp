@@ -474,6 +474,7 @@ describe('StripeBillingService', () => {
         id: 'evt_123',
         type: 'checkout.session.completed',
         created: 1234567890,
+        api_version: '2026-08-26.dahlia',
         data: {
           object: { foo: 'bar' },
         },
@@ -489,6 +490,8 @@ describe('StripeBillingService', () => {
         id: mockStripeEvent.id,
         type: mockStripeEvent.type,
         created: mockStripeEvent.created,
+        // Carried through so each delivery can log its payload version (#3204).
+        api_version: '2026-08-26.dahlia',
         data: {
           object: mockStripeEvent.data.object,
         },

@@ -48,6 +48,14 @@ interface EligibleClaimants {
   memberIds: Set<string>;
 }
 
+/** One chapter member's resolved access, from {@link RbacService.getChapterMemberAccess}. */
+export interface ChapterMemberAccess {
+  user_id: string;
+  permissions: Set<string>;
+  /** Smallest `display_order` among held live roles; `null` when none. */
+  top_role_order: number | null;
+}
+
 @Injectable()
 export class RbacService {
   constructor(
@@ -603,35 +611,59 @@ export class RbacService {
    * queue needs `members:view` **and** `channels:manage`, and notifying a member
    * who holds only the second would send them to a queue that 403s.
    *
-   * **Three reads, not one per member.** `getEffectivePermissions` costs a
-   * membership read and a role read per member; walking the roster through it
-   * would be ~2N queries on a request path. This loads the roster, the
-   * chapter's roles and its custom roles once each, and flattens in memory
-   * through the same `flattenPermissionSets` the guard and
-   * {@link resolvePermissionSet} use, so the three cannot disagree about who
-   * holds what (the wildcard only from a live role, never a custom one).
-   *
-   * **Re-scoped to the chapter twice over.** All three reads filter on
-   * `chapter_id`, and the role maps below additionally drop any row whose
-   * `chapter_id` is not this one — a member's `role_ids` array is not
-   * foreign-keyed, so a stale or cross-chapter id in it must contribute
-   * nothing, exactly as the per-member resolver's `findByIds(ids, chapterId)`
-   * guarantees.
+   * **Three reads, not one per member**, through
+   * {@link getChapterMemberAccess}, which owns the chapter-wide resolve and its
+   * re-scoping; walking the roster through `getEffectivePermissions` would be
+   * ~2N queries on a request path.
    */
   async findUserIdsWithPermissions(
     chapterId: string,
     permissions: readonly string[],
   ): Promise<string[]> {
+    const access = await this.getChapterMemberAccess(chapterId);
+    return access
+      .filter(
+        ({ permissions: granted }) =>
+          granted.has(WILDCARD) ||
+          permissions.every((permission) => granted.has(permission)),
+      )
+      .map(({ user_id }) => user_id);
+  }
+
+  /**
+   * Every member of `chapterId` with their flattened effective permissions and
+   * the rank of their highest role, from three reads (roster, roles, custom
+   * roles) rather than ~2N. The one place a chapter-wide permission resolve is
+   * built, so {@link findUserIdsWithPermissions} and the channel member list
+   * (`ChannelAccessService.listChannelMembers`) cannot disagree about who holds
+   * what.
+   *
+   * `top_role_order` is the smallest `display_order` among the member's live
+   * roles in this chapter (lower ranks higher, as on the Roles page), or `null`
+   * for a member who holds none. Custom roles rank on their own scale
+   * (`chapter_custom_roles.rank`) and do not count toward it.
+   *
+   * **Re-scoped to the chapter twice over.** All three reads filter on
+   * `chapter_id`, and the role maps below additionally drop any row whose
+   * `chapter_id` is not this one: a member's `role_ids` array is not
+   * foreign-keyed, so a stale or cross-chapter id in it must contribute
+   * nothing, exactly as the per-member resolver's `findByIds(ids, chapterId)`
+   * guarantees. A user with two membership rows (the read is not keyed on
+   * user) gets one entry with both rows' roles unioned.
+   */
+  async getChapterMemberAccess(
+    chapterId: string,
+  ): Promise<ChapterMemberAccess[]> {
     const [members, roles, customRoles] = await Promise.all([
       this.memberRepo.findByChapter(chapterId),
       this.roleRepo.findByChapter(chapterId),
       this.customRoleService.findByChapter(chapterId),
     ]);
 
-    const rolePermissions = new Map(
+    const roleById = new Map(
       roles
         .filter((role) => role.chapter_id === chapterId)
-        .map((role) => [role.id, role.permissions] as const),
+        .map((role) => [role.id, role] as const),
     );
     const customRoleCapabilities = new Map(
       customRoles
@@ -639,23 +671,30 @@ export class RbacService {
         .map((role) => [role.id, role.capabilities] as const),
     );
 
-    const holders = new Set<string>();
+    const held = new Map<string, { roleIds: string[]; customIds: string[] }>();
     for (const member of members) {
       if (member.chapter_id !== chapterId) continue;
-      const granted = flattenPermissionSets(
-        (member.role_ids ?? []).map((id) => rolePermissions.get(id)),
-        (member.custom_role_ids ?? []).map((id) =>
-          customRoleCapabilities.get(id),
-        ),
-      );
-      if (
-        granted.has(WILDCARD) ||
-        permissions.every((permission) => granted.has(permission))
-      ) {
-        holders.add(member.user_id);
-      }
+      const entry = held.get(member.user_id) ?? { roleIds: [], customIds: [] };
+      entry.roleIds.push(...(member.role_ids ?? []));
+      entry.customIds.push(...(member.custom_role_ids ?? []));
+      held.set(member.user_id, entry);
     }
-    return [...holders];
+
+    return [...held].map(([userId, { roleIds, customIds }]) => {
+      const liveRoles = roleIds
+        .map((id) => roleById.get(id))
+        .filter((role): role is Role => role !== undefined);
+      return {
+        user_id: userId,
+        permissions: flattenPermissionSets(
+          liveRoles.map((role) => role.permissions),
+          customIds.map((id) => customRoleCapabilities.get(id)),
+        ),
+        top_role_order: liveRoles.length
+          ? Math.min(...liveRoles.map((role) => role.display_order))
+          : null,
+      };
+    });
   }
 
   /**

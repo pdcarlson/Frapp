@@ -120,6 +120,46 @@ describe('PosthogRuntime', () => {
     expect(batch?.decodedBody).not.toContain('$exception');
   });
 
+  // PostHog links a group only on a person-processed event, so an event that
+  // carries one must not be sent personless; every other event stays personless.
+  it('sends a grouped event person-processed and an ungrouped one personless', async () => {
+    const transport = new RecordingPosthogTransport(FIXTURES);
+    const runtime = startRuntime(transport);
+    const chapterGroup = 'b'.repeat(64);
+
+    runtime.captureEvent({
+      name: 'search-completed',
+      distinctId: HEX,
+      properties: { result_count: 2, app: 'web' },
+      groups: { chapter: chapterGroup },
+    });
+    runtime.captureEvent({
+      name: 'search-completed',
+      distinctId: HEX,
+      properties: { result_count: 0, app: 'web' },
+    });
+    await runtime.flush();
+
+    const batch = transport.calls.find((call) => call.url.includes('/batch'));
+    const sent = (
+      JSON.parse(batch!.decodedBody) as {
+        batch: { properties: Record<string, unknown> }[];
+      }
+    ).batch.map((event) => event.properties);
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).toMatchObject({
+      result_count: 2,
+      app: 'web',
+      $groups: { chapter: chapterGroup },
+    });
+    expect(sent[0]).not.toHaveProperty('$process_person_profile');
+    expect(sent[1]).toMatchObject({
+      app: 'web',
+      $process_person_profile: false,
+    });
+    expect(sent[1]).not.toHaveProperty('$groups');
+  });
+
   it('allowlists sentry-error-correlated properties and drops the rest', async () => {
     const transport = new RecordingPosthogTransport(FIXTURES);
     const runtime = startRuntime(transport);

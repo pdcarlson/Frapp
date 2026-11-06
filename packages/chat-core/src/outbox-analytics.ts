@@ -4,8 +4,8 @@
  * each `ctx.track()` call site in `chat-client.ts`, so a typo can't quietly
  * split one event into two names.
  *
- * Kebab-case to match the existing client-event convention (`opened-channel`,
- * `ran-slash-command`, the `activation-*` funnel names in
+ * Kebab-case to match the other event names (`search-completed`, the
+ * `activation-*` funnel names in
  * `apps/api/src/domain/constants/activation-milestones.ts`).
  *
  * Every property passed alongside these events must be behavioral, never

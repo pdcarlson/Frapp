@@ -784,8 +784,10 @@ After any rollback event:
   column, row, policy, or function is touched, so nothing that predates the migration
   can be lost and rolling back cannot corrupt anything. What it removes is the memory of
   which suggestions an officer has already closed: every eligible chapter's officers see
-  the Dues nudge again. Annoying, not damaging, and no data outside this column depends
-  on it.
+  the Dues nudge again, and the "Set up your chapter" list returns for every officer who
+  hid it (its hide is the `setup-checklist` entry in the same column), with the hide
+  failing until the column is back. Annoying, not damaging, and no data outside this
+  column depends on it.
 * **Data caveat**: the column is the *only* record of a dismissal — there is no second
   copy and no way to recompute it, because "this officer chose to close this card" is
   not derivable from any other state. Dropping it is therefore lossy in a way the
@@ -796,8 +798,8 @@ After any rollback event:
   FROM members WHERE dismissed_ops_nudges <> '{}';` — that predicate keeps the snapshot
   to the rows that actually carry a choice. Restore with an `UPDATE ... FROM` on `id`.
   The loss is one UI preference per officer, so prefer simply not rolling this back:
-  hiding the card is a web-side change (stop rendering `OpsSetupNudge`) that needs no
-  migration at all.
+  hiding the cards is a web-side change (stop rendering `OpsSetupNudge` and
+  `SetupChecklistSection`) that needs no migration at all.
 
 ## Rollback the chat-archive upload quota
 
@@ -1496,8 +1498,10 @@ After any rollback event:
 * **Also revert `supabase/config.toml`** if you are rolling back the whole slice:
   the global local-stack `[storage] file_size_limit` was raised from `26214400`
   to `104857600`. Leaving it raised is harmless — every member-upload bucket is
-  still pinned to 25 MB by its own `allowed_mime_types`/`file_size_limit` columns
-  and by `MAX_UPLOAD_BYTES` in `@repo/validation`.
+  still pinned by its own `allowed_mime_types`/`file_size_limit` columns and by
+  `@repo/validation`: 25 MB (`MAX_UPLOAD_BYTES`), except `backwork` at 100 MB
+  (`MAX_BACKWORK_UPLOAD_BYTES`, #3499). Lowering the global cap below 100 MB
+  would cut backwork short, so don't.
 * **Lighter option**: to stop new writes without deleting anything, forward-revert
   the API's use of it and leave the bucket in place. An unused private bucket costs storage for what
   is in it and nothing else.
@@ -2765,6 +2769,80 @@ alter table public.chat_message_reports
   drop column if exists reported_attachments;
 ```
 
+## Rollback silent audit entries in unread counts (20261106193000)
+
+* **Migration**: `20261106193000_chat_unread_skip_audit_mirror.sql`
+
+A function body. It re-creates `get_channel_unread_counts` with one more join predicate, so an entry the audit mirror posted into `#chapter-audit` no longer counts toward unread or mention badges. No data changes and the signature is unchanged; no API or client code depends on the new behaviour.
+
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). Put the `create or replace function public.get_channel_unread_counts` statement and the grant block after it from `20260927050000_chat_unread_counts_skip_blocked.sql` in a new migration and ship it through Deploy production (`scope: migrations-only` is enough). Copy that body rather than retyping it: it must keep the blocked-sender predicate (#2521), `kind <> 'imported'` and `set search_path = public, pg_temp`.
+
+Afterwards every settings change lights the `#chapter-audit` badge again, for every member.
+
+## Rollback Discord import category progress (20261106170000)
+
+* **Migration**: `20261106170000_discord_import_category_progress.sql`
+
+One read-only function, `discord_import_category_progress`, which adds up an import's mapping rows per Discord category for `GET /v1/discord-imports/:id/progress`. Service role only. It writes nothing and the migration rewrites no row.
+
+**Revert the API code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API doesn't call the function, so leaving it in place is safe. The web reads the progress's `categories` defensively, so an older API without it shows no tiles and the combined channel count.
+
+**Keep the function unless it is itself the problem.** To remove it anyway, do it in a later forward migration, after the code revert has shipped:
+
+```sql
+drop function if exists public.discord_import_category_progress(uuid, uuid);
+```
+
+## Rollback the chapter default channel (20261106010000)
+
+* **Migration**: `20261106010000_chat_channels_is_default.sql`
+
+One column on `chat_channels`, `is_default` (not null, default false), a partial unique index, `chat_channels_one_default_per_chapter`, and the RPC `set_chat_channel_default`. No row is rewritten.
+
+**Revert the code forward and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never writes the column and the reverted clients never read it, so a chapter that set a default simply opens on `#general` again. To remove the column anyway, do it in a later forward migration, not by hand:
+
+```sql
+drop function if exists public.set_chat_channel_default(uuid, uuid);
+drop index if exists public.chat_channels_one_default_per_chapter;
+alter table public.chat_channels drop column if exists is_default;
+```
+
+## Rollback backwork search wider (20261106190000)
+
+* **Migration**: `20261106190000_backwork_search_wider.sql`
+
+One function, `search_backwork_resources`, and the `pg_trgm` extension in the `extensions` schema. No row changed.
+
+**Revert the code forward and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API searches `backwork_resources.search_vector` again, which this migration left in place, so Backwork search goes back to title and course number. To remove the function anyway, do it in a later forward migration, not by hand. Leave `pg_trgm` unless nothing else uses it:
+
+```sql
+drop function if exists public.search_backwork_resources(uuid, text, integer);
+```
+
+## Rollback the backwork 100 MB limit (20261106153000)
+
+* **Migration**: `20261106153000_backwork_bucket_100mb.sql`
+
+One column on one bucket: `backwork`'s `file_size_limit` goes from 52428800 to 104857600. No object or row changed.
+
+**Revert the code forward and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With the code reverted and the bucket still at 100 MB, the API refuses anything over 50 MB at URL issuance when the client sends `size_bytes`; a client that omits it can store a 50 to 100 MB object until the column is lowered. Objects already stored between 50 and 100 MB stay readable either way. To lower the column, do it in a later forward migration, not by hand:
+
+```sql
+update storage.buckets set file_size_limit = 52428800 where id = 'backwork';
+```
+
+## Rollback the backwork 50 MB limit (20261105230000)
+
+* **Migration**: `20261105230000_backwork_bucket_50mb.sql`
+
+One column on one bucket: `backwork`'s `file_size_limit` goes from 26214400 to 52428800 (#3499). No object or row changed.
+
+**Revert the code forward and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). With the code reverted and the bucket still at 50 MB, the API refuses anything over 25 MB at URL issuance, but only when the client sends `size_bytes`, which is optional; the single-file sheet never sent it. So a client that omits it can store a 25 to 50 MB object until the column is lowered. If that matters, lower it in the forward migration below. Objects already stored between 25 and 50 MB stay readable either way. To lower the column anyway, do it in a later forward migration, not by hand:
+
+```sql
+update storage.buckets set file_size_limit = 26214400 where id = 'backwork';
+```
+
 ## Rollback one DM per pair (20260930231000)
 
 * **Migration**: `20260930231000_chat_dm_one_channel_per_pair.sql`
@@ -2778,6 +2856,90 @@ A CHECK on `chat_channels`, `chat_channels_dm_two_members`, and a partial unique
 ```sql
 drop index if exists public.chat_channels_dm_pair_key;
 alter table public.chat_channels drop constraint if exists chat_channels_dm_two_members;
+```
+
+## Rollback Discord import channel groups (20261105220000)
+
+* **Migration**: `20261105220000_discord_import_channel_groups.sql`
+
+Three nullable columns and two checks on `discord_import_channels`, a table `discord_import_created_categories` (RLS on, no policies), two functions, `delete_empty_discord_import_categories` and its check `discord_import_category_holds_anything`, and two partial indexes. The migration rewrites no row. What changes data is the API: `start` creates groups and records them, and the purge's group step deletes the empty ones an import made.
+
+**Revert the API code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API neither writes the columns or the table nor calls the function, so leaving them in place is safe. Groups an import already made stay as ordinary groups an officer can rename or delete in Chat admin, and their channels stay in them.
+
+**Keep the schema unless it is itself the problem.** To remove it anyway, do it in a later forward migration, not by hand, after the code revert has shipped:
+
+```sql
+drop function if exists public.delete_empty_discord_import_categories(uuid, uuid);
+drop function if exists public.discord_import_category_holds_anything(uuid);
+drop table if exists public.discord_import_created_categories;
+drop index if exists public.idx_chat_channels_category;
+drop index if exists public.idx_discord_import_channels_category;
+alter table public.discord_import_channels
+  drop constraint if exists discord_import_channels_group_name_length,
+  drop constraint if exists discord_import_channels_group_only_new,
+  drop column if exists new_channel_category_id,
+  drop column if exists discord_category_position,
+  drop column if exists new_channel_group;
+```
+
+Dropping the table loses the record of which groups each import made, so a later purge of those imports leaves their groups behind.
+
+## Rollback default channel descriptions (20261105210000)
+
+* **Migration**: `20261105210000_default_channel_descriptions.sql`
+
+A data-only `update` that wrote a starting `description` into the four default channels where it was null (never set). No schema changed.
+
+**There is usually nothing to roll back.** Officers can change or clear any description in Chat admin, and the clients treat a blank one as absent. Keep the migration file in the tree whatever else is reverted ([§ 3) Undo one migration](#3-undo-one-migration)). To clear the starting lines anyway, do it in a later forward migration, and match the exact text on the same name and type pairs the migration touched, so an officer's own edit survives:
+
+```sql
+update chat_channels set description = null
+where (name = 'general' and type = 'PUBLIC'
+       and description = 'The whole chapter. Plans, questions, whatever''s going on.')
+   or (name = 'announcements' and type = 'PUBLIC'
+       and description = 'News from officers. Everyone gets notified.')
+   or (name = 'chapter-audit' and type = 'PUBLIC'
+       and description = 'Officer changes to dues, roles and settings, posted automatically.')
+   or (name = 'alumni' and type = 'ROLE_GATED'
+       and description = 'Alumni and actives keeping in touch.');
+```
+
+## Rollback the role palette defaults (20261105200000)
+
+* **Migration**: `20261105200000_role_color_palette_defaults.sql`
+
+Rewrites `roles.color` on untouched seeded system roles onto the role palette (#3485). No schema changed.
+
+**Revert the code forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). Reverted code writes any hex again and paints names plain, and the palette values it finds are valid hexes, so nothing breaks while the rows keep their new colors. To restore the old seeds anyway, do it in a later forward migration, not by hand, and only for rows still on the new defaults:
+
+```sql
+update public.roles as r
+set color = v.old_color
+from (
+  values
+    ('PRESIDENT', '#F2994A', '#FFD700'),
+    ('TREASURER', '#6FD08C', '#10B981'),
+    ('VICE_PRESIDENT', '#8FA8FF', null),
+    ('SECRETARY', '#F47FA4', null),
+    ('ALUMNI', '#A9B4C2', '#6B7280')
+) as v(system_key, new_color, old_color)
+where r.system_key = v.system_key
+  and r.is_system = true
+  and r.color = v.new_color;
+```
+
+## Rollback one document row per object (20261104210000)
+
+* **Migration**: `20261104210000_chapter_documents_storage_path_key.sql`
+
+A unique index on `chapter_documents (storage_path)`, `chapter_documents_storage_path_key` (#3399). No data is rewritten.
+
+**Revert the API code forward, and keep the migration file.** Revert the #3399 code on `main` and ship that, but keep `supabase/migrations/20261104210000_chapter_documents_storage_path_key.sql` in the tree ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API runs safely against the index. It inserts without a re-read, so a confirm retried after its response was lost gets the raw `23505` as a 500, and the document it filed the first time is already in the library.
+
+**Keep the index unless it is itself the problem.** With it dropped, the API's read still answers a retried confirm, but two confirms racing past that read can file two rows on one object again, and deleting either row removes the object the other points at. With the API reverted as well, there is no read, and every retried confirm files a second row. To remove it anyway, do it in a later forward migration, not by hand ([§ 3) Undo one migration](#3-undo-one-migration)):
+
+```sql
+drop index if exists public.chapter_documents_storage_path_key;
 ```
 
 ## Rollback the role_mapping comment (20261001024000)

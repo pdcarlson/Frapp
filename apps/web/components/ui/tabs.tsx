@@ -32,9 +32,13 @@ import { FOCUS_RING, FOCUS_RING_OFFSET } from "@/components/ui/focus"
  *
  * Two numbers are rounded onto the locked maps instead of transcribed:
  * §6 draws the item gap at 22 and the vertical padding at 11, which are off
- * foundations.md §9's 4px grid; `gap-6` (24) and `py-3` (12) are the adjacent
- * grid steps, and the 12 also lands the item at exactly the 44px hit area §6
- * requires on touch.
+ * foundations.md §9's 4px grid; `gap-6` (24) is the adjacent grid step. The
+ * item is the Small step of §9's control size scale (2026-11-05): `min-h-9`
+ * to a mouse and `min-h-11`, the 44px hit area §6 requires, on touch. The box
+ * is border-box, so the min-height includes the 2px underline, and `py-1.5`
+ * leaves the 20px line plus padding and border (34) under it. Height comes
+ * from the min-height, not the padding, so a caller's `py-*` cannot push the
+ * item past the toolbar row it sits in.
  */
 const Tabs = TabsPrimitive.Root
 
@@ -62,7 +66,7 @@ const TabsTrigger = React.forwardRef<
     className={cn(
       // `-mb-px` pulls the item's own bottom border over the list's hairline so
       // the active underline replaces the rule rather than stacking under it.
-      "-mb-px inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-t-xs border-b-2 border-transparent px-1 py-3 text-sm font-normal transition-colors",
+      "-mb-px inline-flex min-h-9 items-center justify-center whitespace-nowrap rounded-t-xs border-b-2 border-transparent px-1 py-1.5 text-sm pointer-coarse:min-h-11 font-normal transition-colors",
       "enabled:hover:text-foreground",
       // `enabled:`-scoped so `disabled:text-disabled` below is not competing
       // with an equal-specificity `data-[state]` rule that Tailwind emits later.

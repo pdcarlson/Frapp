@@ -13,6 +13,7 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiQuery,
   ApiTags,
@@ -28,6 +29,10 @@ import {
 import { RequireModule } from '../decorators/module.decorator';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
+import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
@@ -40,6 +45,8 @@ import {
   UpdateProfessorDto,
   MergeBackworkTaxonomyDto,
   MergeBackworkTaxonomyResponseDto,
+  BackworkDownloadUrlsQueryDto,
+  BackworkDownloadUrlsResponseDto,
 } from '../dtos/backwork.dto';
 
 @ApiTags('Backwork')
@@ -89,6 +96,15 @@ export class BackworkController {
   @Post()
   @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
   @ApiOperation({ summary: 'Confirm upload and store resource metadata' })
+  @FeatureEvent(
+    'backwork-uploaded',
+    ({ body }: FeatureEventInput<ConfirmBackworkUploadDto>) => ({
+      // A closed `@IsIn(ASSIGNMENT_TYPES)` set, so safe to send as a value.
+      assignment_type: body.assignment_type ?? null,
+      is_redacted: body.is_redacted === true,
+      tag_count: Array.isArray(body.tags) ? body.tags.length : 0,
+    }),
+  )
   async confirmUpload(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -133,6 +149,23 @@ export class BackworkController {
       document_variant: documentVariant,
       search,
     });
+  }
+
+  // MUST stay above `@Get(':id')`, like `departments` below. A GET, not a
+  // POST, so it stays a read: a lapsed chapter can still download its files,
+  // one at a time or zipped (`enforceSubscription` lets GETs through).
+  @Get('download-urls')
+  @ApiOperation({
+    summary: 'Signed download links for several resources, for a zip',
+  })
+  @ApiOkResponse({ type: BackworkDownloadUrlsResponseDto })
+  async downloadUrls(
+    @CurrentChapterId() chapterId: string,
+    @Query() query: BackworkDownloadUrlsQueryDto,
+  ): Promise<BackworkDownloadUrlsResponseDto> {
+    return {
+      files: await this.backworkService.getDownloadUrls(query.ids, chapterId),
+    };
   }
 
   // MUST stay above `@Get(':id')`. Nest matches routes in declaration order and
@@ -233,6 +266,7 @@ export class BackworkController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get resource detail with download URL' })
+  @FeatureEvent('backwork-viewed')
   async getOne(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
     return this.backworkService.findById(id, chapterId);
   }

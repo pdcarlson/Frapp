@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { ChatProvider } from "@/lib/chat/chat-provider";
 import { ChatShell } from "./chat-shell";
-import { LoadingState } from "@/components/shared/async-states";
+import { ChatRouteSkeleton } from "@/components/chat/chat-route-skeleton";
 import { CHAT_CHANNEL_PARAM, CHAT_MESSAGE_PARAM } from "@/lib/chat/chat-links";
 
 /**
@@ -14,7 +14,11 @@ import { CHAT_CHANNEL_PARAM, CHAT_MESSAGE_PARAM } from "@/lib/chat/chat-links";
  * pre-selected. `useSearchParams` requires a Suspense boundary (matches
  * `directory-page.tsx`'s `?tab=` pattern).
  */
-function ChatPageContent() {
+function ChatPageContent({
+  defaultMembersHidden,
+}: {
+  defaultMembersHidden: boolean;
+}) {
   const searchParams = useSearchParams();
   const channelParam = searchParams.get(CHAT_CHANNEL_PARAM);
   const messageParam = searchParams.get(CHAT_MESSAGE_PARAM);
@@ -24,6 +28,7 @@ function ChatPageContent() {
       <ChatShell
         initialChannelId={channelParam}
         initialMessageId={messageParam}
+        defaultMembersHidden={defaultMembersHidden}
       />
     </ChatProvider>
   );
@@ -35,7 +40,12 @@ function ChatPageContent() {
  * shell. The provider lives inside the dashboard tree so it sees the existing
  * QueryClient, api-sdk client, and active chapter id.
  */
-export function ChatPage() {
+export function ChatPage({
+  defaultMembersHidden = false,
+}: {
+  /** The member list's remembered state, read by the route on the server. */
+  defaultMembersHidden?: boolean;
+} = {}) {
   /*
     This boundary's fallback must never be what the server sends.
 
@@ -43,7 +53,7 @@ export function ChatPage() {
     payload", and `ComposerShell` (#2176) is only focusable before hydration
     because it really is in that payload. A Suspense boundary around a
     `useSearchParams()` consumer is exactly the thing Next.js resolves to its
-    fallback on a *static* prerender — which would ship `LoadingState` instead
+    fallback on a *static* prerender — which would ship the skeleton instead
     of the shell, and the budget would go quietly back to being hydration-gated
     with every test still green.
 
@@ -55,8 +65,8 @@ export function ChatPage() {
     composer's `<textarea>` before assuming this still holds.
   */
   return (
-    <Suspense fallback={<LoadingState message="Loading chat..." />}>
-      <ChatPageContent />
+    <Suspense fallback={<ChatRouteSkeleton />}>
+      <ChatPageContent defaultMembersHidden={defaultMembersHidden} />
     </Suspense>
   );
 }

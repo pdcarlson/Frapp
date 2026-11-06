@@ -10,6 +10,7 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { POSITION_MAX } from '#domain/constants/field-limits';
+import { DOCUMENT_TITLE_MAX_LENGTH } from '@repo/validation';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RequestDocumentUploadUrlDto {
@@ -58,7 +59,7 @@ export class ConfirmDocumentUploadDto {
 
   @ApiProperty({ description: 'Document title' })
   @IsString()
-  @MaxLength(255)
+  @MaxLength(DOCUMENT_TITLE_MAX_LENGTH)
   title: string;
 
   @ApiPropertyOptional({ description: 'Document description' })

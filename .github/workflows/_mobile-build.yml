@@ -3,9 +3,10 @@ name: Mobile build
 # Build the commit production serves for the stores, upload it without
 # releasing it, and record what was uploaded (#3111). A reusable workflow:
 # `on: workflow_call` only, and its one caller is `deploy-production.yml`'s
-# `mobile` job, which runs only when the operator chose a platform in the
-# `mobile_build` input, and only after a `full`, non-dry-run ship whose
-# deploy and tag both succeeded. Paul chose this opt-in shape on 2026-10-01
+# `mobile` job, which runs only when its `mobile-plan` job names a platform:
+# the one the operator chose in the `mobile_build` input, or, under `auto`,
+# each platform no OTA update can reach. Only after a `full`, non-dry-run
+# ship whose deploy and tag both succeeded. Paul chose this opt-in shape on 2026-10-01
 # over building on every ship: most ships don't touch the app, every iOS
 # release is another App Review cycle, and EAS meters builds.
 #
@@ -22,6 +23,18 @@ name: Mobile build
 #   2. Every uploaded build is listed in `apps/mobile/store/shipped-builds.json`,
 #      which arms the required `api-contract-check` gate. The `record` job
 #      opens that PR (`scripts/ci/record-shipped-builds.mjs`).
+#
+# ── Submit, record, then confirm (#3483) ────────────────────────────────────
+# Expo's free plan queues each submission for about 47 minutes before it
+# uploads anything (2026-11-05). `eas submit --wait` held the upload step for
+# all of it, hit the step's ceiling, and turned an upload that worked into a
+# red run with no record PR. So each upload step submits with `--no-wait`:
+# it ends once EAS accepts the submission, and hands the submission id on.
+# The `record` job records a build once its submission is accepted. The
+# `confirm` job then waits out the queue beside it, polling each submission
+# (`scripts/ci/confirm-store-submissions.mjs`), and goes red with what to do
+# when one errors, is cancelled, is still queued at its deadline, can't be
+# read, or succeeded with no submission id.
 #
 # ── Upload, never release ───────────────────────────────────────────────────
 # iOS goes to TestFlight and Android to the Play `internal` track
@@ -49,6 +62,8 @@ name: Mobile build
 # names the main-only environment too (`workflow-secrets-scope.test.mjs` B).
 #   * `build` holds `EXPO_TOKEN` and runs the deployed tree.
 #   * `record` holds the base-sync App token and runs the trusted ref.
+#   * `confirm` holds `EXPO_TOKEN` too, but runs the trusted ref with nothing
+#     installed: it only reads each submission's status from EAS's API.
 #   * `snapshot` publishes the migration snapshot as the store build starts.
 #     This run stays in flight for as long as EAS takes, and
 #     `migration-snapshot.yml` otherwise publishes only when a Deploy
@@ -73,11 +88,13 @@ name: Mobile build
 #
 # ── Failure ─────────────────────────────────────────────────────────────────
 # Production is live and tagged before this starts, so nothing here rolls
-# anything back or turns the deploy's summary red. A failed build or upload
-# reds this workflow's own job, which reds the run with the caller's job name
-# saying the ship stands, and the `record` job's summary says what was built,
-# what was uploaded and how to finish each case by hand (ADR-24 I4: never a
-# silent skip). A re-run rebuilds every platform the run asked for, so re-run
+# anything back or turns the deploy's summary red. A failed build, or a
+# submission EAS refused, reds the `build` job, which reds the run with the
+# caller's job name saying the ship stands, and the `record` job's summary
+# says what was built, what was submitted and how to finish each case by hand.
+# A submission EAS accepted and then failed to upload reds `confirm`, whose
+# summary says what to do with its record entry (ADR-24 I4: never a silent
+# skip). A re-run rebuilds every platform the run asked for, so re-run
 # only when nothing uploaded and nothing is still building
 # (`docs/ops/deployment/mobile.md` § 6.6).
 
@@ -127,7 +144,7 @@ jobs:
       deployment: false
     # The ceilings below: two starts of 15, the wait of 240 (its own deadline
     # ends the poll at 230, so the step reports before it can be killed), two
-    # uploads of 25, and the installs, under the 360 a hosted job allows.
+    # submits of 10, and the installs, under the 360 a hosted job allows.
     timeout-minutes: 340
     permissions:
       contents: read
@@ -139,6 +156,8 @@ jobs:
       android-started: ${{ steps.start-android.outputs.id }}
       ios-upload: ${{ steps.upload-ios.outcome }}
       android-upload: ${{ steps.upload-android.outcome }}
+      ios-submission: ${{ steps.upload-ios.outputs.submission }}
+      android-submission: ${{ steps.upload-android.outputs.submission }}
       # `true` when either tag check found production on another commit;
       # each check's outcome says whether it ran and passed.
       tag-moved: ${{ steps.tag-before-build.outputs.moved || steps.tag-before-upload.outputs.moved }}
@@ -548,22 +567,38 @@ jobs:
       - name: Upload iOS to TestFlight (not submitted for review)
         id: upload-ios
         if: ${{ !cancelled() && steps.tag-before-upload.outcome == 'success' && steps.wait.outputs.ios_id != '' }}
-        timeout-minutes: 25
+        timeout-minutes: 10
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           BUILD_ID: ${{ steps.wait.outputs.ios_id }}
-        run: eas submit --platform ios --profile production --id "$BUILD_ID" --non-interactive --wait --no-auto-testflight-setup
+        # `--no-wait`: the step ends once EAS accepts the submission, and the
+        # `confirm` job waits out Expo's queue (this file's header, #3483).
+        # The id comes from the details link eas prints. Without one the step
+        # still passes, since EAS took the build, and `confirm` fails on an
+        # upload that succeeded with no id, so nothing goes unchecked.
+        run: |
+          set -euo pipefail
+          eas submit --platform ios --profile production --id "$BUILD_ID" --non-interactive --no-wait --no-auto-testflight-setup | tee "$RUNNER_TEMP/submit.log"
+          ID="$(grep -oE 'submissions/[0-9a-f-]{36}' "$RUNNER_TEMP/submit.log" | head -n 1 | cut -d/ -f2 || true)"
+          [ -n "$ID" ] || echo "::warning::eas submit printed no submission link, so the confirm job can't check this upload. Check it on expo.dev."
+          echo "submission=$ID" >> "$GITHUB_OUTPUT"
 
       - name: Upload Android to the Play internal track (not promoted)
         id: upload-android
         if: ${{ !cancelled() && steps.tag-before-upload.outcome == 'success' && steps.wait.outputs.android_id != '' }}
-        timeout-minutes: 25
+        timeout-minutes: 10
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           BUILD_ID: ${{ steps.wait.outputs.android_id }}
-        run: eas submit --platform android --profile production --id "$BUILD_ID" --non-interactive --wait
+        # The same as the iOS upload above.
+        run: |
+          set -euo pipefail
+          eas submit --platform android --profile production --id "$BUILD_ID" --non-interactive --no-wait | tee "$RUNNER_TEMP/submit.log"
+          ID="$(grep -oE 'submissions/[0-9a-f-]{36}' "$RUNNER_TEMP/submit.log" | head -n 1 | cut -d/ -f2 || true)"
+          [ -n "$ID" ] || echo "::warning::eas submit printed no submission link, so the confirm job can't check this upload. Check it on expo.dev."
+          echo "submission=$ID" >> "$GITHUB_OUTPUT"
 
   record:
     name: Record the uploads in shipped-builds.json (opens a PR)
@@ -630,3 +665,49 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
         run: node scripts/ci/record-shipped-builds.mjs
+
+  confirm:
+    name: Confirm the store uploads finished (waits out Expo's queue)
+    needs: build
+    # Beside `record`, after a failed build too: one platform may have been
+    # submitted. Only when an upload step succeeded, so a run that submitted
+    # nothing has nothing to wait for; the script fails an upload that
+    # succeeded without a submission id.
+    if: ${{ !cancelled() && (needs.build.outputs.ios-upload == 'success' || needs.build.outputs.android-upload == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    environment:
+      name: automation
+      deployment: false
+    permissions:
+      contents: read
+    steps:
+      # The dispatched `main`, as in `record`: the script holds EXPO_TOKEN, so
+      # it must not come from the tree that was built.
+      - name: Checkout (trusted ref)
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Node only, no install: the script uses fetch and Node built-ins, so
+      # no installed package runs with the token.
+      - name: Setup Node
+        uses: ./.github/actions/node-setup
+        with:
+          install: none
+
+      # Its own deadline ends the poll at 280, so it reports before the step
+      # is killed at 290.
+      - name: Wait for each submission to finish on EAS
+        timeout-minutes: 290
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          IOS_UPLOAD: ${{ needs.build.outputs.ios-upload }}
+          IOS_SUBMISSION: ${{ needs.build.outputs.ios-submission }}
+          IOS_BUILD: ${{ needs.build.outputs.ios-started }}
+          ANDROID_UPLOAD: ${{ needs.build.outputs.android-upload }}
+          ANDROID_SUBMISSION: ${{ needs.build.outputs.android-submission }}
+          ANDROID_BUILD: ${{ needs.build.outputs.android-started }}
+          DEADLINE_MINUTES: "280"
+          POLL_SECONDS: "60"
+        run: node scripts/ci/confirm-store-submissions.mjs

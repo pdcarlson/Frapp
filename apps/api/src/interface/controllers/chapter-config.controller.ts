@@ -22,8 +22,46 @@ import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
+import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { PatchChapterConfigDto } from '../dtos/chapter-config.dto';
+
+/**
+ * The settings a `PATCH :id/config` can change, by DTO field. Typed as a
+ * record of every DTO key, so a new field won't compile until it is listed,
+ * and a key outside it is never sent as a `section`.
+ */
+const CONFIG_SECTIONS: Readonly<Record<keyof PatchChapterConfigDto, true>> = {
+  org_archetype: true,
+  enabled_modules: true,
+  vocabulary: true,
+  branding: true,
+  beta_config: true,
+  dues: true,
+  service: true,
+  points: true,
+  workflows: true,
+  analytics_opt_out: true,
+  default_invite_role_id: true,
+};
+
+/**
+ * Which setting a config PATCH changed: the DTO field when it sent one,
+ * `multiple` when it sent several, and nothing for an empty PATCH.
+ */
+function configSection(body: unknown): string | null {
+  const sent =
+    body && typeof body === 'object'
+      ? Object.keys(body).filter((key) =>
+          Object.prototype.hasOwnProperty.call(CONFIG_SECTIONS, key),
+        )
+      : [];
+  if (sent.length === 0) return null;
+  return sent.length === 1 ? sent[0] : 'multiple';
+}
 
 @ApiTags('Chapter Config')
 @ApiBearerAuth()
@@ -55,6 +93,15 @@ export class ChapterConfigController {
     summary:
       'Update chapter config (writes audit log + posts to #chapter-audit)',
   })
+  // `track` reads the opt-out after this handler, so a PATCH that opts the
+  // chapter out is itself not recorded.
+  @FeatureEvent(
+    'chapter-config-updated',
+    ({ body }: FeatureEventInput<PatchChapterConfigDto>) => {
+      const section = configSection(body);
+      return section === null ? null : { section };
+    },
+  )
   async patchConfig(
     @Param('id') id: string,
     @CurrentChapterId() chapterId: string,

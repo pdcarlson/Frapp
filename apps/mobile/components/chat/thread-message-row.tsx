@@ -1,5 +1,14 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
+import {
+  readAnnouncementBody,
+  readEventPayload,
+  readHoursPayload,
+  readPointsPayload,
+  readRushPayload,
+  readSystemAuditPayload,
+  readTaskPayload,
+} from "@repo/chat-core/cards";
 import {
   hiddenQuoteText,
   tombstoneCanUnblock,
@@ -11,28 +20,36 @@ import {
 import { dayDividerLabel } from "@repo/chat-core/grouping";
 import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
-import { canOpenMessageActions } from "@/lib/chat/blocks";
+import { canOpenMessageActions } from "@repo/chat-core/message-actions";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { AnnouncementCard } from "./announcement-card";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
+import type { ChatCardFrameProps } from "./chat-card";
+import { EventCard } from "./event-card";
+import { HoursCard } from "./hours-card";
 import { MessageItem, MessageRowFrame, OwnLineMarkers } from "./message-item";
+import { PointsCard } from "./points-card";
 import { PollCard } from "./poll-card";
 import { ReplyQuote } from "./reply-quote";
+import { RushCard } from "./rush-card";
+import { SystemAuditLine } from "./system-audit-card";
+import { TaskCard } from "./task-card";
 
 /**
  * One s05 row, after the block list has been applied (`applyBlockList` in
  * `@repo/chat-core/blocks`). Held rows never reach here.
  *
  * Split out of `app/(tabs)/chat-thread.tsx` so the choice between tombstone,
- * poll card and message is testable: everything under `app/` ships as a route
+ * card and message is testable: everything under `app/` ships as a route
  * module, so a spec cannot sit beside the screen (`routes.spec.ts` fails on
  * one), and the list's `FlatList` stand-in never calls `renderItem` in tests.
  *
  * **Everything the block list hides is decided here**, so a message or card
  * never has to know about it:
  *
- * - **The tombstone comes first**, before the `kind === "poll"` branch: a
- *   blocked member's poll is their authored text like any other message, and a
- *   votable card would put it on screen.
+ * - **The tombstone comes first**, before any card: a blocked member's poll is
+ *   their authored text like any other message, and a votable card would put
+ *   it on screen.
  * - **Reactions** go through `visibleReactions` on every message, the viewer's
  *   own included: a reaction is its author's own text, and the server's mask
  *   (#2494) does not reach reaction rows cached before a block.
@@ -55,6 +72,8 @@ export interface ThreadMessageRowProps {
    */
   viewerId: string;
   nameFor: (userId: string) => string | null;
+  /** `users.id` → role color for the author line (#3485); `null` keeps it plain. */
+  roleColorFor?: (userId: string) => string | null;
   replyParent: ChatMessage | null | undefined;
   blockState: BlockState;
   onVote: (
@@ -77,15 +96,20 @@ export interface ThreadMessageRowProps {
 }
 
 export function ThreadMessageRow(props: ThreadMessageRowProps) {
-  // In an inverted list the item's own content still reads top to bottom, so
-  // the divider goes above the row inside the same item.
+  // One View, never a fragment. An inverted list lays each cell out
+  // `column-reverse` (React Native's `VirtualizedListCellRenderer`, so a
+  // separator lands on the right side of an upside-down list), which stacks a
+  // cell's direct children bottom to top. A fragment made the divider and the
+  // row two direct children, so the divider drew under its row, between the
+  // day's first and second messages. Wrapped, the cell has one child
+  // and the divider reads above the row.
   return (
-    <>
+    <View>
       {props.startsDay ? (
         <DayDivider createdAt={props.row.message.created_at} />
       ) : null}
       <ThreadMessageRowBody {...props} />
-    </>
+    </View>
   );
 }
 
@@ -94,6 +118,7 @@ function ThreadMessageRowBody({
   startsRun,
   viewerId,
   nameFor,
+  roleColorFor,
   replyParent,
   blockState,
   onVote,
@@ -145,14 +170,52 @@ function ThreadMessageRowBody({
     ? () => onJumpToMessage(quotedParent.id)
     : undefined;
 
+  // An audit entry is a line, not a post: no author line, no card frame
+  // (components.md §11 § Audit lines). Audit rows never reply.
+  const auditPayload = message.is_deleted
+    ? null
+    : message.kind === "system_audit"
+      ? readSystemAuditPayload(message)
+      : null;
+  if (auditPayload) {
+    return (
+      <SystemAuditLine
+        message={message}
+        payload={auditPayload}
+        viewerId={viewerId}
+        nameFor={nameFor}
+        startsRun={startsRun}
+        onReact={onReact}
+        onUnreact={onUnreact}
+        onOpenActions={openActions}
+      />
+    );
+  }
+
   // A card is not a message body, so it goes into the row frame directly:
   // the same quote, avatar and author line as any other row, with the card
-  // where the text would be. Web draws every card kind this way; mobile has a
-  // renderer for `poll` only, and draws every other kind as text.
-  // A deleted poll keeps its kind and payload server-side, so it would still
-  // draw a live, votable card; like web, a deleted message of any kind is the
-  // placeholder instead (MessageItem: no votes, no reactions).
-  if (message.kind === "poll" && !message.is_deleted) {
+  // where the text would be. Web draws every card kind this way; `cardFor`
+  // says which kinds mobile draws as a card, and every other kind is text.
+  // A deleted card keeps its kind and payload server-side, so it would still
+  // draw a live card with live buttons; like web, a deleted message of any
+  // kind is the placeholder instead (MessageItem: no actions, no reactions).
+  const card = message.is_deleted
+    ? null
+    : cardFor(
+        {
+          message,
+          viewerId,
+          isConfirmed: message._status === "confirmed",
+          onRetry,
+          onDiscard,
+          onReact,
+          onUnreact,
+          onOpenActions: openActions,
+          onJumpToParent: message.reply_to_id ? onJumpToParent : undefined,
+        },
+        { onVote },
+      );
+  if (card) {
     const quote =
       message.reply_to_id ? (
         <ReplyQuote
@@ -170,22 +233,12 @@ function ThreadMessageRowBody({
         message={message}
         viewerId={viewerId}
         nameFor={nameFor}
+        roleColorFor={roleColorFor}
         startsRun={startsRun}
         quote={quote}
         onOpenActions={openActions}
       >
-        <PollCard
-          message={message}
-          viewerId={viewerId}
-          isConfirmed={message._status === "confirmed"}
-          onVote={onVote}
-          onRetry={onRetry}
-          onDiscard={onDiscard}
-          onReact={onReact}
-          onUnreact={onUnreact}
-          onOpenActions={openActions}
-          onJumpToParent={quote ? onJumpToParent : undefined}
-        />
+        {card}
         <OwnLineMarkers message={message} />
       </MessageRowFrame>
     );
@@ -196,6 +249,7 @@ function ThreadMessageRowBody({
       message={message}
       viewerId={viewerId}
       nameFor={nameFor}
+      roleColorFor={roleColorFor}
       startsRun={startsRun}
       replyParent={quotedParent}
       replyParentHidden={replyParentHidden}
@@ -207,6 +261,58 @@ function ThreadMessageRowBody({
       onJumpToParent={onJumpToParent}
     />
   );
+}
+
+/**
+ * The card a message draws, or `null` to draw it as text.
+ *
+ * A card whose payload doesn't read is text, its `content` string, as web's
+ * renderers fall back: the server writes that string for exactly this. That
+ * includes the server's own `system_audit` notices, which carry no payload
+ * and whose `content` is the whole notice ("This poll has closed."). A poll
+ * keeps its own malformed state, which names the poll.
+ *
+ * Not cards on mobile: `dues`, which web draws as a "coming soon" card, and
+ * `loading`, web's placeholder for a slash command in flight, which mobile
+ * never sends.
+ */
+function cardFor(
+  frame: ChatCardFrameProps,
+  row: {
+    onVote: ThreadMessageRowProps["onVote"];
+  },
+): ReactNode | null {
+  const { message } = frame;
+  switch (message.kind) {
+    case "poll":
+      return <PollCard {...frame} onVote={row.onVote} />;
+    case "event": {
+      const payload = readEventPayload(message);
+      return payload ? <EventCard {...frame} payload={payload} /> : null;
+    }
+    case "task": {
+      const payload = readTaskPayload(message);
+      return payload ? <TaskCard {...frame} payload={payload} /> : null;
+    }
+    case "points": {
+      const payload = readPointsPayload(message);
+      return payload ? <PointsCard {...frame} payload={payload} /> : null;
+    }
+    case "hours": {
+      const payload = readHoursPayload(message);
+      return payload ? <HoursCard {...frame} payload={payload} /> : null;
+    }
+    case "rush": {
+      const payload = readRushPayload(message);
+      return payload ? <RushCard {...frame} payload={payload} /> : null;
+    }
+    case "announcement": {
+      const body = readAnnouncementBody(message);
+      return body ? <AnnouncementCard {...frame} body={body} /> : null;
+    }
+    default:
+      return null;
+  }
 }
 
 /**

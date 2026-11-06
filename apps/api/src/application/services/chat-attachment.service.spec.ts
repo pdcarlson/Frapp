@@ -4,6 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { MAX_UPLOAD_BYTES } from '@repo/validation';
 import type { ReportedAttachment } from '#domain/entities/chat-moderation.entity';
 import { ChatAttachmentService } from './chat-attachment.service';
@@ -13,6 +14,13 @@ import {
   createChatServiceFixture,
   type ChatServiceFixture,
 } from '#test/helpers/chat-service.fixture';
+
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(() => 'event-exception'),
+  captureMessage: jest.fn(() => 'event-message'),
+}));
+
+const captureException = jest.mocked(Sentry.captureException);
 
 // Moved out of `chat.service.spec.ts` with the methods (#1380). The fixture
 // wires the real `ChatService` beside this service, so the send-path cases
@@ -28,6 +36,7 @@ describe('ChatAttachmentService', () => {
   let mockReportRepo: ChatServiceFixture['mockReportRepo'];
 
   beforeEach(async () => {
+    captureException.mockClear();
     ({
       attachments,
       mockChannelRepo,
@@ -1030,6 +1039,49 @@ describe('ChatAttachmentService', () => {
 
         expect(mockStorageProvider.getSignedUploadUrl).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('persistAttachments', () => {
+    it('rethrows the write error and reports a failed attachment_count cleanup once', async () => {
+      const writeError = new Error('insert failed');
+      mockAttachmentRepo.createMany.mockRejectedValue(writeError);
+      mockMessageRepo.findById.mockRejectedValue(new Error('db down'));
+      const error = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      await expect(
+        attachments.persistAttachments('msg-1', 'ch-chan-1', [
+          {
+            storage_path: 'chapters/ch-1/chat/ch-chan-1/msg-1/minutes.pdf',
+            filename: 'minutes.pdf',
+            content_type: 'application/pdf',
+            byte_size: 2048,
+          },
+        ]),
+      ).rejects.toBe(writeError);
+
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'Failed to clear attachment_count on message msg-1 (channel ch-chan-1)',
+        ),
+        expect.any(String),
+      );
+      expect(captureException).toHaveBeenCalledTimes(1);
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'db down' }),
+        expect.objectContaining({
+          level: 'error',
+          tags: { caught_at: 'chat-attachment-count-clear' },
+          fingerprint: [
+            'caught-failure',
+            'chat-attachment-count-clear',
+            'Error',
+          ],
+        }),
+      );
+      error.mockRestore();
     });
   });
 });

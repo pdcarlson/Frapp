@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -33,8 +34,9 @@ import { compactControlClassName } from "@/components/shared/table-controls";
  * sat *on* a card — and is still the wrong pick now that the card is gone and
  * the rail sits on `--background`, because §7's fallback would paint the rail
  * a step lighter than the list beside it and rebuild the panel this lane
- * deleted. Hover takes `accent-3`, active `accent-4` plus `accent-11` text —
- * the table recipe `components/shared/table-contrast.spec.ts` pins.
+ * deleted. Hover takes the neutral `--card-hover`; the active folder takes
+ * `accent-4` plus `accent-11` text, because it is where the member is
+ * (`foundations.md` §6, "Where the accent goes").
  * `FOCUS_RING_OFFSET`, not `FOCUS_RING`: these rows carry no border, and
  * `FOCUS_RING`'s indicator is the border swap.
  */
@@ -45,9 +47,17 @@ function folderRowClassName(isActive: boolean): string {
     FOCUS_RING_OFFSET,
     isActive
       ? "bg-accent-subtle-hover text-accent-text"
-      : "text-muted-foreground hover:bg-accent-subtle hover:text-foreground",
+      : "text-muted-foreground hover:bg-card-hover hover:text-foreground",
   ].join(" ");
 }
+
+/**
+ * The four management icons. A disabled one (the first folder's Move up, the
+ * last one's Move down) keeps the quiet look rather than `button.tsx`'s
+ * disabled card fill, which drew a boxed arrow in the middle of the rail.
+ */
+const MANAGE_CONTROL =
+  "h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11 disabled:border-transparent disabled:bg-transparent";
 
 export function FolderRail({
   railFolders,
@@ -71,6 +81,16 @@ export function FolderRail({
 }) {
   const { folderBusy, openFolderDialog, handleMoveFolder, handleDeleteFolder } =
     management;
+  /*
+    Folder management is a mode, not furniture. Every named folder used to
+    carry a second line of four icon buttons (up, down, rename, delete), so an
+    officer's rail read as a toolbar repeated six times and a member's rail
+    could never look like the navigation it is. Edit shows those lines; Done
+    puts them away. Toggling is not a write, so it is not gated; the four
+    controls it reveals still are, each with its own explanation.
+  */
+  const [editing, setEditing] = useState(false);
+  const manageable = railFolders.some((folder) => folder.id);
 
   return (
     <nav aria-labelledby="doc-folders-label">
@@ -82,16 +102,30 @@ export function FolderRail({
           Folders
         </h2>
         <Can permission="chapter_docs:manage">
-          <Button
-            variant="ghost"
-            size="icon"
-            className={compactControlClassName}
-            aria-label="New folder"
-            onClick={() => openFolderDialog(null)}
-            {...gate.controlProps(folderBusy)}
-          >
-            <FolderPlus className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-0.5">
+            {manageable ? (
+              <Button
+                variant="ghost"
+                size="toolbar"
+                className="px-2 pointer-coarse:px-3"
+                aria-pressed={editing}
+                aria-label={editing ? "Done editing folders" : "Edit folders"}
+                onClick={() => setEditing((current) => !current)}
+              >
+                {editing ? "Done" : "Edit"}
+              </Button>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="icon"
+              className={compactControlClassName}
+              aria-label="New folder"
+              onClick={() => openFolderDialog(null)}
+              {...gate.controlProps(folderBusy)}
+            >
+              <FolderPlus className="h-4 w-4" />
+            </Button>
+          </div>
         </Can>
       </div>
       {/*
@@ -135,7 +169,7 @@ export function FolderRail({
               because the folder endpoint is down — there is no record to
               rename, reorder or delete, so the row filters and nothing more.
             */}
-            {folder.id ? (
+            {folder.id && editing ? (
               <Can permission="chapter_docs:manage">
                 {/*
                   A second line under the name rather than a trailing cluster
@@ -151,7 +185,7 @@ export function FolderRail({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11"
+                    className={MANAGE_CONTROL}
                     aria-label={`Move ${folder.name} up`}
                     onClick={() => void handleMoveFolder(index, -1)}
                     {...gate.controlProps(folderBusy || index === 0)}
@@ -161,7 +195,7 @@ export function FolderRail({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11"
+                    className={MANAGE_CONTROL}
                     aria-label={`Move ${folder.name} down`}
                     onClick={() => void handleMoveFolder(index, 1)}
                     {...gate.controlProps(
@@ -173,7 +207,7 @@ export function FolderRail({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11"
+                    className={MANAGE_CONTROL}
                     aria-label={`Rename ${folder.name}`}
                     onClick={() => openFolderDialog(folder)}
                     {...gate.controlProps(folderBusy)}
@@ -183,7 +217,7 @@ export function FolderRail({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11"
+                    className={MANAGE_CONTROL}
                     aria-label={`Delete folder ${folder.name}`}
                     onClick={() => void handleDeleteFolder(folder)}
                     {...gate.controlProps(folderBusy)}

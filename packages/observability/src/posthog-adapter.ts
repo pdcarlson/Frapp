@@ -4,6 +4,7 @@ import {
 } from "./policy";
 import { isPseudonymHex, type AnalyticsIdentity } from "./correlation";
 import { validatedChapterGroupId, validatedDistinctId } from "./identity";
+import { analyticsRouteTemplate } from "./analytics-path";
 
 /**
  * The surface tests fake and production wraps. Specs bind a memory adapter
@@ -19,6 +20,12 @@ export interface PostHogAdapter {
   optInCapturing(): void;
   stopSessionRecording(): void;
   capture(event: string, properties?: Record<string, unknown>): void;
+  /**
+   * Record that a page or screen was opened, as the platform's own view event:
+   * `$pageview` on web, `$screen` on mobile. `path` is already a route
+   * template ({@link createRouteViewRecorder}).
+   */
+  routeView(path: string): void;
   getSessionId(): string | undefined;
   getReplayId(): string | undefined;
   getDistinctId(): string | undefined;
@@ -40,7 +47,8 @@ export type MemoryPostHogCall =
   | { type: "optIn" }
   | { type: "stopSessionRecording" }
   | { type: "reloadFeatureFlags" }
-  | { type: "capture"; event: string; properties?: Record<string, unknown> };
+  | { type: "capture"; event: string; properties?: Record<string, unknown> }
+  | { type: "routeView"; path: string };
 
 export function createMemoryPostHogAdapter(): {
   adapter: PostHogAdapter;
@@ -78,6 +86,9 @@ export function createMemoryPostHogAdapter(): {
     },
     capture(event, properties) {
       calls.push({ type: "capture", event, properties });
+    },
+    routeView(path) {
+      calls.push({ type: "routeView", path });
     },
     getSessionId: () => sessionId,
     getReplayId: () => (recording ? sessionId : undefined),
@@ -149,6 +160,48 @@ export function applyAnalyticsOptOut(next: boolean): void {
     return;
   }
   adapter.optInCapturing();
+}
+
+/**
+ * A page or screen view (#3382), sent straight from the SDK like `$identify`.
+ * Nothing while the chapter is opted out, and the path goes as a route
+ * template ({@link analyticsRouteTemplate}): no query, no host, no record id.
+ * Private: apps record views through {@link createRouteViewRecorder}, which
+ * keeps one view per visit.
+ */
+function captureRouteView(path: string): void {
+  if (optedOut) return;
+  const template = analyticsRouteTemplate(path);
+  if (!template) return;
+  currentAdapter()?.routeView(template);
+}
+
+/**
+ * One route view per visit (#3382). Call the returned function with the
+ * current pathname whenever the pathname, the visit or the chapter's opt-out
+ * changes. It records a visit once, as soon as capture is on: the first route
+ * is recorded when the chapter read opts in, and a gate that flips while the
+ * member stays put (a chapter switch reloads the chapter read) records nothing
+ * more. A route reached while opted out is still recorded if the member is on
+ * it when capture turns on.
+ *
+ * `visitKey` (default: the pathname) is what makes a new visit. Mobile passes
+ * the pathname plus its params, because pushing the same screen with new
+ * params (a notification for another thread) is a navigation the pathname
+ * alone cannot see. The key stays in memory; only the path's template is sent.
+ */
+export function createRouteViewRecorder(): (
+  path: string | null | undefined,
+  visitKey?: string,
+) => void {
+  let visit: { key: string; recorded: boolean } | null = null;
+  return (path, visitKey = path ?? undefined) => {
+    if (!path || visitKey === undefined) return;
+    if (visit?.key !== visitKey) visit = { key: visitKey, recorded: false };
+    if (optedOut || visit.recorded) return;
+    visit.recorded = true;
+    captureRouteView(path);
+  };
 }
 
 /**
@@ -224,8 +277,12 @@ export type NamedAnalyticsEventProperties = {
   [key: string]: string | number | boolean | null;
 };
 
+/** The app a client names itself as; `TrackEventDto.app`. */
+export type NamedAnalyticsEventApp = "web" | "mobile";
+
 export type NamedAnalyticsEventBody = {
   name: string;
+  app: NamedAnalyticsEventApp;
   chapter_id?: string;
   properties?: NamedAnalyticsEventProperties;
 };
@@ -233,9 +290,14 @@ export type NamedAnalyticsEventBody = {
 /**
  * Body for `POST /v1/analytics/events`. Named product events never go to the
  * vendor SDK. Returns `null` when a chapter id is required and missing.
+ *
+ * `app` is required so neither client can forget it: the API stamps it on the
+ * event, which is how usage splits by platform
+ * (`spec/behavior/observability.md` § Correlation schema).
  */
 export function namedAnalyticsEventBody(input: {
   name: string;
+  app: NamedAnalyticsEventApp;
   chapterId?: string | null;
   properties?: NamedAnalyticsEventProperties;
   requireChapter?: boolean;
@@ -243,6 +305,7 @@ export function namedAnalyticsEventBody(input: {
   if (input.requireChapter && !input.chapterId) return null;
   return {
     name: input.name,
+    app: input.app,
     ...(input.chapterId ? { chapter_id: input.chapterId } : {}),
     ...(input.properties == undefined ? {} : { properties: input.properties }),
   };
@@ -251,18 +314,6 @@ export function namedAnalyticsEventBody(input: {
 export function resetPostHog(): void {
   const adapter = currentAdapter();
   if (adapter) resetKeepingOptOut(adapter);
-}
-
-/**
- * Capture a product or page event on the bound adapter. Landing uses this
- * for path-only pageviews and CTA clicks so it does not fork the singleton.
- */
-export function captureAnalyticsEvent(
-  event: string,
-  properties?: Record<string, unknown>,
-): void {
-  if (optedOut) return;
-  currentAdapter()?.capture(event, properties);
 }
 
 export function getPostHogDistinctId(): string | undefined {

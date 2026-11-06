@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo } from "react";
 import { Platform } from "react-native";
 import type { TextStyle } from "react-native";
+import { glassFill } from "@repo/theme/glass";
 import {
   Figtree_400Regular,
   Figtree_400Regular_Italic,
@@ -117,11 +118,7 @@ export function typeRole(role: SignetTypeRole): TextStyle {
  * conventionally use 0.3.
  */
 export function tint(hex: string, alpha = 0.13): string {
-  const value = hex.replace("#", "");
-  const r = parseInt(value.slice(0, 2), 16);
-  const g = parseInt(value.slice(2, 4), 16);
-  const b = parseInt(value.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
+  return glassFill(hex, alpha);
 }
 
 /**

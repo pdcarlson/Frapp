@@ -20,16 +20,14 @@ import {
   type SemesterArchive,
 } from "@repo/hooks";
 import { type PatchChapterConfig } from "@repo/validation";
-import { titleCase, vocab } from "@/lib/vocabulary";
+import { memberViewVocabulary, titleCase, vocab } from "@repo/org-archetypes";
 import { Card, CardDescription, CardHeader } from "@/components/ui/card";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   ErrorState,
   anyReadUncached,
-  LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
-import { PageHeader } from "@/components/layout/page-header";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useSubscriptionGate } from "@/components/shared/subscription-gate";
@@ -69,6 +67,10 @@ import { SettingsDuesTab } from "@/components/settings/settings-dues-tab";
 import { SettingsRolesTab } from "@/components/settings/settings-roles-tab";
 import { SettingsPrivacyTab } from "@/components/settings/settings-privacy-tab";
 import { SettingsFieldsTab } from "@/components/settings/settings-fields-tab";
+import {
+  SettingsBodySkeleton,
+  SettingsTabSkeleton,
+} from "@/components/settings/settings-skeleton";
 
 type Branding = {
   greek_letters?: string;
@@ -237,7 +239,7 @@ function SettingsPageContent() {
       />
     );
   } else if (chapterQuery.isLoading || chapterPaused) {
-    stateBanner = <LoadingState message="Loading chapter settings..." />;
+    stateBanner = <SettingsBodySkeleton />;
   } else if (chapterQuery.isError) {
     stateBanner = (
       <ErrorState
@@ -293,7 +295,17 @@ function SettingsPageContent() {
   // defaults are sentence-case prose ("New member") rather than the title
   // case the seeded role is actually displayed with elsewhere (e.g. the
   // Discord-import role mapping step).
-  const pledgeTerm = titleCase(vocab("pledge", { vocabulary }));
+  // `memberViewVocabulary` lays the archetype's words under the chapter's: a
+  // reader the config read refuses gets the member view's stored column as
+  // it is, which can be `{}` (a chapter created without onboarding's seed) or
+  // hold a cleared `""`, and either alone would name an NPHC chapter's
+  // aspirants "New Member".
+  const pledgeTerm = titleCase(
+    vocab(
+      "pledge",
+      memberViewVocabulary({ org_archetype: archetypeKey, vocabulary }),
+    ),
+  );
   const brandingRaw = config?.branding ?? {};
   const branding: Branding = {
     greek_letters:
@@ -407,7 +419,7 @@ function SettingsPageContent() {
 
   function renderConfigGated(node: React.ReactNode) {
     if (orgConfigQuery.isPending) {
-      return <LoadingState message="Loading chapter configuration..." />;
+      return <SettingsTabSkeleton />;
     }
     if (orgConfigQuery.isError) {
       return (
@@ -615,6 +627,7 @@ function SettingsPageContent() {
               draft={accentDraft}
               canEditProfile={canEditProfile}
               updateChapter={updateChapter}
+              orgName={chapter?.name}
             />
           </TabsContent>
 
@@ -644,15 +657,7 @@ function SettingsPageContent() {
 export function SettingsPage() {
   return (
     <>
-      {/*
-        Outside the Suspense boundary so the heading is there on the pending
-        path too — the shell no longer supplies one (#2141), and the content
-        below deliberately renders none of its own.
-      */}
-      <PageHeader title="Chapter settings" />
-      <Suspense
-        fallback={<LoadingState message="Loading chapter settings..." />}
-      >
+      <Suspense fallback={<SettingsBodySkeleton />}>
         <SettingsPageContent />
       </Suspense>
     </>

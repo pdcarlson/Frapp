@@ -9,6 +9,24 @@ import {
 } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// These screens paint with the chapter accent (`useChapterBranding`), which
+// reads the current chapter through the client provider these specs don't
+// mount. A purple chapter's values, deliberately not house gold, so a control
+// that slips back to a `gold.*` token shows up in an assertion; the hook
+// itself has its own spec.
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({
+    accent: "#CB9FFF",
+    accentPrimary: "#8E4EC6",
+    accentOnPrimary: "#FFFFFF",
+    accentSubtle: "#251A33",
+    accentBorder: "#5C3E8A",
+    logoUrl: null,
+    chapterName: null,
+    textMark: null,
+  }),
+}));
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { ThreadRow } from "@repo/chat-core/blocks";
 import { ChatComposer } from "@/components/chat/chat-composer";
@@ -17,9 +35,17 @@ import {
   NotificationLevelControl,
   NotificationLevelMenu,
 } from "@/components/chat/notification-level-control";
-import { ThreadHistoryEdge } from "@/components/chat/thread-history-edge";
+import { ChannelStart } from "@/components/chat/channel-start";
+import {
+  HISTORY_START_COPY,
+  ThreadHistoryEdge,
+} from "@/components/chat/thread-history-edge";
+import { ThreadSkeleton } from "@/components/chat/thread-skeleton";
+import { jumpToLatestLabel } from "@/components/chat/jump-to-latest-button";
+import { reactionActionType } from "@repo/chat-core/types";
 import type { UseChatChannelResult } from "@/lib/chat/use-chat-channel";
 import { FrappThemeProvider } from "@/lib/theme";
+import { flatStyle } from "@/test/flat-style";
 import { screenText } from "@/test/screen-text";
 
 /**
@@ -52,15 +78,14 @@ vi.mock("react-native", async () => {
   return { ...reactNativeStub, FlatList: RenderingFlatList };
 });
 
-// `getKeyboardPath()` reaches `expo-constants` through `lib/expo-go.ts`. The
-// suite leaves that module to each spec; this one runs as Expo Go.
-vi.mock("expo-constants", () => ({
-  default: { executionEnvironment: "storeClient" },
-  ExecutionEnvironment: {
-    Bare: "bare",
-    Standalone: "standalone",
-    StoreClient: "storeClient",
-  },
+// The reaction tick. Mocked so a spec can count it: one per tap, never per
+// render.
+const selectionHaptic = vi.hoisted(() => vi.fn());
+/** The actions sheet's `dismiss`, as the screen calls it through its ref. */
+const dismissSheet = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/haptics", () => ({
+  selectionHaptic: () => selectionHaptic(),
+  successHaptic: vi.fn(),
 }));
 
 vi.mock("@/components/chat/thread-message-row", async () => {
@@ -83,8 +108,32 @@ vi.mock("@/components/chat/message-actions-sheet", async () => {
       props: Record<string, unknown>,
       ref,
     ) {
-      useImperativeHandle(ref, () => ({ present: () => {} }));
+      useImperativeHandle(ref, () => ({
+        present: () => {},
+        dismiss: () => dismissSheet(),
+      }));
       return createElement("MessageActionsSheet", props);
+    }),
+  };
+});
+
+const presentMemberSheet = vi.fn();
+const dismissMemberSheet = vi.fn();
+vi.mock("@/components/chat/channel-member-sheet", async () => {
+  const { createElement, forwardRef, useImperativeHandle } =
+    await import("react");
+  return {
+    ChannelMembersButton: (props: Record<string, unknown>) =>
+      createElement("ChannelMembersButton", props),
+    ChannelMemberSheet: forwardRef(function ChannelMemberSheet(
+      props: Record<string, unknown>,
+      ref,
+    ) {
+      useImperativeHandle(ref, () => ({
+        present: presentMemberSheet,
+        dismiss: dismissMemberSheet,
+      }));
+      return createElement("ChannelMemberSheet", props);
     }),
   };
 });
@@ -151,6 +200,7 @@ function channelState(
     viewerId: VIEWER,
     canSend: true,
     send: vi.fn(async () => true),
+    sendInFlight: () => false,
     edit: vi.fn(async () => {}),
     remove: vi.fn(async () => {}),
     react: vi.fn(async () => {}),
@@ -181,6 +231,11 @@ vi.mock("@/lib/chat/use-chat-channel", () => ({
 }));
 
 let viewerQuery = { isError: false, isFetching: false, refetch: vi.fn() };
+
+/** What `useChannel` hands back: the channel, or no row yet. */
+let channelRow: "found" | "reading" | "missing" = "found";
+/** The open channel's type, for the member list's 1:1 DM rule (#3536). */
+let channelType = "PUBLIC";
 
 /** A ready list with one member on it, stable across renders as the hook's is. */
 const BLOCK_LIST = {
@@ -217,10 +272,22 @@ const requestUploadUrl = { mutateAsync: vi.fn() };
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => "chapter-1",
-  useChannel: (id: string) => ({
-    data: { id, name: "general", can_post: true, is_read_only: false },
-    isFetching: false,
-  }),
+  useChannel: (id: string) =>
+    channelRow === "found"
+      ? {
+          data: {
+            id,
+            name: "general",
+            type: channelType,
+            description: "The whole chapter.",
+            can_post: true,
+            is_read_only: false,
+          },
+          isFetching: false,
+        }
+      : // No row and no cached list: a blank title while it is read, then the
+        // `Thread` fallback (`threadTitleFor`).
+        { data: undefined, isFetching: channelRow === "reading" },
   useCurrentUser: () => viewerQuery,
   useMemberDisplayNames: () => ROSTER,
   usePermissionList: () => [],
@@ -279,6 +346,10 @@ const rows = (tree: ReactTestRenderer) =>
 const lists = (tree: ReactTestRenderer) =>
   tree.root.findAllByType("FlatList" as never);
 
+/** The message-shaped loading state (components.md §10). */
+const skeletons = (tree: ReactTestRenderer) =>
+  tree.root.findAllByType(ThreadSkeleton);
+
 const byLabel = (tree: ReactTestRenderer, label: string) =>
   tree.root.find(
     (node) =>
@@ -329,7 +400,14 @@ function openImageViewer(tree: ReactTestRenderer, messageId = "m1") {
     }),
   );
   expect(viewerOpen(tree)).toBe(true);
-  expect(screenText(tree)).toContain(IMAGE.filename);
+  // The filename is the shown image's accessible name, never drawn text.
+  expect(
+    tree.root.findAll(
+      (node) =>
+        node.type === ("Animated.Image" as never) &&
+        node.props.accessibilityLabel === IMAGE.filename,
+    ).length,
+  ).toBeGreaterThan(0);
 }
 
 /** The last child React renders into `node`, composite or host. */
@@ -341,6 +419,8 @@ beforeEach(() => {
   channel = channelState();
   viewerQuery = { isError: false, isFetching: false, refetch: vi.fn() };
   params = { channelId: CHANNEL };
+  channelRow = "found";
+  channelType = "PUBLIC";
   queryClient = new QueryClient();
 });
 
@@ -353,7 +433,7 @@ describe("chat thread identity gate (#2250)", () => {
     channel = channelState({ viewerId: null });
     const tree = render();
 
-    expect(screenText(tree)).toContain("Loading messages…");
+    expect(skeletons(tree)).toHaveLength(1);
     expect(lists(tree)).toHaveLength(0);
     expect(rows(tree)).toHaveLength(0);
     act(() => tree.unmount());
@@ -367,7 +447,7 @@ describe("chat thread identity gate (#2250)", () => {
     channel = { ...channel, viewerId: VIEWER };
     rerender(tree);
 
-    expect(screenText(tree)).not.toContain("Loading messages…");
+    expect(skeletons(tree)).toHaveLength(0);
     expect(rows(tree)).toHaveLength(2);
     for (const row of rows(tree)) expect(row.props.viewerId).toBe(VIEWER);
     act(() => tree.unmount());
@@ -381,7 +461,7 @@ describe("chat thread identity gate (#2250)", () => {
     const tree = render();
 
     expect(screenText(tree)).toContain("Couldn't load your account");
-    expect(screenText(tree)).not.toContain("Loading messages…");
+    expect(skeletons(tree)).toHaveLength(0);
     expect(rows(tree)).toHaveLength(0);
     act(() => byLabel(tree, "Try again").props.onPress());
     expect(viewerQuery.refetch).toHaveBeenCalledTimes(1);
@@ -397,7 +477,7 @@ describe("chat thread identity gate (#2250)", () => {
 
     expect(screenText(tree)).toContain("Couldn't load messages");
     expect(screenText(tree)).not.toContain("Couldn't load your account");
-    expect(screenText(tree)).not.toContain("Loading messages…");
+    expect(skeletons(tree)).toHaveLength(0);
     act(() => byLabel(tree, "Try again").props.onPress());
     expect(channel.reload).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
@@ -648,6 +728,73 @@ describe("chat thread typing indicator after the block list (#2496)", () => {
   });
 });
 
+describe("chat thread typing line holds its place", () => {
+  // Mounting and unmounting in flow between the list and the composer moved
+  // every row, and the jump control, by a line each time.
+  const slot = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.type === ("View" as never) && node.props.testID === "typing-line",
+    );
+  const flat = (style: unknown) =>
+    Object.assign({}, ...[style].flat(Infinity).filter(Boolean)) as Record<
+      string,
+      unknown
+    >;
+
+  it("reserves the caption's own line whether or not anyone is typing", () => {
+    // The reserved height is the caption Text's line box, which React Native
+    // scales with the system text size. A fixed height on the slot would not
+    // scale, and large text would spill onto the composer or be cut off.
+    const caption = (tree: ReactTestRenderer) => {
+      const texts = slot(tree).findAllByType("Text" as never);
+      expect(texts).toHaveLength(1);
+      return texts[0]!;
+    };
+    const slotStyle = (tree: ReactTestRenderer) => flat(slot(tree).props.style);
+
+    const idle = render();
+    for (const key of ["height", "maxHeight", "minHeight"]) {
+      expect(slotStyle(idle)).not.toHaveProperty(key);
+    }
+    const blank = caption(idle);
+    // A non-breaking space: one line box, no glyphs, no words.
+    expect(blank.props.children).toBe("\u00a0");
+    expect(blank.props.numberOfLines).toBe(1);
+    expect(blank.props.allowFontScaling).not.toBe(false);
+    expect(blank.props.maxFontSizeMultiplier).toBeUndefined();
+    const idleTextStyle = flat(blank.props.style);
+    act(() => idle.unmount());
+
+    channel = channelState({ typingUsers: [MEMBER] });
+    const typing = render();
+    for (const key of ["height", "maxHeight", "minHeight"]) {
+      expect(slotStyle(typing)).not.toHaveProperty(key);
+    }
+    const line = caption(typing);
+    expect(line.props.children).toBe("Someone is typing…");
+    expect(line.props.numberOfLines).toBe(1);
+    // Same type and line height as the blank, so the swap moves nothing.
+    expect(flat(line.props.style)).toEqual(idleTextStyle);
+    act(() => typing.unmount());
+  });
+
+  it("hides the empty line from a screen reader, and shows the full one", () => {
+    const idle = render();
+    expect(slot(idle).props.accessibilityElementsHidden).toBe(true);
+    expect(slot(idle).props.importantForAccessibility).toBe(
+      "no-hide-descendants",
+    );
+    act(() => idle.unmount());
+
+    channel = channelState({ typingUsers: [MEMBER] });
+    const typing = render();
+    expect(slot(typing).props.accessibilityElementsHidden).toBe(false);
+    expect(slot(typing).props.importantForAccessibility).toBe("auto");
+    act(() => typing.unmount());
+  });
+});
+
 describe("chat thread scrollback (#2772)", () => {
   // The list is inverted, so its end is the top: reaching it asks for the
   // next older page, which lands past the rows on screen.
@@ -741,6 +888,824 @@ describe("chat thread frame (#2485)", () => {
     const frame = tree.root.findByType("SafeAreaView" as never);
 
     expect(frame.props.edges).toContain("top");
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread loading state (components.md §10)", () => {
+  it("draws message shapes, not a spinner and a sentence", () => {
+    channel = channelState({ isLoading: true });
+    const tree = render();
+
+    expect(skeletons(tree)).toHaveLength(1);
+    expect(tree.root.findAllByType("ActivityIndicator" as never)).toHaveLength(
+      0,
+    );
+    expect(screenText(tree)).not.toMatch(/Loading/);
+    expect(lists(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("sits the shapes at the bottom, where an inverted thread's rows land", () => {
+    channel = channelState({ isLoading: true });
+    const tree = render();
+
+    const container = skeletons(tree)[0]!.find(
+      (node) =>
+        node.type === ("View" as never) &&
+        node.props.accessibilityLabel === "Loading messages",
+    );
+    expect(container.props.style).toMatchObject({
+      flex: 1,
+      justifyContent: "flex-end",
+    });
+    act(() => tree.unmount());
+  });
+
+  it("reads aloud as one loading element", () => {
+    // A label alone is not enough on iOS: VoiceOver only reads a View that is
+    // an accessibility element, and the shapes inside have nothing to read.
+    channel = channelState({ isLoading: true });
+    const tree = render();
+
+    const container = skeletons(tree)[0]!.find(
+      (node) =>
+        node.type === ("View" as never) &&
+        node.props.accessibilityLabel === "Loading messages",
+    );
+    expect(container.props.accessible).toBe(true);
+    expect(container.props.accessibilityRole).toBe("progressbar");
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread list behaviour", () => {
+  const list = (tree: ReactTestRenderer) => lists(tree)[0]!;
+
+  it("keeps the reader's place as messages arrive, following them only near the newest", () => {
+    const tree = render();
+    expect(list(tree).props.maintainVisibleContentPosition).toEqual({
+      minIndexForVisible: 0,
+      autoscrollToTopThreshold: 80,
+    });
+    act(() => tree.unmount());
+  });
+
+  it("lets a tap act with the keyboard up, and a drag put the keyboard away", () => {
+    const tree = render();
+    expect(list(tree).props.keyboardShouldPersistTaps).toBe("handled");
+    expect(list(tree).props.keyboardDismissMode).toBe("on-drag");
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread jump to latest", () => {
+  const list = (tree: ReactTestRenderer) => lists(tree)[0]!;
+  const jumpButtons = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        node.type === ("Pressable" as never) &&
+        [jumpToLatestLabel(false), jumpToLatestLabel(true)].includes(
+          node.props.accessibilityLabel,
+        ),
+    );
+
+  function scrollTo(tree: ReactTestRenderer, y: number) {
+    act(() =>
+      list(tree).props.onScroll({
+        nativeEvent: { contentOffset: { x: 0, y } },
+      }),
+    );
+  }
+
+  function renderMeasured(scrollToOffset = vi.fn()) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(<Screen />, {
+        createNodeMock: (element) =>
+          element.type === "FlatList"
+            ? { scrollToOffset, scrollToIndex: vi.fn() }
+            : null,
+      });
+    });
+    act(() =>
+      list(tree).props.onLayout({ nativeEvent: { layout: { height: 500 } } }),
+    );
+    return tree;
+  }
+
+  it("appears past a screen of history, and takes the reader back down", () => {
+    const scrollToOffset = vi.fn();
+    const tree = renderMeasured(scrollToOffset);
+    expect(jumpButtons(tree)).toHaveLength(0);
+
+    scrollTo(tree, 1200);
+    const [jump] = jumpButtons(tree);
+    expect(jump!.props.accessibilityLabel).toBe(jumpToLatestLabel(false));
+
+    act(() => jump!.props.onPress());
+    expect(scrollToOffset).toHaveBeenCalledWith({ offset: 0, animated: true });
+
+    scrollTo(tree, 0);
+    expect(jumpButtons(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("says so when a newer message lands while the reader is away", () => {
+    const tree = renderMeasured();
+    scrollTo(tree, 1200);
+
+    channel = {
+      ...channel,
+      messages: [
+        ...channel.messages,
+        message("m3", {
+          created_at: new Date(2026, 8, 28, 17, 2).toISOString(),
+        }),
+      ],
+    };
+    rerender(tree);
+
+    expect(jumpButtons(tree)[0]!.props.accessibilityLabel).toBe(
+      jumpToLatestLabel(true),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("says so when a message lands out of sight just past the follow threshold", () => {
+    // Past 80pt the list stops following arrivals, so one that lands while
+    // the reader is less than a screen back is still out of sight.
+    const tree = renderMeasured();
+    scrollTo(tree, 200);
+    expect(jumpButtons(tree)).toHaveLength(0);
+
+    channel = {
+      ...channel,
+      messages: [
+        ...channel.messages,
+        message("m3", {
+          created_at: new Date(2026, 8, 28, 17, 2).toISOString(),
+        }),
+      ],
+    };
+    rerender(tree);
+
+    expect(jumpButtons(tree)[0]!.props.accessibilityLabel).toBe(
+      jumpToLatestLabel(true),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("opens another channel at its newest message, with no jump control", () => {
+    // The screen stays mounted across a switch. A shared list kept the last
+    // channel's offset, so a cached channel opened mid-history with no ↓.
+    const mounted: object[] = [];
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(<Screen />, {
+        createNodeMock: (element) => {
+          if (element.type !== "FlatList") return null;
+          const instance = { scrollToOffset: vi.fn(), scrollToIndex: vi.fn() };
+          mounted.push(instance);
+          return instance;
+        },
+      });
+    });
+    act(() =>
+      list(tree).props.onLayout({ nativeEvent: { layout: { height: 500 } } }),
+    );
+    scrollTo(tree, 1200);
+    expect(jumpButtons(tree)).toHaveLength(1);
+    // Read off the test instance, never `.instance`, which builds a fresh
+    // node mock on every read.
+    const before = list(tree);
+    rerender(tree);
+    expect(list(tree)).toBe(before);
+    expect(mounted).toHaveLength(1);
+
+    params = { channelId: OTHER_CHANNEL };
+    rerender(tree);
+
+    // A new native list, which opens at offset 0: the newest message.
+    expect(mounted).toHaveLength(2);
+    expect(list(tree)).not.toBe(before);
+    expect(jumpButtons(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  /** A send the test settles itself, as a slow POST holds it open. */
+  function heldSend() {
+    const held: { settle: (queued: boolean) => void } = { settle: () => {} };
+    // As the channel hook's: claimed as `send` is called, before it awaits,
+    // and released when it settles.
+    let inFlight = false;
+    const send = vi.fn(() => {
+      inFlight = true;
+      return new Promise<boolean>((resolve) => {
+        held.settle = (queued) => {
+          inFlight = false;
+          resolve(queued);
+        };
+      });
+    });
+    return { send, sendInFlight: () => inFlight, held };
+  }
+
+  // Online, `send` settles only once the server has answered, so the jump
+  // can't wait for it: it comes on the tap.
+  it("takes a member who sends a new message to the bottom on the tap", async () => {
+    const { send, held } = heldSend();
+    channel = channelState({ draft: "on my way", send });
+    const scrollToOffset = vi.fn();
+    const tree = renderMeasured(scrollToOffset);
+    scrollTo(tree, 1200);
+
+    act(() => tree.root.findByType(ChatComposer).props.onSend());
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).toHaveBeenCalledWith({ offset: 0, animated: false });
+    expect(jumpButtons(tree)).toHaveLength(0);
+
+    await act(async () => {
+      held.settle(true);
+      await Promise.resolve();
+    });
+    expect(scrollToOffset).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  // The composer greys Send out then; this is the belt to it.
+  it("leaves the reader where they are when there is nothing to send", () => {
+    const scrollToOffset = vi.fn();
+    const tree = renderMeasured(scrollToOffset);
+    scrollTo(tree, 1200);
+
+    act(() => tree.root.findByType(ChatComposer).props.onSend());
+
+    expect(channel.send).not.toHaveBeenCalled();
+    expect(scrollToOffset).not.toHaveBeenCalled();
+    expect(jumpButtons(tree)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("does not move the reader again for a second tap while their reply is still on its way", async () => {
+    const { send, held } = heldSend();
+    channel = channelState({ draft: "same here", send });
+    const scrollToOffset = vi.fn();
+    const tree = renderMeasured(scrollToOffset);
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    act(() => (sheet.props.onReply as (id: string) => void)("m1"));
+    scrollTo(tree, 1200);
+
+    act(() => {
+      // One render: the second tap meets the same staged reply, in flight.
+      const composer = tree.root.findByType(ChatComposer);
+      composer.props.onSend();
+      composer.props.onSend();
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      held.settle(true);
+      await Promise.resolve();
+    });
+    expect(scrollToOffset).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  // `send` refuses a message while an earlier one is out (a slow POST), so a
+  // jump then would move the reader with nothing on its way.
+  it("leaves the reader where they are for a Send tap while an earlier send is still out", async () => {
+    const { send, sendInFlight, held } = heldSend();
+    channel = channelState({ draft: "first", send, sendInFlight });
+    const scrollToOffset = vi.fn();
+    const tree = renderMeasured(scrollToOffset);
+    scrollTo(tree, 1200);
+    act(() => tree.root.findByType(ChatComposer).props.onSend());
+    expect(scrollToOffset).toHaveBeenCalledTimes(1);
+
+    // Back up the thread, with the next message typed, before the POST answers.
+    scrollTo(tree, 1200);
+    channel = { ...channel, draft: "second" };
+    rerender(tree);
+    act(() => tree.root.findByType(ChatComposer).props.onSend());
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).toHaveBeenCalledTimes(1);
+    expect(jumpButtons(tree)).toHaveLength(1);
+
+    // Once it answers, the next tap sends and jumps.
+    await act(async () => {
+      held.settle(true);
+      await Promise.resolve();
+    });
+    act(() => tree.root.findByType(ChatComposer).props.onSend());
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(scrollToOffset).toHaveBeenCalledTimes(2);
+    act(() => tree.unmount());
+  });
+
+  it("moves the reader once for a double tap on Send", () => {
+    const { send, sendInFlight } = heldSend();
+    channel = channelState({ draft: "on my way", send, sendInFlight });
+    const scrollToOffset = vi.fn();
+    const tree = renderMeasured(scrollToOffset);
+    scrollTo(tree, 1200);
+
+    act(() => {
+      // One render: the second tap reads the same draft.
+      const composer = tree.root.findByType(ChatComposer);
+      composer.props.onSend();
+      composer.props.onSend();
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  // The screen stays mounted across channels, so anything still waiting on a
+  // send would act on whichever channel is open when it settles.
+  it("does not scroll the next channel when a send from the last one settles", async () => {
+    const { send, held } = heldSend();
+    channel = channelState({ draft: "see you there", send });
+    const mounted: { scrollToOffset: ReturnType<typeof vi.fn> }[] = [];
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(<Screen />, {
+        createNodeMock: (element) => {
+          if (element.type !== "FlatList") return null;
+          const instance = { scrollToOffset: vi.fn(), scrollToIndex: vi.fn() };
+          mounted.push(instance);
+          return instance;
+        },
+      });
+    });
+    const measure = () =>
+      act(() =>
+        list(tree).props.onLayout({
+          nativeEvent: { layout: { height: 500 } },
+        }),
+      );
+    measure();
+    scrollTo(tree, 1200);
+    act(() => tree.root.findByType(ChatComposer).props.onSend());
+    expect(mounted[0]!.scrollToOffset).toHaveBeenCalledTimes(1);
+
+    params = { channelId: OTHER_CHANNEL };
+    channel = channelState({ draft: "", send });
+    rerender(tree);
+    measure();
+    scrollTo(tree, 1200);
+    expect(jumpButtons(tree)).toHaveLength(1);
+
+    await act(async () => {
+      held.settle(true);
+      await Promise.resolve();
+    });
+    expect(mounted[1]!.scrollToOffset).not.toHaveBeenCalled();
+    expect(jumpButtons(tree)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  // Taken down on the tap, the reader can be back in history before their
+  // message is drawn, and so before the server confirms it, which leaves it
+  // newest under a key they never saw. It is still their own.
+  it("lights no dot for the viewer's own message when it is confirmed", () => {
+    const { send } = heldSend();
+    channel = channelState({ draft: "running late", send });
+    const tree = renderMeasured();
+    scrollTo(tree, 200);
+    act(() => tree.root.findByType(ChatComposer).props.onSend());
+    // Back up the thread before their row is even drawn.
+    scrollTo(tree, 200);
+
+    const mine = message("mine", {
+      sender_id: VIEWER,
+      created_at: new Date(2026, 8, 28, 17, 2).toISOString(),
+      _status: "pending",
+    });
+    channel = { ...channel, messages: [...channel.messages, mine] };
+    rerender(tree);
+    expect(jumpButtons(tree)).toHaveLength(0);
+    channel = {
+      ...channel,
+      messages: [
+        ...channelState().messages,
+        // Re-keyed under the server's id, its client key unchanged.
+        { ...mine, id: "srv-mine", _status: "confirmed" },
+      ],
+    };
+    rerender(tree);
+
+    expect(jumpButtons(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  // Queued offline, the viewer's message comes back from the server newest,
+  // under the same key, after everything backfilled from the outage.
+  it("says so when rows are backfilled beneath the viewer's own message", () => {
+    const own = message("own", {
+      sender_id: VIEWER,
+      created_at: new Date(2026, 8, 28, 17, 2).toISOString(),
+      _status: "pending",
+    });
+    channel = channelState({
+      messages: [...channelState().messages, own],
+    });
+    const tree = renderMeasured();
+    scrollTo(tree, 200);
+    expect(jumpButtons(tree)).toHaveLength(0);
+
+    channel = {
+      ...channel,
+      messages: [
+        ...channelState().messages,
+        message("b1", {
+          created_at: new Date(2026, 8, 28, 17, 3).toISOString(),
+        }),
+        message("b2", {
+          created_at: new Date(2026, 8, 28, 17, 4).toISOString(),
+        }),
+        {
+          ...own,
+          created_at: new Date(2026, 8, 28, 17, 5).toISOString(),
+          _status: "confirmed",
+        },
+      ],
+    };
+    rerender(tree);
+
+    expect(jumpButtons(tree)[0]!.props.accessibilityLabel).toBe(
+      jumpToLatestLabel(true),
+    );
+    act(() => tree.unmount());
+  });
+
+  // The viewer's own message is not news to them, before it is confirmed or
+  // after.
+  it("lights no dot for the viewer's own unconfirmed message", () => {
+    const tree = renderMeasured();
+    scrollTo(tree, 200);
+
+    channel = {
+      ...channel,
+      messages: [
+        ...channel.messages,
+        message("mine", {
+          sender_id: VIEWER,
+          created_at: new Date(2026, 8, 28, 17, 2).toISOString(),
+          _status: "pending",
+        }),
+      ],
+    };
+    rerender(tree);
+
+    expect(jumpButtons(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  // Thread rows the viewer has nothing to read in: a blocked member's message
+  // is drawn as a tombstone, and a deleted one as a placeholder.
+  it("lights no dot for a message from a member the viewer blocked, or one deleted", () => {
+    const tree = renderMeasured();
+    scrollTo(tree, 200);
+
+    channel = {
+      ...channel,
+      messages: [
+        ...channel.messages,
+        message("b1", {
+          sender_id: BLOCKED,
+          created_at: new Date(2026, 8, 28, 17, 2).toISOString(),
+        }),
+        message("d1", {
+          is_deleted: true,
+          content: "",
+          created_at: new Date(2026, 8, 28, 17, 3).toISOString(),
+        }),
+      ],
+    };
+    rerender(tree);
+    expect(rows(tree)).toHaveLength(4);
+    expect(jumpButtons(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("leaves the reader where they are when the send saves an edit", () => {
+    channel = channelState({
+      messages: [message("m1", { sender_id: VIEWER, content: "first" })],
+    });
+    const scrollToOffset = vi.fn();
+    const tree = renderMeasured(scrollToOffset);
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    act(() => (sheet.props.onEdit as (id: string) => void)("m1"));
+    expect(tree.root.findByType(ChatComposer).props.context?.kind).toBe("edit");
+
+    act(() => tree.root.findByType(ChatComposer).props.onSend());
+
+    expect(scrollToOffset).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread reactions from the actions sheet", () => {
+  it("opens the sheet knowing the viewer's reactions, and wires its picks", () => {
+    channel = channelState({
+      messages: [
+        message("m1", {
+          reactions: {
+            [reactionActionType("🔥")]: [VIEWER, MEMBER],
+            [reactionActionType("👍")]: [MEMBER],
+          },
+        }),
+      ],
+    });
+    const tree = render();
+    const row = rows(tree)[0]!;
+    act(() =>
+      (row.props.onOpenActions as (message: ChatMessage) => void)(
+        (row.props.row as ThreadRow).message,
+      ),
+    );
+
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    expect(sheet.props.target).toMatchObject({
+      messageId: "m1",
+      reactedWith: ["🔥"],
+    });
+    act(() =>
+      (sheet.props.onReact as (id: string, emoji: string) => void)("m1", "👍"),
+    );
+    act(() =>
+      (sheet.props.onUnreact as (id: string, emoji: string) => void)(
+        "m1",
+        "🔥",
+      ),
+    );
+    expect(channel.react).toHaveBeenCalledWith("m1", "👍");
+    expect(channel.unreact).toHaveBeenCalledWith("m1", "🔥");
+    act(() => tree.unmount());
+  });
+
+  it("follows the viewer's reactions as they change under the open sheet", () => {
+    // A rollback, or the viewer's other device, can change them while the
+    // sheet is up; a copy taken at the long-press would draw 🔥 selected and
+    // send a second "remove" for a reaction that is already gone.
+    channel = channelState({
+      messages: [
+        message("m1", {
+          reactions: { [reactionActionType("🔥")]: [VIEWER] },
+        }),
+      ],
+    });
+    const tree = render();
+    const row = rows(tree)[0]!;
+    act(() =>
+      (row.props.onOpenActions as (message: ChatMessage) => void)(
+        (row.props.row as ThreadRow).message,
+      ),
+    );
+    const target = () =>
+      tree.root.findByType("MessageActionsSheet" as never).props.target;
+    expect(target().reactedWith).toEqual(["🔥"]);
+
+    channel = {
+      ...channel,
+      messages: [
+        message("m1", {
+          reactions: {
+            [reactionActionType("🔥")]: [MEMBER],
+            [reactionActionType("👍")]: [VIEWER],
+          },
+        }),
+      ],
+    };
+    rerender(tree);
+
+    expect(target()).toMatchObject({ messageId: "m1", reactedWith: ["👍"] });
+    act(() => tree.unmount());
+  });
+
+  it("closes the sheet when its message is deleted while it is open", () => {
+    // A deleted message offers no actions; left open, the quick row would
+    // write a reaction the thread no longer draws.
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const row = rows(tree)[0]!;
+    act(() =>
+      (row.props.onOpenActions as (message: ChatMessage) => void)(
+        (row.props.row as ThreadRow).message,
+      ),
+    );
+    rerender(tree);
+    expect(dismissSheet).not.toHaveBeenCalled();
+
+    channel = {
+      ...channel,
+      messages: [message("m1", { is_deleted: true, content: "" })],
+    };
+    rerender(tree);
+
+    expect(dismissSheet).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("closes the sheet when its message leaves the cache while it is open", () => {
+    // A hard delete, or a re-read that drops the older page it was on: the
+    // sheet's actions would act on a message the thread no longer draws.
+    channel = channelState({ messages: [message("m1"), message("m2")] });
+    const tree = render();
+    const row = rows(tree).find(
+      (node) => (node.props.row as ThreadRow).message.id === "m1",
+    )!;
+    act(() =>
+      (row.props.onOpenActions as (message: ChatMessage) => void)(
+        (row.props.row as ThreadRow).message,
+      ),
+    );
+    rerender(tree);
+    expect(dismissSheet).not.toHaveBeenCalled();
+
+    channel = { ...channel, messages: [message("m2")] };
+    rerender(tree);
+
+    expect(dismissSheet).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread reaction haptic (README § Native-feel rules)", () => {
+  it("ticks once per reaction a member adds or takes back, from a chip or the sheet", () => {
+    const tree = render();
+    const row = rows(tree)[0]!;
+    const sheet = () => tree.root.findByType("MessageActionsSheet" as never);
+    const call = (fn: unknown, ...args: string[]) =>
+      act(() => (fn as (...a: string[]) => void)(...args));
+
+    call(row.props.onReact, "m2", "👍");
+    expect(selectionHaptic).toHaveBeenCalledTimes(1);
+    expect(channel.react).toHaveBeenCalledTimes(1);
+    call(row.props.onUnreact, "m2", "👍");
+    expect(selectionHaptic).toHaveBeenCalledTimes(2);
+    call(sheet().props.onReact, "m2", "🔥");
+    call(sheet().props.onUnreact, "m2", "🔥");
+    expect(selectionHaptic).toHaveBeenCalledTimes(4);
+
+    // Not on a render: a rollback lands as new messages, not as a tap.
+    channel = { ...channel, messages: [...channel.messages] };
+    rerender(tree);
+    expect(selectionHaptic).toHaveBeenCalledTimes(4);
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread composer placeholder", () => {
+  it("names the conversation, as s05 draws it", () => {
+    const tree = render();
+    expect(tree.root.findByType(ChatComposer).props.placeholder).toBe(
+      "Message #general",
+    );
+    act(() => tree.unmount());
+  });
+
+  it.each([
+    ["while the channel is read and the title is blank", "reading" as const],
+    ["once the title falls back to Thread", "missing" as const],
+  ])("says plain Message %s", (_label, row) => {
+    channelRow = row;
+    const tree = render();
+    expect(tree.root.findByType(ChatComposer).props.placeholder).toBe(
+      "Message",
+    );
+    const input = tree.root.find(
+      (node) => node.type === ("TextInput" as never),
+    );
+    expect(input.props.placeholder).toBe("Message");
+    expect(input.props.accessibilityLabel).toBe("Message");
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread channel start", () => {
+  it("shows the channel's description under its name in the header", () => {
+    const tree = render();
+    expect(screenText(tree)).toContain("The whole chapter.");
+    act(() => tree.unmount());
+  });
+
+  it("starts an empty channel with its channel start, in a scrolling slot", () => {
+    channel = channelState({ messages: [], hasOlder: false });
+    const tree = render();
+
+    const start = tree.root.findByType(ChannelStart);
+    expect(start.props).toMatchObject({
+      channelName: "general",
+      description: "The whole chapter.",
+    });
+    const slot = start.parent!;
+    expect(slot.type).toBe("ScrollView");
+    // `flexGrow`, not `flex`: a content container held to the viewport's
+    // height can't scroll a start taller than it.
+    expect(flatStyle(slot.props.contentContainerStyle)).toMatchObject({
+      flexGrow: 1,
+      justifyContent: "flex-end",
+    });
+    expect(flatStyle(slot.props.contentContainerStyle).flex).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("draws nothing in an empty channel while its row is still being read", () => {
+    channelRow = "reading";
+    channel = channelState({ messages: [], hasOlder: false });
+    const tree = render();
+
+    expect(tree.root.findAllByType(ChannelStart)).toHaveLength(0);
+    expect(screenText(tree)).not.toContain(HISTORY_START_COPY);
+    act(() => tree.unmount());
+  });
+
+  it("says where the history starts when the channel's row can't be read", () => {
+    channelRow = "missing";
+    channel = channelState({ messages: [], hasOlder: false });
+    const tree = render();
+
+    expect(tree.root.findAllByType(ChannelStart)).toHaveLength(0);
+    expect(screenText(tree)).toContain(HISTORY_START_COPY);
+    act(() => tree.unmount());
+  });
+
+  it("hands the history edge the channel start for the top of a long channel", () => {
+    channel = channelState({ hasOlder: false });
+    const tree = render();
+
+    const edge = lists(tree)[0]!.findByType(ThreadHistoryEdge);
+    expect(edge.props.start).toBeTruthy();
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread member list (#3536)", () => {
+  const membersButtons = (tree: ReactTestRenderer) =>
+    header(tree).findAllByType("ChannelMembersButton" as never);
+
+  it("opens the member sheet from the header, for the open channel", () => {
+    const tree = render();
+
+    expect(membersButtons(tree)).toHaveLength(1);
+    expect(
+      tree.root.findByType("ChannelMemberSheet" as never).props.channelId,
+    ).toBe(CHANNEL);
+    act(() => membersButtons(tree)[0]!.props.onPress());
+    expect(presentMemberSheet).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("offers it on a group DM", () => {
+    channelType = "GROUP_DM";
+    const tree = render();
+    expect(membersButtons(tree)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("offers no list on a 1:1 DM, whose two members are the header", () => {
+    channelType = "DM";
+    const tree = render();
+    expect(membersButtons(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  // The sheet draws through the app's sheet provider, and the screen stays
+  // mounted, so it would outlive the channel it lists.
+  it("closes the sheet when the screen blurs", () => {
+    const tree = render();
+    act(() => refocus());
+    expect(dismissMemberSheet).toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("closes the sheet when the thread switches channel", () => {
+    const tree = render();
+    dismissMemberSheet.mockClear();
+    params = { channelId: OTHER_CHANNEL };
+    rerender(tree);
+    expect(dismissMemberSheet).toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("closes the sheet when the channel turns out to be a 1:1 DM", () => {
+    const tree = render();
+    dismissMemberSheet.mockClear();
+    channelType = "DM";
+    rerender(tree);
+    expect(membersButtons(tree)).toHaveLength(0);
+    expect(dismissMemberSheet).toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("offers no list before the channel row is known", () => {
+    channelRow = "reading";
+    const tree = render();
+    expect(membersButtons(tree)).toHaveLength(0);
     act(() => tree.unmount());
   });
 });

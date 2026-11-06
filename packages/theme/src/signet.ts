@@ -1,5 +1,5 @@
 /**
- * Signet design tokens — the dark-first warm palette.
+ * Signet design tokens — the dark-first neutral graphite palette.
  *
  * This started as an ADDITIVE entrypoint beside the legacy bone/bronze/ink
  * tokens, with `apps/mobile` its first consumer. It is now the ONLY token set
@@ -58,6 +58,11 @@ export type SignetTokens = {
       success: string;
       warning: string;
       destructive: string;
+      /**
+       * The AA-lifted tone for danger TEXT on a danger tint or on `popover`
+       * (components.md §5). The solid `destructive` stays the fill and border.
+       */
+      destructiveText: string;
       info: string;
       /** "You were addressed" — @-mention or DM. Never replaced by the chapter accent. */
       mention: string;
@@ -111,16 +116,15 @@ export type SignetTokens = {
   touch: { minimum: number; button: number; buttonLarge: number; tabBar: number };
   focus: { ringWidth: number; ringOpacity: number };
   /**
-   * Scrollbars are board chrome, not a per-surface opt-in: an 8px gold thumb
-   * on a fixed `#1A1A1A` track, drawn everywhere (web-framework board option
-   * `3a`, "never hidden"). The greenfield shell is the surface that settled
-   * this; see the `@layer components` block in `signet.css` for the engine
-   * split and for why the previous low-opacity-white opt-in was retired.
+   * Scrollbars are quiet chrome drawn on every scroll region: a thin neutral
+   * thumb on a clear track, so the bar blends into whichever surface it sits
+   * on. It replaced the board's gold-on-`#1A1A1A` bar (option `3a`) on
+   * 2026-11-05 at the owner's request: the gold bar read as the loudest thing on
+   * the chat screen. See the `@layer components` block in `signet.css` for the
+   * engine split.
    *
-   * Both colors are FIXED literals and never retint per chapter. The thumb is
-   * mark gold, which the brand lock keeps out of the accent engine entirely
-   * (`spec/ui/brand-identity.md` §2), so wiring it to `--primary` would be the
-   * same house-tenant mistake as painting the mark with a tenant accent.
+   * Both colors are FIXED literals and never retint per chapter. A scrollbar
+   * is not an accent role, so the accent engine must not reach it.
    */
   scrollbar: {
     width: number;
@@ -135,25 +139,26 @@ export type SignetTokens = {
 const SIGNET_DARK: SignetTokens = {
   color: {
     surface: {
-      background: "#131211",
-      surface1: "#1A1A1A",
-      card: "#211E1A",
-      popover: "#2A2621",
+      background: "#0A0A0A",
+      surface1: "#111111",
+      card: "#171717",
+      popover: "#1E1E1E",
     },
     border: {
       hairline: "rgba(255,255,255,0.08)",
       input: "rgba(255,255,255,0.14)",
     },
     text: {
-      foreground: "#EDEAE3",
-      mutedForeground: "#A9A399",
-      muted: "#78716A",
-      disabled: "#57534C",
+      foreground: "#EBEBEB",
+      mutedForeground: "#A3A3A3",
+      muted: "#737373",
+      disabled: "#525252",
     },
     semantic: {
       success: "#3FB950",
       warning: "#E5A000",
       destructive: "#F85149",
+      destructiveText: "#FF7B72",
       info: "#2F81F7",
       mention: "#E5484D",
       mentionForeground: "#FFFFFF",
@@ -192,13 +197,13 @@ const SIGNET_DARK: SignetTokens = {
     avatar: "50%",
   },
   spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, "2xl": 32, "3xl": 48 },
-  touch: { minimum: 44, button: 46, buttonLarge: 48, tabBar: 56 },
+  touch: { minimum: 44, button: 44, buttonLarge: 48, tabBar: 50 },
   focus: { ringWidth: 3, ringOpacity: 0.25 },
   scrollbar: {
-    width: 8,
-    thumb: "#DDB844",
-    thumbHover: "#F0CD5E",
-    track: "#1A1A1A",
+    width: 6,
+    thumb: "rgba(255,255,255,0.12)",
+    thumbHover: "rgba(255,255,255,0.22)",
+    track: "rgba(0,0,0,0)",
   },
   motion: motionTokens,
 };
@@ -252,6 +257,7 @@ export function getSignetCssVars(
     "--success": t.color.semantic.success,
     "--warning": t.color.semantic.warning,
     "--destructive": t.color.semantic.destructive,
+    "--destructive-text": t.color.semantic.destructiveText,
     "--info": t.color.semantic.info,
     "--mention": t.color.semantic.mention,
     "--mention-foreground": t.color.semantic.mentionForeground,
@@ -290,8 +296,9 @@ export function getSignetCssVars(
     "--space-2xl": `${t.spacing["2xl"]}px`,
     "--space-3xl": `${t.spacing["3xl"]}px`,
 
-    // Touch floors (foundations.md §9). Web honors the same 44px minimum;
-    // pointer input does not make a small target acceptable.
+    // Touch floors (foundations.md §9). Web honors the same 44px minimum
+    // wherever a finger lands (`pointer: coarse`); a mouse gets the denser
+    // steps of the control size scale.
     "--touch-min": `${t.touch.minimum}px`,
     "--touch-button": `${t.touch.button}px`,
 

@@ -33,12 +33,43 @@ import { CHAT_MESSAGE_REPOSITORY } from '#domain/repositories/chat.repository.in
 import type { IChatMessageRepository } from '#domain/repositories/chat.repository.interface';
 import type { ChatMessage } from '#domain/entities/chat.entity';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import {
   resolveAppOrigin,
   buildJoinUrl,
 } from '../../infrastructure/email/invite-link.util';
-import { assertHttpsJoinOrigin, dedupeEmails } from '@repo/validation';
+import {
+  assertHttpsJoinOrigin,
+  chapterTextMark,
+  dedupeEmails,
+} from '@repo/validation';
+import { orgHidingGreekLettersIn } from '@repo/org-archetypes';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
+
+/**
+ * What an invite is for, read without using it up (#3352). Only what the
+ * person holding the token is about to see anyway once they join.
+ */
+export interface InvitePreview {
+  chapter_name: string;
+  university: string;
+  /**
+   * The chapter's text mark, resolved by `chapterTextMark` after the org
+   * override in `preview`. The rule clients read is the `mark_text`
+   * description on `InvitePreviewResponseDto` (invite.dto.ts).
+   */
+  mark_text: string | null;
+  accent_color: string | null;
+  /** The inviter's display name, or null when their profile is gone. */
+  invited_by: string | null;
+  /**
+   * The role name the redeem will grant (`resolveRedeemRole`), or null when
+   * it would grant none: the invite's role is gone and the chapter has no
+   * seeded Member role to fall back to.
+   */
+  role: string | null;
+  expires_at: string;
+}
 
 export interface BulkEmailInviteResult {
   invites: Invite[];
@@ -279,6 +310,74 @@ export class InviteService {
   }
 
   /**
+   * The invite behind `token`, if it can still be redeemed. Gone (410) for a
+   * token that never existed, was used, or expired: the join screens treat
+   * all three as a dead link (`joinErrorCopy`).
+   */
+  private async findLiveInvite(token: string): Promise<Invite> {
+    const invite = await this.inviteRepo.findByToken(token);
+    if (!invite) throw new GoneException('Invite not found');
+    if (invite.used_at) throw new GoneException('Invite already used');
+    if (new Date(invite.expires_at) < new Date())
+      throw new GoneException('Invite expired');
+    return invite;
+  }
+
+  /**
+   * The role a redeem grants. `invite.role` is the display name chosen when
+   * the invite was issued, so it is matched by name by design. The fallback is
+   * the seeded Member role, which resolves by `system_key`: a chapter that
+   * relabelled it would otherwise leave redeemers with no role at all.
+   */
+  private async resolveRedeemRole(invite: Invite) {
+    const roles = await this.roleRepo.findByChapter(invite.chapter_id);
+    return (
+      roles.find((r) => r.name === invite.role) ??
+      roles.find((r) => r.system_key === SystemRoleKeys.MEMBER)
+    );
+  }
+
+  /**
+   * What an invite is for, without using it up (#3352): the chapter, who sent
+   * it and the role it grants, for the join screen's confirm card. It checks
+   * only what makes a token dead (410, as redeem does); the subscription lock,
+   * the Terms and an existing membership are the redeem's to answer, with the
+   * errors the join screens already handle.
+   *
+   * Signed-in only, like redeem: the token is the secret, and the caller is
+   * about to redeem it, so it learns nothing it wouldn't on joining. A POST
+   * so the token rides in the body, not in a URL that access logs keep.
+   */
+  async preview(token: string): Promise<InvitePreview> {
+    const invite = await this.findLiveInvite(token);
+    const [chapter, inviter, role] = await Promise.all([
+      this.chapterRepo.findById(invite.chapter_id),
+      this.userRepo.findById(invite.created_by),
+      this.resolveRedeemRole(invite),
+    ]);
+    // A chapter deleted under a live invite: as dead as the link gets.
+    if (!chapter) throw new GoneException('Invite not found');
+    // An organization that never displays its letters (FIJI) keeps them off
+    // the card even when the chapter's stored switch was never turned off, as
+    // for one created before its org profile knew to (#3421). The match reads
+    // the organization's name inside the chapter's ("Phi Gamma Delta Tau
+    // Nu"), the override web's nav crest and mobile's Chat home also apply.
+    // Done here rather than on the card so every client gets it.
+    const branding = orgHidingGreekLettersIn(chapter.name)
+      ? { ...chapter.branding, show_greek_letters: false }
+      : chapter.branding;
+    return {
+      chapter_name: chapter.name,
+      university: chapter.university,
+      mark_text: chapterTextMark(branding)?.text ?? null,
+      accent_color: chapter.accent_color,
+      invited_by: inviter?.display_name ?? null,
+      role: role?.name ?? null,
+      expires_at: invite.expires_at,
+    };
+  }
+
+  /**
    * Bind the *current* user to this token. Invite email is not matched against
    * `users.email`, so Apple Hide My Email / `privaterelay.appleid.com` still
    * joins when the member opens the invite after signing in.
@@ -293,12 +392,7 @@ export class InviteService {
     userId: string,
     acceptTerms = false,
   ): Promise<{ chapterId: string; memberId: string }> {
-    const invite = await this.inviteRepo.findByToken(token);
-
-    if (!invite) throw new GoneException('Invite not found');
-    if (invite.used_at) throw new GoneException('Invite already used');
-    if (new Date(invite.expires_at) < new Date())
-      throw new GoneException('Invite expired');
+    const invite = await this.findLiveInvite(token);
 
     const existingMember = await this.memberRepo.findByUserAndChapter(
       userId,
@@ -338,16 +432,8 @@ export class InviteService {
     // checkbox; before the claim, so a refusal leaves the token usable.
     await this.legalAcceptance.requireOrAccept(userId, acceptTerms);
 
-    const roles = await this.roleRepo.findByChapter(invite.chapter_id);
-    // `invite.role` is the display name chosen when the invite was issued, so
-    // it is matched by name by design. The fallback is the seeded Member role,
-    // which resolves by `system_key` — a chapter that relabelled it would
-    // otherwise leave redeemers with no role at all. This read is before the
-    // claim so a roles outage does not consume the token (#1863).
-    let targetRole = roles.find((r) => r.name === invite.role);
-    if (!targetRole) {
-      targetRole = roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
-    }
+    // Before the claim, so a roles outage does not consume the token (#1863).
+    const targetRole = await this.resolveRedeemRole(invite);
 
     const claimedAt = await this.inviteRepo.markUsedAtomically(invite.id);
     if (!claimedAt) throw new GoneException('Invite already used');
@@ -385,12 +471,12 @@ export class InviteService {
         try {
           await this.inviteRepo.releaseClaim(invite.id, claimedAt);
         } catch (releaseError) {
-          logThrowable(
-            this.logger,
-            'warn',
-            'Failed to release invite after membership insert failed',
-            releaseError,
-          );
+          reportCaughtFailure(this.logger, {
+            level: 'error',
+            site: 'invite-redeem-claim-release-failed',
+            message: 'Failed to release invite after membership insert failed',
+            error: releaseError,
+          });
         }
       }
       throw error;
@@ -413,7 +499,14 @@ export class InviteService {
         category: 'admin',
         data: { target: { screen: 'members' } },
       });
-    } catch {}
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'invite-redeem-new-member-notify-failed',
+        message: `Failed to send the New Member Joined notification (chapter ${invite.chapter_id})`,
+        error,
+      });
+    }
 
     await this.notifyInviterOfAcceptance(invite, userId);
 

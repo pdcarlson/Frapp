@@ -31,6 +31,7 @@ import {
   ReportRetentionService,
 } from './report-retention.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
 
 /**
@@ -98,6 +99,7 @@ export class AccountDeletionService {
       memberships = await this.memberRepo.findByUser(user.id);
       await this.purgeStorageObjects(user, memberships);
     } catch (error) {
+      // caught-failure-exempt: rethrown as a 502; AllExceptionsFilter reports the 5xx
       logThrowable(
         this.logger,
         'error',
@@ -133,6 +135,7 @@ export class AccountDeletionService {
     try {
       await this.authAdmin.deleteAuthUser(tombstone.supabase_auth_id);
     } catch (error) {
+      // caught-failure-exempt: rethrown as a 502; AllExceptionsFilter reports the 5xx
       logThrowable(
         this.logger,
         'error',
@@ -158,12 +161,12 @@ export class AccountDeletionService {
     try {
       await this.userRepo.anonymize(userId, true);
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'error',
-        `Post-auth-deletion convergence scrub failed for user ${userId}; if a concurrent profile edit or card slipped in during deletion it may persist — re-run anonymize_user('${userId}', true) manually`,
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'account-deletion-convergence-scrub',
+        message: `Post-auth-deletion convergence scrub failed for user ${userId}; if a concurrent profile edit or card slipped in during deletion it may persist — re-run anonymize_user('${userId}', true) manually`,
         error,
-      );
+      });
     }
   }
 
@@ -205,12 +208,12 @@ export class AccountDeletionService {
     try {
       await this.reportRetention.purgeUserReports(chapterIds);
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'error',
-        `Report purge failed for user ${user.id}; deletion is proceeding; the hourly retention sweep normally removes these exports within ~${REPORT_RETENTION_HOURS + 1}h, but it cannot age out an object whose stored-at timestamp is missing and it skips a prefix it cannot read — investigate the reports bucket if this repeats`,
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'account-deletion-report-purge',
+        message: `Report purge failed for user ${user.id}; deletion is proceeding; the hourly retention sweep normally removes these exports within ~${REPORT_RETENTION_HOURS + 1}h, but it cannot age out an object whose stored-at timestamp is missing and it skips a prefix it cannot read — investigate the reports bucket if this repeats`,
         error,
-      );
+      });
     }
   }
 
@@ -295,12 +298,12 @@ export class AccountDeletionService {
           null,
         );
       } catch (error) {
-        logThrowable(
-          this.logger,
-          'error',
-          `Failed to flag orphaned presidency for chapter ${membership.chapter_id} (deleted user ${userId}); that chapter may be missing its needs_president flag — investigate manually`,
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'account-deletion-flag-orphaned-presidency',
+          message: `Failed to flag orphaned presidency for chapter ${membership.chapter_id} (deleted user ${userId}); that chapter may be missing its needs_president flag — investigate manually`,
           error,
-        );
+        });
       }
     }
   }

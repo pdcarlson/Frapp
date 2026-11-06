@@ -1,7 +1,14 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
+import { cardFilledContainers } from "@/tests/card-surfaces";
 import { MAX_UPLOAD_LABEL } from "@repo/validation";
 import {
   expectClearingEntriesEmpty,
@@ -51,6 +58,8 @@ const APPROVED_ENTRY = {
   points_awarded: true,
 };
 
+const entriesPending = vi.hoisted(() => ({ current: false }));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   // The real PUT, so the specs below assert on the request it actually sends.
   putSignedUpload: (await importOriginal<typeof import("@repo/hooks")>())
@@ -58,17 +67,21 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCurrentChapter: () => mockCurrentChapter(),
   useServiceEntries: (...args: unknown[]) => {
     mockServiceEntries(...args);
-    return {
-      data: [PENDING_ENTRY, APPROVED_ENTRY],
-      isPending: false,
-      isError: false,
-    };
+    return entriesPending.current
+      ? { data: undefined, isPending: true, isError: false }
+      : {
+          data: [PENDING_ENTRY, APPROVED_ENTRY],
+          isPending: false,
+          isError: false,
+        };
   },
   useMembers: () => ({ data: [] }),
   useCreateServiceEntry: () => ({ mutateAsync: mockCreateEntry }),
   useReviewServiceEntry: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDeleteServiceEntry: () => ({ mutateAsync: vi.fn() }),
-  useRequestServiceProofUploadUrl: () => ({ mutateAsync: mockRequestProofUpload }),
+  useRequestServiceProofUploadUrl: () => ({
+    mutateAsync: mockRequestProofUpload,
+  }),
   useGetServiceProofUrl: () => ({ mutateAsync: vi.fn(), isPending: false }),
   // Chapter policy only decides whether the proof input is `required`; it has
   // no bearing on the gate, so the neutral (unloaded) branch is enough here.
@@ -84,7 +97,9 @@ vi.mock("@/components/shared/can", () => ({
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: mockToast }),
+}));
 
 // `useFrappUser` reads `useCurrentUser`/`useViewerUserId` out of `@repo/hooks`,
 // which is stubbed wholesale above, so it is stubbed at its own module instead.
@@ -108,6 +123,27 @@ const expectNoWithdraw = () =>
   ).not.toBeInTheDocument();
 const viewProofButton = () =>
   screen.getByRole("button", { name: /view proof/i });
+
+describe("ServiceHoursPage first load", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+    mockFrappUser.mockReturnValue({ userId: "u-1", isLoading: false });
+    entriesPending.current = true;
+  });
+  afterEach(() => {
+    entriesPending.current = false;
+  });
+
+  it("draws the page's own flush skeleton, not a card", () => {
+    const { container } = render(<ServiceHoursPage />);
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Loading service hours",
+    );
+    expect(container.querySelector(".bg-card")).toBeNull();
+  });
+});
 
 describe("ServiceHoursPage subscription gating", () => {
   beforeEach(() => {
@@ -358,6 +394,22 @@ describe("ServiceHoursPage review queue", () => {
     }
     expect(screen.getByText(/soup kitchen shift/i)).toBeInTheDocument();
   });
+
+  it("renders flush sections, the queue's count on its label, and house dates", () => {
+    const { container } = render(<ServiceHoursPage />);
+
+    // No `--card` container on the loaded page (README § Page grammar).
+    expect(cardFilledContainers(container)).toEqual([]);
+    const queue = screen.getByRole("region", { name: /review queue/i });
+    expect(within(queue).getByText("1 pending")).toBeInTheDocument();
+    // `date` is a bare column: "Aug 1", never the raw "2026-08-01".
+    expect(queue).toHaveTextContent(/Aug 1(, 2026)? · 2h/);
+    expect(queue).not.toHaveTextContent("2026-08-01");
+    const history = screen.getByRole("region", { name: /history/i });
+    expect(history).toHaveTextContent(/Aug 1(, 2026)? · 2h/);
+    // The status badge renders the server's §5 token unchanged.
+    expect(within(history).getByText("APPROVED")).toBeInTheDocument();
+  });
 });
 
 describe("ServiceHoursPage self-approval affordance", () => {
@@ -565,7 +617,10 @@ describe("ServiceHoursPage proof upload ticket contract", () => {
     });
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => ({ ok: false, status: 413 })) as unknown as typeof fetch,
+      vi.fn(async () => ({
+        ok: false,
+        status: 413,
+      })) as unknown as typeof fetch,
     );
 
     render(<ServiceHoursPage />);

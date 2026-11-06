@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useRouter } from "expo-router";
 import {
   useActiveChapterId,
@@ -9,12 +15,23 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
-import { SectionHeader } from "@/components/list-section";
+import { CheckAllGlyph } from "@/components/control-glyphs";
+import { IconButton } from "@/components/icon-button";
+import { useRefetchAll } from "@/components/pull-to-refresh";
+import { BACK_TO_CHAT } from "@/components/back-row";
+import {
+  listRowHint,
+  SectionHeader,
+  SectionHeaderSkeleton,
+  usePressFeedback,
+} from "@/components/list-section";
+import { NotificationsGlyph } from "@/components/more/more-glyphs";
 import {
   EmptyState,
   ErrorState,
   NoChapterState,
-  SkeletonLines,
+  SkeletonRegion,
+  SkeletonText,
 } from "@/components/state-block";
 import {
   type NotificationRow,
@@ -24,6 +41,10 @@ import {
 import { NOTIFICATION_FALLBACK_PATHNAME } from "@/lib/notifications/targets";
 import { asRoute } from "@/lib/href";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import {
+  type ChapterBranding,
+  useChapterBranding,
+} from "@/lib/chapter-branding";
 
 /**
  * s14 — Notifications (`canvas-screens.dc.html:474`).
@@ -66,10 +87,12 @@ const MARK_ALL_BATCH = 25;
 export default function NotificationsScreen() {
   const router = useRouter();
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
   const chapterId = useActiveChapterId();
 
   const notificationsQuery = useNotifications();
+  const refresh = useRefetchAll([notificationsQuery]);
   const markRead = useMarkNotificationRead();
   const [isMarkingAll, setIsMarkingAll] = useState(false);
   const [markAllNote, setMarkAllNote] = useState<string | null>(null);
@@ -117,7 +140,7 @@ export default function NotificationsScreen() {
 
   function renderBody() {
     if (!chapterId) return <NoChapterState noun="your notifications" />;
-    if (notificationsQuery.isPending) return <SkeletonLines lines={4} />;
+    if (notificationsQuery.isPending) return <NotificationListSkeleton />;
     if (notificationsQuery.isError) {
       return (
         <ErrorState
@@ -130,11 +153,7 @@ export default function NotificationsScreen() {
     }
     if (groups.length === 0) {
       return (
-        <EmptyState
-          glyph="✓"
-          title="You're all caught up"
-          body="Chapter activity you're involved in shows up here."
-        />
+        <EmptyState glyph={NotificationsGlyph} title="You're all caught up" />
       );
     }
     return groups.map((group) => (
@@ -161,22 +180,25 @@ export default function NotificationsScreen() {
 
   return (
     <ScreenShell
+      back={BACK_TO_CHAT}
       title="Notifications"
-      subtitle="Recent chapter activity, and what you haven't read."
+      refresh={refresh}
       headerAction={
         unreadIds.length > 0 ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Mark all notifications read"
-            accessibilityState={{ disabled: isMarkingAll }}
+          // The double check, as web's drawer draws it (components.md §
+          // Icon-only actions). A spinner while the write runs, in place of
+          // the "Marking…" word it replaced.
+          <IconButton
+            label="Mark all notifications read"
             disabled={isMarkingAll}
-            hitSlop={tokens.spacing.sm}
             onPress={() => void markAllRead()}
           >
-            <Text style={styles.headerAction}>
-              {isMarkingAll ? "Marking…" : "Mark all read"}
-            </Text>
-          </Pressable>
+            {isMarkingAll ? (
+              <ActivityIndicator size="small" color={brand.accent} />
+            ) : (
+              <CheckAllGlyph color={brand.accent} />
+            )}
+          </IconButton>
         ) : null
       }
     >
@@ -197,24 +219,36 @@ export function NotificationListRow({
   onPress: () => void;
 }) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
+  const feedback = usePressFeedback();
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={row.title}
+      // The Pressable is one node, so its texts aren't read on their own: the
+      // label carries the body too, all of it, though the row shows two lines.
+      // `listRowHint` joins them as sentences, the way a row's hint is.
+      accessibilityLabel={
+        row.body ? listRowHint(row.title, row.body) : row.title
+      }
       accessibilityHint={row.isUnread ? "Marks this as read." : undefined}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.row,
-        row.isUnread ? null : styles.rowRead,
-        pressed ? styles.pressed : null,
-      ]}
+      android_ripple={feedback.ripple}
+      style={({ pressed }) => [styles.row, feedback.lift(pressed)]}
     >
       <View style={row.isUnread ? styles.dot : styles.dotSpacer} />
       <View style={styles.rowText}>
-        <Text style={styles.rowTitle}>{row.title}</Text>
-        {row.body ? <Text style={styles.rowBody}>{row.body}</Text> : null}
+        <Text
+          style={[styles.rowTitle, row.isUnread ? null : styles.rowTitleRead]}
+        >
+          {row.title}
+        </Text>
+        {row.body ? (
+          <Text style={styles.rowBody} numberOfLines={2}>
+            {row.body}
+          </Text>
+        ) : null}
         <Text style={styles.rowMeta}>
           {[row.categoryLabel, row.time].filter(Boolean).join(" · ")}
         </Text>
@@ -223,12 +257,62 @@ export function NotificationListRow({
   );
 }
 
-function createStyles(tokens: SignetTokens) {
+/** Title widths, cycled, so the placeholder rows don't read as a grid. */
+const SKELETON_TITLE_WIDTHS = ["62%", "48%", "70%", "54%"] as const;
+
+/**
+ * The list's loading state: a group caption over rows on
+ * {@link NotificationListRow}'s own styles (the dot's column, the 20pt title
+ * and body lines, the meta line), so the real list lands in place. The dot
+ * column is left empty, as on a read row: which rows are unread isn't known
+ * yet.
+ *
+ * Exported so `components/screen-skeletons.spec.tsx` can pin its shape.
+ */
+export function NotificationListSkeleton({ rows = 4 }: { rows?: number }) {
+  const { tokens } = useFrappTheme();
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
+  const { caption, label } = tokens.typography.role;
+
+  return (
+    <SkeletonRegion label="Loading notifications" style={styles.group}>
+      <SectionHeaderSkeleton width="16%" />
+      {Array.from({ length: rows }, (_, index) => (
+        <View key={index} style={styles.row}>
+          <View style={styles.dotSpacer} />
+          <View style={styles.rowText}>
+            <SkeletonText
+              role={label}
+              lineHeight={LINE_HEIGHT}
+              width={
+                SKELETON_TITLE_WIDTHS[index % SKELETON_TITLE_WIDTHS.length]!
+              }
+            />
+            <SkeletonText role={label} lineHeight={LINE_HEIGHT} width="86%" />
+            <SkeletonText
+              role={caption}
+              width="24%"
+              style={styles.rowMetaSkeleton}
+            />
+          </View>
+        </View>
+      ))}
+    </SkeletonRegion>
+  );
+}
+
+/**
+ * The title and body's line height. The label role carries none, so the line
+ * box was the font's own and the unread dot could only guess at its middle.
+ * 20 is the 14pt label's natural line on the 4pt grid.
+ */
+const LINE_HEIGHT = 20;
+
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
+  const DOT_SIZE = tokens.spacing.sm;
+  const META_MARGIN_TOP = tokens.spacing.xs;
   return StyleSheet.create({
-    headerAction: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.gold.askText,
-    },
     group: {
       gap: tokens.spacing.xs,
     },
@@ -237,46 +321,64 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.semantic.warning,
       paddingHorizontal: tokens.spacing.xs,
     },
+    // Padded on both sides so the dot sits inset from the section caption, as
+    // drawn, and the press lift clears the text. No radius: the hairline
+    // under each row would meet a rounded corner.
     row: {
       flexDirection: "row",
       gap: tokens.spacing.md,
       paddingVertical: tokens.spacing.md,
+      paddingHorizontal: tokens.spacing.sm,
       minHeight: tokens.touch.minimum,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: tokens.color.border.hairline,
     },
-    // Read rows recede rather than disappear, as drawn.
-    rowRead: {
-      opacity: 0.7,
-    },
+    // Centred on the title's first line, as drawn, however many lines the
+    // title wraps to.
     dot: {
-      width: tokens.spacing.sm,
-      height: tokens.spacing.sm,
-      borderRadius: tokens.spacing.xs,
-      marginTop: tokens.spacing.sm,
-      backgroundColor: tokens.color.gold.house,
+      width: DOT_SIZE,
+      height: DOT_SIZE,
+      borderRadius: DOT_SIZE / 2,
+      marginTop: (LINE_HEIGHT - DOT_SIZE) / 2,
+      backgroundColor: brand.accent,
     },
     dotSpacer: {
-      width: tokens.spacing.sm,
+      width: DOT_SIZE,
     },
+    // Title and body read as one sentence at one size, as s14 sets them, and
+    // the meta line sits a step below.
     rowText: {
       flex: 1,
-      gap: tokens.spacing.xs,
     },
     rowTitle: {
       ...typeRole(tokens.typography.role.label),
+      lineHeight: LINE_HEIGHT,
       color: tokens.color.text.foreground,
     },
+    // Read rows recede rather than disappear, as drawn: the title drops to the
+    // body's tone, so the row reads as one quieter sentence. Colour, not
+    // opacity, so the press lift behind it is as strong as any other row's.
+    rowTitleRead: {
+      color: tokens.color.text.mutedForeground,
+    },
+    // The title's size at regular weight. It used to be the body role (16),
+    // larger than the 14pt title above it.
     rowBody: {
-      ...typeRole(tokens.typography.role.body),
+      ...typeRole({
+        ...tokens.typography.role.label,
+        weight: tokens.typography.weight.regular,
+      }),
+      lineHeight: LINE_HEIGHT,
       color: tokens.color.text.mutedForeground,
     },
     rowMeta: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
+      marginTop: META_MARGIN_TOP,
     },
-    pressed: {
-      opacity: 0.6,
+    // The meta line's margin, read from it so the two can't drift.
+    rowMetaSkeleton: {
+      marginTop: META_MARGIN_TOP,
     },
   });
 }

@@ -1,5 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { can, isAnnouncementChannel } from '@repo/validation';
+import {
+  can,
+  isAnnouncementChannel,
+  SYSTEM_AUTHOR_LABEL,
+  SYSTEM_SENDER_ID,
+} from '@repo/validation';
 import { EventService } from './event.service';
 import { PointsService } from './points.service';
 import { BackworkService } from './backwork.service';
@@ -369,21 +374,31 @@ export class ActivityFeedService {
         timestamp: message.created_at,
         title: `New in #${announcementChannel.name}`,
         body: message.content,
-        // A roster member first. An imported row whose author linked their
-        // Discord account (#2878) has a sender too, and when that member has
-        // left the chapter it falls back to its Discord name, as every client
-        // does (`resolveAuthorName`), rather than to an unnamed actor.
+        // The system actor first, should a system post land in the
+        // announcements channel: it is on no roster, so it takes its name
+        // before any lookup, as every client does (`resolveAuthorName`,
+        // #3347). Then a roster member. An
+        // imported row whose author linked their Discord account (#2878) has a
+        // sender too, and when that member has left the chapter it falls back
+        // to its Discord name, as every client does, rather than to an
+        // unnamed actor.
         actor:
-          message.sender_id &&
-          (roster.has(message.sender_id) || !message.author_name)
-            ? actorFromRoster(message.sender_id, roster)
-            : message.author_name
-              ? {
-                  user_id: '',
-                  display_name: message.author_name,
-                  avatar_url: null,
-                }
-              : null,
+          message.sender_id === SYSTEM_SENDER_ID
+            ? {
+                user_id: SYSTEM_SENDER_ID,
+                display_name: SYSTEM_AUTHOR_LABEL,
+                avatar_url: null,
+              }
+            : message.sender_id &&
+                (roster.has(message.sender_id) || !message.author_name)
+              ? actorFromRoster(message.sender_id, roster)
+              : message.author_name
+                ? {
+                    user_id: '',
+                    display_name: message.author_name,
+                    avatar_url: null,
+                  }
+                : null,
         target_id: announcementChannel.id,
       }));
   }

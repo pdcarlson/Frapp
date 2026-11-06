@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { reactionActionType } from "@repo/chat-core/types";
 import { FrappThemeProvider } from "@/lib/theme";
+import { Keyboard } from "react-native";
 import { drawnText } from "@/test/screen-text";
 
 const attachmentHook = vi.hoisted(() => ({
@@ -37,6 +38,8 @@ vi.mock("@/lib/chapter-branding", () => ({
     accent: "#C49A3A",
     accentPrimary: "#C49A3A",
     accentOnPrimary: "#2B2009",
+    accentSubtle: "#251A33",
+    accentBorder: "#5C3E8A",
     logoUrl: null,
     chapterName: null,
   }),
@@ -48,7 +51,12 @@ import {
 } from "@repo/chat-core/reply-preview";
 import { EDITED_MARKER } from "@repo/chat-core/message-actions";
 import { signetDarkTokens } from "@repo/theme/signet";
-import { groupReactions, MessageItem } from "./message-item";
+import { SYSTEM_SENDER_ID } from "@repo/validation";
+import {
+  ADD_REACTION_A11Y_LABEL,
+  groupReactions,
+  MessageItem,
+} from "./message-item";
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
@@ -159,7 +167,11 @@ describe("groupReactions", () => {
 function renderItem(
   message: ChatMessage,
   replyParent?: ChatMessage | null,
-  extra: { startsRun?: boolean; onOpenActions?: () => void } = {},
+  extra: {
+    startsRun?: boolean;
+    onOpenActions?: () => void;
+    roleColorFor?: (userId: string) => string | null;
+  } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -169,6 +181,7 @@ function renderItem(
           message={message}
           viewerId={VIEWER}
           nameFor={(id) => (id === OTHER ? "Casey" : null)}
+          roleColorFor={extra.roleColorFor}
           startsRun={extra.startsRun ?? true}
           replyParent={replyParent}
           onRetry={vi.fn()}
@@ -223,9 +236,50 @@ describe("an imported author's row", () => {
       message({ sender_id: null, author_name: "Discord Dan" }),
     );
     const initials = tree.root.find(
-      (node) => (node.type as unknown) === "Text" && node.props.children === "DD",
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "DD",
     );
     expect(JSON.stringify(initials.props.style)).toContain("Figtree_700Bold");
+  });
+});
+
+// Frapp's own posts (the welcome, the audit bridge, a poll's closing notice,
+// an invite-accept DM) read "Frapp" and wear the crest rather than initials
+// (#3347). The system actor is on no roster, so it used to fall through to
+// "Member 000000" beside a "00" avatar.
+describe("a system post", () => {
+  const hasSystemAvatar = (tree: ReactTestRenderer) =>
+    tree.root.findAll((node) => node.props.testID === "system-avatar").length >
+    0;
+
+  it("draws the crest, not initials, for the system sender", () => {
+    const tree = renderItem(
+      message({ sender_id: SYSTEM_SENDER_ID, kind: "system_audit" }),
+    );
+    expect(hasSystemAvatar(tree)).toBe(true);
+    // The name resolves to "Frapp" (`SYSTEM_AUTHOR_LABEL`), so initials, if
+    // the crest branch went, would be drawn from it rather than from the id.
+    const texts = tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map((node) => node.props.children);
+    expect(texts).toContain("Frapp");
+    expect(texts).not.toContain("Member 000000");
+    expect(texts).not.toContain("F");
+    expect(texts).not.toContain("FR");
+  });
+
+  it("keeps initials for a member", () => {
+    const tree = renderItem(message());
+    expect(hasSystemAvatar(tree)).toBe(false);
+  });
+
+  it("draws no crest on a system follow-on row", () => {
+    const tree = renderItem(
+      message({ sender_id: SYSTEM_SENDER_ID, kind: "system_audit" }),
+      undefined,
+      { startsRun: false },
+    );
+    expect(hasSystemAvatar(tree)).toBe(false);
   });
 });
 
@@ -261,19 +315,22 @@ describe("attachment rendering is gated on the message", () => {
   });
 });
 
-// components.md §11 (#2873): the viewer's own name takes the chapter accent,
-// via the mocked `useChapterBranding()`, which is how a member spots their run.
-describe("the viewer's own name takes the chapter accent", () => {
-  it("colours 'You' with the accent text, and paints no accent fill", () => {
+// foundations.md §6 "Where the accent goes" (2026-11-05): names are neutral,
+// the viewer's own included. With no role colour "You" reads in the foreground
+// text, and the row draws no colour from the mocked `useChapterBranding()`.
+describe("the viewer's own name is neutral", () => {
+  it("colours 'You' with the foreground text, and paints no accent", () => {
     const tree = renderItem(message({ sender_id: VIEWER, content: "hello" }));
     const you = tree.root.find(
       (node) =>
         (node.type as unknown) === "Text" && node.props.children === "You",
     );
-    expect(JSON.stringify(you.props.style)).toContain('"color":"#C49A3A"');
-    // The self bubble's fill and its on-primary text are gone.
+    expect(JSON.stringify(you.props.style)).toContain(
+      `"color":"${signetDarkTokens.color.text.foreground}"`,
+    );
+    // Neither the accent text nor the old self bubble's fill is drawn.
     const flat = JSON.stringify(tree.toJSON());
-    expect(flat).not.toContain('"backgroundColor":"#C49A3A"');
+    expect(flat).not.toContain("#C49A3A");
     expect(flat).not.toContain("#2B2009");
   });
 
@@ -286,6 +343,181 @@ describe("the viewer's own name takes the chapter accent", () => {
     expect(flat).not.toContain("#C49A3A");
     expect(flat).not.toContain("#2B2009");
     expect(flat).toContain("Casey");
+  });
+});
+
+// #3485: an author's name wears their top role's palette color, the
+// viewer's own "You" included (foundations.md §6, 2026-11-05).
+describe("an author's name takes their role color", () => {
+  const roleColorFor = (id: string) => (id === OTHER ? "#6FD08C" : "#F2994A");
+
+  it("paints someone else's name in their role color", () => {
+    const tree = renderItem(
+      message({ sender_id: OTHER, content: "hi" }),
+      undefined,
+      {
+        roleColorFor,
+      },
+    );
+    const name = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "Casey",
+    );
+    expect(JSON.stringify(name.props.style)).toContain('"color":"#6FD08C"');
+  });
+
+  it("paints the viewer's own name in their role color too, never the accent", () => {
+    const tree = renderItem(
+      message({ sender_id: VIEWER, content: "hi" }),
+      undefined,
+      {
+        roleColorFor,
+      },
+    );
+    const you = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "You",
+    );
+    expect(JSON.stringify(you.props.style)).toContain('"color":"#F2994A"');
+    expect(JSON.stringify(tree.toJSON())).not.toContain("#C49A3A");
+  });
+});
+
+// #3370: the viewer's own reaction wears the chapter's tint, never Ask gold.
+describe("the viewer's own reaction takes the chapter accent", () => {
+  it("paints a mine chip from the branding hook and leaves others neutral", () => {
+    const tree = renderItem(
+      message({
+        sender_id: OTHER,
+        content: "hello",
+        reactions: {
+          [reactionActionType("👍")]: [VIEWER],
+          [reactionActionType("🔥")]: [OTHER],
+        },
+      }),
+    );
+    const chip = (emoji: string) =>
+      tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          typeof node.props.accessibilityLabel === "string" &&
+          node.props.accessibilityLabel.includes(emoji),
+      );
+    const mine = JSON.stringify(chip("👍").props.style);
+    expect(mine).toContain('"backgroundColor":"#251A33"');
+    expect(mine).toContain('"borderColor":"#5C3E8A"');
+    expect(JSON.stringify(chip("👍").findByType("Text" as never).props.style)).toContain(
+      '"color":"#C49A3A"',
+    );
+    expect(JSON.stringify(chip("🔥").props.style)).not.toContain("#251A33");
+  });
+});
+
+// The `👍 +` chip under every unreacted message made the thread loose and
+// busy; the first reaction starts from the long-press sheet instead (s05).
+describe("the reaction row", () => {
+  const pressables = (tree: ReactTestRenderer) =>
+    tree.root.findAll((node) => (node.type as unknown) === "Pressable");
+  const addChip = (tree: ReactTestRenderer) =>
+    pressables(tree).filter(
+      (node) => node.props.accessibilityLabel === ADD_REACTION_A11Y_LABEL,
+    );
+
+  it("draws nothing, not even an add chip, under a message nobody reacted to", () => {
+    const tree = renderItem(message(), undefined, { onOpenActions: vi.fn() });
+    expect(addChip(tree)).toHaveLength(0);
+    expect(drawnText(tree.root)).not.toContain("+");
+  });
+
+  it("follows existing reactions with a + chip that opens the actions sheet", () => {
+    const onOpenActions = vi.fn();
+    const tree = renderItem(
+      message({ reactions: { [reactionActionType("🔥")]: [OTHER] } }),
+      undefined,
+      { onOpenActions },
+    );
+    const [add] = addChip(tree);
+    expect(add).toBeDefined();
+    expect(drawnText(add!)).toBe("+");
+    // After the reaction chips, as the board draws `5` then `+`.
+    const labels = pressables(tree).map((node) => node.props.accessibilityLabel);
+    expect(labels.indexOf(ADD_REACTION_A11Y_LABEL)).toBeGreaterThan(
+      labels.indexOf("🔥, 1"),
+    );
+    act(() => add!.props.onPress());
+    expect(onOpenActions).toHaveBeenCalledTimes(1);
+    // Reach grows up and down only (components.md §11): chips sit 6pt apart,
+    // so a sideways overhang would hand the + the reaction chip's right edge.
+    const chips = pressables(tree).filter((node) =>
+      ["🔥, 1", ADD_REACTION_A11Y_LABEL].includes(node.props.accessibilityLabel),
+    );
+    expect(chips).toHaveLength(2);
+    for (const node of chips) {
+      expect(node.props.hitSlop).toEqual({ top: 9, bottom: 9 });
+    }
+  });
+
+  it("forwards a long press on + to the row's actions, as every chip does", () => {
+    // The + is its own Pressable and claims the touch: without the forward, a
+    // long press on it would end as a tap.
+    const onOpenActions = vi.fn();
+    const tree = renderItem(
+      message({ reactions: { [reactionActionType("🔥")]: [OTHER] } }),
+      undefined,
+      { onOpenActions },
+    );
+    const [add] = addChip(tree);
+    expect(add!.props.accessibilityRole).toBe("button");
+
+    act(() => add!.props.onLongPress());
+    expect(onOpenActions).toHaveBeenCalledTimes(1);
+    act(() => add!.props.onPress());
+    expect(onOpenActions).toHaveBeenCalledTimes(2);
+  });
+
+  it("still offers + after the viewer's own reaction", () => {
+    const tree = renderItem(
+      message({ reactions: { [reactionActionType("👍")]: [VIEWER] } }),
+      undefined,
+      { onOpenActions: vi.fn() },
+    );
+    expect(addChip(tree)).toHaveLength(1);
+  });
+
+  it("draws no + where the sheet can't open, or before the message is confirmed", () => {
+    const reacted = { reactions: { [reactionActionType("🔥")]: [OTHER] } };
+    // No actions on the row: the chips still toggle, but + has nowhere to go.
+    const noActions = renderItem(message(reacted));
+    expect(drawnText(noActions.root)).toContain("🔥 1");
+    expect(addChip(noActions)).toHaveLength(0);
+
+    const pending = renderItem(
+      message({ ...reacted, _status: "pending" }),
+      undefined,
+      { onOpenActions: vi.fn() },
+    );
+    expect(addChip(pending)).toHaveLength(0);
+  });
+});
+
+describe("a tap on the row", () => {
+  // The thread's list keeps taps for its controls while the keyboard is up
+  // (`keyboardShouldPersistTaps="handled"`), and the row's frame claims a tap
+  // for its long press, so the frame is what has to put the keyboard away.
+  it("puts the keyboard away, as a tap on the thread did before", () => {
+    vi.mocked(Keyboard.dismiss).mockClear();
+    const onOpenActions = vi.fn();
+    const tree = renderItem(message(), undefined, { onOpenActions });
+    const frame = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.onLongPress === onOpenActions &&
+        node.props.accessible === false,
+    );
+
+    act(() => frame.props.onPress());
+    expect(Keyboard.dismiss).toHaveBeenCalledTimes(1);
+    expect(onOpenActions).not.toHaveBeenCalled();
   });
 });
 
@@ -399,14 +631,18 @@ describe("compact layout (#2873)", () => {
     expect(onJumpToParent).toHaveBeenCalledTimes(1);
   });
 
-  it("trails Pinned after the text, in the accent", () => {
+  it("trails Pinned after the text, muted, never in the accent", () => {
     const tree = renderItem(message({ is_pinned: true }));
     const pinned = tree.root.find(
       (node) =>
         (node.type as unknown) === "Text" &&
         node.props.children === " · Pinned",
     );
-    expect(JSON.stringify(pinned.props.style)).toContain('"color":"#C49A3A"');
+    const style = JSON.stringify(pinned.props.style);
+    expect(style).toContain(
+      `"color":"${signetDarkTokens.color.text.mutedForeground}"`,
+    );
+    expect(style).not.toContain("#C49A3A");
   });
 
   it("marks a photo-only message on a line of its own, with no stray separator", () => {
@@ -448,11 +684,13 @@ describe("compact layout (#2873)", () => {
           is_deleted: true,
           reactions: { [reactionActionType("🔥")]: [OTHER] },
         }),
+        undefined,
+        { onOpenActions: vi.fn() },
       ).toJSON(),
     );
     expect(flat).toContain(DELETED_MESSAGE_PLACEHOLDER);
     expect(flat).not.toContain("🔥");
-    expect(flat).not.toContain("👍 +");
+    expect(flat).not.toContain(ADD_REACTION_A11Y_LABEL);
   });
 
   it("mutes the text of a send still in flight", () => {
@@ -502,7 +740,9 @@ describe("reply quote (#1727)", () => {
       ).toJSON(),
     );
     // The quote's author comes first in the tree, then the row's own.
-    expect(flat.indexOf("the original")).toBeLessThan(flat.lastIndexOf("Casey"));
+    expect(flat.indexOf("the original")).toBeLessThan(
+      flat.lastIndexOf("Casey"),
+    );
   });
 
   it("says so when the parent is outside the loaded window", () => {
@@ -602,8 +842,6 @@ describe("delivery status (#1910)", () => {
     expect(flat).not.toContain("Send failed");
     expect(flat).not.toContain("Discard this message");
     expect(flat).not.toContain("Retry sending this message");
-    // Delivered rows offer the first-reaction chip; a placeholder must not.
-    expect(flat).not.toContain("👍 +");
     // Not a known failure — red is what makes an officer re-type the command.
     expect(flat).not.toContain(DESTRUCTIVE);
   });
@@ -650,23 +888,32 @@ describe("delivery status (#1910)", () => {
 
   it("draws no delivery line on a confirmed message", () => {
     const flat = JSON.stringify(
-      renderItem(
-        message({ sender_id: VIEWER, _status: "confirmed" }),
-      ).toJSON(),
+      renderItem(message({ sender_id: VIEWER, _status: "confirmed" })).toJSON(),
     );
 
     expect(flat).not.toContain("Not confirmed");
     expect(flat).not.toContain("Send failed");
     expect(flat).not.toContain("Sending");
-    expect(flat).toContain("👍 +");
   });
 
-  it("says Sending… under a pending message", () => {
-    const flat = JSON.stringify(
-      renderItem(message({ sender_id: VIEWER, _status: "pending" })).toJSON(),
+  it("grays a pending message and adds no line under it (owner decision 2026-11-06)", () => {
+    const tree = renderItem(
+      message({ sender_id: VIEWER, _status: "pending", content: "on its way" }),
     );
-    expect(flat).toContain("Sending…");
-    expect(flat).not.toContain("Discard this message");
+    // No caption, no spinner: the gray body is the whole pending state.
+    const drawn = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        typeof node.props.children === "string" &&
+        node.props.children.includes("Sending"),
+    );
+    expect(drawn).toHaveLength(0);
+    expect(JSON.stringify(tree.toJSON())).not.toContain("Discard this message");
+    expect(
+      tree.root.findAll(
+        (node) => node.props.accessibilityHint === "Sending",
+      ).length,
+    ).toBeGreaterThan(0);
   });
 });
 

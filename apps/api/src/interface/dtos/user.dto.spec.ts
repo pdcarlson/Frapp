@@ -1,6 +1,7 @@
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
 
 import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
+import { GRADUATION_YEAR_MAX, GRADUATION_YEAR_MIN } from '@repo/validation';
 import { ConfirmAvatarDto, UpdateUserDto } from './user.dto';
 
 const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
@@ -15,6 +16,25 @@ describe('UpdateUserDto', () => {
       transform(UpdateUserDto, { display_name: 'Ann', bio: 'Hi' }),
     ).resolves.toEqual({ display_name: 'Ann', bio: 'Hi' });
   });
+
+  // The shared bound both clients refuse before sending (#3387).
+  it.each([GRADUATION_YEAR_MIN, GRADUATION_YEAR_MAX, null])(
+    'accepts graduation_year %s',
+    async (graduation_year) => {
+      await expect(
+        transform(UpdateUserDto, { graduation_year }),
+      ).resolves.toEqual({ graduation_year });
+    },
+  );
+
+  it.each([GRADUATION_YEAR_MIN - 1, GRADUATION_YEAR_MAX + 1, 2027.5])(
+    'refuses graduation_year %s',
+    async (graduation_year) => {
+      await expect(
+        transform(UpdateUserDto, { graduation_year }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    },
+  );
 
   // #2519: a free-text avatar_url let a member point their photo at any
   // string, including another member's storage path. The photo is now set

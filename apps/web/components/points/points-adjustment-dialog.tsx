@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { AdjustGlyph } from "@/components/points/points-glyphs";
 import { useAdjustPoints, useMembers } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -10,14 +9,13 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { dashboardFilterSelectClassName } from "@/components/shared/table-controls";
+import { dashboardFormSelectClassName } from "@/components/shared/table-controls";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -179,18 +177,20 @@ export function PointsAdjustmentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      {/*
+        No description: the one it had restated what the required Reason field
+        already says. `aria-describedby={undefined}` tells Radix the omission is
+        deliberate, so it does not warn about a missing `Description`.
+      */}
       <DialogContent
         className="sm:max-w-lg"
         onCloseAutoFocus={onCloseAutoFocus}
+        aria-describedby={undefined}
       >
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <AdjustGlyph className="h-5 w-5" />
+          <DialogTitle>
             Adjust points
           </DialogTitle>
-          <DialogDescription>
-            Apply a manual adjustment with a required reason for audit trail integrity.
-          </DialogDescription>
         </DialogHeader>
 
         {/*
@@ -212,7 +212,7 @@ export function PointsAdjustmentDialog({
             <select
               value={targetUserId}
               onChange={(event) => setTargetUserId(event.target.value)}
-              className={`${dashboardFilterSelectClassName} w-full`}
+              className={`${dashboardFormSelectClassName} w-full`}
               {...gate.controlProps()}
             >
               {memberOptions.map((option) => (
@@ -240,7 +240,7 @@ export function PointsAdjustmentDialog({
               <select
                 value={category}
                 onChange={(event) => setCategory(event.target.value as "MANUAL" | "FINE")}
-                className={`${dashboardFilterSelectClassName} w-full`}
+                className={`${dashboardFormSelectClassName} w-full`}
                 {...gate.controlProps()}
               >
                 <option value="MANUAL">Manual adjustment</option>

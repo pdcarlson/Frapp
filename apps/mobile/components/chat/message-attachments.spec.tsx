@@ -1,6 +1,10 @@
 /** @vitest-environment jsdom */
 import React from "react";
-import { create, type ReactTestRenderer } from "react-test-renderer";
+import {
+  create,
+  type ReactTestInstance,
+  type ReactTestRenderer,
+} from "react-test-renderer";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
@@ -160,12 +164,13 @@ describe("rendering", () => {
     };
 
     const tree = render();
-    const image = tree.root.findAllByType(
-      "Image" as unknown as React.ElementType,
-    )[0]!;
-    const style = JSON.stringify(image.props.style);
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "button",
+    );
 
-    expect(style).toContain('"aspectRatio":2');
+    expect(JSON.stringify(row.props.style)).toContain('"aspectRatio":2');
   });
 
   it("caps a tall preview so it cannot push the thread off screen", () => {
@@ -184,9 +189,81 @@ describe("rendering", () => {
     const image = tree.root.findAllByType(
       "Image" as unknown as React.ElementType,
     )[0]!;
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "button",
+    );
 
-    expect(JSON.stringify(image.props.style)).toContain('"maxHeight":240');
+    expect(JSON.stringify(image.props.style)).toContain('"maxHeight":256');
+    // The row narrows to the width at which the photo reaches the cap.
+    expect(JSON.stringify(row.props.style)).toContain('"maxWidth":51.2');
   });
+
+  it("draws a photo bare and a file in its frame", () => {
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: [
+        attachment({
+          id: "photo",
+          content_type: "image/png",
+          width: 800,
+          height: 400,
+        }),
+        attachment({
+          id: "file",
+          content_type: "application/pdf",
+          filename: "dues.pdf",
+        }),
+      ],
+    };
+
+    const tree = render();
+    const [photo, file] = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "button",
+    );
+    expect(JSON.stringify(photo!.props.style)).not.toContain("borderWidth");
+    expect(JSON.stringify(file!.props.style)).toContain('"borderWidth":1');
+  });
+
+  // Any shape the column's width would push past the cap: a portrait photo,
+  // and on a ~314pt column a square one too. A full-width box would leave
+  // `contain` empty sides with the rounded corners on them.
+  it.each([
+    ["portrait", 400, 2000, 0.2, 51.2],
+    ["square", 1080, 1080, 1, 256],
+    ["4:3", 1600, 1200, 4 / 3, (256 * 4) / 3],
+  ])(
+    "hugs a %s photo with its row, at its own shape under the cap",
+    (_shape, width, height, aspect, maxWidth) => {
+      hookState.result = {
+        isPending: false,
+        isError: false,
+        data: [attachment({ content_type: "image/png", width, height })],
+      };
+
+      const tree = render();
+      const row = tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityRole === "button",
+      );
+      const rowStyle = JSON.stringify(row.props.style);
+      expect(rowStyle).toContain('"alignSelf":"flex-start"');
+      expect(rowStyle).toContain('"width":"100%"');
+      expect(rowStyle).toContain(`"maxWidth":${maxWidth}`);
+      expect(rowStyle).toContain(`"aspectRatio":${aspect}`);
+      const image = tree.root.findAllByType(
+        "Image" as unknown as React.ElementType,
+      )[0]!;
+      const imageStyle = JSON.stringify(image.props.style);
+      expect(imageStyle).toContain('"height":"100%"');
+      expect(imageStyle).not.toContain("aspectRatio");
+    },
+  );
 
   it("falls back to a fixed height when the dimensions are null", () => {
     // `chat_message_attachments` allows both to be null, so an aspect ratio
@@ -222,20 +299,115 @@ describe("the states that must stay visible", () => {
   });
 });
 
-// The note is a caption about the message, lifted off `--muted` like every
-// chat caption (components.md §1): the self bubble it once had to match is gone
-// (#2873), so every row's note takes the same tone.
-describe("the note colour", () => {
-  it("draws the loading note in the lifted caption tone", () => {
-    hookState.result = { isPending: true, isError: false, data: undefined };
-    const tree = render({ count: 1 });
+// A one-line caption that a photo up to 256pt tall then replaced pushed the
+// thread with every photo that landed (components.md §10).
+describe("the loading tiles", () => {
+  const tiles = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        node.props.testID === "attachment-loading-tile",
+    );
 
-    const [note] = tree.root.findAllByType(
-      "Text" as unknown as React.ElementType,
+  it("reserves a bare preview's room and an unsized preview's height per file", () => {
+    hookState.result = { isPending: true, isError: false, data: undefined };
+    const tree = render({ count: 2 });
+
+    expect(tiles(tree)).toHaveLength(2);
+    // No caption line to grow out of.
+    expect(tree.root.findAllByType("Text" as never)).toHaveLength(0);
+
+    const tile = tiles(tree)[0]!;
+    const frame = JSON.stringify(tile.props.style);
+    const block = JSON.stringify(
+      (tile.children[0] as ReactTestInstance).props.style,
     );
-    expect(JSON.stringify(note!.props.style)).toContain(
-      `"color":"${signetDarkTokens.color.text.mutedForeground}"`,
+    expect(frame).toContain(
+      `"borderRadius":${signetDarkTokens.radius.control}`,
     );
+    // Bare like the photo it becomes (components.md § Chrome weight): no
+    // file-row frame to drop when the photo lands.
+    expect(frame).not.toContain("borderWidth");
+    expect(frame).not.toContain(signetDarkTokens.color.surface.surface1);
+    expect(block).toContain('"height":180');
+    expect(block).toContain(
+      `"borderRadius":${signetDarkTokens.radius.control}`,
+    );
+    expect(block).toContain(
+      `"backgroundColor":"${signetDarkTokens.color.surface.popover}"`,
+    );
+  });
+
+  it("keeps the loading line's name for a screen reader", () => {
+    hookState.result = { isPending: true, isError: false, data: undefined };
+    const one = render({ count: 1 });
+    const [status] = one.root.findAll(
+      (node) => node.props.accessibilityRole === "progressbar",
+    );
+    expect(status!.props.accessibilityLabel).toBe("Loading attachment…");
+    expect(status!.props.accessible).toBe(true);
+
+    const two = render({ count: 2 });
+    expect(
+      two.root.find((node) => node.props.accessibilityRole === "progressbar")
+        .props.accessibilityLabel,
+    ).toBe("Loading 2 attachments…");
+  });
+
+  it("draws the tile as tall as the photo it stands in for, when that photo is unsized", () => {
+    hookState.result = { isPending: true, isError: false, data: undefined };
+    const loading = render({ count: 1 });
+    const tileBlock = tiles(loading)[0]!.children[0] as ReactTestInstance;
+
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: [attachment({ content_type: "image/jpeg" })],
+    };
+    const loaded = render({ count: 1 });
+    const image = loaded.root.findAllByType(
+      "Image" as unknown as React.ElementType,
+    )[0]!;
+
+    const height = (style: unknown) =>
+      (JSON.stringify(style).match(/"height":(\d+)/) ?? [])[1];
+    expect(height(tileBlock.props.style)).toBe(height(image.props.style));
+  });
+
+  // The row knows the count, not the types, until the files are read. The tile
+  // bets on a photo; a web-sent document loses that bet and settles into its
+  // one-line file row (the docblock says why that is still the smaller jump).
+  it("draws a photo tile for a pending file, then settles into its file row", () => {
+    hookState.result = { isPending: true, isError: false, data: undefined };
+    // A fresh element per render: React skips re-rendering an identical one.
+    const element = () => (
+      <FrappThemeProvider>
+        <ImageViewerContext.Provider value={null}>
+          <MessageAttachments channelId="chan-1" messageId="msg-1" count={1} />
+        </ImageViewerContext.Provider>
+      </FrappThemeProvider>
+    );
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(element());
+    });
+    expect(tiles(tree)).toHaveLength(1);
+
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: [attachment()],
+    };
+    act(() => tree.update(element()));
+
+    expect(tiles(tree)).toHaveLength(0);
+    expect(
+      tree.root.findAllByType("Image" as unknown as React.ElementType),
+    ).toHaveLength(0);
+    const [row] = tree.root.findAllByProps({ accessibilityRole: "button" });
+    expect(row!.props.accessibilityLabel).toBe("Open minutes.pdf");
+    expect(textOf(tree)).toContain("minutes.pdf");
+    expect(textOf(tree)).not.toMatch(/"height":180/);
   });
 });
 

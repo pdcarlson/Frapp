@@ -1,3 +1,5 @@
+import { isBetaOffModule } from "./beta-off-modules";
+
 /**
  * The member-facing notification categories, shared so every surface offers the
  * same switches under the same names.
@@ -58,16 +60,21 @@
  *
  * Both surfaces now draw from here — mobile's s16 grid and web's Profile
  * Notifications card — which is what #564 closed. Anything that renders these
- * switches maps this array; nothing hand-writes a second list of keys.
+ * switches maps this array; nothing hand-writes a second list of keys. Web
+ * draws each as a switch with its label and `description`; mobile s16 draws
+ * the label only (`apps/mobile/app/(tabs)/preferences.tsx` says why).
  */
 
-/** One member-facing category, as drawn: a switch with a label and a hint. */
+/** One member-facing category: a switch's key, label and hint. */
 export interface NotificationCategory {
   /** Written verbatim to `notification_preferences.category`. */
   key: string;
   /** Switch label. Sentence case, per `spec/ui/design-system/writing.md`. */
   label: string;
-  /** One line under the label naming what actually arrives. */
+  /**
+   * One line naming what actually arrives, drawn under the label on web's
+   * Profile card. Mobile s16 leaves it off.
+   */
   description: string;
   /**
    * What to show before the member's rows load. Always `true` today — see the
@@ -108,6 +115,8 @@ export const NOTIFICATION_CATEGORIES = [
     // URGENT bypasses the preference gate, so this switch now governs only the
     // routine invoice and dues traffic it advertises. No second server-side
     // category is needed.
+    // While dues is beta-off nothing this switch governs is sent, so
+    // `shownNotificationCategories` leaves the row out.
     description: "Invoices created, dues coming due, and payments received.",
     defaultEnabled: true,
   },
@@ -132,6 +141,20 @@ export type NotificationCategoryKey =
 const CATEGORY_KEYS: ReadonlySet<string> = new Set(
   NOTIFICATION_CATEGORIES.map((category) => category.key),
 );
+
+/**
+ * The categories a surface draws a switch for. `billing` is left out while
+ * dues is beta-off (`spec/product/modules.md` § Beta-off modules): URGENT
+ * subscription alerts bypass the preference gate, so the switch would govern
+ * only invoice and dues pushes, and none are sent. The stored preference is
+ * kept and still saved; only the row is hidden. Read at render time, not at
+ * import, so specs can empty the beta list.
+ */
+export function shownNotificationCategories(): readonly (typeof NOTIFICATION_CATEGORIES)[number][] {
+  return NOTIFICATION_CATEGORIES.filter(
+    (category) => category.key !== "billing" || !isBetaOffModule("dues"),
+  );
+}
 
 /**
  * Whether `value` is a category this catalog exposes.

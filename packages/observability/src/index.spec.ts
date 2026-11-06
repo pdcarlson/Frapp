@@ -12,6 +12,8 @@ import {
   DEFAULT_POSTHOG_LOGS_SAMPLE_RATE,
   createSentryScrubber,
   createNoPseudonymScrubHooks,
+  createQueryErrorReporter,
+  createReportOnce,
   parseSampleRate,
   pathOnlyAnalyticsPath,
   pickSentryErrorCorrelatedProperties,
@@ -30,6 +32,8 @@ describe("public API", () => {
     expect(typeof stripAuthority).toBe("function");
     expect(typeof shouldEnablePostHogReplay).toBe("function");
     expect(typeof createNoPseudonymScrubHooks).toBe("function");
+    expect(typeof createQueryErrorReporter).toBe("function");
+    expect(typeof createReportOnce).toBe("function");
     expect(NO_PSEUDONYMS.pseudonymizeUserId("x")).toBeUndefined();
     expect(REQUEST_ID_HEADER).toBe("x-request-id");
     expect(SENTRY_TRACE_HEADER).toBe("sentry-trace");

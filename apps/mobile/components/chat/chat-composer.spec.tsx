@@ -1,8 +1,30 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { act } from "react";
-import { create, type ReactTestRenderer } from "react-test-renderer";
+import {
+  create,
+  type ReactTestInstance,
+  type ReactTestRenderer,
+} from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
+
+// These screens paint with the chapter accent (`useChapterBranding`), which
+// reads the current chapter through the client provider these specs don't
+// mount. A purple chapter's values, deliberately not house gold, so a control
+// that slips back to a `gold.*` token shows up in an assertion; the hook
+// itself has its own spec.
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({
+    accent: "#CB9FFF",
+    accentPrimary: "#8E4EC6",
+    accentOnPrimary: "#FFFFFF",
+    accentSubtle: "#251A33",
+    accentBorder: "#5C3E8A",
+    logoUrl: null,
+    chapterName: null,
+    textMark: null,
+  }),
+}));
 import { FrappThemeProvider } from "@/lib/theme";
 import { ChatComposer, type ChatComposerProps } from "./chat-composer";
 
@@ -193,5 +215,75 @@ describe("ChatComposer reply and edit strip (#2775)", () => {
     const { tree } = renderComposer();
     expect(byLabel(tree, "Cancel reply")).toBeUndefined();
     expect(byLabel(tree, "Cancel edit")).toBeUndefined();
+  });
+});
+
+/** A pressable's resting style, its array flattened left to right. */
+function restingStyle(node: ReactTestInstance) {
+  return Object.assign(
+    {},
+    ...((node.props.style as (state: object) => unknown[])({
+      pressed: false,
+    }).filter(Boolean) as object[]),
+  ) as { backgroundColor?: string; borderColor?: string };
+}
+
+function glyphColor(tree: ReactTestRenderer) {
+  const glyph = byLabel(tree, "Send message")!.findByType("Text" as never);
+  return Object.assign(
+    {},
+    ...[glyph.props.style].flat().filter(Boolean),
+  ).color as string;
+}
+
+describe("ChatComposer accent", () => {
+  it("paints send with the chapter's solid accent, not house gold (owner's rule, 2026-11-04)", () => {
+    const { tree } = renderComposer({ value: "hi" });
+    const style = restingStyle(byLabel(tree, "Send message")!);
+    // The mocked chapter's solid fill and its contrast-corrected ink, the
+    // pairing the chat cards use, never the step-11 text accent or gold ink.
+    expect(style.backgroundColor).toBe("#8E4EC6");
+    expect(glyphColor(tree)).toBe("#FFFFFF");
+  });
+
+  it("rests in the attach button's neutral recipe when nothing can be sent", () => {
+    const { tree } = renderComposer({ value: "  " });
+    const send = byLabel(tree, "Send message")!;
+    const attach = renderComposer({ onAttach: vi.fn() }).tree;
+    const style = restingStyle(send);
+    const attachStyle = restingStyle(byLabel(attach, "Attach photo")!);
+
+    // Not a faded accent: no opacity, no accent anywhere on it.
+    expect(style).not.toHaveProperty("opacity");
+    expect(style.backgroundColor).toBe(attachStyle.backgroundColor);
+    expect(style.borderColor).toBe(attachStyle.borderColor);
+    expect(JSON.stringify(style)).not.toContain("#8E4EC6");
+    expect(glyphColor(tree)).not.toBe("#FFFFFF");
+  });
+});
+
+describe("ChatComposer input", () => {
+  it("measures one line at exactly the buttons' 44pt, so the three line up", () => {
+    const { tree } = renderComposer();
+    const input = tree.root.findByType("TextInput" as never);
+    const style = input.props.style as {
+      minHeight: number;
+      paddingTop: number;
+      paddingBottom: number;
+      lineHeight: number;
+      borderWidth: number;
+      includeFontPadding: boolean;
+      textAlignVertical: string;
+    };
+    expect(
+      style.paddingTop +
+        style.paddingBottom +
+        style.lineHeight +
+        2 * style.borderWidth,
+    ).toBe(44);
+    expect(style.minHeight).toBe(44);
+    // Android's font padding would add to that line; off, it can't.
+    expect(style.includeFontPadding).toBe(false);
+    expect(style.textAlignVertical).toBe("center");
   });
 });

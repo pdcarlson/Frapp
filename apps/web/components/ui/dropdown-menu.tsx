@@ -1,29 +1,37 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu"
+import * as React from "react";
+import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 /*
- * The highlighted-row recipe in this file is `--accent-subtle` / `--accent-text`,
- * not `--accent`.
+ * The highlighted row is `--card-hover` with `--foreground` text: neutral,
+ * since 2026-11-05 (`foundations.md` §6, "Where the accent goes"). It was the
+ * accent tint until then, so every menu lit its hovered row gold.
  *
- * That is not a preference. On Signet the scaffold's `--accent` held the SAME
- * value as `--popover` (`#2A2621`) — it was the neutral highlight for a control
- * sitting on a lower surface, and a menu is already on the top step of the
- * ladder. The scaffold's `focus:bg-accent` on a `bg-popover` panel therefore
- * painted the hovered row in exactly its own background: keyboard navigation
- * through a dropdown moved an invisible cursor. `--accent` is deleted (#3036),
- * so that class now compiles to nothing.
- *
- * The selected row separates by hue instead, which is what the shell slice
- * settled for the same reason (the ladder's own steps are ~1.1:1 apart) and
- * what components.md §5 gives as the selected recipe.
+ * Not `--popover`, and not the deleted scaffold `--accent` (#3036), which held
+ * `--popover`'s own value: a menu sits on `--popover`, the top step of the
+ * ladder, so a row highlighted with it moved an invisible cursor.
+ * `--card-hover` sits above every ladder step, 1.194:1 on `--popover`
+ * (`shared/elevation-contrast.spec.ts`), which reads as a state where the
+ * ladder's own ~1.1:1 steps do not.
  */
-const DropdownMenu = DropdownMenuPrimitive.Root
+/*
+ * Shared with `context-menu.tsx`: a right-click menu and a ⋯ menu that read
+ * the same action list must also look the same, so both read these.
+ */
+export const MENU_CONTENT_CLASS =
+  "z-50 min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground";
+export const MENU_ITEM_CLASS =
+  "relative flex min-h-8 cursor-default select-none items-center gap-2 rounded-xs px-2 py-1.5 text-sm outline-none pointer-coarse:min-h-11 pointer-coarse:text-base transition-colors focus:bg-card-hover focus:text-foreground data-[disabled]:pointer-events-none data-[disabled]:text-disabled [&>svg]:size-4 [&>svg]:shrink-0";
+export const MENU_LABEL_CLASS =
+  "px-2 py-1.5 text-sm font-semibold text-muted-foreground";
+export const MENU_SEPARATOR_CLASS = "-mx-1 my-1 h-px bg-border";
 
-const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger
+const DropdownMenu = DropdownMenuPrimitive.Root;
+
+const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
@@ -34,51 +42,52 @@ const DropdownMenuContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        "z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground",
+        MENU_CONTENT_CLASS,
+        "max-h-[var(--radix-dropdown-menu-content-available-height)]",
         "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-dropdown-menu-content-transform-origin]",
-        className
+        className,
       )}
       {...props}
     />
   </DropdownMenuPrimitive.Portal>
-))
-DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName
+));
+DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName;
 
 const DropdownMenuItem = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Item> & {
-    inset?: boolean
+    inset?: boolean;
   }
 >(({ className, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex min-h-11 cursor-default select-none items-center gap-2 rounded-xs px-2 py-1.5 text-base outline-none transition-colors focus:bg-accent-subtle focus:text-accent-text data-[disabled]:pointer-events-none data-[disabled]:text-disabled [&>svg]:size-4 [&>svg]:shrink-0",
+      MENU_ITEM_CLASS,
       inset && "pl-8",
-      className
+      className,
     )}
     {...props}
   />
-))
-DropdownMenuItem.displayName = DropdownMenuPrimitive.Item.displayName
+));
+DropdownMenuItem.displayName = DropdownMenuPrimitive.Item.displayName;
 
 const DropdownMenuLabel = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Label>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Label> & {
-    inset?: boolean
+    inset?: boolean;
   }
 >(({ className, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.Label
     ref={ref}
     className={cn(
-      "px-2 py-1.5 text-sm font-semibold text-muted-foreground",
+      MENU_LABEL_CLASS,
       inset && "pl-8",
-      className
+      className,
     )}
     {...props}
   />
-))
-DropdownMenuLabel.displayName = DropdownMenuPrimitive.Label.displayName
+));
+DropdownMenuLabel.displayName = DropdownMenuPrimitive.Label.displayName;
 
 const DropdownMenuSeparator = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Separator>,
@@ -86,11 +95,11 @@ const DropdownMenuSeparator = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.Separator
     ref={ref}
-    className={cn("-mx-1 my-1 h-px bg-border", className)}
+    className={cn(MENU_SEPARATOR_CLASS, className)}
     {...props}
   />
-))
-DropdownMenuSeparator.displayName = DropdownMenuPrimitive.Separator.displayName
+));
+DropdownMenuSeparator.displayName = DropdownMenuPrimitive.Separator.displayName;
 
 export {
   DropdownMenu,
@@ -99,4 +108,4 @@ export {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-}
+};

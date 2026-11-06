@@ -12,6 +12,7 @@ import type {
 import type { ChapterDocument } from '#domain/entities/chapter-document.entity';
 import { escapeLikePattern } from '../supabase.utils';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 
 @Injectable()
 export class SupabaseChapterDocumentRepository implements IChapterDocumentRepository {
@@ -62,6 +63,21 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
     return data || [];
   }
 
+  /**
+   * Insert, and translate a hit on `chapter_documents_storage_path_key` into
+   * "here is the row that already files this object" (#3399).
+   *
+   * A confirm whose response was lost after it committed is retried with the
+   * same `storage_path` (mobile's upload sheet keeps the bytes it sent rather
+   * than uploading a second copy). The insert names no id, and the path index
+   * is the only other unique key on the table, so a `23505` here means this
+   * path is filed. The re-select is scoped to the chapter. A null re-select
+   * means that row was deleted between the failed insert and the read, and
+   * surfacing the original error is the honest answer. Whether the caller may
+   * have the row is the service's call (`ChapterDocumentService.confirmUpload`),
+   * which reads the path first, so this re-read serves only two confirms that
+   * race past that read.
+   */
   async create(
     data: TablesInsert<'chapter_documents'>,
   ): Promise<ChapterDocument> {
@@ -70,8 +86,35 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
       .insert(data)
       .select()
       .single();
-    if (error) throw new SupabaseQueryError(error);
+    if (error) {
+      if (
+        error.code === PG_UNIQUE_VIOLATION &&
+        data.storage_path &&
+        data.chapter_id
+      ) {
+        const filed = await this.findByStoragePath(
+          data.storage_path,
+          data.chapter_id,
+        );
+        if (filed) return filed;
+      }
+      throw new SupabaseQueryError(error);
+    }
     return created;
+  }
+
+  async findByStoragePath(
+    storagePath: string,
+    chapterId: string,
+  ): Promise<ChapterDocument | null> {
+    const { data, error } = await this.supabase
+      .from('chapter_documents')
+      .select('*')
+      .eq('storage_path', storagePath)
+      .eq('chapter_id', chapterId)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

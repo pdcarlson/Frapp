@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * Signet design tokens — the dark-first warm charcoal system.
+ * Signet design tokens — the dark-first neutral graphite system.
  *
  * This stylesheet is what BOTH web surfaces ship — `apps/web` since the #920
  * shell cutover, `apps/landing` since its token cutover (#2366). A surface
@@ -39,12 +39,12 @@
 @layer base {
   :root {
     /* ── Surface ladder (fixed for every chapter; foundations §2) ── */
-    --background: #131211;
-    --surface-1: #1A1A1A;
-    --card: #211E1A;
-    --card-foreground: #EDEAE3;
-    --popover: #2A2621;
-    --popover-foreground: #EDEAE3;
+    --background: #0A0A0A;
+    --surface-1: #111111;
+    --card: #171717;
+    --card-foreground: #EBEBEB;
+    --popover: #1E1E1E;
+    --popover-foreground: #EBEBEB;
 
     /* ── Borders & hairlines (foundations §3) ─────────────────────
      * Low-opacity white only, so a hairline tracks whatever surface
@@ -54,13 +54,13 @@
 
     /* ── Text ladder (foundations §4) ─────────────────────────────
      * NOTE the ShadCN-era name collision, resolved in foundations'
-     * favor: `--muted` is muted TEXT (#78716A), not a fill. Subtle
+     * favor: `--muted` is muted TEXT (#737373), not a fill. Subtle
      * fills use the surface ladder (`--surface-1`, `--card`) instead;
      * the web reskin retargeted every `bg-muted` call site accordingly. */
-    --foreground: #EDEAE3;
-    --muted-foreground: #A9A399;
-    --muted: #78716A;
-    --disabled: #57534C;
+    --foreground: #EBEBEB;
+    --muted-foreground: #A3A3A3;
+    --muted: #737373;
+    --disabled: #525252;
 
     /* ── Semantic status (foundations §5; status-only, never decorative) ──
      * Foregrounds are for text ON a solid semantic fill; measured against
@@ -68,11 +68,11 @@
      * success 2.54:1 and destructive 3.35:1). On dark surfaces, prefer the
      * tint recipe (the `--*-tint` fills below + hue text) over solid fills. */
     --success: #3FB950;
-    --success-foreground: #131211;
+    --success-foreground: #0A0A0A;
     --warning: #E5A000;
-    --warning-foreground: #131211;
+    --warning-foreground: #0A0A0A;
     --destructive: #F85149;
-    --destructive-foreground: #131211;
+    --destructive-foreground: #0A0A0A;
     /* The AA-lifted tone for danger text ON a danger tint, which components.md
      * §5 sanctions explicitly ("implementations MAY lift the text tone for AA
      * contrast, but the hue is the fixed semantic") and the reference already
@@ -102,7 +102,7 @@
     --destructive-tint: rgba(248, 81, 73, 0.13);
     --destructive-tint-hover: rgba(248, 81, 73, 0.2);
     --info: #2F81F7;
-    --info-foreground: #131211;
+    --info-foreground: #0A0A0A;
     /* The same AA lift components.md §5 sanctions for danger, applied to info
      * for the same reason: the lighter ladder puts solid `--info` at 4.43:1 over
      * --card and 4.01:1 over --popover, under the 4.5:1 gate on the two surfaces
@@ -148,8 +148,8 @@
      * own colour (#1208, #1220). Nothing painted them by the time they
      * were deleted. A rest fill names its ladder step (`bg-card`,
      * `bg-popover`). A hover takes a state above what it sits on
-     * (`--card-hover` below, or `--accent-subtle` for a row in a menu or
-     * table), never the surface it already sits on.
+     * (`--card-hover` below, which a row in a menu, table or list takes
+     * too), never the surface it already sits on.
      * `apps/web/components/shared/elevation-call-sites.spec.ts` keeps the
      * old names out, because with the variables gone `hover:bg-accent`
      * compiles to nothing (#1145).
@@ -167,7 +167,7 @@
      * the four steps above. `elevation-contrast.spec.ts` derives it from
      * `--popover`, so a ladder change fails there instead of leaving
      * this value behind. */
-    --card-hover: #37332E;
+    --card-hover: #2C2C2C;
 
     /* ── Accent slot — house default (accent-engine.md §2/§3) ─────
      * deriveSignetPalette("#DDB844") output, pinned by signet.css.spec.ts.
@@ -176,7 +176,7 @@
     --primary-hover: #D2AD37;
     --primary-foreground: #292109;
     --ring: #796938;
-    --accent-subtle: #282314;
+    --accent-subtle: #272213;
     --accent-border: #5F522C;
     --accent-text: #E7C86B;
 
@@ -245,8 +245,13 @@
      * measured 1.1744:1 against the OLD `--popover` (#26221C) — the board reuses
      * the legacy highlight without re-pitching it for the ladder it also moved.
      * If the sweep reads dead on a real panel, the fix is to re-pitch the
-     * highlight against #2A2621, not to move a ladder rung. */
-    --skeleton-highlight: #332E26;
+     * highlight against #2A2621, not to move a ladder rung.
+     *
+     * RE-PITCHED 2026-11-05 with the neutral ladder (foundations.md §2):
+     * `--popover` is now #1E1E1E, and #2B2B2B measures 1.1774:1 on it, the
+     * pre-greenfield amplitude again, and neutral like the ladder. The
+     * board's warm pair is history. */
+    --skeleton-highlight: #2B2B2B;
 
     /* ── Shadows are banned on Signet surfaces (foundations §10) ──
      * Elevation is a lighter surface step. The tokens exist because
@@ -303,29 +308,42 @@
     --space-3xl: 48px;
 
     /* ── Touch floors (foundations §9) ────────────────────────────
-     * Web honors the same 44px minimum as mobile. A pointer does not
-     * make a small target acceptable. */
+     * Web honors the same 44px minimum as mobile wherever a finger
+     * lands (`pointer: coarse`); a mouse gets the denser steps of the
+     * control size scale. */
     --touch-min: 44px;
-    --touch-button: 46px;
+    --touch-button: 44px;
 
     /* ── Scrollbars ───────────────────────────────────────────────
      * A scroll region on a Signet surface draws its own bar. The browser
      * default renders as a light-mode artifact on this ladder.
      *
-     * Board chrome (option `3a`): an 8px gold thumb on a fixed `#1A1A1A`
-     * track, drawn on every scroll region and never hidden. Both colors are
-     * FIXED and never retint per chapter — the thumb is mark gold, which the
-     * brand lock keeps out of the accent engine entirely
-     * (`spec/ui/brand-identity.md` §2), so wiring it to `--primary` would be
-     * the same house-tenant mistake as retinting the mark itself. */
-    --scrollbar-width: 8px;
-    --scrollbar-thumb: #DDB844;
-    --scrollbar-thumb-hover: #F0CD5E;
-    --scrollbar-track: #1A1A1A;
+     * A thin neutral thumb on a clear track, drawn on every scroll region.
+     * The track is see-through so the bar sits on whatever surface the
+     * region already paints, with no strip of its own. Both colors are
+     * FIXED and never retint per chapter: a scrollbar is not an accent role.
+     * (Until 2026-11-05 this was the board's gold thumb on `#1A1A1A`;
+     * foundations.md §12 says why it changed.) */
+    --scrollbar-width: 6px;
+    --scrollbar-thumb: rgba(255,255,255,0.12);
+    --scrollbar-thumb-hover: rgba(255,255,255,0.22);
+    --scrollbar-track: rgba(0,0,0,0);
   }
 
   * {
     border-color: var(--border);
+  }
+  /*
+   * Tell the browser the page is dark, so the controls it draws itself render
+   * dark too: checkboxes and radios, the date and time pickers' glyphs, native
+   * <select> popups, file inputs, number spinners and autofill. Without it they
+   * kept their light-scheme chrome, which on this ladder is a white box per row
+   * on every list with a checkbox column and an invisible black calendar glyph
+   * in every date field. Signet has one appearance, so this is `dark` alone,
+   * never `light dark`.
+   */
+  :root {
+    color-scheme: dark;
   }
   body {
     background-color: var(--background);
@@ -373,7 +391,7 @@
    *
    * **This is the scrollbar rule again** (§12, `foundations.md`): a piece of
    * chrome that looks like it should carry the chapter and must not. The
-   * difference is the reason — the scrollbar is held back by the brand lock,
+   * difference is the reason: the scrollbar stays neutral so it blends in,
    * selection by legibility over the accent itself.
    *
    * `::-moz-selection` is not duplicated: Firefox has supported unprefixed
@@ -388,39 +406,24 @@
 
 @layer components {
   /*
-   * Scrollbars are GLOBAL board chrome, not a per-surface opt-in.
+   * Scrollbars are GLOBAL chrome, not a per-surface opt-in: one rule on `*`
+   * styles every scroll region the same way (foundations.md §12).
    *
-   * This replaced a `.signet-scroll` class whose two stated reasons were that
-   * a blanket rule would repaint third-party widgets on surfaces we do not
-   * own, and that overlay scrollbars already render correctly. The framework
-   * board (option `3a`) overrules both: it declares the bar at the root, calls
-   * it chrome, and says scrollbars are "never hidden" — a persistent gold bar
-   * is part of how the surface reads, not an accessibility nicety to be left
-   * to the platform. Committed HTML outranks written docs
-   * (`spec/ui/web-dashboard/README.md` § Sources and precedence), and the
-   * class had ZERO call sites in the entire repo, so nothing regressed by
-   * retiring it. The concern about
-   * third-party surfaces is now moot in the other direction: the thumb is an
-   * opaque brand gold on an opaque track, so it no longer depends on guessing
-   * what is underneath it.
+   * A thin neutral thumb on a see-through track. The thumb is a low-alpha
+   * white like the hairline family, so it reads as a slightly lighter step of
+   * whatever surface it sits on rather than as a strip of its own. This
+   * replaced the framework board's gold thumb on a `#1A1A1A` track
+   * (option `3a`) on 2026-11-05: a permanent gold bar was the loudest thing
+   * on the chat screen. The bar is still never hidden; it is just quiet.
    *
-   * `foundations.md` §12 was rewritten with this change rather than left to
-   * contradict it.
-   *
-   * ENGINE SPLIT — the board's own CSS gets this wrong, and copying it
-   * verbatim would throw the styling away in the majority browser. The board
-   * declares `scrollbar-color` AND `::-webkit-scrollbar` together on `*`.
-   * Since Chromium 121 a non-`auto` `scrollbar-width`/`scrollbar-color` on an
-   * element makes that element's `::-webkit-scrollbar-*` pseudo-elements
-   * ignored outright, so in Chrome and Edge the board's rule resolves to a
-   * flat `thin` bar and silently discards the 8px width, the 8px rounding and
-   * the 2px track inset it also specifies.
-   *
-   * So the standard properties stay scoped to engines with no pseudo-element
-   * support, which is Firefox: `@supports not selector(::-webkit-scrollbar)`
-   * is false in Chromium and Safari (both match the selector) and true in
-   * Firefox. Every engine then renders the board's INTENT — 8px gold thumb on
-   * #1A1A1A — rather than only the engine that reads the shorthand.
+   * ENGINE SPLIT. Since Chromium 121 a non-`auto` `scrollbar-width` or
+   * `scrollbar-color` on an element makes that element's
+   * `::-webkit-scrollbar-*` pseudo-elements ignored outright, so declaring
+   * both on `*` would discard the width, rounding and inset below in Chrome
+   * and Edge. The standard properties stay scoped to engines with no
+   * pseudo-element support, which is Firefox: `@supports not
+   * selector(::-webkit-scrollbar)` is false in Chromium and Safari (both
+   * match the selector) and true in Firefox.
    */
   @supports not selector(::-webkit-scrollbar) {
     * {
@@ -442,12 +445,13 @@
 
   *::-webkit-scrollbar-thumb {
     background-color: var(--scrollbar-thumb);
+    /* `--radius-xs` is larger than half the thumb, so the corners clamp to a
+     * full round: no off-map pill radius needed. */
     border-radius: var(--radius-xs);
-    /* The board draws a 2px track-colored border around the thumb. Keeping it
-     * transparent + `background-clip: padding-box` renders identically over
-     * the opaque track while still working on any region that sets its own
-     * track color. */
-    border: 2px solid transparent;
+    /* A 1px clear border with `background-clip: padding-box` insets the
+     * thumb inside its gutter, so the visible bar is 4px with a hairline of
+     * surface around it rather than a slab that fills the gutter. */
+    border: 1px solid transparent;
     background-clip: padding-box;
   }
 

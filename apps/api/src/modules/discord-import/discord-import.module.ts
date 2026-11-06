@@ -13,6 +13,7 @@ import { SupabaseDiscordImportRepository } from '../../infrastructure/supabase/r
 import { SupabaseDiscordConnectionRepository } from '../../infrastructure/supabase/repositories/supabase-discord-connection.repository';
 import { SupabaseDiscordAuthorLinkRepository } from '../../infrastructure/supabase/repositories/supabase-discord-author-link.repository';
 import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/repositories/supabase-chat-channel.repository';
+import { SupabaseChatCategoryRepository } from '../../infrastructure/supabase/repositories/supabase-chat-category.repository';
 import { SupabaseChatMessageReportRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-report.repository';
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 import { SupabaseArchiveMediaCopier } from '../../infrastructure/storage/supabase-archive-media-copier.service';
@@ -20,10 +21,14 @@ import { DiscordBotGatewayService } from '../../infrastructure/discord/discord-b
 import { DiscordOAuthClientService } from '../../infrastructure/discord/discord-oauth-client.service';
 import { RbacModule } from '../rbac/rbac.module';
 import { ChannelCacheModule } from '../chat-push-worker/channel-cache.module';
+import { NotificationModule } from '../notification/notification.module';
 import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.repository.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
 import { DISCORD_AUTHOR_LINK_REPOSITORY } from '#domain/repositories/discord-author-link.repository.interface';
-import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import {
+  CHAT_CATEGORY_REPOSITORY,
+  CHAT_CHANNEL_REPOSITORY,
+} from '#domain/repositories/chat.repository.interface';
 import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import { ARCHIVE_MEDIA_COPIER } from '#domain/adapters/archive-media-copier.interface';
@@ -63,7 +68,9 @@ import {
   // ChannelCacheModule → ChannelCacheService: the purge deletes the channels
   // an import created and left empty, and evicts them as `ChatService` does
   // when an officer deletes one (#2905).
-  imports: [RbacModule, ChannelCacheModule],
+  // NotificationModule → NotificationService: the worker tells whoever
+  // started an import that it finished.
+  imports: [RbacModule, ChannelCacheModule, NotificationModule],
   controllers: [
     DiscordImportController,
     DiscordConnectionController,
@@ -92,6 +99,12 @@ import {
     {
       provide: CHAT_CHANNEL_REPOSITORY,
       useClass: SupabaseChatChannelRepository,
+    },
+    // Starting an import puts its new channels into channel groups, and the
+    // purge deletes the groups it made once they're empty.
+    {
+      provide: CHAT_CATEGORY_REPOSITORY,
+      useClass: SupabaseChatCategoryRepository,
     },
     // The purge keeps what an open chat report holds (#2481).
     {

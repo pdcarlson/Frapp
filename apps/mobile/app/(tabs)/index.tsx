@@ -1,13 +1,6 @@
-import { useMemo, useRef, useState } from "react";
-import { useRouter } from "expo-router";
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { Alert, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   arrangeChannelSidebar,
@@ -28,8 +21,14 @@ import {
   useCategories,
   useChannelNotificationPreferences,
   useChannelUnreadCounts,
+  lastChannelLandingId,
+  useActiveChapterId,
   useGetOrCreateDm,
   useChannels,
+  useChapterSetupChecklist,
+  useChapterRoster,
+  useCurrentUser,
+  useNotifications,
   useEvents,
   useLeaveChannel,
   useMemberDisplayNames,
@@ -37,16 +36,34 @@ import {
   useSetSidebarFilter,
   useSetSidebarSectionCollapsed,
   useSidebarPreferences,
+  useSidebarPreferencesRefetch,
   useTasks,
   useViewerUserId,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChapterMark } from "@/components/chapter-mark";
+import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
+import { NotificationsBell } from "@/components/chat/notifications-bell";
 import { ToggleChips } from "@/components/filter-chips";
-import { ChannelRow, UnreadBadge } from "@/components/chat/channel-row";
+import {
+  ChannelListSkeleton,
+  ChannelRow,
+  UnreadBadge,
+} from "@/components/chat/channel-row";
+import { gutterBleed, PressableRow } from "@/components/list-section";
+import { SearchGlyph } from "@/components/search-glyph";
+import {
+  EmptyState,
+  EmptyStateAction,
+  ErrorState,
+} from "@/components/state-block";
+import {
+  MOBILE_SETUP_CHECKLIST_OMIT,
+  SetupChecklistView,
+} from "@/components/chat/setup-checklist";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
 import { isAskAvailable } from "@/lib/ask/flag";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -60,6 +77,11 @@ import {
   type ChannelSummary,
 } from "@/lib/chat/channel-list";
 import { confirmHideConversation } from "@/lib/chat/hide-conversation-prompt";
+import {
+  claimChatLaunch,
+  readLastChannel,
+  settleChatLaunch,
+} from "@/lib/chat/last-channel";
 import { openChannelRowActions } from "@/lib/chat/channel-row-actions";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -152,6 +174,31 @@ export default function ChatHomeScreen() {
     useSetSidebarSectionCollapsed(sidebarWriteOptions);
   const { mutate: setSidebarFilter } = useSetSidebarFilter(sidebarWriteOptions);
   const notificationPrefsQuery = useChannelNotificationPreferences();
+  // Everything the screen draws: rows, categories, badges, the agenda, mute
+  // state, the arrangement, the names a DM row is titled with, the viewer a
+  // DM title subtracts, and the header bell's inbox.
+  const sidebarRefetch = useSidebarPreferencesRefetch();
+  const rosterQuery = useChapterRoster();
+  const viewerQuery = useCurrentUser();
+  const inboxQuery = useNotifications();
+  // The officer setup checklist. Held here, not in its view, so the pull below
+  // re-reads the lists it counts.
+  const setup = useChapterSetupChecklist({
+    omit: MOBILE_SETUP_CHECKLIST_OMIT,
+  });
+  const refresh = useRefetchAll([
+    { refetch: setup.refetch },
+    viewerQuery,
+    inboxQuery,
+    channelsQuery,
+    categoriesQuery,
+    unreadQuery,
+    eventsQuery,
+    tasksQuery,
+    notificationPrefsQuery,
+    sidebarRefetch,
+    rosterQuery,
+  ]);
 
   // Categories are grouping only. While they load, or if the read fails,
   // `selectCategories` gives `[]` and every channel sits under CHANNELS, the
@@ -195,6 +242,33 @@ export default function ChatHomeScreen() {
     viewerId,
     memberNames,
   ]);
+
+  /*
+    Launch opens the last channel the member was in, the way Discord does
+    (owner, 2026-11-05). Once per app process, only once the list has
+    answered, so a channel that was deleted or is no longer visible falls
+    through to this list instead of a thread that cannot load. A notification
+    tap that launched the app goes where it points instead, and so does
+    anything the member does before the list answers: leaving chat home
+    settles the launch, and so does the launch window running out
+    (`lib/chat/last-channel.ts`). Back from the thread returns here.
+  */
+  useFocusEffect(useCallback(() => () => settleChatLaunch(), []));
+  const chapterId = useActiveChapterId();
+  const listAnswered = channelsQuery.isSuccess;
+  useEffect(() => {
+    if (!listAnswered || !viewerId) return;
+    // No cancellation on cleanup: the claim is spent either way, and a
+    // cancelled read would lose the jump for good (Strict Mode re-runs this).
+    if (!claimChatLaunch()) return;
+    void readLastChannel(viewerId, chapterId).then((stored) => {
+      const target = lastChannelLandingId(allChannels, stored);
+      if (target) openChannel(target);
+    });
+    // Launch-only: `claimChatLaunch` makes later runs no-ops, so the list
+    // changing afterwards never re-opens anything.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listAnswered, viewerId]);
 
   function openChannel(channelId: string) {
     // Object form, because the route takes a param. Note this is invisible to
@@ -256,13 +330,18 @@ export default function ChatHomeScreen() {
     <ScreenShell
       title={chapterName ?? "Frapp"}
       titleMark={<ChapterMark />}
-      subtitle="Your chapter's channels and direct messages."
+      refresh={refresh}
       headerAction={
-        // No pill at all in a build without Ask (#2259): `AskSheet` renders
-        // nothing then, so the pill would be a control with nothing behind it.
-        isAskAvailable() ? (
-          <AskPill onPress={() => askSheetRef.current?.present()} />
-        ) : undefined
+        <View style={styles.headerActions}>
+          {/* No pill at all in a build without Ask (#2259): `AskSheet`
+              renders nothing then, so the pill would be a control with
+              nothing behind it. */}
+          {isAskAvailable() ? (
+            <AskPill onPress={() => askSheetRef.current?.present()} />
+          ) : null}
+          {/* The inbox's entry (#3362), where the web keeps it: on home. */}
+          <NotificationsBell />
+        </View>
       }
     >
       <UpNextStrip
@@ -270,6 +349,20 @@ export default function ChatHomeScreen() {
         tasks={tasksQuery.data}
         viewerUserId={viewerId}
       />
+
+      {/*
+        The officer setup checklist (spec/product/modules.md § Setup
+        checklist), under UP NEXT and above the channels, as the web rail
+        draws it above its channel list. Only once channels have loaded, so it
+        never sits on top of the skeleton or the error.
+      */}
+      {setup.checklist && !channelsQuery.isPending && !channelsQuery.isError ? (
+        <SetupChecklistView
+          checklist={setup.checklist}
+          onHide={setup.hide}
+          onReturnFromWeb={() => void setup.refetch()}
+        />
+      ) : null}
 
       {/*
         A failed unread fetch must not read as "everything is read". The counts
@@ -284,49 +377,32 @@ export default function ChatHomeScreen() {
       ) : null}
 
       {channelsQuery.isPending ? (
-        <View style={styles.stateBlock}>
-          <ActivityIndicator color={tokens.color.text.muted} />
-          <Text style={styles.stateBody}>Loading channels…</Text>
-        </View>
+        <ChannelListSkeleton />
       ) : channelsQuery.isError ? (
-        <View style={styles.stateBlock}>
-          <Text style={styles.stateTitle}>Couldn&apos;t load channels</Text>
-          <Text style={styles.stateBody}>
-            Chat couldn&apos;t reach the server.
-          </Text>
-          {/*
-            An explicit control, because nothing else here would recover: this
-            screen is a tab that stays mounted for the session, `ScreenShell`'s
-            ScrollView has no RefreshControl to pull, and the copy would
-            otherwise have named a pull-to-refresh that does not exist.
-
-            C8 (#998) has since wired `onlineManager` and `focusManager`
-            (`lib/connection/query-connectivity.ts`), so a *connectivity* blip
-            now recovers on its own and this is no longer the only way back.
-            It stays because a server error still has no other recovery.
-          */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Try loading channels again"
-            disabled={channelsQuery.isFetching}
-            onPress={() => void channelsQuery.refetch()}
-            style={({ pressed }) => [
-              styles.retryButton,
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={styles.retryText}>
-              {channelsQuery.isFetching ? "Retrying…" : "Try again"}
-            </Text>
-          </Pressable>
-        </View>
+        // An explicit retry as well as the pull (#3385): this tab stays
+        // mounted for the session, and a button is the recovery a member
+        // sees without knowing the gesture. A *connectivity* blip
+        // recovers on its own since C8 (#998) wired `onlineManager` and
+        // `focusManager` (`lib/connection/query-connectivity.ts`).
+        <ErrorState
+          title="Couldn't load channels"
+          body="Chat couldn't reach the server."
+          onRetry={() => void channelsQuery.refetch()}
+          // Names what it retries, so the button still makes sense heard on
+          // its own (a screen reader's list of buttons) and not only under
+          // the card's title.
+          retryLabel="Try loading channels again"
+          isRetrying={channelsQuery.isFetching}
+        />
       ) : allChannels.length === 0 ? (
-        <View style={styles.stateBlock}>
-          <Text style={styles.stateTitle}>No channels yet</Text>
-          <Text style={styles.stateBody}>
-            Channels your chapter creates will appear here.
-          </Text>
-        </View>
+        // No line saying channels appear here, which would only restate what
+        // Chat is for; the one line says what to do, since mobile has no way
+        // to create a channel (writing.md §4, as amended 2026-11-05).
+        <EmptyState
+          glyph="#"
+          title="No channels yet"
+          body="Ask an admin to add one."
+        />
       ) : (
         <>
           {/*
@@ -373,7 +449,7 @@ export default function ChatHomeScreen() {
                 a double-tap does. A folded label also carries the section's
                 total, since the badge inside is not read on its own.
               */}
-              <Pressable
+              <PressableRow
                 accessibilityRole="header"
                 accessibilityState={{ expanded: !section.collapsed }}
                 accessibilityLabel={
@@ -394,10 +470,7 @@ export default function ChatHomeScreen() {
                     collapsed: !section.collapsed,
                   })
                 }
-                style={({ pressed }) => [
-                  styles.sectionHeader,
-                  pressed ? styles.pressed : null,
-                ]}
+                style={styles.sectionHeader}
               >
                 <Text style={styles.sectionChevron}>
                   {section.collapsed ? "▸" : "▾"}
@@ -416,44 +489,40 @@ export default function ChatHomeScreen() {
                     addressed={section.addressed}
                   />
                 ) : null}
-              </Pressable>
+              </PressableRow>
               {section.rows.map(renderChannel)}
             </View>
           ))}
 
           {arranged.emptiedByFilters ? (
-            <View style={styles.stateBlock}>
-              <Text style={styles.stateBody}>{NO_MATCHING_CHANNELS}</Text>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() =>
-                  setSidebarFilter({ unread_only: false, hide_muted: false })
-                }
-                style={({ pressed }) => [
-                  styles.retryButton,
-                  pressed ? styles.pressed : null,
-                ]}
-              >
-                <Text style={styles.retryText}>{SHOW_ALL_CHANNELS_LABEL}</Text>
-              </Pressable>
-            </View>
+            <EmptyState
+              glyph={SearchGlyph}
+              // No title: writing.md § Arrange the channel list gives this
+              // state none, and web shows none either.
+              body={NO_MATCHING_CHANNELS}
+              action={
+                <EmptyStateAction
+                  label={SHOW_ALL_CHANNELS_LABEL}
+                  onPress={() =>
+                    setSidebarFilter({ unread_only: false, hide_muted: false })
+                  }
+                />
+              }
+            />
           ) : null}
 
           {hidden.length > 0 ? (
             <View style={styles.section}>
-              <Pressable
+              <PressableRow
                 accessibilityRole="button"
                 accessibilityState={{ expanded: showHidden }}
                 onPress={() => setShowHidden((open) => !open)}
-                style={({ pressed }) => [
-                  styles.hiddenToggle,
-                  pressed ? styles.pressed : null,
-                ]}
+                style={styles.hiddenToggle}
               >
                 <Text style={styles.sectionLabel}>
                   {`${HIDDEN_CONVERSATIONS_LABEL} (${hidden.length})`}
                 </Text>
-              </Pressable>
+              </PressableRow>
               {showHidden
                 ? hidden.map((channel) => (
                     <ChannelRow
@@ -480,6 +549,11 @@ export default function ChatHomeScreen() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+    },
     section: {
       gap: tokens.spacing.xs,
     },
@@ -490,11 +564,14 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.muted,
       marginBottom: tokens.spacing.xs,
     },
+    // The fold header and the Hidden conversations toggle take the rows'
+    // `gutterBleed`, so their captions line up with the rows' sigils.
     sectionHeader: {
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.xs,
       minHeight: tokens.touch.minimum,
+      ...gutterBleed(tokens),
     },
     // Inside the fold control the row carries the spacing, so the label drops
     // its own bottom margin and gives up width to the badge.
@@ -506,44 +583,14 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
     },
-    retryButton: {
-      marginTop: tokens.spacing.sm,
-      minHeight: tokens.touch.minimum,
-      justifyContent: "center",
-      paddingHorizontal: tokens.spacing.lg,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.card,
-    },
-    retryText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-    },
-    pressed: {
-      opacity: 0.7,
-    },
     hiddenToggle: {
       minHeight: tokens.touch.minimum,
       justifyContent: "center",
+      ...gutterBleed(tokens),
     },
     unreadWarning: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.warning,
-    },
-    stateBlock: {
-      gap: tokens.spacing.sm,
-      paddingVertical: tokens.spacing.xl,
-      alignItems: "center",
-    },
-    stateTitle: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-    },
-    stateBody: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.mutedForeground,
-      textAlign: "center",
     },
   });
 }

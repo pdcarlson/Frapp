@@ -75,12 +75,14 @@ bound per-app until [#2371](https://github.com/pdcarlson/Frapp/issues/2371) coll
 Scrollbars are genuinely new. Nothing specified them before; they are now
 [`foundations.md`](../design-system/foundations.md) §12, with `--scrollbar-*` tokens. Lane 2 took
 them to the board's values and made the rule global; the `.signet-scroll` opt-in class is gone.
+*(Corrected 2026-11-05: the board's gold bar was retired for a thin neutral one; §12 owns the
+current values and the reason.)*
 
 ### Two AA text lifts
 
 The lighter ladder pushed two solid semantics under the 4.5:1 gate on the surfaces their badges sit
-on. `--destructive-text` already existed; `--info-text` is new. Both are CSS-only and are not new
-semantics. [`foundations.md`](../design-system/foundations.md) §5 carries the rule and the
+on. `--destructive-text` already existed; `--info-text` is new. Neither is a new semantic. `--info-text`
+is CSS-only; `--destructive-text` is also a `signetDarkTokens` entry, for mobile (2026-11-05). [`foundations.md`](../design-system/foundations.md) §5 carries the rule and the
 measurements.
 
 ### One accessibility fix the ladder forced
@@ -191,6 +193,11 @@ sheet is option `3a`.
 | `--input` (interactive edge) | `rgba(255,255,255,0.14)` | `rgba(255,255,255,.14)` |
 | `--foreground` / `--muted-foreground` / `--muted` / `--disabled` | `#EDEAE3` / `#A9A399` / `#78716A` / `#57534C` | the same four, and the board calls the text ladder "unchanged" |
 
+> **Superseded 2026-11-05.** The owner replaced this warm ladder with a darker, pure neutral one
+> (`#0A0A0A` / `#111111` / `#171717` / `#1E1E1E`, text `#EBEBEB` / `#A3A3A3` / `#737373` /
+> `#525252`). The table above is the lock as it was settled; the current values and the reasons
+> live in [`../design-system/foundations.md`](../design-system/foundations.md) §2 and §4.
+
 This closes the lock as stated. The board does **not** close L-06 or L-08, which it was also hoped to
 settle: L-06 is still open, and L-08 was closed separately by
 [#2153](https://github.com/pdcarlson/Frapp/issues/2153) re-exporting the mark, not by anything the
@@ -209,7 +216,7 @@ change that reaches one should know the board already has a position on it.
 | ---- | ------- | ---------- |
 | `--primary-hover` | `#D2AD37` | `#C9A63A` |
 | `--primary-foreground` | `#292109` | `#2A2000` |
-| `--accent-subtle` | `#282314` | `#2A2410` |
+| `--accent-subtle` | `#272213` (`#282314` before the 2026-11-05 neutral ladder) | `#2A2410` |
 | `--accent-border` | `#5F522C` | `#6B5A24` |
 | `--accent-text` | `#E7C86B` | `#F0CD5E` |
 | `--gold-ask-fill` / `--gold-ask-border` / `--gold-ask-text` | `#251E0E` / `#6B5619` / `#F4CB63` | `#2A2410` / `#6B5A24` / `#F0CD5E` |
@@ -243,7 +250,9 @@ measured at `#DDB844` on `#1A1A1A` it is **9.13:1**, so the claim is sound and t
 3:1 non-text floor with room to spare.
 [`../design-system/foundations.md`](../design-system/foundations.md) §12 moved with it, and the
 `.signet-scroll` class was retired rather than left beside the global rule — it had zero call sites,
-so nothing regressed.
+so nothing regressed. *(Corrected 2026-11-05: the scrollbar rows no longer hold. Paul found the gold
+bar too loud in use, and §12 now ships a 6px neutral thumb on a clear track. The global rule and the
+engine split below stayed.)*
 
 Two things lane 2 found while taking these, both recorded rather than smoothed over:
 
@@ -252,7 +261,9 @@ Two things lane 2 found while taking these, both recorded rather than smoothed o
   that element's WebKit pseudo-elements ignored outright, so Chrome and Edge get a flat `thin` bar
   and silently discard the 8px width, the rounding and the track inset. The repo's existing
   `@supports not selector(::-webkit-scrollbar)` split was kept, which is what makes every engine
-  render the board's *intent*. Transcribe the reference, never lift it.
+  render the board's *intent*. Transcribe the reference, never lift it. *(Corrected 2026-11-05: the
+  split now carries §12's neutral values, not the board's gold. The board's scrollbar is a recorded
+  departure in [`reference/README.md`](reference/README.md) § What this board settles.)*
 - **`#332E26` is measurably a weaker shimmer on this ladder, and shipped anyway.** The gradient is
   `--popover` -> highlight -> `--popover`, so that delta is the whole visible signal. Against the
   greenfield `--popover` (`#2A2621`): `#38312A` measures **1.1740:1**, `#332E26` measures

@@ -1,8 +1,10 @@
 import { Logger, Module, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AnalyticsService } from '../../application/services/analytics.service';
 import { AnalyticsController } from '../../interface/controllers/analytics.controller';
 import { AuthSyncInterceptor } from '../../interface/interceptors/auth-sync.interceptor';
+import { FeatureEventInterceptor } from '../../interface/interceptors/feature-event.interceptor';
 import {
   ANALYTICS_PROVIDER,
   type IAnalyticsProvider,
@@ -102,6 +104,10 @@ export function selectAnalyticsProvider(
       inject: [ConfigService],
       useFactory: selectAnalyticsProvider,
     },
+    // Global: sends a handler's `@FeatureEvent` after it succeeds (#593).
+    // Provided here, beside the service it calls; Nest applies an
+    // APP_INTERCEPTOR to every route whichever module provides it.
+    { provide: APP_INTERCEPTOR, useClass: FeatureEventInterceptor },
   ],
   exports: [AnalyticsService],
 })

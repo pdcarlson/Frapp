@@ -2,8 +2,10 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
+import { useRouter } from "expo-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { expectRoundedRipple } from "@/test/pressable-row";
 import { screenText } from "@/test/screen-text";
 
 /**
@@ -28,19 +30,66 @@ let permissions: string[] = [];
 let events: unknown[] = [];
 let sessions: unknown[] | undefined;
 let invoices: unknown[] = [];
+let notifications: unknown[] = [];
+let hiddenFeatures = new Set<string>();
+/** True while `/v1/users/me/permissions` hasn't answered. */
+let permissionsLoading = false;
+const hiddenFeatureCalls: unknown[][] = [];
+let chapterModules: Record<string, boolean> = {};
+const invoiceReadOptions: ({ enabled?: boolean } | undefined)[] = [];
+
+// `@repo/validation`'s beta list, emptied so these specs draw More as a
+// chapter with dues on sees it. The beta's own case, dues off, sets
+// `betaOff.keys`.
+const betaOff = vi.hoisted(() => ({ keys: [] as string[] }));
+vi.mock("@repo/validation/beta-off-modules", () => ({
+  get BETA_OFF_MODULES() {
+    return betaOff.keys;
+  },
+  isBetaOffModule: (key: string) => betaOff.keys.includes(key),
+}));
+afterEach(() => {
+  betaOff.keys = [];
+});
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useListChapters: () => ({ isSuccess: true, data: [{ id: "chapter-1" }] }),
   usePermissionList: () => permissions,
-  useNotifications: () => ({ data: [] }),
+  useMyPermissions: () => ({
+    data: permissionsLoading ? undefined : { permissions },
+  }),
+  // The rule itself is pinned in `@repo/hooks` (`unset-features.spec.tsx`).
+  useHiddenUnsetFeatures: (...args: unknown[]) => {
+    hiddenFeatureCalls.push(args);
+    return hiddenFeatures;
+  },
+  useNotifications: () => ({ data: notifications }),
   useEvents: () => ({ data: events }),
   useViewerUserId: () => "user-1",
   useStudySessions: () => ({ data: sessions }),
-  useInvoices: () => ({ data: invoices }),
+  useInvoices: (_userId?: string, options?: { enabled?: boolean }) => {
+    invoiceReadOptions.push(options);
+    return { data: invoices };
+  },
+  useCurrentUser: () => ({ data: { display_name: "Paul Carlson" } }),
+  useMyPoints: () => ({ data: { balance: 1240, transactions: [] } }),
+  useCurrentChapter: () => ({
+    data: {
+      name: "FIJI Tau Nu",
+      enabled_modules: chapterModules,
+      theme_palette: {
+        "--signet-accent-text": "#7FB2FF",
+        "--signet-accent-primary": "#2D7BFF",
+        "--signet-accent-on-primary": "#FFFFFF",
+      },
+    },
+  }),
 }));
 
 import MoreScreen from "@/app/(tabs)/more";
+import { ListRow, ListSection } from "@/components/list-section";
+import { signetDarkTokens } from "@repo/theme/signet";
 
 /**
  * Unmounted in `afterEach`, not at the end of each test: the shared clock is
@@ -79,6 +128,7 @@ describe("More hub clock (#2101)", () => {
     events = [];
     sessions = undefined;
     invoices = [];
+    notifications = [];
   });
 
   afterEach(() => {
@@ -164,5 +214,310 @@ describe("More hub clock (#2101)", () => {
 
     expect(screenText(tree)).toContain("0.0 hrs");
     expect(screenText(tree)).not.toContain("2.0 hrs");
+  });
+});
+
+describe("More hub anatomy (#1048)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 4, 12, 0, 0));
+    permissions = [];
+    events = [];
+    sessions = undefined;
+    invoices = [];
+    notifications = [];
+  });
+
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    vi.useRealTimers();
+  });
+
+  it("opens on the profile card, with the name and the points balance", () => {
+    const text = screenText(render());
+    expect(text).toContain("Paul Carlson");
+    expect(text).toContain("1,240 pts");
+    expect(text.indexOf("Paul Carlson")).toBeLessThan(
+      text.indexOf("Study hours"),
+    );
+  });
+
+  // The profile card answers a press as a list row does (`usePressFeedback`,
+  // through `PressableRow`). It sits on `surface1`, the tone of the rows
+  // under it, so its iOS lift is the rows' own one step, to `card`.
+  it("draws the profile card in the rows' tone, ripples it on Android and lifts it a step on iOS", () => {
+    const card = render().root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityHint === "Opens your profile.",
+    );
+    const held = Object.assign(
+      {},
+      ...[card.props.style({ pressed: true })].flat(Infinity),
+    ) as Record<string, unknown>;
+
+    const resting = Object.assign(
+      {},
+      ...[card.props.style({ pressed: false })].flat(Infinity),
+    ) as Record<string, unknown>;
+
+    expect(resting.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    expect(card.props.android_ripple?.color).toMatch(/^rgba\(/);
+    // The suite's react-native stub runs as iOS.
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
+    expect(held).not.toHaveProperty("opacity");
+    // The ripple is rounded by a parent clip with the card's radius
+    // (`PressableRow`); the card's own `overflow` would leave it square.
+    expectRoundedRipple(card, signetDarkTokens.radius.card);
+    // The chevron is `ListRow`'s, at the label role's size.
+    const chevron = card.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "›",
+    );
+    expect(Object.assign({}, chevron.props.style).fontSize).toBe(
+      signetDarkTokens.typography.role.label.size,
+    );
+  });
+
+  it("draws labels without a description line, and names the current chapter", () => {
+    const text = screenText(render());
+    for (const label of [
+      "Study hours",
+      "Service hours",
+      "Dues",
+      "Documents",
+      "Directory",
+      "Settings",
+      "Switch chapter",
+    ]) {
+      expect(text).toContain(label);
+    }
+    expect(text).toContain("FIJI Tau Nu");
+  });
+
+  it("gives no row a description line", () => {
+    const rows = render().root.findAllByType(ListRow);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) expect(row.props.description).toBeUndefined();
+  });
+
+  it("groups chapter tools, then your settings and chapter, then Admin", () => {
+    permissions = ["events:update"];
+    const sections = render()
+      .root.findAllByType(ListSection)
+      .map((section) =>
+        section.findAllByType(ListRow).map((row) => row.props.label),
+      );
+    expect(sections).toEqual([
+      ["Study hours", "Service hours", "Dues", "Documents", "Directory"],
+      ["Settings", "Switch chapter"],
+      ["Host check-in"],
+    ]);
+  });
+
+  it("drops the Dues row while dues is beta-off", () => {
+    betaOff.keys = ["dues"];
+    const labels = render()
+      .root.findAllByType(ListRow)
+      .map((row) => row.props.label);
+    expect(labels).not.toContain("Dues");
+    expect(labels).toContain("Documents");
+  });
+
+  // A member must still be able to pay an invoice the chapter already sent.
+  it("keeps the Dues row for a chapter that switched dues off itself", () => {
+    chapterModules = { dues: false };
+    try {
+      const labels = render()
+        .root.findAllByType(ListRow)
+        .map((row) => row.props.label);
+      expect(labels).toContain("Dues");
+    } finally {
+      chapterModules = {};
+    }
+  });
+
+  it("reads no invoices while dues is beta-off", () => {
+    betaOff.keys = ["dues"];
+    render();
+    expect(invoiceReadOptions.at(-1)).toEqual({ enabled: false });
+  });
+
+  it("drops Study hours and Documents while nobody has set them up for this member", () => {
+    hiddenFeatures = new Set(["study", "documents"]);
+    try {
+      const labels = render()
+        .root.findAllByType(ListRow)
+        .map((row) => row.props.label);
+      expect(labels).not.toContain("Study hours");
+      expect(labels).not.toContain("Documents");
+      expect(labels).toContain("Service hours");
+      expect(labels).toContain("Directory");
+    } finally {
+      hiddenFeatures = new Set();
+    }
+  });
+
+  it("asks the setup gate with the real permissions and the chapter's modules", () => {
+    permissions = ["members:view"];
+    try {
+      render();
+      const [perms, gate] = hiddenFeatureCalls.at(-1) as [
+        string[],
+        ((key: string) => boolean) | undefined,
+      ];
+      expect(perms).toEqual(["members:view"]);
+      // A module `enabled_modules` leaves out is on.
+      expect(gate?.("geofences")).toBe(true);
+    } finally {
+      permissions = [];
+    }
+  });
+
+  // `usePermissionList` says `[]` while loading, which would read as a member
+  // who holds nothing and hide an officer's rows for a beat.
+  it("tells the setup gate permissions are still loading, not empty", () => {
+    permissionsLoading = true;
+    try {
+      render();
+      expect(hiddenFeatureCalls.at(-1)?.[0]).toBeUndefined();
+    } finally {
+      permissionsLoading = false;
+    }
+  });
+
+  // foundations.md §6 "Where the accent goes" (2026-11-05): an icon that
+  // labels a row is neutral, so member and Admin rows draw the same muted hue.
+  it("draws a neutral leading glyph on every row, never the chapter accent", () => {
+    permissions = ["events:update"];
+    const rows = render().root.findAllByType(ListRow);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const glyph = row.props.leading as React.ReactElement<{
+        color: string;
+      }>;
+      expect(glyph, row.props.label).toBeTruthy();
+      expect(glyph.props.color, row.props.label).toBe(
+        signetDarkTokens.color.text.muted,
+      );
+    }
+  });
+
+  // The same rule for people: the viewer's initials avatar is a raised
+  // neutral fill with foreground initials, never an accent tint.
+  it("draws the profile card's initials avatar neutral, never the chapter accent", () => {
+    const card = render().root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityHint === "Opens your profile.",
+    );
+    const initials = card.find(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "PC",
+    );
+    const flatten = (style: unknown) =>
+      Object.assign({}, ...[style].flat(Infinity)) as Record<string, unknown>;
+    expect(flatten(initials.props.style).color).toBe(
+      signetDarkTokens.color.text.foreground,
+    );
+    const avatar = flatten(initials.parent!.props.style);
+    expect(avatar.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
+    expect(avatar.borderColor).toBe(signetDarkTokens.color.border.hairline);
+    const styles = JSON.stringify(
+      card
+        .findAll((node) => typeof node.type === "string")
+        .map((node) => node.props.style ?? null),
+    );
+    expect(styles).not.toContain("#7FB2FF");
+    expect(styles).not.toContain("#2D7BFF");
+  });
+
+  it("has no Notifications row: the inbox is the bell on Chat home (#3362)", () => {
+    notifications = [{ id: "n-1", read_at: null }];
+    const tree = render();
+    expect(
+      tree.root.findAllByType(ListRow).map((row) => row.props.label),
+    ).not.toContain("Notifications");
+  });
+
+  it("gives every row a chevron and a press target", () => {
+    const tree = render();
+    const buttons = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "button",
+    );
+    const labels = buttons.map((node) => node.props.accessibilityLabel);
+    expect(labels).toEqual([
+      "Paul Carlson",
+      "Study hours",
+      "Service hours",
+      "Dues",
+      "Documents",
+      "Directory",
+      "Settings",
+      "Switch chapter",
+    ]);
+    // One chevron inside each press target.
+    for (const button of buttons) {
+      expect(
+        button.findAll(
+          (node) =>
+            (node.type as unknown) === "Text" && node.props.children === "›",
+        ),
+      ).toHaveLength(1);
+    }
+  });
+
+  it("drops the chevron and the open-hint from a Host check-in row with nothing to host", () => {
+    permissions = ["events:update"];
+    const tree = render();
+    const host = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Host check-in",
+    );
+    expect(host.props.accessibilityState).toEqual({
+      disabled: true,
+      busy: false,
+    });
+    expect(host.props.accessibilityHint).toBeUndefined();
+    expect(host.props.accessibilityValue).toEqual({
+      text: "No upcoming event",
+    });
+    expect(
+      host.findAll(
+        (node) =>
+          (node.type as unknown) === "Text" && node.props.children === "›",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("shows the Admin section only to a member who can host", () => {
+    expect(screenText(render())).not.toContain("Host check-in");
+    permissions = ["events:update"];
+    const text = screenText(render());
+    expect(text).toContain("Admin");
+    expect(text).toContain("Host check-in");
+    expect(text).toContain("No upcoming event");
+  });
+
+  it("tells the chapter picker that More opened it, so it draws ‹ More", () => {
+    const row = render().root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Switch chapter",
+    );
+    const push = vi.mocked(useRouter().push);
+    push.mockClear();
+    act(() => {
+      row.props.onPress();
+    });
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/(auth)/chapter-picker",
+      params: { from: "more" },
+    });
   });
 });

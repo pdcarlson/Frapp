@@ -6,7 +6,10 @@
   "exports": {
     "./tailwind": "./src/tailwind.config.ts",
     "./signet.css": "./src/signet.css",
-    "./signet": "./src/signet.ts"
+    "./signet": "./src/signet.ts",
+    "./glass": "./src/glass.ts",
+    "./nav-glyphs": "./src/nav-glyphs.ts",
+    "./signature": "./src/signature.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",
@@ -19,9 +22,9 @@
     "@repo/chapter-theme": "*",
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
-    "@tailwindcss/postcss": "^4.3.3",
-    "@types/node": "^26.6.4",
-    "postcss": "^8.5.6",
+    "@tailwindcss/postcss": "^4.3.4",
+    "@types/node": "^26.6.6",
+    "postcss": "^8.5.32",
     "tailwindcss": "^4.3.3",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vitest": "^4.1.10"

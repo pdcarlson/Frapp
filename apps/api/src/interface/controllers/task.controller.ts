@@ -23,6 +23,10 @@ import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
 import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
+import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
@@ -83,6 +87,16 @@ export class TaskController {
   @RequirePermissions(SystemPermissions.TASKS_MANAGE)
   @ApiOperation({ summary: 'Create a task' })
   @ApiCreatedResponse({ type: CreateTaskResponseDto })
+  // The created row carries both the assignee and the creator (the acting
+  // user), so self-assignment is a comparison of the two, not an id sent.
+  @FeatureEvent(
+    'task-created',
+    ({ result }: FeatureEventInput<CreateTaskDto, CreateTaskResponseDto>) => ({
+      assigned_to_self: result.assignee_id === result.created_by,
+      has_point_reward: (result.point_reward ?? 0) > 0,
+      posted_to_chat: result.card_posted === true,
+    }),
+  )
   async create(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') createdBy: string,
@@ -103,6 +117,14 @@ export class TaskController {
 
   @Patch(':id/status')
   @ApiOperation({ summary: 'Update task status (assignee or admin)' })
+  // `as_admin` is not derivable here: the describer sees neither the acting
+  // user nor the handler's `isAdmin`, and the result is the task alone.
+  @FeatureEvent(
+    'task-status-changed',
+    ({ body }: FeatureEventInput<UpdateTaskStatusDto>) => ({
+      status: body.status,
+    }),
+  )
   async updateStatus(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -126,6 +148,7 @@ export class TaskController {
   @Post(':id/confirm')
   @RequirePermissions(SystemPermissions.TASKS_MANAGE)
   @ApiOperation({ summary: 'Confirm task completion and award points' })
+  @FeatureEvent('task-completion-confirmed')
   async confirmCompletion(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -137,6 +160,7 @@ export class TaskController {
   @Post(':id/reject')
   @RequirePermissions(SystemPermissions.TASKS_MANAGE)
   @ApiOperation({ summary: 'Reject task completion (revert to IN_PROGRESS)' })
+  @FeatureEvent('task-completion-rejected')
   async rejectCompletion(
     @CurrentChapterId() chapterId: string,
     @Param('id') id: string,

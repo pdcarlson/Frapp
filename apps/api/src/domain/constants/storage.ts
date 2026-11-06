@@ -166,6 +166,31 @@ export function flattenArchiveRelativePath(relativePath: string): string {
 const UNSAFE_OBJECT_KEY_CHAR = /[^A-Za-z0-9_!.*'() &$=@;:+,-]/g;
 
 /**
+ * The same set, as a whole-segment test, minus a trailing space. A key's last
+ * segment ends the request URL, and the URL parser strips trailing spaces, so
+ * `{path} ` would sign `{path}` while comparing unequal to it.
+ * `safeObjectFilename` drops a trailing space, so no minted key ends in one.
+ */
+const OBJECT_KEY_SEGMENT =
+  /^[A-Za-z0-9_!.*'() &$=@;:+,-]*[A-Za-z0-9_!.*'()&$=@;:+,-]$/;
+
+/**
+ * True when `segment` is one a minted key can hold: non-empty, made only of
+ * the characters `safeObjectFilename` keeps, and not ending in a space.
+ *
+ * A confirm route checks the client's path with this as well as
+ * `assertSafeStoragePath`, because the traversal guard lets `?`, `#`, `%`
+ * and a trailing space through. storage-js puts the key into the request URL
+ * unencoded, so `{path}?x`, `{path}#x`, `{path} ` or a percent-encoded
+ * spelling names the same object as `{path}` while comparing unequal to it as
+ * a string, and anything keyed on the string (a unique index, a filed-row
+ * lookup) would treat it as a new one (#3399).
+ */
+export function isObjectKeySegment(segment: string): boolean {
+  return OBJECT_KEY_SEGMENT.test(segment);
+}
+
+/**
  * The last segment of a storage key built from a client-supplied filename.
  *
  * Every upload-URL route that puts the member's filename into the key
@@ -183,9 +208,14 @@ const UNSAFE_OBJECT_KEY_CHAR = /[^A-Za-z0-9_!.*'() &$=@;:+,-]/g;
  *   at the `#` or `?` (`Rush `, `q`) while the API confirms the uncut path, so
  *   the row points at nothing.
  *
+ * - `bylaws.pdf ` (a trailing space, which the extension check trims away)
+ *   lands at `bylaws.pdf`, because the URL parser strips a trailing space,
+ *   while the row keeps the space, so delete, which sends the key in a JSON
+ *   body, removes nothing.
+ *
  * `posix.basename` drops any `/`-separated directory part; then each character
  * `UNSAFE_OBJECT_KEY_CHAR` matches becomes `_`, one for one (a backslash
- * included).
+ * included), and trailing spaces are dropped.
  *
  * **The squash is deliberately no wider than that.** A name storage-api
  * already accepted (`Meeting notes (final).pdf`, `Bob's, A&B.pdf`) comes out
@@ -203,7 +233,10 @@ const UNSAFE_OBJECT_KEY_CHAR = /[^A-Za-z0-9_!.*'() &$=@;:+,-]/g;
  * built this way: an existing row keeps the key it was confirmed with.
  */
 export function safeObjectFilename(filename: string): string {
-  return posix.basename(filename).replace(UNSAFE_OBJECT_KEY_CHAR, '_');
+  return posix
+    .basename(filename)
+    .replace(UNSAFE_OBJECT_KEY_CHAR, '_')
+    .replace(/ +$/, '');
 }
 
 /**

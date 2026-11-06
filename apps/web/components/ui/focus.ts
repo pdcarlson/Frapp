@@ -95,15 +95,20 @@ export const FOCUS_RING =
  *
  * | Role | Worst seed | Clears 3:1 |
  * | --- | --- | --- |
- * | `--primary` (accent-9) | 4.70:1 | yes, and 3.78:1 on `--popover` |
- * | `--ring` (accent-8) | 2.98:1 | no, fails on 3 |
- * | `--accent-text` (accent-11) | 8.48:1 | yes, on all 19 |
+ * | `--primary` (accent-9) | 4.19:1 | yes, and on `--popover` |
+ * | `--ring` (accent-8) | 3.15:1 | yes, with no headroom |
+ * | `--accent-text` (accent-11) | 8.97:1 | yes, on all 19 |
+ *
+ * Measured on the neutral ladder (2026-11-05, foundations.md §2), whose darker
+ * `--background` raised the ring's margin back over 3:1; on the greenfield
+ * ladder `--primary`'s worst was 4.70:1 and `--ring` failed on 3 seeds at
+ * 2.98:1. The worst `--primary` is now `#BF0A30`'s lifted `#D83144`.
  *
  * `--primary` failed on 4 seeds (worst 1.87:1) until #2541, when the engine
  * began lifting a dark fill until it clears 3:1 on every ladder surface
  * (`accent-engine.md` §8). The floor guarantees 3:1 and nothing more, and a
- * seed that already clears it keeps its fill: the worst is `#800000`, whose
- * generated `#F42F22` the engine leaves as it is. So accent-9 still has
+ * seed that already clears it keeps its fill (on the greenfield ladder the
+ * worst was `#800000`'s generated `#F42F22`, which the engine left as it was). So accent-9 still has
  * nowhere near accent-11's headroom as a whole indicator.
  *
  * `--ring` was the token here until the greenfield surface ladder

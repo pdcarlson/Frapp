@@ -7,7 +7,11 @@
  * its own copy of these helpers, and the copies drifted: mobile uppercased the
  * accent and web did not, and mobile defaulted to the retired Frapp bronze while
  * web used the Signet seed (#1642, #2102). One definition means one input
- * produces one stored value on either surface.
+ * produces one stored value on either surface. The same goes for how the
+ * Organization field drives the short name and the letters switch
+ * (`lettersHiddenBy`, `withOrgName`, `directoryMatchMarkFields`, on
+ * `@repo/org-archetypes`' profiles). Mobile's setup reads them; web's wizard
+ * still holds its own copies of the three until it moves onto these.
  *
  * Deliberately pure: no React, no react-query. It is a subpath export, like
  * `./display-names`, so importing it does not pull a query client into a
@@ -15,6 +19,11 @@
  */
 
 import { normalizeHex } from "@repo/color";
+import {
+  orgHidingGreekLettersIn,
+  orgMarkFieldsFor,
+  type OrgMarkFields,
+} from "@repo/org-archetypes";
 import { signetDarkTokens } from "@repo/theme/signet";
 
 /**
@@ -28,6 +37,28 @@ import { signetDarkTokens } from "@repo/theme/signet";
  * (`spec/ui/web-dashboard/tokens.md` § One duplicate removed).
  */
 export const DEFAULT_CHAPTER_ACCENT = signetDarkTokens.color.gold.seed;
+
+/** A named accent swatch: an organization's color or one of the presets. */
+export type AccentSwatch = { name: string; hex: string };
+
+/**
+ * The common colors an accent picker offers every chapter, after its own
+ * organization's colors (`orgColorsFor` in `@repo/org-archetypes`). They are
+ * the hues Greek organizations use most, each a seed the accent engine reads
+ * well on Signet's dark surfaces. A chapter can still enter any hex.
+ */
+export const ACCENT_PRESETS: readonly AccentSwatch[] = Object.freeze(
+  [
+    { name: "Crimson", hex: "#A6192E" },
+    { name: "Orange", hex: "#E87722" },
+    { name: "Gold", hex: "#C9A227" },
+    { name: "Green", hex: "#2E7D32" },
+    { name: "Royal Blue", hex: "#1E4FA3" },
+    { name: "Navy", hex: "#1D2F6F" },
+    { name: "Purple", hex: "#5B2C83" },
+    { name: "Rose", hex: "#D51A68" },
+  ].map((swatch) => Object.freeze(swatch)),
+);
 
 export type ChapterIdentityForm = {
   name: string;
@@ -76,8 +107,8 @@ export const EMPTY_CHAPTER_IDENTITY: Readonly<ChapterIdentityForm> =
  * shouldn't be swapped for the default. Settings can stay strict because it
  * shows an explicit unsavable state; the wizard has none, so a blank or
  * unparseable field takes the default instead. Web's native colour input can't
- * produce one, and mobile's swatch previews this function's result, so the
- * founder sees the colour that will be stored.
+ * produce one, and mobile's accent picker only passes on a typed hex that
+ * already parses, so neither wizard stores a colour the founder didn't see.
  */
 export function normalizeAccentInput(value: string | null | undefined): string {
   const trimmed = value?.trim() ?? "";
@@ -156,4 +187,69 @@ export function chapterIdentityBranding(
     founded_at: parseFoundedYear(identity.foundedYear),
     colors: { accent: normalizeAccentInput(identity.colorAccent) },
   };
+}
+
+/**
+ * The organization whose Greek letters setup must not draw, or `null`: the
+ * picked directory row's organization first (`matchedOrgName`), because a
+ * chapter from FIJI's row is FIJI whatever its name field says later, then
+ * the name as typed ("FIJI", "Phi Gamma Delta Tau Nu"). The match
+ * (`orgHidingGreekLettersIn`) can hide letters, never show them.
+ */
+export function lettersHiddenBy(
+  matchedOrgName: string | null | undefined,
+  identity: Pick<ChapterIdentityForm, "name">,
+): string | null {
+  return (
+    orgHidingGreekLettersIn(matchedOrgName) ??
+    orgHidingGreekLettersIn(identity.name) ??
+    null
+  );
+}
+
+/**
+ * The identity after the Organization field changes. By hand, the short name
+ * and the letters switch follow `orgMarkFieldsFor`: naming an organization
+ * fills an empty short name from its profile and turns the switch off when it
+ * hides its letters, typing on past it ("Phi Gamma Delta Tau Nu") keeps both,
+ * and leaving it undoes both. A short name the founder typed is never
+ * replaced. After a directory pick the row decides the organization, so
+ * renaming the chapter ("Tau Nu Chapter") changes the name alone.
+ */
+export function withOrgName(
+  identity: ChapterIdentityForm,
+  name: string,
+  fromDirectory: boolean,
+): ChapterIdentityForm {
+  if (fromDirectory) return { ...identity, name };
+  return {
+    ...identity,
+    name,
+    ...orgMarkFieldsFor(name, identity.name, identity),
+  };
+}
+
+/**
+ * The short name and letters switch after the founder picks a directory row
+ * of `rowOrgName`. The directory knows letters, not whether an organization
+ * shows them, so the row's profile decides (`orgMarkFieldsFor`): FIJI's
+ * switches them off and fills an empty short name.
+ *
+ * The organization being left is the one that set the form's fields: the
+ * previously picked row's (`matchedOrgName`) when there is one, because
+ * renaming a picked row changes the name alone (`withOrgName`), and the typed
+ * name otherwise. Reading the edited name instead would let FIJI's short name
+ * and switch survive a pick of another row once FIJI's row had been renamed,
+ * and a row renamed "FIJI" would block FIJI's own row from filling them.
+ */
+export function directoryMatchMarkFields(
+  rowOrgName: string | null | undefined,
+  matchedOrgName: string | null | undefined,
+  identity: ChapterIdentityForm,
+): OrgMarkFields {
+  return orgMarkFieldsFor(
+    rowOrgName,
+    matchedOrgName ?? identity.name,
+    identity,
+  );
 }

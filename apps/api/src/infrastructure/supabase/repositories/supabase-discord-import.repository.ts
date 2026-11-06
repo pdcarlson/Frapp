@@ -1,7 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import { fetchAllPages } from '../supabase.utils';
+import { logThrowable } from '../../observability/log-throwable';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type {
   ArchiveQuotaScope,
@@ -13,6 +14,7 @@ import { ArchiveQuotaExceededError } from '#domain/repositories/discord-import.r
 import type {
   DiscordImport,
   DiscordImportChannel,
+  DiscordImportCategoryProgress,
   DiscordImportChannelProgress,
   DiscordImportChannelProgressRow,
   DiscordImportChannelStatus,
@@ -85,6 +87,8 @@ function parseArchiveQuotaError(error: {
 
 @Injectable()
 export class SupabaseDiscordImportRepository implements IDiscordImportRepository {
+  private readonly logger = new Logger(SupabaseDiscordImportRepository.name);
+
   constructor(
     @Inject(SUPABASE_CLIENT)
     private readonly supabase: FrappSupabaseClient,
@@ -319,7 +323,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
         .neq('mapping_action', 'skip')
         .eq('status', status);
 
-    const [counts, running, recent, failed] = await Promise.all([
+    const [counts, running, recent, failed, categories] = await Promise.all([
       Promise.all(PROGRESS_STATUSES.map(count)),
       rows('running')
         .order('position', { ascending: true })
@@ -335,9 +339,26 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
         .order('position', { ascending: true })
         .order('id', { ascending: true })
         .limit(DISCORD_IMPORT_PROGRESS_LIMITS.failed),
+      // Added up in the database: one line per category, whatever the
+      // server's size. Scoped by the chapter inside the function.
+      this.supabase.rpc('discord_import_category_progress', {
+        p_import_id: importId,
+        p_chapter_id: chapterId,
+      }),
     ]);
     for (const result of [...counts, running, recent, failed]) {
       if (result.error) throw new SupabaseQueryError(result.error);
+    }
+    // The per-category sums are extra: when they fail (or the function isn't
+    // there yet, an API deployed ahead of its migration), the counts and the
+    // named rows still answer, and the page draws no tiles.
+    if (categories.error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not add up import ${importId}'s progress per category; answering without it`,
+        new SupabaseQueryError(categories.error),
+      );
     }
     const named = (
       data: DiscordImportChannelProgressRow[] | null,
@@ -362,6 +383,15 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       running: named(running.data),
       recent: named(recent.data),
       failed: named(failed.data),
+      categories: (categories.error ? [] : (categories.data ?? [])).map(
+        (row): DiscordImportCategoryProgress => ({
+          category: row.category,
+          channels: row.channels,
+          threads: row.threads,
+          done: row.done,
+          failed: row.failed,
+        }),
+      ),
     };
   }
 
@@ -744,6 +774,57 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     // (`20260930030000_discord_import_purge_channels.sql`).
     const { data, error } = await this.supabase.rpc(
       'delete_empty_discord_import_channels',
+      { p_import_id: importId, p_chapter_id: chapterId },
+    );
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
+  async assignChannelGroup(
+    importId: string,
+    chapterId: string,
+    rowIds: readonly string[],
+    categoryId: string,
+  ): Promise<void> {
+    if (rowIds.length === 0) return;
+    // Scoped through the import, as `replaceChannels` is: the channel rows
+    // carry no chapter of their own.
+    const owned = await this.findById(importId, chapterId);
+    if (!owned) return;
+    // A group holds a channel and every thread inheriting it, so a large
+    // server's group can name hundreds of rows; batched like other id lists.
+    for (const batch of chunkIds([...rowIds])) {
+      const { error } = await this.supabase
+        .from('discord_import_channels')
+        .update({ new_channel_category_id: categoryId })
+        .eq('import_id', importId)
+        .in('id', batch);
+      if (error) throw new SupabaseQueryError(error);
+    }
+  }
+
+  async recordCreatedCategory(
+    importId: string,
+    categoryId: string,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('discord_import_created_categories')
+      .upsert(
+        { import_id: importId, category_id: categoryId },
+        { onConflict: 'import_id,category_id', ignoreDuplicates: true },
+      );
+    if (error) throw new SupabaseQueryError(error);
+  }
+
+  async deleteEmptyCreatedCategories(
+    importId: string,
+    chapterId: string,
+  ): Promise<string[]> {
+    // One call, so each group's emptiness check and its delete run under the
+    // row lock that keeps a channel from being moved in between
+    // (`20261105220000_discord_import_channel_groups.sql`).
+    const { data, error } = await this.supabase.rpc(
+      'delete_empty_discord_import_categories',
       { p_import_id: importId, p_chapter_id: chapterId },
     );
     if (error) throw new SupabaseQueryError(error);

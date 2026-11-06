@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { cardFilledContainers } from "@/tests/card-surfaces";
@@ -7,22 +13,30 @@ import { networkMock } from "@/tests/network";
 /*
  * Chat Admin's channel structure (#2500): flush on the page surface, its
  * states from the nested family, a background read that fails keeps what is
- * already loaded, and the create dialog tells the three types apart truthfully.
+ * already loaded, and the create panel tells the three types apart truthfully.
  *
  * The report queue above it has its own spec (`chat-reports-card.spec.tsx`)
  * and is stubbed here; so is the screen-level `<Can>`, whose fallbacks
  * `can-fallback.spec.tsx` pins.
  */
 
-const { mockOffline, reads } = vi.hoisted(() => ({
-  mockOffline: { value: false },
-  reads: {
-    channels: {} as Record<string, unknown>,
-    categories: {} as Record<string, unknown>,
-    pins: {} as Record<string, unknown>,
-    catalog: {} as Record<string, unknown>,
-  },
-}));
+const { mockOffline, reads, updateChannel, mockCreateChannel } = vi.hoisted(
+  () => ({
+    mockCreateChannel: vi.fn(),
+    mockOffline: { value: false },
+    updateChannel: {
+      mutateAsync: (() => Promise.resolve()) as (
+        ...args: unknown[]
+      ) => Promise<unknown>,
+    },
+    reads: {
+      channels: {} as Record<string, unknown>,
+      categories: {} as Record<string, unknown>,
+      pins: {} as Record<string, unknown>,
+      catalog: {} as Record<string, unknown>,
+    },
+  }),
+);
 
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/hooks")>();
@@ -35,8 +49,14 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     usePermissionsCatalog: () => reads.catalog,
     useRoles: () => ({ data: [] }),
     useMemberDisplayNames: () => ({ nameFor: () => null }),
-    useCreateChannel: mutation,
-    useUpdateChannel: mutation,
+    useCreateChannel: () => ({
+      mutateAsync: mockCreateChannel,
+      isPending: false,
+    }),
+    useUpdateChannel: () => ({
+      mutateAsync: (...args: unknown[]) => updateChannel.mutateAsync(...args),
+      isPending: false,
+    }),
     useDeleteChannel: mutation,
     useCreateCategory: mutation,
     useUpdateCategory: mutation,
@@ -92,6 +112,7 @@ function settled(data: unknown) {
     data,
     isPending: false,
     isLoading: false,
+    isSuccess: true,
     isError: false,
     fetchStatus: "idle",
     refetch: vi.fn(),
@@ -183,7 +204,7 @@ describe("ChatAdminPage — row heights", () => {
   });
 });
 
-describe("ChatAdminPage — the create dialog", () => {
+describe("ChatAdminPage — the create panel", () => {
   it("says a private channel is for its members, and that the type is final", () => {
     render(<ChatAdminPage />);
     fireEvent.click(screen.getByRole("button", { name: "New channel" }));
@@ -196,6 +217,39 @@ describe("ChatAdminPage — the create dialog", () => {
       dialog.getByText(/type can.t be changed after it.s created/),
     ).toBeInTheDocument();
     expect(dialog.queryByText(/visible to every member/)).toBeNull();
+  });
+
+  // The footer's Create sits outside the form and submits it through `form=`.
+  it("creates the channel from the footer's Create button", async () => {
+    mockCreateChannel.mockResolvedValue({});
+    render(<ChatAdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "rush-planning" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create channel" }));
+
+    await waitFor(() =>
+      expect(mockCreateChannel).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "rush-planning", type: "PUBLIC" }),
+      ),
+    );
+  });
+
+  // Cancel sets state directly, and Radix fires no `onOpenChange` for that, so
+  // it has to drop the draft itself the way the X and Escape do.
+  it("drops the draft on Cancel, so the next New channel starts empty", () => {
+    render(<ChatAdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "rush-planning" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+
+    expect(screen.getByLabelText("Name")).toHaveValue("");
   });
 });
 
@@ -239,7 +293,7 @@ describe("ChatAdminPage — the channel structure's states", () => {
     });
     const { container } = render(<ChatAdminPage />);
 
-    expect(screen.getByText("Loading channels...")).toBeInTheDocument();
+    expect(screen.getByText("Loading channels")).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });
 
@@ -248,9 +302,7 @@ describe("ChatAdminPage — the channel structure's states", () => {
     render(<ChatAdminPage />);
     fireEvent.click(screen.getByRole("button", { name: /^#officers/ }));
 
-    expect(
-      screen.queryByText(/Couldn't load the permission catalog/),
-    ).toBeNull();
+    expect(screen.queryByText(/Couldn.t load the permission list/)).toBeNull();
     expect(screen.getAllByRole("checkbox").length).toBeGreaterThan(0);
   });
 
@@ -259,7 +311,7 @@ describe("ChatAdminPage — the channel structure's states", () => {
       "has failed with nothing loaded",
       { isError: true },
       false,
-      /Couldn.t load the permission catalog/,
+      /Couldn.t load the permission list/,
     ],
     [
       "is loading",
@@ -434,5 +486,221 @@ describe("ChatAdminPage — a channel's pins", () => {
     expect(
       screen.getByRole("heading", { level: 4, name: "Pinned messages (0)" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("ChatAdminPage — saving a channel", () => {
+  it("leaves a never-set description alone when another field is saved", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).not.toHaveProperty("description");
+  });
+
+  it("leaves the chapter default alone when another field is saved", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).not.toHaveProperty("is_default");
+  });
+
+  it("makes the channel the chapter default from its switch", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Chapter default channel" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).toMatchObject({ is_default: true });
+  });
+
+  it("sends the description once the officer has typed one", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    fireEvent.change(document.getElementById("ca-description")!, {
+      target: { value: "  The whole chapter.  " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).toMatchObject({ description: "The whole chapter." });
+  });
+
+  it("sends an empty description when the officer clears one", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    reads.channels = settled([
+      { ...CHANNELS[0], description: "Old words." },
+      ...CHANNELS.slice(1),
+    ]);
+    render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    fireEvent.change(document.getElementById("ca-description")!, {
+      target: { value: "   " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).toMatchObject({ description: "" });
+  });
+
+  it("doesn't send an untouched draft over a description that arrived on refetch", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    const { rerender } = render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    reads.channels = settled([
+      { ...CHANNELS[0], description: "The whole chapter." },
+      ...CHANNELS.slice(1),
+    ]);
+    rerender(<ChatAdminPage initialChannelId="ch-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).not.toHaveProperty("description");
+  });
+
+  it("keeps the current default when another field of it is saved, and badges it", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    reads.channels = settled([
+      { ...CHANNELS[0], is_default: true },
+      ...CHANNELS.slice(1),
+    ]);
+    render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    expect(
+      screen.getByRole("switch", { name: "Chapter default channel" }),
+    ).toBeChecked();
+    expect(screen.getByRole("button", { name: /^#general/ })).toHaveTextContent(
+      "Default",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).not.toHaveProperty("is_default");
+  });
+
+  it("doesn't move the default back when another officer moved it under an untouched switch", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    reads.channels = settled([
+      { ...CHANNELS[0], is_default: true },
+      ...CHANNELS.slice(1),
+    ]);
+    const { rerender } = render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    // Another officer made #exec the default; the list refetched.
+    reads.channels = settled([
+      CHANNELS[0],
+      { ...CHANNELS[1], is_default: true },
+      CHANNELS[2],
+    ]);
+    rerender(<ChatAdminPage initialChannelId="ch-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).not.toHaveProperty("is_default");
+  });
+});
+
+describe("ChatAdminPage — opened from a channel start", () => {
+  it("selects ?channel= and puts the cursor in its description", () => {
+    render(<ChatAdminPage initialChannelId="ch-2" />);
+
+    expect(screen.getByRole("button", { name: /^#exec/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(document.activeElement).toBe(
+      document.getElementById("ca-description"),
+    );
+  });
+
+  it("waits for the channel list when the page is opened cold", () => {
+    reads.channels = {
+      data: undefined,
+      isPending: true,
+      isLoading: true,
+      isSuccess: false,
+      isError: false,
+      fetchStatus: "fetching",
+      refetch: vi.fn(),
+    };
+    const { rerender } = render(<ChatAdminPage initialChannelId="ch-2" />);
+
+    reads.channels = settled(CHANNELS);
+    rerender(<ChatAdminPage initialChannelId="ch-2" />);
+
+    expect(screen.getByRole("button", { name: /^#exec/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(document.activeElement).toBe(
+      document.getElementById("ca-description"),
+    );
+  });
+
+  it("doesn't take the cursor back to the description on a later pick", () => {
+    const { rerender } = render(<ChatAdminPage initialChannelId="ch-2" />);
+
+    // The opened channel goes away (deleted), so the editor unmounts; the
+    // next pick mounts it afresh.
+    reads.channels = settled(CHANNELS.filter((c) => c.id !== "ch-2"));
+    rerender(<ChatAdminPage initialChannelId="ch-2" />);
+    const general = screen.getByRole("button", { name: /^#general/ });
+    general.focus();
+    fireEvent.click(general);
+
+    expect(document.activeElement).not.toBe(
+      document.getElementById("ca-description"),
+    );
+  });
+
+  it("selects nothing for a channel id it doesn't know", () => {
+    render(<ChatAdminPage initialChannelId="nope" />);
+
+    expect(screen.getByRole("button", { name: /^#exec/ })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 });

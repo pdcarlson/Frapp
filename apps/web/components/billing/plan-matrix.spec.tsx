@@ -1,10 +1,24 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { MODULE_CATALOG } from "@repo/org-archetypes";
 import { DASHBOARD_NAV_ITEMS } from "@/components/layout/nav-config";
 import { SETTINGS_TOOLS } from "@/components/settings/settings-access";
 import { PlanMatrix } from "./plan-matrix";
 import { ProChip } from "./pro-chip";
+
+// `@repo/validation`'s beta list, emptied so this spec pins the ordinary
+// module rule with dues as its example. A test that wants dues beta-off, as
+// it is for the beta, sets `betaOff.keys`.
+const betaOff = vi.hoisted(() => ({ keys: [] as string[] }));
+vi.mock("@repo/validation/beta-off-modules", () => ({
+  get BETA_OFF_MODULES() {
+    return betaOff.keys;
+  },
+  isBetaOffModule: (key: string) => betaOff.keys.includes(key),
+}));
+afterEach(() => {
+  betaOff.keys = [];
+});
 
 /**
  * The matrix is only worth anything if it is the catalog.
@@ -101,9 +115,9 @@ describe("PlanMatrix", () => {
   });
 
   it("clears the 4.5:1 text gate on the not-included dash", () => {
-    // `--disabled` (#57534C) is 2.45:1 on `--background`, under §6's release
+    // `--disabled` (#525252) is 2.53:1 on `--background`, under §6's release
     // gate, and WCAG's inactive-control exemption does not cover informational
-    // content. `--muted-foreground` is 7.47:1.
+    // content. `--muted-foreground` is 7.85:1.
     const { container } = render(<PlanMatrix />);
     const dash = Array.from(container.querySelectorAll("span")).find(
       (node) => node.textContent === "–",
@@ -142,6 +156,13 @@ describe("PlanMatrix", () => {
   it("keeps Dues, whose surface is this page's own invoice list", () => {
     render(<PlanMatrix />);
     expect(screen.getByText("Dues")).toBeInTheDocument();
+  });
+
+  it("sells no row for a beta-off module", () => {
+    betaOff.keys = ["dues"];
+    render(<PlanMatrix />);
+    expect(screen.queryByText("Dues")).not.toBeInTheDocument();
+    expect(screen.getByText("Events")).toBeInTheDocument();
   });
 
   it("invents no tier the product does not sell", () => {

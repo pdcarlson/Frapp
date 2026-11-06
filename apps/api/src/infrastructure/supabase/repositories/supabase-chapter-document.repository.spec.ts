@@ -1,4 +1,5 @@
 import { SupabaseChapterDocumentRepository } from './supabase-chapter-document.repository';
+import type { FrappSupabaseClient } from '../database.types';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -108,5 +109,96 @@ describe('SupabaseChapterDocumentRepository — tenant scope', () => {
         .rows('chapter_documents')
         .filter((d) => d.chapter_id === CHAPTER_A),
     ).toHaveLength(1);
+  });
+});
+
+/**
+ * A confirm retried with a path that is already filed (#3399), which the
+ * tenant harness cannot reach: its `insert` appends unconditionally, so it
+ * never raises the `23505` that `chapter_documents_storage_path_key` does.
+ */
+describe('SupabaseChapterDocumentRepository — create when the path is already filed', () => {
+  const PATH = 'chapters/c/documents/d/minutes.jpg';
+  const filed = {
+    id: '0c000000-0000-4000-8000-0000000000a0',
+    chapter_id: CHAPTER_A,
+    title: 'Minutes',
+    storage_path: PATH,
+    uploaded_by: USER_SHARED,
+  };
+
+  /**
+   * Minimal PostgREST double: `.insert(...).select().single()` answers with
+   * `insertError`, and the re-select's `.select().eq().eq().maybeSingle()`
+   * answers with `reselect`. `filters` records the re-select's predicates.
+   */
+  function createClient(options: {
+    insertError: unknown;
+    reselect: Record<string, unknown> | null;
+  }) {
+    const filters: Array<[string, unknown]> = [];
+    const builder: Record<string, unknown> = {
+      insert: jest.fn(() => builder),
+      select: jest.fn(() => builder),
+      eq: jest.fn((column: string, value: unknown) => {
+        filters.push([column, value]);
+        return builder;
+      }),
+      single: jest.fn(() =>
+        Promise.resolve({ data: null, error: options.insertError }),
+      ),
+      maybeSingle: jest.fn(() =>
+        Promise.resolve({ data: options.reselect, error: null }),
+      ),
+    };
+    const client = {
+      from: jest.fn(() => builder),
+    } as unknown as FrappSupabaseClient;
+    return { client, filters };
+  }
+
+  const insert = {
+    chapter_id: CHAPTER_A,
+    title: 'Minutes',
+    storage_path: PATH,
+    uploaded_by: USER_SHARED,
+  };
+
+  it('returns the filed row instead of surfacing 23505, read in the caller chapter', async () => {
+    const { client, filters } = createClient({
+      insertError: { code: '23505', message: 'duplicate key value' },
+      reselect: filed,
+    });
+
+    await expect(
+      new SupabaseChapterDocumentRepository(client).create(insert),
+    ).resolves.toEqual(filed);
+    expect(filters).toEqual([
+      ['storage_path', PATH],
+      ['chapter_id', CHAPTER_A],
+    ]);
+  });
+
+  it('rethrows when the filed row vanished between the insert and the re-select', async () => {
+    const { client } = createClient({
+      insertError: { code: '23505', message: 'duplicate key value' },
+      reselect: null,
+    });
+
+    await expect(
+      new SupabaseChapterDocumentRepository(client).create(insert),
+    ).rejects.toMatchObject({ code: '23505' });
+  });
+
+  it('rethrows an error that is not a unique violation', async () => {
+    const { client, filters } = createClient({
+      insertError: { code: '23503', message: 'foreign key violation' },
+      reselect: filed,
+    });
+
+    await expect(
+      new SupabaseChapterDocumentRepository(client).create(insert),
+    ).rejects.toMatchObject({ code: '23503' });
+    expect(filters).toEqual([]);
   });
 });

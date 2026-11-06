@@ -35,6 +35,13 @@ interface BaseWebhookEvent<TType extends string, TObject> {
   id: string;
   type: TType;
   created: number;
+  /**
+   * The API version this payload was rendered at: the endpoint's own pin, or
+   * the account default when the endpoint has none. Logged per event so the
+   * live endpoint's version shows up in production logs (#3204). Null on
+   * events Stripe sends without one.
+   */
+  api_version?: string | null;
   data: {
     object: TObject;
   };
@@ -58,16 +65,65 @@ export interface SubscriptionWebhookObject {
   customer?: string | { id: string } | null;
 }
 
+/**
+ * The `invoice.*` webhook object, as far as the billing handler reads it.
+ *
+ * Since API version 2025-03-31.basil Stripe puts the subscription id at
+ * `parent.subscription_details.subscription` and no longer sends a top-level
+ * `subscription` (#3204). A webhook payload follows its endpoint's own
+ * `api_version`, or the account default when that is null, never the SDK's
+ * pinned version, so the shape here is set in the Stripe dashboard, not in
+ * code. Which version each endpoint receives:
+ * `docs/ops/deployment/integrations.md` § 7.1.
+ */
 export interface InvoiceWebhookObject {
-  subscription?: string | null;
+  id?: string;
+  parent?: {
+    type?: string;
+    subscription_details?: {
+      // An id string on webhook payloads; an expanded object only under
+      // explicit expansion.
+      subscription?: string | { id: string } | null;
+    } | null;
+  } | null;
+  /**
+   * Pre-Basil payloads only. Kept as a read fallback on purpose: the live
+   * endpoint shows 2026-08-26.dahlia, but whether that is a pin or the
+   * account default isn't recorded (docs/ops/deployment/integrations.md § 7),
+   * and reading one extra field costs nothing.
+   */
+  subscription?: string | { id: string } | null;
   customer?: string | { id: string } | null;
+}
+
+/**
+ * The subscription a paid invoice belongs to, from the Basil-and-later
+ * `parent.subscription_details` first, then the pre-Basil top-level field.
+ * Null for an invoice no subscription generated (a one-off or quote invoice).
+ */
+export function invoiceSubscriptionId(
+  invoice: InvoiceWebhookObject,
+): string | null {
+  return stripeRefId(
+    invoice.parent?.subscription_details?.subscription ?? invoice.subscription,
+  );
+}
+
+/**
+ * Normalize a Stripe object reference: an id string on webhook payloads, an
+ * expanded object only under explicit expansion, or null.
+ */
+function stripeRefId(
+  ref: string | { id: string } | null | undefined,
+): string | null {
+  return typeof ref === 'string' ? ref : (ref?.id ?? null);
 }
 
 /** Normalize a Stripe `customer` reference (id, expanded object, or null). */
 export function customerIdFrom(
   customer: string | { id: string } | null | undefined,
 ): string | null {
-  return typeof customer === 'string' ? customer : (customer?.id ?? null);
+  return stripeRefId(customer);
 }
 
 export interface PaymentIntentLastPaymentError {
@@ -94,9 +150,7 @@ export interface PaymentIntentWebhookObject {
 export function chargeIdFromLatestCharge(
   latestCharge: string | { id: string } | null | undefined,
 ): string | null {
-  return typeof latestCharge === 'string'
-    ? latestCharge
-    : (latestCharge?.id ?? null);
+  return stripeRefId(latestCharge);
 }
 
 /** Cap so a Stripe decline string cannot blow a notification body. */

@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 /**
@@ -11,7 +12,11 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  * well-formed either way — but two chapters' libraries must not share a cache
  * entry, which is what `["documents", folder]` alone did.
  */
-export function useDocuments(options?: { folder?: string; search?: string }) {
+export function useDocuments(options?: {
+  folder?: string;
+  search?: string;
+  enabled?: boolean;
+}) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   const folder = options?.folder;
@@ -26,6 +31,7 @@ export function useDocuments(options?: { folder?: string; search?: string }) {
       return data;
     },
     staleTime: 60_000,
+    enabled: options?.enabled ?? true,
   });
 }
 
@@ -172,7 +178,11 @@ export function useDocumentDownloadUrl() {
 export function useRequestDocumentUploadUrl() {
   const client = useFrappClient();
   return useMutation({
-    mutationFn: async (body: { filename: string; content_type: string }) => {
+    // The generated body, so `size_bytes` reaches the API's own size check
+    // from the phone (#3399); web's call site still omits it (#1515).
+    mutationFn: async (
+      body: components["schemas"]["RequestDocumentUploadUrlDto"],
+    ) => {
       const { data, error } = await client.POST("/v1/documents/upload-url", {
         body,
       });
@@ -186,16 +196,9 @@ export function useConfirmDocumentUpload() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (body: {
-      storage_path: string;
-      title: string;
-      description?: string;
-      folder?: string;
-      content_type?: string;
-      byte_size?: number;
-      document_type?: string;
-      effective_date?: string;
-    }) => {
+    mutationFn: async (
+      body: components["schemas"]["ConfirmDocumentUploadDto"],
+    ) => {
       const { data, error } = await client.POST("/v1/documents", { body });
       if (error) throw error;
       return data;

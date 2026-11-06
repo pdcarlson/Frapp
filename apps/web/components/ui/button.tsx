@@ -1,9 +1,9 @@
-import * as React from "react"
-import { Slot } from "@radix-ui/react-slot"
-import { cva, type VariantProps } from "class-variance-authority"
+import * as React from "react";
+import { Slot } from "@radix-ui/react-slot";
+import { cva, type VariantProps } from "class-variance-authority";
 
-import { cn } from "@/lib/utils"
-import { FOCUS_RING } from "@/components/ui/focus"
+import { cn } from "@/lib/utils";
+import { FOCUS_RING } from "@/components/ui/focus";
 
 /*
  * The Signet button, `spec/ui/design-system/components.md` §3.
@@ -24,11 +24,26 @@ import { FOCUS_RING } from "@/components/ui/focus"
  *    shifts the label by a pixel as it lands. Reserving the box is cheaper than
  *    explaining the jitter.
  *
+ * Every size is pointer-aware (§3, corrected 2026-11-05): the mouse gets the
+ * dense heights the sidebar already used, and `pointer-coarse` gives every
+ * size the 44 touch height, so nothing a finger hits drops under the floor
+ * (§2). The steps are foundations.md §9's control size scale.
+ *
  * Label size is the `label` role — 14 — not the 15/14.5/14 ladder §3's size
  * table quotes. foundations.md §7 locks the type scale and calls an off-scale
  * size a defect, exactly as §1 there locks the radius map over the same board's
  * drawings; the sizes below differentiate by height and padding instead.
  */
+/*
+ * The Small step (foundations.md §9): 36 to a mouse, 44 to a finger. Padding
+ * does not change with the pointer on purpose: a `pointer-coarse:px-*` class
+ * survives `cn()` next to a caller's plain `px-0` (tailwind-merge only merges
+ * classes with the same variant), so link-style buttons would grow a box on
+ * touch. Only the height splits, and a caller that cancels it says so with
+ * `pointer-coarse:h-auto`.
+ */
+const SMALL = "h-9 px-3 text-sm pointer-coarse:h-11";
+
 const buttonVariants = cva(
   cn(
     "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent transition-colors",
@@ -58,7 +73,14 @@ const buttonVariants = cva(
           "border-input bg-card font-semibold text-foreground hover:bg-card-hover",
         tinted:
           "border-accent-border bg-accent-subtle font-bold text-accent-text hover:bg-accent-subtle-hover",
-        ghost: "font-semibold text-accent-text hover:bg-accent-subtle",
+        // The text's own tone, lit only on hover (2026-11-05). Ghost used to
+        // paint the chapter accent, which made every icon button in the
+        // composer, every row's Edit and Delete, and every Back and Cancel
+        // gold: the accent belongs to the one action that matters, so a
+        // tertiary control blends in. It absorbed the short-lived `quiet`
+        // variant, which was this recipe under a second name.
+        ghost:
+          "font-semibold text-muted-foreground hover:bg-card-hover hover:text-foreground",
         // Tint, never a solid red fill (§3): `--destructive-tint` (13%) at
         // rest, `--destructive-tint-hover` (20%) on hover. The label is the
         // AA-lifted tone: `--destructive` on its own tint measures 3.82:1 over
@@ -72,41 +94,50 @@ const buttonVariants = cva(
         link: "font-semibold text-accent-text underline-offset-4 hover:underline disabled:border-transparent disabled:bg-transparent",
       },
       size: {
-        // §3's ladder. `sm` is the Inline size (44, action rows inside cards)
-        // and `default` the standalone one; the names are the scaffold's and
-        // are kept so 68 call sites do not churn for a rename.
-        default: "h-12 px-4 text-sm",
-        sm: "h-11 px-3.5 text-sm",
-        // Square, and 44 rather than the app bar's 38, so an icon-only control
+        // §3's ladder. `sm` is the Inline size (36 to a mouse, 44 to a finger:
+        // action rows inside cards) and `default` the standalone one (40, 44);
+        // the names are the scaffold's and are kept so 68 call sites do not
+        // churn for a rename.
+        default: "h-10 px-4 text-sm pointer-coarse:h-11",
+        sm: SMALL,
+        // Square: 36 to a mouse, and 44 to a finger so an icon-only control
         // clears the touch-target floor (§2) on the 375px layout.
-        icon: "h-11 w-11",
+        icon: "h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11",
+        // A toolbar row's controls (the PageActions row, filters, search):
+        // §3's Compact on a mouse, the 44 touch floor on a finger, which is
+        // the README's row rule. At 48 the primary action stood taller than
+        // the page's title row and every list row under it.
+        // Since 2026-11-05 the same step as `sm`; both names stay so the call
+        // sites read as what they are.
+        toolbar: SMALL,
       },
     },
     defaultVariants: {
       variant: "default",
       size: "default",
     },
-  }
-)
+  },
+);
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends
+    React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
-  asChild?: boolean
+  asChild?: boolean;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
-    const Comp = asChild ? Slot : "button"
+    const Comp = asChild ? Slot : "button";
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
         {...props}
       />
-    )
-  }
-)
-Button.displayName = "Button"
+    );
+  },
+);
+Button.displayName = "Button";
 
-export { Button, buttonVariants }
+export { Button, buttonVariants };

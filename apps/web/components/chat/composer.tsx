@@ -46,6 +46,7 @@ import { definitiveRefusalMessage } from "@repo/chat-core/chat-client";
 // `use-chat-channel` boundary before #544 added `warning`.
 import type { DispatchResult } from "@repo/chat-core/dispatch";
 import { useToast } from "@/lib/hooks/use-toast";
+import type { ChapterModuleGateStatus } from "@/lib/hooks/use-chapter-module-gate";
 import {
   COLD_LOAD_MARKS,
   markColdLoad,
@@ -56,6 +57,7 @@ import {
   MAX_UPLOAD_LABEL,
   acceptAttribute,
   inspectUploadFile,
+  isBetaOffModule,
   readSignedUpload,
 } from "@repo/validation";
 import { EmojiPicker } from "./emoji-picker";
@@ -462,12 +464,12 @@ interface ComposerBaseProps {
    */
   recruitmentVocab?: string;
   /**
-   * Status of the read behind `isModuleEnabled`. `"loading"` and `"error"`
-   * surface explicit states inside the slash palette instead of an empty
-   * filter, and refuse a typed module command with their own copy; defaults
-   * to `"ready"` for callers that don't gate the catalog.
+   * Status of the read behind `isModuleEnabled`. `"loading"`, `"offline"`
+   * and `"error"` surface explicit states inside the slash palette instead of
+   * an empty filter, and refuse a typed module command with their own copy;
+   * defaults to `"ready"` for callers that don't gate the catalog.
    */
-  slashCommandsStatus?: "loading" | "error" | "ready";
+  slashCommandsStatus?: ChapterModuleGateStatus;
   onRetrySlashCommands?: () => void;
   /**
    * Realtime is down. The composer stays **live** and says so — it does not
@@ -569,14 +571,14 @@ function slashToken(command: SlashCommand): string {
  * module gate lets it through. The same gate the palette filters by
  * (`filterSlashCommands`), for a command typed out in full (#2993).
  *
- * Fails closed while the chapter's modules are loading or failed to load
- * (#310), with its own copy for each, so a member isn't told a module is off
- * when the gate simply hasn't answered. A command with no module (`/announce`)
- * is never refused here.
+ * Fails closed while the chapter's modules are loading, can't be checked
+ * offline, or failed to load (#310, #3160), with its own copy for each, so a
+ * member isn't told a module is off when the gate simply hasn't answered. A
+ * command with no module (`/announce`) is never refused here.
  */
 export function slashModuleRefusal(
   command: SlashCommand,
-  status: "loading" | "error" | "ready",
+  status: ChapterModuleGateStatus,
   isModuleEnabled: (moduleKey: string) => boolean,
 ): { title: string; description: string } | null {
   const moduleKey = command.requiredModule;
@@ -589,6 +591,15 @@ export function slashModuleRefusal(
         "Still checking which commands your chapter has on. Your text is still here. Send it again in a moment.",
     };
   }
+  // The module read is paused or failing offline even though the channel may
+  // not say so yet, so "try again in a moment" would be the wrong advice.
+  if (status === "offline") {
+    return {
+      title: `/${token} needs a connection`,
+      description:
+        "You're offline, so we can't check which commands your chapter has on. Your text is still here. Send it when you're back online.",
+    };
+  }
   if (status === "error") {
     return {
       title: `Couldn't check /${token}`,
@@ -598,8 +609,15 @@ export function slashModuleRefusal(
   }
   if (isModuleEnabled(moduleKey)) return null;
   const label =
-    MODULE_CATALOG.find((entry) => entry.key === moduleKey)?.label ??
-    moduleKey;
+    MODULE_CATALOG.find((entry) => entry.key === moduleKey)?.label ?? moduleKey;
+  // No chapter switched a beta-off module off, and Settings → Modules has no
+  // switch for it, so the usual advice would send an officer looking for one.
+  if (isBetaOffModule(moduleKey)) {
+    return {
+      title: `/${token} is turned off`,
+      description: `${label} is off for every chapter during the beta.`,
+    };
+  }
   return {
     title: `/${token} is turned off`,
     description: `Your chapter has switched off ${label}. An officer can turn it back on in Settings → Modules.`,
@@ -1418,10 +1436,7 @@ export function Composer({
     return (
       <p className="border-t border-border px-4 py-3 text-caption text-muted-foreground">
         {isReadOnly ? (
-          <>
-            This channel is read-only. Posting requires the{" "}
-            <code className="font-mono">announcements:post</code> permission.
-          </>
+          <>This channel is read-only for your role.</>
         ) : (
           <>
             Alumni can read this channel but not post. Alumni may post in{" "}
@@ -1446,9 +1461,7 @@ export function Composer({
         `focus:outline-none` and, before this, nothing replaced it, so the
         composer had no visible focus indicator at all.
       */}
-      <div
-        className={cn(COMPOSER_WELL_CLASS, FOCUS_RING_WITHIN)}
-      >
+      <div className={cn(COMPOSER_WELL_CLASS, FOCUS_RING_WITHIN)}>
         {/*
           The staged reply, above the input and above the attachment chips —
           it is context for everything below it, not another attachment. Same

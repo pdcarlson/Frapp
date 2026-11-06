@@ -1,5 +1,6 @@
 "use client";
 
+import { permissionLabel } from "@/lib/permission-labels";
 import type { ReactNode } from "react";
 
 import { useMemo, useState } from "react";
@@ -20,7 +21,6 @@ import {
   EmptyState,
   ErrorState,
   anyReadUncached,
-  LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -55,6 +55,7 @@ import {
   usePermissionsCatalog,
   useRoles,
 } from "@repo/hooks";
+import { SettingsListCardSkeleton } from "@/components/settings/settings-skeleton";
 
 type PermissionCatalogEntry = { key: string; permission: string };
 
@@ -232,7 +233,7 @@ function RolesMatrixSection({ packLabel }: { packLabel: string | null }) {
     return (
       <section className="space-y-4">
         {header}
-        <LoadingState message="Loading roles..." />
+        <SettingsListCardSkeleton label="Loading roles" rows={4} />
       </section>
     );
   }
@@ -264,7 +265,7 @@ function RolesMatrixSection({ packLabel }: { packLabel: string | null }) {
       <p className="text-caption text-muted-foreground">
         {canManage
           ? "A role holding every permission cannot be edited here; the presidency moves through Transfer presidency below."
-          : "You can see who holds what. Changing it needs the roles:manage permission."}
+          : "You can see who holds what, but your role can't change it."}
       </p>
     </section>
   );
@@ -341,8 +342,7 @@ function DefaultInviteRoleCard({
       <CardHeader>
         <CardTitle>Default invite role</CardTitle>
         <CardDescription>
-          The role new invites use when the sender doesn&apos;t pick one.
-          Senders can still override it per invite. Changes here are written to
+          Used when an invite doesn&apos;t pick a role. Changes are written to
           the chapter audit log.
         </CardDescription>
       </CardHeader>
@@ -367,8 +367,8 @@ function DefaultInviteRoleCard({
         </select>
         {isDangling ? (
           <p className="text-caption text-warning">
-            The configured default role no longer exists. Pick another, or
-            leave it. New invites fall back to the Member role.
+            The configured default role no longer exists. Pick another, or leave
+            it. New invites fall back to the Member role.
           </p>
         ) : null}
         {rolesQuery.isError ? (
@@ -380,7 +380,6 @@ function DefaultInviteRoleCard({
     </Card>
   );
 }
-
 
 const EMPTY_DRAFT = {
   key: "",
@@ -538,7 +537,7 @@ function CustomView({
       />
     );
   } else if (customRolesQuery.isLoading || paused) {
-    body = <LoadingState message="Loading custom roles..." />;
+    body = <SettingsListCardSkeleton label="Loading custom roles" />;
   } else if (customRolesQuery.isError) {
     body = (
       <ErrorState
@@ -550,178 +549,187 @@ function CustomView({
   } else {
     body = (
       <>
-      <Card>
-        <CardHeader>
-          <CardTitle>Custom roles</CardTitle>
-          <CardDescription>
-            Chapter-defined roles with a label, rank, and capabilities.
-            Capabilities are enforced: assign these roles in the member
-            directory and they apply on the member&apos;s next request. Core
-            roles are protected from deletion. Saving writes an entry to the
-            chapter audit log.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {roles.length === 0 ? (
-            <EmptyState
-              title="No custom roles yet"
-              description="Create one below to extend the permission matrix."
-            />
-          ) : (
-            <ul className="space-y-3">
-              {roles.map((role) => (
-                <li
-                  key={role.id}
-                  className="rounded-md border border-border p-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="min-w-0">
-                      <span className="text-sm font-medium">{role.label}</span>
-                      <span className="ml-2 font-mono text-xs text-muted-foreground">
-                        {role.key} · rank {role.rank}
-                        {role.core ? " · core" : ""}
-                      </span>
-                    </div>
-                    {!role.core ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={!canManage || deleteRole.isPending}
-                        onClick={() => void handleDelete(role)}
-                        aria-label={`Delete ${role.label}`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    ) : null}
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {assignableCatalog.map((entry) => {
-                      const held = role.capabilities.includes(entry.permission);
-                      return (
-                        <label
-                          key={entry.permission}
-                          className="flex items-center gap-1.5 text-xs"
-                        >
-                          <span className={dashboardCheckboxHitAreaClassName}>
-                            <input
-                              type="checkbox"
-                              className={dashboardTableCheckboxClassName}
-                              checked={held}
-                              disabled={!canManage || updateRole.isPending}
-                              onChange={() =>
-                                void handleToggleCapability(
-                                  role,
-                                  entry.permission,
-                                )
-                              }
-                              aria-label={`${role.label} ${entry.permission}`}
-                            />
-                          </span>
-                          <span className="font-mono">{entry.permission}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Create a custom role</CardTitle>
-          <CardDescription>
-            The key is a lowercase slug (letters, numbers, underscores), unique
-            per chapter.
-          </CardDescription>
-        </CardHeader>
-        <form onSubmit={handleCreate}>
-          <CardContent className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="grid gap-1.5">
-                <Label htmlFor="custom-role-key">Key</Label>
-                <Input
-                  id="custom-role-key"
-                  value={draft.key}
-                  disabled={!canManage}
-                  placeholder="pledge_educator"
-                  onChange={(event) =>
-                    setDraft((prev) => ({ ...prev, key: event.target.value }))
-                  }
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="custom-role-label">Label</Label>
-                <Input
-                  id="custom-role-label"
-                  value={draft.label}
-                  disabled={!canManage}
-                  placeholder="Pledge Educator"
-                  onChange={(event) =>
-                    setDraft((prev) => ({ ...prev, label: event.target.value }))
-                  }
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="custom-role-rank">Rank</Label>
-                <Input
-                  id="custom-role-rank"
-                  type="number"
-                  min={0}
-                  step={1}
-                  inputMode="numeric"
-                  aria-label="Rank"
-                  value={draft.rank}
-                  disabled={!canManage}
-                  onChange={(event) => setRank(event.target.value)}
-                />
-              </div>
-            </div>
-            <div className="grid gap-1.5">
-              <span className="text-sm font-medium">Capabilities</span>
-              <div className="flex flex-wrap gap-2">
-                {assignableCatalog.map((entry) => (
-                  <label
-                    key={entry.permission}
-                    className="flex items-center gap-1.5 text-xs"
+        <Card>
+          <CardHeader>
+            <CardTitle>Custom roles</CardTitle>
+            <CardDescription>
+              A role applies on the member&apos;s next request. Core roles
+              can&apos;t be deleted. Saving writes an entry to the chapter audit
+              log.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {roles.length === 0 ? (
+              <EmptyState
+                title="No custom roles yet"
+                description="Create one below to extend the permission matrix."
+              />
+            ) : (
+              <ul className="space-y-3">
+                {roles.map((role) => (
+                  <li
+                    key={role.id}
+                    className="rounded-md border border-border p-4"
                   >
-                    <span className={dashboardCheckboxHitAreaClassName}>
-                      <input
-                        type="checkbox"
-                        className={dashboardTableCheckboxClassName}
-                        checked={draft.capabilities.includes(entry.permission)}
-                        disabled={!canManage}
-                        onChange={() => toggleDraftCapability(entry.permission)}
-                        aria-label={`new role ${entry.permission}`}
-                      />
-                    </span>
-                    <span className="font-mono">{entry.permission}</span>
-                  </label>
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0">
+                        <span className="text-sm font-medium">
+                          {role.label}
+                        </span>
+                        <span className="ml-2 font-mono text-xs text-muted-foreground">
+                          {role.key} · rank {role.rank}
+                          {role.core ? " · core" : ""}
+                        </span>
+                      </div>
+                      {!role.core ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={!canManage || deleteRole.isPending}
+                          onClick={() => void handleDelete(role)}
+                          aria-label={`Delete ${role.label}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {assignableCatalog.map((entry) => {
+                        const held = role.capabilities.includes(
+                          entry.permission,
+                        );
+                        return (
+                          <label
+                            key={entry.permission}
+                            className="flex items-center gap-1.5 text-xs"
+                          >
+                            <span className={dashboardCheckboxHitAreaClassName}>
+                              <input
+                                type="checkbox"
+                                className={dashboardTableCheckboxClassName}
+                                checked={held}
+                                disabled={!canManage || updateRole.isPending}
+                                onChange={() =>
+                                  void handleToggleCapability(
+                                    role,
+                                    entry.permission,
+                                  )
+                                }
+                                aria-label={`${role.label}: ${permissionLabel(entry.permission)}`}
+                              />
+                            </span>
+                            <span>{permissionLabel(entry.permission)}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </li>
                 ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Create a custom role</CardTitle>
+            <CardDescription>
+              The key is a lowercase slug (letters, numbers, underscores),
+              unique per chapter.
+            </CardDescription>
+          </CardHeader>
+          <form onSubmit={handleCreate}>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="custom-role-key">Key</Label>
+                  <Input
+                    id="custom-role-key"
+                    value={draft.key}
+                    disabled={!canManage}
+                    placeholder="pledge_educator"
+                    onChange={(event) =>
+                      setDraft((prev) => ({ ...prev, key: event.target.value }))
+                    }
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="custom-role-label">Label</Label>
+                  <Input
+                    id="custom-role-label"
+                    value={draft.label}
+                    disabled={!canManage}
+                    placeholder="Pledge Educator"
+                    onChange={(event) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        label: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="custom-role-rank">Rank</Label>
+                  <Input
+                    id="custom-role-rank"
+                    type="number"
+                    min={0}
+                    step={1}
+                    inputMode="numeric"
+                    aria-label="Rank"
+                    value={draft.rank}
+                    disabled={!canManage}
+                    onChange={(event) => setRank(event.target.value)}
+                  />
+                </div>
               </div>
-            </div>
-          </CardContent>
-          <CardContent className="flex justify-end pt-0">
-            <Button
-              type="submit"
-              disabled={
-                !canManage ||
-                createRole.isPending ||
-                !draft.key.trim() ||
-                !draft.label.trim()
-              }
-            >
-              {createRole.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : null}
-              Create role
-            </Button>
-          </CardContent>
-        </form>
-      </Card>
+              <div className="grid gap-1.5">
+                <span className="text-sm font-medium">Capabilities</span>
+                <div className="flex flex-wrap gap-2">
+                  {assignableCatalog.map((entry) => (
+                    <label
+                      key={entry.permission}
+                      className="flex items-center gap-1.5 text-xs"
+                    >
+                      <span className={dashboardCheckboxHitAreaClassName}>
+                        <input
+                          type="checkbox"
+                          className={dashboardTableCheckboxClassName}
+                          checked={draft.capabilities.includes(
+                            entry.permission,
+                          )}
+                          disabled={!canManage}
+                          onChange={() =>
+                            toggleDraftCapability(entry.permission)
+                          }
+                          aria-label={`New role: ${permissionLabel(entry.permission)}`}
+                        />
+                      </span>
+                      <span>{permissionLabel(entry.permission)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+            <CardContent className="flex justify-end pt-0">
+              <Button
+                type="submit"
+                disabled={
+                  !canManage ||
+                  createRole.isPending ||
+                  !draft.key.trim() ||
+                  !draft.label.trim()
+                }
+              >
+                {createRole.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
+                Create role
+              </Button>
+            </CardContent>
+          </form>
+        </Card>
       </>
     );
   }

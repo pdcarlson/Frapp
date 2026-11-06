@@ -27,6 +27,10 @@ import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
+import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
@@ -85,9 +89,22 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Start a Discord archive import',
     description:
-      'Requires the consent acknowledgement. Returns the import to upload an export against.',
+      "Requires the consent acknowledgement. Returns the import to upload an export against. 409 while another of the chapter's imports still holds what it brought in (queued, running, completed, failed, cancelled or deleting): a chapter has one import at a time, so delete it first.",
   })
   @ApiCreatedResponse({ type: DiscordImportResponseDto })
+  // `source` as the server resolved it (`upload` when omitted); never the
+  // guild name.
+  @FeatureEvent(
+    'discord-import-created',
+    ({
+      result,
+    }: FeatureEventInput<
+      CreateDiscordImportDto,
+      DiscordImportResponseDto
+    >) => ({
+      source: result.source,
+    }),
+  )
   async create(
     @CurrentChapterId() chapterId: string,
     @CurrentUser() user: { id: string },
@@ -120,7 +137,7 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Import detail and progress',
     description:
-      "Poll this while an import is running. An upload's progress is `imported_messages` / `total_messages`; its total grows a part at a time, as each export part is opened. A bot import's total grows with every page it reads from Discord, so its progress is `channels_done` / `channels_total`: the channel and thread rows being imported, and how many of those are finished (imported, or skipped because Discord no longer showed them to the bot). Both are null for an upload, and for a bot import that is not queued, running, failed or cancelled. While an import is being deleted (`purging`), `purged_messages` counts the messages deleted so far, out of `imported_messages`; the count can stop short of that total, so `purged` is what says the deletion finished.",
+      "Poll this while an import is running. An upload's progress is `imported_messages` / `total_messages`; its total grows a part at a time, as each export part is opened. A bot import's total grows with every page it reads from Discord, so its progress is `channels_done` / `channels_total`: the channel and thread rows being imported, and how many of those are finished (imported, or skipped because Discord no longer showed them to the bot). Both are null for an upload, and for a bot import that is not queued, running, completed, failed or cancelled. While an import is being deleted (`purging`), `purged_messages` counts the messages deleted so far, out of `imported_messages`; the count can stop short of that total, so `purged` is what says the deletion finished.",
   })
   @ApiOkResponse({ type: DiscordImportWithProgressResponseDto })
   async get(
@@ -147,7 +164,7 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Channel-by-channel progress, for watching an import',
     description:
-      "What the Watch view polls while a bot import runs (#2857): the channel and thread rows by status, the ones running now, the last ones finished, and the failures with their reasons, each with the Frapp channel it lands in once known. A few KB whatever the server holds; `GET :id/channels` is the full list, which is too large to poll. The rows follow a bot import's walk, one channel at a time in `position` order; an upload works through export parts, which leave its rows' order and a skipped part's row unrecorded, so the web shows this for bot imports only.",
+      "What the Watch view polls while a bot import runs (#2857): the channel and thread rows by status and per Discord category, the ones running now, the last ones finished, and the failures with their reasons, each with the Frapp channel it lands in once known. A few KB whatever the server holds; `GET :id/channels` is the full list, which is too large to poll. The rows follow a bot import's walk, one channel at a time in `position` order; an upload works through export parts, which leave its rows' order and a skipped part's row unrecorded, so the web shows this for bot imports only.",
   })
   @ApiOkResponse({ type: DiscordImportProgressDto })
   getProgress(
@@ -292,11 +309,22 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Queue the import',
     description:
-      'The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818). A bot import may carry a date cutoff, `messages_after` (#2858); the body is optional.',
+      "The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818). A bot import may carry a date cutoff, `messages_after` (#2858); the body is optional. 409 while another of the chapter's imports still holds what it brought in, as on create.",
   })
   // Optional: every client before #2858 starts with no body at all.
   @ApiBody({ type: StartDiscordImportDto, required: false })
   @ApiCreatedResponse({ type: DiscordImportResponseDto })
+  // From the result, not the body: a restart that sends no cutoff keeps the
+  // one the first start set. A start of an import already `ready` succeeds
+  // again and counts again.
+  @FeatureEvent(
+    'discord-import-started',
+    ({
+      result,
+    }: FeatureEventInput<StartDiscordImportDto, DiscordImportResponseDto>) => ({
+      has_cutoff: result.messages_after != null,
+    }),
+  )
   async start(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: StartDiscordImportDto,

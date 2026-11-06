@@ -41,11 +41,14 @@ Every notification payload includes a `target` object with screen and parameters
 push (`apps/api/src/application/services/notification.service.ts`), which is what lets
 a tap mark the row read without a lookup. The `target` itself carries **only** the keys
 its emitter sets: `chat` sends `channelId`, `events` sends `eventId`, `tasks` sends
-`taskId`, and `billing` / `points` / `service` / `members` / `chat_reports` send a bare
-`screen`. `chat_reports` names the officer report queue (the new-report notification,
-[`chat/README.md`](./chat/README.md#report)); web resolves it to `/chat-admin`, and
-mobile, which has no queue, falls through to the notification list like any screen it
-does not route. Every chat row and push also carries `senderId`, the sending member's
+`taskId`, and `billing` / `points` / `service` / `members` / `chat_reports` /
+`discord_import` send a bare `screen`. `chat_reports` names the officer report queue
+(the new-report notification, [`chat/README.md`](./chat/README.md#report)); web
+resolves it to `/chat-admin`, and mobile, which has no queue, falls through to the
+notification list like any screen it does not route. `discord_import` is the notice
+that a Discord import finished or stopped on an error, sent to the admin who set it up
+([`chat/README.md`](./chat/README.md#imported-archive-messages)); web resolves it to
+`/discord-import`, and mobile, which has no import page, falls through the same way. Every chat row and push also carries `senderId`, the sending member's
 `users.id`, which the in-app list uses to withhold a blocked member's rows
 ([`chat/README.md`](./chat/README.md#what-a-block-does-and-does-not-hide), #2715). A
 bundled chat burst adds `bundled: true` and `count` (`chat-push-worker.service.ts`
@@ -273,7 +276,7 @@ were pushed by a separate path that never read it until #2771, so letting a `tex
 `mentions` apply would silently stop every DM for a member who set it to calm `#general`. A kind
 row quieter than the DM's default is therefore ignored there, and a DM is muted from the DM
 itself. One louder than it still counts, so the `system_audit` opt-in below keeps reaching
-system messages posted into DMs (the invite-accept notice, a DM poll's expiry). A user who explicitly sets `(scope='kind', scope_kind='system_audit', level='all')` opts in to audit-bridge pushes; otherwise audit messages never page anyone. That opt-in is reachable from `PUT /v1/channels/notification-preferences/kinds/system_audit` (see **Write paths** above); until that route shipped the kind arm was readable by the worker but writable by nobody, so the branch always evaluated an empty set.
+system messages posted into DMs (the invite-accept notice, a DM poll's expiry). A user who explicitly sets `(scope='kind', scope_kind='system_audit', level='all')` opts in to `system_audit` pushes; otherwise those messages never page anyone. The opt-in reaches the server's own notices only, never an audit-bridge mirror: `decidePush` refuses a mirror row (`isAuditMirrorRow`, `client_message_id = 'audit:<id>'`) ahead of every preference, the member's channel-scope `all` on `#chapter-audit` included (owner decision, 2026-11-06: audit entries arrive silently). That opt-in is reachable from `PUT /v1/channels/notification-preferences/kinds/system_audit` (see **Write paths** above); until that route shipped the kind arm was readable by the worker but writable by nobody, so the branch always evaluated an empty set.
 
 **The push worker is the only chat push path** (#2771). `ChatService` used to push DMs and announcements itself as well, so an announcement reached an away member twice, a DM that mentioned its recipient did the same, and a DM the member had muted pushed anyway, since that path never read `chat_notification_preferences`. Every chat push now goes through the rule chain above, once per recipient.
 
@@ -329,6 +332,7 @@ Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge l
 | Admin         | Invite accepted                                                    | SILENT                      |
 | Admin         | Role change on a member                                            | SILENT                      |
 | Admin         | Chat message reported (to report-queue officers; never the reported sender or the reporter; content-free) | NORMAL |
+| Admin         | Discord import finished, or stopped on an error (to the admin who set it up, while they hold `channels:manage`; not when an admin stopped it, nor for a failed deletion) | NORMAL |
 
 ## Pre-Event Reminders
 

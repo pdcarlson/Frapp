@@ -3,10 +3,18 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { Alert } from "react-native";
+import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
-import { textHeadings } from "@/test/screen-text";
+import { expectRoundedRipple } from "@/test/pressable-row";
+import { PressableRow } from "@/components/list-section";
+import { signetDarkTokens } from "@repo/theme/signet";
+import {
+  drawnText as screenTextOf,
+  screenText,
+  textHeadings,
+} from "@/test/screen-text";
 
 /**
  * #2303 — the chat home's wiring of Hide conversation, rendered for real.
@@ -35,7 +43,15 @@ const {
   setFilter,
   writeOptions,
   queryErrors,
+  notificationsData,
+  channelsState,
+  refetches,
+  setupChecklist,
+  setupChecklistOptions,
 } = vi.hoisted(() => ({
+  // The officer setup checklist's state (#3535's hook), null for a member.
+  setupChecklist: { value: null as unknown },
+  setupChecklistOptions: { value: undefined as unknown },
   channelsData: { value: [] as unknown[] },
   categoriesData: { value: [] as unknown },
   unreadData: {
@@ -66,6 +82,39 @@ const {
   },
   // Loaded-but-failed state for the two reads the filters depend on.
   queryErrors: { unread: false, levels: false },
+  // The inbox rows behind the title row's bell (#3362).
+  notificationsData: {
+    value: [] as { id: string; read_at: string | null; data?: unknown }[],
+  },
+  // The channel list's own read state, for the loading and error branches.
+  channelsState: {
+    value: {
+      isPending: false,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    } as {
+      isPending: boolean;
+      isError: boolean;
+      isFetching: boolean;
+      isSuccess?: boolean;
+      refetch: ReturnType<typeof vi.fn>;
+    },
+  },
+  // Each read's refetch but the channels' (in `channelsState`), so a pull is
+  // observable (#3385).
+  refetches: {
+    setup: vi.fn(),
+    categories: vi.fn(),
+    unread: vi.fn(),
+    events: vi.fn(),
+    tasks: vi.fn(),
+    levels: vi.fn(),
+    sidebar: vi.fn(),
+    roster: vi.fn(),
+    viewer: vi.fn(),
+    inbox: vi.fn(),
+  },
 }));
 
 vi.mock("@repo/hooks", async () => {
@@ -73,15 +122,18 @@ vi.mock("@repo/hooks", async () => {
   // them wrongly, and a stub would decide the answer itself.
   const actual =
     await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
-  const query = (data: unknown) => ({
+  const query = (data: unknown, refetch = vi.fn()) => ({
     data,
     isPending: false,
     isError: false,
     isFetching: false,
-    refetch: vi.fn(),
+    refetch,
   });
   return {
     canHideConversation: actual.canHideConversation,
+    lastChannelLandingId: actual.lastChannelLandingId,
+    lastChannelStorageKey: actual.lastChannelStorageKey,
+    useActiveChapterId: () => "chapter-1",
     groupChannelsByCategory: actual.groupChannelsByCategory,
     otherMemberId: actual.otherMemberId,
     directChannelDisplayName: actual.directChannelDisplayName,
@@ -107,6 +159,8 @@ vi.mock("@repo/hooks", async () => {
     SIDEBAR_SAVE_FAILED_TITLE: actual.SIDEBAR_SAVE_FAILED_TITLE,
     UNPIN_FROM_TOP_LABEL: actual.UNPIN_FROM_TOP_LABEL,
     UNREAD_ONLY_LABEL: actual.UNREAD_ONLY_LABEL,
+    useChapterRoster: () => query([], refetches.roster),
+    useSidebarPreferencesRefetch: () => ({ refetch: refetches.sidebar }),
     useSidebarPreferences: () => sidebarPrefs.value,
     useSetChannelPinned: (options?: { onError?: () => void }) => {
       writeOptions.pin = options;
@@ -121,18 +175,34 @@ vi.mock("@repo/hooks", async () => {
       return { mutate: setFilter };
     },
     useChannelNotificationPreferences: () => ({
-      ...query(levelsData.value),
+      ...query(levelsData.value, refetches.levels),
       isError: queryErrors.levels,
     }),
     useNowDate: () => new Date("2026-09-25T18:00:00Z"),
-    useChannels: () => query(channelsData.value),
-    useCategories: () => query(categoriesData.value),
+    useChannels: () => ({
+      ...query(channelsData.value),
+      ...channelsState.value,
+    }),
+    useCategories: () => query(categoriesData.value, refetches.categories),
     useChannelUnreadCounts: () => ({
-      ...query(unreadData.value),
+      ...query(unreadData.value, refetches.unread),
       isError: queryErrors.unread,
     }),
-    useEvents: () => query([]),
-    useTasks: () => query([]),
+    useChapterSetupChecklist: (options?: { omit?: readonly string[] }) => {
+      setupChecklistOptions.value = options;
+      return {
+        checklist: setupChecklist.value,
+        hide: vi.fn(),
+        refetch: refetches.setup,
+      };
+    },
+    HIDE_SETUP_CHECKLIST_LABEL: actual.HIDE_SETUP_CHECKLIST_LABEL,
+    SETUP_CHECKLIST_TITLE: actual.SETUP_CHECKLIST_TITLE,
+    SETUP_CHECKLIST_WEB_PATH: actual.SETUP_CHECKLIST_WEB_PATH,
+    useEvents: () => query([], refetches.events),
+    useNotifications: () => query(notificationsData.value, refetches.inbox),
+    useCurrentUser: () => query({ id: VIEWER }, refetches.viewer),
+    useTasks: () => query([], refetches.tasks),
     useViewerUserId: () => VIEWER,
     useMemberDisplayNames: () => ({
       byId: { [ALICE]: "Alice Chen", [BOB]: "Bob Diaz" },
@@ -147,6 +217,8 @@ const branding = vi.hoisted(() => {
     accent: "#F4CB63",
     accentPrimary: "#EFB63B",
     accentOnPrimary: "#131211",
+    accentSubtle: "#3A2F14",
+    accentBorder: "#6E5523",
     logoUrl: null as string | null,
     chapterName: null as string | null,
     textMark: null as string | null,
@@ -159,7 +231,21 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import ChatHomeScreen from "@/app/(tabs)/index";
-import { ChannelRow } from "@/components/chat/channel-row";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  resetChatLaunchForTests,
+  settleChatLaunch,
+} from "@/lib/chat/last-channel";
+import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
+import { SearchGlyph } from "@/components/search-glyph";
+import { SetupChecklistView } from "@/components/chat/setup-checklist";
+import { UpNextStrip } from "@/components/chat/up-next-strip";
+import { ScreenShell } from "@/components/screen-shell";
+import {
+  EmptyState,
+  EmptyStateAction,
+  ErrorState,
+} from "@/components/state-block";
 
 const general = { id: "c-general", name: "general", type: "PUBLIC" };
 const dmAlice = {
@@ -234,12 +320,20 @@ function hiddenToggle(tree: ReactTestRenderer) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  setupChecklist.value = null;
   channelsData.value = [general, dmAlice, dmBobHidden, group];
   categoriesData.value = [];
   unreadData.value = [];
   levelsData.value = [];
+  notificationsData.value = [];
   queryErrors.unread = false;
   queryErrors.levels = false;
+  channelsState.value = {
+    isPending: false,
+    isError: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  };
   sidebarPrefs.value = {
     pinnedIds: new Set(),
     collapsed: new Set(),
@@ -334,11 +428,8 @@ describe("Chat home hide conversation (#2303)", () => {
  */
 function layout(tree: ReactTestRenderer): [string, string[]][] {
   return tree.root
-    .findAll(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        node.props.accessibilityRole === "header",
-    )
+    .findAllByType(PressableRow)
+    .filter((header) => header.props.accessibilityRole === "header")
     .map((header) => [
       // Since #2877 the header is a fold control: a chevron, then the label.
       String(
@@ -562,6 +653,14 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     };
     const tree = render();
 
+    // The state family's empty card, with its CTA, not a hand-rolled block.
+    const empty = tree.root.findByType(EmptyState);
+    expect(empty.findAllByType(EmptyStateAction)).toHaveLength(1);
+    // writing.md § Arrange the channel list gives this state no title, and
+    // every string it shows lives in `@repo/hooks`; web shows none either.
+    expect(empty.props.title).toBeUndefined();
+    // The search glyph, not the "⌕" character Figtree doesn't carry.
+    expect(empty.props.glyph).toBe(SearchGlyph);
     expect(
       tree.root.findAll(
         (node) =>
@@ -785,5 +884,330 @@ describe("Chat home's title (#2485)", () => {
   it("falls back to Frapp while the chapter's name is unknown", () => {
     const tree = render();
     expect(heading(tree).props.children).toBe("Frapp");
+  });
+});
+
+/**
+ * #3362 — the notification inbox moved off More onto a bell on this screen's
+ * title row (owner decision 2026-11-04), where the web keeps it too.
+ */
+describe("Chat home notifications bell (#3362)", () => {
+  function badge(tree: ReactTestRenderer) {
+    return pressableLabelled(tree, "Notifications").findAllByProps({
+      testID: "notifications-badge",
+    });
+  }
+
+  it("draws the bell with Ask off, with no badge while nothing is unread", () => {
+    const tree = render();
+    const bell = pressableLabelled(tree, "Notifications");
+
+    expect(bell.props.accessibilityValue).toBeUndefined();
+    expect(badge(tree)).toHaveLength(0);
+  });
+
+  it("badges the unread count in house gold, never the chapter accent, and reads it out", () => {
+    // A red accent, the case the fixed gold exists for: beside the channel
+    // rows' mention-red badges, an accent-filled count would read as a mention.
+    branding.current = { ...branding.unnamed, accentPrimary: "#D75748" };
+    notificationsData.value = [
+      { id: "n-1", read_at: null },
+      { id: "n-2", read_at: null },
+      { id: "n-3", read_at: "2026-09-25T10:00:00Z" },
+    ];
+    const tree = render();
+    const bell = pressableLabelled(tree, "Notifications");
+    const [pill] = badge(tree).filter(
+      (node) => (node.type as unknown) === "View",
+    );
+
+    expect(bell.props.accessibilityValue).toEqual({ text: "2 unread" });
+    const style = JSON.stringify(pill!.props.style);
+    expect(style).toContain("#EFB63B");
+    expect(style).not.toContain("#D75748");
+    expect(screenTextOf(pill!)).toBe("2");
+  });
+
+  it("leaves chat-sourced rows to the channel badges below it", () => {
+    notificationsData.value = [
+      { id: "n-1", read_at: null, data: { target: { screen: "chat" } } },
+      { id: "n-2", read_at: null, data: { target: { screen: "events" } } },
+    ] as typeof notificationsData.value;
+    const tree = render();
+
+    expect(
+      pressableLabelled(tree, "Notifications").props.accessibilityValue,
+    ).toEqual({ text: "1 unread" });
+  });
+
+  it("opens the inbox", () => {
+    const tree = render();
+    act(() => {
+      pressableLabelled(tree, "Notifications").props.onPress();
+    });
+
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/notifications");
+  });
+});
+
+/**
+ * Chat home is the first screen after launch, so its loading and error states
+ * are the state family's (components.md §10), not a spinner over "Loading
+ * channels…" and a hand-rolled retry.
+ */
+describe("Chat home loading and error states", () => {
+  it("loads on channel-shaped skeletons, with no spinner or loading copy", () => {
+    channelsState.value = { ...channelsState.value, isPending: true };
+    const tree = render();
+
+    expect(tree.root.findAllByType(ChannelListSkeleton)).toHaveLength(1);
+    expect(
+      tree.root.findAll(
+        (node) => (node.type as unknown) === "ActivityIndicator",
+      ),
+    ).toHaveLength(0);
+    expect(screenText(tree)).not.toContain("Loading channels");
+    expect(rows(tree)).toHaveLength(0);
+  });
+
+  it("fails on the shared error state, whose retry refetches the channels", () => {
+    const refetch = vi.fn();
+    channelsState.value = { ...channelsState.value, isError: true, refetch };
+    const tree = render();
+
+    const error = tree.root.findByType(ErrorState);
+    expect(error.props.title).toBe("Couldn't load channels");
+    // The retry names what it retries, so it still makes sense heard on its
+    // own, away from the card's title.
+    const retry = pressableLabelled(tree, "Try loading channels again");
+    expect(screenTextOf(retry)).toBe("Try loading channels again");
+    act(() => {
+      retry.props.onPress();
+    });
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("says Retrying… and holds the control while a retry is in flight", () => {
+    channelsState.value = {
+      ...channelsState.value,
+      isError: true,
+      isFetching: true,
+    };
+    const tree = render();
+
+    const retry = pressableLabelled(tree, "Try loading channels again");
+    expect(retry.props.disabled).toBe(true);
+    expect(screenTextOf(retry)).toBe("Retrying…");
+  });
+
+  // writing.md §4, as amended 2026-11-05: no line saying channels appear
+  // here, which would only restate what Chat is for, but the next step.
+  it("says a chapter has no channels, and what to do about it", () => {
+    channelsData.value = [];
+    const tree = render();
+
+    const empty = tree.root.findByType(EmptyState);
+    expect(empty.props.title).toBe("No channels yet");
+    expect(empty.props.body).toBe("Ask an admin to add one.");
+  });
+});
+
+describe("Chat home pull-to-refresh (#3385)", () => {
+  it("refreshes everything the screen draws on a pull (#3385)", async () => {
+    const tree = render();
+
+    // The scroll view is a host stand-in, so its control is never mounted;
+    // the pull is the control's own `refresh`, called directly.
+    const scroll = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "ScrollView" &&
+        node.props.refreshControl !== undefined,
+    );
+    await act(async () => {
+      await scroll.props.refreshControl.props.refresh();
+    });
+
+    for (const refetch of [
+      channelsState.value.refetch,
+      ...Object.values(refetches),
+    ]) {
+      expect(refetch).toHaveBeenCalledWith({ cancelRefetch: true });
+    }
+  });
+});
+
+describe("Chat home press feedback", () => {
+  it("gives section headers and the Hidden toggle the rows' feedback, not a fade", () => {
+    const tree = render();
+    const headers = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "header",
+    );
+    expect(headers.length).toBeGreaterThan(0);
+
+    for (const control of [...headers, hiddenToggle(tree)]) {
+      expect(control.props.android_ripple?.color).toMatch(/^rgba\(/);
+      // The suite's react-native stub runs as iOS.
+      const held = control.props.style({ pressed: true });
+      expect(held).toContainEqual({
+        backgroundColor: signetDarkTokens.color.surface.card,
+      });
+      expect(JSON.stringify(held)).not.toContain("opacity");
+    }
+  });
+
+  // Like the channel rows, the fold headers and the Hidden toggle pad by `sm`
+  // and bleed it into the gutter, so their captions line up with the rows'
+  // sigils. The bleed sits on the clip that rounds the ripple
+  // (`PressableRow`), so each control is where it was.
+  it("bleeds section headers and the Hidden toggle into the gutter, inside a rounded clip", () => {
+    const tree = render();
+    const headers = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "header",
+    );
+    expect(headers.length).toBeGreaterThan(0);
+
+    for (const control of [...headers, hiddenToggle(tree)]) {
+      const { clip, resting } = expectRoundedRipple(
+        control,
+        signetDarkTokens.radius.control,
+      );
+      expect(resting.paddingHorizontal).toBe(signetDarkTokens.spacing.sm);
+      expect(clip.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
+      expect(resting).not.toHaveProperty("marginHorizontal");
+    }
+  });
+});
+
+/**
+ * Launch opens the last channel the member was in, like Discord (owner,
+ * 2026-11-05), once per app process and only once the list has answered.
+ */
+describe("Chat home opens the last channel on launch", () => {
+  const answered = () => {
+    channelsState.value = { ...channelsState.value, isSuccess: true };
+  };
+  beforeEach(() => resetChatLaunchForTests());
+
+  async function settle() {
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+
+  it("opens the remembered channel, once", async () => {
+    answered();
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue("c-general");
+    render();
+    await settle();
+    expect(AsyncStorage.getItem).toHaveBeenCalledWith(
+      `frapp.chat.last-channel.${VIEWER}.chapter-1`,
+    );
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: "c-general" },
+    });
+
+    // Back from the thread lands here again; nothing re-opens.
+    vi.mocked(vi.mocked(useRouter)().push).mockClear();
+    render();
+    await settle();
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+
+  it("stays on the list when the remembered channel is gone or hidden", async () => {
+    answered();
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue(dmBobHidden.id);
+    render();
+    await settle();
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+
+  it("stands aside for a notification tap", async () => {
+    answered();
+    settleChatLaunch();
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue("c-general");
+    render();
+    await settle();
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+
+  it("does not jump when the list only answers after launch", async () => {
+    // Offline or a failed first fetch: the member has moved on by now.
+    resetChatLaunchForTests(Date.now() - 60_000);
+    answered();
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue("c-general");
+    render();
+    await settle();
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+
+  it("does not jump once the member has left chat home", async () => {
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue("c-general");
+    render();
+    await settle();
+    act(() => {
+      (expoRouter as unknown as { __blur: () => void }).__blur();
+    });
+    answered();
+    render();
+    await settle();
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+});
+
+describe("Chat home setup checklist (spec/product/modules.md § Setup checklist)", () => {
+  const ONE_LINE = {
+    doneCount: 0,
+    lines: [{ key: "event", label: "Schedule the first event", done: false }],
+  };
+
+  it("draws the officer's list under UP NEXT and above the channels", () => {
+    setupChecklist.value = ONE_LINE;
+    const tree = render();
+
+    const order = tree.root
+      .findAll(
+        (node) =>
+          node.type === UpNextStrip ||
+          node.type === SetupChecklistView ||
+          node.type === ChannelRow,
+      )
+      .map((node) => node.type);
+    expect(order.slice(0, 3)).toEqual([
+      UpNextStrip,
+      SetupChecklistView,
+      ChannelRow,
+    ]);
+  });
+
+  it("asks the shared hook to leave dues off the phone", () => {
+    render();
+    expect(setupChecklistOptions.value).toEqual({ omit: ["dues"] });
+  });
+
+  it("re-reads the checklist's lists on a pull", async () => {
+    const tree = render();
+    await act(async () => {
+      await tree.root.findByType(ScreenShell).props.refresh();
+    });
+    expect(refetches.setup).toHaveBeenCalled();
+  });
+
+  it("draws nothing for a member, and nothing over the skeleton", () => {
+    expect(render().root.findAllByType(SetupChecklistView)).toHaveLength(0);
+
+    setupChecklist.value = ONE_LINE;
+    channelsState.value = { ...channelsState.value, isPending: true };
+    expect(render().root.findAllByType(SetupChecklistView)).toHaveLength(0);
+  });
+
+  it("draws nothing over the channels' error", () => {
+    setupChecklist.value = ONE_LINE;
+    channelsState.value = { ...channelsState.value, isError: true };
+    expect(render().root.findAllByType(SetupChecklistView)).toHaveLength(0);
   });
 });

@@ -16,6 +16,10 @@ import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
 import {
+  FeatureEvent,
+  type FeatureEventInput,
+} from '../decorators/feature-event.decorator';
+import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
@@ -55,6 +59,17 @@ export class PollController {
   @Post('polls/:messageId/vote')
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'Cast vote on a poll' })
+  // The `/polls` page's vote (`usePolls` in `@repo/hooks`). The service
+  // replaces any earlier vote without saying whether there was one, so there
+  // is no `is_revote`, and a repeat counts again. A multi-choice vote with
+  // nothing selected clears the vote, which is not a vote cast.
+  @FeatureEvent('poll-voted', ({ body }: FeatureEventInput<VoteDto>) => {
+    const selectedCount = Array.isArray(body.option_indexes)
+      ? body.option_indexes.length
+      : 0;
+    if (selectedCount === 0) return null;
+    return { surface: 'page', selected_count: selectedCount };
+  })
   async vote(
     @Param('messageId') messageId: string,
     @CurrentChapterId() chapterId: string,

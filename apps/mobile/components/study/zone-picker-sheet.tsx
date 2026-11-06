@@ -7,7 +7,10 @@ import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   SheetGrabber,
   SheetHeader,
+  SheetScrim,
   useSheetBackgroundStyle,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 import type { StudyZoneModel } from "@/lib/study/zones";
 import { zoneRewardCopy } from "@/lib/study/zones";
@@ -30,6 +33,7 @@ export interface ZonePickerSheetProps {
 
 export const ZonePickerSheet = forwardRef<BottomSheetModal, ZonePickerSheetProps>(
   function ZonePickerSheet({ zones, selectedZoneId, onSelect }, ref) {
+    const closeSheet = useSheetClose(ref);
     const { tokens } = useFrappTheme();
     const { accent } = useChapterBranding();
     const styles = createStyles(tokens);
@@ -41,20 +45,15 @@ export const ZonePickerSheet = forwardRef<BottomSheetModal, ZonePickerSheetProps
         snapPoints={SNAP_POINTS}
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
+        backdropComponent={SheetScrim}
       >
-        <View style={styles.header}>
-          <SheetHeader
-            title="Study zone"
-            onCancel={() => {
-              // `ref` is the caller's; dismissing is theirs to own too, so the
-              // cancel path goes through the same `onSelect`-free close the
-              // backdrop uses.
-              (ref as React.RefObject<BottomSheetModal>)?.current?.dismiss();
-            }}
-          />
+        <SheetBackToClose onClose={closeSheet} />
+        <View onAccessibilityEscape={closeSheet} style={styles.header}>
+          <SheetHeader title="Study zone" />
         </View>
 
         <BottomSheetFlatList
+          onAccessibilityEscape={closeSheet}
           data={zones}
           keyExtractor={(zone: StudyZoneModel) => zone.id}
           contentContainerStyle={styles.list}
@@ -91,10 +90,10 @@ export const ZonePickerSheet = forwardRef<BottomSheetModal, ZonePickerSheetProps
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     header: {
-      paddingHorizontal: tokens.spacing.lg + 2,
+      paddingHorizontal: tokens.spacing.lg,
     },
     list: {
-      paddingHorizontal: tokens.spacing.lg + 2,
+      paddingHorizontal: tokens.spacing.lg,
       paddingBottom: tokens.spacing.xl,
     },
     row: {

@@ -203,14 +203,13 @@ scripts tick it for the demo login and carry on. By hand, tick the box and
 choose **Agree and continue**; the App Review reviewer does the same, which
 § Review notes in `apps/mobile/store/README.md` tells them to expect.
 
-`node scripts/demo/capture-mobile.mjs --app-store` is the second mode: the App
-Store set, at the store's size, into `screenshots/app-store/`, with no Ask or
-Dues shot and a hard stop if any Ask surface is on screen. It needs the Expo
-server started **without** `EXPO_PUBLIC_ASK_ENABLED`. The procedure, and which
-size and why, are in
-[`mobile.md` § 6.4](../ops/deployment/mobile.md#64-app-store-screenshots).
-`--google-play` is the same set at Play's size, into `screenshots/google-play/`
-([§ 6.5](../ops/deployment/mobile.md#65-google-play-screenshots)).
+`node scripts/demo/capture-mobile.mjs --store` is the second mode: the framed
+store sets for both stores, into `screenshots/app-store/` and
+`screenshots/google-play/`, with no Ask or Dues shot and a hard stop if any Ask
+surface is on screen. It needs the Expo server started **without**
+`EXPO_PUBLIC_ASK_ENABLED`. The procedure, the sizes and why, and how the frames
+are made are in
+[`mobile.md` § 6.4](../ops/deployment/mobile.md#64-store-screenshots).
 
 Output lands in `screenshots/`, which is **gitignored**. There is no sanctioned
 home for generated marketing binaries
@@ -280,11 +279,11 @@ two generated paths and the errors go with them. They are an artifact of the
 capture, not a defect — do not "fix" the flagged component.
 
 **Capture from a freshly seeded chapter.** Opening a channel marks it read, and
-`ChannelRow` drops both the unread badge and the elevated card treatment for a
-read row — so a second capture run photographs a chat home whose `#general` has
-gone flat and empty. `capture-mobile.mjs` shoots s04 before it opens the thread,
-which keeps a single run self-consistent; across runs, re-run `setup-demo.sh`
-first.
+`ChannelRow` drops the unread badge for a read row and dims its title from a
+700 weight in `text.foreground` to a 600 in `text.mutedForeground` — so a
+second capture run photographs a chat home whose `#general` reads as already
+seen. `capture-mobile.mjs` shoots s04 before it opens the thread, which keeps a
+single run self-consistent; across runs, re-run `setup-demo.sh` first.
 
 <a id="mobile-setup"></a>
 
@@ -310,10 +309,10 @@ that is acceptable: nothing in the repo sets the flag, and an EAS `production`
 build refuses to evaluate its config when it is on (`apps/mobile/app.config.js`).
 
 **The flag is for the marketing and demo capture only.** The default run shoots
-`02-ask-answer` and so needs it. Both store sets (`--app-store` and
-`--google-play`) must run with it **unset**: the store binary has no Ask, so
+`02-ask-answer` and so needs it. The store run (`--store`) must run with it
+**unset**: the store binary has no Ask, so
 with the flag off the app draws no ✦ pill
-([#2259](https://github.com/pdcarlson/Frapp/issues/2259)), and each store preset
+([#2259](https://github.com/pdcarlson/Frapp/issues/2259)), and the store run
 refuses to write anything if it finds one. `EXPO_PUBLIC_*` values are inlined
 when Metro transforms the bundle, so between the marketing run and a store run
 remove the line and restart Expo with `--clear`.
@@ -336,7 +335,7 @@ repo's Playwright expects. Point at it instead of downloading another (never run
 `playwright install` here):
 
 ```bash
-CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome \
+CHROMIUM_PATH=/opt/pw-browsers/chromium-1243/chrome-linux64/chrome \
   node scripts/demo/capture-screenshots.mjs
 ```
 

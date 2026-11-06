@@ -72,6 +72,7 @@ const EXCEPTIONS: { file: string; literal: string; count: number; reason: string
       "button. It is not label text, and `text-label` would set 600/1.3 on it.",
   },
   { file: "components/chat/mention-list.tsx", literal: "text-[10px]", count: 1, reason: DRAWN_MARK },
+  { file: "components/chat/channel-member-list.tsx", literal: "text-[10px]", count: 1, reason: DRAWN_MARK },
   { file: "components/layout/account-menu.tsx", literal: "text-[11px]", count: 1, reason: DRAWN_MARK },
   { file: "components/roles/roles-matrix.tsx", literal: "text-[10px]", count: 1, reason: DRAWN_MARK },
   { file: "components/alumni/alumni-directory.tsx", literal: "text-[9px]", count: 1, reason: DRAWN_MARK },

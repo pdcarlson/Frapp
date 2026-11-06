@@ -33,24 +33,34 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-const { notifications, mockInvalidateReports, mockMarkRead } = vi.hoisted(
-  () => ({
-    notifications: { value: [] as unknown[] },
-    mockInvalidateReports: vi.fn(),
-    mockMarkRead: vi.fn(),
-  }),
-);
+const {
+  notifications,
+  queryFailed,
+  queryFetching,
+  mockInvalidateReports,
+  mockMarkRead,
+  mockRefetch,
+} = vi.hoisted(() => ({
+  notifications: { value: [] as unknown[] },
+  queryFailed: { value: false },
+  queryFetching: { value: false },
+  mockInvalidateReports: vi.fn(),
+  mockMarkRead: vi.fn(),
+  mockRefetch: vi.fn(),
+}));
 
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/hooks")>();
   return {
     CHAT_REPORTS_NOTIFICATION_SCREEN: actual.CHAT_REPORTS_NOTIFICATION_SCREEN,
+    DISCORD_IMPORT_NOTIFICATION_SCREEN:
+      actual.DISCORD_IMPORT_NOTIFICATION_SCREEN,
     useNotifications: () => ({
-      data: notifications.value,
+      data: queryFailed.value ? undefined : notifications.value,
       isPending: false,
-      isError: false,
-      isFetching: false,
-      refetch: vi.fn(),
+      isError: queryFailed.value,
+      isFetching: queryFetching.value,
+      refetch: mockRefetch,
     }),
     useMarkNotificationRead: () => ({
       mutateAsync: mockMarkRead,
@@ -104,6 +114,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockMarkRead.mockResolvedValue({});
   notifications.value = [EVENT];
+  queryFailed.value = false;
+  queryFetching.value = false;
 });
 
 describe("DashboardNotificationDrawer — report queue freshness", () => {
@@ -159,5 +171,111 @@ describe("DashboardNotificationDrawer — report queue freshness", () => {
     await user.click(screen.getByRole("link", { name: /Notice/ }));
 
     expect(mockInvalidateReports).not.toHaveBeenCalled();
+  });
+});
+
+describe("DashboardNotificationDrawer — chrome (components.md § Chrome weight)", () => {
+  it("draws a bare title with Mark all read as its one icon control", () => {
+    renderDrawer();
+
+    expect(
+      screen.getByRole("heading", { name: "Notifications" }),
+    ).toBeInTheDocument();
+    const markAll = screen.getByRole("button", { name: "Mark all read" });
+    expect(markAll).toHaveAttribute("title", "Mark all read");
+    expect(markAll.textContent).toBe("");
+    // The realtime ping refetches; there is no manual Refresh, no count and
+    // no "N total" line.
+    expect(screen.queryByRole("button", { name: /refresh/i })).toBeNull();
+    expect(screen.queryByText(/\d+ total/)).toBeNull();
+  });
+
+  it("marks unread with a dot and a spoken word, not a New or Read badge", () => {
+    notifications.value = [
+      EVENT,
+      { ...REPORT, read_at: "2026-09-22T10:05:00Z" },
+    ];
+    renderDrawer();
+
+    expect(
+      screen.getByRole("link", { name: /^Unread:\s*Notice / }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /^Message Reported / }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/^(New|Read)$/)).toBeNull();
+    const dots = document.querySelectorAll("[data-unread-dot]");
+    expect(dots).toHaveLength(1);
+    expect(dots[0]).toHaveClass("bg-foreground");
+    expect(
+      screen.getByRole("link", { name: /^Unread:\s*Notice / }),
+    ).toContainElement(dots[0] as HTMLElement);
+  });
+
+  it("shows a long title and body whole, since nothing else on web does", () => {
+    notifications.value = [
+      {
+        ...EVENT,
+        body: "A body long enough to run past two lines of the drawer, which used to clip it with no way to read the rest anywhere else on web.",
+      },
+    ];
+    renderDrawer();
+    const row = screen.getByRole("link", { name: /Notice/ });
+    for (const clip of ["truncate", "line-clamp-2"]) {
+      expect(row.querySelector(`.${clip}`)).toBeNull();
+    }
+    // Drawn inside the row: the scroll area's overflow clips anything outside.
+    expect(row).toHaveClass("focus-visible:ring-inset");
+  });
+
+  it("lists rows flat, with no card around each", () => {
+    renderDrawer();
+    const row = screen.getByRole("link", { name: /Notice/ });
+    // One class per assertion: a negated multi-class `toHaveClass` passes as
+    // soon as any one of them is missing.
+    for (const frame of [
+      "border-border",
+      "border-accent-border",
+      "bg-card",
+      "bg-accent-subtle",
+      "bg-surface-1",
+    ]) {
+      expect(row).not.toHaveClass(frame);
+    }
+    expect(row.closest("ul")).toHaveClass("divide-y");
+  });
+
+  it("offers Try again on a failed load, since the header has no Refresh", async () => {
+    queryFailed.value = true;
+    renderDrawer();
+    expect(screen.getByText(/Couldn.t load notifications/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables Try again with a spinner while the retry runs", () => {
+    queryFailed.value = true;
+    queryFetching.value = true;
+    renderDrawer();
+    const retry = screen.getByRole("button", { name: "Try again" });
+    expect(retry).toBeDisabled();
+    expect(retry.querySelector(".animate-spin")).not.toBeNull();
+  });
+});
+
+describe("DashboardNotificationDrawer — a Discord import that ended", () => {
+  it("opens the import page", () => {
+    notifications.value = [
+      notification(
+        "n-import",
+        "discord_import",
+        "2026-11-06T10:00:00Z",
+        "Discord import finished",
+      ),
+    ];
+    renderDrawer();
+    expect(
+      screen.getByRole("link", { name: /Discord import finished/ }),
+    ).toHaveAttribute("href", "/discord-import");
   });
 });

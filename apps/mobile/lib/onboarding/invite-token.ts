@@ -12,6 +12,8 @@
  * same reason.
  */
 
+import { extractInviteToken } from "@repo/validation";
+
 export {
   extractInviteToken,
   extractInviteTokenFromQuery,
@@ -27,5 +29,23 @@ export function rememberInviteToken(token: string | null): void {
 export function consumeRememberedInviteToken(): string | null {
   const token = rememberedToken;
   rememberedToken = null;
+  return token;
+}
+
+let handledLinkUrl: string | null = null;
+
+/**
+ * The invite token in an opened link, once per link.
+ *
+ * `Linking.useURL()` answers with the URL that launched the app for as long as
+ * the process lives, not only at the moment a link opens it. Read on every
+ * visit to `/join`, an invite the member already redeemed would fill the field
+ * again, and send them past s02's question (#3350), every time they came back.
+ * A link that carries no token isn't marked, so a later one still counts.
+ */
+export function takeInviteTokenFromLink(url: string | null): string | null {
+  if (!url || url === handledLinkUrl) return null;
+  const token = extractInviteToken(url);
+  if (token) handledLinkUrl = url;
   return token;
 }

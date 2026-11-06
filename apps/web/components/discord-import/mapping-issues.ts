@@ -1,5 +1,11 @@
 import type { StagedChannel } from "./upload-step";
 import { nameKey, type SameAsDiscordReaders } from "./role-matching";
+import {
+  NO_SIDEBAR_GROUPS,
+  normaliseChannelName,
+  sidebarGroupFor,
+  type SidebarGroups,
+} from "./sidebar-groups";
 
 /** A Frapp channel the admin can see, as `GET /v1/channels` returns it. */
 export interface ExistingChannel {
@@ -290,10 +296,7 @@ export interface MappingIssue {
   retry?: () => void;
 }
 
-/** Channel names compare case-insensitively and ignoring a leading `#`. */
-export function normaliseChannelName(name: string): string {
-  return name.trim().replace(/^#+/, "").toLowerCase();
-}
+export { normaliseChannelName };
 
 type ReadersOf = (channel: StagedChannel) => SameAsDiscordReaders | null;
 
@@ -330,7 +333,8 @@ function readersSignature(
  *
  * Rows asking for a new channel of the same name (`normaliseChannelName`)
  * land in ONE channel when they agree on who reads it and whether it is read
- * only: the API reuses the channel the first of them creates. `together`
+ * only, and on the channel category it goes into when Discord's categories
+ * are kept: the API reuses the channel the first of them creates. `together`
  * says, per row, how many other rows it shares a channel with; `split`
  * lists the rows whose name is shared by rows that do not agree, which would
  * become separate channels of one name, so they are asked about instead.
@@ -339,6 +343,7 @@ export function newChannelGroups(
   channels: readonly StagedChannel[],
   choices: Record<string, ChannelChoice>,
   readersOf: ReadersOf = () => null,
+  groups: SidebarGroups = NO_SIDEBAR_GROUPS,
 ): { together: Map<string, number>; split: Map<string, number> } {
   const byName = new Map<
     string,
@@ -355,9 +360,14 @@ export function newChannelGroups(
   for (const members of byName.values()) {
     if (members.length < 2) continue;
     const signatures = new Set(
-      members.map(({ channel, choice }) =>
-        readersSignature(channel, choice, readersOf),
-      ),
+      members.map(({ channel, choice }) => {
+        const readers = readersSignature(channel, choice, readersOf);
+        const group = sidebarGroupFor(channel, choice, groups);
+        // The API compares categories trimmed and in any case.
+        return readers === null
+          ? null
+          : `${readers}|category:${group?.toLocaleLowerCase("en-US") ?? ""}`;
+      }),
     );
     // A row with no visibility yet is asked about on its own; the group is
     // judged once every row has one.
@@ -386,6 +396,8 @@ export function mappingIssues(
   existingChannelNames: readonly string[],
   /** Who "Same as Discord" resolves to; null where it is not on offer. */
   readersOf: ReadersOf = () => null,
+  /** Which Discord categories become channel categories. */
+  groups: SidebarGroups = NO_SIDEBAR_GROUPS,
 ): MappingIssue[] {
   const issues: MappingIssue[] = [];
   // A clash is the same name, or a like one: the merge default matches
@@ -405,7 +417,7 @@ export function mappingIssues(
       (like ? existing.get(`like:${like}`) : undefined)
     );
   };
-  const { split } = newChannelGroups(channels, choices, readersOf);
+  const { split } = newChannelGroups(channels, choices, readersOf, groups);
 
   let importing = 0;
   for (const channel of channels) {
@@ -443,7 +455,7 @@ export function mappingIssues(
     } else if (split.has(channel.channelId)) {
       issues.push({
         channelId: channel.channelId,
-        message: `#${name} is the new name for ${split.get(channel.channelId)} channels that differ in who can read them or whether they are read-only, so they cannot become one channel. Give ${label} the same settings as the others, or a different name.`,
+        message: `#${name} is the new name for ${split.get(channel.channelId)} channels that differ in who can read them, whether they are read-only, or which category they go into, so they cannot become one channel. Give ${label} the same settings as the others, or a different name.`,
       });
     }
 

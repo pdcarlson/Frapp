@@ -1,13 +1,19 @@
 export * from "./use-frapp-client";
 export * from "./use-now";
 export * from "./display-names";
+export * from "./channel-members";
 export * from "./document-download";
 export * from "./put-signed-upload";
 export * from "./chapter-query-keys";
 export * from "./use-members";
+export * from "./setup-checklist";
+export * from "./unset-features";
 export * from "./use-events";
 export * from "./use-activity-feed";
 export * from "./use-attendance";
+export * from "./task-card";
+export * from "./service-entry-card";
+export * from "./rush-card";
 export * from "./use-points";
 export * from "./use-chat";
 export * from "./hide-conversation";
@@ -42,10 +48,12 @@ export * from "./use-custom-fields";
 export * from "./use-discord-import";
 export * from "./use-discord-connection";
 export * from "./channel-sidebar";
+export * from "./landing-channel";
 // `useChatSidebar` and its query keys stay module-private: every surface reads
 // the arrangement through `useSidebarPreferences`.
 export {
   useSidebarPreferences,
+  useSidebarPreferencesRefetch,
   useSetSidebarFilter,
   useSetSidebarSectionCollapsed,
   useSetChannelPinned,

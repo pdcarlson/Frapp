@@ -3,6 +3,24 @@ import React from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
+
+// These screens paint with the chapter accent (`useChapterBranding`), which
+// reads the current chapter through the client provider these specs don't
+// mount. A purple chapter's values, deliberately not house gold, so a control
+// that slips back to a `gold.*` token shows up in an assertion; the hook
+// itself has its own spec.
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({
+    accent: "#CB9FFF",
+    accentPrimary: "#8E4EC6",
+    accentOnPrimary: "#FFFFFF",
+    accentSubtle: "#251A33",
+    accentBorder: "#5C3E8A",
+    logoUrl: null,
+    chapterName: null,
+    textMark: null,
+  }),
+}));
 import { FrappThemeProvider } from "@/lib/theme";
 import {
   HISTORY_START_COPY,
@@ -22,6 +40,7 @@ interface EdgeProps {
   isLoadingOlder?: boolean;
   olderError?: boolean;
   onLoadOlder?: () => void;
+  start?: React.ReactNode;
 }
 
 function render({
@@ -29,6 +48,7 @@ function render({
   isLoadingOlder = false,
   olderError = false,
   onLoadOlder = vi.fn(),
+  start,
 }: EdgeProps): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -39,6 +59,7 @@ function render({
           isLoadingOlder={isLoadingOlder}
           olderError={olderError}
           onLoadOlder={onLoadOlder}
+          start={start}
         />
       </FrappThemeProvider>,
     );
@@ -85,5 +106,31 @@ describe("ThreadHistoryEdge", () => {
     const tree = render({ hasOlder: false });
     expect(text(tree)).toContain(HISTORY_START_COPY);
     expect(buttons(tree)).toHaveLength(0);
+  });
+
+  it("draws the channel start in place of the caption once there is nothing older", async () => {
+    const { ChannelStart } = await import("./channel-start");
+    const tree = render({
+      hasOlder: false,
+      start: (
+        <ChannelStart
+          type="PUBLIC"
+          channelName="general"
+          displayName="general"
+          description="The whole chapter."
+        />
+      ),
+    });
+    const shown = text(tree);
+    expect(shown).toContain("Welcome to #general");
+    expect(shown).toContain("This is the start of #general.");
+    expect(shown).toContain("The whole chapter.");
+    expect(shown).not.toContain(HISTORY_START_COPY);
+  });
+
+  it("keeps the older-history read above the channel start while there is more", () => {
+    const tree = render({ hasOlder: true, start: "CHANNEL_START_MARK" });
+    expect(text(tree)).toContain(OLDER_IDLE_COPY);
+    expect(text(tree)).not.toContain("CHANNEL_START_MARK");
   });
 });

@@ -40,9 +40,18 @@ export function parseNavCollapsed(value: string | undefined): boolean {
  * still set it.
  */
 export function persistNavCollapsed(collapsed: boolean): void {
+  writePreferenceCookie(NAV_COLLAPSED_COOKIE, collapsed);
+}
+
+/**
+ * Write a remembered on/off layout preference as `"1"` or `"0"` for a year.
+ * Shared with Chat's member list (`lib/chat/members-panel.ts`) so the two
+ * preferences cannot drift on cookie policy.
+ */
+export function writePreferenceCookie(name: string, on: boolean): void {
   if (typeof document === "undefined") return;
   const secure = window.location.protocol === "https:" ? "; Secure" : "";
   document.cookie =
-    `${NAV_COLLAPSED_COOKIE}=${collapsed ? "1" : "0"}` +
+    `${name}=${on ? "1" : "0"}` +
     `; Path=/; Max-Age=${NAV_COLLAPSED_MAX_AGE}; SameSite=Lax${secure}`;
 }

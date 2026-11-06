@@ -552,7 +552,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Display roster for the chapter — id, name and avatar only */
+        /** Display roster for the chapter — id, name, avatar and role color only */
         get: operations["MemberController_roster_v1"];
         put?: never;
         post?: never;
@@ -694,6 +694,23 @@ export interface paths {
         put?: never;
         /** Generate invite tokens and email each address a join link */
         post: operations["InviteController_createWithEmails_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/invites/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Read an invite's chapter, inviter and role without redeeming it (410 when the invite is dead) */
+        post: operations["InviteController_preview_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1002,7 +1019,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Everyone who can read a channel, with their top role rank */
+        get: operations["ChatController_listChannelMembers_v1"];
         put?: never;
         /** Add a chapter member to a private channel */
         post: operations["ChatController_addChannelMember_v1"];
@@ -1905,6 +1923,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/backwork/download-urls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Signed download links for several resources, for a zip */
+        get: operations["BackworkController_downloadUrls_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/backwork/departments": {
         parameters: {
             query?: never;
@@ -2780,7 +2815,7 @@ export interface paths {
         put?: never;
         /**
          * Start a Discord archive import
-         * @description Requires the consent acknowledgement. Returns the import to upload an export against.
+         * @description Requires the consent acknowledgement. Returns the import to upload an export against. 409 while another of the chapter's imports still holds what it brought in (queued, running, completed, failed, cancelled or deleting): a chapter has one import at a time, so delete it first.
          */
         post: operations["DiscordImportController_create_v1"];
         delete?: never;
@@ -2798,7 +2833,7 @@ export interface paths {
         };
         /**
          * Import detail and progress
-         * @description Poll this while an import is running. An upload's progress is `imported_messages` / `total_messages`; its total grows a part at a time, as each export part is opened. A bot import's total grows with every page it reads from Discord, so its progress is `channels_done` / `channels_total`: the channel and thread rows being imported, and how many of those are finished (imported, or skipped because Discord no longer showed them to the bot). Both are null for an upload, and for a bot import that is not queued, running, failed or cancelled. While an import is being deleted (`purging`), `purged_messages` counts the messages deleted so far, out of `imported_messages`; the count can stop short of that total, so `purged` is what says the deletion finished.
+         * @description Poll this while an import is running. An upload's progress is `imported_messages` / `total_messages`; its total grows a part at a time, as each export part is opened. A bot import's total grows with every page it reads from Discord, so its progress is `channels_done` / `channels_total`: the channel and thread rows being imported, and how many of those are finished (imported, or skipped because Discord no longer showed them to the bot). Both are null for an upload, and for a bot import that is not queued, running, completed, failed or cancelled. While an import is being deleted (`purging`), `purged_messages` counts the messages deleted so far, out of `imported_messages`; the count can stop short of that total, so `purged` is what says the deletion finished.
          */
         get: operations["DiscordImportController_get_v1"];
         put?: never;
@@ -2843,7 +2878,7 @@ export interface paths {
         };
         /**
          * Channel-by-channel progress, for watching an import
-         * @description What the Watch view polls while a bot import runs (#2857): the channel and thread rows by status, the ones running now, the last ones finished, and the failures with their reasons, each with the Frapp channel it lands in once known. A few KB whatever the server holds; `GET :id/channels` is the full list, which is too large to poll. The rows follow a bot import's walk, one channel at a time in `position` order; an upload works through export parts, which leave its rows' order and a skipped part's row unrecorded, so the web shows this for bot imports only.
+         * @description What the Watch view polls while a bot import runs (#2857): the channel and thread rows by status and per Discord category, the ones running now, the last ones finished, and the failures with their reasons, each with the Frapp channel it lands in once known. A few KB whatever the server holds; `GET :id/channels` is the full list, which is too large to poll. The rows follow a bot import's walk, one channel at a time in `position` order; an upload works through export parts, which leave its rows' order and a skipped part's row unrecorded, so the web shows this for bot imports only.
          */
         get: operations["DiscordImportController_getProgress_v1"];
         put?: never;
@@ -2982,7 +3017,7 @@ export interface paths {
         put?: never;
         /**
          * Queue the import
-         * @description The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818). A bot import may carry a date cutoff, `messages_after` (#2858); the body is optional.
+         * @description The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818). A bot import may carry a date cutoff, `messages_after` (#2858); the body is optional. 409 while another of the chapter's imports still holds what it brought in, as on create.
          */
         post: operations["DiscordImportController_start_v1"];
         delete?: never;
@@ -3298,13 +3333,18 @@ export interface components {
         };
         TrackEventDto: {
             /**
-             * @description Behavioral event name in kebab-case, e.g. "opened-channel", "ran-slash-command". Must describe behavior, never content.
-             * @example opened-channel
+             * @description Behavioral event name in kebab-case, e.g. "search-completed", "outbox-queued". Must describe behavior, never content.
+             * @example search-completed
              */
             name: string;
             /** @description Chapter the event is attributed to (enables the opt-out gate) */
             chapter_id?: string;
-            /** @description Behavioral, content-free properties. Values must be scalars (string/number/boolean/null); keys that look like content/PII (content, body, email, name, …) are rejected. */
+            /**
+             * @description The app sending the event, as the client reports it. The API stamps it on the event as the `app` property; a client may not set `app` in `properties`.
+             * @enum {string}
+             */
+            app?: "web" | "mobile";
+            /** @description Behavioral, content-free properties. Values must be scalars (string/number/boolean/null); keys that look like content/PII (content, body, email, name, …) are rejected, and so are `app` and `$`-prefixed keys, which the API sets itself. */
             properties?: {
                 [key: string]: (string | number | boolean) | null;
             };
@@ -3615,13 +3655,21 @@ export interface components {
             name: string;
             permissions: string[];
             display_order?: number;
-            color?: string;
+            /**
+             * @description One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color.
+             * @enum {string|null}
+             */
+            color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
         };
         UpdateRoleDto: {
             name?: string;
             permissions?: string[];
             display_order?: number;
-            color?: string;
+            /**
+             * @description One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color.
+             * @enum {string|null}
+             */
+            color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
         };
         TransferPresidencyDto: {
             /** Format: uuid */
@@ -3672,6 +3720,8 @@ export interface components {
             /** @description May be an empty string: the column is NOT NULL DEFAULT '', so clients treat empty as unresolved rather than rendering a blank name. */
             display_name: string;
             avatar_url: string | null;
+            /** @description Palette color of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it. */
+            role_color: string | null;
         };
         UpdateMemberRolesDto: {
             role_ids: string[];
@@ -3683,10 +3733,10 @@ export interface components {
         };
         DismissOpsNudgeDto: {
             /**
-             * @description Module whose ops-setup nudge to dismiss for the caller in the active chapter. Validated against the shared catalog rather than accepted as free text: `members.dismissed_ops_nudges` is an unconstrained `text[]`, so an unchecked value would persist forever and suppress nothing.
+             * @description Module whose ops-setup nudge to dismiss for the caller in the active chapter, or `setup-checklist` for the officer setup checklist on chat home. Validated against the shared catalog rather than accepted as free text: `members.dismissed_ops_nudges` is an unconstrained `text[]`, so an unchecked value would persist forever and suppress nothing.
              * @enum {string}
              */
-            module_key: "dues" | "events" | "tasks" | "points";
+            module_key: "dues" | "events" | "tasks" | "points" | "setup-checklist";
         };
         CreateInviteDto: {
             /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
@@ -3703,6 +3753,22 @@ export interface components {
             role?: string;
             /** @description Email addresses to invite, one invite token per address */
             emails: string[];
+        };
+        PreviewInviteDto: {
+            /** @description The invite token, as the join link carries it */
+            token: string;
+        };
+        InvitePreviewResponseDto: {
+            chapter_name: string;
+            university: string;
+            /** @description The chapter's text mark: its short name, else its Greek letters if it shows them, else null. Never letters the chapter hides, nor those of an organization that never displays them (such as Phi Gamma Delta), whatever the chapter's stored switch says (#3421). */
+            mark_text: string | null;
+            accent_color: string | null;
+            /** @description The inviter's display name, or null when it can't be read. */
+            invited_by: string | null;
+            /** @description The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role) */
+            role: string | null;
+            expires_at: string;
         };
         RedeemInviteDto: {
             token: string;
@@ -3825,6 +3891,8 @@ export interface components {
              * @enum {string|null}
              */
             default_notification_level?: "all" | "mentions" | "off" | null;
+            /** @description Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. Refused as `true` on a DM or group DM. */
+            is_default?: boolean;
         };
         CreateDmDto: {
             /** @description The other member user ID */
@@ -3833,6 +3901,15 @@ export interface components {
         CreateGroupDmDto: {
             member_ids: string[];
             name?: string;
+        };
+        ChannelMemberDto: {
+            /**
+             * Format: uuid
+             * @description The member's `users.id`.
+             */
+            user_id: string;
+            /** @description The `display_order` of the member's highest role (lower ranks higher), or null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`. */
+            role_rank: number | null;
         };
         AddChannelMemberDto: {
             /** @description The `users.id` to add. Must be a member of the channel's chapter. */
@@ -4329,6 +4406,16 @@ export interface components {
             /** @default false */
             is_redacted: boolean;
         };
+        BackworkDownloadUrlDto: {
+            /** Format: uuid */
+            id: string;
+            /** @description Short-lived signed URL that downloads the file */
+            download_url: string;
+        };
+        BackworkDownloadUrlsResponseDto: {
+            /** @description In the order asked. An id not in this chapter, or that could not be signed, is left out. */
+            files: components["schemas"]["BackworkDownloadUrlDto"][];
+        };
         UpdateDepartmentDto: {
             /** @description Full department name */
             name?: string;
@@ -4762,6 +4849,11 @@ export interface components {
             created_at: string;
             /**
              * Format: date-time
+             * @description When the import finished. Null until then, and for one that failed or was stopped.
+             */
+            completed_at: string | null;
+            /**
+             * Format: date-time
              * @description A bot import's date cutoff (#2858): only messages sent at or after it. Null imports all history.
              */
             messages_after: string | null;
@@ -4796,12 +4888,17 @@ export interface components {
             created_at: string;
             /**
              * Format: date-time
+             * @description When the import finished. Null until then, and for one that failed or was stopped.
+             */
+            completed_at: string | null;
+            /**
+             * Format: date-time
              * @description A bot import's date cutoff (#2858): only messages sent at or after it. Null imports all history.
              */
             messages_after: string | null;
             /** @description Imported messages the deletion has removed so far (#2944), out of `imported_messages`. It can stop short of that total, so `purged` is what says the deletion finished. */
             purged_messages: number;
-            /** @description Channel and thread rows being imported. Null for an upload, and for a bot import that is not queued, running, failed or cancelled. */
+            /** @description Channel and thread rows being imported. Null for an upload, and for a bot import that is not queued, running, completed, failed or cancelled. */
             channels_total: number | null;
             /** @description Of those, how many are finished (imported, or skipped because Discord no longer showed them to the bot). Null when `channels_total` is. */
             channels_done: number | null;
@@ -4813,6 +4910,18 @@ export interface components {
             failed: number;
             /** @description Skipped by the worker: Discord no longer showed the channel to the bot when it got there. */
             skipped: number;
+        };
+        DiscordImportCategoryProgressDto: {
+            /** @description The Discord category; null for the channels in none. */
+            category: string | null;
+            /** @description Channels being imported: rows with no parent. */
+            channels: number;
+            /** @description Threads being imported, each counted under its parent channel's category. */
+            threads: number;
+            /** @description Channels and threads finished: imported, or skipped because Discord no longer showed them to the bot. */
+            done: number;
+            /** @description Channels and threads that failed. */
+            failed: number;
         };
         DiscordImportChannelProgressRowDto: {
             discord_channel_id: string;
@@ -4832,6 +4941,8 @@ export interface components {
         DiscordImportProgressDto: {
             /** @description Channel and thread rows being imported, by status. Rows mapped to skip are in no count. */
             counts: components["schemas"]["DiscordImportProgressCountsDto"];
+            /** @description The same rows added up per Discord category, by name (two categories of one name are one line, as they become one group): the channels in no category first, then the categories in Discord's order on a bot import, and on an upload, whose export records no order, in the order the import reaches them. A thread counts under its channel's category. `channels + threads` is the category's total; `done` of that total is finished. Rows mapped to skip are in no count. Empty when the sums could not be read; the rest of the progress still answers. */
+            categories: components["schemas"]["DiscordImportCategoryProgressDto"][];
             /** @description The rows running now, at most 5. On an import that is no longer moving, where it stopped. */
             running: components["schemas"]["DiscordImportChannelProgressRowDto"][];
             /** @description The rows finished last, most recent first, at most 5. */
@@ -4889,6 +5000,8 @@ export interface components {
             new_channel_visibility?: "chapter" | "restricted" | "discord";
             /** @description Permission strings that can read a `restricted` new channel; a member needs any one. Required and non-empty when `new_channel_visibility` is `restricted`. */
             new_channel_required_permissions?: string[];
+            /** @description The Frapp channel group the channel `create_new` makes goes into, by name: usually its Discord category, when the admin keeps categories as groups. Starting the import puts it in the chapter's group of that name (compared trimmed, in any case), or creates one, after the chapter's own groups and, on a bot import, in Discord's category order. Omitted, null or blank means no group. Ignored unless `mapping_action` is `create_new`: a merge leaves its channel where it is. */
+            new_channel_group?: string | null;
             message_count?: number;
         };
         SetDiscordChannelMappingDto: {
@@ -4915,7 +5028,7 @@ export interface components {
             discord_role_name: string;
         };
         DiscordDiscoveryResponseDto: {
-            /** @description Every channel in the server, and the threads of each channel the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. Each row carries `readable` (whether the bot can read its history; false rows can only be skipped, null means the scan could not tell) and `private_in_discord` (some member could not read its history in Discord; a thread is true when it is a private thread or its channel is private; null means the scan could not tell). A channel that is private, holds a private thread, or whose privacy is null needs an explicit `new_channel_visibility` to be created. A top-level channel that was private also carries `discord_reader_role_ids`: the Discord roles (from `roles`) that could read it, each on its own, which is what `new_channel_visibility: discord` copies. Empty when `@everyone` alone could read it (a deny hid it from someone); null when unknown. */
+            /** @description Every channel in the server, and the threads of each channel the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. Each row carries `readable` (whether the bot can read its history; false rows can only be skipped, null means the scan could not tell) and `private_in_discord` (some member could not read its history in Discord; a thread is true when it is a private thread or its channel is private; null means the scan could not tell). A channel that is private, holds a private thread, or whose privacy is null needs an explicit `new_channel_visibility` to be created. A top-level channel that was private also carries `discord_reader_role_ids`: the Discord roles (from `roles`) that could read it, each on its own, which is what `new_channel_visibility: discord` copies. Empty when `@everyone` alone could read it (a deny hid it from someone); null when unknown. A top-level channel in a Discord category carries `discord_category` (its name) and `discord_category_position` (its place in the server), which is how the admin keeps categories as channel groups (`new_channel_group`). */
             channels: {
                 [key: string]: unknown;
             }[];
@@ -6636,6 +6749,38 @@ export interface operations {
             };
         };
     };
+    InviteController_preview_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewInviteDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitePreviewResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     InviteController_redeem_v1: {
         parameters: {
             query?: never;
@@ -7296,6 +7441,36 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_listChannelMembers_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelMemberDto"][];
+                };
             };
             /** @description Error */
             default: {
@@ -9380,6 +9555,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_downloadUrls_v1: {
+        parameters: {
+            query: {
+                /** @description Comma-separated resource ids to sign, at most 50 */
+                ids: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackworkDownloadUrlsResponseDto"];
+                };
             };
             /** @description Error */
             default: {

@@ -60,12 +60,23 @@ export function sentryMarkerFrom(
   return {
     sentry_event_id: event.event_id,
     trace_id: traceIdFrom(event),
-    request_id: headerValue(event.request?.headers, REQUEST_ID_HEADER),
+    request_id:
+      headerValue(event.request?.headers, REQUEST_ID_HEADER) ??
+      requestIdTag(event.tags),
     route:
       typeof event.transaction === "string" ? event.transaction : undefined,
     status_class: extras?.statusClass ?? httpStatusClass(statusFrom(event)),
     release: typeof event.release === "string" ? event.release : undefined,
   };
+}
+
+/**
+ * The `request_id` tag, for an event with no request headers: a client's
+ * report of a failed query (`query-errors.ts`) carries the API's id there.
+ */
+function requestIdTag(tags: SentryEventFields["tags"]): string | undefined {
+  const tag = tags?.request_id;
+  return typeof tag === "string" && tag.length > 0 ? tag : undefined;
 }
 
 /**

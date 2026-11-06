@@ -103,7 +103,7 @@ describe("useClientPolicy", () => {
       );
       await settle();
     };
-    return { ...view, GET, refetch, settle };
+    return { ...view, GET, policyClient, refetch, settle };
   }
 
   const BLOCK = { data: { update_required: true, update_url: "https://a.test" } };
@@ -125,6 +125,31 @@ describe("useClientPolicy", () => {
     await waitFor(() => expect(GET).toHaveBeenCalled());
     await settle();
     expect(result.current).toEqual({ updateRequired: false, updateUrl: null });
+  });
+
+  // What a Sentry report groups by and joins on (`lib/sentry/query-errors.ts`).
+  it("throws a non-2xx with its status, and the body's request id and code", async () => {
+    const { GET, policyClient, settle } = setup([
+      { status: 503, data: { requestId: "req_abc", code: "DEGRADED", message: "x" } },
+    ]);
+    await waitFor(() => expect(GET).toHaveBeenCalled());
+    await settle();
+    const error = policyClient.getQueryState(CLIENT_POLICY_QUERY_KEY)?.error;
+    expect(error).toMatchObject({
+      statusCode: 503,
+      requestId: "req_abc",
+      code: "DEGRADED",
+    });
+  });
+
+  it("throws an empty-bodied non-2xx with only its status", async () => {
+    const { GET, policyClient, settle } = setup([{ status: 502 }]);
+    await waitFor(() => expect(GET).toHaveBeenCalled());
+    await settle();
+    const error = policyClient.getQueryState(CLIENT_POLICY_QUERY_KEY)?.error;
+    expect(error).toMatchObject({ statusCode: 502 });
+    expect(error).not.toHaveProperty("requestId");
+    expect(error).not.toHaveProperty("code");
   });
 
   it.each([

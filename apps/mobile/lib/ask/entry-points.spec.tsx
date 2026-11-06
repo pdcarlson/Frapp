@@ -33,13 +33,24 @@ vi.mock("@repo/hooks", () => {
   const now = new Date("2026-09-25T18:00:00Z");
   return {
     useNowDate: () => now,
+    // s06 gates its list on an active chapter (no chapter, no query).
+    useActiveChapterId: () => "chapter-1",
     useChannels: () => empty,
     useCategories: () => empty,
     useChannelUnreadCounts: () => empty,
     useEvents: () => empty,
+    useNotifications: () => empty,
+    useCurrentUser: () => empty,
     useTasks: () => empty,
     useViewerUserId: () => "viewer-1",
     useMemberDisplayNames: () => ({ byId: {} }),
+    useChapterRoster: () => empty,
+    useChapterSetupChecklist: () => ({
+      checklist: null,
+      hide: vi.fn(),
+      refetch: vi.fn(),
+    }),
+    useSidebarPreferencesRefetch: () => ({ refetch: vi.fn() }),
     useLeaveChannel: () => ({ mutateAsync: vi.fn() }),
     useGetOrCreateDm: () => ({ mutate: vi.fn() }),
     canHideConversation: () => false,
@@ -164,6 +175,28 @@ describe.each([
       pills[0].props.onPress();
     });
     expect(present).toHaveBeenCalledTimes(1);
+  });
+});
+
+// #3362: Chat home's notifications bell shares the title row with the pill,
+// and is drawn whether or not the build has Ask.
+describe("Chat home (s04) notifications bell", () => {
+  const screen = () => <ChatHomeScreen />;
+
+  it.each([
+    ["off", undefined],
+    ["on", "1"],
+  ])("draws the notifications bell with Ask %s", (_state, flag) => {
+    if (flag) process.env[ASK_FLAG_ENV_KEY] = flag;
+    const tree = render(screen());
+
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityLabel === "Notifications",
+      ),
+    ).toHaveLength(1);
   });
 });
 

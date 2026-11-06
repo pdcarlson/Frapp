@@ -11,7 +11,7 @@
 | Name        | **Frapp** ([ADR-25](../architecture/adr/adr-25.md), 2026-09-23). "Signet" is retired as a product name and remains the design system's internal name. |
 | Tagline     | "Ask your chapter anything."                                                                                |
 | Positioning | The AI-first operating system for Greek life — see [../product/positioning.md](../product/positioning.md)   |
-| Lane        | Dark-first, warm, **consumer** (Notion / Cash App), with de-Google guardrails. Not Linear/Vercel technical. |
+| Lane        | Dark-first, warm, **consumer** (Notion / Cash App), with de-Google guardrails. Not Linear/Vercel technical. Since 2026-11-05 the warmth comes from the gold accent, Figtree and the copy, not from the surfaces: the owner moved the surface ladder to a darker, pure neutral graphite ([foundations.md](design-system/foundations.md) §2). |
 
 **Naming rule (binding).** This is the one canonical statement; other docs link here.
 
@@ -68,7 +68,7 @@ Signet's mascot is a **seal (the animal)**. It is not a wax seal, a signet ring,
 
 ### Platform requirements when the real mark lands
 
-- **iOS:** Light, Dark, and Tinted app-icon variants. Provided by an Icon Composer bundle from which iOS derives every appearance, unverified until the first EAS build compiles it ([assets.md](assets.md) §7).
+- **iOS:** Light, Dark, and Tinted app-icon variants. Provided as PNGs named per appearance in `expo.ios.icon` ([assets.md](assets.md) §7).
 - **Android:** an adaptive icon with a monochrome layer.
 
 Asset production, storage, and sync are owned by [assets.md](assets.md).

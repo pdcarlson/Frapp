@@ -10,6 +10,7 @@ import {
   StripeWebhookEndpointMismatchError,
 } from './stripe-webhook-consistency';
 import { HANDLED_WEBHOOK_EVENT_TYPES } from './stripe-webhook-events';
+import { reportCaughtFailure } from '../observability/report-caught-failure';
 
 const WEBHOOK_LIST_TIMEOUT_MS = 8_000;
 
@@ -111,6 +112,7 @@ export class StripeWebhookConsistencyService implements OnModuleInit {
         expectedUrl,
         'account has no webhook endpoints at all',
       );
+      // caught-failure-exempt: rethrown from onModuleInit; main.ts captures the boot failure at fatal
       this.logger.error(err.message);
       throw err;
     }
@@ -118,17 +120,35 @@ export class StripeWebhookConsistencyService implements OnModuleInit {
     const endpoint = findEnabledEndpoint(endpoints, expectedUrl);
     if (!endpoint) {
       const forUrl = findEndpointsForUrl(endpoints, expectedUrl);
-      this.logger.error(
-        forUrl.length
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'stripe-webhook-endpoint-mismatch',
+        message: forUrl.length
           ? `Stripe has ${forUrl.length} endpoint(s) for ${expectedUrl} but none are enabled — ` +
-              'deliveries are not being sent. Re-enable it in the Stripe dashboard.'
+            'deliveries are not being sent. Re-enable it in the Stripe dashboard.'
           : `Stripe has ${endpoints.length} endpoint(s) on this account but none for ${expectedUrl} — ` +
-              'either this deployment receives no webhooks, or the endpoint is registered ' +
-              'against a different hostname for the same service. Not refusing boot, because ' +
-              'that would trade a billing outage for a total one.',
-      );
+            'either this deployment receives no webhooks, or the endpoint is registered ' +
+            'against a different hostname for the same service. Not refusing boot, because ' +
+            'that would trade a billing outage for a total one.',
+      });
       return;
     }
+
+    // A webhook payload's shape follows the endpoint's own api_version, or the
+    // account default when it is null, never the SDK's pinned version. An
+    // unnoticed default change is how invoice.paid lost its top-level
+    // `subscription` (#3204), so the boot log says whether this endpoint is
+    // pinned. This list call does not return the account default, so for an
+    // unpinned endpoint the version itself comes from BillingService, which
+    // logs the api_version every delivery carries. Logged, not warned: an
+    // unpinned endpoint works, because handleInvoicePaid reads both invoice
+    // shapes, and pinning means re-creating the endpoint, which rotates its
+    // signing secret (integrations.md § 7.1).
+    this.logger.log(
+      `Stripe endpoint ${expectedUrl} receives payloads at API version ` +
+        (endpoint.api_version ??
+          'the account default (unpinned); each delivery logs the version it carries'),
+    );
 
     const missing = missingEventTypes(
       endpoint.enabled_events,

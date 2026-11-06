@@ -60,7 +60,10 @@ describe("SettingsOrgTab", () => {
       enabled_modules: Record<string, boolean>;
     };
     expect(diff.org_archetype).toBe("nphc");
-    expect(diff.vocabulary).toMatchObject({ recruitment: "Intake", class: "Line" });
+    expect(diff.vocabulary).toMatchObject({
+      recruitment: "Intake",
+      class: "Line",
+    });
     // NPHC seeds points off by default — proves modules reset to the new archetype.
     expect(diff.enabled_modules.chat).toBe(true);
     expect(diff.enabled_modules.points).toBe(false);
@@ -125,7 +128,7 @@ describe("SettingsOrgTab", () => {
     ).toBeDisabled();
   });
 
-  it("names both profile permissions when the caller lacks them", () => {
+  it("says the role can't change settings, never which permission key it lacks", () => {
     render(
       <SettingsOrgTab
         archetypeKey="ifc"
@@ -139,8 +142,7 @@ describe("SettingsOrgTab", () => {
       screen.getAllByText(
         (_, node) =>
           node?.tagName === "P" &&
-          node.textContent ===
-            "Editing chapter settings requires the chapter-config:view and chapter-config:manage permissions.",
+          node.textContent === "Your role can't change chapter settings.",
       ),
     ).toHaveLength(2);
   });
@@ -193,7 +195,9 @@ describe("SettingsOrgTab chapter mark (#2876, #2591)", () => {
       />,
     );
     expect(tile()).toHaveTextContent("ΦΓΔ");
-    await user.click(screen.getByRole("switch", { name: /show greek letters/i }));
+    await user.click(
+      screen.getByRole("switch", { name: /show greek letters/i }),
+    );
     expect(tile()).toHaveTextContent("TC");
     expect(tile()).not.toHaveTextContent("ΦΓΔ");
   });
@@ -225,7 +229,9 @@ describe("SettingsOrgTab chapter mark (#2876, #2591)", () => {
       />,
     );
     await user.type(screen.getByLabelText(/short name/i), "FIJI");
-    await user.click(screen.getByRole("switch", { name: /show greek letters/i }));
+    await user.click(
+      screen.getByRole("switch", { name: /show greek letters/i }),
+    );
     await user.click(screen.getByRole("button", { name: /save mark/i }));
     expect(onPatchConfig).toHaveBeenCalledWith({
       branding: { short_name: "FIJI", show_greek_letters: false },
@@ -285,7 +291,9 @@ describe("SettingsOrgTab chapter mark (#2876, #2591)", () => {
     );
     expect(onUploadLogo).not.toHaveBeenCalled();
     expect(
-      screen.getByText("Choose an image file: .jpg, .jpeg, .png, .gif or .webp."),
+      screen.getByText(
+        "Choose an image file: .jpg, .jpeg, .png, .gif or .webp.",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -309,10 +317,14 @@ describe("SettingsOrgTab chapter mark (#2876, #2591)", () => {
 
     expect(onUploadLogo).not.toHaveBeenCalled();
     expect(
-      screen.getByText(`That file is too large. Logos can be up to ${MAX_UPLOAD_LABEL}.`),
+      screen.getByText(
+        `That file is too large. Logos can be up to ${MAX_UPLOAD_LABEL}.`,
+      ),
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/short name/i)).toHaveValue("FIJI");
-    expect(screen.getByLabelText(/chapter designation/i)).toHaveValue("Tau Nu II");
+    expect(screen.getByLabelText(/chapter designation/i)).toHaveValue(
+      "Tau Nu II",
+    );
   });
 
   it("keeps unsaved drafts when the page re-renders with the same stored values", async () => {
@@ -327,7 +339,9 @@ describe("SettingsOrgTab chapter mark (#2876, #2591)", () => {
       />,
     );
     await user.type(screen.getByLabelText(/short name/i), "FIJI");
-    await user.click(screen.getByRole("switch", { name: /show greek letters/i }));
+    await user.click(
+      screen.getByRole("switch", { name: /show greek letters/i }),
+    );
     await user.type(screen.getByLabelText(/chapter name/i), " II");
 
     rerender(
@@ -344,14 +358,20 @@ describe("SettingsOrgTab chapter mark (#2876, #2591)", () => {
     expect(
       screen.getByRole("switch", { name: /show greek letters/i }),
     ).toHaveAttribute("aria-checked", "false");
-    expect(screen.getByLabelText(/chapter name/i)).toHaveValue("Test Chapter II");
+    expect(screen.getByLabelText(/chapter name/i)).toHaveValue(
+      "Test Chapter II",
+    );
   });
 
   it("keeps unsaved identity and vocabulary drafts across a re-render with equal values", async () => {
     // The page rebuilds `branding` and `vocabulary` (`config?.vocabulary ?? {}`)
     // every render, so each effect must key on values, not the object.
     const user = userEvent.setup();
-    const stored = { greek_letters: "ΦΓΔ", designation: "Tau Nu", founded_at: 1893 };
+    const stored = {
+      greek_letters: "ΦΓΔ",
+      designation: "Tau Nu",
+      founded_at: 1893,
+    };
     const { rerender } = render(
       <SettingsOrgTab
         archetypeKey="ifc"
@@ -365,7 +385,10 @@ describe("SettingsOrgTab chapter mark (#2876, #2591)", () => {
     await user.clear(screen.getByLabelText(/founded year/i));
     await user.type(screen.getByLabelText(/founded year/i), "1894");
     await user.clear(screen.getByLabelText(/recruitment process/i));
-    await user.type(screen.getByLabelText(/recruitment process/i), "Recruitment");
+    await user.type(
+      screen.getByLabelText(/recruitment process/i),
+      "Recruitment",
+    );
 
     rerender(
       <SettingsOrgTab
@@ -376,9 +399,13 @@ describe("SettingsOrgTab chapter mark (#2876, #2591)", () => {
       />,
     );
 
-    expect(screen.getByLabelText(/chapter designation/i)).toHaveValue("Tau Nu II");
+    expect(screen.getByLabelText(/chapter designation/i)).toHaveValue(
+      "Tau Nu II",
+    );
     expect(screen.getByLabelText(/founded year/i)).toHaveValue(1894);
-    expect(screen.getByLabelText(/recruitment process/i)).toHaveValue("Recruitment");
+    expect(screen.getByLabelText(/recruitment process/i)).toHaveValue(
+      "Recruitment",
+    );
   });
 
   it("refuses to save an emptied founded year instead of silently keeping it", async () => {
@@ -397,7 +424,9 @@ describe("SettingsOrgTab chapter mark (#2876, #2591)", () => {
     expect(
       screen.getByText(/A founded year can't be removed once saved/),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /save identity/i })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /save identity/i }),
+    ).toBeDisabled();
   });
 
   it("re-seeds the drafts when the stored values really change", () => {
@@ -474,5 +503,81 @@ describe("SettingsOrgTab chapter mark (#2876, #2591)", () => {
     expect(
       screen.getByRole("switch", { name: /show greek letters/i }),
     ).toBeDisabled();
+  });
+});
+
+describe("SettingsOrgTab for an organization that hides its letters", () => {
+  // FIJI chapters created before the profile turned the letters off still
+  // store them, sometimes with the switch on.
+  const fiji = {
+    ...baseProps,
+    profile: { name: "Phi Gamma Delta", university: "RPI", donation_url: "" },
+    branding: {
+      greek_letters: "ΦΓΔ",
+      show_greek_letters: true,
+      designation: "Tau Nu",
+    },
+  };
+
+  it("draws neither for a chapter whose name adds to the organization's", () => {
+    render(
+      <SettingsOrgTab
+        archetypeKey="ifc"
+        {...fiji}
+        profile={{ ...fiji.profile, name: "Phi Gamma Delta Tau Nu" }}
+      />,
+    );
+    expect(screen.queryByLabelText(/^greek letters$/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("switch", { name: /show greek letters/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/ΦΓΔ/)).not.toBeInTheDocument();
+  });
+
+  it("draws neither the letters field nor the switch, and the mark skips them", () => {
+    render(<SettingsOrgTab archetypeKey="ifc" {...fiji} />);
+    expect(screen.queryByLabelText(/^greek letters$/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("switch", { name: /show greek letters/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByTestId(/chapter-mark-/)[0]!).not.toHaveTextContent(
+      "ΦΓΔ",
+    );
+    expect(screen.queryByText(/ΦΓΔ/)).not.toBeInTheDocument();
+  });
+
+  it("writes the letters off on the next mark save", async () => {
+    const user = userEvent.setup();
+    const onPatchConfig = vi.fn();
+    render(
+      <SettingsOrgTab
+        archetypeKey="ifc"
+        {...fiji}
+        onPatchConfig={onPatchConfig}
+      />,
+    );
+    await user.type(screen.getByLabelText(/short name/i), "FIJI");
+    await user.click(screen.getByRole("button", { name: /save mark/i }));
+    expect(onPatchConfig).toHaveBeenCalledWith({
+      branding: { short_name: "FIJI", show_greek_letters: false },
+    });
+  });
+
+  it("saves identity with the stored letters unchanged", () => {
+    const onPatchConfig = vi.fn();
+    render(
+      <SettingsOrgTab
+        archetypeKey="ifc"
+        {...fiji}
+        onPatchConfig={onPatchConfig}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /save identity/i }));
+    expect(onPatchConfig).toHaveBeenCalledWith({
+      branding: expect.objectContaining({
+        greek_letters: "ΦΓΔ",
+        designation: "Tau Nu",
+      }),
+    });
   });
 });

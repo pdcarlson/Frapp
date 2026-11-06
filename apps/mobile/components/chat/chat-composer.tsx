@@ -10,12 +10,24 @@ import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { formatBytes } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { CloseGlyph } from "@/components/control-glyphs";
+import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 
 /**
  * The s05 composer (`canvas-screens.dc.html:186-189`).
  *
- * Drawn as a 44pt input between a 38pt attach button and a 38pt send button,
- * above a top hairline.
+ * The board draws a 44pt input between a 38pt attach button and a 38pt send
+ * button, above a top hairline. The buttons here take the 44pt touch floor
+ * instead (components.md §2), and one line of input measures exactly that
+ * height, so the three share a top and a bottom edge until the draft wraps
+ * (`INPUT_LINE_HEIGHT`).
+ *
+ * **Send lights up when there is something to send.** It paints the chapter's
+ * solid accent (`accentPrimary` under `accentOnPrimary`, the pairing the chat
+ * cards and a poll's chosen option use), and nothing sendable draws it in the
+ * attach button's neutral recipe instead. A faded accent read as a muddy
+ * square rather than "not yet", and two different accent recipes sat side by
+ * side in the thread.
  *
  * The attach affordance used to be omitted here. The docblock said why — the
  * upload endpoint existed (`POST /v1/channels/{id}/upload-url`) but a picker,
@@ -106,7 +118,8 @@ export function ChatComposer({
   context = null,
 }: ChatComposerProps) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const brand = useChapterBranding();
+  const styles = createStyles(tokens, brand);
 
   // An empty or whitespace-only body is not a send — unless something is
   // attached. An attachment-only message is a real message, and gating it on
@@ -147,14 +160,14 @@ export function ChatComposer({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={composerCancelLabel(context.kind)}
-            hitSlop={12}
+            hitSlop={14}
             onPress={context.onCancel}
             style={({ pressed }) => [
               styles.chipRemove,
               pressed ? styles.pressed : null,
             ]}
           >
-            <Text style={styles.chipRemoveGlyph}>×</Text>
+            <CloseGlyph color={tokens.color.text.muted} size={16} />
           </Pressable>
         </View>
       ) : null}
@@ -174,14 +187,14 @@ export function ChatComposer({
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`Remove ${attachment.filename}`}
-                hitSlop={8}
+                hitSlop={14}
                 onPress={() => onRemoveAttachment?.(attachment.storagePath)}
                 style={({ pressed }) => [
                   styles.chipRemove,
                   pressed ? styles.pressed : null,
                 ]}
               >
-                <Text style={styles.chipRemoveGlyph}>×</Text>
+                <CloseGlyph color={tokens.color.text.muted} size={16} />
               </Pressable>
             </View>
           ))}
@@ -239,14 +252,36 @@ export function ChatComposer({
             pressed ? styles.pressed : null,
           ]}
         >
-          <Text style={styles.sendGlyph}>↑</Text>
+          <Text
+            style={[
+              styles.sendGlyph,
+              !isSendable ? styles.sendGlyphDisabled : null,
+            ]}
+          >
+            ↑
+          </Text>
         </Pressable>
       </View>
     </View>
   );
 }
 
-function createStyles(tokens: SignetTokens) {
+/**
+ * The input's line height. With body type's 16/25 and 12pt of padding above
+ * and below, an empty input on the first Android build measured about 75pt
+ * against its 44pt buttons, with the placeholder at the top of a box that
+ * looked two lines tall. 20 sits close to the font's own height, so Android
+ * (with its font padding off) and iOS lay one line out the same, and it is the
+ * figure the vertical padding is worked out from.
+ */
+const INPUT_LINE_HEIGHT = 20;
+const INPUT_BORDER = 1;
+
+function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
+  // What is left of the 44pt floor once one line and the border are drawn,
+  // split above and below, so a one-line input is exactly button height.
+  const inputPaddingY =
+    (tokens.touch.minimum - INPUT_LINE_HEIGHT - 2 * INPUT_BORDER) / 2;
   return StyleSheet.create({
     wrapper: {
       borderTopWidth: 1,
@@ -318,15 +353,13 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.muted,
       flexShrink: 0,
     },
+    // A 16pt × with 14pt of slop on each side reaches the 44pt floor (§2)
+    // without making the chip taller.
     chipRemove: {
       marginLeft: "auto",
       alignItems: "center",
       justifyContent: "center",
       paddingHorizontal: tokens.spacing.xs,
-    },
-    chipRemoveGlyph: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.muted,
     },
     row: {
       flexDirection: "row",
@@ -340,18 +373,29 @@ function createStyles(tokens: SignetTokens) {
       // pushed off screen by the composer alone.
       maxHeight: 120,
       borderRadius: tokens.radius.control,
-      borderWidth: 1,
+      borderWidth: INPUT_BORDER,
       borderColor: tokens.color.border.input,
       backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: tokens.spacing.md + 2,
-      paddingTop: tokens.spacing.md,
-      paddingBottom: tokens.spacing.md,
-      ...typeRole(tokens.typography.role.body),
+      // Top and bottom set apart, not `paddingVertical`: iOS gives a multiline
+      // input a default top inset that only an explicit `paddingTop` replaces.
+      paddingTop: inputPaddingY,
+      paddingBottom: inputPaddingY,
+      ...typeRole({
+        ...tokens.typography.role.body,
+        lineHeight: INPUT_LINE_HEIGHT,
+      }),
+      // `includeFontPadding` is Android's: off, a line is the line height and
+      // no more, which the padding above counts on. Centring keeps the
+      // placeholder on the buttons' midline should a device still measure the
+      // empty field a little tall.
+      includeFontPadding: false,
+      textAlignVertical: "center",
       color: tokens.color.text.foreground,
     },
-    // Deliberately NOT gold. Gold is the send affordance on this row, and two
-    // gold controls either side of the input would give the screen two primary
-    // actions.
+    // Deliberately NOT the accent. The accent is the send affordance on this
+    // row, and two accent controls either side of the input would give the
+    // screen two primary actions.
     attach: {
       width: tokens.touch.minimum,
       height: tokens.touch.minimum,
@@ -369,23 +413,34 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.title),
       color: tokens.color.text.muted,
     },
+    // A 1pt border in both states, so the box never shifts as the button flips
+    // between them. Lit, it is painted the accent, the same as the fill, so it
+    // reads as part of the fill; a lit fill that changes must change it too.
     send: {
       width: tokens.touch.minimum,
       height: tokens.touch.minimum,
       borderRadius: tokens.radius.chipLarge,
-      backgroundColor: tokens.color.gold.house,
+      borderWidth: 1,
+      borderColor: brand.accentPrimary,
+      backgroundColor: brand.accentPrimary,
       alignItems: "center",
       justifyContent: "center",
     },
+    // The attach button's recipe: nothing to send is a resting control, not a
+    // faded accent.
     sendDisabled: {
-      opacity: 0.4,
+      borderColor: tokens.color.border.input,
+      backgroundColor: tokens.color.surface.surface1,
     },
     pressed: {
       opacity: 0.7,
     },
     sendGlyph: {
       ...typeRole(tokens.typography.role.title),
-      color: tokens.color.gold.onHouse,
+      color: brand.accentOnPrimary,
+    },
+    sendGlyphDisabled: {
+      color: tokens.color.text.muted,
     },
   });
 }

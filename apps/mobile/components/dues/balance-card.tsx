@@ -2,8 +2,26 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { StatusChip } from "@/components/status-chip";
+import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { splitAmount, type DueState } from "@/lib/dues/invoices";
+import {
+  dueChipHue,
+  splitAmount,
+  type DueState,
+} from "@/lib/dues/invoices";
+
+/**
+ * One line about the member's last attempt to pay the invoice this card's CTA
+ * settles, drawn in the card's caption slot under the CTA.
+ *
+ * Here rather than above the card: the screen used to insert these as a bare
+ * caption over everything, so the card, the CTA the member had just tapped
+ * and the whole list jumped down the moment a payment came back.
+ */
+export interface BalanceCardStatus {
+  text: string;
+  tone: "neutral" | "destructive";
+}
 
 /**
  * The balance card at the top of s11 — `canvas-screens.dc.html`, `id="s11"`.
@@ -31,8 +49,39 @@ export interface BalanceCardProps {
   payLabel: string | null;
   /** Present when payment is blocked — the control disables and says why. */
   disabledReason: string | null;
-  /** Context shown under an *enabled* CTA, e.g. which invoice it pays. */
+  /**
+   * Context shown under an *enabled* CTA, e.g. which invoice it pays. Under a
+   * neutral `status` it isn't drawn, but it is still a live CTA's hint.
+   */
   footnote: string | null;
+  /**
+   * The card's invoice has a captured payment the invoice list doesn't read as
+   * settled yet (`spec/behavior/billing.md`: the webhook is the source of
+   * truth), so the chip reads Pending until it does; the screen keeps the card
+   * on this invoice meanwhile. The CTA stays live.
+   */
+  isPending?: boolean;
+  /**
+   * Pending, and the screen is still polling for the settlement right after
+   * the sheet: the CTA is disabled as "Confirming payment…" too.
+   */
+  isConfirming?: boolean;
+  /**
+   * About the invoice the CTA settles, so it takes the caption slot ahead of
+   * the blocker and the footnote. A failure is the CTA's accessibility hint;
+   * a neutral line (a payment already made, awaiting confirmation) is the
+   * hint only while the CTA is disabled or has no footnote, because a live
+   * CTA's hint says what a tap pays.
+   */
+  status?: BalanceCardStatus | null;
+  /**
+   * Captured payments for invoices the CTA no longer settles, one line each:
+   * the "Paid …" line once the invoice reads PAID, or the line saying it was
+   * voided or is gone. Each is drawn as its own line under the caption and
+   * never as the CTA's hint: it says nothing about the next invoice, and must
+   * not hide the footnote naming it.
+   */
+  receipts?: readonly string[];
   isPaying: boolean;
   onPay: () => void;
 }
@@ -44,6 +93,10 @@ export function BalanceCard({
   payLabel,
   disabledReason,
   footnote,
+  isPending = false,
+  isConfirming = false,
+  status = null,
+  receipts = [],
   isPaying,
   onPay,
 }: BalanceCardProps) {
@@ -52,20 +105,38 @@ export function BalanceCard({
   const styles = createStyles(tokens);
   const { whole, fraction } = splitAmount(amountCents);
 
-  const chipHue =
-    due?.state === "past-due"
-      ? tokens.color.semantic.destructive
-      : tokens.color.semantic.warning;
-  const disabled = isPaying || disabledReason !== null;
-  // The blocker wins over the context note: a member who cannot pay does not
-  // need to be told which invoice they cannot pay.
-  const caption = disabledReason ?? footnote;
+  const disabled = isPaying || isConfirming || disabledReason !== null;
+  // The last attempt's outcome wins, because it is what the member is waiting
+  // to read. Then the blocker over the context note: a member who cannot pay
+  // does not need to be told which invoice they cannot pay.
+  const caption = status?.text ?? disabledReason ?? footnote;
+  const captionIsFailure = status?.tone === "destructive";
+  // A neutral status is about a payment already made, not about what a tap
+  // does, so a live CTA keeps the footnote naming the invoice it pays as its
+  // hint. With several invoices open, the card's label says only how many.
+  const hint =
+    status?.tone === "neutral" && !disabled && footnote ? footnote : caption;
+  const buttonLabel = isPaying
+    ? "Opening…"
+    : isConfirming
+      ? "Confirming payment…"
+      : payLabel;
 
   return (
     <View style={styles.card}>
       <View style={styles.metaRow}>
         <Text style={styles.label}>{label}</Text>
-        {due ? <StatusChip label={due.label} hue={chipHue} /> : null}
+        {isPending || isConfirming ? (
+          <StatusChip
+            label="Pending"
+            hue={dueChipHue("pending", tokens.color.semantic)}
+          />
+        ) : due ? (
+          <StatusChip
+            label={due.label}
+            hue={dueChipHue(due.state, tokens.color.semantic)}
+          />
+        ) : null}
       </View>
 
       <Text
@@ -80,11 +151,11 @@ export function BalanceCard({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={payLabel}
-          accessibilityState={{ disabled, busy: isPaying }}
+          accessibilityState={{ disabled, busy: isPaying || isConfirming }}
           // §5 rule 4: disable and name the reason, never hide a recoverable
           // block — and the reason is wired to the control for a screen reader
           // rather than only sitting near it.
-          accessibilityHint={caption ?? undefined}
+          accessibilityHint={hint ?? undefined}
           disabled={disabled}
           onPress={onPay}
           style={({ pressed }) => [
@@ -95,17 +166,68 @@ export function BalanceCard({
           ]}
         >
           <Text style={[styles.payLabel, { color: tokens.color.gold.onHouse }]}>
-            {isPaying ? "Opening…" : payLabel}
+            {buttonLabel}
           </Text>
         </Pressable>
       ) : null}
 
-      {caption ? <Text style={styles.reason}>{caption}</Text> : null}
+      {caption ? (
+        <Text
+          style={[
+            styles.reason,
+            captionIsFailure ? styles.reasonFailure : null,
+          ]}
+          // Read out on Android when a payment comes back: the line is the
+          // outcome the member is waiting for.
+          accessibilityLiveRegion={status ? "polite" : undefined}
+        >
+          {caption}
+        </Text>
+      ) : null}
+
+      {receipts.map((receipt, index) => (
+        <Text
+          // Two invoices can share a title, so the position keeps keys apart.
+          key={`${index}:${receipt}`}
+          style={styles.reason}
+          accessibilityLiveRegion="polite"
+        >
+          {receipt}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
+/**
+ * The balance card before the invoices load, on the card's own styles: the
+ * label line, the amount at the display size, and the pay button.
+ * `CardListSkeleton` places it above the history list.
+ */
+export function BalanceCardSkeleton() {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const { caption, display } = tokens.typography.role;
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.metaRow}>
+        <SkeletonText role={caption} width="30%" />
+      </View>
+      <SkeletonText role={display} width="40%" style={styles.skeletonAmount} />
+      <SkeletonBlock
+        width="100%"
+        height={tokens.touch.buttonLarge}
+        radius={tokens.radius.control}
+        style={styles.skeletonButton}
+      />
     </View>
   );
 }
 
 function createStyles(tokens: SignetTokens) {
+  // Shared by the card's lines and its skeleton's, so the two can't drift.
+  const margin = { amount: tokens.spacing.sm, button: tokens.spacing.lg };
   return StyleSheet.create({
     card: {
       borderRadius: tokens.radius.cardLarge,
@@ -130,7 +252,7 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.display),
       letterSpacing: -0.8,
       color: tokens.color.text.foreground,
-      marginTop: tokens.spacing.sm,
+      marginTop: margin.amount,
     },
     amountFraction: {
       // The drawn second tier: the cents sit at roughly half the dollar size in
@@ -139,15 +261,21 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.muted,
     },
     payButton: {
-      // 50px as drawn, following `components/sheet-scaffold.tsx` — the
-      // reference wins over components.md §9's 46–48px band per
-      // `spec/ui/README.md`'s precedence rule, and diverging from the sheet CTA
-      // would put two different primary heights in one app.
-      height: 50,
+      // The Primary step (foundations.md §9), the same as the sheet CTA in
+      // `components/sheet-scaffold.tsx`: two primary heights in one app would
+      // read as two kinds of button.
+      height: tokens.touch.buttonLarge,
       borderRadius: tokens.radius.control,
       alignItems: "center",
       justifyContent: "center",
-      marginTop: tokens.spacing.lg,
+      marginTop: margin.button,
+    },
+    // The skeleton's lines take the margins the real ones do, from `margin`.
+    skeletonAmount: {
+      marginTop: margin.amount,
+    },
+    skeletonButton: {
+      marginTop: margin.button,
     },
     payButtonPressed: {
       opacity: 0.85,
@@ -163,6 +291,9 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.mutedForeground,
       textAlign: "center",
       marginTop: tokens.spacing.md,
+    },
+    reasonFailure: {
+      color: tokens.color.semantic.destructive,
     },
   });
 }

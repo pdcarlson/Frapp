@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OAuthButtons } from "./oauth-buttons";
 import { GOOGLE_MARK_COLORS } from "./oauth-brand-icons";
+import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth/oauth";
 
 describe("OAuthButtons", () => {
   it("renders Apple and Google as equal secondary actions", () => {
@@ -49,5 +50,18 @@ describe("OAuthButtons", () => {
     render(<OAuthButtons onSelect={vi.fn()} pending="apple" />);
     expect(screen.getByRole("button", { name: "Continue with Apple" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Continue with Google" })).toBeDisabled();
+  });
+
+  it("keeps the membership hint under the providers", () => {
+    // Invite links land on sign-in, and Apple there can make a Hide My Email
+    // account, so the hint is not a sign-up-only note.
+    render(<OAuthButtons onSelect={vi.fn()} />);
+    expect(screen.getByText(OAUTH_MEMBERSHIP_HINT)).toBeInTheDocument();
+  });
+
+  it("shows the provider's name and keeps the full phrase as the accessible name", () => {
+    render(<OAuthButtons onSelect={vi.fn()} />);
+    const apple = screen.getByRole("button", { name: "Continue with Apple" });
+    expect(apple.textContent).toBe("Apple");
   });
 });

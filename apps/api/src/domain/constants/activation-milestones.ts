@@ -13,9 +13,8 @@
  * module before anyone redeems an invite), which is precisely what the funnel
  * is for measuring; the order encodes the intended path, not a state machine.
  *
- * Names are kebab-case to match the existing event examples on
- * `AnalyticsEvent` in `@repo/validation` (`opened-channel`,
- * `ran-slash-command`).
+ * Names are kebab-case, like every other event the API sends
+ * (`spec/behavior/observability.md` § Feature Events).
  *
  * Only the API records milestones, so this lives here rather than in
  * `@repo/validation` (#3268).

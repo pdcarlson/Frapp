@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { MAX_UPLOAD_BYTES } from '@repo/validation';
 import { ChapterDocumentService } from './chapter-document.service';
+import { safeObjectFilename } from '#domain/constants/storage';
 import { CHAPTER_DOCUMENT_REPOSITORY } from '#domain/repositories/chapter-document.repository.interface';
 import type { IChapterDocumentRepository } from '#domain/repositories/chapter-document.repository.interface';
 import { CHAPTER_DOCUMENT_FOLDER_REPOSITORY } from '#domain/repositories/chapter-document-folder.repository.interface';
@@ -50,6 +51,7 @@ describe('ChapterDocumentService', () => {
     mockDocumentRepo = {
       findById: jest.fn(),
       findByChapter: jest.fn(),
+      findByStoragePath: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
       delete: jest.fn(),
       moveToRoot: jest.fn(),
@@ -107,6 +109,30 @@ describe('ChapterDocumentService', () => {
       expect(result.storagePath).toMatch(
         /^chapters\/ch-1\/documents\/[0-9a-f-]{36}\/R_sum_ _3 50_\.pdf$/,
       );
+    });
+
+    it('mints a key its own confirm accepts for a name ending in a space', async () => {
+      // The extension check trims, so `bylaws.pdf ` mints; a key ending in a
+      // space would then be refused at confirm, orphaning the uploaded bytes.
+      const { storagePath } = await service.requestUploadUrl({
+        chapterId: 'ch-1',
+        filename: 'bylaws.pdf ',
+        contentType: 'application/pdf',
+      });
+      expect(storagePath).toMatch(/\/bylaws\.pdf$/);
+      mockDocumentRepo.create.mockResolvedValue({
+        ...baseDocument,
+        storage_path: storagePath,
+      });
+
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          title: 'Bylaws',
+          storage_path: storagePath,
+          uploaded_by: 'user-1',
+        }),
+      ).resolves.toMatchObject({ storage_path: storagePath });
     });
 
     it('strips directory components from the filename before building the key', async () => {
@@ -208,6 +234,57 @@ describe('ChapterDocumentService', () => {
           folder: 'Governance',
         }),
       );
+    });
+
+    it('returns the row a retried confirm already filed, unchanged, and files nothing', async () => {
+      // A mobile retry after a lost response lands here (#3399).
+      mockDocumentRepo.findByStoragePath.mockResolvedValue(baseDocument);
+
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          title: 'Bylaws 2025',
+          folder: 'A folder nothing is filed into',
+          storage_path: baseDocument.storage_path,
+          uploaded_by: baseDocument.uploaded_by,
+        }),
+      ).resolves.toEqual(baseDocument);
+      expect(mockDocumentRepo.findByStoragePath).toHaveBeenCalledWith(
+        baseDocument.storage_path,
+        'ch-1',
+      );
+      expect(mockDocumentRepo.create).not.toHaveBeenCalled();
+      expect(mockFolderRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a path another member filed, registering no folder for it', async () => {
+      mockDocumentRepo.findByStoragePath.mockResolvedValue(baseDocument);
+
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          title: 'Bylaws 2025',
+          folder: 'Not mine',
+          storage_path: baseDocument.storage_path,
+          uploaded_by: 'user-2',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mockDocumentRepo.create).not.toHaveBeenCalled();
+      expect(mockFolderRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses another member who won a race past the read', async () => {
+      // `create` hands back the row a concurrent confirm filed (its 23505).
+      mockDocumentRepo.create.mockResolvedValue(baseDocument);
+
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          title: 'Bylaws 2025',
+          storage_path: baseDocument.storage_path,
+          uploaded_by: 'user-2',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('should create document with minimal metadata (no folder)', async () => {
@@ -404,6 +481,54 @@ describe('ChapterDocumentService', () => {
         expect(mockDocumentRepo.create).not.toHaveBeenCalled();
       },
     );
+
+    it.each([
+      // Each names the filed object `doc-1/bylaws.pdf` under another string,
+      // so it would pass the filed-row read and the unique index (#3399).
+      'chapters/ch-1/documents/doc-1/bylaws.pdf?alias',
+      'chapters/ch-1/documents/doc-1/bylaws.pdf#alias',
+      'chapters/ch-1/documents/doc-1/bylaw%73.pdf',
+      // The URL parser strips a trailing space, so this signs the filed object.
+      'chapters/ch-1/documents/doc-1/bylaws.pdf ',
+      // Not the `{documentId}/{filename}` the mint builds.
+      'chapters/ch-1/documents/bylaws.pdf',
+      'chapters/ch-1/documents/doc-1/extra/bylaws.pdf',
+      'chapters/ch-1/documents/doc-1/',
+      'chapters/ch-1/documents/doc-1//bylaws.pdf',
+    ])(
+      'rejects a storage_path that is not a minted key (%p)',
+      async (storagePath) => {
+        await expect(
+          service.confirmUpload({
+            chapter_id: 'ch-1',
+            title: 'Bylaws',
+            storage_path: storagePath,
+            uploaded_by: 'user-1',
+          }),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockDocumentRepo.findByStoragePath).not.toHaveBeenCalled();
+        expect(mockDocumentRepo.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('accepts every character a minted filename can keep', async () => {
+      const storagePath = `chapters/ch-1/documents/4a5c1f0e-3d2b-4c8a-9f1e-2b7d6c5a4e3f/${safeObjectFilename("Bob's notes (final), A&B $1=@;:+!*.pdf")}`;
+      mockDocumentRepo.create.mockResolvedValue({
+        ...baseDocument,
+        storage_path: storagePath,
+      });
+
+      await service.confirmUpload({
+        chapter_id: 'ch-1',
+        title: 'Notes',
+        storage_path: storagePath,
+        uploaded_by: 'user-1',
+      });
+
+      expect(mockDocumentRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ storage_path: storagePath }),
+      );
+    });
 
     it('should reject a storage_path outside the chapter (cross-chapter)', async () => {
       await expect(

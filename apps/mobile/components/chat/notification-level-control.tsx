@@ -10,8 +10,10 @@ import {
 import type { ChatNotificationLevel } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
-import { tint, typeRole, useFrappTheme } from "@/lib/theme";
-import { MuteGlyph } from "./mute-glyph";
+import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useChapterBranding } from "@/lib/chapter-branding";
+import { CheckGlyph } from "@/components/tasks/task-glyphs";
+import { OverflowGlyph } from "./overflow-glyph";
 
 /**
  * Per-channel notification level, from the thread header (#1406).
@@ -153,7 +155,6 @@ export function NotificationLevelControl({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
-  const isMuted = menu.level === "off";
   const glyphColor = menu.blocked
     ? tokens.color.text.muted
     : tokens.color.text.foreground;
@@ -170,8 +171,15 @@ export function NotificationLevelControl({
       onPress={menu.toggle}
       style={({ pressed }) => [styles.trigger, pressed ? styles.pressed : null]}
     >
-      <MuteGlyph color={glyphColor} active={isMuted} size={24} />
-      {isMuted ? <Text style={styles.mutedLabel}>Muted</Text> : null}
+      {/*
+        `⋯`, not the speaker (owner decision 2026-11-06): the level is a
+        setting a couple of taps away, not a state the header shows, so a
+        muted channel's header looks like any other (components.md § Chrome
+        weight). The level is still in the label for a screen reader, and on
+        the checked row once the menu opens. Until then this drew the speaker,
+        with an × when muted, and before that the word "Muted" beside it.
+      */}
+      <OverflowGlyph color={glyphColor} size={24} />
     </Pressable>
   );
 }
@@ -190,6 +198,12 @@ export function NotificationLevelControl({
  * while it is visible (`accessibilityViewIsModal` below is iOS-only). The
  * overlay rules, including why this is not a React Native `Modal`:
  * `spec/ui/mobile/patterns.md` § Overlays.
+ *
+ * The levels are a radio group, so the current one is a control the member
+ * switched on, and its checkmark is the one thing here in the chapter accent.
+ * The rows themselves stay neutral, the selected one included: no accent wash,
+ * the label in the foreground text, the description muted (foundations.md §6,
+ * "Where the accent goes", 2026-11-05).
  */
 export function NotificationLevelMenu({
   menu,
@@ -204,6 +218,7 @@ export function NotificationLevelMenu({
   anchor: { top: number; right: number };
 }) {
   const { tokens } = useFrappTheme();
+  const brand = useChapterBranding();
   const styles = createStyles(tokens);
   const titleRef = useRef<React.ComponentRef<typeof Text>>(null);
 
@@ -214,7 +229,14 @@ export function NotificationLevelMenu({
   if (!menu.visible) return null;
 
   return (
-    <View accessibilityViewIsModal style={styles.fill}>
+    // No Cancel row (components.md § Chrome weight): a tap outside, Android
+    // back (`useBackToClose`) and VoiceOver's escape gesture close it, and a
+    // pick closes it too.
+    <View
+      accessibilityViewIsModal
+      onAccessibilityEscape={menu.close}
+      style={styles.fill}
+    >
       <Pressable
         testID="notification-level-backdrop"
         accessible={false}
@@ -229,7 +251,7 @@ export function NotificationLevelMenu({
         <Text ref={titleRef} style={styles.menuTitle}>
           Notify me about
         </Text>
-        {NOTIFICATION_LEVEL_OPTIONS.map((option) => {
+        {NOTIFICATION_LEVEL_OPTIONS.map((option, index) => {
           const selected = option.level === menu.level;
           return (
             <Pressable
@@ -244,44 +266,37 @@ export function NotificationLevelMenu({
               }}
               style={({ pressed }) => [
                 styles.option,
-                selected ? styles.optionSelected : null,
+                index > 0 ? styles.optionDivided : null,
                 pressed ? styles.pressed : null,
               ]}
             >
-              <Text
-                style={[
-                  styles.optionLabel,
-                  selected ? styles.optionLabelSelected : null,
-                ]}
+              <View style={styles.optionText}>
+                <Text style={styles.optionLabel}>{option.label}</Text>
+                <Text style={styles.optionDescription}>
+                  {option.description}
+                </Text>
+              </View>
+              {/* A fixed slot, so the text wraps the same whichever row is
+                  on. Decorative: `selected` already says it. */}
+              <View
+                style={styles.optionCheck}
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
               >
-                {option.label}
-              </Text>
-              <Text
-                style={[
-                  styles.optionDescription,
-                  selected ? styles.optionDescriptionSelected : null,
-                ]}
-              >
-                {option.description}
-              </Text>
+                {selected ? (
+                  <CheckGlyph color={brand.accent} size={OPTION_CHECK_SIZE} />
+                ) : null}
+              </View>
             </Pressable>
           );
         })}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Cancel"
-          onPress={menu.close}
-          style={({ pressed }) => [
-            styles.cancel,
-            pressed ? styles.pressed : null,
-          ]}
-        >
-          <Text style={styles.cancelLabel}>Cancel</Text>
-        </Pressable>
       </View>
     </View>
   );
 }
+
+/** The selected level's checkmark, at the tab family's small size. */
+const OPTION_CHECK_SIZE = 16;
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
@@ -292,10 +307,6 @@ function createStyles(tokens: SignetTokens) {
       minHeight: 44,
       minWidth: 44,
       justifyContent: "center",
-    },
-    mutedLabel: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.foreground,
     },
     pressed: {
       opacity: 0.6,
@@ -316,47 +327,42 @@ function createStyles(tokens: SignetTokens) {
       borderColor: tokens.color.border.hairline,
       borderRadius: tokens.radius.control,
     },
+    // A quiet caption in sentence case, with no rule under it: the menu's
+    // name, not a boxed header.
     menuTitle: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
-      textTransform: "uppercase",
       paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.md,
-      borderBottomWidth: 1,
-      borderBottomColor: tokens.color.border.hairline,
+      paddingTop: tokens.spacing.md,
+      paddingBottom: tokens.spacing.xs,
     },
     option: {
+      flexDirection: "row",
+      alignItems: "center",
       paddingHorizontal: tokens.spacing.md,
       paddingVertical: tokens.spacing.md,
-      borderBottomWidth: 1,
-      borderBottomColor: tokens.color.border.hairline,
+      gap: tokens.spacing.md,
+    },
+    // Hairlines between the levels only, not under the last: with no Cancel
+    // row below it, a closing rule would underline the menu's own edge.
+    optionDivided: {
+      borderTopWidth: 1,
+      borderTopColor: tokens.color.border.hairline,
+    },
+    optionText: {
+      flex: 1,
       gap: tokens.spacing.xs,
     },
-    optionSelected: {
-      backgroundColor: tint(tokens.color.gold.house, 0.18),
+    optionCheck: {
+      width: OPTION_CHECK_SIZE,
+      alignItems: "center",
     },
     optionLabel: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
     },
-    optionLabelSelected: {
-      color: tokens.color.gold.askText,
-    },
     optionDescription: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    optionDescriptionSelected: {
-      color: tokens.color.gold.askText,
-    },
-    cancel: {
-      minHeight: 44,
-      alignItems: "center",
-      justifyContent: "center",
-      paddingHorizontal: tokens.spacing.md,
-    },
-    cancelLabel: {
-      ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.mutedForeground,
     },
   });

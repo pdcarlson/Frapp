@@ -27,6 +27,23 @@ import {
 } from '../../application/services/module-gate';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { isWithinSubscriptionGrace } from '#domain/constants/subscription-grace';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
+import { lookupUnavailable } from './guard-lookup';
+
+/**
+ * Every lookup here tells "no row" (`.maybeSingle()`'s `null`, the 4xx it
+ * always was) from "the lookup failed" (an `error`, a 503 with the query as
+ * its cause; `lookupUnavailable`, #3143), so a pool exhaustion or a statement
+ * timeout no longer tells a valid member they are not one.
+ */
+const LOOKUP_FAILED = 'Could not verify your chapter membership right now';
+
+// A `RegExp` rather than a literal: `subscription-refusal-parity.test.mjs`
+// scans this file and cannot read regex literals.
+const UUID_PATTERN = new RegExp(
+  '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+  'i',
+);
 
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -49,12 +66,18 @@ export class ChapterGuard implements CanActivate {
 
     // Resolved before the chapter context, because auto-resolving a
     // single-chapter user requires knowing which memberships they hold.
-    const { data: appUser } = await this.supabase
+    const { data: appUser, error: appUserError } = await this.supabase
       .from('users')
       .select('id')
       .eq('supabase_auth_id', supabaseUser.id)
-      .single<{ id: string }>();
+      .maybeSingle<{ id: string }>();
 
+    if (appUserError) {
+      throw lookupUnavailable(
+        LOOKUP_FAILED,
+        new SupabaseQueryError(appUserError),
+      );
+    }
     if (!appUser) {
       throw new ForbiddenException('User profile not found');
     }
@@ -74,16 +97,22 @@ export class ChapterGuard implements CanActivate {
       });
     }
 
-    const { data: chapter } = await this.supabase
+    const { data: chapter, error: chapterError } = await this.supabase
       .from('chapters')
       .select('subscription_status, past_due_since, enabled_modules')
       .eq('id', chapterId)
-      .single<{
+      .maybeSingle<{
         subscription_status: SubscriptionStatus;
         past_due_since: string | null;
         enabled_modules: Record<string, boolean> | null;
       }>();
 
+    if (chapterError) {
+      throw lookupUnavailable(
+        LOOKUP_FAILED,
+        new SupabaseQueryError(chapterError),
+      );
+    }
     if (!chapter) {
       throw new ForbiddenException('Chapter not found');
     }
@@ -141,6 +170,16 @@ export class ChapterGuard implements CanActivate {
 
     const explicit = jwtChapterId ?? headerChapterId;
     if (explicit) {
+      // A chapter id that is not a uuid names no chapter, so it is refused as
+      // one the caller is not a member of. Checked here because Postgres
+      // answers a malformed uuid comparison with an error (22P02), not zero
+      // rows, which the membership lookup would now report as a 503 (#3143).
+      if (!UUID_PATTERN.test(explicit)) {
+        throw new ForbiddenException({
+          code: 'chapter.context.invalid',
+          message: 'You are not a member of the requested chapter.',
+        });
+      }
       // #688: Postgres `uuid` comparison is case-insensitive, so an
       // uppercase-cased header/claim is authorized normally — but storage
       // prefix math (profileFolderPrefix, backwork/chapter-document/chat
@@ -154,11 +193,20 @@ export class ChapterGuard implements CanActivate {
     }
 
     // Two rows is all it takes to tell "exactly one" from "more than one".
-    const { data: memberships } = await this.supabase
+    const { data: memberships, error: membershipsError } = await this.supabase
       .from('members')
       .select('id, role_ids, custom_role_ids, chapter_id')
       .eq('user_id', appUserId)
       .limit(2);
+
+    // Without this a failed read fell through to `chapter.context.required`,
+    // a 400 telling a single-chapter member to pick a chapter they already have.
+    if (membershipsError) {
+      throw lookupUnavailable(
+        LOOKUP_FAILED,
+        new SupabaseQueryError(membershipsError),
+      );
+    }
 
     if (memberships?.length === 1) {
       const sole = memberships[0] as MemberContext & { chapter_id: string };
@@ -176,13 +224,16 @@ export class ChapterGuard implements CanActivate {
     appUserId: string,
     chapterId: string,
   ): Promise<MemberContext | null> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('members')
       .select('id, role_ids, custom_role_ids')
       .eq('user_id', appUserId)
       .eq('chapter_id', chapterId)
-      .single();
+      .maybeSingle();
 
+    if (error) {
+      throw lookupUnavailable(LOOKUP_FAILED, new SupabaseQueryError(error));
+    }
     return data ?? null;
   }
 

@@ -10,6 +10,7 @@ import {
   reportsFolderPrefix,
 } from '#domain/constants/storage';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /**
  * How long a generated report survives after it is written.
@@ -123,12 +124,12 @@ export class ReportRetentionService {
         );
       } catch (error) {
         failed += 1;
-        logThrowable(
-          this.logger,
-          'error',
-          `report retention sweep: chapter ${chapterId} failed`,
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'report-retention-sweep-chapter-failed',
+          message: `report retention sweep: chapter ${chapterId} failed`,
           error,
-        );
+        });
       }
     }
 
@@ -180,6 +181,7 @@ export class ReportRetentionService {
         await this.purgeChapterReports(chapterId);
       } catch (error) {
         failures.push(chapterId);
+        // caught-failure-exempt: rethrown in one aggregate error below; AccountDeletionService reports it once as account-deletion-report-purge
         logThrowable(
           this.logger,
           'error',

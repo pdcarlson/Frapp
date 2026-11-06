@@ -7,7 +7,9 @@ import React, {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
 } from "react";
+import { usePathname } from "next/navigation";
 import {
   useFrappClient,
   useActiveChapterId,
@@ -19,6 +21,7 @@ import {
 } from "@repo/validation";
 import {
   applyAnalyticsOptOut,
+  createRouteViewRecorder,
   namedAnalyticsEventBody,
 } from "@repo/observability/identified-posthog";
 
@@ -51,7 +54,8 @@ import {
  * `track` posts named product events to the API only. PostHog JS does **not**
  * capture those names — the API adapter already forwards them, and a second
  * `posthog.capture` would double-count. The JS SDK is identify / groups /
- * flags / replay-gates / the `sentry-error-correlated` marker.
+ * flags / replay-gates / the `sentry-error-correlated` marker / one
+ * `$pageview` per route, recorded as its route template (#3382).
  *
  * `track` is fire-and-forget: a failed event must never disrupt the UI.
  *
@@ -90,10 +94,29 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
     applyAnalyticsOptOut(optedOut);
   }, [optedOut]);
 
+  // One `$pageview` per visit, as its route template (#3382). Declared after the
+  // opt-out effect so the gate the recorder checks is already current when
+  // this runs, and keyed on `optedOut` so the route the member is on is
+  // recorded once the chapter read opts in. The recorder keeps the visit, so a
+  // gate that flips while the member stays put (a chapter switch reloads the
+  // chapter read) records nothing more. Lives here, not in a child: a child's
+  // effects run before this provider's, while the gate still holds the
+  // previous answer.
+  const pathname = usePathname();
+  const [recordRouteView] = useState(createRouteViewRecorder);
+  useEffect(() => {
+    recordRouteView(pathname);
+  }, [optedOut, pathname, recordRouteView]);
+
   const track = useCallback<TrackFn>(
     (name, properties) => {
       if (optedOutRef.current) return;
-      const body = namedAnalyticsEventBody({ name, chapterId, properties });
+      const body = namedAnalyticsEventBody({
+        name,
+        app: "web",
+        chapterId,
+        properties,
+      });
       if (!body) return;
       void client
         .POST("/v1/analytics/events", { body })

@@ -10,6 +10,7 @@ import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interf
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import type { IChatChannelRepository } from '#domain/repositories/chat.repository.interface';
 import { ChannelCacheService } from './channel-cache.service';
+import { topRoleColor } from '@repo/validation';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
@@ -85,10 +86,19 @@ export interface MemberRosterEntry {
   user_id: string;
   display_name: string;
   avatar_url: string | null;
+  /**
+   * The palette color of the member's highest-ranked colored role, or `null`
+   * (#3485). Chat paints the author's name in it. Computed here so a chat
+   * surface needs no second roles read and never sees `role_ids`.
+   */
+  role_color: string | null;
 }
 
-/** A {@link MemberRosterEntry} plus the membership's join timestamp. */
-export interface RecentMemberJoin extends MemberRosterEntry {
+/** A member's name and photo plus the membership's join timestamp. */
+export interface RecentMemberJoin extends Omit<
+  MemberRosterEntry,
+  'role_color'
+> {
   joined_at: string;
 }
 
@@ -151,7 +161,8 @@ export class MemberService {
    *
    * Costs the membership read plus one chunked user read per `ID_CHUNK_SIZE`
    * ids — two round trips for a chapter up to 100 members, three up to 200 —
-   * and the chunks go out concurrently, so latency stays near one. Note the
+   * and the chunks go out concurrently, so latency stays near one. The roles
+   * read that colors each entry runs beside the user read, adding no trip. Note the
    * membership read is still `select('*')` and only `user_id` is used from it;
    * narrowing that is separate work.
    *
@@ -164,8 +175,30 @@ export class MemberService {
     if (!members.length) return [];
 
     const userIds = [...new Set(members.map((member) => member.user_id))];
-    const identities = await this.userRepo.findDisplayIdentitiesByIds(userIds);
+    const [identities, roles] = await Promise.all([
+      this.userRepo.findDisplayIdentitiesByIds(userIds),
+      // Role colors only decorate names, so a failed roles read paints every
+      // name plain rather than taking the whole roster (and with it every
+      // chat author and DM title) down.
+      this.roleRepo.findByChapter(chapterId).catch((error: unknown) => {
+        logThrowable(
+          this.logger,
+          'warn',
+          `Roster role colors unavailable for chapter ${chapterId}`,
+          error,
+        );
+        return [];
+      }),
+    ]);
     const byId = new Map(identities.map((user) => [user.id, user]));
+    // A user holds one membership per chapter, but the read is not keyed that
+    // way, so a duplicate row unions its roles rather than replacing them.
+    const roleIdsByUser = new Map<string, string[]>();
+    for (const member of members) {
+      const held = roleIdsByUser.get(member.user_id) ?? [];
+      held.push(...(member.role_ids ?? []));
+      roleIdsByUser.set(member.user_id, held);
+    }
 
     const roster: MemberRosterEntry[] = [];
     for (const userId of userIds) {
@@ -175,6 +208,7 @@ export class MemberService {
         user_id: user.id,
         display_name: user.display_name,
         avatar_url: user.avatar_url,
+        role_color: topRoleColor(roles, roleIdsByUser.get(userId) ?? []),
       });
     }
     return this.photoUrls.signRows(roster, (entry) => entry.user_id);
@@ -335,8 +369,9 @@ export class MemberService {
    * retried request cannot grow the column without bound.
    *
    * Read-then-write rather than a Postgres `array_append`, because the repository
-   * boundary takes whole column values and the array is at most four entries —
-   * the width of `OPS_NUDGE_MODULES`.
+   * boundary takes whole column values and the array is at most five entries —
+   * the width of `MEMBER_DISMISSAL_KEYS` (the four nudges and the setup
+   * checklist).
    *
    * That does open a lost-update window, and it is **reachable**, not theoretical:
    * dismissing one nudge falls the next one through immediately, putting a fresh
@@ -440,6 +475,7 @@ export class MemberService {
     } catch (error) {
       // The prune has committed, so a member who is still in the chapter is
       // now off these channels. Say which, so an officer can add them back.
+      // caught-failure-exempt: rethrown; AllExceptionsFilter reports the 5xx
       logThrowable(
         this.logger,
         'error',

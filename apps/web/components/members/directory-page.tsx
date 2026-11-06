@@ -3,10 +3,9 @@
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { NestedLoading } from "@/components/shared/nested-states";
-import { PageHeader } from "@/components/layout/page-header";
 import { MembersDirectory } from "@/components/members/members-directory";
 import { AlumniDirectory } from "@/components/alumni/alumni-directory";
+import { DirectoryBodySkeleton } from "@/components/members/directory-skeleton";
 
 /**
  * Actives and alumni, one surface, two tabs.
@@ -89,12 +88,9 @@ export function DirectoryPage() {
   return (
     <div className="space-y-6">
       {/*
-        Outside the Suspense boundary so the heading is there on the pending
-        path too — the shell no longer supplies one (#2141), and `PageHeader`'s
-        own contract is that a route renders it on every path it can take.
-
-        **No `actions` here, and that is a decision rather than an omission.**
-        `1f` pin 2 puts a route's primary action in this row, and lane 4 duly
+        **No `PageActions` row here, and that is a decision rather than an
+        omission.** `1f` pin 2 puts a route's primary action in that row, and
+        lane 4 duly
         put `/documents`' Upload in it — behind `<Can permission="…">`. This
         route has no `<Can>` anywhere; the only client mirror of `members:view`
         is the sidebar entry in `components/layout/nav-config.ts`. Adding one is
@@ -109,22 +105,16 @@ export function DirectoryPage() {
         still fires a guaranteed 403 whenever they open the default tab. What
         this placement buys is that the 403 is not *widened* to the Alumni tab
         and to the loading, error and offline paths, which is where mounting
-        Invite in an unguarded `PageHeader` would put it. #2170 carries the
+        Invite in an unguarded `PageActions` row would put it. #2170 carries the
         actual fix (gate the hook, gate the control). It is also the more honest
         home regardless: you invite people onto the roster, and the alumni tab
         has no invite.
       */}
-      <PageHeader title="Directory" />
       {/*
-        The nested loading state, not the whole-screen one, for the reason
-        `members-directory.tsx` spells out at its own import: the whole-screen
-        family paints `--card`, and this route has no cards left. `sole` because
-        while this fallback is up it is the only async state on the page, so it
-        needs the live region the nested variant leaves off by default.
+        The tab row and roster rows, drawn as they will load, so reading
+        `?tab=` does not swap a placeholder for the page.
       */}
-      <Suspense
-        fallback={<NestedLoading sole message="Loading directory..." />}
-      >
+      <Suspense fallback={<DirectoryBodySkeleton />}>
         <DirectoryPageContent />
       </Suspense>
     </div>

@@ -1,7 +1,16 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+
+/**
+ * Role write bodies, read from the contract rather than restated: `color` is a
+ * palette enum there (#3485), which a hand-written `string` would hide until
+ * the API refused the request.
+ */
+export type CreateRoleBody = components["schemas"]["CreateRoleDto"];
+export type UpdateRoleBody = components["schemas"]["UpdateRoleDto"];
 
 export function useRoles() {
   const client = useFrappClient();
@@ -24,9 +33,7 @@ export function usePermissionsCatalog() {
   return useQuery({
     queryKey: ["roles", chapterId, "permissions-catalog"],
     queryFn: async () => {
-      const { data, error } = await client.GET(
-        "/v1/roles/permissions-catalog",
-      );
+      const { data, error } = await client.GET("/v1/roles/permissions-catalog");
       if (error) throw error;
       return data;
     },
@@ -40,12 +47,7 @@ export function useCreateRole() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
-    mutationFn: async (body: {
-      name: string;
-      permissions: string[];
-      display_order?: number;
-      color?: string;
-    }) => {
+    mutationFn: async (body: CreateRoleBody) => {
       const { data, error } = await client.POST("/v1/roles", { body });
       if (error) throw error;
       return data;
@@ -61,18 +63,7 @@ export function useUpdateRole() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
-    mutationFn: async ({
-      id,
-      body,
-    }: {
-      id: string;
-      body: {
-        name?: string;
-        permissions?: string[];
-        display_order?: number;
-        color?: string;
-      };
-    }) => {
+    mutationFn: async ({ id, body }: { id: string; body: UpdateRoleBody }) => {
       const { data, error } = await client.PATCH("/v1/roles/{id}", {
         params: { path: { id } },
         body,
@@ -82,6 +73,17 @@ export function useUpdateRole() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roles", chapterId] });
+      // The roster's `role_color` is computed from role colors and order
+      // (#3485), so a role edit or delete repaints chat names now, not after
+      // the roster's 60s staleTime.
+      queryClient.invalidateQueries({
+        queryKey: ["members", chapterId, "roster"],
+      });
+      // A role's permissions decide who reads a ROLE_GATED channel, and its
+      // order ranks the channel member list (#3536).
+      queryClient.invalidateQueries({
+        queryKey: ["members", chapterId, "channel"],
+      });
     },
   });
 }
@@ -100,12 +102,25 @@ export function useDeleteRole() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roles", chapterId] });
+      // The roster's `role_color` is computed from role colors and order
+      // (#3485), so a role edit or delete repaints chat names now, not after
+      // the roster's 60s staleTime.
+      queryClient.invalidateQueries({
+        queryKey: ["members", chapterId, "roster"],
+      });
+      // A role's permissions decide who reads a ROLE_GATED channel, and its
+      // order ranks the channel member list (#3536).
+      queryClient.invalidateQueries({
+        queryKey: ["members", chapterId, "channel"],
+      });
       // Deleting a role can clear `chapters.default_invite_role_id` server-side
       // via `on delete set null` (#422). The config query has a 5-minute
       // staleTime, so without this the Settings card keeps showing the deleted
       // id and warns that the default "no longer exists" — about a setting the
       // server has already nulled.
-      queryClient.invalidateQueries({ queryKey: ["chapter-config", chapterId] });
+      queryClient.invalidateQueries({
+        queryKey: ["chapter-config", chapterId],
+      });
     },
   });
 }

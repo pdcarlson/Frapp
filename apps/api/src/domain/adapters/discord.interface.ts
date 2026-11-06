@@ -75,6 +75,19 @@ export class DiscordNotConfiguredError extends Error {
 }
 
 /**
+ * An import stopped on a condition the admin can see and fix, its message the
+ * sentence the Watch panel shows. Not a fault: the import sweep logs it and
+ * does not report it to Sentry. Both the import worker and the bot export
+ * worker throw it, so it lives here rather than in either.
+ */
+export class DiscordImportStoppedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DiscordImportStoppedError';
+  }
+}
+
+/**
  * One channel the bot can read, as Discord reported it.
  *
  * `guildId` is carried explicitly and is **always** the value from Discord's
@@ -87,6 +100,12 @@ export interface DiscordChannelRef {
   guildId: string | null;
   /** Category name for a top-level channel; the parent channel for a thread. */
   categoryName: string | null;
+  /**
+   * The category's position in the server, for a top-level channel in one.
+   * Absent or null for a thread, a channel with no category, and wherever the
+   * position was not read.
+   */
+  categoryPosition?: number | null;
   /** Set only for threads — the channel the thread lives in. */
   parentChannelId: string | null;
   isThread: boolean;

@@ -171,10 +171,16 @@ await import("./tiers/hide-direct-message.mjs");
 await import("./tiers/private-channel-members.mjs");
 await import("./tiers/sidebar-section-fold.mjs");
 await import("./tiers/unread-counts-blocked-sender.mjs");
+await import("./tiers/unread-counts-skip-audit-mirror.mjs");
 await import("./tiers/discord-author-links.mjs");
 await import("./tiers/discord-import-purge.mjs");
 await import("./tiers/discord-import-merge-target.mjs");
+await import("./tiers/discord-import-channel-groups.mjs");
+await import("./tiers/discord-import-category-progress.mjs");
 await import("./tiers/dm-one-per-pair.mjs");
+await import("./tiers/document-one-row-per-object.mjs");
+await import("./tiers/default-channel-descriptions.mjs");
+await import("./tiers/backwork-search.mjs");
 
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,

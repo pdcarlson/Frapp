@@ -59,12 +59,15 @@ layers are that job's steps named `inputs.environment == 'production'`:
    shipped with `vercel deploy --prebuilt --prod`) → **source-map check** ([§ Source maps](#source-maps);
    reports, never fails) → **tag**. A failure after the approval opens the
    P1 *Deploy production failed* alert issue ([`alert-routing.md`](../alert-routing.md#automated-github-issue-alerts)).
-8. **Store builds, only when asked** — with `mobile_build` set to `ios`, `android` or `all`, and
-   only after a `full` ship and its tag succeed, `_mobile-build.yml` builds the same commit on EAS,
-   uploads it without releasing it, and opens the `shipped-builds.json` PR
-   ([`mobile.md` § 6.6](mobile.md#66-store-submission)). A failure there leaves production and the
-   tag as they are and opens no alert issue: the *Deploy production failed* alert above covers the
-   ship, not the store build.
+8. **Store builds and OTA updates, only when asked** — with `mobile_build` set to `ios`,
+   `android`, `all` or `auto`, and only after a `full` ship and its tag succeed, `mobile-plan`
+   decides per platform ([`mobile.md` § 6.6](mobile.md#66-store-submission)). A store build:
+   `_mobile-build.yml` builds the same commit on EAS, uploads it without releasing it, and opens
+   the `shipped-builds.json` PR. An OTA update (`auto` only, where the native inputs still match
+   the recorded store build): `_mobile-update.yml` publishes the same commit through the guard
+   ([`mobile.md` § 6.7](mobile.md#67-ota-updates)). A failure there leaves production and the tag
+   as they are and opens no alert issue: the *Deploy production failed* alert above covers the
+   ship, not the app.
 
 > **Corrected 2026-09-28 (#2805):** until #2805 production had its own copy of these steps in
 > `deploy-production.yml`, with three differences that were accidents: `npm ci` and the Vercel CLI
@@ -297,6 +300,7 @@ Every surface uploads its source maps to Sentry during its build, best effort: a
 - **Whose bundle counts:** staging and production upload the same commit to the same Sentry projects, so only a bundle uploaded since this run's builds began counts (the `builds-start` step notes the time). Web and landing inline each environment's `NEXT_PUBLIC_*` values, so staging's maps don't fit production's chunks. The API's dist is the same in both, but it carries debug IDs only if that environment's Render build injected them, which a build without the token, or with a failed inject, did not. Two known limits, both loud: a same-commit redeploy where Render reuses its cached upload layer reads `missing`, and a staging upload of the same commit made while this run builds would count.
 - **How:** `GET /api/0/projects/frapp-live/<project>/files/artifact-bundles/?query=<sha>` with the job's `SENTRY_AUTH_TOKEN`, from the trusted copy, all projects at once. A `missing` answer is re-asked every 15 s for a minute, because Sentry assembles an upload after it lands; the step takes about 75 s then, and under three minutes when Sentry is slow.
 - **What it writes:** one verdict word per project (`present`, `missing`, `no-token`, `rejected`, `no-project`, `unverifiable` or `unbuilt`) as the job output `sourcemaps`, and the details as annotations and a step summary. The output holds only those words because the runner drops a job output that contains a value the Infisical injection masked, and `staging`, `production` and the digits of `PORT` are among them; `deploy-outcome` takes the environment and the commit from its own context. The endpoint is undocumented, so an answer that isn't a list of bundles is `unverifiable`, never `missing`.
+- **What it can't check:** a bundle is only half of what symbolication needs. The event must also carry each frame's debug ID in `debug_meta`, which the Sentry scrubber dropped until [#3380](https://github.com/pdcarlson/Frapp/issues/3380), so events arrived compiled while this step read `present`. A deploy has no event to read; what checks that half, and for which surfaces, is in [`observability.md` § Error Tracking](../../../spec/behavior/observability.md#error-tracking).
 - **Never red:** it exits 0 on every verdict and every error of its own. The deploy shipped either way.
 
 Each caller's `deploy-outcome` job turns the report into one P2 alert per project and environment ([`sentry-sourcemaps-alert.mjs`](../../../scripts/ci/sentry-sourcemaps-alert.mjs); what raises and what closes one is its row in [`alert-routing.md`](../alert-routing.md#automated-github-issue-alerts)). The deploy job holds the Sentry token and no write scope; `deploy-outcome` holds `issues: write` and no token.
