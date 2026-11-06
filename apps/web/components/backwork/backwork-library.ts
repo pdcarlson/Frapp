@@ -37,6 +37,8 @@ export type BackworkResource = {
   document_variant: string | null;
   tags: string[] | null;
   is_redacted: boolean;
+  /** The stored object's key; the zip takes the file's extension from it. */
+  storage_path: string;
   created_at: string;
 };
 
