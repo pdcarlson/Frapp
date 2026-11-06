@@ -115,6 +115,9 @@ export function groupChannelMembersByRole<T extends GroupableChannelMember>(
  */
 export const MEMBER_SEARCH_THRESHOLD = 12;
 
+/** Where a name splits into words: spaces, hyphens, apostrophes, periods. */
+const NAME_SEPARATORS = /[\s\-'\u2019.]+/;
+
 /** Lowercased, accents dropped, so "jose" finds "José". */
 function foldForSearch(text: string): string {
   return text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -129,11 +132,13 @@ export function filterChannelMembers<T extends { name: string }>(
   rows: readonly T[],
   query: string,
 ): T[] {
-  const terms = foldForSearch(query).split(/\s+/).filter(Boolean);
+  // Split the query on the name's own separators, so a typed "O'Brien" or
+  // "Mary-Kate" matches the words the name was split into.
+  const terms = foldForSearch(query).split(NAME_SEPARATORS).filter(Boolean);
   if (!terms.length) return [...rows];
   return rows.filter((row) => {
     const words = foldForSearch(row.name)
-      .split(/[\s\-'.]+/)
+      .split(NAME_SEPARATORS)
       .filter(Boolean);
     return terms.every((term) => words.some((word) => word.startsWith(term)));
   });

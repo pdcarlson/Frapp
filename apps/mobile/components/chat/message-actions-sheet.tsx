@@ -290,6 +290,16 @@ export const MessageActionsSheet = forwardRef<
     },
     [],
   );
+  /**
+   * However the menu closed (the timer, a swipe, Android back, another row),
+   * the next open starts on "Copy text", and a timer still pending can't
+   * close a sheet the member has opened since.
+   */
+  const resetCopy = useCallback(() => {
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    copyTimer.current = null;
+    setCopiedFor(null);
+  }, []);
   const copyText = useCallback(() => {
     const text = target?.copyText;
     const messageId = target?.messageId;
@@ -403,6 +413,7 @@ export const MessageActionsSheet = forwardRef<
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
+        onDismiss={resetCopy}
       >
         <SheetBackToClose onClose={closeMenu} />
         <BottomSheetView onAccessibilityEscape={closeMenu} style={styles.body}>

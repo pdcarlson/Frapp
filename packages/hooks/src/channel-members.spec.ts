@@ -84,6 +84,7 @@ describe("filterChannelMembers", () => {
     expect(names("jose")).toEqual(["José Álvarez"]);
     expect(names("kate")).toEqual(["Mary-Kate O'Neil"]);
     expect(names("neil")).toEqual(["Mary-Kate O'Neil"]);
+    expect(names("mary-kate o'neil")).toEqual(["Mary-Kate O'Neil"]);
   });
 
   it("does not match the middle of a word", () => {

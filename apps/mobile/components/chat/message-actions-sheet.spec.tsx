@@ -255,8 +255,24 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     }
   });
 
-  it("draws no Copy text for a card or a photo-only message", () => {
+  it("draws no Copy text when the message has nothing to copy", () => {
+    // `copyableText` (`@repo/chat-core`, its own spec) returns null for a
+    // card, a photo-only and a deleted message; the sheet hides the row then.
     expect(hasRow(render(OWN), "Copy text")).toBe(false);
+  });
+
+  it("starts the next open on Copy text again, however the sheet closed", async () => {
+    const tree = render({ ...OWN, copyText: "hi" });
+    pressByLabel(tree, "Copy text");
+    await flush();
+    expect(hasRow(tree, COPIED_LABEL)).toBe(true);
+    const modal = tree.root.find(
+      (node) =>
+        typeof node.props.onDismiss === "function" &&
+        node.props.enableDynamicSizing === true,
+    );
+    act(() => modal.props.onDismiss());
+    expect(hasRow(tree, "Copy text")).toBe(true);
   });
 
   it("offers Reply, Edit and Delete on your own message, and never Report or Block", () => {
@@ -638,6 +654,7 @@ describe("MessageActionsSheet — report", () => {
     const reportSheet = tree.root.find(
       (node) =>
         (node.type as unknown) === "BottomSheetModal" &&
+        node.props.stackBehavior === "replace" &&
         typeof node.props.onDismiss === "function",
     );
     act(() => reportSheet.props.onDismiss());
@@ -664,6 +681,7 @@ describe("MessageActionsSheet — report", () => {
     const reportSheet = tree.root.find(
       (node) =>
         (node.type as unknown) === "BottomSheetModal" &&
+        node.props.stackBehavior === "replace" &&
         typeof node.props.onDismiss === "function",
     );
     act(() => reportSheet.props.onDismiss());
@@ -733,6 +751,7 @@ describe("MessageActionsSheet — report", () => {
     const reportSheet = tree.root.find(
       (node) =>
         (node.type as unknown) === "BottomSheetModal" &&
+        node.props.stackBehavior === "replace" &&
         typeof node.props.onDismiss === "function",
     );
     act(() => reportSheet.props.onDismiss());
