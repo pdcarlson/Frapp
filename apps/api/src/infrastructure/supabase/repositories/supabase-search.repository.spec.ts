@@ -134,12 +134,33 @@ describe('SupabaseSearchRepository — tenant scope', () => {
     repo = new SupabaseSearchRepository(harness.client);
   });
 
-  it('searchBackwork matches only in the caller chapter', async () => {
+  it('searchBackwork names the caller chapter to the search function', async () => {
+    // The function's own chapter filter is proven against real Postgres in
+    // `scripts/pglite/tiers/backwork-search.mjs`; this pins that the
+    // repository hands it the caller's chapter under `p_chapter_id`.
+    harness = createTenantHarness({
+      tables: seed(),
+      untenantedTables: ['chat_messages'],
+      parentTenant: {
+        chat_messages: { column: 'channel_id', table: 'chat_channels' },
+      },
+      rpc: {
+        search_backwork_resources: { data: [seed().backwork_resources[1]] },
+      },
+    });
+    repo = new SupabaseSearchRepository(harness.client);
+
     const hits = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.searchBackwork(CHAPTER_B, 'budget', 10),
     );
 
     expect(hits.map((h) => h.chapter_id)).toEqual([CHAPTER_B]);
+    expect(harness.rpcCalls).toEqual([
+      {
+        fn: 'search_backwork_resources',
+        args: { p_chapter_id: CHAPTER_B, p_query: 'budget', p_limit: 10 },
+      },
+    ]);
   });
 
   it('searchEvents matches only in the caller chapter', async () => {
@@ -226,9 +247,18 @@ describe('SupabaseSearchRepository — query shape', () => {
       chains[table] = chain;
       return chain;
     });
+    // Backwork searches through a function (#585): `rpc(...).select(...)`.
+    const rpc = jest.fn(() => {
+      const chain = {} as Chain;
+      chain.select = jest.fn(() => chain);
+      chain.then = (resolve) => Promise.resolve(result).then(resolve);
+      chains.rpc = chain;
+      return chain;
+    });
     return {
-      client: { from } as unknown as FrappSupabaseClient,
+      client: { from, rpc } as unknown as FrappSupabaseClient,
       from,
+      rpc,
       chains,
     };
   };
@@ -249,7 +279,7 @@ describe('SupabaseSearchRepository — query shape', () => {
    */
   it('passes a hostile query to text search as one opaque value, never a filter expression', async () => {
     const hostile = 'test,id.eq.secret';
-    const { client, chains } = recordingClient();
+    const { client, chains, rpc } = recordingClient();
     const repo = new SupabaseSearchRepository(client);
 
     await repo.searchBackwork('ch-1', hostile, 10);
@@ -257,8 +287,14 @@ describe('SupabaseSearchRepository — query shape', () => {
     await repo.searchMembers('ch-1', hostile, 10);
     await repo.searchMessages(['c-1'], hostile, 10);
 
+    // Backwork: one named argument to a function that parses it with
+    // `websearch_to_tsquery('english', …)` itself.
+    expect(rpc).toHaveBeenCalledWith('search_backwork_resources', {
+      p_chapter_id: 'ch-1',
+      p_query: hostile,
+      p_limit: 10,
+    });
     for (const [table, column] of [
-      ['backwork_resources', 'search_vector'],
       ['events', 'search_vector'],
       ['members', 'users.display_name_search'],
       ['chat_messages', 'content_search'],
@@ -455,9 +491,7 @@ describe('SupabaseSearchRepository — query shape', () => {
     await repo.searchBackwork('ch-1', 'meeting', 10);
 
     expect(chains.events.select).toHaveBeenCalledWith(EVENT_SEARCH_COLUMNS);
-    expect(chains.backwork_resources.select).toHaveBeenCalledWith(
-      BACKWORK_SEARCH_COLUMNS,
-    );
+    expect(chains.rpc.select).toHaveBeenCalledWith(BACKWORK_SEARCH_COLUMNS);
     expect(EVENT_SEARCH_COLUMNS).toContain('check_in_zone');
     expect(EVENT_SEARCH_COLUMNS).toContain('check_in_zone_name');
     // and the tsvector is still excluded, which is why the list is explicit
