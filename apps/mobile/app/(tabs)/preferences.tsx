@@ -25,7 +25,7 @@ import {
   isModuleEnabled,
   isSupportedTimeZone,
   MAX_TIME_ZONE_LENGTH,
-  NOTIFICATION_CATEGORIES,
+  shownNotificationCategories,
 } from "@repo/validation";
 import { BLOCKED_MEMBERS_TITLE } from "@repo/chat-core/block-copy";
 import { ScreenShell } from "@/components/screen-shell";
@@ -623,7 +623,7 @@ export default function PreferencesScreen() {
       />
 
       <ListSection>
-        {NOTIFICATION_CATEGORIES.map((category) => (
+        {shownNotificationCategories().map((category) => (
           // No description. The shared catalog carries one per category for
           // web's Profile card, but on the phone five two-line hints pushed
           // Account three screens down, and the labels say enough.
