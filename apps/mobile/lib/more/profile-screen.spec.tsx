@@ -59,6 +59,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 // Picking and uploading a photo is `profile-photo`'s own spec's business.
 vi.mock("@/components/profile/profile-photo", () => ({
+  PROFILE_PHOTO_SIZE: 84,
   ProfilePhoto: "ProfilePhoto",
 }));
 

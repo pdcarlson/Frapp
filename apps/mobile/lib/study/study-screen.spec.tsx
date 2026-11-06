@@ -14,7 +14,7 @@ import { MODULE_OFF_COPY, startErrorCopy } from "@/lib/study/errors";
 import { drawnText } from "@/test/screen-text";
 import { CardListSkeleton } from "@/components/card-list-skeleton";
 import { SkeletonLines } from "@/components/state-block";
-import { StartCard } from "@/components/study/start-card";
+import { StartCard, StartCardSkeleton } from "@/components/study/start-card";
 import { SessionCard } from "@/components/study/session-card";
 import { ZonePickerSheet } from "@/components/study/zone-picker-sheet";
 import { readForegroundPermission } from "@/lib/location";
@@ -924,6 +924,16 @@ describe("Study loading and empty states", () => {
 
     expect(tree.root.findAllByType(CardListSkeleton)).toHaveLength(1);
     expect(tree.root.findAllByType(SkeletonLines)).toHaveLength(0);
+    // The start card's own skeleton, so the card doesn't grow in on load.
+    expect(tree.root.findAllByType(StartCardSkeleton)).toHaveLength(1);
+    // Its writing.md row, without the ellipsis, as the region's name.
+    expect(
+      tree.root.find(
+        (node) =>
+          (node.type as unknown) === "View" &&
+          node.props.accessibilityRole === "progressbar",
+      ).props.accessibilityLabel,
+    ).toBe("Loading study zones");
     act(() => tree.unmount());
   });
 

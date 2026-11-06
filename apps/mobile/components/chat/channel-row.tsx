@@ -3,7 +3,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { initialsFor } from "@/lib/chat/display-name";
 import { gutterBleed, PressableRow } from "@/components/list-section";
-import { SkeletonBlock, SkeletonPulse } from "@/components/state-block";
+import { SkeletonBlock, SkeletonRegion } from "@/components/state-block";
 import {
   HIDE_CONVERSATION_LABEL,
   countsAddressMember,
@@ -249,39 +249,27 @@ export function ChannelListSkeleton({ rows = 5 }: { rows?: number }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   return (
-    // `accessible` makes the list one node, so VoiceOver reads the role and
-    // label; without it iOS skips a View that has no text in it.
-    <View
-      accessible
-      accessibilityRole="progressbar"
-      accessibilityLabel="Loading channels"
-      style={styles.skeletonList}
-    >
-      <SkeletonPulse>
-        <View style={styles.skeletonCaption}>
-          <SkeletonBlock
-            width={tokens.spacing["3xl"]}
-            height={tokens.spacing.sm}
-          />
-        </View>
-        {Array.from({ length: rows }, (_, index) => (
-          <View key={index} style={styles.row}>
+    <SkeletonRegion label="Loading channels" style={styles.skeletonList}>
+      <View style={styles.skeletonCaption}>
+        <SkeletonBlock
+          width={tokens.spacing["3xl"]}
+          height={tokens.spacing.sm}
+        />
+      </View>
+      {Array.from({ length: rows }, (_, index) => (
+        <View key={index} style={styles.row}>
+          <SkeletonBlock width={tokens.spacing.md} height={tokens.spacing.lg} />
+          <View style={styles.skeletonTitle}>
             <SkeletonBlock
-              width={tokens.spacing.md}
-              height={tokens.spacing.lg}
+              width={
+                SKELETON_TITLE_WIDTHS[index % SKELETON_TITLE_WIDTHS.length]
+              }
+              height={tokens.spacing.md}
             />
-            <View style={styles.skeletonTitle}>
-              <SkeletonBlock
-                width={
-                  SKELETON_TITLE_WIDTHS[index % SKELETON_TITLE_WIDTHS.length]
-                }
-                height={tokens.spacing.md}
-              />
-            </View>
           </View>
-        ))}
-      </SkeletonPulse>
-    </View>
+        </View>
+      ))}
+    </SkeletonRegion>
   );
 }
 

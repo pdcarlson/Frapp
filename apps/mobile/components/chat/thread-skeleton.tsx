@@ -1,5 +1,6 @@
 import { StyleSheet, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
+import { SkeletonBlock, SkeletonRegion } from "@/components/state-block";
 import { avatarRadius, useFrappTheme } from "@/lib/theme";
 import { MESSAGE_AVATAR_SIZE } from "./message-item";
 
@@ -18,44 +19,34 @@ const BODY_WIDTHS = ["70%", "52%", "60%", "45%"] as const;
  * where an inverted thread draws its newest messages, so the real rows land
  * where the shapes were rather than dropping in from the top.
  *
- * Static, like `SkeletonLines` in `components/state-block.tsx`, and for the
- * same reason: the §10 shimmer needs a gradient primitive this app does not
- * have. Neutral only, never the accent.
- *
- * TODO-DESIGN: shimmer sweep per components.md §10, as `SkeletonLines` carries
- * it, once a gradient dependency lands. Nearest pattern used: static neutral
- * blocks at the row's shapes. A second hand-drawn skeleton until this folds
- * onto the shared skeleton block, so whoever lands the shimmer finds it here.
+ * Its shapes are `SkeletonBlock`s in one `SkeletonRegion`
+ * (`components/state-block.tsx`), so they pulse with every other skeleton's
+ * and the §10 shimmer lands here when it lands in `SkeletonBlock`. Neutral
+ * only, never the accent.
  */
 export function ThreadSkeleton() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
   return (
-    // `accessible` makes the container one element, so VoiceOver reads the
-    // label: on iOS a View's label counts only on an accessibility element,
-    // and the shapes inside have nothing to read.
-    <View
-      accessible
-      accessibilityRole="progressbar"
-      accessibilityLabel="Loading messages"
-      style={styles.container}
-    >
+    <SkeletonRegion label="Loading messages" style={styles.container}>
       {Array.from({ length: ROWS }, (_, index) => (
         <View key={index} style={styles.row}>
-          <View style={styles.avatar} />
+          <SkeletonBlock
+            width={MESSAGE_AVATAR_SIZE}
+            height={MESSAGE_AVATAR_SIZE}
+            radius={avatarRadius(MESSAGE_AVATAR_SIZE)}
+          />
           <View style={styles.column}>
-            <View style={styles.author} />
-            <View
-              style={[
-                styles.line,
-                { width: BODY_WIDTHS[index % BODY_WIDTHS.length] },
-              ]}
+            <SkeletonBlock width="28%" height={tokens.spacing.md} />
+            <SkeletonBlock
+              width={BODY_WIDTHS[index % BODY_WIDTHS.length]!}
+              height={tokens.spacing.md}
             />
           </View>
         </View>
       ))}
-    </View>
+    </SkeletonRegion>
   );
 }
 
@@ -74,31 +65,10 @@ function createStyles(tokens: SignetTokens) {
       paddingHorizontal: tokens.spacing.lg,
       paddingTop: tokens.spacing.lg,
     },
-    avatar: {
-      width: MESSAGE_AVATAR_SIZE,
-      height: MESSAGE_AVATAR_SIZE,
-      borderRadius: avatarRadius(MESSAGE_AVATAR_SIZE),
-      backgroundColor: tokens.color.surface.popover,
-    },
     column: {
       flex: 1,
       gap: tokens.spacing.sm,
       paddingTop: tokens.spacing.xs,
-    },
-    author: {
-      width: "28%",
-      height: tokens.spacing.md,
-      // TODO-DESIGN: §10 specifies radius 6 for skeleton text lines. `chip` (8)
-      // is the nearest token; a raw 6 would be a hard-coded value, which
-      // foundations.md bans. Same gap as `SkeletonLines`.
-      borderRadius: tokens.radius.chip,
-      backgroundColor: tokens.color.surface.popover,
-    },
-    line: {
-      height: tokens.spacing.md,
-      // TODO-DESIGN: radius 6, as on `author` above.
-      borderRadius: tokens.radius.chip,
-      backgroundColor: tokens.color.surface.popover,
     },
   });
 }
