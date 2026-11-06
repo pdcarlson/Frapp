@@ -130,14 +130,17 @@ const COLUMNS: {
 ];
 
 /**
- * Days a confirmed task stays in the Confirmed list under the board, counted
- * from its confirmation. The same week mobile keeps a finished row on its
- * board (`COMPLETED_RETENTION_DAYS`, `apps/mobile/lib/tasks/board.ts`): long
- * enough to see this week's confirmations, short enough that a semester of
- * them doesn't pile up under the columns. The points history keeps the rest.
+ * Confirmed tasks the Confirmed list shows before "Show all". Every one stays
+ * reachable (it is where an officer deletes an old task), but a semester of
+ * them shouldn't lengthen the page under the columns by default.
  */
-const CONFIRMED_RETENTION_DAYS = 7;
-const DAY_MS = 24 * 60 * 60 * 1000;
+const CONFIRMED_PREVIEW = 4;
+
+/** Newest confirmation first; a row missing both stamps sorts last. */
+function confirmedAt(task: Task): number {
+  const at = Date.parse(task.confirmed_at ?? task.completed_at ?? "");
+  return Number.isNaN(at) ? 0 : at;
+}
 
 export function TasksBoard() {
   const { toast } = useToast();
@@ -173,7 +176,7 @@ export function TasksBoard() {
   }, [members]);
 
   // Since #560 the status mutations write the list entry in `onMutate`, so a
-  // row re-renders into its next status immediately — "Mark complete" can now
+  // row re-renders into its next status immediately — "Mark done" can now
   // appear under the cursor while the Start PATCH is still in flight, and a
   // fast second tap sends a transition the server will reject (the table in
   // `task.service.ts` is checked against the *stored* status). The chat card
@@ -181,6 +184,7 @@ export function TasksBoard() {
   const lifecycleWritePending =
     updateStatus.isPending || confirmTask.isPending || rejectTask.isPending;
 
+  const [showAllConfirmed, setShowAllConfirmed] = useState(false);
   const [draft, setDraft] = useState({
     title: "",
     description: "",
@@ -195,20 +199,15 @@ export function TasksBoard() {
       grouped.set(column.status, []);
     }
     const recent: Task[] = [];
-    const cutoff = Date.now() - CONFIRMED_RETENTION_DAYS * DAY_MS;
     for (const task of tasks) {
       if (task.status === "COMPLETED" && task.points_awarded) {
-        const at = Date.parse(task.confirmed_at ?? task.completed_at ?? "");
-        if (Number.isNaN(at) || at >= cutoff) recent.push(task);
+        recent.push(task);
         continue;
       }
       const bucket = grouped.get(task.status);
       if (bucket) bucket.push(task);
     }
-    recent.sort(
-      (a, b) =>
-        Date.parse(b.confirmed_at ?? "") - Date.parse(a.confirmed_at ?? ""),
-    );
+    recent.sort((a, b) => confirmedAt(b) - confirmedAt(a));
     for (const [, list] of grouped) {
       list.sort((a, b) => {
         const aMs = new Date(a.due_date).getTime();
@@ -590,7 +589,7 @@ export function TasksBoard() {
       ) : (
         /*
           Flush, not carded. Each column used to be a `<Card>` with a title,
-          a description and (under Awaiting confirmation) a footer explaining
+          a description and (under the completed column) a footer explaining
           the confirm rule. A column is now a section on the page surface,
           named by its label and count; the tiles inside keep a hairline frame,
           because a kanban tile is a block with its own controls, not a row.
@@ -640,17 +639,22 @@ export function TasksBoard() {
       )}
 
       {/*
-        This week's confirmations, under the columns rather than in them: they
-        are finished, so they are the quietest thing on the page, and the
-        Waiting on an officer column stays the officer's queue.
+        Confirmed tasks, under the columns rather than in them: they are
+        finished, so they are the quietest thing on the page, and the Waiting
+        on an officer column stays the officer's queue. Newest first, the
+        latest few by default, every one a click away (Delete lives on the
+        tile).
       */}
       {confirmed.length > 0 ? (
         <section aria-labelledby="tasks-confirmed" className="space-y-3">
           <SectionLabel id="tasks-confirmed" count={confirmed.length}>
             {TASK_CONFIRMED_LABEL}
           </SectionLabel>
-          <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-            {confirmed.map((task) => (
+          <ul className="grid gap-x-6 gap-y-2 md:grid-cols-2 xl:grid-cols-4">
+            {(showAllConfirmed
+              ? confirmed
+              : confirmed.slice(0, CONFIRMED_PREVIEW)
+            ).map((task) => (
               <TaskTile
                 key={task.id}
                 task={task}
@@ -668,6 +672,18 @@ export function TasksBoard() {
               />
             ))}
           </ul>
+          {confirmed.length > CONFIRMED_PREVIEW ? (
+            <Button
+              size="toolbar"
+              variant="ghost"
+              className="justify-self-start"
+              onClick={() => setShowAllConfirmed((open) => !open)}
+            >
+              {showAllConfirmed
+                ? "Show fewer"
+                : `Show all ${confirmed.length}`}
+            </Button>
+          ) : null}
         </section>
       ) : null}
 

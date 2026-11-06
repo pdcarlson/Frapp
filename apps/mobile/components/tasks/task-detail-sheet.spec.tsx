@@ -22,6 +22,7 @@ function row(overrides: Partial<TaskRowModel> = {}): TaskRowModel {
     displayStatus: "TODO",
     dueDate: "2026-08-18",
     completedAt: null,
+    confirmedAt: null,
     pointReward: 15,
     pointsAwarded: false,
     isDone: false,

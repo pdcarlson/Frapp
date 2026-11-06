@@ -425,6 +425,7 @@ describe("Placeholder rows sit on their real row's frame", () => {
           displayStatus: "TODO",
           dueDate: null,
           completedAt: null,
+          confirmedAt: null,
           pointReward: 5,
           pointsAwarded: false,
           isDone: false,

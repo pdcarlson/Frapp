@@ -14,6 +14,7 @@ import {
   useViewerUserId,
   type TaskStatus,
 } from "@repo/hooks";
+import { memberLabel } from "@repo/hooks/display-names";
 import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { useRefetchAll } from "@/components/pull-to-refresh";
@@ -80,6 +81,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * rows — see its header. An officer's review queue is a different surface with a
  * different shape, and is not this slice.
  */
+const TAKE_BACK_FAILED =
+  "Couldn't mark that task not done. An officer may have confirmed it already.";
+
 export default function TasksScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -188,20 +192,41 @@ export default function TasksScreen() {
    * The task the undo bar offers to take back, while its window runs. Cleared
    * by its own timer, by Undo, or by the box unchecking the same task.
    */
-  const [undo, setUndo] = useState<{ id: string; message: string } | null>(
-    null,
-  );
+  const [undo, setUndo] = useState<{
+    id: string;
+    message: string;
+    key: number;
+  } | null>(null);
   useEffect(() => {
     if (!undo) return undefined;
     const timer = setTimeout(() => setUndo(null), UNDO_WINDOW_MS);
     return () => clearTimeout(timer);
   }, [undo]);
 
-  /** Sends one sequence for one task, in order, guarded against a double tap. */
+  /**
+   * A one-off line for a take-back that didn't land: the bar has gone by
+   * then, and without it the row just stays done with no word of why. Not a
+   * latch like `refusal`: the next tap, or coming back, clears it.
+   */
+  const [notice, setNotice] = useState<string | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      setNotice(null);
+      return undefined;
+    }, []),
+  );
+
+  /**
+   * Sends one sequence for one task, in order, guarded against a double tap.
+   * Resolves to what happened: a gate refusal has already said why.
+   */
   const run = useCallback(
-    async (id: string, sequence: readonly TaskStatus[]) => {
-      if (sequence.length === 0) return false;
-      if (inFlight.current.has(id)) return false;
+    async (
+      id: string,
+      sequence: readonly TaskStatus[],
+    ): Promise<"ok" | "gate" | "failed" | "skipped"> => {
+      if (sequence.length === 0) return "skipped";
+      if (inFlight.current.has(id)) return "skipped";
 
       inFlight.current.add(id);
       setPendingId(id);
@@ -209,7 +234,7 @@ export default function TasksScreen() {
         for (const status of sequence) {
           await updateStatus.mutateAsync({ id, body: { status } });
         }
-        return true;
+        return "ok";
       } catch (error) {
         // The hook has already reverted its own write and invalidated, so the
         // row redraws at whatever the server actually holds. A gate refusal
@@ -218,7 +243,7 @@ export default function TasksScreen() {
         // revert it always was.
         const gate = taskStatusGateRefusal(error);
         if (gate) setRefusal(gate);
-        return false;
+        return gate ? "gate" : "failed";
       } finally {
         inFlight.current.delete(id);
         setPendingId(null);
@@ -231,25 +256,38 @@ export default function TasksScreen() {
     async (row: TaskRowModel) => {
       const sequence = checkboxSequence(row);
       const completes = sequence[sequence.length - 1] === "COMPLETED";
+      setNotice(null);
       // Unchecking is its own undo: the bar for this task has nothing left to
       // offer. Cleared before the write so it never sits over the change.
       if (!completes) setUndo((open) => (open?.id === row.id ? null : open));
-      const ok = await run(row.id, sequence);
+      const outcome = await run(row.id, sequence);
       // The confirming action (`spec/ui/mobile/README.md` § Native-feel
       // rules), felt once the server holds the task done. Only a sequence
       // that completes the task earns it, and offers the undo.
-      if (ok && completes) {
+      if (outcome === "ok" && completes) {
         successHaptic();
-        setUndo({ id: row.id, message: "Marked done" });
+        setUndo((open) => ({
+          id: row.id,
+          message: "Marked done",
+          // A new key per completion, so a second one inside the window is
+          // announced again even though the words are the same.
+          key: (open?.key ?? 0) + 1,
+        }));
       }
+      if (outcome === "failed" && !completes) setNotice(TAKE_BACK_FAILED);
     },
     [run],
   );
 
   const takeBack = useCallback(
-    (id: string) => {
+    async (id: string) => {
       setUndo(null);
-      void run(id, ["IN_PROGRESS"]);
+      setNotice(null);
+      // Most often refused because an officer confirmed it inside the
+      // window: the bar has gone, so say so rather than leave it done.
+      if ((await run(id, ["IN_PROGRESS"])) === "failed") {
+        setNotice(TAKE_BACK_FAILED);
+      }
     },
     [run],
   );
@@ -275,7 +313,8 @@ export default function TasksScreen() {
     const match = (rosterQuery.data ?? []).find(
       (member) => member.user_id === createdBy,
     );
-    return match?.display_name.trim() || null;
+    // The shared fallback, so a creator with no name reads as on web.
+    return memberLabel(match?.display_name, createdBy);
   }, [createdBy, rosterQuery.data, viewerUserId]);
 
   const canToggle = useCallback(
@@ -398,12 +437,19 @@ export default function TasksScreen() {
         <PointsSummaryCard summary={summary} rank={rank} />
 
         {refusal ? <Text style={styles.refusal}>{refusal}</Text> : null}
+        {notice && !refusal ? (
+          <Text style={styles.refusal}>{notice}</Text>
+        ) : null}
 
         {renderBoard()}
       </ScreenShell>
 
       {undo ? (
-        <UndoBar message={undo.message} onUndo={() => takeBack(undo.id)} />
+        <UndoBar
+          key={undo.key}
+          message={undo.message}
+          onUndo={() => void takeBack(undo.id)}
+        />
       ) : null}
 
       <TaskDetailSheet

@@ -41,6 +41,8 @@ export interface TaskRowModel {
   displayStatus: string | null;
   dueDate: string | null;
   completedAt: string | null;
+  /** When an officer confirmed it; `null` while it waits on one. */
+  confirmedAt: string | null;
   pointReward: number | null;
   pointsAwarded: boolean;
   isDone: boolean;
@@ -73,6 +75,7 @@ function toRow(row: Record<string, unknown>): TaskRowModel | null {
     displayStatus,
     dueDate: str(row, "due_date"),
     completedAt: str(row, "completed_at"),
+    confirmedAt: str(row, "confirmed_at"),
     pointReward: num(row, "point_reward"),
     pointsAwarded: row.points_awarded === true,
     // Read off the row, never recomputed. `toDisplayStatus` derives it in UTC
@@ -163,13 +166,17 @@ export function selectTaskRows(
     // award, not the task. Canvas draws one done row and specifies no policy;
     // this window is the PR's proposal.
     //
-    // Age is measured from completion, and a row whose `completed_at` cannot be
-    // read is **kept**: the alternative is retiring a task on a timestamp this
-    // module never saw. The optimistic path always supplies one —
-    // `useUpdateTaskStatus` stamps `completed_at` alongside the status — so the
-    // just-completed row stays put and draws "Done today" as drawn.
-    if (row.isDone) {
-      const sinceDone = daysSinceCompletion(row.completedAt, now);
+    // Only a confirmed row retires. One still waiting on an officer is still
+    // the member's business: it says so, and its box can take the completion
+    // back until it is confirmed, so it stays however old it is. A confirmed
+    // row's age runs from its confirmation (its completion where that is
+    // missing), and a row with neither timestamp readable is **kept**: the
+    // alternative is retiring a task on a timestamp this module never saw.
+    if (row.isDone && row.pointsAwarded) {
+      const sinceDone = daysSinceCompletion(
+        row.confirmedAt ?? row.completedAt,
+        now,
+      );
       if (sinceDone !== null && sinceDone > COMPLETED_RETENTION_DAYS) continue;
     }
 

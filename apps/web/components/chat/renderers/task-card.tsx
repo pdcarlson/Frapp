@@ -68,7 +68,7 @@ export const STATUS_BADGE: Record<TaskStatus, "default" | "outline" | "destructi
  * mutating the message row. Server-originated (a client cannot forge
  * `kind:"task"` — see `ChatService.SERVER_ONLY_KINDS`).
  *
- * Interactive: the assignee can Start / Mark complete and an admin
+ * Interactive: the assignee can Start / Mark done and an admin
  * (`tasks:manage`) can Confirm / Reject inline. Buttons fire the existing task
  * REST endpoints with optimistic cache writes; the server stays the trust
  * boundary, so the gating here is UX-only. Which controls show, and when the

@@ -323,8 +323,10 @@ export class TaskService {
     }
     const updated = await this.taskRepo.reopenCompletion(task.id, chapterId);
     if (!updated) {
+      // Null is any write that moved it first: an officer's confirm, their
+      // reject, or this member's own take-back from another device.
       throw new BadRequestException(
-        'An officer already confirmed this task, so it stays done',
+        'This task is no longer waiting on confirmation',
       );
     }
     return toDisplayStatus(updated);

@@ -466,6 +466,30 @@ describe("Undo after the checkbox completes a task (P6.1)", () => {
     act(() => tree.unmount());
   });
 
+  it("says so when Undo is refused, since the bar has already gone", async () => {
+    mutateAsync.mockImplementation(async () => undefined as never);
+    const tree = render();
+    await tapRow(tree);
+    const bar = tree.root.findByType(UndoBar);
+
+    mutateAsync.mockImplementation(async () => {
+      throw FAILED;
+    });
+    await act(async () => bar.props.onUndo());
+    const all = tree.root
+      .findAllByType("Text" as never)
+      .flatMap((node) => React.Children.toArray(node.props.children))
+      .filter((child) => typeof child === "string");
+    expect(all).toContain(
+      "Couldn't mark that task not done. An officer may have confirmed it already.",
+    );
+    mutateAsync.mockReset();
+    mutateAsync.mockImplementation(async () => {
+      throw failure;
+    });
+    act(() => tree.unmount());
+  });
+
   it("offers no Undo when the completion fails", async () => {
     failure = FAILED;
     const tree = render();

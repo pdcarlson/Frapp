@@ -156,7 +156,7 @@ describe("taskCardControls", () => {
     expect(taskCardControls({ live: null, ...assigneeAdmin })).toEqual([]);
   });
 
-  it("walks the assignee through Start and Mark complete off the stored status", () => {
+  it("walks the assignee through Start and Mark done off the stored status", () => {
     expect(taskCardControls({ live: live(), ...assignee })).toEqual(["start"]);
     expect(
       taskCardControls({
