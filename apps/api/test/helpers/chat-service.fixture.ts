@@ -102,7 +102,7 @@ export async function createChatServiceFixture() {
     removePrivateChannelMember: jest.fn(),
     findRoleGates: jest.fn(),
     removeUserFromPrivateChannels: jest.fn(),
-    clearDefault: jest.fn(),
+    setDefault: jest.fn(),
   };
 
   const mockCategoryRepo: jest.Mocked<IChatCategoryRepository> = {

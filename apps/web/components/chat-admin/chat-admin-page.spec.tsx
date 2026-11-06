@@ -591,6 +591,55 @@ describe("ChatAdminPage — saving a channel", () => {
         .body,
     ).not.toHaveProperty("description");
   });
+
+  it("keeps the current default when another field of it is saved, and badges it", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    reads.channels = settled([
+      { ...CHANNELS[0], is_default: true },
+      ...CHANNELS.slice(1),
+    ]);
+    render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    expect(
+      screen.getByRole("switch", { name: "Chapter default channel" }),
+    ).toBeChecked();
+    expect(screen.getByRole("button", { name: /^#general/ })).toHaveTextContent(
+      "Default",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).not.toHaveProperty("is_default");
+  });
+
+  it("doesn't move the default back when another officer moved it under an untouched switch", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    reads.channels = settled([
+      { ...CHANNELS[0], is_default: true },
+      ...CHANNELS.slice(1),
+    ]);
+    const { rerender } = render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    // Another officer made #exec the default; the list refetched.
+    reads.channels = settled([
+      CHANNELS[0],
+      { ...CHANNELS[1], is_default: true },
+      CHANNELS[2],
+    ]);
+    rerender(<ChatAdminPage initialChannelId="ch-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).not.toHaveProperty("is_default");
+  });
 });
 
 describe("ChatAdminPage — opened from a channel start", () => {

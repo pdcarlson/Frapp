@@ -92,7 +92,7 @@ describe('ChannelAccessService', () => {
       addPrivateChannelMember: jest.fn(),
       removePrivateChannelMember: jest.fn(),
       removeUserFromPrivateChannels: jest.fn(),
-      clearDefault: jest.fn(),
+      setDefault: jest.fn(),
     };
     mockMessageRepo = {
       findById: jest.fn(),

@@ -335,6 +335,10 @@ function ChatAdminBody({
   const [categoryDraft, setCategoryDraft] = useState(NO_CATEGORY);
   const [readOnlyDraft, setReadOnlyDraft] = useState(false);
   const [isDefaultDraft, setIsDefaultDraft] = useState(false);
+  // What the switch was seeded with, for the reason `descriptionSeed` exists:
+  // another officer moving the default refetches the live row under an
+  // untouched switch, and comparing with that row would send it back.
+  const [isDefaultSeed, setIsDefaultSeed] = useState(false);
   const [defaultLevelDraft, setDefaultLevelDraft] = useState<string>(
     BUILT_IN_DEFAULT_LEVEL,
   );
@@ -370,6 +374,7 @@ function ChatAdminBody({
     setCategoryDraft(channel.category_id ?? NO_CATEGORY);
     setReadOnlyDraft(channel.is_read_only);
     setIsDefaultDraft(channel.is_default === true);
+    setIsDefaultSeed(channel.is_default === true);
     setDefaultLevelDraft(
       channel.default_notification_level ?? BUILT_IN_DEFAULT_LEVEL,
     );
@@ -412,9 +417,10 @@ function ChatAdminBody({
           // uncategorized," which is a real write, not "leave it alone."
           category_id: categoryDraft === NO_CATEGORY ? null : categoryDraft,
           is_read_only: readOnlyDraft,
-          // Sent only when it changed: setting it moves the chapter default
-          // off another channel, which a save of an unrelated field must not.
-          ...(isDefaultDraft !== (selectedChannel.is_default === true)
+          // Sent only when the officer flipped it: setting it moves the
+          // chapter default off another channel, which a save of an unrelated
+          // field must not.
+          ...(isDefaultDraft !== isDefaultSeed
             ? { is_default: isDefaultDraft }
             : {}),
           // `null` clears an officer's choice; the built-in default applies.
@@ -428,6 +434,7 @@ function ChatAdminBody({
         },
       });
       if (descriptionChanged) setDescriptionSeed(description);
+      setIsDefaultSeed(isDefaultDraft);
       toast({ description: `#${name} saved.` });
     } catch (error) {
       toast({

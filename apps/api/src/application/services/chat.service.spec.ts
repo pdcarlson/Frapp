@@ -318,49 +318,91 @@ describe('ChatService', () => {
     });
 
     describe('is_default (the chapter default channel)', () => {
-      it('moves the default off the old channel before setting the new one', async () => {
+      const asDefault = { ...baseChannel, is_default: true };
+
+      it('sets it through the one-transaction swap, after the plain fields', async () => {
         mockChannelRepo.findById.mockResolvedValue(baseChannel);
         mockChannelRepo.update.mockResolvedValue({
           ...baseChannel,
+          name: 'renamed',
+        });
+        mockChannelRepo.setDefault.mockResolvedValue({
+          ...asDefault,
+          name: 'renamed',
+        });
+
+        const result = await service.updateChannel('chan-1', 'ch-1', {
+          name: 'renamed',
           is_default: true,
         });
+
+        expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
+          name: 'renamed',
+        });
+        expect(mockChannelRepo.setDefault).toHaveBeenCalledWith(
+          'chan-1',
+          'ch-1',
+        );
+        expect(mockChannelRepo.update.mock.invocationCallOrder[0]).toBeLessThan(
+          mockChannelRepo.setDefault.mock.invocationCallOrder[0],
+        );
+        expect(result.is_default).toBe(true);
+      });
+
+      it('skips the plain update when the default is all that changed', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockChannelRepo.setDefault.mockResolvedValue(asDefault);
 
         await service.updateChannel('chan-1', 'ch-1', { is_default: true });
 
-        expect(mockChannelRepo.clearDefault).toHaveBeenCalledWith('ch-1');
-        expect(
-          mockChannelRepo.clearDefault.mock.invocationCallOrder[0],
-        ).toBeLessThan(mockChannelRepo.update.mock.invocationCallOrder[0]!);
-        expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
-          is_default: true,
+        expect(mockChannelRepo.update).not.toHaveBeenCalled();
+        expect(mockChannelRepo.setDefault).toHaveBeenCalled();
+      });
+
+      it('never moves the default when the save is refused', async () => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...baseChannel,
+          type: 'ROLE_GATED',
+          required_permissions: ['roles:manage'],
         });
+
+        await expect(
+          service.updateChannel('chan-1', 'ch-1', {
+            required_permissions: [],
+            is_default: true,
+          }),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockChannelRepo.setDefault).not.toHaveBeenCalled();
+      });
+
+      it('never moves the default when the plain update fails', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockChannelRepo.update.mockRejectedValue(new Error('name taken'));
+
+        await expect(
+          service.updateChannel('chan-1', 'ch-1', {
+            name: 'general',
+            is_default: true,
+          }),
+        ).rejects.toThrow('name taken');
+        expect(mockChannelRepo.setDefault).not.toHaveBeenCalled();
       });
 
       it('leaves the default alone when this channel already holds it', async () => {
-        mockChannelRepo.findById.mockResolvedValue({
-          ...baseChannel,
-          is_default: true,
-        });
-        mockChannelRepo.update.mockResolvedValue({
-          ...baseChannel,
-          is_default: true,
-        });
+        mockChannelRepo.findById.mockResolvedValue(asDefault);
 
         await service.updateChannel('chan-1', 'ch-1', { is_default: true });
 
-        expect(mockChannelRepo.clearDefault).not.toHaveBeenCalled();
+        expect(mockChannelRepo.setDefault).not.toHaveBeenCalled();
       });
 
-      it('unsets it without touching other channels', async () => {
-        mockChannelRepo.findById.mockResolvedValue({
-          ...baseChannel,
-          is_default: true,
-        });
+      it('unsets it with a plain update', async () => {
+        mockChannelRepo.findById.mockResolvedValue(asDefault);
         mockChannelRepo.update.mockResolvedValue(baseChannel);
 
         await service.updateChannel('chan-1', 'ch-1', { is_default: false });
 
-        expect(mockChannelRepo.clearDefault).not.toHaveBeenCalled();
+        expect(mockChannelRepo.setDefault).not.toHaveBeenCalled();
         expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
           is_default: false,
         });
@@ -378,7 +420,7 @@ describe('ChatService', () => {
           await expect(
             service.updateChannel('chan-1', 'ch-1', { is_default: true }),
           ).rejects.toThrow(BadRequestException);
-          expect(mockChannelRepo.clearDefault).not.toHaveBeenCalled();
+          expect(mockChannelRepo.setDefault).not.toHaveBeenCalled();
           expect(mockChannelRepo.update).not.toHaveBeenCalled();
         },
       );

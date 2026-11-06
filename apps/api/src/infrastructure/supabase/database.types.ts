@@ -336,6 +336,18 @@ export interface Database {
        * serialize correctly instead of losing an update. Empty result set
        * means the row didn't match (wrong id/chapter, or not a GROUP_DM).
        */
+      /**
+       * `20261106010000`. Makes one channel the chapter's default and unsets
+       * the old one in the same transaction. Empty when the channel is not
+       * in the chapter or is a DM.
+       */
+      set_chat_channel_default: {
+        Args: {
+          p_channel_id: string;
+          p_chapter_id: string;
+        };
+        Returns: ChatChannel[];
+      };
       leave_group_dm: {
         Args: {
           p_channel_id: string;
