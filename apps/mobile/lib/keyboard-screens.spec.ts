@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -16,6 +16,8 @@ import { describe, expect, it } from "vitest";
 
 const APP_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "app");
 
+// Listed by hand because the chat thread's field lives in a component
+// (`components/chat/`), which the scan below does not follow.
 const SCREENS = [
   "(app)/chat-thread.tsx",
   "(auth)/sign-in.tsx",
@@ -44,4 +46,53 @@ describe("screens with a low text field avoid the keyboard (#3346)", () => {
       /<KeyboardAvoidingArea\b[^>]*\biosInsetFromScrollView\b/,
     );
   });
+});
+
+/**
+ * #3354: a route that draws a text field on the screen itself (React Native's
+ * `TextInput`, or `OnboardingTextInput` built on it) goes through the area. A
+ * field typed in a sheet uses `BottomSheetTextInput`, which coordinates with
+ * the keyboard on its own, so it doesn't count; that is how Settings (accent)
+ * and s18 check-in (manual code) keep their fields off the screen.
+ */
+function routeFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return routeFiles(path);
+    return /\.tsx$/.test(entry.name) && !/\.spec\.tsx$/.test(entry.name)
+      ? [path]
+      : [];
+  });
+}
+
+const ON_SCREEN_FIELD =
+  /import \{[^}]*\bTextInput\b[^}]*\} from "react-native";|\bOnboardingTextInput\b/;
+
+const ROUTES_WITH_FIELDS = routeFiles(APP_DIR)
+  .filter((path) => ON_SCREEN_FIELD.test(readFileSync(path, "utf8")))
+  .map((path) => relative(APP_DIR, path));
+
+describe("every route with an on-screen text field avoids the keyboard (#3354)", () => {
+  it("finds the routes it guards", () => {
+    // A regex that silently stopped matching would pass every case below.
+    expect(ROUTES_WITH_FIELDS).toEqual(
+      expect.arrayContaining(["(auth)/sign-in.tsx", "(auth)/join.tsx"]),
+    );
+  });
+
+  it.each(ROUTES_WITH_FIELDS)(
+    "%s renders inside KeyboardAvoidingArea",
+    (file) => {
+      expect(readFileSync(join(APP_DIR, file), "utf8")).toMatch(
+        /<KeyboardAvoidingArea\b/,
+      );
+    },
+  );
+
+  it.each(["(tabs)/preferences.tsx", "(tabs)/check-in.tsx"])(
+    "%s keeps its text fields in sheets",
+    (file) => {
+      expect(ROUTES_WITH_FIELDS).not.toContain(file);
+    },
+  );
 });
