@@ -316,6 +316,8 @@ async function buildWorker(
     exportWorker?: { runSlice: jest.Mock };
     reportRepo?: { findHeldObjects: jest.Mock };
     notifications?: { notifyUser: jest.Mock };
+    /** Who holds `channels:manage` now; the import's creator by default. */
+    admins?: string[];
   } = {},
 ) {
   const channelRepo = {
@@ -372,6 +374,9 @@ async function buildWorker(
   // Role mentions read as the mapped Frapp role's current name (#2875).
   const rbac = {
     findByChapter: jest.fn(async () => [{ id: 'role-1', name: 'Brothers' }]),
+    findUserIdsWithPermissions: jest.fn(
+      async () => options.admins ?? ['user-1'],
+    ),
   };
   const channelCache = { invalidate: jest.fn() };
   // No open chat report holds anything unless a case says so (#2481).
@@ -436,12 +441,27 @@ function makeStorage(partBytes: Uint8Array | null) {
 const part000 = () =>
   new Uint8Array(readFileSync(join(FIXTURES, 'part-000.json')));
 
-describe('DiscordImportWorkerService — telling the admin it finished', () => {
+describe('DiscordImportWorkerService — telling the admin it ended', () => {
   beforeEach(() => {
     repoRef = makeRepo(job());
   });
 
-  it('notifies whoever started the import once it completes', async () => {
+  const botSlice = (finished: boolean) => ({
+    runSlice: jest.fn(async () => ({
+      messagesImported: 6,
+      finished,
+      totals: {
+        imported: 6,
+        skipped: 0,
+        attachmentsImported: 0,
+        attachmentsSkipped: 0,
+        totalMessages: 6,
+        warnings: [],
+      },
+    })),
+  });
+
+  it('notifies the admin who set the import up once an upload completes', async () => {
     const { worker, notifications } = await buildWorker(
       repoRef,
       makeStorage(part000()),
@@ -458,6 +478,67 @@ describe('DiscordImportWorkerService — telling the admin it finished', () => {
       category: 'admin',
       data: { target: { screen: 'discord_import' } },
     });
+  });
+
+  // The bot path closes in its own write, the main way in.
+  it('notifies once a bot import completes, and not on a slice that leaves it running', async () => {
+    repoRef = makeRepo(job({ source: 'bot', status: 'running' }));
+    const running = await buildWorker(repoRef, makeStorage(null), {
+      exportWorker: botSlice(false),
+    });
+    await running.worker.sweepImports(NOW);
+    expect(running.notifications.notifyUser).not.toHaveBeenCalled();
+
+    repoRef = makeRepo(job({ source: 'bot', status: 'running' }));
+    const done = await buildWorker(repoRef, makeStorage(null), {
+      exportWorker: botSlice(true),
+    });
+    await done.worker.sweepImports(NOW);
+    expect(repoRef.state().status).toBe('completed');
+    expect(done.notifications.notifyUser).toHaveBeenCalledWith(
+      'user-1',
+      CHAPTER,
+      expect.objectContaining({ title: 'Discord import finished' }),
+    );
+  });
+
+  it('tells the admin when the import stops on an error', async () => {
+    repoRef = makeRepo(job({ source: 'bot', status: 'running' }));
+    const { worker, notifications } = await buildWorker(
+      repoRef,
+      makeStorage(null),
+      {
+        exportWorker: {
+          runSlice: jest.fn(async () => {
+            throw new DiscordApiError('Missing Access', 403);
+          }),
+        },
+      },
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.state().status).toBe('failed');
+    expect(notifications.notifyUser).toHaveBeenCalledWith('user-1', CHAPTER, {
+      title: 'Discord import stopped',
+      body: 'The import from Tau Nu stopped on an error. Open the Discord import page to see why.',
+      priority: 'NORMAL',
+      category: 'admin',
+      data: { target: { screen: 'discord_import' } },
+    });
+  });
+
+  it('sends nothing to an admin who no longer manages channels', async () => {
+    const { worker, notifications } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+      { admins: ['someone-else'] },
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.state().status).toBe('completed');
+    expect(notifications.notifyUser).not.toHaveBeenCalled();
   });
 
   it('says nothing when the closing write finds the import stopped', async () => {
@@ -617,7 +698,7 @@ describe('DiscordImportWorkerService — importing', () => {
     };
     expect(last.attachments_skipped).toBeGreaterThan(0);
     expect(last.warnings.join('\n')).toContain(
-      'No uploaded file for attachment',
+      "wasn't in the upload, so it was not imported",
     );
   });
 
@@ -636,7 +717,7 @@ describe('DiscordImportWorkerService — importing', () => {
     expect(result.messagesImported).toBe(0);
     expect(repoRef.insertMessages).not.toHaveBeenCalled();
     const last = repoRef.updates.at(-1) as { warnings: string[] };
-    expect(last.warnings.join('\n')).toContain('No mapping for');
+    expect(last.warnings.join('\n')).toContain('had no place chosen in Frapp');
   });
 
   it('skips a channel the admin chose to skip', async () => {
@@ -1794,13 +1875,19 @@ describe('DiscordImportWorkerService — purging', () => {
     });
     const storage = makeStorage(null);
     storage.listFiles.mockImplementation(async () => ['a/one.png']);
-    const { worker, channelCache } = await buildWorker(repoRef, storage);
+    const { worker, channelCache, notifications } = await buildWorker(
+      repoRef,
+      storage,
+    );
 
     await worker.sweepImports(NOW);
 
     expect(storage.deleteFiles).not.toHaveBeenCalled();
     expect(channelCache.invalidate).not.toHaveBeenCalled();
     expect(repoRef.updates.at(-1)).toMatchObject({ status: 'failed' });
+    // The admin who asked for the deletion is watching it; a failed one is
+    // not sent as news.
+    expect(notifications.notifyUser).not.toHaveBeenCalled();
     expect(repoRef.updates).not.toContainEqual(
       expect.objectContaining({ status: 'purged' }),
     );

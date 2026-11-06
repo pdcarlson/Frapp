@@ -26,16 +26,23 @@ export const DISCORD_IMPORT_ACTIVE_STATUSES: readonly DiscordImportStatus[] = [
 ];
 
 /**
- * How often an import is polled while it is moving.
+ * The notification target for an import that ended (the API's
+ * `importFinishedNotification`), which web routes to `/discord-import`.
+ */
+export const DISCORD_IMPORT_NOTIFICATION_SCREEN = "discord_import";
+
+/**
+ * How often the chapter's import list is polled while an import in it is
+ * moving (`discordImportListPollMs`).
  *
  * The worker checkpoints roughly once a minute, so a shorter interval does not
- * surface progress sooner — but an import runs for minutes to tens of minutes
- * and a page that looks frozen for a minute reads as broken. Three seconds is
- * the compromise: cheap (the row, plus two row counts for a bot import's
- * channel progress), and the bar visibly moves.
+ * surface progress sooner, but an import runs for minutes to hours and a page
+ * that looks frozen for a minute reads as broken. Three seconds is the
+ * compromise: the chapter's few import rows, plus two row counts for each bot
+ * import's channel progress, and the bar visibly moves.
  *
- * Polling stops entirely on a terminal status, so an idle admin sitting on a
- * finished import costs nothing.
+ * Polling stops entirely once nothing is moving, so an idle admin sitting on
+ * a finished import costs nothing.
  */
 export const DISCORD_IMPORT_POLL_MS = 3_000;
 
@@ -92,16 +99,17 @@ export function useDiscordImports(options?: { enabled?: boolean }) {
 }
 
 /**
- * How often the Watch view's progress is polled while an import runs (#2857).
+ * How often the channel panel's progress is polled while an import runs
+ * (#2857).
  *
- * Slower than the detail poll: it names channels, and the worker moves to the
+ * Slower than the import's own poll: it names channels, and the worker moves to the
  * next one at most once a page of messages. Eight small reads a tick, whatever
  * the server's size, because the full channel list is too large to poll.
  */
 export const DISCORD_IMPORT_PROGRESS_POLL_MS = 5_000;
 
 /**
- * One import's progress channel by channel, for the Watch view (#2857):
+ * One import's progress channel by channel, for the channel panel (#2857):
  * counts by status, the rows running now, the last ones finished, and the
  * failures. `active` is whether the import is still moving; a finished one
  * is read once and not polled.

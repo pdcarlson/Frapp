@@ -55,7 +55,7 @@ export interface NotificationGroup {
  * Keyed on the screen names the API actually emits — every `screen:` in a
  * `target: {` across `apps/api/src`, which is the list to re-derive from
  * rather than a count kept here: `chat`, `events`, `tasks`, `billing`,
- * `points`, `service`, `members` and `chat_reports`. Each has a label — an
+ * `points`, `service`, `members`, `chat_reports` and `discord_import`. Each has a label — an
  * emitted screen missing here is the bug C7 (#998) found, when an invite
  * notification (`invite.service.ts` sends `screen: 'members'`) navigated
  * correctly to the directory while rendering with no category label at all,
@@ -64,7 +64,9 @@ export interface NotificationGroup {
  * `chat_reports` is the officer new-report notification
  * (`ChatReportService`). Mobile has no report queue, so the row routes to the
  * notification list (`lib/notifications/targets.ts`), but it is still labelled:
- * an officer reading it here should see what kind of notice it is.
+ * an officer reading it here should see what kind of notice it is. The same
+ * holds for `discord_import`, the notice that a Discord import ended
+ * (`DiscordImportWorkerService`), whose page is web-only.
  *
  * The extra keys below (`event`, `event-details`, `task`, `dues`, `study`) are
  * not emitted by anything today. They are kept because a label that is merely
@@ -76,6 +78,7 @@ export interface NotificationGroup {
 const SCREEN_LABELS: Record<string, string> = {
   chat: "Chat",
   chat_reports: "Reports",
+  discord_import: "Discord import",
   event: "Events",
   events: "Events",
   "event-details": "Events",

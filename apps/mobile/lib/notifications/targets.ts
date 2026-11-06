@@ -12,16 +12,18 @@
  *
  * The keys below are the values `apps/api` actually emits, found by grepping
  * `target: {` across its services: `chat`, `events`, `tasks`, `billing`,
- * `points`, `service`, `members`. `lib/more/notifications.ts` maps a
+ * `points`, `service`, `members`, `chat_reports`, `discord_import`.
+ * `lib/more/notifications.ts` maps a
  * deliberately *wider* set to display labels, because a label that is merely
  * absent costs a member nothing. A route does: navigating somewhere on a guess
  * is worse than landing on the notification list, so anything unrecognized
  * falls through to `/notifications`, which can always render the row.
  *
- * One emitted screen is deliberately absent: `chat_reports`, the officer report
- * queue (`ChatReportService`'s new-report notification). The queue is a web
- * surface (`/chat-admin`) with no mobile route, so it takes the fallback above
- * rather than a guess.
+ * Two emitted screens are deliberately absent: `chat_reports`, the officer
+ * report queue (`ChatReportService`'s new-report notification), and
+ * `discord_import`, the notice that a Discord import ended. Both are web
+ * surfaces (`/chat-admin`, `/discord-import`) with no mobile route, so they
+ * take the fallback above rather than a guess.
  *
  * ## Why the table is spelled with `pathname:`
  *

@@ -1262,7 +1262,9 @@ describe('DiscordExportWorkerService — attachments', () => {
           attachmentsImported: batch.mediaByRelativePath.size,
           attachmentsSkipped: 0,
           // What the real batch writer says about a file with no stored object.
-          warnings: ['No uploaded file for attachment: att-1/p1.png'],
+          warnings: [
+            '"att-1/p1.png" wasn\'t in the upload, so it was not imported. The message it belongs to was.',
+          ],
         }),
       ),
     });
@@ -1288,7 +1290,7 @@ describe('DiscordExportWorkerService — attachments', () => {
     );
     expect(warnings.join(' ')).not.toContain('CDN answered 503');
     // Explained by name and reason already, so the generic line is dropped.
-    expect(warnings.join(' ')).not.toContain('No uploaded file');
+    expect(warnings.join(' ')).not.toContain("wasn't in the upload");
   });
 
   it('sends a large page in batches', async () => {

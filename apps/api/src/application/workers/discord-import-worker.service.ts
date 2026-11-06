@@ -100,24 +100,40 @@ export const IMPORT_BATCH_SIZE = 200;
  */
 export const PURGE_BATCH_SIZE = 500;
 
+/** The notification target that opens `/discord-import` on web. */
+export const DISCORD_IMPORT_NOTIFICATION_SCREEN = 'discord_import';
+
 /**
- * What the person who started an import is told when it finishes. `admin`,
- * like a filed chat report: officer traffic with no member-facing switch.
- * NORMAL, so quiet hours hold. The `discord_import` target opens the import
- * page on web; mobile has no such page and falls through to the list.
+ * What the admin who set an import up (`created_by`) is told when it ends on
+ * its own: finished, or stopped on an error. A large server takes hours and
+ * the page says they can leave, so either way they need to hear. One they
+ * stopped themselves sends nothing. `admin`, like a filed chat report: officer
+ * traffic with no member-facing switch. NORMAL, so quiet hours hold. The
+ * target opens the import page on web; mobile has no such page and falls
+ * through to the list.
  */
 export function importFinishedNotification(
-  row: Pick<DiscordImport, 'imported_messages' | 'guild_name'>,
+  row: Pick<DiscordImport, 'status' | 'imported_messages' | 'guild_name'>,
 ): NotifyPayload {
+  const base = {
+    priority: 'NORMAL' as const,
+    category: 'admin' as const,
+    data: { target: { screen: DISCORD_IMPORT_NOTIFICATION_SCREEN } },
+  };
+  if (row.status === 'failed') {
+    return {
+      ...base,
+      title: 'Discord import stopped',
+      body: `The import${row.guild_name ? ` from ${row.guild_name}` : ''} stopped on an error. Open the Discord import page to see why.`,
+    };
+  }
   const count = row.imported_messages.toLocaleString('en-US');
   const one = row.imported_messages === 1;
   const from = row.guild_name ? ` from ${row.guild_name}` : '';
   return {
+    ...base,
     title: 'Discord import finished',
     body: `${count} ${one ? 'message' : 'messages'}${from} ${one ? 'is' : 'are'} now in Frapp chat.`,
-    priority: 'NORMAL',
-    category: 'admin',
-    data: { target: { screen: 'discord_import' } },
   };
 }
 
@@ -228,8 +244,8 @@ export class DiscordImportWorkerService {
     // an imported message's attachments live under the import's prefix.
     @Inject(CHAT_MESSAGE_REPORT_REPOSITORY)
     private readonly reportRepo: IChatMessageReportRepository,
-    // Tells whoever started an import that it finished: a large server takes
-    // hours, and the page says it will.
+    // Tells the admin who set an import up that it ended: a large server
+    // takes hours, and the page says they will hear.
     private readonly notifications: NotificationService,
   ) {}
 
@@ -331,12 +347,15 @@ export class DiscordImportWorkerService {
             error,
           });
         }
-        await this.importRepo.updateIfStatus(
+        const failed = await this.importRepo.updateIfStatus(
           job.id,
           job.chapter_id,
           [...WORKER_MAY_CONTINUE, 'purging'],
           { status: 'failed', error: message },
         );
+        // A deletion that failed is not news to send: the admin who asked
+        // for it is watching it count down. An import that failed is.
+        if (job.status !== 'purging') await this.announceFinished(failed);
         return { claimed: true, importId: job.id, finished: true };
       } finally {
         await this.importRepo.releaseLease(job.id, lockToken).catch(() => {
@@ -493,15 +512,23 @@ export class DiscordImportWorkerService {
   }
 
   /**
-   * Notify whoever started the import, once the closing write has made it
-   * `completed`. That write is status-guarded, so it moves a job to
-   * `completed` once and only one slice reaches this with a completed row.
-   * Best-effort: the import is finished whether or not the notice goes out,
-   * so a failure is logged and never fails the slice.
+   * Notify the admin who set the import up, once a closing write has made it
+   * `completed` or `failed`. Those writes are status-guarded, so only one
+   * slice reaches this with the closed row. Only while they can still open
+   * the import page (`channels:manage` in this chapter): an officer who has
+   * since left the role, or the chapter, is not sent the chapter's news.
+   * Best-effort: the import is over whether or not the notice goes out, so a
+   * failure is logged and never fails the slice.
    */
   private async announceFinished(row: DiscordImport | null): Promise<void> {
-    if (row?.status !== 'completed' || !row.created_by) return;
+    if (!row?.created_by) return;
+    if (row.status !== 'completed' && row.status !== 'failed') return;
     try {
+      const admins = await this.rbac.findUserIdsWithPermissions(
+        row.chapter_id,
+        ['channels:manage'],
+      );
+      if (!admins.includes(row.created_by)) return;
       await this.notifications.notifyUser(
         row.created_by,
         row.chapter_id,
@@ -587,7 +614,9 @@ export class DiscordImportWorkerService {
         part.storage_path,
       );
       if (!bytes) {
-        warnings.push(`Uploaded export part is missing: ${part.relative_path}`);
+        warnings.push(
+          `Export file "${part.relative_path}" is missing from the upload, so its messages were skipped.`,
+        );
         partIndex += 1;
         messageIndex = 0;
         continue;
@@ -603,7 +632,7 @@ export class DiscordImportWorkerService {
       // the cursor advances and the import cannot loop on it forever.
       if (bytes.byteLength > MAX_ARCHIVE_EXPORT_PART_BYTES) {
         warnings.push(
-          `${part.relative_path} is ${Math.round(bytes.byteLength / 1024 / 1024)} MB, over the ${Math.round(MAX_ARCHIVE_EXPORT_PART_BYTES / 1024 / 1024)} MB limit for one export part — re-export with a smaller --partition. Skipped.`,
+          `Export file "${part.relative_path}" is ${Math.round(bytes.byteLength / 1024 / 1024)} MB, over the ${Math.round(MAX_ARCHIVE_EXPORT_PART_BYTES / 1024 / 1024)} MB limit for one export file, so its messages were skipped. Re-export with a smaller --partition.`,
         );
         partIndex += 1;
         messageIndex = 0;
@@ -615,7 +644,9 @@ export class DiscordImportWorkerService {
         parsed = parseExportPart(bytes);
       } catch (error) {
         if (!(error instanceof DiscordExportFormatError)) throw error;
-        warnings.push(`${part.relative_path}: ${error.message}`);
+        warnings.push(
+          `Export file "${part.relative_path}" couldn't be read (${error.message}), so its messages were skipped.`,
+        );
         partIndex += 1;
         messageIndex = 0;
         continue;
@@ -629,7 +660,7 @@ export class DiscordImportWorkerService {
       if (!mapping || mapping.mapping_action === 'skip') {
         if (!mapping) {
           warnings.push(
-            `No mapping for #${parsed.channel.name ?? parsed.channel.id}; its messages were skipped.`,
+            `#${parsed.channel.name ?? parsed.channel.id} had no place chosen in Frapp, so its messages were skipped.`,
           );
         }
         partIndex += 1;
@@ -883,7 +914,9 @@ export class DiscordImportWorkerService {
       );
       attachmentsSkipped += unresolved.length;
       for (const path of unresolved) {
-        warnings.push(`No uploaded file for attachment: ${path}`);
+        warnings.push(
+          `"${path}" wasn't in the upload, so it was not imported. The message it belongs to was.`,
+        );
       }
 
       const row = toImportedMessage({
@@ -897,7 +930,7 @@ export class DiscordImportWorkerService {
       });
       if (!row) {
         warnings.push(
-          `Skipped a message with no id or timestamp in this export.`,
+          `A message with no id or time in the export was skipped.`,
         );
         continue;
       }

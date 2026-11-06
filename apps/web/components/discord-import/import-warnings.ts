@@ -53,6 +53,28 @@ const REASONS: Reason[] = [
     title: "Channels the bot could no longer read",
     matches: /no longer readable in Discord/,
   },
+  // The upload path's own reasons.
+  {
+    key: "missing",
+    title: "Files missing from the upload",
+    matches: /wasn't in the upload|^No uploaded file for attachment/,
+  },
+  {
+    key: "part",
+    title: "Export files Frapp couldn't read",
+    matches:
+      /^Export file "|^Uploaded export part is missing|limit for one export part|^\S+\.json: /,
+  },
+  {
+    key: "unmapped",
+    title: "Channels with no place chosen",
+    matches: /had no place chosen in Frapp|^No mapping for #/,
+  },
+  {
+    key: "message",
+    title: "Messages with no id or time",
+    matches: /no id or (time|timestamp)/,
+  },
 ];
 
 export interface WarningGroup {
@@ -67,7 +89,15 @@ function subject(warning: string): string | null {
   const quoted = /"([^"]+)"/.exec(warning);
   if (quoted?.[1]) return quoted[1];
   const channel = /^#\S+/.exec(warning);
-  return channel?.[0] ?? null;
+  if (channel?.[0]) return channel[0];
+  // The older upload wording named its file or channel after a colon.
+  const named =
+    /^(?:No uploaded file for attachment|Uploaded export part is missing): (.+)$/.exec(
+      warning,
+    ) ??
+    /^No mapping for (#[^;]+);/.exec(warning) ??
+    /^(\S+\.json): /.exec(warning);
+  return named?.[1] ?? null;
 }
 
 function readable(warning: string): string {

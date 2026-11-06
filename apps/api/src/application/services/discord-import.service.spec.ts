@@ -330,11 +330,16 @@ describe('DiscordImportService — upload URLs', () => {
 });
 
 describe('DiscordImportService — one import per chapter', () => {
-  it('refuses a new import while another still holds what it brought in', async () => {
+  it.each([
+    'ready',
+    'running',
+    'completed',
+    'failed',
+    'cancelled',
+    'purging',
+  ] as const)('refuses a new import while another is %s', async (status) => {
     await build();
-    repo.findByChapter.mockResolvedValue([
-      job({ id: 'other', status: 'completed' }),
-    ]);
+    repo.findByChapter.mockResolvedValue([job({ id: 'other', status })]);
     await expect(
       service.create(CHAPTER, USER, { consent_acknowledged: true }),
     ).rejects.toThrow(ConflictException);

@@ -8,6 +8,7 @@ import {
   useClearDiscordImport,
   useDeleteDiscordImport,
   useDiscordImports,
+  useStartDiscordImport,
 } from "@repo/hooks";
 import { Can } from "@/components/shared/can";
 import { Button } from "@/components/ui/button";
@@ -69,7 +70,7 @@ export function DiscordImportPage() {
 
   // `?wizard=bot` is set by the Discord connect step's return path, so the
   // browser coming back from Discord lands where it left off rather than on the
-  // import list with no idea whether anything happened.
+  // page's start with no idea whether anything happened.
   //
   // Both of these are read ONCE into state, not on every render. The effect
   // below strips the params, and Next patches `replaceState` so
@@ -215,6 +216,7 @@ function DiscordImportView({
   const deleteImport = useDeleteDiscordImport();
   const cancelImport = useCancelDiscordImport();
   const clearImport = useClearDiscordImport();
+  const startImport = useStartDiscordImport();
   const botAvailable = useBotUsable();
   const { toast } = useToast();
   // The channel-by-channel panel (#2857), opened from the import's own page.
@@ -277,7 +279,7 @@ function DiscordImportView({
   }
 
   const rows: ImportRow[] = imports.data ?? [];
-  const { current, lastDeleted } = currentImport(rows);
+  const { current, lastDeleted, unfinished } = currentImport(rows);
 
   async function stop(row: ImportRow) {
     try {
@@ -287,6 +289,20 @@ function DiscordImportView({
       toast({
         variant: "destructive",
         description: getErrorMessage(error, "Could not stop the import."),
+      });
+    }
+  }
+
+  // A failed import picks up where it stopped (#2947 tracks the restart's
+  // remaining gaps); its cutoff and mappings are kept.
+  async function resume(row: ImportRow) {
+    try {
+      await startImport.mutateAsync({ id: row.id });
+      toast({ description: "Resuming the import." });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        description: getErrorMessage(error, "Could not resume the import."),
       });
     }
   }
@@ -359,6 +375,9 @@ function DiscordImportView({
           onPick={(source) => openWizard({ source, step: FIRST_STEP[source] })}
           lastDeleted={lastDeleted}
           onDismissDeleted={() => lastDeleted && void dismiss(lastDeleted)}
+          unfinished={unfinished}
+          onDeleteUnfinished={() => unfinished && void purge(unfinished)}
+          deleting={deleteImport.isPending}
         />
       ) : stage === "importing" ? (
         <ImportRunning
@@ -374,6 +393,8 @@ function DiscordImportView({
           row={current}
           onDelete={() => void purge(current)}
           deleting={deleteImport.isPending}
+          onResume={() => void resume(current)}
+          resuming={startImport.isPending}
           channels={channels(current, false)}
         />
       )}

@@ -329,7 +329,7 @@ export function ImportWizard({
       // the server, Discord is slow — and the admin is left on this step with
       // Continue still enabled. Without this, every retry mints another
       // `discord_imports` row (consent stamped, guild stamped) and orphans the
-      // last one in `draft` for them to delete by hand.
+      // last one in `draft`, which the page's start then offers to delete.
       const createdId =
         importId ??
         (

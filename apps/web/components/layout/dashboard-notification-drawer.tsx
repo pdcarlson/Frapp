@@ -5,6 +5,7 @@ import Link from "next/link";
 import { CheckCheck, Loader2 } from "lucide-react";
 import {
   CHAT_REPORTS_NOTIFICATION_SCREEN,
+  DISCORD_IMPORT_NOTIFICATION_SCREEN,
   useInvalidateChatReports,
   useMarkNotificationRead,
   useNotifications,
@@ -85,8 +86,9 @@ function deepLinkFor(notification: Notification): string {
     // targets it with a bare screen, and the queue lives on Chat Admin.
     case CHAT_REPORTS_NOTIFICATION_SCREEN:
       return "/chat-admin";
-    // A finished Discord import, sent to whoever started it.
-    case "discord_import":
+    // A Discord import that finished or stopped on an error, sent to the
+    // admin who set it up.
+    case DISCORD_IMPORT_NOTIFICATION_SCREEN:
       return "/discord-import";
     default:
       return "/chat";

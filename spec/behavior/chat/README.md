@@ -569,21 +569,24 @@ deliberate race. The page shows that one import in the state it is in:
   posts, files, reaction counts, categories if the admin wants them, private
   channels kept private) and what stays behind (DMs, voice, and who holds
   which role), with the two ways in as the wizard's first step. Picking one
-  opens the wizard past it. An abandoned draft reads as nothing imported, and
-  the import last deleted is named in one line until the admin dismisses it.
+  opens the wizard past it. An abandoned draft reads as nothing imported, but
+  an upload's draft can hold its export, counted against the chapter's
+  archive space, so the newest one is named with a Delete. The import last
+  deleted is named in one line until the admin dismisses it.
 - **Importing:** the messages counted in so far, channels and threads done
   out of the total, the percent, and Stop import. The admin can leave: when
-  the import completes, whoever started it gets an in-app notification and
-  push (`Discord import finished`, category `admin`, opening
-  `/discord-import`; [`../notifications.md`](../notifications.md#deep-linking)).
-  A failed or stopped import sends none, since the admin who stopped it is
-  looking at it, and a failed one says why on the page.
-- **Finished, or stopped part-way:** the messages, files, and channels and
-  threads that came over; Open chat, once it completed; what didn't come over,
-  grouped by reason in plain words (file types Frapp doesn't store, files with
-  no type Frapp could tell, files too large, files Discord no longer has,
-  files storage couldn't take, channels the bot could no longer read), from
-  the last 50 warnings the import keeps; and Delete import.
+  the import completes or fails, the admin who set it up (`created_by`) is
+  notified, if they still hold `channels:manage` in the chapter. One the
+  admin stopped sends nothing. The notice itself is in
+  [`../notifications.md`](../notifications.md#notification-triggers-complete-list).
+- **Finished, or stopped part-way:** the messages and files that came over,
+  and the channels and threads (all it read once completed, the ones it got
+  through otherwise); Open chat, once it completed; Resume import, on one
+  that failed, which starts it again from where it stopped (#2947);
+  what didn't come over, grouped by reason in plain words, from the last 50
+  warnings the import keeps; and Delete import. A deletion that failed
+  part-way also leaves the import `failed`, and is titled as a failed
+  deletion, with no Resume.
 - **Deleting:** the messages counted down (below).
 
 **Watching an import (#2857).** See every channel, on a bot import that is
@@ -592,7 +595,7 @@ importing, waiting, failed or gone from Discord; the one importing now with its
 message count so far; the last few finished; and the failures with their
 reasons (at most 20 named), each linking to the Frapp channel it lands in once
 there is one. A channel the import fails on is marked failed with the reason,
-and a restart resumes it (through the API only today, #2947). The same panel opens on a finished bot import,
+and a restart resumes it (Resume import on the page, for a failed import; #2947 tracks what a restart still gets wrong after a remap). The same panel opens on a finished bot import,
 read once when the import stops rather than polled, and there a channel still
 marked importing is where the import stopped. Hide channels closes the panel
 and keeps the import's own progress live. Imported messages never arrive live in an open

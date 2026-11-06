@@ -64,12 +64,19 @@ export function ImportLanding({
   onPick,
   lastDeleted,
   onDismissDeleted,
+  unfinished,
+  onDeleteUnfinished,
+  deleting,
 }: {
   botAvailable: boolean;
   onPick: (source: ImportSource) => void;
   /** The last import, deleted, until the admin dismisses the line. */
   lastDeleted: ImportRow | null;
   onDismissDeleted: () => void;
+  /** An import set up part-way and left, which may hold an uploaded export. */
+  unfinished: ImportRow | null;
+  onDeleteUnfinished: () => void;
+  deleting: boolean;
 }) {
   return (
     <section
@@ -86,6 +93,25 @@ export function ImportLanding({
           to claim what they wrote.
         </p>
       </div>
+
+      {unfinished ? (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3 text-sm">
+          <p className="text-muted-foreground">
+            An import
+            {unfinished.guild_name ? ` from ${unfinished.guild_name}` : ""} was
+            set up and not started. Delete it to remove anything uploaded for
+            it.
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onDeleteUnfinished}
+            disabled={deleting}
+          >
+            Delete
+          </Button>
+        </div>
+      ) : null}
 
       {lastDeleted ? (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3 text-sm">
@@ -212,20 +238,34 @@ const FINISHED_TITLE: Record<string, string> = {
 
 /**
  * State 4: done, or stopped part-way. What came over, what didn't and why,
- * and the one way back.
+ * and the way back: Resume for an import that failed, Delete for any.
  */
 export function ImportFinished({
   row,
   onDelete,
   deleting,
+  onResume,
+  resuming,
   channels,
 }: {
   row: ImportRow;
   onDelete: () => void;
   deleting: boolean;
+  onResume: () => void;
+  resuming: boolean;
   channels: React.ReactNode;
 }) {
   const done = row.status === "completed";
+  // A deletion that failed part-way leaves the import `failed` too (#2944):
+  // the import itself came over, so it must not read as an import that broke.
+  const purged = row.purged_messages ?? 0;
+  const deletionFailed = row.status === "failed" && purged > 0;
+  // An import that failed picks up where it stopped when started again; one
+  // the admin stopped, or whose deletion failed, does not.
+  const resumable = row.status === "failed" && !deletionFailed;
+  const title = deletionFailed
+    ? "The deletion stopped on an error"
+    : (FINISHED_TITLE[row.status] ?? "The import stopped");
   const groups = groupWarnings(row.warnings ?? []);
   const warned = row.warnings?.length ?? 0;
   const since = formatDay(row.messages_after);
@@ -237,17 +277,15 @@ export function ImportFinished({
     >
       <div className="space-y-1">
         <h2 id="discord-import-finished" className="text-headline">
-          {FINISHED_TITLE[row.status] ?? "The import stopped"}
+          {title}
         </h2>
         <p className="text-sm text-muted-foreground">
           {[
-            row.guild_name ?? "Discord",
+            row.guild_name,
             since ? `messages since ${since}` : null,
             done && finishedAt ? `finished ${finishedAt}` : null,
             // A deletion that failed part-way (#2944).
-            (row.purged_messages ?? 0) > 0
-              ? `${count(row.purged_messages)} already deleted`
-              : null,
+            purged > 0 ? `${count(purged)} already deleted` : null,
           ]
             .filter(Boolean)
             .join(" · ")}
@@ -260,10 +298,17 @@ export function ImportFinished({
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Figure value={count(row.imported_messages)} label="messages" />
         <Figure value={count(row.attachments_imported)} label="files" />
-        {row.channels_total !== null && row.channels_total !== undefined ? (
+        {/* Done, every channel it read; stopped part-way, the ones it got
+            through, since the rest never came over. */}
+        {done && typeof row.channels_total === "number" ? (
           <Figure
             value={count(row.channels_total)}
             label="channels and threads"
+          />
+        ) : !done && typeof row.channels_done === "number" ? (
+          <Figure
+            value={count(row.channels_done)}
+            label="channels and threads done"
           />
         ) : null}
       </dl>
@@ -273,6 +318,16 @@ export function ImportFinished({
           <Button asChild>
             <Link href="/chat">Open chat</Link>
           </Button>
+        </div>
+      ) : resumable ? (
+        <div className="space-y-1.5">
+          <Button onClick={onResume} disabled={resuming}>
+            Resume import
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            It picks up where it stopped. Nothing already imported comes in
+            twice.
+          </p>
         </div>
       ) : null}
 
@@ -312,8 +367,8 @@ export function ImportFinished({
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
         <p className="max-w-md text-sm text-muted-foreground">
-          Deleting the import removes everything it brought in. Roles it made
-          stay, and so does anything you made yourself.
+          Deleting the import removes the messages and files it brought in. The
+          roles and read permissions it made stay.
         </p>
         <Button variant="destructive" onClick={onDelete} disabled={deleting}>
           Delete import

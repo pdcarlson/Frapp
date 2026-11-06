@@ -39,8 +39,8 @@ function removesSentence(row: ImportRow): string {
 /**
  * The confirmation Delete import opens. It names the counts because a delete
  * of five thousand messages and one of a hundred and forty thousand look the
- * same from the button, and names the server because every row carries the
- * same control.
+ * same from the button, and names the server so the admin knows which
+ * Discord's history goes.
  */
 export function deleteImportConfirmation(row: ImportRow): ConfirmRequest {
   const removes = removesSentence(row);

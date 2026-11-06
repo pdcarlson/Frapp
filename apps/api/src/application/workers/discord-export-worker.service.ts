@@ -729,7 +729,7 @@ export class DiscordExportWorkerService {
       totals.skipped += outcome.skipped;
       totals.attachmentsImported += outcome.attachmentsImported;
       totals.attachmentsSkipped += outcome.attachmentsSkipped;
-      // The batch writer emits a bare "No uploaded file for attachment: <key>"
+      // The batch writer emits a generic "<key> wasn't in the upload" line
       // for every key it cannot resolve — including the ones this slice
       // deliberately rejected a moment ago and already explained by name and
       // reason. Both lines compete for a 50-entry buffer that keeps the tail,
@@ -1024,7 +1024,7 @@ export class DiscordExportWorkerService {
             // A deleted or expired attachment is a warning on one message,
             // not a failed import — the message still has its text.
             totals.warnings.push(
-              `Attachment "${name}" is no longer available from Discord and was not imported.`,
+              `"${name}" is no longer available from Discord, so it was not imported. The message it belongs to was.`,
             );
             break;
           default:

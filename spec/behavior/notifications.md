@@ -46,7 +46,7 @@ its emitter sets: `chat` sends `channelId`, `events` sends `eventId`, `tasks` se
 (the new-report notification, [`chat/README.md`](./chat/README.md#report)); web
 resolves it to `/chat-admin`, and mobile, which has no queue, falls through to the
 notification list like any screen it does not route. `discord_import` is the notice
-that a Discord import finished, sent to whoever started it
+that a Discord import finished or stopped on an error, sent to the admin who set it up
 ([`chat/README.md`](./chat/README.md#imported-archive-messages)); web resolves it to
 `/discord-import`, and mobile, which has no import page, falls through the same way. Every chat row and push also carries `senderId`, the sending member's
 `users.id`, which the in-app list uses to withhold a blocked member's rows
@@ -332,7 +332,7 @@ Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge l
 | Admin         | Invite accepted                                                    | SILENT                      |
 | Admin         | Role change on a member                                            | SILENT                      |
 | Admin         | Chat message reported (to report-queue officers; never the reported sender or the reporter; content-free) | NORMAL |
-| Admin         | Discord import finished (to whoever started it; not sent when it fails or is stopped) | NORMAL |
+| Admin         | Discord import finished, or stopped on an error (to the admin who set it up, while they hold `channels:manage`; not when an admin stopped it, nor for a failed deletion) | NORMAL |
 
 ## Pre-Event Reminders
 
