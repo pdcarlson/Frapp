@@ -39,7 +39,10 @@ function homeSource(file: string): string {
 }
 
 const allSources = [pageSource, ...Object.values(homeSources)].join("\n");
-const globalsSource = readFileSync(join(landingRoot, "app/globals.css"), "utf8");
+const globalsSource = readFileSync(
+  join(landingRoot, "app/globals.css"),
+  "utf8",
+);
 const layoutSource = readFileSync(join(landingRoot, "app/layout.tsx"), "utf8");
 
 /**
@@ -127,7 +130,9 @@ describe("landing marketing copy rules", () => {
     expect(flatAll).toContain(
       "Events, check-in and points land in the conversation",
     );
-    expect(renderedAll).not.toMatch(/dues[^.]{0,40}(in|into) (the )?(chat|thread|conversation)/i);
+    expect(renderedAll).not.toMatch(
+      /dues[^.]{0,40}(in|into) (the )?(chat|thread|conversation)/i,
+    );
   });
 
   it("carries no testimonial, no FAQ and no stats array", () => {
@@ -147,7 +152,9 @@ describe("landing marketing copy rules", () => {
     // pairing is what makes this bite: counting `aria-label=` anywhere in the
     // file passed on the nav and the lockup alone, so a frame could lose its
     // label and the assertion would not notice.
-    expect(renderedAll.match(/role="img"\s+aria-label=/g) ?? []).toHaveLength(2);
+    expect(renderedAll.match(/role="img"\s+aria-label=/g) ?? []).toHaveLength(
+      2,
+    );
     expect(
       flatAll.match(/Names and (messages|events) are illustrative/g) ?? [],
     ).toHaveLength(3);
@@ -180,7 +187,9 @@ describe("landing page structure", () => {
     // drops off the page would still satisfy them. Every component a file there
     // exports is either rendered by `page.tsx` or by another file there.
     const exported = Object.values(homeSources).flatMap((source) =>
-      [...source.matchAll(/^export function (\w+)/gm)].map((match) => String(match[1])),
+      [...source.matchAll(/^export function (\w+)/gm)].map((match) =>
+        String(match[1]),
+      ),
     );
     expect(exported.length).toBeGreaterThan(0);
     for (const name of exported) {
@@ -211,7 +220,10 @@ describe("landing page structure", () => {
     // file an editor actually opens has to send them there.
     for (const [file, source] of Object.entries(homeSources)) {
       if (!file.endsWith(".tsx")) continue;
-      expect(source, `components/home/${file} lost its pointer to the rules`).toContain(
+      expect(
+        source,
+        `components/home/${file} lost its pointer to the rules`,
+      ).toContain(
         "The four rules at the top of `app/page.tsx` bind everything this file draws.",
       );
     }
@@ -241,7 +253,9 @@ describe("landing page structure", () => {
       events.indexOf("<EventFrame"),
     );
     // Desktop puts it back on the left without disturbing that source order.
-    expect(events).toMatch(/lg:col-start-1[^"]*lg:row-start-1|lg:row-start-1[^"]*lg:col-start-1/);
+    expect(events).toMatch(
+      /lg:col-start-1[^"]*lg:row-start-1|lg:row-start-1[^"]*lg:col-start-1/,
+    );
   });
 
   it("gives the event frame the phone board's geometry as its base", () => {
@@ -250,8 +264,16 @@ describe("landing page structure", () => {
     // phone frame at the desktop's height and cropped different content.
     const frame = withoutComments(homeSource("event-frame.tsx"));
     expect(frame).toContain("function EventFrame");
-    for (const base of ["h-[560px]", "w-[350px]", "rounded-[28px]", "px-4", "pt-11"]) {
-      expect(frame, `event frame is missing the phone base ${base}`).toContain(base);
+    for (const base of [
+      "h-[560px]",
+      "w-[350px]",
+      "rounded-[28px]",
+      "px-4",
+      "pt-11",
+    ]) {
+      expect(frame, `event frame is missing the phone base ${base}`).toContain(
+        base,
+      );
     }
     for (const up of [
       "sm:h-[600px]",
@@ -260,7 +282,10 @@ describe("landing page structure", () => {
       "sm:px-5",
       "sm:pt-14",
     ]) {
-      expect(frame, `event frame is missing the desktop override ${up}`).toContain(up);
+      expect(
+        frame,
+        `event frame is missing the desktop override ${up}`,
+      ).toContain(up);
     }
   });
 
@@ -275,7 +300,9 @@ describe("landing page structure", () => {
     const thread = chatFrame.slice(start, end);
 
     it("finds the thread", () => {
-      expect(start, "the chat thread's row list moved").toBeGreaterThanOrEqual(0);
+      expect(start, "the chat thread's row list moved").toBeGreaterThanOrEqual(
+        0,
+      );
       expect(end, "the composer moved").toBeGreaterThan(start);
     });
 
@@ -286,9 +313,10 @@ describe("landing page structure", () => {
       expect(runs).toHaveLength(rowCount);
       for (const run of runs) {
         // `formatTimeOfDay`'s shape: never a date, never a "read" marker.
-        expect(run, "an author line carries something besides the time").toMatch(
-          /\btime="\d{1,2}:\d{2} [AP]M"/,
-        );
+        expect(
+          run,
+          "an author line carries something besides the time",
+        ).toMatch(/\btime="\d{1,2}:\d{2} [AP]M"/);
       }
       expect(thread).not.toMatch(/·\s*read\b/i);
       // And `RunStart`'s author line is the name then that prop, and nothing
@@ -298,12 +326,16 @@ describe("landing page structure", () => {
       );
     });
 
-    it("labels the viewer's own run \"You\" in the accent text, on the left", () => {
-      expect(thread.match(/<RunStart\b[^>]*\bauthor="You"[^>]*\bself\b/g) ?? []).toHaveLength(1);
+    it('labels the viewer\'s own run "You" in the accent text, on the left', () => {
+      expect(
+        thread.match(/<RunStart\b[^>]*\bauthor="You"[^>]*\bself\b/g) ?? [],
+      ).toHaveLength(1);
       expect(thread).toMatch(/self \? "text-accent-text" : "text-foreground"/);
       // Own messages sit on the left like everyone else's: nothing pushes a
       // row, or its body, to the right edge.
-      expect(thread).not.toMatch(/\b(?:ml-auto|self-end|items-end|flex-row-reverse|text-right)\b/);
+      expect(thread).not.toMatch(
+        /\b(?:ml-auto|self-end|items-end|flex-row-reverse|text-right)\b/,
+      );
     });
 
     it("draws message text with no fill, border or padding", () => {
@@ -317,9 +349,11 @@ describe("landing page structure", () => {
       // round a body, or a retinted row, adds a token or a count this doesn't
       // allow, whichever spelling it uses (`rounded`, `border-[1px]`,
       // `border-l-2`, `ring-1`).
-      const visual = (thread.match(
-        /(?<![\w-])(?:bg|border|rounded|ring|shadow|outline|divide)(?:-[\w[\].%/-]+)?/g,
-      ) ?? []).reduce<Record<string, number>>(
+      const visual = (
+        thread.match(
+          /(?<![\w-])(?:bg|border|rounded|ring|shadow|outline|divide)(?:-[\w[\].%/-]+)?/g,
+        ) ?? []
+      ).reduce<Record<string, number>>(
         (counts, token) => ({ ...counts, [token]: (counts[token] ?? 0) + 1 }),
         {},
       );
@@ -357,10 +391,9 @@ describe("landing page structure", () => {
       ["log-in", "cta-band"],
       ["log-in", "footer"],
     ]) {
-      expect(
-        renderedAll,
-        `no TrackedCta for ${cta} on ${surface}`,
-      ).toMatch(new RegExp(`cta="${cta}"\\s*\\n?\\s*surface="${surface}"`));
+      expect(renderedAll, `no TrackedCta for ${cta} on ${surface}`).toMatch(
+        new RegExp(`cta="${cta}"\\s*\\n?\\s*surface="${surface}"`),
+      );
     }
     expect(pageSource).toContain("buildAuthUrls");
     // The invite CTA targets this origin's `/join`, which calls `buildJoinUrl`
@@ -390,7 +423,8 @@ describe("landing motion stylesheet", () => {
 
   function jsNumber(name: string): number {
     const match = new RegExp(`${name}:\\s*(\\d+)`).exec(tokensSource);
-    if (!match) throw new Error(`motion.duration.${name} not found in motion.ts`);
+    if (!match)
+      throw new Error(`motion.duration.${name} not found in motion.ts`);
     return Number(match[1]);
   }
 
@@ -412,10 +446,15 @@ describe("landing motion stylesheet", () => {
       ["motion-ease-standard", "standard"],
       ["motion-ease-entrance", "entrance"],
     ]) {
-      const css = new RegExp(`--${cssName}:\\s*([^;]+);`).exec(globalsSource)?.[1];
+      const css = new RegExp(`--${cssName}:\\s*([^;]+);`).exec(
+        globalsSource,
+      )?.[1];
       const js = new RegExp(`${jsName}:\\s*"([^"]+)"`).exec(tokensSource)?.[1];
       expect(css, `--${cssName} missing from globals.css`).toBeDefined();
-      expect(js, `motion.easing.${jsName} missing from motion.ts`).toBeDefined();
+      expect(
+        js,
+        `motion.easing.${jsName} missing from motion.ts`,
+      ).toBeDefined();
       expect(normalize(css ?? "")).toBe(normalize(js ?? "unmatched"));
     }
   });
@@ -444,7 +483,9 @@ describe("landing motion stylesheet", () => {
      */
     const ceiling = cssMs("motion-context");
     const durations = new Map<string, number>();
-    for (const match of globalsSource.matchAll(/--(motion-[a-z-]+):\s*(\d+)ms/g)) {
+    for (const match of globalsSource.matchAll(
+      /--(motion-[a-z-]+):\s*(\d+)ms/g,
+    )) {
       durations.set(String(match[1]), Number(match[2]));
     }
 
@@ -456,7 +497,11 @@ describe("landing motion stylesheet", () => {
 
       const named = /var\(--(motion-[a-z-]+)\)/.exec(decl)?.[1];
       const literal = /\b(\d+)ms\b/.exec(decl)?.[1];
-      const duration = named ? durations.get(named) : literal ? Number(literal) : undefined;
+      const duration = named
+        ? durations.get(named)
+        : literal
+          ? Number(literal)
+          : undefined;
       if (duration === undefined) {
         offenders.push(`${decl} — no duration this test can resolve`);
         continue;
@@ -464,7 +509,9 @@ describe("landing motion stylesheet", () => {
 
       // Strip `var(...)` and `NNNms` so what is left of the shorthand can be
       // scanned for a bare iteration count.
-      const rest = decl.replace(/var\([^)]*\)/g, " ").replace(/\b\d+ms\b/g, " ");
+      const rest = decl
+        .replace(/var\([^)]*\)/g, " ")
+        .replace(/\b\d+ms\b/g, " ");
       if (/\binfinite\b/.test(rest)) {
         offenders.push(`${decl} — loops, and nothing on this page may loop`);
         continue;
@@ -482,18 +529,20 @@ describe("landing motion stylesheet", () => {
       offenders,
       "a gesture runs longer than the context duration `spec/ui/design-system/README.md` §7 sets " +
         "as the ceiling. Declaring no single number over the limit does not make it shorter; a " +
-        "gesture that needs longer is the Motion sheet's signature class, and that class needs the " +
-        "taxonomy amendment #2378 is blocked on, in the same pull request.",
+        "gesture that needs longer is the Motion sheet's signature class, which this page may use " +
+        "only once README §7 admits the crest (#2378), in the same pull request.",
     ).toEqual([]);
   });
 
-  it("does not claim a fourth motion class without the amendment that pays for it", () => {
+  it("does not claim the signature class until README §7 admits the crest", () => {
     /*
-     * D4's signature moment is cut until brand sign-off clears (#2378). If a
-     * later change reintroduces it, the taxonomy amendment has to land in the
-     * SAME pull request, never earlier and never later, per
-     * `spec/ui/landing/README.md` § Motion, and what D4 still owes. This test
-     * is what makes "the same PR" mechanical rather than remembered.
+     * D4's signature moment is cut until brand sign-off clears (#2378). The
+     * signature class itself now exists (README §7 § Signature moments,
+     * 2026-11-06, #3493), but its trigger excludes a page load, so the crest
+     * needs §7 amended to admit it, with its own catalog row, in the SAME pull
+     * request that declares it here, per `spec/ui/landing/README.md` § Motion,
+     * and what D4 still owes. This test makes that mechanical: a catalog row
+     * naming the crest.
      */
     // Matches what the signature class would actually declare, not the word:
     // the comment above these rules explains at length why it is absent.
@@ -502,25 +551,21 @@ describe("landing motion stylesheet", () => {
         globalsSource,
       );
     if (!declaresSignature) {
-      expect(globalsSource).not.toMatch(/@keyframes\s+signet-(wipe|settle|bloom)/);
+      expect(globalsSource).not.toMatch(
+        /@keyframes\s+signet-(wipe|settle|bloom)/,
+      );
       return;
     }
     const designSystemReadme = readFileSync(
       join(repoRoot, "spec/ui/design-system/README.md"),
       "utf8",
     );
-    const foundations = readFileSync(
-      join(repoRoot, "spec/ui/design-system/foundations.md"),
-      "utf8",
-    );
+    const catalog =
+      /\*\*Catalog\.\*\*[\s\S]*?(?=\n## )/.exec(designSystemReadme)?.[0] ?? "";
     expect(
-      designSystemReadme,
-      "README §7's motion table needs the signature row in this PR",
-    ).toMatch(/signature/i);
-    expect(
-      foundations,
-      "foundations §11 needs the signature paragraph in this PR",
-    ).toMatch(/signature/i);
+      catalog,
+      "README §7's signature catalog needs a row for the landing crest in this PR",
+    ).toMatch(/^\|[^\n]*crest[^\n]*\|$/im);
   });
 
   it("never arms a block the browser has already painted", () => {
@@ -536,7 +581,9 @@ describe("landing motion stylesheet", () => {
     );
     const guard = wrapper.indexOf("getBoundingClientRect");
     const arm = wrapper.indexOf('classList.add("reveal-armed")');
-    expect(guard, "the wrapper must measure before it arms").toBeGreaterThan(-1);
+    expect(guard, "the wrapper must measure before it arms").toBeGreaterThan(
+      -1,
+    );
     expect(guard).toBeLessThan(arm);
     expect(wrapper).toMatch(
       /getBoundingClientRect\(\)\.top\s*<\s*window\.innerHeight\)\s*return;/,
@@ -555,9 +602,10 @@ describe("landing motion stylesheet", () => {
   it("draws every reveal at rest under reduced motion", () => {
     // The hidden state lives inside the no-preference query, so a reduced
     // motion user never has content hidden that something else must un-hide.
-    const noPreference = /@media \(prefers-reduced-motion: no-preference\)\s*\{/.exec(
-      globalsSource,
-    );
+    const noPreference =
+      /@media \(prefers-reduced-motion: no-preference\)\s*\{/.exec(
+        globalsSource,
+      );
     expect(noPreference).not.toBeNull();
 
     /*
