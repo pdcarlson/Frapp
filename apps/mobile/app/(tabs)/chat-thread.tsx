@@ -34,6 +34,7 @@ import {
   resolveAuthorName,
   useActiveChapterId,
   useChannel,
+  useChapterRoster,
   useChannelNotificationPreferences,
   useCurrentUser,
   useMarkChannelRead,
@@ -567,6 +568,9 @@ export default function ChatThreadScreen() {
     () => jumpToLatest({ animated: false }),
     [jumpToLatest],
   );
+  // Who the composer's `@` offers. The same roster read `useMemberDisplayNames`
+  // makes (one query key), so it costs no second request.
+  const mentionRoster = useChapterRoster();
   // A staged reply or an open edit (#2775), keyed by channel. Typing into the
   // draft still emits typing; typing into an edit does not, since nothing new
   // is on its way.
@@ -1186,6 +1190,7 @@ export default function ChatThreadScreen() {
             onSend={handleSend}
             canSend={canSend && channelCanPost && !staging.isSavingEdit}
             context={staging.context}
+            mentionCandidates={mentionRoster.data}
             placeholder={composerPlaceholder}
             // A send that never reached the outbox has no failed row to show
             // (nothing was queued), so this line is the only report of it.
