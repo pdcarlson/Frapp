@@ -1,4 +1,5 @@
 import { MODULE_CATALOG } from "@repo/org-archetypes";
+import { isBetaOffModule } from "@repo/validation";
 import { DASHBOARD_NAV_ITEMS } from "@/components/layout/nav-config";
 import { SETTINGS_TOOLS } from "@/components/settings/settings-access";
 import { EYEBROW } from "@/components/ui/typography";
@@ -91,7 +92,7 @@ const SHIPPED_PAID_KEYS = new Set<string>([
 ]);
 
 const FREE_MODULES = MODULE_CATALOG.filter((entry) => entry.tier === "free");
-const PAID_MODULES = MODULE_CATALOG.filter(
+const SHIPPED_PAID_MODULES = MODULE_CATALOG.filter(
   (entry) => entry.tier === "paid" && SHIPPED_PAID_KEYS.has(entry.key),
 );
 
@@ -181,7 +182,10 @@ export function PlanMatrix() {
           <Cell included column="Pro" />
         </div>
 
-        {PAID_MODULES.map((entry) => (
+        {/* A beta-off module is sold to nobody right now, so it gets no row. */}
+        {SHIPPED_PAID_MODULES.filter(
+          (entry) => !isBetaOffModule(entry.key),
+        ).map((entry) => (
           <div key={entry.key} className={ROW_CLASS}>
             <span className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
               <span className="truncate">{entry.label}</span>

@@ -1,6 +1,20 @@
 import { render, screen } from "@testing-library/react";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
+
+// `@repo/validation`'s beta list, emptied so this spec pins the ordinary
+// module rule with dues as its example. A test that wants dues beta-off, as
+// it is for the beta, sets `betaOff.keys`.
+const betaOff = vi.hoisted(() => ({ keys: [] as string[] }));
+vi.mock("@repo/validation/beta-off-modules", () => ({
+  get BETA_OFF_MODULES() {
+    return betaOff.keys;
+  },
+  isBetaOffModule: (key: string) => betaOff.keys.includes(key),
+}));
+afterEach(() => {
+  betaOff.keys = [];
+});
 
 /**
  * The route body: what it puts on the screen, and what it refuses to.
@@ -40,14 +54,20 @@ const currentUserQuery: {
   refetch: vi.fn(),
 };
 
-const { mockCurrentChapter, networkState } = vi.hoisted(() => ({
-  mockCurrentChapter: vi.fn(),
-  networkState: { isOffline: false },
-}));
+const { mockCurrentChapter, networkState, invoiceReadOptions } = vi.hoisted(
+  () => ({
+    invoiceReadOptions: [] as ({ enabled?: boolean } | undefined)[],
+    mockCurrentChapter: vi.fn(),
+    networkState: { isOffline: false },
+  }),
+);
 
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
-  useInvoices: () => invoicesQuery,
+  useInvoices: (_userId?: string, options?: { enabled?: boolean }) => {
+    invoiceReadOptions.push(options);
+    return invoicesQuery;
+  },
   useCurrentUser: () => currentUserQuery,
 }));
 
@@ -136,6 +156,31 @@ describe("the route is flush on the shell", () => {
       "id",
       "invoices",
     );
+  });
+});
+
+describe("while dues is beta-off", () => {
+  it("drops the invoice list and the panel's link to it", () => {
+    betaOff.keys = ["dues"];
+    render(<BillingPage />);
+
+    expect(invoiceReadOptions.at(-1)).toEqual({ enabled: false });
+    expect(screen.queryByTestId("invoice-list")).not.toBeInTheDocument();
+    expect(screen.getByTestId("plan-panel")).not.toHaveAttribute(
+      "data-invoices-href",
+    );
+  });
+
+  it("does not hold the page offline on an invoice read it never makes", () => {
+    betaOff.keys = ["dues"];
+    networkState.isOffline = true;
+    invoicesQuery.data = undefined;
+    invoicesQuery.isPending = true;
+    invoicesQuery.fetchStatus = "paused";
+    render(<BillingPage />);
+
+    expect(screen.queryByText(/unavailable offline/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("plan-panel")).toBeInTheDocument();
   });
 });
 

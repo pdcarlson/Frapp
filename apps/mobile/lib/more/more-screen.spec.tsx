@@ -35,6 +35,22 @@ let hiddenFeatures = new Set<string>();
 /** True while `/v1/users/me/permissions` hasn't answered. */
 let permissionsLoading = false;
 const hiddenFeatureCalls: unknown[][] = [];
+let chapterModules: Record<string, boolean> = {};
+const invoiceReadOptions: ({ enabled?: boolean } | undefined)[] = [];
+
+// `@repo/validation`'s beta list, emptied so these specs draw More as a
+// chapter with dues on sees it. The beta's own case, dues off, sets
+// `betaOff.keys`.
+const betaOff = vi.hoisted(() => ({ keys: [] as string[] }));
+vi.mock("@repo/validation/beta-off-modules", () => ({
+  get BETA_OFF_MODULES() {
+    return betaOff.keys;
+  },
+  isBetaOffModule: (key: string) => betaOff.keys.includes(key),
+}));
+afterEach(() => {
+  betaOff.keys = [];
+});
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -52,12 +68,16 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useEvents: () => ({ data: events }),
   useViewerUserId: () => "user-1",
   useStudySessions: () => ({ data: sessions }),
-  useInvoices: () => ({ data: invoices }),
+  useInvoices: (_userId?: string, options?: { enabled?: boolean }) => {
+    invoiceReadOptions.push(options);
+    return { data: invoices };
+  },
   useCurrentUser: () => ({ data: { display_name: "Paul Carlson" } }),
   useMyPoints: () => ({ data: { balance: 1240, transactions: [] } }),
   useCurrentChapter: () => ({
     data: {
       name: "FIJI Tau Nu",
+      enabled_modules: chapterModules,
       theme_palette: {
         "--signet-accent-text": "#7FB2FF",
         "--signet-accent-primary": "#2D7BFF",
@@ -297,6 +317,34 @@ describe("More hub anatomy (#1048)", () => {
     ]);
   });
 
+  it("drops the Dues row while dues is beta-off", () => {
+    betaOff.keys = ["dues"];
+    const labels = render()
+      .root.findAllByType(ListRow)
+      .map((row) => row.props.label);
+    expect(labels).not.toContain("Dues");
+    expect(labels).toContain("Documents");
+  });
+
+  // A member must still be able to pay an invoice the chapter already sent.
+  it("keeps the Dues row for a chapter that switched dues off itself", () => {
+    chapterModules = { dues: false };
+    try {
+      const labels = render()
+        .root.findAllByType(ListRow)
+        .map((row) => row.props.label);
+      expect(labels).toContain("Dues");
+    } finally {
+      chapterModules = {};
+    }
+  });
+
+  it("reads no invoices while dues is beta-off", () => {
+    betaOff.keys = ["dues"];
+    render();
+    expect(invoiceReadOptions.at(-1)).toEqual({ enabled: false });
+  });
+
   it("drops Study hours and Documents while nobody has set them up for this member", () => {
     hiddenFeatures = new Set(["study", "documents"]);
     try {
@@ -321,7 +369,7 @@ describe("More hub anatomy (#1048)", () => {
         ((key: string) => boolean) | undefined,
       ];
       expect(perms).toEqual(["members:view"]);
-      // A chapter with no `enabled_modules` key has every module on.
+      // A module `enabled_modules` leaves out is on.
       expect(gate?.("geofences")).toBe(true);
     } finally {
       permissions = [];

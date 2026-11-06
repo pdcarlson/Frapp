@@ -1,4 +1,4 @@
-import { can, canAny } from "@repo/validation";
+import { can, canAny, isBetaOffModule } from "@repo/validation";
 
 /**
  * Who Settings is for, and what each viewer finds in it.
@@ -87,6 +87,15 @@ const TAB_EXTRA_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
+ * Tabs that configure one module. Each hides while its module is off for
+ * every chapter in the beta (`BETA_OFF_MODULES`), and stays for a chapter that
+ * switched the module off itself, so its officers can still set it up.
+ */
+const TAB_MODULES: Readonly<Record<string, string>> = {
+  dues: "dues",
+};
+
+/**
  * Holding any one of these means Settings has a tab or a tool for the viewer.
  * The nav's Settings row is gated on the set, and `hasSettingsDestination`
  * then drops the row when the only tools behind it are switched off.
@@ -117,6 +126,8 @@ export function isSettingsTabVisible(
   tab: string,
   permissions: readonly string[] | null | undefined,
 ): boolean {
+  const tabModule = TAB_MODULES[tab];
+  if (tabModule && isBetaOffModule(tabModule)) return false;
   if (permissions === undefined || permissions === null) return true;
   return canAny(
     [CHAPTER_CONFIG_VIEW, ...(TAB_EXTRA_PERMISSIONS[tab] ?? [])],

@@ -172,3 +172,32 @@ describe("SettingsWorkflowsTab", () => {
     ).toBeDisabled();
   });
 });
+
+describe("SettingsWorkflowsTab while dues is beta-off", () => {
+  const withDues: OrgWorkflow[] = [
+    ...WORKFLOWS,
+    {
+      key: "wf_dues_grace",
+      label: "Dues grace period before late status",
+      enabled: true,
+      threshold: 7,
+      units: "days",
+    },
+  ];
+
+  it("hides the dues grace row and still saves its stored value", () => {
+    const onSave = vi.fn();
+    render(
+      <SettingsWorkflowsTab workflows={withDues} canManage onSave={onSave} />,
+    );
+    expect(
+      screen.queryByRole("switch", { name: /dues grace/i }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /save workflows/i }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        { key: "wf_dues_grace", enabled: true, threshold: 7 },
+      ]),
+    );
+  });
+});
