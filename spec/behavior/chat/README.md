@@ -257,10 +257,11 @@ adding that filter would make the bookmark vanish, the opposite of this rule.
 - A sender broadcasts at most once every 3 seconds while typing. A typist expires 4 seconds after their last broadcast, and the indicator catches up on the next sweep of expired typists, which runs every 1.5 seconds, so it clears 4 to 5.5 seconds after that broadcast (`packages/chat-core/src/realtime-manager.ts`).
 - The viewer's own typing never counts, including typing from another of the viewer's devices, whose broadcasts do arrive.
 
-**Member list** (web, [#3536](https://github.com/pdcarlson/Frapp/issues/3536)):
+**Member list** (web and mobile, [#3536](https://github.com/pdcarlson/Frapp/issues/3536)):
 
 - Beside a channel, the list shows everyone who can read it, by the same rule that admits a read: the whole chapter for a public channel, the holders of a required permission (or the wildcard) for a role-gated one, and `member_ids` for a private channel or group DM. A 1:1 DM shows no list. Only a member who can read the channel can ask for its list (`GET /v1/channels/{id}/members`).
 - Grouped Online, then Idle, then Offline, from the chapter presence topic below. Within a group, members sort by their highest role's rank (lower `display_order` first, no role last), then by name. Names take the member's role color, as in the timeline. Until presence has resolved, the list is one ungrouped "Members" group rather than calling everyone Offline.
+- On mobile the list is a tall sheet from the thread header's members button, shown on every channel but a 1:1 DM. Mobile does not join the chapter presence topic, so the sheet is always that one ungrouped list, in the same order (`compareChannelMembers` in `@repo/hooks`, which web sorts with too), headed by its count.
 
 **Online/offline presence:**
 

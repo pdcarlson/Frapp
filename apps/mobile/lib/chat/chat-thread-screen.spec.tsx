@@ -117,6 +117,26 @@ vi.mock("@/components/chat/message-actions-sheet", async () => {
   };
 });
 
+const presentMemberSheet = vi.fn();
+vi.mock("@/components/chat/channel-member-sheet", async () => {
+  const { createElement, forwardRef, useImperativeHandle } =
+    await import("react");
+  return {
+    ChannelMembersButton: (props: Record<string, unknown>) =>
+      createElement("ChannelMembersButton", props),
+    ChannelMemberSheet: forwardRef(function ChannelMemberSheet(
+      props: Record<string, unknown>,
+      ref,
+    ) {
+      useImperativeHandle(ref, () => ({
+        present: presentMemberSheet,
+        dismiss: () => {},
+      }));
+      return createElement("ChannelMemberSheet", props);
+    }),
+  };
+});
+
 const CHANNEL = "chan-1";
 const OTHER_CHANNEL = "chan-2";
 const VIEWER = "viewer-1";
@@ -213,6 +233,8 @@ let viewerQuery = { isError: false, isFetching: false, refetch: vi.fn() };
 
 /** What `useChannel` hands back: the channel, or no row yet. */
 let channelRow: "found" | "reading" | "missing" = "found";
+/** The open channel's type, for the member list's 1:1 DM rule (#3536). */
+let channelType = "PUBLIC";
 
 /** A ready list with one member on it, stable across renders as the hook's is. */
 const BLOCK_LIST = {
@@ -255,7 +277,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
           data: {
             id,
             name: "general",
-            type: "PUBLIC",
+            type: channelType,
             description: "The whole chapter.",
             can_post: true,
             is_read_only: false,
@@ -397,6 +419,7 @@ beforeEach(() => {
   viewerQuery = { isError: false, isFetching: false, refetch: vi.fn() };
   params = { channelId: CHANNEL };
   channelRow = "found";
+  channelType = "PUBLIC";
   queryClient = new QueryClient();
 });
 
@@ -1375,9 +1398,7 @@ describe("chat thread jump to latest", () => {
     const tree = renderMeasured(scrollToOffset);
     const sheet = tree.root.findByType("MessageActionsSheet" as never);
     act(() => (sheet.props.onEdit as (id: string) => void)("m1"));
-    expect(tree.root.findByType(ChatComposer).props.context?.kind).toBe(
-      "edit",
-    );
+    expect(tree.root.findByType(ChatComposer).props.context?.kind).toBe("edit");
 
     act(() => tree.root.findByType(ChatComposer).props.onSend());
 
@@ -1618,6 +1639,44 @@ describe("chat thread channel start", () => {
 
     const edge = lists(tree)[0]!.findByType(ThreadHistoryEdge);
     expect(edge.props.start).toBeTruthy();
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread member list (#3536)", () => {
+  const membersButtons = (tree: ReactTestRenderer) =>
+    header(tree).findAllByType("ChannelMembersButton" as never);
+
+  it("opens the member sheet from the header, for the open channel", () => {
+    const tree = render();
+
+    expect(membersButtons(tree)).toHaveLength(1);
+    expect(
+      tree.root.findByType("ChannelMemberSheet" as never).props.channelId,
+    ).toBe(CHANNEL);
+    act(() => membersButtons(tree)[0]!.props.onPress());
+    expect(presentMemberSheet).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("offers it on a group DM", () => {
+    channelType = "GROUP_DM";
+    const tree = render();
+    expect(membersButtons(tree)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("offers no list on a 1:1 DM, whose two members are the header", () => {
+    channelType = "DM";
+    const tree = render();
+    expect(membersButtons(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("offers no list before the channel row is known", () => {
+    channelRow = "reading";
+    const tree = render();
+    expect(membersButtons(tree)).toHaveLength(0);
     act(() => tree.unmount());
   });
 });

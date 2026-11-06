@@ -360,7 +360,7 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Announcement | `AnnouncementGlyph` |
 | `#chapter-audit` / audit row | `AuditGlyph` |
 | Private / role-gated channel | `LockGlyph` |
-| Show or hide the channel member list (#3536), filled while shown | `MembersGlyph` (the nav set's `DirectoryGlyph`, re-exported) |
+| Show or hide the channel member list (#3536), filled while shown | `MembersGlyph` (the nav set's `DirectoryGlyph`, re-exported); mobile's thread header draws the same shape, `NAV_GLYPHS.directory`, through `NavGlyph` |
 | Direct or group message | `DirectMessageGlyph` |
 | Connection lost | `OfflineGlyph` |
 | Reply to a message | `ThreadGlyph` |

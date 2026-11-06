@@ -35,9 +35,7 @@ const roster = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/hooks", async () => ({
-  memberLabel: (
-    await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks")
-  ).memberLabel,
+  ...(await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks")),
   useChannelMembers: () => ({
     data: undefined,
     isPending: false,
