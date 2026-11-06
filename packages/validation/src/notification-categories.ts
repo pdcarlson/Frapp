@@ -1,3 +1,5 @@
+import { isBetaOffModule } from "./beta-off-modules";
+
 /**
  * The member-facing notification categories, shared so every surface offers the
  * same switches under the same names.
@@ -113,6 +115,8 @@ export const NOTIFICATION_CATEGORIES = [
     // URGENT bypasses the preference gate, so this switch now governs only the
     // routine invoice and dues traffic it advertises. No second server-side
     // category is needed.
+    // While dues is beta-off nothing this switch governs is sent, so
+    // `shownNotificationCategories` leaves the row out.
     description: "Invoices created, dues coming due, and payments received.",
     defaultEnabled: true,
   },
@@ -137,6 +141,20 @@ export type NotificationCategoryKey =
 const CATEGORY_KEYS: ReadonlySet<string> = new Set(
   NOTIFICATION_CATEGORIES.map((category) => category.key),
 );
+
+/**
+ * The categories a surface draws a switch for. `billing` is left out while
+ * dues is beta-off (`spec/product/modules.md` § Beta-off modules): URGENT
+ * subscription alerts bypass the preference gate, so the switch would govern
+ * only invoice and dues pushes, and none are sent. The stored preference is
+ * kept and still saved; only the row is hidden. Read at render time, not at
+ * import, so specs can empty the beta list.
+ */
+export function shownNotificationCategories(): readonly (typeof NOTIFICATION_CATEGORIES)[number][] {
+  return NOTIFICATION_CATEGORIES.filter(
+    (category) => category.key !== "billing" || !isBetaOffModule("dues"),
+  );
+}
 
 /**
  * Whether `value` is a category this catalog exposes.

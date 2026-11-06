@@ -25,7 +25,7 @@ import {
   isModuleEnabled,
   isSupportedTimeZone,
   MAX_TIME_ZONE_LENGTH,
-  NOTIFICATION_CATEGORIES,
+  shownNotificationCategories,
 } from "@repo/validation";
 import { BLOCKED_MEMBERS_TITLE } from "@repo/chat-core/block-copy";
 import { ScreenShell } from "@/components/screen-shell";
@@ -41,12 +41,17 @@ import { shouldShowDonationCta } from "@/lib/more/donation";
 import { LEGAL_LINKS } from "@/lib/more/legal";
 import { acceptPrimer } from "@/lib/notifications/primer";
 import {
+  PUSH_PROMPT_ANSWERED_EVENT,
+  pushPromptAnsweredProperties,
+} from "@/lib/notifications/push-analytics";
+import {
   getPushPermission,
   isPushChannelBlocked,
   pushUnavailableReason,
 } from "@/lib/notifications/push";
 import type { PushPermissionStatus } from "@/lib/notifications/push-types";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useLatestTrack } from "@/lib/use-latest-track";
 import {
   type QuietHoursWindow,
   useNotificationPreferencesSync,
@@ -431,6 +436,8 @@ export default function PreferencesScreen() {
         : String(blockList.ids.size);
 
   const pushReason = pushUnavailableReason();
+  // Read after the OS prompt closes (`useLatestTrack`).
+  const track = useLatestTrack();
   // One tap at a time: a second tap while the OS prompt is up would queue a
   // second prompt, or open the settings app over it.
   const pushTapInFlight = useRef(false);
@@ -460,7 +467,14 @@ export default function PreferencesScreen() {
       if (current && pushTapAsks(current)) {
         // A prompt the OS failed to show reads as not granted; the re-read
         // below reports whatever is true either way.
-        await acceptPrimer();
+        const granted = await acceptPrimer();
+        track(
+          PUSH_PROMPT_ANSWERED_EVENT,
+          pushPromptAnsweredProperties(
+            granted ? "allowed" : "denied",
+            "settings",
+          ),
+        );
         setPushState(await readPushState().catch(() => null));
         return;
       }
@@ -609,7 +623,7 @@ export default function PreferencesScreen() {
       />
 
       <ListSection>
-        {NOTIFICATION_CATEGORIES.map((category) => (
+        {shownNotificationCategories().map((category) => (
           // No description. The shared catalog carries one per category for
           // web's Profile card, but on the phone five two-line hints pushed
           // Account three screens down, and the labels say enough.

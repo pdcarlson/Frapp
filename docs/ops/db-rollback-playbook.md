@@ -2769,6 +2769,16 @@ alter table public.chat_message_reports
   drop column if exists reported_attachments;
 ```
 
+## Rollback silent audit entries in unread counts (20261106193000)
+
+* **Migration**: `20261106193000_chat_unread_skip_audit_mirror.sql`
+
+A function body. It re-creates `get_channel_unread_counts` with one more join predicate, so an entry the audit mirror posted into `#chapter-audit` no longer counts toward unread or mention badges. No data changes and the signature is unchanged; no API or client code depends on the new behaviour.
+
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). Put the `create or replace function public.get_channel_unread_counts` statement and the grant block after it from `20260927050000_chat_unread_counts_skip_blocked.sql` in a new migration and ship it through Deploy production (`scope: migrations-only` is enough). Copy that body rather than retyping it: it must keep the blocked-sender predicate (#2521), `kind <> 'imported'` and `set search_path = public, pg_temp`.
+
+Afterwards every settings change lights the `#chapter-audit` badge again, for every member.
+
 ## Rollback Discord import category progress (20261106170000)
 
 * **Migration**: `20261106170000_discord_import_category_progress.sql`
@@ -2795,6 +2805,18 @@ One column on `chat_channels`, `is_default` (not null, default false), a partial
 drop function if exists public.set_chat_channel_default(uuid, uuid);
 drop index if exists public.chat_channels_one_default_per_chapter;
 alter table public.chat_channels drop column if exists is_default;
+```
+
+## Rollback backwork search wider (20261106190000)
+
+* **Migration**: `20261106190000_backwork_search_wider.sql`
+
+One function, `search_backwork_resources`, and the `pg_trgm` extension in the `extensions` schema. No row changed.
+
+**Revert the code forward and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API searches `backwork_resources.search_vector` again, which this migration left in place, so Backwork search goes back to title and course number. To remove the function anyway, do it in a later forward migration, not by hand. Leave `pg_trgm` unless nothing else uses it:
+
+```sql
+drop function if exists public.search_backwork_resources(uuid, text, integer);
 ```
 
 ## Rollback the backwork 100 MB limit (20261106153000)

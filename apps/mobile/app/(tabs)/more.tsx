@@ -2,10 +2,13 @@ import { useMemo } from "react";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text } from "react-native";
 import {
+  useCurrentChapter,
   useCurrentUser,
   useEvents,
+  useHiddenUnsetFeatures,
   useInvoices,
   useListChapters,
+  useMyPermissions,
   useMyPoints,
   useNowDate,
   usePermissionList,
@@ -13,7 +16,7 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { can } from "@repo/validation";
+import { can, isBetaOffModule, isModuleEnabled } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import {
@@ -81,6 +84,17 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * permissions only), so it reads "Admin", and the profile card shows no role
  * chip for the same reason.
  *
+ * ## Rows nobody has set up
+ *
+ * Study hours with no active study zone leaves the list for everyone, since
+ * zones are made in the web app and the screen could only say so. Documents
+ * with nothing in it leaves it for a viewer who can't upload; an officer who
+ * can keeps the row, because the upload is on that screen
+ * (`useHiddenUnsetFeatures` in `@repo/hooks`; `spec/product/modules.md`
+ * § Not-set-up features). Nothing hides until the viewer's permissions, the
+ * chapter's modules and the list have all answered, so a row never vanishes
+ * on a slow or failed read.
+ *
  * ## Trailing statuses
  *
  * Canvas draws "4.0 / 6.0" on Study, but no weekly requirement is modelled
@@ -119,6 +133,22 @@ export default function MoreScreen() {
   // section from exactly the people who need it.
   const canHost = can("events:update", permissions);
 
+  // The setup gate needs to tell "still loading" from "holds nothing", which
+  // `usePermissionList` (`[]` while loading) can't, so it reads the query.
+  const permissionsQuery = useMyPermissions();
+  const chapter = useCurrentChapter().data;
+  const moduleGate = useMemo(
+    () =>
+      chapter
+        ? (key: string) => isModuleEnabled(chapter.enabled_modules, key)
+        : undefined,
+    [chapter],
+  );
+  const hiddenFeatures = useHiddenUnsetFeatures(
+    permissionsQuery.data?.permissions,
+    moduleGate,
+  );
+
   // s22 takes an `eventId`, so the row resolves one rather than leading
   // nowhere. `selectEventRows` already returns upcoming-plus-still-checkable-in,
   // soonest first, so the head of that list is the event an officer would host.
@@ -139,10 +169,15 @@ export default function MoreScreen() {
   // rather than duplicating work.
   const viewerUserId = useViewerUserId();
   const sessionsQuery = useStudySessions();
+  // The Dues row hides only while dues is off for every chapter in the beta
+  // (`BETA_OFF_MODULES`). A chapter's own dues switch leaves it, so a member
+  // can still pay an invoice the chapter already sent
+  // (`spec/product/modules.md` § Module disabling behavior).
+  const duesOn = !isBetaOffModule("dues");
   // Viewer-filtered server-side, for the reason `dues.tsx` records: unfiltered,
   // this row would pull the whole chapter's ledger onto an officer's device.
   const invoicesQuery = useInvoices(viewerUserId ?? undefined, {
-    enabled: !!viewerUserId,
+    enabled: duesOn && !!viewerUserId,
   });
 
   // Keyed on the week boundary rather than the ticking `now`: this
@@ -176,47 +211,53 @@ export default function MoreScreen() {
       />
 
       <ListSection>
-        <ListRow
-          label="Study hours"
-          leading={<StudyGlyph color={glyphColor} />}
-          value={studyThisWeek}
-          accessibilityHint="Opens study hours and session tracking."
-          onPress={() => router.push("/study")}
-        />
+        {hiddenFeatures.has("study") ? null : (
+          <ListRow
+            label="Study hours"
+            leading={<StudyGlyph color={glyphColor} />}
+            value={studyThisWeek}
+            accessibilityHint="Opens study hours and session tracking."
+            onPress={() => router.push("/study")}
+          />
+        )}
         <ListRow
           label="Service hours"
           leading={<ServiceGlyph color={glyphColor} />}
           accessibilityHint="Opens your logged service hours."
           onPress={() => router.push("/service-hours")}
         />
-        <ListRow
-          label="Dues"
-          leading={<DuesGlyph color={glyphColor} />}
-          accessibilityHint="Opens your dues and payment history."
-          accessibilityValue={duesDue?.label}
-          trailing={
-            duesDue ? (
-              <StatusChip
-                label={duesDue.label}
-                // foundations.md §5 assigns "overdue" to the destructive role.
-                // A late bill reading the same as an upcoming one is the
-                // confusion the semantic palette exists to prevent.
-                hue={
-                  duesDue.state === "past-due"
-                    ? tokens.color.semantic.destructive
-                    : tokens.color.semantic.warning
-                }
-              />
-            ) : undefined
-          }
-          onPress={() => router.push("/dues")}
-        />
-        <ListRow
-          label="Documents"
-          leading={<DocumentsGlyph color={glyphColor} />}
-          accessibilityHint="Opens the chapter's documents."
-          onPress={() => router.push("/documents")}
-        />
+        {duesOn ? (
+          <ListRow
+            label="Dues"
+            leading={<DuesGlyph color={glyphColor} />}
+            accessibilityHint="Opens your dues and payment history."
+            accessibilityValue={duesDue?.label}
+            trailing={
+              duesDue ? (
+                <StatusChip
+                  label={duesDue.label}
+                  // foundations.md §5 assigns "overdue" to the destructive role.
+                  // A late bill reading the same as an upcoming one is the
+                  // confusion the semantic palette exists to prevent.
+                  hue={
+                    duesDue.state === "past-due"
+                      ? tokens.color.semantic.destructive
+                      : tokens.color.semantic.warning
+                  }
+                />
+              ) : undefined
+            }
+            onPress={() => router.push("/dues")}
+          />
+        ) : null}
+        {hiddenFeatures.has("documents") ? null : (
+          <ListRow
+            label="Documents"
+            leading={<DocumentsGlyph color={glyphColor} />}
+            accessibilityHint="Opens the chapter's documents."
+            onPress={() => router.push("/documents")}
+          />
+        )}
         <ListRow
           label="Directory"
           leading={<DirectoryGlyph color={glyphColor} />}

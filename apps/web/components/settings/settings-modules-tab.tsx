@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { isBetaOffModule } from "@repo/validation";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
 import {
@@ -83,7 +84,11 @@ export function SettingsModulesTab({
   focusModuleKey,
   onModuleFocused,
 }: Props) {
-  const enabledCount = MODULE_CATALOG.filter((m) =>
+  // A beta-off module is left out rather than drawn as a switch that can't
+  // turn on (`BETA_OFF_MODULES` in `@repo/validation`).
+  const paidModules = PAID_MODULES.filter((m) => !isBetaOffModule(m.key));
+  const listedModules = [...FREE_MODULES, ...paidModules];
+  const enabledCount = listedModules.filter((m) =>
     moduleIsOn(enabledModules, m.key),
   ).length;
 
@@ -92,7 +97,7 @@ export function SettingsModulesTab({
       <CardHeader>
         <CardTitle>Modules</CardTitle>
         <CardDescription>
-          {enabledCount} of {MODULE_CATALOG.length} modules enabled. Disabling a
+          {enabledCount} of {listedModules.length} modules enabled. Disabling a
           module hides it from the sidebar and chat slash commands. Re-enabling
           restores everything. Data is never deleted.
         </CardDescription>
@@ -110,7 +115,7 @@ export function SettingsModulesTab({
         />
         <ModuleGroup
           title="Chapter Pro"
-          modules={PAID_MODULES}
+          modules={paidModules}
           enabledModules={enabledModules}
           canManage={canManage}
           onToggle={onToggle}

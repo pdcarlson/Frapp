@@ -675,24 +675,30 @@ Where each answer comes from:
 - **Product Interaction is Analytics only**, not App Functionality — nothing in the
   product depends on it. Be precise about what emits it, because "it is PostHog" was
   wrong on both halves: the client path is `POST /v1/analytics/events` via
-  `lib/analytics-provider.tsx`, **and no screen in the iOS binary calls it** —
-  `AnalyticsContext` has no product consumer. The PostHog RN SDK (key present in
+  `lib/analytics-provider.tsx`. Since 2026-11-06 (#3164) the client sends named
+  events through it from two places: chat's outbox lifecycle (`outbox-*`, attempt
+  counts and timings) and the push prompt's answer (`push-prompt-answered`), all
+  content-free ([`observability.md` § Outbox
+  Telemetry](../../../spec/behavior/observability.md#outbox-telemetry), [§ Push
+  Prompt Telemetry](../../../spec/behavior/observability.md#push-prompt-telemetry)).
+  The PostHog RN SDK (key present in
   `production` per #2415) sends `$identify`, `$groupidentify`,
   `$feature_flag_called` and, since #3382, one `$screen` per route visit (named by
   route template, never an id) plus the app lifecycle events
   (`captureAppLifecycleEvents` is on: Installed, Updated, Opened, Became Active,
   Backgrounded), all keyed to the same pseudonym and none while the chapter is opted
   out. There is still no autocapture. So the row is justified by **server-side**
-  feature events **and** by those client screen and lifecycle events, both Analytics
-  only; the declared category does not change ([`observability.md` § Route
+  feature events, those client named events, **and** the SDK's screen and lifecycle
+  events, all Analytics only; the declared category does not change ([`observability.md` § Route
   views](../../../spec/behavior/observability.md#route-views)).
 - **Crash and Performance Data** are Sentry. What switches Sentry on is
   `EXPO_PUBLIC_SENTRY_DSN`, **not** the `EXPO_PUBLIC_SENTRY_ENVIRONMENT` that `eas.json`
   sets: `app/_layout.tsx` calls `Sentry.init` only inside `if (sentryDsn)`, and the
   environment tag merely labels events that a DSN-less build never sends. Per #2415 the
   DSN **is** set in the EAS `production` environment, so both rows are real for a store
-  build, and tracing is genuinely on at `tracesSampleRate = 0.1`
-  (`lib/sentry/options.ts`), so Performance Data is not an over-declaration either.
+  build, and tracing is genuinely on (`tracesSampleRate` in `lib/sentry/options.ts`, `1` during
+  the beta per [`observability.md` §
+  Sampling](../../../spec/behavior/observability.md#sampling)), so Performance Data is not an over-declaration either.
   This bullet used to end "and are the only two rows that are **not** linked" — that was
   wrong; see the ‡ footnote.
 - **Payment Info is deliberately absent**, and the basis is #2415's `env:list`, not a
@@ -763,12 +769,12 @@ Two of Play's definitions differ from Apple's, and they change answers:
 | Personal info → User IDs | Yes | No | Required | App functionality, Analytics | Kept as an anonymous tombstone; the analytics id is forgotten | Member and account ids; the pseudonymous analytics `distinct_id` (see *User ID carries Analytics* above) |
 | Messages → Other in-app messages | Yes | No | Optional | App functionality | **Kept, anonymised** | Chat channels and DMs |
 | Photos and videos → Photos | Yes | No | Optional | App functionality | **Mixed**: chat photos and service-hour proof photos are kept, anonymised, with their messages and entries; the profile photo is deleted; a chapter logo and document photos stay with the chapter | Chat photo attachments (`lib/chat/attachment-upload.ts`), kept with their messages; a photo a member attaches as proof to a service-hour entry (s20, `lib/more/service-proof.ts`), kept in the private service bucket with its entry: deleting a pending entry deletes its photo, but account deletion keeps the entry, anonymised, and its photo with it, since the deletion purge reaches only profile photos and generated reports ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion); whether it should reach proof is [#3425](https://github.com/pdcarlson/Frapp/issues/3425)) (a photo uploaded for an entry that never saved stays unclaimed until [#2197](https://github.com/pdcarlson/Frapp/issues/2197)'s sweep); the chapter logo an officer adds in chapter setup (`lib/onboarding/chapter-wizard/chapter-logo.ts`, #3351), which belongs to the chapter and stays until an officer replaces or removes it; a photo a member holding `chapter_docs:upload` adds to the chapter's documents (`lib/more/document-upload.ts`, #3399), which is filed in the chapter's library and stays, attributed to "Deleted User" after its uploader's account is deleted, until an officer deletes the document; and the member's profile photo (`lib/more/profile-photo.ts`, #2897), deleted when it is replaced or removed (best effort: a failed delete there is logged, not retried), when the member leaves the chapter, and on account deletion ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion)). The camera only reads check-in codes on the device, and no frame leaves the phone. The owner entered this row in Play's Data safety form as written here, profile photo included, on 2026-11-05 (#2720, #2895) |
-| App activity → App interactions | Yes | No | Required | Analytics | Forgotten (the analytics forget) | The server-side product events behind the App Store *Product Interaction* row, plus the SDK's `$screen` route views and app lifecycle events (#3382). Required because the only opt-out is a chapter setting, not the member's choice |
+| App activity → App interactions | Yes | No | Required | Analytics | Forgotten (the analytics forget) | The server-side product events behind the App Store *Product Interaction* row, the client's named `outbox-*` and `push-prompt-answered` events (#3164), plus the SDK's `$screen` route views and app lifecycle events (#3382). Required because the only opt-out is a chapter setting, not the member's choice |
 | App activity → In-app search history | Yes | **Yes** | Optional | App functionality | Nothing stored to delete | The directory and chapter-finder queries (`GET /v1/members/search`, `GET /v1/chapter-directory/search`). Ephemeral only while the App Store table's open question holds: if the API keeps query strings in its access logs, this answer is No |
 | App activity → Other user-generated content | Yes | No | Optional | App functionality | **Kept, anonymised** | Free text a member writes outside chat: service-hour entries, tasks they create, the details of a report they file (kept whole, as moderation history), and a chapter they create |
 | App activity → Other actions | Yes | No | Optional | App functionality | **Mixed**: event check-ins, task completions, poll votes and reactions are kept, anonymised; the Terms acceptance stays on the anonymised account record; study sessions, settings, notification preferences, read markers and the member's own blocks are deleted | Event check-ins (`event_attendance`), study sessions (`study_sessions`), task completions, poll votes, reactions, blocks, settings and notification preferences, read markers, and the Terms acceptance |
 | App info and performance → Crash logs | Yes | No | Required | App functionality | Not deleted with the account; aged out by Sentry's retention | Sentry, when the build has `EXPO_PUBLIC_SENTRY_DSN` (EAS `production` does, per #2415) |
-| App info and performance → Diagnostics | Yes | No | Required | App functionality | As Crash logs | Sentry tracing at `tracesSampleRate = 0.1` (`lib/sentry/options.ts`) |
+| App info and performance → Diagnostics | Yes | No | Required | App functionality | As Crash logs | Sentry tracing (`tracesSampleRate` in `lib/sentry/options.ts`; the rate is in [`observability.md` § Sampling](../../../spec/behavior/observability.md#sampling)) |
 | Device or other IDs | Yes | No | Optional | App functionality | Deleted | The Expo push token (`lib/notifications/push.ts`). Optional because it sits behind the notification permission |
 
 **On account deletion** is what `DELETE /v1/users/me` does to each type, and

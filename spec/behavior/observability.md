@@ -106,7 +106,7 @@ Every rate is a number in `[0, 1]`. A missing, empty, non-numeric, or out-of-ran
 | Signal | Intended rate | Default / source |
 | --- | --- | --- |
 | Sentry error events | `1.0` | SDK default (do not set a lower `sampleRate`). Web and mobile rate-limit their query and mutation failure reports at the source instead ([§ Error Tracking](#error-tracking)) |
-| Sentry traces | `0.1` | `SENTRY_TRACES_SAMPLE_RATE` / `NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE` via `@repo/observability` `parseTracesSampleRate`; mobile uses `DEFAULT_TRACES_SAMPLE_RATE` (same `0.1`) |
+| Sentry traces | `0.1`; mobile `1.0` during the beta | `SENTRY_TRACES_SAMPLE_RATE` / `NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE` via `@repo/observability` `parseTracesSampleRate`, defaulting to `DEFAULT_TRACES_SAMPLE_RATE` (`0.1`). Mobile hardcodes `1` while one chapter is the only user (2026-11-06: at `0.1`, an afternoon of on-device testing left about nine spans), and goes back to `DEFAULT_TRACES_SAMPLE_RATE` before a second chapter joins ([#3580](https://github.com/pdcarlson/Frapp/issues/3580)). The API inherits a sampled parent: mobile sends `sentry-trace` and `baggage` to the first-party API (`tracePropagationTargets`), and the API sets only `tracesSampleRate`, so every API transaction a mobile request starts is kept too. Mobile at `1.0` therefore means the API's mobile-driven traffic at `1.0` as well, and lowering mobile lowers both |
 | Sentry Replay | `0` | Not initialized |
 | PostHog exception autocapture | `0` | Project + SDK: off |
 | PostHog session replay (production) | `0` until approval | Then a documented rate in `[0, 1]`, still masked/blocklisted and opt-out-gated |
@@ -374,7 +374,7 @@ Recording is best-effort and never fails the action that triggered it: the call 
 
 ## Outbox Telemetry
 
-Web chat queues offline sends in Dexie (`apps/web/lib/chat/offline-queue.ts`) and flushes them on reconnect, distinguishing terminal 4xx rejections from transient network/5xx failures (`packages/chat-core/src/chat-client.ts`). Six client-side events cover the full lifecycle of one queued row, defined once in `packages/chat-core/src/outbox-analytics.ts` so a typo can't split one event into two names:
+Chat queues every send in an outbox and flushes it on reconnect, distinguishing terminal 4xx rejections from transient network/5xx failures (`packages/chat-core/src/chat-client.ts`). Web's outbox is Dexie (`apps/web/lib/chat/offline-queue.ts`) and mobile's is AsyncStorage (`apps/mobile/lib/chat/outbox-store.ts`); both clients hand chat-core their `AnalyticsContext` `track` (web in `apps/web/lib/chat/use-chat-channel.ts`, mobile in `apps/mobile/lib/chat/use-chat-runtime.ts` since 2026-11-06, [#3164](https://github.com/pdcarlson/Frapp/issues/3164)), so the events below come from both. Mobile reads `track` when each event is sent (`apps/mobile/lib/use-latest-track.ts`), and its outbox rows are keyed on the member, not the chapter (`apps/mobile/lib/chat/chat-scope.ts`). So a row queued in one chapter and flushed after a switch reports its outcome under the chapter active at the flush, gated by that chapter's opt-out. Six client-side events cover the full lifecycle of one queued row, defined once in `packages/chat-core/src/outbox-analytics.ts` so a typo can't split one event into two names:
 
 | Event name | Recorded when | Extra properties |
 | --- | --- | --- |
@@ -431,6 +431,17 @@ Like Outbox Telemetry above, `search-completed` carries no dedicated Frapp-owned
 - **Actionable buckets for product/design review**: group zero-result events by `query_word_count` (single-word vs. multi-word misses read differently) and cross-reference against `timed_out = true` (a timeout-caused miss is an infrastructure problem, not a content or vocabulary gap, and must not be counted as the same kind of failure).
 
 **This instrumentation enables but does not itself complete the acceptance criterion that findings inform the mobile search UI's scope** — no chapter has used this yet, so there is no data to analyze. That is a downstream product decision for whoever reviews the report once real usage accumulates, the same posture the Outbox Telemetry section takes toward its own p50/failure-rate report.
+
+## Push Prompt Telemetry
+
+Mobile asks for notification permission only after the member taps "Turn on", on the C7 primer card or s16 Settings' push row ([`patterns.md` § Push notifications](../ui/mobile/patterns.md#push-notifications)). Whether members say yes decides whether chat pushes reach anyone, and the server can't see the answer: `POST /push-tokens` follows only an "allowed", and repeats on every launch. So mobile sends one client event, `push-prompt-answered` (defined in `apps/mobile/lib/notifications/push-analytics.ts`), through `AnalyticsContext` `track`, once per answer:
+
+| Property | Meaning |
+| --- | --- |
+| `answer` | `allowed` or `denied`, what the OS prompt returned after "Turn on" (a prompt the OS didn't show, as on iOS after one answer, reads as `denied`); or `not_now`, the primer card's "Not now", where no OS prompt was shown |
+| `surface` | `primer` (the card, `use-push-primer.ts`) or `settings` (the push row, `app/(tabs)/preferences.tsx`) |
+
+Neither property is content. The allow rate is a Trends insight: events with `answer = allowed` over all `push-prompt-answered` events, broken down by `surface`.
 
 ## Feature Events
 
@@ -547,6 +558,7 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 | `invite-created` | An officer creates invites. `invite_method` is `link`, `batch` or `email`; `count` is the invites created, never the addresses | `invite_method`, `count` |
 | `invite-redeemed` | Someone joins by redeeming an invite | — |
 | `member-onboarding-completed` | A member finishes onboarding. Counts requests that set it, not first completions | — |
+| `profile-photo-updated` | A member confirms a new profile photo upload (`POST /users/me/avatar`). Removing a photo records nothing, since that route has no chapter | — |
 | `chapter-onboarded` | The onboarding wizard creates a chapter (feature `chapter-settings`). `archetype` is the stored archetype key | `archetype`, `from_directory` |
 | `semester-rolled-over` | An officer rolls the chapter into a new semester (`chapter-settings`) | `promote_new_members` |
 | `chapter-config-updated` | An officer saves a chapter setting (`chapter-settings`). `section` is the field the save changed (`enabled_modules`, `branding`, `dues`, and so on), or `multiple`; never the values. An empty save records nothing | `section` |
@@ -581,7 +593,7 @@ Properties describe an action's shape, never its content: no titles, bodies, des
 
 ### Volume
 
-An estimate, not a measurement: an active 60-member chapter sending about 400 messages and 200 reactions or votes a day makes roughly 18,000 chat events a month, and every other feature event together about 1,000 to 2,000, so about 20,000 feature events. Web also sends two outbox events for every message sent from web (`outbox-queued` and `outbox-confirmed`, [§ Outbox Telemetry](#outbox-telemetry)), offline or not, so the total depends on how much of the chat is on web: about 20,000 person-processed events per chapter per month if almost all of it is on mobile, about 32,000 at an even split, and about 44,000 if all of it is on web. PostHog's free allowance is 1 million events a month ([pricing](https://posthog.com/pricing), read 2026-11-04), about 23 to 50 chapters at those rates; identified (person-processed) events above the allowance are billed at a higher rate than anonymous ones ([anonymous vs identified events](https://posthog.com/event-comparison), read 2026-11-04). [Route views](#route-views) and mobile lifecycle events come on top, sent person-processed once a member is identified (`person_profiles: "identified_only"`): at four app opens per member a day, each with about eight route views and two lifecycle events, about 70,000 a month for the same chapter, so about 90,000 to 115,000 in all and about 9 to 11 chapters inside the allowance (an estimate, 2026-11-05).
+An estimate, not a measurement: an active 60-member chapter sending about 400 messages and 200 reactions or votes a day makes roughly 18,000 chat events a month, and every other feature event together about 1,000 to 2,000, so about 20,000 feature events. Both clients also send two outbox events for every message (`outbox-queued` and `outbox-confirmed`, [§ Outbox Telemetry](#outbox-telemetry)), offline or not, about 24,000 more, so about 44,000 person-processed events per chapter per month. (Before mobile sent outbox events on 2026-11-06, this ranged from 20,000 to 44,000 with the share of chat on web.) PostHog's free allowance is 1 million events a month ([pricing](https://posthog.com/pricing), read 2026-11-04), about 23 chapters at that rate; identified (person-processed) events above the allowance are billed at a higher rate than anonymous ones ([anonymous vs identified events](https://posthog.com/event-comparison), read 2026-11-04). [Route views](#route-views) and mobile lifecycle events come on top, sent person-processed once a member is identified (`person_profiles: "identified_only"`): at four app opens per member a day, each with about eight route views and two lifecycle events, about 70,000 a month for the same chapter, so about 115,000 in all and about 9 chapters inside the allowance (an estimate, 2026-11-05; outbox share updated 2026-11-06).
 
 ### Adding one
 

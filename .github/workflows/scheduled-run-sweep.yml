@@ -1,0 +1,71 @@
+name: Scheduled run sweep
+
+# Frees a scheduled watchdog that one stuck run has frozen, and alerts when a
+# watchdog's runs keep getting cancelled (#3368).
+#
+# Every scheduled watchdog sets `cancel-in-progress: false`, so a run that never
+# finishes holds its concurrency group, and each later run waits and is
+# cancelled, with no alert, when the next one queues. Production guardrails and
+# Staging conformance sat frozen that way for 30 days (2026-10-05 to 11-04). A
+# watchdog can't free itself, because its own run is the one waiting, so this
+# workflow does it from outside: it force-cancels a watched run that has held
+# its group for six hours, and raises one `incident` alert when such a run
+# can't be cleared or, with no stuck run in sight, a watchdog's last three
+# scheduled runs were cancelled. When it fires and clears: docs/ops/alert-routing.md.
+#
+# Deliberately NO concurrency group: a group is exactly what one stuck run can
+# hold, and this workflow must not freeze the way the ones it frees do. Two
+# sweeps overlap only if one is dispatched during another. Each is idempotent,
+# and the worst a race can do is file a duplicate alert, which the next
+# recovery closes along with the first.
+#
+# Runs only on main: a dispatch from another branch would run that branch's
+# copy of the script with `actions: write` over main's runs.
+#
+# Semantics live in scripts/ci/scheduled-run-sweep.mjs.
+# Unit tests: scripts/ci/__tests__/scheduled-run-sweep.test.mjs
+# (`npm run test:ci-scripts`).
+#
+# Not a required PR check.
+
+on:
+  schedule:
+    # Every 3 hours at :50, clear of the daily watchdogs' :00/:15/:30/:45 and
+    # migration-snapshot.yml's :23. Full schedule: docs/ci-cd/agent-infra.md
+    # § Scheduled conformance.
+    - cron: "50 */3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # The workflows are swept concurrently, so a slow API costs about one
+    # retried read (3 x 15 s plus backoff) per stage, not fourteen in a row.
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Force-cancel a stuck run of a watched workflow.
+      actions: write
+      # The frozen-watchdog alert issue.
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: ./.github/actions/node-setup
+        with:
+          install: none
+
+      - name: Clear stuck runs and update the alert
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/ci/scheduled-run-sweep.mjs

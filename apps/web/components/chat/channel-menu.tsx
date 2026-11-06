@@ -58,10 +58,11 @@ import {
  * because Radix kept the component mounted behind a closed popover. Mounting is
  * now the gate.
  *
- * Muting stays legible without opening this menu: the header renders a
- * `MuteGlyph` beside the channel name when the channel is muted, because the
- * deleted notification trigger used to name that state in its `aria-label` and
- * losing it would make a muted channel silently indistinguishable.
+ * The channel's notification level is read on its row here ("Muted"), and in
+ * the rail, which marks a muted channel. Until 2026-11-06 the header also drew
+ * a mute glyph beside the channel name; the owner took it off (2026-11-06:
+ * keep options a couple of taps away rather than on the header,
+ * `components.md` § Chrome weight).
  *
  * **Hide conversation** (#2303) is a fifth row, on a 1:1 DM only, and its panel
  * is the confirmation. The same view swap carries it, so it needs no dialog of
@@ -120,10 +121,19 @@ type ChannelMenuProps = {
   };
 };
 
+/** The Notifications row's trailing word: the level the channel is on. */
+const LEVEL_DETAIL: Record<ChatNotificationLevel, string> = {
+  all: "All",
+  mentions: "Mentions",
+  off: "Muted",
+};
+
 type MenuRow = {
   view: Exclude<View, "menu">;
   label: string;
   Glyph: (props: { className?: string }) => React.ReactElement;
+  /** A word after the label, where a row has a state rather than a count. */
+  detail?: string;
   /**
    * Shown after the label. Two of the deleted triggers carried a count badge,
    * which was the only way to see from the header that a channel had pins or
@@ -214,7 +224,12 @@ export function ChannelMenu({
       // loading state exists to avoid making.
       count: bookmarksLoading || bookmarksError ? undefined : bookmarks.length,
     },
-    { view: "notifications", label: "Notifications", Glyph: MuteGlyph },
+    {
+      view: "notifications",
+      label: "Notifications",
+      Glyph: MuteGlyph,
+      detail: notificationLevel ? LEVEL_DETAIL[notificationLevel] : undefined,
+    },
     ...(hideConversation
       ? [
           {
@@ -267,7 +282,7 @@ export function ChannelMenu({
       >
         {view === "menu" ? (
           <ul className="divide-y divide-border">
-            {rows.map(({ view: target, label, Glyph, count }) => (
+            {rows.map(({ view: target, label, Glyph, count, detail }) => (
               <li key={target}>
                 <button
                   type="button"
@@ -275,14 +290,20 @@ export function ChannelMenu({
                   // Spelled out rather than left to name computation: the count
                   // sits in its own element pushed to the far end of the row,
                   // and concatenating the two text nodes yields "Pinned2".
-                  aria-label={count ? `${label}, ${count}` : undefined}
+                  aria-label={
+                    count
+                      ? `${label}, ${count}`
+                      : detail
+                        ? `${label}, ${detail}`
+                        : undefined
+                  }
                   className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-foreground transition-colors hover:bg-card"
                 >
                   <Glyph className="h-5 w-5 shrink-0 text-muted-foreground" />
                   {label}
-                  {count ? (
+                  {count || detail ? (
                     <span className="ml-auto text-caption font-normal text-muted-foreground">
-                      {count}
+                      {count || detail}
                     </span>
                   ) : null}
                 </button>

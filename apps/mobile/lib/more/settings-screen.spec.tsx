@@ -47,6 +47,20 @@ const state = vi.hoisted(() => ({
 
 // The suite's stub has no `Linking`; the push switch's fallback opens the OS
 // settings through it.
+// `@repo/validation`'s beta list, emptied so these specs draw every
+// notification switch as they do with dues on. The beta's own case, dues
+// off, sets `betaOff.keys`.
+const betaOff = vi.hoisted(() => ({ keys: [] as string[] }));
+vi.mock("@repo/validation/beta-off-modules", () => ({
+  get BETA_OFF_MODULES() {
+    return betaOff.keys;
+  },
+  isBetaOffModule: (key: string) => betaOff.keys.includes(key),
+}));
+afterEach(() => {
+  betaOff.keys = [];
+});
+
 vi.mock("react-native", async () => {
   const { reactNativeStub } = await import("@/test/react-native-stub");
   return {
@@ -117,16 +131,21 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import SettingsScreen from "@/app/(tabs)/preferences";
+import { AnalyticsContext } from "@/lib/analytics-provider";
 
 const mounted: ReactTestRenderer[] = [];
 
-function render(): ReactTestRenderer {
+function render(
+  track: ((name: string, properties?: object) => void) | null = null,
+): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
-      <FrappThemeProvider>
-        <SettingsScreen />
-      </FrappThemeProvider>,
+      <AnalyticsContext.Provider value={track}>
+        <FrappThemeProvider>
+          <SettingsScreen />
+        </FrappThemeProvider>
+      </AnalyticsContext.Provider>,
     );
   });
   mounted.push(tree);
@@ -246,6 +265,14 @@ describe("Settings copy", () => {
       expect(text).toContain(category.label);
       expect(text).not.toContain(category.description);
     }
+  });
+
+  it("draws no Billing switch while dues is beta-off", () => {
+    betaOff.keys = ["dues"];
+    const text = screenText(render());
+
+    expect(text).not.toContain("Billing");
+    expect(text).toContain("Tasks");
   });
 
   it("says nothing about sync once the preferences are synced", () => {
@@ -425,6 +452,30 @@ describe("Settings push switch", () => {
     );
   });
 
+  it.each([
+    [true, "allowed"],
+    [false, "denied"],
+  ])("records the OS answer (%s) as push-prompt-answered from settings", async (granted, answer) => {
+    state.getPushPermission = async () => ({
+      granted: false,
+      canAskAgain: true,
+      status: "undetermined",
+    });
+    state.requestPushPermission.mockResolvedValue(granted);
+    const track = vi.fn();
+    const tree = render(track);
+    await settle();
+
+    act(() => pushSwitch(tree).props.onValueChange(true));
+    await settle();
+
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith("push-prompt-answered", {
+      answer,
+      surface: "settings",
+    });
+  });
+
   it("stays off after the member denies the OS prompt, and says where to turn it on", async () => {
     let asked = false;
     state.getPushPermission = async () =>
@@ -579,7 +630,8 @@ describe("Settings push switch", () => {
       canAskAgain: true,
       status: "denied",
     });
-    const tree = render();
+    const track = vi.fn();
+    const tree = render(track);
     await settle();
 
     expect(pushSwitch(tree).props.value).toBe(false);
@@ -594,6 +646,8 @@ describe("Settings push switch", () => {
     expect(state.requestPushPermission).not.toHaveBeenCalled();
     expect(primerWrites()).toEqual([]);
     expect(state.openSettings).toHaveBeenCalledTimes(1);
+    // Opening the OS settings answers no prompt.
+    expect(track).not.toHaveBeenCalled();
   });
 
   it("reads off on Android when the app's channel is switched off, though the permission is granted", async () => {

@@ -140,7 +140,8 @@ export interface ChatActionContext {
   /**
    * Product analytics sink for the outbox lifecycle
    * (`spec/behavior/observability.md` § Outbox Telemetry) — omitted → no
-   * events. Web supplies the pseudonymous `track` from `AnalyticsContext`;
+   * events. Web and mobile supply the pseudonymous `track` from their
+   * `AnalyticsContext`;
    * fire-and-forget by the same contract that context documents. Properties
    * must be behavioral only — never pass `OutboxRow.body` or anything
    * content-derived (see `outbox-analytics.ts`).
