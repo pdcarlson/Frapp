@@ -198,6 +198,26 @@ export interface DiscordApplicationInfo {
 }
 
 /**
+ * One member of a guild, as `GET /guilds/{id}/members/{user}` answers: what
+ * Discord draws beside their messages in that server.
+ *
+ * Read per user rather than listed, because listing a guild's members needs the
+ * Server Members privileged intent and reading one member does not.
+ */
+export interface DiscordGuildMemberProfile {
+  userId: string;
+  /** The per-server nickname; what the server shows first. */
+  nick: string | null;
+  /** The per-server avatar hash, which the server shows over the account's. */
+  guildAvatar: string | null;
+  /** The account-wide display name. */
+  globalName: string | null;
+  username: string | null;
+  /** The account's avatar hash. */
+  avatar: string | null;
+}
+
+/**
  * The bot's read-only view of a guild.
  *
  * Every method takes `guildId` because every method must be able to prove what
@@ -266,6 +286,22 @@ export interface IDiscordBotGateway {
     before: string | null;
     limit?: number;
   }): Promise<unknown[]>;
+  /**
+   * One member of `guildId`, for the name and avatar the server shows them
+   * with. Null when they are not a member (they left, or the account is gone),
+   * which is Discord's 404. Any other refusal throws.
+   */
+  fetchGuildMember(
+    guildId: string,
+    userId: string,
+  ): Promise<DiscordGuildMemberProfile | null>;
+
+  /**
+   * A Discord account's avatar hash (`GET /users/{id}`), for someone no longer
+   * in the server. Null for a default avatar or an account Discord does not
+   * know (404). Any other refusal throws.
+   */
+  fetchUserAvatar(userId: string): Promise<string | null>;
 }
 
 /** The guild object Discord returns on a `bot`-scope token exchange. */

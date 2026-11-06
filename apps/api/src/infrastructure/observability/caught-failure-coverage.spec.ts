@@ -25,6 +25,7 @@ const OWN_FOLDER = join('infrastructure', 'observability');
 const STANDALONE_SCRIPTS = new Set([
   'export-openapi.ts',
   'backfill-discord-mention-tokens.ts',
+  'backfill-discord-import-people.ts',
 ]);
 
 const ERROR_LOG = /\.error\(|\blogThrowable\(\s*[\w.]+\s*,\s*'error'/g;
