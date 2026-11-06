@@ -16,11 +16,19 @@ export const motionTokens = {
     micro: 140,
     standard: 220,
     context: 300,
+    /*
+     * One piece of a signature moment (a row landing, a mark appearing). The
+     * moment as a whole has its own budget in `./signature.ts`. Only a
+     * signature moment may use it (`spec/ui/design-system/README.md` §7).
+     */
+    signature: 520,
   },
   easing: {
     standard: "cubic-bezier(0.16, 1, 0.3, 1)",
     entrance: "cubic-bezier(0.22, 1, 0.36, 1)",
     exit: "cubic-bezier(0.4, 0, 1, 1)",
+    /* Overshoots a little and comes back: a signature moment's landing. */
+    settle: "cubic-bezier(0.34, 1.36, 0.64, 1)",
   },
 } as const;
 

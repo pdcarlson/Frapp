@@ -1,0 +1,67 @@
+name: npm audit watch
+
+# Daily run of the npm audit gate on main (#3367).
+#
+# ci.yml's `dependency-audit` job runs only on pull requests and pushes to
+# main, so an advisory published between merges, or an allowlist entry's
+# expiry, surfaced as unrelated PRs going red. This runs the same
+# `scripts/check-npm-audit.mjs` on main every day and raises one `incident`
+# alert when it fails, closing it when it passes. It also warns, with a second
+# alert, when an entry in scripts/npm-audit-allowlist.json expires within 7
+# days. When each fires and clears: docs/ops/alert-routing.md.
+#
+# Reads the lockfile and the npm registry, and writes the alert issues with
+# GITHUB_TOKEN: no other secret, and no environment.
+#
+# Runs only on main: a dispatch from another branch would audit that branch's
+# lockfile and still raise or close the alerts about main.
+#
+# Semantics live in scripts/ci/npm-audit-watch.mjs.
+# Unit tests: scripts/ci/__tests__/npm-audit-watch.test.mjs
+# (`npm run test:ci-scripts`).
+#
+# Not a required PR check.
+
+on:
+  schedule:
+    # 08:30 UTC daily, after supabase-quota.yml (08:15). Full schedule:
+    # docs/ci-cd/agent-infra.md § Scheduled conformance.
+    - cron: "30 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One run at a time: two would race on the alert issues.
+  group: npm-audit-watch
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # The gate's own worst case is three npm attempts at 330 s each plus 70 s
+    # of backoff, about 18 minutes (check-npm-audit.mjs, "Transport retry").
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # The only write scope in this workflow, job-scoped: the alert issues.
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: ./.github/actions/node-setup
+        with:
+          install: none
+
+      - name: Audit main and update the alerts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/ci/npm-audit-watch.mjs

@@ -27,3 +27,6 @@ export const ROLLBACK_PLAYBOOK = "docs/ops/db-rollback-playbook.md";
 
 /** The alert roster, and the escalation rule every alert body links to. */
 export const ALERT_ROUTING = "docs/ops/alert-routing.md";
+
+/** The npm audit gate's policy: § The gate, and § Prevention for what to do when it goes red. */
+export const NPM_AUDIT_GATE_DOC = "docs/security/security-fixes.md";
