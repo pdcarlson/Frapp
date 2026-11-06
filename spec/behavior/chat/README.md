@@ -1133,11 +1133,14 @@ What follows is the behaviour the archive has once it is in.
   - a token inside inline code or a fenced block, or escaped with a backslash,
     stays as written, as Discord shows it;
   - a name is inserted as plain text, since it is someone else's words inside
-    another member's message: brackets, angle brackets, backslashes, backticks,
-    asterisks, underscores at a word's edge and bidirectional controls are
-    dropped from it. So a nickname cannot make a disguised link, restyle the
-    words around it, or reorder them. A nickname that is itself a URL stays
-    one, and mobile links it, showing the address it opens.
+    another member's message. A user or role name keeps only its letters,
+    digits and marks (above), so it cannot make a link at all. A channel name,
+    and a user or role name written in full because it does not start with a
+    letter, has brackets, angle brackets, backslashes, backticks, asterisks,
+    underscores at a word's edge and bidirectional controls dropped. So a name
+    cannot make a disguised link, restyle the words around it, or reorder
+    them. A full name that is itself a URL stays one, and mobile links it,
+    showing the address it opens.
 
   The web mention chip marks `@` plus one word, which is why names are written
   without their spaces (above). The `@unknown-*` placeholders are marked too,
@@ -1161,8 +1164,11 @@ What follows is the behaviour the archive has once it is in.
   from the server and rewrites their `author_name`, copies their avatar, and
   rewrites the mention text the old importer wrote for them and for each role
   to what it writes now. It works from text, since no token is left, so it
-  reaches only people who posted in the import, and leaves a name two people or
-  roles shared (several Discord roles mapped onto one Frapp role) as it was.
+  reaches only people who posted in the import, and finds a role only under
+  its Frapp role's current name. It leaves a name two people or roles shared
+  (several Discord roles mapped onto one Frapp role) as it was, and an old name
+  that is someone else's new one, which is also what makes a second run change
+  nothing. Run after `backfill-discord-mention-tokens.ts` when both apply.
 
 - **Moderating an archived message is not live.** The Realtime exclusion is a
   row rule, not an operation rule, so a soft-delete, pin or edit of an imported

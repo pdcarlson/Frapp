@@ -10,8 +10,9 @@
  * already wrote:
  *
  * - `author_name` ← the member's server nickname, else their account name;
- * - `author_avatar_path` ← their server avatar, else their account's, copied
- *   into the import's archive like the importer does (rows that have none);
+ * - `author_avatar_path` ← their server avatar, else their account's (read on
+ *   its own for someone who left the server), copied into the import's
+ *   archive like the importer does, on rows that have none;
  * - `content` ← each mention the old importer wrote, rewritten to what it
  *   writes now (`planPeopleRemap` says which mentions it can and cannot reach).
  *
@@ -50,6 +51,7 @@ import {
   archiveMediaObjectPath,
 } from '#domain/constants/storage';
 import {
+  AVATAR_DECLARED_BYTES,
   MAX_ARCHIVE_CHAPTER_BYTES,
   MAX_ARCHIVE_IMPORT_BYTES,
 } from '#domain/constants/discord-archive-limits';
@@ -205,45 +207,71 @@ async function main(): Promise<void> {
   }
 
   // ── avatars ───────────────────────────────────────────────────────────────
-  const avatars = authors
-    .map(({ discordUserId }) => {
-      const profile = profiles.get(discordUserId);
-      if (!profile) return null;
-      const asset = discordAvatarAsset(
-        {
-          author: { id: discordUserId, avatar: profile.avatar },
-          member: { avatar: profile.guildAvatar },
-        },
-        guildId,
-      );
-      return asset ? { discordUserId, ...asset } : null;
-    })
-    .filter((entry) => entry !== null);
-  console.log(`${avatars.length} authors have an avatar to copy.`);
+  // A member's server avatar, else their account's; someone who left the
+  // server has only their account's, read on its own, as a fresh import
+  // would take it from their messages.
+  const avatars: { discordUserId: string; key: string; url: string }[] = [];
+  await inBatches(authors, async ({ discordUserId }) => {
+    if (!profiles.has(discordUserId)) return;
+    const profile = profiles.get(discordUserId);
+    let accountAvatar = profile?.avatar ?? null;
+    if (!profile) {
+      try {
+        accountAvatar = await bot.fetchUserAvatar(discordUserId);
+      } catch {
+        return;
+      }
+    }
+    const asset = discordAvatarAsset(
+      {
+        author: { id: discordUserId, avatar: accountAvatar },
+        member: { avatar: profile?.guildAvatar ?? null },
+      },
+      guildId,
+    );
+    if (asset) avatars.push({ discordUserId, ...asset });
+  });
+  // Stored by the importer or an earlier run: only the rows need pointing.
+  const uploaded = new Map(
+    (await imports.findFiles(importId, chapterId))
+      .filter((file) => file.kind === 'media' && file.uploaded_at !== null)
+      .map((file) => [file.relative_path, file.storage_path]),
+  );
+  const toCopy = avatars.filter((avatar) => !uploaded.has(avatar.key));
+  console.log(
+    `${avatars.length} authors have an avatar, ${toCopy.length} to copy.`,
+  );
 
   if (!dryRun && avatars.length > 0) {
     const copier = new SupabaseArchiveMediaCopier(supabase);
-    const files = await imports.registerFiles(
-      chapterId,
-      importId,
-      avatars.map((avatar) => ({
-        import_id: importId,
-        chapter_id: chapterId,
-        kind: 'media' as const,
-        part_index: null,
-        relative_path: avatar.key,
-        bucket: CHAT_ARCHIVE_BUCKET,
-        storage_path: archiveMediaObjectPath(chapterId, importId, avatar.key),
-        content_type: 'image/png',
-        byte_size: null,
-      })),
-      {
-        importBytes: MAX_ARCHIVE_IMPORT_BYTES,
-        chapterBytes: MAX_ARCHIVE_CHAPTER_BYTES,
-      },
-    );
+    const files =
+      toCopy.length === 0
+        ? []
+        : await imports.registerFiles(
+            chapterId,
+            importId,
+            toCopy.map((avatar) => ({
+              import_id: importId,
+              chapter_id: chapterId,
+              kind: 'media' as const,
+              part_index: null,
+              relative_path: avatar.key,
+              bucket: CHAT_ARCHIVE_BUCKET,
+              storage_path: archiveMediaObjectPath(
+                chapterId,
+                importId,
+                avatar.key,
+              ),
+              content_type: 'image/png',
+              byte_size: AVATAR_DECLARED_BYTES,
+            })),
+            {
+              importBytes: MAX_ARCHIVE_IMPORT_BYTES,
+              chapterBytes: MAX_ARCHIVE_CHAPTER_BYTES,
+            },
+          );
     const byKey = new Map(files.map((file) => [file.relative_path, file]));
-    let queue = avatars.filter((avatar) => byKey.has(avatar.key));
+    let queue = toCopy.filter((avatar) => byKey.has(avatar.key));
     const stored: typeof avatars = [];
     while (queue.length > 0) {
       const batch = queue.slice(0, 50);
@@ -273,17 +301,23 @@ async function main(): Promise<void> {
       stored.map((avatar) => byKey.get(avatar.key)!.storage_path),
       new Date().toISOString(),
     );
-    await inBatches(stored, async (avatar) => {
+    for (const avatar of stored) {
+      uploaded.set(avatar.key, byKey.get(avatar.key)!.storage_path);
+    }
+    const ready = avatars.filter((avatar) => uploaded.has(avatar.key));
+    await inBatches(ready, async (avatar) => {
       const { error } = await supabase
         .from('chat_messages')
-        .update({ author_avatar_path: byKey.get(avatar.key)!.storage_path })
+        .update({ author_avatar_path: uploaded.get(avatar.key)! })
         .eq('kind', 'imported')
         .eq('metadata->>discord_import_id', importId)
         .eq('author_external_id', avatar.discordUserId)
         .is('author_avatar_path', null);
       if (error) throw new SupabaseQueryError(error);
     });
-    console.log(`${stored.length} avatars stored.`);
+    console.log(
+      `${stored.length} avatars stored; ${ready.length} authors' rows pointed at theirs.`,
+    );
   }
 
   // ── mentions ──────────────────────────────────────────────────────────────

@@ -161,6 +161,7 @@ export async function createDiscordImportFixture(
     verifyChannelInGuild: jest.fn(),
     fetchMessagePage: jest.fn(),
     fetchGuildMember: jest.fn(async () => null),
+    fetchUserAvatar: jest.fn(async () => null),
   };
   const oauthService: Record<string, jest.Mock> = {
     requireGuildId: jest.fn(async () => GUILD),

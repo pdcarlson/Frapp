@@ -295,6 +295,13 @@ export interface IDiscordBotGateway {
     guildId: string,
     userId: string,
   ): Promise<DiscordGuildMemberProfile | null>;
+
+  /**
+   * A Discord account's avatar hash (`GET /users/{id}`), for someone no longer
+   * in the server. Null for a default avatar or an account Discord does not
+   * know (404). Any other refusal throws.
+   */
+  fetchUserAvatar(userId: string): Promise<string | null>;
 }
 
 /** The guild object Discord returns on a `bot`-scope token exchange. */

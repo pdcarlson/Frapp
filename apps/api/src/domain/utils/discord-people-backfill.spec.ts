@@ -93,6 +93,7 @@ describe('planPeopleRemap', () => {
       new Map([
         ['@Member', '@Brothers'],
         ['@New Member', '@NewMembers'],
+        ['@NewMember', '@NewMembers'],
         ['@Recording Committee', '@RecordingCommittee'],
       ]),
     );
@@ -115,6 +116,29 @@ describe('planPeopleRemap', () => {
       frappRoleNames: new Map([['s', 'Secretary']]),
     });
     expect(plan.mentions.has('@Secretary')).toBe(false);
+  });
+});
+
+describe('planPeopleRemap, run twice', () => {
+  it("leaves an old name that is someone else's new name, so a second run changes nothing", () => {
+    // A's account name is B's nickname: `@Moiz` may already mean B.
+    const plan = planPeopleRemap({
+      authors: [
+        { discordUserId: '1', recordedName: 'Moiz' },
+        { discordUserId: '2', recordedName: 'Pinstripe' },
+      ],
+      profiles: new Map([
+        ['1', profile('1', 'Big Moiz')],
+        ['2', profile('2', 'Moiz')],
+      ]),
+      roleMapping: [],
+      frappRoleNames: new Map(),
+    });
+    expect(plan.mentions).toEqual(new Map([['@Pinstripe', '@Moiz']]));
+
+    const rewrite = mentionRewriter(plan.mentions);
+    const once = rewrite('@Pinstripe and @Moiz');
+    expect(rewrite(once)).toBe(once);
   });
 });
 

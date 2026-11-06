@@ -25,7 +25,9 @@
  * becomes an ordinary markdown link.
  *
  * **What the output must never do.** A name is someone else's text, so it is
- * inserted inert (see {@link inertName}): a Discord nickname such as
+ * inserted inert ({@link mentionText} keeps only a user or role name's
+ * letters, digits and marks; {@link inertName} covers the rest): a Discord
+ * nickname such as
  * `[Verify](https://ev.il)` must not become a disguised link, or restyle or
  * reorder the words around it, inside another member's message. And a channel only some members could read is not named at all
  * (see {@link importChannelMentions}), since Discord shows "No Access" there.

@@ -831,6 +831,18 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
     };
   }
 
+  async fetchUserAvatar(userId: string): Promise<string | null> {
+    let raw: Record<string, unknown> | null;
+    try {
+      raw = asRecord(await this.client().get(Routes.user(userId)));
+    } catch (error) {
+      if (statusOf(error) === 404) return null;
+      throw error;
+    }
+    if (!raw || asString(raw.id) !== userId) return null;
+    return asString(raw.avatar);
+  }
+
   private describe(error: unknown): string {
     const status = statusOf(error);
     const message = toReportableError(error).message;

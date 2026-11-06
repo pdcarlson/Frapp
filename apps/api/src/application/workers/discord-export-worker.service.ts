@@ -32,6 +32,7 @@ import {
   isAllowedUploadMime,
 } from '@repo/validation';
 import {
+  AVATAR_DECLARED_BYTES,
   MAX_ARCHIVE_CHAPTER_BYTES,
   MAX_ARCHIVE_IMPORT_BYTES,
   isWithinArchiveUploadSizeLimit,
@@ -126,6 +127,9 @@ export interface ExportSliceResult {
  * have not changed.
  */
 export const MEMBER_PROFILE_TTL_MS = 30 * 60_000;
+
+/** Member reads that took this long renew the lease before the page goes on. */
+export const MEMBER_READS_RENEW_AFTER_MS = 10_000;
 
 /** Member reads in flight at once. The REST client queues past Discord's limit. */
 const MEMBER_READS_IN_FLIGHT = 4;
@@ -718,10 +722,28 @@ export class DiscordExportWorkerService {
       // Discord's messages name people by account, never by what the server
       // shows them as. Each author and mentioned user is read as a member of
       // the server, so their nickname and server avatar are what land.
+      const readingSince = Date.now();
       const profiles = await this.readServerProfiles(guildId, page);
       const profiled = page.map((message) =>
         withServerProfiles(message, profiles),
       );
+      // A cold page can name a hundred people, read at Discord's pace, and the
+      // copy below does not renew the lease before its first call. Renew it
+      // when the reads took long enough to eat into the time that call was
+      // promised.
+      if (
+        Date.now() - readingSince >= MEMBER_READS_RENEW_AFTER_MS &&
+        !(await checkpoint({
+          imported: totals.imported,
+          skipped: totals.skipped,
+          attachmentsImported: totals.attachmentsImported,
+          attachmentsSkipped: totals.attachmentsSkipped,
+          totalMessages: totals.totalMessages,
+          warnings: totals.warnings,
+        }))
+      ) {
+        return false;
+      }
 
       // Attachments first: `attachment_count` on the message row has to be the
       // number of attachment rows that will actually exist, and that is only
@@ -849,12 +871,25 @@ export class DiscordExportWorkerService {
     }
 
     const now = Date.now();
-    const missing = [...ids].filter((id) => {
-      const cached = this.memberProfiles.get(keyOf(id));
-      return !cached || now - cached.readAt > MEMBER_PROFILE_TTL_MS;
-    });
+    const isFresh = (key: string) => {
+      const cached = this.memberProfiles.get(key);
+      return Boolean(cached && now - cached.readAt <= MEMBER_PROFILE_TTL_MS);
+    };
+    let missing = [...ids].filter((id) => !isFresh(keyOf(id)));
+    // Bounded memory: drop what is stale first, and only if that is not
+    // enough, start over and read this whole page's people again, so no one on
+    // it is left unnamed by the eviction.
     if (this.memberProfiles.size + missing.length > MEMBER_PROFILE_CACHE_MAX) {
-      this.memberProfiles.clear();
+      for (const key of [...this.memberProfiles.keys()]) {
+        if (!isFresh(key)) this.memberProfiles.delete(key);
+      }
+      if (
+        this.memberProfiles.size + missing.length >
+        MEMBER_PROFILE_CACHE_MAX
+      ) {
+        this.memberProfiles.clear();
+        missing = [...ids];
+      }
     }
 
     let failed = 0;
@@ -994,7 +1029,9 @@ export class DiscordExportWorkerService {
       pending.set(avatar.key, {
         filename: avatar.key.slice(avatar.key.lastIndexOf('/') + 1),
         content_type: 'image/png',
-        size: null,
+        // Declared, so avatars count toward the archive ceilings; the real
+        // 128px PNG is smaller.
+        size: AVATAR_DECLARED_BYTES,
         url: avatar.url,
       });
       avatarKeys.add(avatar.key);
@@ -1153,12 +1190,15 @@ export class DiscordExportWorkerService {
             return;
         }
         if (entry.avatar) {
-          // The author is drawn with initials; nothing to tell the admin.
-          if (this.unavailableAvatars.size >= MEMBER_PROFILE_CACHE_MAX) {
-            this.unavailableAvatars.clear();
-          }
-          this.unavailableAvatars.add(`${job.id}:${entry.key}`);
-          if (result.status !== 'gone') {
+          // The author is drawn with initials; nothing to tell the admin. One
+          // Discord no longer serves is not asked for again this import; any
+          // other failure may pass, so a later page tries it again.
+          if (result.status === 'gone') {
+            if (this.unavailableAvatars.size >= MEMBER_PROFILE_CACHE_MAX) {
+              this.unavailableAvatars.clear();
+            }
+            this.unavailableAvatars.add(`${job.id}:${entry.key}`);
+          } else {
             this.logger.warn(
               `Avatar copy failed for import ${job.id}: ${
                 result.reason ?? result.status
