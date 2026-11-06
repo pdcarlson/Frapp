@@ -43,3 +43,20 @@ describe("isSessionOver", () => {
     ).toBe(false);
   });
 });
+
+describe("isSessionOver, not a verdict", () => {
+  it("does not treat an unreadable Auth answer or a missing local session as over", async () => {
+    const { AuthUnknownError, AuthSessionMissingError } = await import(
+      "@supabase/supabase-js"
+    );
+    expect(
+      isSessionOver({
+        data: { user: null },
+        error: new AuthUnknownError("bad body", null),
+      }),
+    ).toBe(false);
+    expect(
+      isSessionOver({ data: { user: null }, error: new AuthSessionMissingError() }),
+    ).toBe(false);
+  });
+});

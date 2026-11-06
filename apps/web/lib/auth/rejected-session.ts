@@ -1,6 +1,6 @@
 "use client";
 
-import { isAuthApiError, isAuthRetryableFetchError } from "@supabase/supabase-js";
+import { isAuthApiError } from "@supabase/supabase-js";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { signOutCurrentSession } from "@/lib/auth/session";
 
@@ -23,8 +23,9 @@ export const SESSION_ENDED_VALUE = "session_ended";
  *
  * The browser asks Auth itself before acting on the API's word, so a stray 401
  * never signs a member out. Auth must judge the token to count: an outage
- * (a dropped request, a 5xx, a 429) is not a verdict, the same allowlist the
- * guard keeps in `apps/api/src/interface/guards/guard-lookup.ts`.
+ * (a dropped request, a 5xx, a 429, an unreadable body) is not a verdict. This
+ * is stricter than the guard's `isAuthOutage`: here a wrong "over" signs a
+ * member out.
  */
 export function isSessionOver(result: {
   data: { user: unknown };
@@ -32,11 +33,16 @@ export function isSessionOver(result: {
 }): boolean {
   const { data, error } = result;
   if (!error) return !data.user;
-  if (isAuthRetryableFetchError(error)) return false;
-  if (isAuthApiError(error) && (error.status >= 500 || error.status === 429)) {
-    return false;
-  }
-  return true;
+  // Only Auth's own 4xx judges the token. Anything else (a dropped request, a
+  // 5xx, a 429, an unreadable body from a proxy in front of Auth, or no local
+  // session left to ask about) is not a verdict, and signing out on it would
+  // sign every member out during an outage.
+  return (
+    isAuthApiError(error) &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    error.status !== 429
+  );
 }
 
 let checking = false;
@@ -49,9 +55,14 @@ let checking = false;
  * A screen fires several reads at once, so concurrent 401s collapse into one
  * check. The sign-out is local: the server-side revoke needs the very session
  * Auth just refused, and the local session is what keeps the tab signed in.
- * Leaving by full navigation drops every in-memory cache with the page, and the
- * `SIGNED_OUT` event reaches `frapp-client-provider.tsx`'s identity effect
- * first, which wipes the persisted chat cache as any other sign-out does.
+ * Leaving by full navigation drops every in-memory cache with the page. The
+ * persisted chat cache gets the same best-effort wipe as the account menu's
+ * sign-out (`frapp-client-provider.tsx`'s identity effect), which may not land
+ * before the navigation; keying by account is what keeps it from leaking.
+ *
+ * A 401 that lands after the local session is already gone (a slow read from
+ * the burst) has nothing left to sign out, so it returns before asking Auth,
+ * whose "no session" answer would otherwise read as another ended session.
  */
 export async function handleRejectedSession(): Promise<void> {
   if (checking) return;
@@ -59,6 +70,8 @@ export async function handleRejectedSession(): Promise<void> {
   let leaving = false;
   try {
     const supabase = createSupabaseBrowserClient();
+    const { data: local } = await supabase.auth.getSession();
+    if (!local.session) return;
     if (!isSessionOver(await supabase.auth.getUser())) return;
     leaving = true;
     await signOutCurrentSession({ scope: "local" });

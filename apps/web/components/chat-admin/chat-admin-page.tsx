@@ -1053,7 +1053,7 @@ function ChatAdminBody({
                       Offline first, and both ways a read goes offline
                       (`readIsOffline` in async-states.tsx): it pauses, or,
                       with the API unreachable or a page restored offline, it
-                      fails, which would otherwise blame chapter access.
+                      fails, which would otherwise read as a load error.
                     */}
                     {readIsOffline(isOffline, pinsQuery) ? (
                       <NestedOffline

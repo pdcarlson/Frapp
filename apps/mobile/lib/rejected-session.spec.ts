@@ -5,7 +5,16 @@ import { createRejectedSessionHandler, isSessionOver } from "./rejected-session"
 vi.mock("react-native", () => ({ Alert: { alert: vi.fn() } }));
 
 function fakeSupabase(result: { data: { user: unknown }; error: unknown }) {
-  return { auth: { getUser: vi.fn(async () => result) } } as never;
+  let session: unknown = { access_token: "t" };
+  return {
+    auth: {
+      getSession: vi.fn(async () => ({ data: { session } })),
+      getUser: vi.fn(async () => result),
+    },
+    signOutLocally: () => {
+      session = null;
+    },
+  };
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -36,7 +45,7 @@ describe("createRejectedSessionHandler", () => {
     const signOut = vi.fn(async () => {});
     const notify = vi.fn();
     const handle = createRejectedSessionHandler({
-      getSupabase: () => supabase,
+      getSupabase: () => supabase as never,
       signOut,
       notify,
     });
@@ -53,7 +62,7 @@ describe("createRejectedSessionHandler", () => {
   it("leaves a session Auth still recognises", async () => {
     const signOut = vi.fn(async () => {});
     const handle = createRejectedSessionHandler({
-      getSupabase: () => fakeSupabase({ data: { user: { id: "u" } }, error: null }),
+      getSupabase: () => fakeSupabase({ data: { user: { id: "u" } }, error: null }) as never,
       signOut,
       notify: vi.fn(),
     });
@@ -62,5 +71,31 @@ describe("createRejectedSessionHandler", () => {
     await flush();
 
     expect(signOut).not.toHaveBeenCalled();
+  });
+});
+
+describe("createRejectedSessionHandler after sign-out", () => {
+  it("does not sign out again for a 401 that lands after the session is gone", async () => {
+    const supabase = fakeSupabase({
+      data: { user: null },
+      error: new AuthApiError("gone", 403, "user_not_found"),
+    });
+    const signOut = vi.fn(async () => {
+      supabase.signOutLocally();
+    });
+    const notify = vi.fn();
+    const handle = createRejectedSessionHandler({
+      getSupabase: () => supabase as never,
+      signOut,
+      notify,
+    });
+
+    handle();
+    await flush();
+    handle();
+    await flush();
+
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledTimes(1);
   });
 });

@@ -411,7 +411,7 @@ describe("ChatAdminPage — a channel's pins", () => {
 
   it("says the pins are unavailable offline when the read failed offline", () => {
     // The API unreachable, or a page restored offline: the read fails rather
-    // than pausing, and must not blame the officer's chapter access.
+    // than pausing, and must say offline, not show a load error.
     mockOffline.value = true;
     reads.pins = empty({ isError: true });
     render(<ChatAdminPage />);

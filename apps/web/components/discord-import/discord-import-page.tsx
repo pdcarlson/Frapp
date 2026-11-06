@@ -264,9 +264,8 @@ function DiscordImportView({
   }
   // `data === undefined`, not `isError` alone: a failed background read keeps
   // what TanStack already holds, and while a deletion is being polled an admin
-  // is watching it count down. Swapping that for an error that blames their
-  // chapter access, over a read that will likely succeed on the next poll,
-  // hid the meter and the controls.
+  // is watching it count down. Swapping that for an error state, over a read
+  // that will likely succeed on the next poll, hid the meter and the controls.
   if (imports.isError && imports.data === undefined) {
     return (
       <NestedError
