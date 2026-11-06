@@ -43,6 +43,9 @@ export function moduleRefusalOf(error: unknown): { moduleKey: string } | null {
 export const MODULE_REFUSAL_COPY = {
   checkIn:
     "Check-in is turned off for your chapter right now. An officer can turn events back on.",
+  /** `POST /v1/events`, the New event sheet, under `@RequireModule('events')`. */
+  event:
+    "Events are turned off for your chapter right now, so new events can't be saved. An officer can turn events back on.",
   /** `POST /v1/tasks` (s19), under the controller's `@RequireModule('tasks')`. */
   task: "Tasks are turned off for your chapter right now, so new tasks can't be saved. An officer can turn tasks back on.",
   /** `PATCH /v1/tasks/:id/status`, the s08 board's checkbox (#2710). */
