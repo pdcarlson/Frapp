@@ -247,3 +247,45 @@ Cursor to be removed entirely, and a contract nobody runs still reads as current
 
 **Trigger to revisit:** none scheduled. Bringing back Cursor, or adding another cloud harness with
 its own repo contract, is a new decision and a new amendment, not a restore of the deleted files.
+
+#### ADR-16 amendment 11 — three routines for the beta, run as project scheduled tasks (2026-11-06)
+
+**Context:** the five Routines lived on a claude.ai account the owner stopped using, and they
+stopped with it: the last run records on #2966 date from 2026-10-29, and the heartbeat alert
+#3206 has been open since. Their run records also showed how little most runs did. From
+2026-10-13 Issue Triage made no writes on any day, because the inbox is about 113 items that are
+nearly all the owner's own holds. Hygiene Scan sat behind its own PR #3321 for three weeks and
+usually could not run its gates. The Curator's 2026-10-23 run stopped part way. Meanwhile the
+product was entering its store beta (TestFlight and Play internal testing), and the signals that
+mattered most there (tester feedback, TestFlight and Play crashes, store reviews) were read by
+nothing. The owner is also short on weekly usage.
+
+**Decision (owner, 2026-11-06):** replace the five with three, defined in
+[`routines.md`](../../../docs/ci-cd/routines.md):
+
+1. **Beta Watch** (new, daily): reads production Sentry, TestFlight feedback and crashes, Play
+   crashes and store reviews, files one issue per real problem, and posts to the owner only when
+   something new needs him. No repo writes.
+2. **Board Sweep** (weekly): PR Follow-ups, the Curator and Triage run as three phases of one
+   session, in that order, with one run record and one post that carries only decisions waiting on
+   the owner.
+3. **Weekly Upkeep** (weekly): Docs Upkeep in even ISO weeks and Hygiene Scan in odd ones, with
+   at most one upkeep PR open at a time.
+
+They are created by an agent as scheduled tasks bound to a Frapp project thread, not in the
+Routines UI, so each fire resumes that thread's session and posts to the owner there, and an agent
+can edit them with `update_trigger`. That reverses the "create them in the UI" advice in
+`routines.md`, which came from a 2026-09-22 agent-created Routine that lost its repository and
+connectors. A bound task carries its session's repository and connectors instead.
+
+**What this changes and what it does not.** The five skills stay as the phases' behavior
+contracts. The shared ownership boundary, the product-code ban (Hygiene Scan still excepted,
+amendment 7), the never-self-merge rule, the pre-push review gate and the run record all stand.
+The run count drops from about 17 a week to about 9.
+
+**Alternatives rejected:** recreating the five as they were (the owner's third option on the
+decision card), which spends most of its runs confirming nothing changed; and Beta Watch alone
+until launch, which would leave PR follow-ups unharvested through the busiest stretch of merges.
+
+**Trigger to revisit:** the store launch, or production PostHog going live (#1173), which would
+give Beta Watch or the Board Sweep a product-usage source.

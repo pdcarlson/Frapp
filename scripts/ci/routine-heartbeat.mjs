@@ -2,7 +2,7 @@
 
 // Scheduled watch: every scheduled routine must leave a run record.
 //
-// The five routines (docs/ci-cd/routines.md) run as Claude Code Routines, whose
+// The three routines (docs/ci-cd/routines.md) run as Claude scheduled tasks, whose
 // run status nothing in this repo can read. That status also says less than it
 // looks: on 2026-09-17 three routines died about 7 seconds after firing and
 // wrote nothing anywhere, and on 2026-09-30 Hygiene Scan read SUCCEEDED while
@@ -42,32 +42,44 @@ export const HEARTBEAT_ISSUE = 2966;
 const HOUR = 60 * 60 * 1000;
 
 /**
- * Each routine's schedule as `list_triggers` stored it on 2026-09-30: UTC, from
- * the ET times entered in the Routines UI during daylight saving (EDT). That
- * is the earliest UTC time a fire can have: in EST a fire either stays put or
- * moves an hour later (routines.md § Settings says the docs don't say which),
- * never earlier. So re-enter a changed schedule here as its EDT-time UTC.
- * `weekday` is 0 (Sunday) to 6, or absent for a daily routine. routines.md
- * § Settings links here; a schedule change there moves this row too.
+ * Each routine's schedule in UTC, as its America/New_York time falls during
+ * daylight saving (EDT). That is the earliest UTC time a fire can have: the
+ * tasks are stored with `CRON_TZ=America/New_York`, so in EST a fire lands an
+ * hour later, never earlier. So enter a changed schedule here as its EDT-time
+ * UTC. `weekday` is 0 (Sunday) to 6, or absent for a daily routine. `since` is
+ * when the routine's scheduled task was created: a fire before it is not
+ * judged, so a routine isn't reported missing for runs it never had.
+ * routines.md § Settings links here; a schedule change there moves this row
+ * too.
  */
+const CREATED_2026_11_06 = Date.parse("2026-11-06T20:00:00Z");
 export const ROUTINES = [
+  // 08:07 ET daily.
   {
-    slug: "issue-curator",
-    name: "Issue Curator",
+    slug: "beta-watch",
+    name: "Beta Watch",
     minute: 7,
     hour: 12,
-    weekday: 5,
+    since: CREATED_2026_11_06,
   },
-  { slug: "issue-triage", name: "Issue Triage", minute: 7, hour: 13 },
+  // Monday 07:07 ET.
   {
-    slug: "pr-followups",
-    name: "PR Follow-ups",
+    slug: "board-sweep",
+    name: "Board Sweep",
     minute: 7,
     hour: 11,
     weekday: 1,
+    since: CREATED_2026_11_06,
   },
-  { slug: "docs-upkeep", name: "Docs Upkeep", minute: 7, hour: 11, weekday: 3 },
-  { slug: "hygiene-scan", name: "Hygiene Scan", minute: 7, hour: 3 },
+  // Wednesday 23:07 ET, which is Thursday in UTC.
+  {
+    slug: "weekly-upkeep",
+    name: "Weekly Upkeep",
+    minute: 7,
+    hour: 3,
+    weekday: 4,
+    since: CREATED_2026_11_06,
+  },
 ];
 
 // How much later than the computed fire a real one can land: the hour a
@@ -76,7 +88,8 @@ export const ROUTINES = [
 // manual run earlier that day can't stand in for a scheduled run that died.
 export const DST_SHIFT_MS = HOUR;
 // How long a run gets to start late, finish and post its record before its
-// fire is judged. Hygiene Scan, the longest, has taken about an hour.
+// fire is judged. The old Hygiene Scan, now a Weekly Upkeep phase, took about an
+// hour; the Board Sweep's three phases may take longer.
 export const RUN_ALLOWANCE_MS = 4 * HOUR;
 
 export const RECORD_PATTERN =
@@ -85,7 +98,7 @@ export const RECORD_PATTERN =
 // or bold. Stripped before matching, so a record isn't dropped for its markup.
 const LEADING_MARKUP = /^(?:[>*_`-]+\s*)+/;
 
-// Pages of heartbeat comments to read. Five routines post about nine records a
+// Pages of heartbeat comments to read. Three routines post about nine records a
 // week, so a hundred-comment page covers months. The issue is public, so a
 // flood of other comments could push the records past the cap; a read that
 // hits it is reported unreadable rather than judged on part of the list.
@@ -170,7 +183,8 @@ export function parseRecords(comments) {
 /**
  * Each routine's verdict for its due fire.
  *
- * - `not-judged`: the fire is before `judgeFrom`, the watch's first run.
+ * - `not-judged`: the fire is before `judgeFrom`, the watch's first run, or
+ *   before the routine's own `since`.
  * - `missing`: no record since the fire's computed time.
  * - `stopped` / `done`: the newest record since then says so.
  *
@@ -180,7 +194,8 @@ export function evaluateHeartbeat({ records, now, judgeFrom }) {
   const routines = ROUTINES.map((routine) => {
     const fire = dueFire(routine, now);
     const base = { slug: routine.slug, name: routine.name, fire };
-    if (fire < judgeFrom) return { ...base, status: "not-judged" };
+    if (fire < judgeFrom || fire < (routine.since ?? -Infinity))
+      return { ...base, status: "not-judged" };
     const latest = records
       .filter((r) => r.routine === routine.slug && r.createdAt >= fire)
       .at(-1);

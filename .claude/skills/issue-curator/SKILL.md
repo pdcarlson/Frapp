@@ -1,18 +1,19 @@
 ---
 name: issue-curator
 description: >
-  Run the Issue Curator routine (1 of 5) — maintain the `suggestion` GitHub issues the agents own
+  Run the curation phase of the weekly Board Sweep routine — maintain the `suggestion` GitHub issues the agents own
   (close what's provably done, mark stale, dedup, refresh, split), then discover a few high-value
-  new issues and file them into the `triage` inbox with an Agent brief. Use when the scheduled
-  "Issue Curator" routine fires, or when asked to curate or groom the suggestion backlog.
+  new issues and file them into the `triage` inbox with an Agent brief. Use when the Board Sweep
+  reaches this phase, or when asked to curate or groom the suggestion backlog.
 ---
 
-# Issue Curator (routine 1 of 5)
+# Issue Curator (phase 2 of the Board Sweep)
 
 Keep the `suggestion` backlog healthy and high-signal rather than just growing. Each run first
 maintains the open `suggestion` issues (one action each), then discovers a few high-value new
 issues and files them into the `triage` inbox, within the net-growth budget. The
-[`issue-triage`](../issue-triage/SKILL.md) routine runs about an hour later (it runs daily) and prioritizes and
+[`issue-triage`](../issue-triage/SKILL.md) phase runs next in the same
+[`board-sweep`](../board-sweep/SKILL.md) session and prioritizes and
 promotes what lands there, so propose a priority but leave inbox grooming, re-bucketing, and
 Backlog promotion to it.
 
@@ -275,10 +276,9 @@ This runs unattended. Work through maintenance and discovery without stopping to
 offer options, and put any status note in the same message as your next tool call. End the run
 when every in-scope suggestion has its action and discovery has used or declined its budget, or
 when nothing more can move (the GitHub MCP is unavailable, or the marker-count guard failed and
-body writes are off). Your last tracker write is the [run record](../../../docs/ci-cd/routines.md#run-record-all-routines),
-`routine=issue-curator`, with the outcome that section defines (a guard that turned body writes
-off makes it `stopped`). With the MCP unavailable there is no record to post, and none is posted
-any other way. The final message is the run report:
+body writes are off). This phase posts no run record of its own: the
+[`board-sweep`](../board-sweep/SKILL.md) record covers it, and a guard that turned body writes off
+makes that record `stopped`. Your section of the sweep's run report:
 
 - Marker-count guard result, and whether you ran the fidelity probe before body writes.
 - Maintenance: each issue touched, with its action (closed `completed` / `not_planned` /

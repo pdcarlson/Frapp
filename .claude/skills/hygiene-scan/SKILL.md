@@ -1,15 +1,15 @@
 ---
 name: hygiene-scan
 description: >
-  Run the Hygiene Scan routine (5 of 5): ground in the repo's engineering standards and gates, read
+  Run the hygiene phase of the Weekly Upkeep routine (odd ISO weeks): ground in the repo's engineering standards and gates, read
   a calendar-derived slice of the codebase whole (legacy patterns, grandfathered violations,
   orphaned code, not just the recent diff), fix one bounded, verified hygiene theme in a
-  product-code PR a human merges, and file or ledger the rest. Use when the scheduled "Hygiene
-  Scan" routine fires, or when asked to scan the codebase for hygiene debt and fix it rather than
+  product-code PR a human merges, and file or ledger the rest. Use when the Weekly Upkeep
+  routine picks it, or when asked to scan the codebase for hygiene debt and fix it rather than
   report it.
 ---
 
-# Hygiene Scan (routine 5 of 5)
+# Hygiene Scan (the odd-week phase of Weekly Upkeep)
 
 This is the one unattended routine that edits product code. Filed hygiene ages behind feature work,
 and nothing else consolidates, so each run fixes one theme itself. A run is done when at most one
@@ -341,11 +341,10 @@ blocks you (the pre-push hook refuses; the cloud sandbox failed to come up, per 
 nothing left can move without the human. A missing GitHub MCP doesn't stop the scan: it ends the
 run at Phase 4 with the branch pushed. A single check you can't run is recorded as not run, not a
 reason to stop. A summary announcing the next step, an offer to continue, or a list of
-non-blocking decisions is not an ending. Your last tracker write, after the ledger comment, is the
-[run record](../../../docs/ci-cd/routines.md#run-record-all-routines), `routine=hygiene-scan`: `stopped` when a
-protected resource ended the run early (a failed sandbox bringup among them), `done` otherwise,
-including a run that decided on no PR. With the MCP unavailable there is no record to post, and
-none is posted any other way. The final message is the run report.
+non-blocking decisions is not an ending. This phase posts no run record of its own; the
+[`weekly-upkeep`](../weekly-upkeep/SKILL.md) record, after the ledger comment, carries the outcome:
+`stopped` when a protected resource ended the run early (a failed sandbox bringup among them),
+`done` otherwise, including a run that decided on no PR. The final message is the run report.
 
 ## Run report
 
