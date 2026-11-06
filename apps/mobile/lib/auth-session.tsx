@@ -14,6 +14,7 @@ import {
 } from "react";
 import { AppState } from "react-native";
 import { signInWithNativeApple } from "./apple-auth";
+import { signInWithNativeGoogle } from "./google-auth";
 import {
   describeOAuthKickoffError,
   type OAuthProvider,
@@ -536,6 +537,10 @@ export function AuthSessionProvider({
 
       if (provider === "apple") {
         const native = await signInWithNativeApple(supabase);
+        if (native === "completed" || native === "cancelled") return;
+      }
+      if (provider === "google") {
+        const native = await signInWithNativeGoogle(supabase);
         if (native === "completed" || native === "cancelled") return;
       }
 
