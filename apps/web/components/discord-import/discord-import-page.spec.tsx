@@ -423,9 +423,79 @@ describe("DiscordImportPage — importing", () => {
     ).toBeInTheDocument();
   });
 
+  it("names the channel importing now, and tiles each Discord category", () => {
+    hooks.progress.mockReturnValue({
+      data: {
+        ...progress,
+        categories: [
+          { category: null, channels: 2, threads: 0, done: 1, failed: 0 },
+          {
+            category: "Notifications",
+            channels: 3,
+            threads: 630,
+            done: 633,
+            failed: 0,
+          },
+          {
+            category: "Committees",
+            channels: 11,
+            threads: 28,
+            done: 8,
+            failed: 1,
+          },
+          // Nothing in it is being imported: no tile.
+          { category: "Skipped", channels: 0, threads: 0, done: 0, failed: 0 },
+        ],
+      },
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    render(<DiscordImportPage />);
+
+    // Polled while it moves, as the channel panel's read is.
+    expect(hooks.progress).toHaveBeenCalledWith("moving", {
+      active: true,
+      enabled: true,
+    });
+    expect(screen.getByText("Now importing").textContent).toBe(
+      "Now importing #rush · 240 messages",
+    );
+    const tiles = within(
+      screen.getByRole("list", { name: "Progress by Discord category" }),
+    ).getAllByRole("listitem");
+    expect(tiles.map((tile) => tile.textContent)).toEqual([
+      "No category1/2",
+      "Notifications633/633",
+      "Committees8/39 · 1 failed",
+    ]);
+    // The finished category reads as done; the others don't.
+    expect(tiles[1]).toHaveClass("bg-success-tint");
+    expect(tiles[2]).not.toHaveClass("bg-success-tint");
+  });
+
+  it("names no channel while the import waits to start", () => {
+    hooks.rows = [row("queued", "ready", "Tau Nu Discord")];
+    render(<DiscordImportPage />);
+    expect(screen.queryByText(/Now importing/)).toBeNull();
+  });
+
+  it("reads no per-category progress for an upload", () => {
+    hooks.rows = [
+      { ...row("uploaded", "running", "Uploaded server"), source: "upload" },
+    ];
+    render(<DiscordImportPage />);
+    expect(hooks.progress).toHaveBeenCalledWith("uploaded", {
+      active: true,
+      enabled: false,
+    });
+  });
+
   it("opens every channel live, with links into chat, and closes again", () => {
     render(<DiscordImportPage />);
-    expect(hooks.progress).not.toHaveBeenCalled();
+    expect(hooks.progress).not.toHaveBeenCalledWith("moving", {
+      active: true,
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "See every channel" }));
     expect(hooks.progress).toHaveBeenCalledWith("moving", { active: true });
@@ -569,6 +639,50 @@ describe("DiscordImportPage — finished", () => {
       "href",
       "/chat",
     );
+  });
+
+  it("counts the channels and threads apart once the categories load", () => {
+    hooks.progress.mockReturnValue({
+      data: {
+        ...progress,
+        categories: [
+          {
+            category: "Notifications",
+            channels: 3,
+            threads: 630,
+            done: 633,
+            failed: 0,
+          },
+          {
+            category: "Other",
+            channels: 75,
+            threads: 438,
+            done: 513,
+            failed: 0,
+          },
+        ],
+      },
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    render(<DiscordImportPage />);
+
+    // Read once, not polled: the import has stopped moving.
+    expect(hooks.progress).toHaveBeenCalledWith("big", {
+      active: false,
+      enabled: true,
+    });
+    expect(screen.getByText("channels").nextSibling?.textContent).toBe(
+      "78",
+    );
+    expect(screen.getByText("threads").nextSibling?.textContent).toBe(
+      n(1068),
+    );
+    expect(screen.queryByText("channels and threads")).toBeNull();
+    expect(
+      screen.queryByRole("list", { name: "Progress by Discord category" }),
+    ).toBeNull();
   });
 
   it("groups what didn't come over by reason, in plain words", () => {

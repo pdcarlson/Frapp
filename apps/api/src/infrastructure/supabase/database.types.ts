@@ -543,6 +543,20 @@ export interface Database {
         Returns: string[];
       };
       /**
+       * `20261106170000`. An import's rows being imported, added up per
+       * Discord category, a thread under its parent's category.
+       */
+      discord_import_category_progress: {
+        Args: { p_import_id: string; p_chapter_id: string };
+        Returns: {
+          category: string | null;
+          channels: number;
+          threads: number;
+          done: number;
+          failed: number;
+        }[];
+      };
+      /**
        * `20260805150000`. `claim_outcome` is `text` in SQL, narrowed here to
        * the three literals the function body can actually return.
        */

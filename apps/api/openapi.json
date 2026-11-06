@@ -9559,7 +9559,7 @@
     },
     "/v1/discord-imports/{id}/progress": {
       "get": {
-        "description": "What the Watch view polls while a bot import runs (#2857): the channel and thread rows by status, the ones running now, the last ones finished, and the failures with their reasons, each with the Frapp channel it lands in once known. A few KB whatever the server holds; `GET :id/channels` is the full list, which is too large to poll. The rows follow a bot import's walk, one channel at a time in `position` order; an upload works through export parts, which leave its rows' order and a skipped part's row unrecorded, so the web shows this for bot imports only.",
+        "description": "What the Watch view polls while a bot import runs (#2857): the channel and thread rows by status and per Discord category, the ones running now, the last ones finished, and the failures with their reasons, each with the Frapp channel it lands in once known. A few KB whatever the server holds; `GET :id/channels` is the full list, which is too large to poll. The rows follow a bot import's walk, one channel at a time in `position` order; an upload works through export parts, which leave its rows' order and a skipped part's row unrecorded, so the web shows this for bot imports only.",
         "operationId": "DiscordImportController_getProgress_v1",
         "parameters": [
           {
@@ -15197,6 +15197,39 @@
           "skipped"
         ]
       },
+      "DiscordImportCategoryProgressDto": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "nullable": true,
+            "description": "The Discord category; null for the channels in none."
+          },
+          "channels": {
+            "type": "number",
+            "description": "Channels being imported: rows with no parent."
+          },
+          "threads": {
+            "type": "number",
+            "description": "Threads being imported, each counted under its parent channel's category."
+          },
+          "done": {
+            "type": "number",
+            "description": "Channels and threads finished: imported, or skipped because Discord no longer showed them to the bot."
+          },
+          "failed": {
+            "type": "number",
+            "description": "Channels and threads that failed."
+          }
+        },
+        "required": [
+          "category",
+          "channels",
+          "threads",
+          "done",
+          "failed"
+        ]
+      },
       "DiscordImportChannelProgressRowDto": {
         "type": "object",
         "properties": {
@@ -15262,6 +15295,13 @@
               }
             ]
           },
+          "categories": {
+            "description": "The same rows added up per Discord category: the channels in no category first, then the categories in Discord's order. `channels + threads` is the category's total; `done` of that total is finished. Rows mapped to skip are in no count.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscordImportCategoryProgressDto"
+            }
+          },
           "running": {
             "description": "The rows running now, at most 5. On an import that is no longer moving, where it stopped.",
             "type": "array",
@@ -15286,6 +15326,7 @@
         },
         "required": [
           "counts",
+          "categories",
           "running",
           "recent",
           "failed"

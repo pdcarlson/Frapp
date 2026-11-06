@@ -4,6 +4,7 @@ import {
   NO_SIDEBAR_GROUPS,
   keptSidebarGroups,
   sidebarGroupFor,
+  sidebarPreview,
 } from "./sidebar-groups";
 
 const channel = (id: string, category: string | null) => ({
@@ -66,5 +67,103 @@ describe("keptSidebarGroups", () => {
       "Generic",
       "Secret",
     ]);
+  });
+});
+
+describe("sidebarPreview", () => {
+  const at = (
+    id: string,
+    category: string | null,
+    categoryPosition: number | null = null,
+  ) => ({ ...channel(id, category), categoryPosition });
+  const named = (newName: string, visibility = "chapter"): ChannelChoice =>
+    ({ action: "create_new", newName, visibility }) as ChannelChoice;
+  const shape = (sections: ReturnType<typeof sidebarPreview>) =>
+    sections.map((section) => [
+      section.group,
+      section.channels.map(
+        (row) => `${row.locked ? "locked " : ""}${row.name}`,
+      ),
+    ]);
+
+  it("lists every new channel under Channels while categories aren't kept, A to Z", () => {
+    expect(
+      shape(
+        sidebarPreview(
+          [at("1", "Generic"), at("2", "Secret"), at("3", null)],
+          {
+            "1": named("random"),
+            "2": named("cabinet", "restricted"),
+            "3": named("announcements"),
+          },
+          NO_SIDEBAR_GROUPS,
+        ),
+      ),
+    ).toEqual([[null, ["announcements", "locked cabinet", "random"]]]);
+  });
+
+  it("leaves out merges and skips, which make no channel", () => {
+    expect(
+      sidebarPreview(
+        [at("1", null), at("2", null)],
+        { "1": merged, "2": { action: "skip" } },
+        keep,
+      ),
+    ).toEqual([]);
+  });
+
+  it("puts Channels first, then kept groups in Discord's order, then by name", () => {
+    expect(
+      shape(
+        sidebarPreview(
+          [
+            at("1", "Secret", 5),
+            at("2", "Generic", 2),
+            at("3", null),
+            // No place from the scan: after every positioned group.
+            at("4", "Archive"),
+            at("5", "Zeta"),
+          ],
+          {
+            "1": named("vault"),
+            "2": named("random"),
+            "3": named("general"),
+            "4": named("old"),
+            "5": named("last"),
+          },
+          keep,
+        ),
+      ),
+    ).toEqual([
+      [null, ["general"]],
+      ["Generic", ["random"]],
+      ["Secret", ["vault"]],
+      ["Archive", ["old"]],
+      ["Zeta", ["last"]],
+    ]);
+  });
+
+  it("draws Discord channels given one new name as one row, locked if any is", () => {
+    expect(
+      shape(
+        sidebarPreview(
+          [at("1", "Rush"), at("2", "Rush")],
+          { "1": named("rush"), "2": named("Rush", "discord") },
+          keep,
+        ),
+      ),
+    ).toEqual([["Rush", ["locked rush"]]]);
+  });
+
+  it("sends a dropped category's channels to Channels", () => {
+    expect(
+      shape(
+        sidebarPreview(
+          [at("1", "Other")],
+          { "1": named("misc") },
+          { keep: true, dropped: new Set(["Other"]) },
+        ),
+      ),
+    ).toEqual([[null, ["misc"]]]);
   });
 });

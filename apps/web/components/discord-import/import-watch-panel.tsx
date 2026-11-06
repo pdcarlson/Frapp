@@ -14,6 +14,7 @@ import { EYEBROW } from "@/components/ui/typography";
 import { chatDeepLink } from "@/lib/chat/chat-links";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { cn } from "@/lib/utils";
+import type { CategoryProgress } from "./category-progress";
 
 /** One channel or thread, as `GET :id/progress` names it. */
 export interface WatchedChannel {
@@ -32,6 +33,8 @@ export interface ImportProgress {
   running: WatchedChannel[];
   recent: WatchedChannel[];
   failed: WatchedChannel[];
+  /** The same rows added up per Discord category (`category-progress.ts`). */
+  categories?: CategoryProgress[];
 }
 
 /** "3 done · 1 importing · 12 waiting", leaving out what is zero. */

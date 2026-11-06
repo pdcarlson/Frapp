@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useState } from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { cardFilledContainers } from "@/tests/card-surfaces";
 import { networkMock } from "@/tests/network";
 
@@ -454,6 +460,10 @@ describe("ImportWizard — the bot path", () => {
     expect(await screen.findByText("#general")).toBeInTheDocument();
     expect(screen.queryByText(/planning/)).not.toBeInTheDocument();
     expect(screen.getAllByRole("radiogroup")).toHaveLength(1);
+    // Counted on the category its channel is in instead.
+    expect(
+      screen.getByRole("button", { name: /^No category/ }).textContent,
+    ).toMatch(/1 channel · 1 thread · /);
   });
 
   it("SHOWS what could not be read instead of swallowing it", async () => {
@@ -573,12 +583,33 @@ describe("ImportWizard — the bot path", () => {
       screen.getByText(/Every member can see category names/),
     ).toBeVisible();
 
+    // The preview lists the new channels; the merge stays where it is.
+    const preview = () =>
+      within(screen.getByRole("region", { name: "What chat will look like" }))
+        .getAllByRole("list")
+        .map((list) => [
+          list.getAttribute("aria-label"),
+          within(list)
+            .getAllByRole("listitem")
+            .map((item) => item.textContent),
+        ]);
+    expect(preview()).toEqual([["Channels", ["#random", "#vault"]]]);
+
     fireEvent.click(keep);
+    // Discord's order: Generic (2) before Secret (5).
+    expect(preview()).toEqual([
+      ["Generic", ["#random"]],
+      ["Secret", ["#vault"]],
+    ]);
     const secret = screen.getByRole("checkbox", {
       name: "Keep Secret as a category",
     });
     expect(secret).toBeChecked();
     fireEvent.click(secret);
+    expect(preview()).toEqual([
+      ["Channels", ["#vault"]],
+      ["Generic", ["#random"]],
+    ]);
 
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 

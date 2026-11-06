@@ -13,6 +13,7 @@ import { ArchiveQuotaExceededError } from '#domain/repositories/discord-import.r
 import type {
   DiscordImport,
   DiscordImportChannel,
+  DiscordImportCategoryProgress,
   DiscordImportChannelProgress,
   DiscordImportChannelProgressRow,
   DiscordImportChannelStatus,
@@ -319,7 +320,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
         .neq('mapping_action', 'skip')
         .eq('status', status);
 
-    const [counts, running, recent, failed] = await Promise.all([
+    const [counts, running, recent, failed, categories] = await Promise.all([
       Promise.all(PROGRESS_STATUSES.map(count)),
       rows('running')
         .order('position', { ascending: true })
@@ -335,8 +336,14 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
         .order('position', { ascending: true })
         .order('id', { ascending: true })
         .limit(DISCORD_IMPORT_PROGRESS_LIMITS.failed),
+      // Added up in the database: one line per category, whatever the
+      // server's size. Scoped by the chapter inside the function.
+      this.supabase.rpc('discord_import_category_progress', {
+        p_import_id: importId,
+        p_chapter_id: chapterId,
+      }),
     ]);
-    for (const result of [...counts, running, recent, failed]) {
+    for (const result of [...counts, running, recent, failed, categories]) {
       if (result.error) throw new SupabaseQueryError(result.error);
     }
     const named = (
@@ -362,6 +369,15 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       running: named(running.data),
       recent: named(recent.data),
       failed: named(failed.data),
+      categories: (categories.data ?? []).map(
+        (row): DiscordImportCategoryProgress => ({
+          category: row.category,
+          channels: row.channels,
+          threads: row.threads,
+          done: row.done,
+          failed: row.failed,
+        }),
+      ),
     };
   }
 
