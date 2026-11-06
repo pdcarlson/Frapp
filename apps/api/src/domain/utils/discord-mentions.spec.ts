@@ -10,6 +10,7 @@ import {
   UNKNOWN_USER_MENTION,
   importChannelMentions,
   inertName,
+  mentionText,
   rewriteDiscordMentions,
   roleMentionNames,
   wholeChapterTargets,
@@ -71,7 +72,7 @@ describe('rewriteDiscordMentions', () => {
         ...resolver,
         userName: () => '[Verify](https://ev.il)',
       });
-      expect(out).toBe('@Verify(https://ev.il) check this');
+      expect(out).toBe('@Verifyhttpsevil check this');
       expect(out).not.toContain('[');
     });
 
@@ -487,9 +488,24 @@ describe('roleMentionNames', () => {
     ...overrides,
   });
 
-  it('reads a mapped role by its current Frapp name', () => {
+  it('reads a mapped role by its Discord name, as the channel saw it', () => {
     const names = roleMentionNames({
       roleMapping: [entry({ action: 'existing', frapp_role_id: 'r1' })],
+      frappRoleNames: new Map([['r1', 'Member']]),
+      guildId: null,
+    });
+    expect(names.get(ROLE)).toBe('Brothers 🦁');
+  });
+
+  it('reads a mapped role by its Frapp name only when its Discord name was not recorded', () => {
+    const names = roleMentionNames({
+      roleMapping: [
+        entry({
+          discord_role_name: ROLE,
+          action: 'existing',
+          frapp_role_id: 'r1',
+        }),
+      ],
       frappRoleNames: new Map([['r1', 'Member']]),
       guildId: null,
     });
@@ -505,10 +521,11 @@ describe('roleMentionNames', () => {
     expect(names.get(ROLE)).toBe('Brothers 🦁');
   });
 
-  it('falls back to the name it was created with, then Discord, when the Frapp role is gone', () => {
+  it('falls back to the name it was created with when neither name is known', () => {
     const created = roleMentionNames({
       roleMapping: [
         entry({
+          discord_role_name: ROLE,
           action: 'new',
           frapp_role_id: 'gone',
           new_role_name: 'Brothers',
@@ -543,5 +560,18 @@ describe('roleMentionNames', () => {
       guildId: '700000000000000000',
     });
     expect(names.get('700000000000000000')).toBe('everyone');
+  });
+});
+
+describe('mentionText', () => {
+  it('writes a name as one handle, the way the mention picker does', () => {
+    expect(mentionText('Tristan Hatton')).toBe('@TristanHatton');
+    expect(mentionText('Jèst')).toBe('@Jèst');
+    expect(mentionText('Dungeon Master (Stinky)')).toBe('@DungeonMasterStinky');
+  });
+
+  it('keeps a name no handle can start readable instead', () => {
+    expect(mentionText('21+')).toBe('@21+');
+    expect(mentionText('   ')).toBeNull();
   });
 });
