@@ -44,6 +44,13 @@ function toPredicateChannel(channel: ChatChannel) {
   };
 }
 
+/** One reader of a channel, from {@link ChannelAccessService.listChannelMembers}. */
+export interface ChannelMemberEntry {
+  user_id: string;
+  /** The member's highest role's `display_order` (lower ranks higher); `null` when they hold none. */
+  role_rank: number | null;
+}
+
 /**
  * An officer's authority over **exactly one** reported message — the report row
  * as a capability (#2311, option 1; `spec/behavior/chat/README.md` § Report and
@@ -230,6 +237,51 @@ export class ChannelAccessService {
     }
 
     return channel;
+  }
+
+  /**
+   * Who can read a channel, for the member list beside it (#3536): the
+   * caller must be able to read it themselves, and gets back every chapter
+   * member the same {@link canAccessChannel} predicate admits, with the rank
+   * of their highest role for sorting. Names, avatars, role colors and
+   * presence are joined on the client from the roster and the presence socket
+   * it already holds, so this read carries ids and ranks only.
+   *
+   * Three reads for any channel type (`RbacService.getChapterMemberAccess`),
+   * never one permission lookup per member: a ROLE_GATED channel in a chapter
+   * of 150 would otherwise cost ~300 queries per open.
+   *
+   * Permissions are passed for every type, which only matters for ROLE_GATED:
+   * the predicate decides PUBLIC on membership and PRIVATE / DM / GROUP_DM on
+   * `member_ids`, ignoring them.
+   */
+  async listChannelMembers(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChannelMemberEntry[]> {
+    const channel = await this.assertChannelAccess(
+      channelId,
+      chapterId,
+      userId,
+      'read',
+    );
+    const access = await this.rbac.getChapterMemberAccess(chapterId);
+    const predicateChannel = toPredicateChannel(channel);
+    return access
+      .filter((member) =>
+        canAccessChannel({
+          channel: predicateChannel,
+          userId: member.user_id,
+          isChapterMember: true,
+          permissions: [...member.permissions],
+          operation: 'read',
+        }),
+      )
+      .map((member) => ({
+        user_id: member.user_id,
+        role_rank: member.top_role_order,
+      }));
   }
 
   /**

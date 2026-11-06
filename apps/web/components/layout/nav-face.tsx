@@ -1,10 +1,11 @@
 "use client";
 
-import { createContext, useContext, useSyncExternalStore } from "react";
+import { createContext, useContext } from "react";
 import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { compactControlClassName } from "@/components/shared/table-controls";
 import { cn } from "@/lib/utils";
+import { useMediaQuery } from "@/lib/use-media-query";
 
 /**
  * The left column's two faces on `/chat` (owner, 2026-11-05).
@@ -57,18 +58,6 @@ export function isChannelsNavRoute(pathname: string | null): boolean {
  */
 const DESKTOP_SHELL_QUERY = "(min-width: 1024px)";
 
-function subscribe(onChange: () => void): () => void {
-  if (typeof window === "undefined" || !window.matchMedia) return () => {};
-  const mql = window.matchMedia(DESKTOP_SHELL_QUERY);
-  mql.addEventListener("change", onChange);
-  return () => mql.removeEventListener("change", onChange);
-}
-
-function getSnapshot(): boolean {
-  if (typeof window === "undefined" || !window.matchMedia) return false;
-  return window.matchMedia(DESKTOP_SHELL_QUERY).matches;
-}
-
 /**
  * Whether the desktop column is on screen. `false` on the server and through
  * hydration: the channels pane renders inline (hidden from `lg` up) until the
@@ -76,7 +65,7 @@ function getSnapshot(): boolean {
  * no width moves on first paint.
  */
 export function useIsDesktopShell(): boolean {
-  return useSyncExternalStore(subscribe, getSnapshot, () => false);
+  return useMediaQuery(DESKTOP_SHELL_QUERY);
 }
 
 /**

@@ -142,6 +142,9 @@ const HTTP_LEDGER: Record<string, Entry> = {
   // `channels:manage` holder is managing; no message content.
   ChatController_addChannelMember_v1: CHANNEL_METADATA,
   ChatController_removeChannelMember_v1: CHANNEL_METADATA,
+  // Who can read a channel (#3536): ids and role ranks, no message content.
+  // Lists a member the caller blocked, as the Directory does.
+  ChatController_listChannelMembers_v1: CHANNEL_METADATA,
   ChatController_listCategories_v1: CHANNEL_METADATA,
   ChatController_createCategory_v1: CHANNEL_METADATA,
   ChatController_updateCategory_v1: CHANNEL_METADATA,
