@@ -192,6 +192,16 @@ shipped on both platforms before it was written down here.
 
 Sizes MUST come from the scale above. Inventing an off-scale font size in screen code — including arithmetic on a role token, e.g. `tokens.type.section - 2` — is a defect, exactly as a raw hex value is ([`../mobile/README.md`](../mobile/README.md)).
 
+### Aligning a row (2026-11-06)
+
+Paul's bar is that nothing in a row reads as sitting higher or lower than its neighbours. Which alignment gets there depends on what the row holds.
+
+- **A row with an icon in it centers every item**: `items-center` on web, `alignItems: "center"` on mobile. That includes a row whose first item is a box that starts with an icon. An icon has no text baseline, so a baseline row reads the icon's bottom edge instead and drops the text after it. That was the web channel header on every private, role-gated and direct-message channel and the audit channel until 2026-11-06: the description sat about 4px below the name ([`channel-header-title.tsx`](../../../apps/web/components/chat/channel-header-title.tsx)).
+- **A text-only row aligns baselines**, such as the chat author line (the name in `label`, then the time as a caption). Baseline is what makes two sizes of type read as one line.
+- **Centering two type roles is only close to a shared baseline when their sizes are close.** Figtree's cap height sits in the middle of its line box, so a centered item's baseline lands 0.35 × its font size below the row's middle. Label beside caption is 0.5px apart, which is why the channel header can center them; title (18) beside caption is about 2px apart and display beside anything is worse. When an icon row also needs two roles that far apart, wrap the text in its own baseline row and center that row with the icon.
+- **A control glyph is drawn, never typed.** A character such as `‹` sits on the font's x-height rather than the line's middle, so it lands low in a centered row and changes size with the type role. Use the platform's glyph (on mobile, `apps/mobile/components/control-glyphs.tsx`, [iconography.md](iconography.md) §6.1.5). Sites still typing one: [#3628](https://github.com/pdcarlson/Frapp/issues/3628).
+- **A dot separator stays type.** The `•` between a name and its description is a character in the description's role, centered with it, not a drawn circle.
+
 ### Amendment: the three marketing type roles (landing only)
 
 The six roles above are the **product** scale and bind every product surface. A storefront headline is not a product heading, and the largest locked role — `display`, 32 — is not a hero. So the landing surface carries three additional roles **above** the scale, added with the token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) and drawn on the reskin's System sheet ([`../landing/reference/canvas/System.dc.html`](../landing/reference/canvas/System.dc.html)).
