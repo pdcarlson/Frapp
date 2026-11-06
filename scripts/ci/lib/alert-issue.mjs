@@ -416,7 +416,8 @@ export async function raiseAlert({
  *   callers' policies differ. Every daily watchdog goes red on it (the
  *   conformance pair, check-migration-drift, production-guardrails,
  *   production-backup-env, both backup-freshness watchdogs,
- *   production-release-pin, routine-heartbeat and supabase-quota): one failed
+ *   production-release-pin, routine-heartbeat, supabase-quota and
+ *   npm-audit-watch): one failed
  *   read is usually transient, but a
  *   lasting one means the job's token lost issues access, and then the next
  *   real failure could not raise its alert either. production-uptime passes
