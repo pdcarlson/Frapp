@@ -588,7 +588,7 @@ The Signet answer is the one approach the measurements left standing — surface
 
 ### Monospace decision
 
-`--font-mono` is a deliberate system-monospace stack (`ui-monospace, SFMono-Regular, …, monospace`), **not** a bundled webfont. Ledger-line motifs, eyebrow labels, and `#chapter-audit` cards render against the system stack. Do not bundle a mono webfont unless brand explicitly revisits this — the "monospace family must be loaded" requirement is satisfied by a stack that needs no loading.
+`--font-mono` is a deliberate system-monospace stack (`ui-monospace, SFMono-Regular, …, monospace`), **not** a bundled webfont. Ledger-line motifs and eyebrow labels render against the system stack. (`#chapter-audit` entries did too while they were cards; since 2026-11-06 they are plain audit lines with no mono, [`components.md`](../ui/design-system/components.md) §11.) Do not bundle a mono webfont unless brand explicitly revisits this — the "monospace family must be loaded" requirement is satisfied by a stack that needs no loading.
 
 ---
 
