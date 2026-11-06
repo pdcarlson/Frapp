@@ -8,7 +8,7 @@
  * them, and the composer has to be pinned to the bottom of the viewport rather
  * than to the bottom of a document that scrolls. (From `lg` up the channel
  * list is the shell's left column itself since 2026-11-05,
- * `chat-nav-column.tsx`; below it, the list is in `<main>` with the thread.)
+ * `nav-column.tsx`; below it, the list is in `<main>` with the thread.)
  *
  * A full-bleed route therefore gets a `<main>` with no padding and no scroll of
  * its own, and takes responsibility for both. It is still the same `<main>`
