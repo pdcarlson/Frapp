@@ -138,6 +138,11 @@ export interface DiscoveredDiscordChannel {
   discord_channel_name: string;
   discord_category: string | null;
   /**
+   * The category's place in the server, for a top-level channel in one; null
+   * otherwise. Kept categories are created in this order.
+   */
+  discord_category_position?: number | null;
+  /**
    * Set when this row is a thread. The wizard lists only rows where this is
    * null — a thread follows its parent's destination rather than getting a
    * mapping question of its own.

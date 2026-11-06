@@ -2,6 +2,7 @@
 
 import { useId, useMemo } from "react";
 import {
+  compareChannelMembers,
   memberLabel,
   useChannelMembers,
   useMemberDisplayNames,
@@ -38,18 +39,7 @@ const GROUP_LABELS: Record<PresenceStatus, string> = {
 };
 
 /**
- * Role rank first (lower `display_order` ranks higher, a member with no role
- * last), then name, so officers lead each group as they do on the Roles page.
- */
-function compareRows(a: ChannelMemberRow, b: ChannelMemberRow): number {
-  const rankA = a.roleRank ?? Number.POSITIVE_INFINITY;
-  const rankB = b.roleRank ?? Number.POSITIVE_INFINITY;
-  if (rankA !== rankB) return rankA - rankB;
-  return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-}
-
-/**
- * Online, then Idle, then Offline, each sorted by {@link compareRows}; empty
+ * Online, then Idle, then Offline, each sorted by `compareChannelMembers` (`@repo/hooks`, shared with mobile); empty
  * groups are dropped. Before presence resolves every status is `null`, and the
  * rows come back as one unlabelled-by-status "Members" group rather than all
  * claiming Offline, which would be a statement about each member sourced from
@@ -60,13 +50,19 @@ export function groupChannelMembers(
 ): ChannelMemberGroup[] {
   if (rows.every((row) => row.status === null)) {
     return rows.length
-      ? [{ key: "all", label: "Members", rows: [...rows].sort(compareRows) }]
+      ? [
+          {
+            key: "all",
+            label: "Members",
+            rows: [...rows].sort(compareChannelMembers),
+          },
+        ]
       : [];
   }
   return (["online", "idle", "offline"] as const).flatMap((status) => {
     const inGroup = rows
       .filter((row) => (row.status ?? "offline") === status)
-      .sort(compareRows);
+      .sort(compareChannelMembers);
     return inGroup.length
       ? [{ key: status, label: GROUP_LABELS[status], rows: inGroup }]
       : [];
@@ -115,9 +111,14 @@ export function ChannelMemberList({
     return groupChannelMembers(rows);
   }, [membersQuery.data, byId, avatarFor, roleColorFor, presence]);
 
-  // Names come from the roster, so a list without them is not ready either;
-  // a failure of either read gets the error, and Retry reruns whichever failed.
-  const failed = membersQuery.isError || roster.isError;
+  // Names come from the roster, so a list without them is not ready either.
+  // A read fails the list only when it has nothing to draw: TanStack keeps
+  // the last good data through a failed refetch, so a background blip leaves
+  // the list up rather than swapping it for an error. Retry reruns only what
+  // failed.
+  const membersFailed = membersQuery.isError && membersQuery.data === undefined;
+  const rosterFailed = roster.isError && !roster.hasData;
+  const failed = membersFailed || rosterFailed;
   const loading =
     !channelId || !enabled || membersQuery.isPending || roster.isPending;
 
@@ -136,8 +137,8 @@ export function ChannelMemberList({
             <button
               type="button"
               onClick={() => {
-                if (membersQuery.isError) void membersQuery.refetch();
-                if (roster.isError) roster.refetch();
+                if (membersFailed) void membersQuery.refetch();
+                if (rosterFailed) roster.refetch();
               }}
               className="font-semibold text-foreground underline-offset-2 hover:underline"
             >

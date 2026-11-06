@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { SupabaseDiscordImportRepository } from './supabase-discord-import.repository';
 import { ArchiveQuotaExceededError } from '#domain/repositories/discord-import.repository.interface';
 import { ID_CHUNK_SIZE } from '#domain/utils/chunk-ids';
@@ -211,8 +212,15 @@ describe('SupabaseDiscordImportRepository — tenant scope', () => {
 
   it('findChannelProgress filters every read through the import embed (#2857)', async () => {
     await repo.findChannelProgress(IMPORT_B, CHAPTER_B);
-    // Five counts and three short lists.
+    // Five counts and three short lists, and the per-category sums, which
+    // the function scopes by the chapter it is handed.
     expect(harness.ops).toHaveLength(8);
+    expect(harness.rpcCalls).toEqual([
+      {
+        fn: 'discord_import_category_progress',
+        args: { p_import_id: IMPORT_B, p_chapter_id: CHAPTER_B },
+      },
+    ]);
     for (const op of harness.ops) {
       expect(op.filters.map((f) => [f.column, f.value])).toContainEqual([
         'discord_imports.chapter_id',
@@ -478,8 +486,13 @@ describe('SupabaseDiscordImportRepository — progress counts and clearing', () 
     ...fields,
   });
 
-  function build(importStatus: string, extra: Record<string, unknown>[] = []) {
+  function build(
+    importStatus: string,
+    extra: Record<string, unknown>[] = [],
+    rpc: Record<string, { data?: unknown; error?: unknown }> = {},
+  ) {
     const harness = createTenantHarness({
+      rpc,
       tenantColumns: {
         discord_import_channels: 'discord_imports.chapter_id',
       },
@@ -567,6 +580,36 @@ describe('SupabaseDiscordImportRepository — progress counts and clearing', () 
     ]);
     // The scoping embed stays behind.
     expect(progress.running[0]).not.toHaveProperty('discord_imports');
+  });
+
+  it('findChannelProgress hands back the per-category sums as the function returns them', async () => {
+    const lines = [
+      { category: null, channels: 2, threads: 0, done: 2, failed: 0 },
+      { category: 'Committees', channels: 11, threads: 28, done: 8, failed: 1 },
+    ];
+    const { repo } = build('running', [], {
+      discord_import_category_progress: { data: lines },
+    });
+    const progress = await repo.findChannelProgress(IMPORT_A, CHAPTER_A);
+    expect(progress.categories).toEqual(lines);
+  });
+
+  it('findChannelProgress still answers when the per-category sums fail', async () => {
+    const { repo } = build('running', [], {
+      discord_import_category_progress: {
+        error: { message: 'function does not exist', code: '42883' },
+      },
+    });
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const progress = await repo.findChannelProgress(IMPORT_A, CHAPTER_A);
+    expect(progress.categories).toEqual([]);
+    expect(progress.counts.running).toBe(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('progress per category'),
+    );
+    warn.mockRestore();
   });
 
   it('findChannelProgress names the last finished first, and only a few', async () => {

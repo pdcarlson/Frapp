@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-06: A Discord import's progress per category
+
+### 20261106170000_discord_import_category_progress.sql
+
+- **Purpose**: Adds `discord_import_category_progress(p_import_id, p_chapter_id)`, a read-only SQL function that adds up an import's channel and thread rows per Discord category (a thread under its parent channel's category): channels, threads, done and failed. `GET /v1/discord-imports/:id/progress` returns it as `categories`, which the one-import page draws as a tile per category while a bot import runs, and as separate channel and thread counts once it finishes. The behaviour is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages. Service role only. Nothing is rewritten.
+- **Checks**: After `db push`, `select has_function_privilege('authenticated', 'public.discord_import_category_progress(uuid, uuid)', 'execute');` returns `false`, and `select * from public.discord_import_category_progress('<an import id>', '<its chapter id>');` returns one row per category. The function's body, run as a plain query against staging's 2026-09-30 import before this shipped, returned 11 categories adding up to 78 channels and 1,068 threads.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API doesn't call the function. The newer API against an unmigrated database logs a warning on every `GET :id/progress` and answers it without `categories`, so the page draws no tiles and the combined channel count; the channel panel and the import itself are unaffected. `create or replace` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-discord-import-category-progress-20261106170000) § Rollback Discord import category progress.
+
 ## 2026-11-06: Backwork accepts files up to 100 MB
 
 ### 20261106153000_backwork_bucket_100mb.sql

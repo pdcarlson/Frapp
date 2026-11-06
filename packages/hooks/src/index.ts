@@ -1,6 +1,7 @@
 export * from "./use-frapp-client";
 export * from "./use-now";
 export * from "./display-names";
+export * from "./channel-members";
 export * from "./document-download";
 export * from "./put-signed-upload";
 export * from "./chapter-query-keys";

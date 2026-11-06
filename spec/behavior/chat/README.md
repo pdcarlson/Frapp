@@ -257,10 +257,11 @@ adding that filter would make the bookmark vanish, the opposite of this rule.
 - A sender broadcasts at most once every 3 seconds while typing. A typist expires 4 seconds after their last broadcast, and the indicator catches up on the next sweep of expired typists, which runs every 1.5 seconds, so it clears 4 to 5.5 seconds after that broadcast (`packages/chat-core/src/realtime-manager.ts`).
 - The viewer's own typing never counts, including typing from another of the viewer's devices, whose broadcasts do arrive.
 
-**Member list** (web, [#3536](https://github.com/pdcarlson/Frapp/issues/3536)):
+**Member list** (web and mobile, [#3536](https://github.com/pdcarlson/Frapp/issues/3536)):
 
 - Beside a channel, the list shows everyone who can read it, by the same rule that admits a read: the whole chapter for a public channel, the holders of a required permission (or the wildcard) for a role-gated one, and `member_ids` for a private channel or group DM. A 1:1 DM shows no list. Only a member who can read the channel can ask for its list (`GET /v1/channels/{id}/members`).
 - Grouped Online, then Idle, then Offline, from the chapter presence topic below. Within a group, members sort by their highest role's rank (lower `display_order` first, no role last), then by name. Names take the member's role color, as in the timeline. Until presence has resolved, the list is one ungrouped "Members" group rather than calling everyone Offline.
+- On mobile the list is a tall sheet from the thread header's members button, shown on every channel but a 1:1 DM. Mobile does not join the chapter presence topic, so the sheet is always that one ungrouped list, in the same order (`compareChannelMembers` in `@repo/hooks`, which web sorts with too), headed by its count.
 
 **Online/offline presence:**
 
@@ -574,14 +575,21 @@ deliberate race. The page shows that one import in the state it is in:
   archive space, so the newest one is named with a Delete. The import last
   deleted is named in one line until the admin dismisses it.
 - **Importing:** the messages counted in so far, channels and threads done
-  out of the total, the percent, and Stop import. The admin can leave: when
+  out of the total, the percent, and Stop import. A bot import also names
+  the channel or thread importing now, with its message count so far, and
+  shows a tile per Discord category: its channels and threads done out of
+  its total, any that failed, turning green once all are done. The channels
+  in no category come first, then the categories in Discord's order; past
+  eight, the last tile sums the rest ("+ N more"). A thread counts under its
+  channel's category. The admin can leave: when
   the import completes or fails, the admin who set it up (`created_by`) is
   notified, if they still hold `channels:manage` in the chapter. One the
   admin stopped sends nothing. The notice itself is in
   [`../notifications.md`](../notifications.md#notification-triggers-complete-list).
 - **Finished, or stopped part-way:** the messages and files that came over,
   and the channels and threads (all it read once completed, the ones it got
-  through otherwise); Open chat, once it completed; Resume import, on one
+  through otherwise; a completed bot import counts channels and threads
+  apart); Open chat, once it completed; Resume import, on one
   that failed, which starts it again from where it stopped (#2947);
   what didn't come over, grouped by reason in plain words, from the last 50
   warnings the import keeps; and Delete import. A deletion that failed
@@ -754,6 +762,20 @@ channel that reports a different one fails the import rather than being skipped.
     one that does. A category a remap stops using, as after unticking one,
     stays until the import is deleted or an officer deletes it (#2882). *2026-11-05, owner's request: a
     78-channel server landed as one flat list.*
+
+    Each Discord category on the step is one folded section with a summary
+    line (its channels, the threads they hold on a bot import, how many are
+    being imported, and what needs attention), so a server of 78 channels
+    reads as a dozen decisions; it opens on its own when something in it
+    needs attention. A thread never gets a row of its own. Above them, "What
+    chat will look like" lists the channels the import will make under the
+    sidebar sections they will land in, in the order starting the import
+    creates them (no category first, then Discord's order, then by name;
+    channels A to Z, marked private as the sidebar marks them), and re-groups
+    as the admin keeps or drops categories. A category named like one of the
+    chapter's own joins it, under the chapter's spelling and before the new
+    ones, as starting the import places it. Merges aren't listed: they make
+    nothing. *2026-11-06, the server map of the #2882 redesign.*
   - **A channel an import merges into stays an ordinary channel, which an
     officer can delete at any time (#2922)**: before the import starts, while
     it runs, or long after. Each import that merged into it keeps its mapping
@@ -1271,7 +1293,7 @@ Clients read it after resubscribing (Resubscribe before backfill, above). How th
 
 ## Web ↔ mobile parity
 
-The mobile (Expo) chat experience shares web's realtime transport and outbox, so **presence and the offline composer queue behave the same across platforms** — both run the same `@repo/chat-core` code. Reactions round-trip on both, but the affordance does not match: mobile offers web's four quick reactions in its long-press actions sheet and has no full picker. Inline rich-message cards are at parity but for two kinds: web has a renderer registry (`apps/web/components/chat/renderers/`, `dues` still a stub), and mobile draws every card kind but `dues` and `loading` through `cardFor` in `apps/mobile/components/chat/thread-message-row.tsx` (#3185, #3383), with those two as their `content` text: web's `dues` card is a placeholder, and `loading` is web's stand-in for a slash command in flight, which mobile never sends ([`integrations.md`](integrations.md)). Differences that are canonical:
+The mobile (Expo) chat experience shares web's realtime transport and outbox, so **the offline composer queue behaves the same across platforms**, both running the same `@repo/chat-core` code. Chapter presence does not yet: mobile neither publishes nor reads it (the presence bullet below), so its channel member list is one ungrouped list (§ Member list). Reactions round-trip on both, but the affordance does not match: mobile offers web's four quick reactions in its long-press actions sheet and has no full picker. Inline rich-message cards are at parity but for two kinds: web has a renderer registry (`apps/web/components/chat/renderers/`, `dues` still a stub), and mobile draws every card kind but `dues` and `loading` through `cardFor` in `apps/mobile/components/chat/thread-message-row.tsx` (#3185, #3383), with those two as their `content` text: web's `dues` card is a placeholder, and `loading` is web's stand-in for a slash command in flight, which mobile never sends ([`integrations.md`](integrations.md)). Differences that are canonical:
 
 - **Voice memos** would be mobile-native: recorded in the composer, uploaded to Storage, and sent as `kind="audio"` with waveform metadata, with web clients playing them back. **Specified, not built** — `audio` is not in `CHAT_MESSAGE_KINDS`, as the Message Kinds and Actions table above records, so this describes the intended behavior rather than a shipped one.
 - **Presence lifecycle on mobile** — **specified, not built.** The presence payload carries no status field: it is exactly `{ userId, ts }`, pinned by key-set equality in `presence-contract.spec.ts` because widening it silently breaks push suppression. Nothing binds `AppState` to presence. As designed it would map app state to presence: backgrounded → `idle`, force-quit → `offline` — statuses that today are derived from the age of `ts`, never written.
