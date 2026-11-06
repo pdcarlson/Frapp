@@ -29,7 +29,7 @@ This drops and recreates the database, applies all migrations, and reruns `seed.
 
 > **A `db reset` restores the chapter directory from migrations, not from the CSV.**
 > The directory's rows arrive with the migrations that load them
-> (`20261106200100_chapter_directory_wikipedia_rows.sql` is the latest), so a reset
+> (`20261106210100_chapter_directory_wikipedia_rows.sql` is the latest), so a reset
 > brings back the last shipped load. A CSV changed locally since then reaches the
 > database only through the bootstrap scripts: re-run `bash scripts/local-dev-setup.sh --quick`
 > (or `bash scripts/cloud-sandbox-up.sh` in a sandbox).

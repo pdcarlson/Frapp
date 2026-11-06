@@ -22,7 +22,7 @@
 -- the link and out of search; the rest are deleted. On 2026-11-06 no
 -- production chapter linked one, and one staging chapter did.
 --
--- Needs 20261106200000_chapter_directory_search.sql first (the alias
+-- Needs 20261106210000_chapter_directory_search.sql first (the alias
 -- columns). To ship a changed CSV later: regenerate into a NEW migration.
 -- Never edit this one.
 

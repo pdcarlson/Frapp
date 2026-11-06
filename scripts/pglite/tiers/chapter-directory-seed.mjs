@@ -52,7 +52,7 @@ try {
     )
   ).rows[0].n;
 
-  // Search (20261106200000_chapter_directory_search.sql), against the real
+  // Search (20261106210000_chapter_directory_search.sql), against the real
   // seed: the cases that sent Paul to the manual form on 2026-11-06.
   const search = async (q, limit = 20, university = null) =>
     (

@@ -191,7 +191,7 @@ export interface Database {
         }[];
       };
       /**
-       * `20261106200000`. Onboarding chapter search: word prefixes over
+       * `20261106210000`. Onboarding chapter search: word prefixes over
        * organization, letters, chapter, school and aliases, with trigram typo
        * tolerance. Global reference data, no chapter scope; at most 50 rows.
        */
