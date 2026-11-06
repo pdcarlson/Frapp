@@ -1,4 +1,9 @@
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  ExecutionContext,
+  ForbiddenException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import { Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ChapterGuard } from './chapter.guard';
@@ -46,7 +51,15 @@ describe('ChapterGuard', () => {
     member,
     chapter,
     memberships,
+    errors = {},
   }: {
+    /** A lookup that fails rather than finding nothing (#3143), by table. */
+    errors?: Partial<
+      Record<
+        'users' | 'members' | 'chapters' | 'memberships',
+        { code: string; message: string }
+      >
+    >;
     appUser?: { id: string } | null;
     member?: {
       id: string;
@@ -73,11 +86,22 @@ describe('ChapterGuard', () => {
       const data =
         table === 'users' ? appUser : table === 'members' ? member : chapter;
       const eqMock: jest.Mock = jest.fn();
-      const single = jest.fn().mockResolvedValue({ data });
-      const limit = jest.fn().mockResolvedValue({ data: memberships ?? [] });
+      const error = errors[table as 'users' | 'members' | 'chapters'];
+      const maybeSingle = jest
+        .fn()
+        .mockResolvedValue(
+          error ? { data: null, error } : { data: data ?? null, error: null },
+        );
+      const limit = jest
+        .fn()
+        .mockResolvedValue(
+          errors.memberships
+            ? { data: null, error: errors.memberships }
+            : { data: memberships ?? [], error: null },
+        );
       // chapters and users use one .eq; members uses either two .eq calls
       // (explicit chapter) or one .eq + .limit (auto-resolve).
-      eqMock.mockReturnValue({ eq: eqMock, single, limit });
+      eqMock.mockReturnValue({ eq: eqMock, maybeSingle, limit });
       return {
         select: jest.fn().mockImplementation((columns: string) => {
           (selectArgs[table] ??= []).push(columns);
@@ -792,6 +816,95 @@ describe('ChapterGuard', () => {
         mockExecutionContext(buildRequest({ method: 'POST' })),
       );
       expect(selectArgs['chapters']?.[0]).toContain('enabled_modules');
+    });
+  });
+  // #3143: a lookup that failed is not an answer. "No row" keeps its 4xx; an
+  // error is a 503 carrying the query as its cause, so clients retry it.
+  describe('a failed lookup is a 503, not a refusal', () => {
+    const TIMEOUT = {
+      code: '57014',
+      message: 'canceling statement due to statement timeout',
+    };
+
+    async function failure(request: ReturnType<typeof buildRequest>) {
+      return guard
+        .canActivate(mockExecutionContext(request))
+        .catch((error: unknown) => error);
+    }
+
+    it('answers 503 when the user lookup errors, and 403 when it finds no one', async () => {
+      mockSupabaseChain({ errors: { users: TIMEOUT } });
+      const thrown = await failure(buildRequest());
+      expect(thrown).toBeInstanceOf(ServiceUnavailableException);
+      expect((thrown as Error).cause).toBeInstanceOf(SupabaseQueryError);
+      expect((thrown as Error).cause).toMatchObject({ code: '57014' });
+
+      mockSupabaseChain({ appUser: null });
+      await expect(
+        guard.canActivate(mockExecutionContext(buildRequest())),
+      ).rejects.toMatchObject({
+        status: 403,
+        message: 'User profile not found',
+      });
+    });
+
+    it('answers 503 when the membership lookup errors, and chapter.context.invalid when there is none', async () => {
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        errors: { members: TIMEOUT },
+      });
+      expect(await failure(buildRequest())).toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+
+      mockSupabaseChain({ appUser: { id: 'user-1' }, member: null });
+      await expect(
+        guard.canActivate(mockExecutionContext(buildRequest())),
+      ).rejects.toMatchObject({
+        status: 403,
+        response: { code: 'chapter.context.invalid' },
+      });
+    });
+
+    it('answers 503 when the auto-resolve lookup errors, not chapter.context.required', async () => {
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        errors: { memberships: TIMEOUT },
+      });
+      expect(await failure(buildRequest({ headers: {} }))).toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+
+      mockSupabaseChain({ appUser: { id: 'user-1' }, memberships: [] });
+      await expect(
+        guard.canActivate(mockExecutionContext(buildRequest({ headers: {} }))),
+      ).rejects.toMatchObject({
+        status: 400,
+        response: { code: 'chapter.context.required' },
+      });
+    });
+
+    it('answers 503 when the chapter lookup errors, and 403 when the chapter is gone', async () => {
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        member: { id: 'member-1', role_ids: [] },
+        errors: { chapters: TIMEOUT },
+      });
+      expect(await failure(buildRequest())).toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        member: { id: 'member-1', role_ids: [] },
+        chapter: null,
+      });
+      await expect(
+        guard.canActivate(mockExecutionContext(buildRequest())),
+      ).rejects.toMatchObject({
+        status: 403,
+        message: 'Chapter not found',
+      });
     });
   });
 });

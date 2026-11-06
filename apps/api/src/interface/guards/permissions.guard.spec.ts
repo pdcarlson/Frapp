@@ -1,7 +1,7 @@
 import {
   ExecutionContext,
   ForbiddenException,
-  InternalServerErrorException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -402,9 +402,9 @@ describe('PermissionsGuard', () => {
       const thrown: unknown = await guard
         .canActivate(ctx)
         .catch((error: unknown) => error);
-      expect(thrown).toBeInstanceOf(InternalServerErrorException);
+      expect(thrown).toBeInstanceOf(ServiceUnavailableException);
       // The query error travels as the cause, so Sentry gets what failed
-      // (#1264); the client body stays the generic 500.
+      // (#1264); the client body stays generic, and a 503 is retried (#3143).
       expect((thrown as Error).cause).toBeInstanceOf(SupabaseQueryError);
       expect((thrown as Error).cause).toMatchObject({
         message: 'connection reset',

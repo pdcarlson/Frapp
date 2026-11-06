@@ -9,6 +9,7 @@ import type { JwtPayload } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { RequestContext, getHeaderValue } from '../types/request-context.types';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import { isAuthOutage, lookupUnavailable } from './guard-lookup';
 
 @Injectable()
 export class SupabaseAuthGuard implements CanActivate {
@@ -30,6 +31,10 @@ export class SupabaseAuthGuard implements CanActivate {
 
     const { data, error } = await this.supabase.auth.getUser(token);
 
+    // An Auth outage is not a verdict on the token (#3143): `isAuthOutage`.
+    if (error && isAuthOutage(error)) {
+      throw lookupUnavailable('Could not verify your session right now', error);
+    }
     if (error || !data.user) {
       throw new UnauthorizedException('Invalid or expired token');
     }

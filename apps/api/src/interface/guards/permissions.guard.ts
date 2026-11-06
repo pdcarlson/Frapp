@@ -4,13 +4,13 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
-  InternalServerErrorException,
   Type,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PostgrestError } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
+import { lookupUnavailable } from './guard-lookup';
 import {
   PERMISSIONS_KEY,
   PERMISSIONS_ANY_KEY,
@@ -96,14 +96,16 @@ export class PermissionsGuard implements CanActivate {
     ];
 
     // A failed lookup must surface as a server fault, not a permission
-    // denial — otherwise a transient DB error reads as a terminal 403. The
+    // denial — otherwise a transient DB error reads as a terminal 403. A 503,
+    // like the auth and chapter guards' (#3143), so clients retry it. The
     // query error rides along as the cause, so Sentry gets its code and the
-    // query's stack (#1264); the client still gets only the generic 500 body.
+    // query's stack (#1264); the client still gets only the generic body.
     const lookupError = rolesResult.error ?? customRolesResult.error;
     if (lookupError) {
-      throw new InternalServerErrorException('Failed to resolve permissions', {
-        cause: new SupabaseQueryError(lookupError),
-      });
+      throw lookupUnavailable(
+        'Failed to resolve permissions',
+        new SupabaseQueryError(lookupError),
+      );
     }
     const roles = rolesResult.data;
     const customRoles = customRolesResult.data;

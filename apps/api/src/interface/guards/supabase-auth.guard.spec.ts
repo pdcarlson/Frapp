@@ -1,4 +1,14 @@
-import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import {
+  ExecutionContext,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import {
+  AuthApiError,
+  AuthRetryableFetchError,
+  AuthSessionMissingError,
+  AuthUnknownError,
+} from '@supabase/supabase-js';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SupabaseAuthGuard } from './supabase-auth.guard';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
@@ -122,6 +132,53 @@ describe('SupabaseAuthGuard', () => {
 
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
       expect(ctx.switchToHttp().getRequest().jwtClaims).toBeUndefined();
+    });
+  });
+  // #3143: an Auth outage is not a verdict on the token. A 401 reads to the
+  // client as "signed out" and is never retried; a 503 is.
+  describe('an Auth outage is a 503, an invalid token stays a 401', () => {
+    const bearer = () => mockExecutionContext({ authorization: 'Bearer tok' });
+
+    it.each([
+      ['a dropped connection', new AuthRetryableFetchError('fetch failed', 0)],
+      ['an Auth 5xx', new AuthRetryableFetchError('Bad Gateway', 502)],
+      [
+        'an Auth 500 with a JSON body',
+        new AuthApiError('boom', 500, undefined),
+      ],
+      [
+        'Auth rate limiting',
+        new AuthApiError('Too many', 429, 'over_request_rate_limit'),
+      ],
+      [
+        'an unreadable answer',
+        new AuthUnknownError('Unexpected token <', null),
+      ],
+    ])(
+      'answers 503 for %s, with the error as its cause',
+      async (_label, error) => {
+        mockGetUser.mockResolvedValue({ data: { user: null }, error });
+        const thrown = await guard
+          .canActivate(bearer())
+          .catch((e: unknown) => e);
+        expect(thrown).toBeInstanceOf(ServiceUnavailableException);
+        expect((thrown as Error).cause).toBe(error);
+      },
+    );
+
+    it.each([
+      ['an expired token', new AuthApiError('JWT expired', 403, 'bad_jwt')],
+      ['a malformed token', new AuthApiError('invalid JWT', 401, 'bad_jwt')],
+      [
+        'a deleted user',
+        new AuthApiError('User not found', 404, 'user_not_found'),
+      ],
+      ['an error auth-js builds itself', new AuthSessionMissingError()],
+    ])('keeps 401 for %s', async (_label, error) => {
+      mockGetUser.mockResolvedValue({ data: { user: null }, error });
+      await expect(guard.canActivate(bearer())).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
   });
 });
