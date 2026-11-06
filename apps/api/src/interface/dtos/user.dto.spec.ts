@@ -1,7 +1,11 @@
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
 
 import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
-import { GRADUATION_YEAR_MAX, GRADUATION_YEAR_MIN } from '@repo/validation';
+import {
+  GRADUATION_YEAR_MAX,
+  GRADUATION_YEAR_MIN,
+  MAJOR_MAX_LENGTH,
+} from '@repo/validation';
 import { ConfirmAvatarDto, UpdateUserDto } from './user.dto';
 
 const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
@@ -35,6 +39,16 @@ describe('UpdateUserDto', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     },
   );
+
+  it('accepts a major up to the shared limit, and refuses one past it', async () => {
+    const major = 'M'.repeat(MAJOR_MAX_LENGTH);
+    await expect(transform(UpdateUserDto, { major })).resolves.toEqual({
+      major,
+    });
+    await expect(
+      transform(UpdateUserDto, { major: `${major}M` }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
 
   // #2519: a free-text avatar_url let a member point their photo at any
   // string, including another member's storage path. The photo is now set

@@ -78,6 +78,18 @@ Example:
 
 Copy never shows a permission key such as `roles:manage`. A permission-denied line names what the role can't do (`Your role can't manage roles.`) and who can change that; an error that may be an access problem says `Confirm your chapter access and retry.`; a toast with no server message says `Try again in a moment.` Where a screen has to name a permission, it uses the words in [`permission-labels.ts`](../../../apps/web/lib/permission-labels.ts) (2026-11-05).
 
+## 3a. Form copy
+
+*(Added 2026-11-06, from the mobile Edit profile sheet, whose bio placeholder asked for "Major, year, anything brothers should know." directly above a Graduation year field.)*
+
+- **A placeholder never asks for what another field holds.** If the form has a field for it, the placeholder doesn't mention it; if it doesn't and the information matters, the form gets the field.
+- **A placeholder never repeats its label.** "Your password" under Password, "Your full name" under Name: say something the label doesn't ("First and last name"), or draw no placeholder.
+- **A placeholder is a hint, not a value.** A format (`YYYY`) or an `e.g.` example reads as a hint; a bare plausible value ("2027") reads as already filled in.
+- **Purpose shared by several fields is said once,** as a group heading or hint, not in each placeholder (components.md § Text input, "Grouping and spacing in a form").
+- **A placeholder is the only label only for a sheet's one primary field** whose purpose the sheet title already names: a composer, a search, a task title, a code entry. Any other field has a visible label.
+- **Free-text prompts can be light.** The bio is a member talking to their chapter, so its placeholder invites rather than instructs: "Hometown, hidden talent, go-to late-night order."
+- **Shared forms share their copy.** Where web and mobile draw the same form, the labels and placeholders come from one constant (`PROFILE_FIELD_COPY` in `@repo/validation` for the profile), so a wording fix lands on both.
+
 ## 4. Empty state pattern
 
 Every empty state MUST include:
@@ -148,10 +160,12 @@ The tables below are the canonical strings for high-frequency state messages, so
 
 ### Connection banner (global)
 
-| State | Title | Description |
-|---|---|---|
-| Degraded | — | `Slow connection. Some features may be delayed.` |
-| Offline | — | `You're offline. Showing cached data.` |
+| State | Title | Description | Mobile pill (drawn) |
+|---|---|---|---|
+| Degraded | — | `Slow connection. Some features may be delayed.` | `Slow connection` |
+| Offline | — | `You're offline. Showing cached data.` | `Offline` |
+
+Mobile's floating pill draws the last column so it fits over a header, and its accessible name is the Description (2026-11-06, `connectionPillLabel` in `apps/mobile/lib/connection/state.ts`).
 
 **The closing clause was removed in #1707 and MUST NOT be re-added to the global banner.** The rule it replaces read: *"The offline string MUST keep its closing clause — a member who edited or posted while offline needs to be told the work is queued, not lost."* The intent was right and the placement was wrong. Only the chat composer has an outbox, so "changes will sync" was true on exactly one surface and false on every other route this global banner renders on — dashboard writes are queueless and now reject rather than pausing. Promising a queue that does not exist is the §1 principle 1 violation ("actions must never appear to succeed when they haven't") that the clause was meant to prevent.
 
@@ -402,7 +416,7 @@ bind every one of them, and both are the point rather than style:
 
 | Surface | Description |
 |---|---|
-| New event (sheet on s06) | `Your chapter's subscription isn't active, so new events can't be saved. An officer can sort this out for the chapter.` |
+| New event (sheet from the tab bar's +) | `Your chapter's subscription isn't active, so new events can't be saved. An officer can sort this out for the chapter.` |
 | New task (s19) | `Your chapter's subscription isn't active, so new tasks can't be saved. An officer can sort this out for the chapter.` |
 | Task status (s08 toggle, chat task card) | `Your chapter's subscription isn't active, so task updates can't be saved. An officer can sort this out for the chapter.` Shown on the board, and on a mobile chat task card for Start, Mark complete, Confirm and Reject (one copy for both, `taskStatusGateRefusal` in `apps/mobile/lib/tasks/status-refusal.ts`). On either, the controls stay withdrawn until the member comes back to the screen or to the app ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
 | Event check-in | `Your chapter's subscription isn't active, so check-in isn't available. An officer can sort this out for the chapter.` |
@@ -432,7 +446,7 @@ the state with `pollsGateOf` in `@repo/chat-core/polls`.
 
 | Surface | Description |
 |---|---|
-| New event (sheet on s06) | `Events are turned off for your chapter right now, so new events can't be saved. An officer can turn events back on.` |
+| New event (sheet from the tab bar's +) | `Events are turned off for your chapter right now, so new events can't be saved. An officer can turn events back on.` |
 | New task (s19) | `Tasks are turned off for your chapter right now, so new tasks can't be saved. An officer can turn tasks back on.` |
 | Task status (s08 toggle, chat task card) | `Tasks are turned off for your chapter right now, so task updates can't be saved. An officer can turn tasks back on.` Shown on the board and on a mobile chat task card, and withdrawn for as long, like the subscription row for the same writes ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
 | Event check-in | `Check-in is turned off for your chapter right now. An officer can turn events back on.` |

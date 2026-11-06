@@ -25,8 +25,10 @@ import { CheckGlyph } from "@/components/tasks/task-glyphs";
  * rows), so it reads as one more strip of chrome and not a card.
  *
  * The phone can upload a document and schedule an event, so those lines open
- * Documents and Events, where the upload and New event sheets are. It has no
- * screen for inviting or study zones, so those lines open the same page of the web app in the in-app browser, and
+ * Documents (its + is the upload sheet) and Events (its empty state points at
+ * the tab bar's +, where New event is). It has no screen for inviting or
+ * study zones, so those lines open the same page of the web app in the
+ * in-app browser, and
  * say so before the tap, the way Settings' Study zones row says where zones
  * are managed. It never draws dues ({@link MOBILE_SETUP_CHECKLIST_OMIT}).
  *

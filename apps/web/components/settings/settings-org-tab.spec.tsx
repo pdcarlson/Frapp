@@ -420,13 +420,38 @@ describe("SettingsOrgTab chapter mark (#2876, #2591)", () => {
       />,
     );
     await user.clear(screen.getByLabelText(/founded year/i));
+    // Still in the field: no error yet.
+    expect(
+      screen.queryByText(/A founded year can't be removed once saved/),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /save identity/i }));
 
     expect(
       screen.getByText(/A founded year can't be removed once saved/),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /save identity/i }),
-    ).toBeDisabled();
+    expect(screen.getByLabelText(/founded year/i)).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(onPatchConfig).not.toHaveBeenCalled();
+  });
+
+  it("waits for the member to leave the founded year before refusing it", async () => {
+    const user = userEvent.setup();
+    render(<SettingsOrgTab archetypeKey="ifc" {...baseProps} branding={{}} />);
+    const field = screen.getByLabelText(/founded year/i);
+
+    await user.type(field, "18");
+    expect(screen.queryByText(/Enter a year between/)).not.toBeInTheDocument();
+    expect(field).toHaveAttribute("aria-invalid", "false");
+
+    await user.tab();
+    expect(screen.getByText(/Enter a year between/)).toBeInTheDocument();
+
+    await user.click(field);
+    await user.type(field, "93");
+    expect(screen.queryByText(/Enter a year between/)).not.toBeInTheDocument();
   });
 
   it("re-seeds the drafts when the stored values really change", () => {

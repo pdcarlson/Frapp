@@ -11,10 +11,14 @@ import React, {
 } from "react";
 import { normalizeApiBaseUrl, withRequestIdInit } from "@repo/api-sdk";
 import {
+  CONFIRM_RETRY_MS,
   deriveConnectionState,
   healthProbeIsReachable,
   type ConnectionState,
 } from "@repo/validation";
+
+/** Re-exported for the specs; the rule and its reasons live in `@repo/validation`. */
+export { CONFIRM_RETRY_MS };
 
 export type { ConnectionState };
 
@@ -82,14 +86,21 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
   );
   const [failureCount, setFailureCount] = useState(0);
   const probeGenerationRef = useRef(0);
+  // Mirrors `failureCount` for the probe, which must not re-create on it.
+  const failuresRef = useRef(0);
+  const confirmRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The retry calls the probe through this, since a callback can't name
+  // itself before it exists.
+  const probeRef = useRef<((retried?: boolean) => Promise<void>) | null>(null);
 
-  const probeOnce = useCallback(async () => {
+  const probeOnce = useCallback(async (retried = false) => {
     if (!navigator.onLine) {
       return;
     }
 
     const healthCheckUrl = getHealthCheckUrl();
     if (!healthCheckUrl) {
+      failuresRef.current = 0;
       setFailureCount(0);
       return;
     }
@@ -113,9 +124,15 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (healthProbeIsReachable(res)) {
+          // A pending confirm has nothing left to confirm.
+          if (confirmRetryRef.current) {
+            clearTimeout(confirmRetryRef.current);
+            confirmRetryRef.current = null;
+          }
+          failuresRef.current = 0;
           setFailureCount(0);
         } else {
-          setFailureCount((prev) => prev + 1);
+          fail();
         }
       } finally {
         clearTimeout(timeout);
@@ -124,9 +141,31 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
       if (generation !== probeGenerationRef.current) {
         return;
       }
-      setFailureCount((prev) => prev + 1);
+      fail();
+    }
+
+    // A first strike is retried once, 2s later, before it counts: one failed
+    // probe is what a blip looks like, and it is enough to show "Slow
+    // connection" (`CONFIRM_RETRY_MS` in @repo/validation; the mobile monitor
+    // does the same). A retry already on its way decides, so a second failure
+    // meanwhile neither counts nor pushes it back.
+    function fail() {
+      if (!retried && failuresRef.current === 0) {
+        if (confirmRetryRef.current) return;
+        confirmRetryRef.current = setTimeout(() => {
+          confirmRetryRef.current = null;
+          void probeRef.current?.(true);
+        }, CONFIRM_RETRY_MS);
+        return;
+      }
+      failuresRef.current += 1;
+      setFailureCount(failuresRef.current);
     }
   }, []);
+
+  useEffect(() => {
+    probeRef.current = probeOnce;
+  }, [probeOnce]);
 
   useEffect(() => {
     // Probe on mount, not only on the first interval tick. Without this a
@@ -146,6 +185,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
       clearInterval(interval);
+      if (confirmRetryRef.current) clearTimeout(confirmRetryRef.current);
     };
   }, [probeOnce]);
 

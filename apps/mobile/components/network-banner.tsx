@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Animated, StyleSheet, Text } from "react-native";
+import { Animated, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
 import { useConnection } from "@/lib/connection/use-connection";
-import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { connectionPillLabel } from "@/lib/connection/state";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 import { CloseGlyph } from "@/components/control-glyphs";
 import { IconButton } from "@/components/icon-button";
 
@@ -20,12 +21,22 @@ import { IconButton } from "@/components/icon-button";
  * ## Two deliberate deviations from connection-state.md, both recorded in the spec
  *
  * **Placement.** UI Indicators says "below the header bar". That is a web-shaped rule
- * written for a dashboard chrome. Here the banner is mounted above the
- * navigator in `app/_layout.tsx`, because a global banner belongs above every
- * screen and moving it under each header would mean editing the frozen
- * `components/screen-shell.tsx`. It does take the safe-area inset, which it
- * previously did not — it rendered outside every `SafeAreaView` and painted
- * under the status bar on a notched device.
+ * written for a dashboard chrome. Here the pill floats at the top of the
+ * window, over the header, mounted in `app/_layout.tsx` after the sheet
+ * provider so it draws over every screen and every open sheet, because a
+ * global banner belongs above everything and moving it under each header would
+ * mean editing the frozen `components/screen-shell.tsx`. It draws a short label
+ * ("Slow connection", `connectionPillLabel`) so it fits between a header's
+ * back capsule and its right-hand controls, and it can be dismissed.
+ *
+ * **A floating pill, not a band (2026-11-06).** It used to be a full-width
+ * tinted band in the layout, under the status bar, so every state change
+ * pushed the whole app (an open sheet included) down by a line and back up.
+ * Now it floats, as web's banner does: a small pill just under the status
+ * bar, drawn over the screen rather than beside it, so nothing moves when it
+ * comes or goes. The colored dot carries the severity; the words stay quiet.
+ * Only the pill takes touches, so the strip either side of it still reaches
+ * the screen beneath.
  *
  * **No emoji.** The banner copy leads with ⚡ and 📡. Those predate Signet's
  * iconography rule, and the semantic tint already carries the severity they
@@ -81,11 +92,10 @@ export function NetworkBanner() {
    * Kept mounted only while it has something to show or is animating out.
    *
    * Without this the component returned early only on `message === null`, so a
-   * *dismissed* banner stayed in the tree at opacity 0 — keeping its safe-area
-   * padding, its text line and its border, and pushing every screen in the app
-   * down behind an invisible band for the full 30s until it reappeared. A
-   * control whose only job is to give the screen back has to actually give it
-   * back. It also keeps the `alert` node and the Dismiss button out of the
+   * *dismissed* banner stayed in the tree at opacity 0 for the full 30s until
+   * it reappeared: when it was still a band in the layout, that pushed every
+   * screen down behind an invisible strip. The pill takes no layout, but
+   * unmounting still keeps the `alert` node and the Dismiss button out of the
    * screen-reader tree, which `pointerEvents` alone does not do.
    */
   const [mounted, setMounted] = useState(false);
@@ -96,10 +106,8 @@ export function NetworkBanner() {
     Animated.timing(slide, {
       toValue: visible ? 1 : 0,
       duration: SLIDE_MS,
-      // Opacity alone could run on the UI thread, but the height collapse below
-      // cannot — layout is not a transform property — and both have to finish
-      // together or the band outlives the message.
-      useNativeDriver: false,
+      // Opacity only, which the native driver runs on the UI thread.
+      useNativeDriver: true,
     }).start(({ finished }) => {
       if (finished && !visible) setMounted(false);
     });
@@ -112,73 +120,88 @@ export function NetworkBanner() {
 
   if (message === null || !mounted) return null;
 
+  const severity = isOffline
+    ? tokens.color.semantic.destructive
+    : tokens.color.semantic.warning;
+
   return (
-    <Animated.View
-      style={[
-        styles.container,
-        isOffline ? styles.offlineContainer : styles.degradedContainer,
-        { paddingTop: insets.top + tokens.spacing.sm, opacity: slide },
-      ]}
-      // Announced rather than merely drawn: a member using a screen reader
-      // needs to know a write is about to fail as much as a sighted one does.
-      accessibilityRole="alert"
-      accessibilityLiveRegion="polite"
-      pointerEvents={visible ? "auto" : "none"}
+    <View
+      style={[styles.overlay, { top: insets.top + tokens.spacing.xs }]}
+      // The row spans the screen only to center the pill: touches outside the
+      // pill pass through to the screen beneath.
+      pointerEvents="box-none"
     >
-      <Text
-        style={[
-          styles.text,
-          isOffline ? styles.offlineText : styles.degradedText,
-        ]}
+      <Animated.View
+        style={[styles.pill, { opacity: slide }]}
+        // Announced rather than merely drawn: a member using a screen reader
+        // needs to know a write is about to fail as much as a sighted one does.
+        accessibilityRole="alert"
+        accessibilityLiveRegion="polite"
+        pointerEvents={visible ? "auto" : "none"}
       >
-        {message}
-      </Text>
-      <IconButton
-        label="Dismiss"
-        hint="Hides this message. It returns if the connection has not recovered."
-        onPress={onDismiss}
-      >
-        <CloseGlyph
-          color={
-            isOffline
-              ? tokens.color.semantic.destructive
-              : tokens.color.semantic.warning
-          }
-        />
-      </IconButton>
-    </Animated.View>
+        <View style={[styles.dot, { backgroundColor: severity }]} />
+        {/* The short label is drawn; the whole sentence is what a screen
+            reader announces (`connectionPillLabel`). */}
+        <Text
+          style={styles.text}
+          numberOfLines={1}
+          accessibilityLabel={message}
+        >
+          {connectionPillLabel(state) ?? message}
+        </Text>
+        <IconButton
+          label="Dismiss"
+          hint="Hides this message. It returns if the connection has not recovered."
+          onPress={onDismiss}
+        >
+          <CloseGlyph color={tokens.color.text.mutedForeground} />
+        </IconButton>
+      </Animated.View>
+    </View>
   );
 }
 
+/** The pill's height: foundations §9's Chip-to-Row band, under 44 drawn. */
+const PILL_HEIGHT = 32;
+const DOT_SIZE = 8;
+
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    container: {
+    overlay: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      alignItems: "center",
+      paddingHorizontal: tokens.spacing.lg,
+      // Over every screen. `app/_layout.tsx` mounts it after the sheet
+      // provider, whose portal host is where every open sheet and scrim
+      // paints, so it draws over those too; this lifts it over the navigator
+      // on Android, where elevation, not order, decides.
+      zIndex: 1000,
+      elevation: 1000,
+    },
+    pill: {
       flexDirection: "row",
       alignItems: "center",
-      gap: tokens.spacing.md,
-      paddingHorizontal: tokens.spacing.lg,
-      paddingBottom: tokens.spacing.sm,
-      borderBottomWidth: 1,
+      gap: tokens.spacing.sm,
+      maxWidth: "100%",
+      minHeight: PILL_HEIGHT,
+      paddingLeft: tokens.spacing.md,
+      paddingRight: tokens.spacing.sm,
+      borderRadius: PILL_HEIGHT / 2,
+      borderWidth: 1,
+      borderColor: tokens.color.border.input,
+      backgroundColor: tokens.color.surface.popover,
+    },
+    dot: {
+      width: DOT_SIZE,
+      height: DOT_SIZE,
+      borderRadius: DOT_SIZE / 2,
     },
     text: {
-      flex: 1,
+      flexShrink: 1,
       ...typeRole(tokens.typography.role.caption),
-    },
-    offlineContainer: {
-      backgroundColor: tint(tokens.color.semantic.destructive),
-      borderBottomColor: tint(tokens.color.semantic.destructive, 0.3),
-    },
-    degradedContainer: {
-      backgroundColor: tint(tokens.color.semantic.warning),
-      borderBottomColor: tint(tokens.color.semantic.warning, 0.3),
-    },
-    offlineText: {
-      // Danger as text on its own tint takes the AA lift (foundations §5), as
-      // web's offline banner does.
-      color: tokens.color.semantic.destructiveText,
-    },
-    degradedText: {
-      color: tokens.color.semantic.warning,
+      color: tokens.color.text.foreground,
     },
   });
 }
