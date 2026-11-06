@@ -112,3 +112,20 @@ describe('ChatMentionService.listMentionRoles', () => {
     expect(list.every((view) => view.mentionable)).toBe(true);
   });
 });
+
+describe('ChatMentionService.resolveForSend', () => {
+  it('still resolves member mentions when the roles read fails', async () => {
+    const memberRepo = {
+      findChapterMemberIdentities: jest.fn().mockResolvedValue(members),
+    } as unknown as IMemberRepository;
+    const rbac = {
+      findByChapter: jest.fn().mockRejectedValue(new Error('roles down')),
+      getEffectivePermissions: jest.fn(),
+    } as unknown as RbacService;
+    const mentions = new ChatMentionService(memberRepo, rbac);
+
+    await expect(
+      mentions.resolveForSend('ch-1', 'u2', '@Ann and @Officers'),
+    ).resolves.toEqual(['u1']);
+  });
+});

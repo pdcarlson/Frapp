@@ -441,6 +441,13 @@ describe("MessageItem mentions the viewer", () => {
     expect(row.className).not.toContain("bg-accent-subtle");
   });
 
+  it("leaves a deleted message plain", () => {
+    renderItem(message({ is_deleted: true, mentions: [VIEWER] }));
+    expect(screen.getByRole("listitem")).not.toHaveAttribute(
+      "data-mentions-viewer",
+    );
+  });
+
   it("leaves the viewer's own message plain", () => {
     renderItem(message({ sender_id: VIEWER, mentions: [VIEWER] }));
     expect(screen.getByRole("listitem")).not.toHaveAttribute(

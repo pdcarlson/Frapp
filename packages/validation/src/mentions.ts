@@ -69,14 +69,6 @@ function fold(value: string): string {
 }
 
 /**
- * Shortest token allowed to resolve by *prefix*.
- *
- * A one-character prefix is not a mention, it is a coin flip: `@A` would match
- * whichever single member happens to start with A. The exact tiers above still
- * accept a one-character token, so a member genuinely named a single character
- * stays reachable — this only stops the loosest tier from guessing.
- */
-/**
  * A name or token as the resolver compares it (`fold`), for a caller that has
  * to ask "does this token name that role" before it has a full candidate set:
  * the API, deciding whether a send needs the sender's permissions at all.
@@ -85,6 +77,14 @@ export function foldMentionName(value: string): string {
   return fold(value);
 }
 
+/**
+ * Shortest token allowed to resolve by *prefix*.
+ *
+ * A one-character prefix is not a mention, it is a coin flip: `@A` would match
+ * whichever single member happens to start with A. The exact tiers above still
+ * accept a one-character token, so a member genuinely named a single character
+ * stays reachable — this only stops the loosest tier from guessing.
+ */
 const MIN_PREFIX_LENGTH = 2;
 
 /** Where one `@`-token sits in a message body. */
@@ -168,19 +168,21 @@ export function matchMentionCandidate<T extends MentionCandidate>(
  */
 const EXACT_TIERS = 3;
 
-function matchTiers<T extends MentionCandidate>(
-  candidates: readonly T[],
+/**
+ * The resolver's tiers for `token`, most specific first. Empty for a token
+ * that is blank once trimmed.
+ */
+function tierPredicates<T extends MentionCandidate>(
   token: string,
-  tierLimit: number,
-): T | null {
+): Array<(m: T) => boolean> {
   const needle = token.trim().toLowerCase();
-  if (needle.length === 0) return null;
+  if (needle.length === 0) return [];
   const folded = fold(token);
 
   const lower = (s: string) => s.toLowerCase();
   const firstWord = (s: string) => s.toLowerCase().split(/\s+/)[0] ?? "";
 
-  const tiers: Array<(m: T) => boolean> = [
+  return [
     (m) => m.user_id.toLowerCase() === needle,
     (m) => lower(m.display_name) === needle,
     // Folded comparison, so punctuation in a name is not a barrier to naming
@@ -196,7 +198,14 @@ function matchTiers<T extends MentionCandidate>(
       folded.length >= MIN_PREFIX_LENGTH &&
       fold(m.display_name).startsWith(folded),
   ];
+}
 
+function matchTiers<T extends MentionCandidate>(
+  candidates: readonly T[],
+  token: string,
+  tierLimit: number,
+): T | null {
+  const tiers = tierPredicates<T>(token);
   for (const pred of tiers.slice(0, tierLimit)) {
     const hits = candidates.filter(pred);
     if (hits.length === 1) return hits[0]!;
@@ -260,8 +269,8 @@ export interface MentionRole {
   member_ids: readonly string[];
   /**
    * Whether this sender may ping it. The API decides (`spec/behavior/chat/
-   * README.md` § Role mentions): a role that covers most of the chapter is a
-   * whole-chapter ping, so only an officer may send one.
+   * README.md` § Role mentions): `true` when the role's "anyone can @" switch
+   * is on, or the sender can manage channels or roles.
    */
   mentionable: boolean;
 }
@@ -284,10 +293,18 @@ function matchMentionRole(
   if (roles.length === 0) return undefined;
   const folded = fold(token);
   if (folded.length === 0) return undefined;
-  const hits = roles.filter((role) => fold(role.name) === folded);
+  // A role nobody holds is not a target: it would reach nobody, and letting
+  // it claim the token would take the name from a member it collides with.
+  const hits = roles.filter(
+    (role) => role.member_ids.length > 0 && fold(role.name) === folded,
+  );
   if (hits.length === 0) return undefined;
   if (hits.length > 1) return null;
-  if (matchTiers(candidates, token, EXACT_TIERS)) return null;
+  // Any exact member hit, one or several, makes the token ambiguous.
+  // `matchTiers` reads several as "no match", which would hand the role a
+  // token that should reach nobody.
+  const exact = tierPredicates<MentionCandidate>(token).slice(0, EXACT_TIERS);
+  if (exact.some((pred) => candidates.some(pred))) return null;
   return hits[0]!;
 }
 
@@ -358,6 +375,8 @@ export function mentionSuggestions<T extends MentionCandidate>(
     if (member.display_name.length === 0) continue;
     const label = mentionLabelFor(member.display_name);
     if (!/^\p{L}/u.test(label)) continue;
+    // The tokenizer drops a longer token, so the pick would reach nobody.
+    if (label.length > MAX_TOKEN_LENGTH) continue;
     if (needle && !matchable(member.display_name).includes(needle)) continue;
     offered.push({ member, label });
   }
@@ -379,7 +398,10 @@ export type MentionPickerEntry<
   | { kind: "member"; member: M; label: string }
   | { kind: "role"; role: R; label: string };
 
-/** At most this many of a picker's rows are roles, so members are never crowded out. */
+/**
+ * At most this many of a picker's rows are roles, so on a bare `@` at least
+ * five of the eight rows are still members.
+ */
 const MAX_ROLE_SUGGESTIONS = 3;
 
 /**
@@ -408,6 +430,7 @@ export function mentionPickerEntries<
     if (!role.mentionable) continue;
     const label = mentionLabelFor(role.name);
     if (!/^\p{L}/u.test(label)) continue;
+    if (label.length > MAX_TOKEN_LENGTH) continue;
     if (needle && !matchable(role.name).includes(needle)) continue;
     roleRows.push({ kind: "role", role, label });
   }
@@ -415,13 +438,11 @@ export function mentionPickerEntries<
     roster,
     query,
     limit - roleRows.length,
-  ).map(
-    ({ member, label }): MentionPickerEntry<M, R> => ({
-      kind: "member",
-      member,
-      label,
-    }),
-  );
+  ).map(({ member, label }): MentionPickerEntry<M, R> => ({
+    kind: "member",
+    member,
+    label,
+  }));
   return [...memberRows, ...roleRows];
 }
 
@@ -471,6 +492,7 @@ export function activeMentionQuery(
   if (!match) return null;
   const query = match[1] ?? "";
   if (query.length > MAX_TOKEN_LENGTH) return null;
-  const tail = query.length > 0 ? (HANDLE_TAIL.exec(text.slice(caret))?.[0] ?? "") : "";
+  const tail =
+    query.length > 0 ? (HANDLE_TAIL.exec(text.slice(caret))?.[0] ?? "") : "";
   return { start: match.index, query, end: caret + tail.length };
 }

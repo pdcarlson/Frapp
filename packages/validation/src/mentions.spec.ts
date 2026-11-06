@@ -218,9 +218,9 @@ describe("matchMentionCandidate", () => {
       { user_id: "u-aa", display_name: "Aaron Webb" },
     ];
     expect(matchMentionCandidate(list, "\u00C1ngela")?.user_id).toBe("u-an");
-    expect(
-      matchMentionCandidate(list, "\u0041\u0301ngela")?.user_id,
-    ).toBe("u-an");
+    expect(matchMentionCandidate(list, "\u0041\u0301ngela")?.user_id).toBe(
+      "u-an",
+    );
   });
 
   it("refuses to guess from a single-character prefix", () => {
@@ -279,8 +279,6 @@ describe("resolveMentions", () => {
   });
 });
 
-// Moved from `apps/web/components/chat/mention-suggestion.spec.ts` when the
-// label became shared with mobile's composer.
 describe("resolveMentions with roles", () => {
   const OFFICERS: MentionRole = {
     role_id: "role-officers",
@@ -337,7 +335,10 @@ describe("resolveMentions with roles", () => {
 
   it("outranks a member's shorthand", () => {
     // "Rush Week" would win `@Rush` on the first-word tier without roles.
-    const rushee = { user_id: "44444444-4444-4444-4444-444444444444", display_name: "Rush Week" };
+    const rushee = {
+      user_id: "44444444-4444-4444-4444-444444444444",
+      display_name: "Rush Week",
+    };
     const rush: MentionRole = {
       role_id: "role-rush",
       name: "Rush",
@@ -350,7 +351,10 @@ describe("resolveMentions with roles", () => {
   });
 
   it("reaches nobody when a member's exact name is also a role's", () => {
-    const rushee = { user_id: "44444444-4444-4444-4444-444444444444", display_name: "Rush" };
+    const rushee = {
+      user_id: "44444444-4444-4444-4444-444444444444",
+      display_name: "Rush",
+    };
     const rush: MentionRole = {
       role_id: "role-rush",
       name: "Rush",
@@ -358,6 +362,40 @@ describe("resolveMentions with roles", () => {
       mentionable: true,
     };
     expect(resolveMentions("@Rush", [...roster, rushee], [rush])).toEqual([]);
+  });
+
+  it("reaches nobody when two members and a role share the name", () => {
+    const one = {
+      user_id: "44444444-4444-4444-4444-444444444444",
+      display_name: "Rush",
+    };
+    const two = {
+      user_id: "55555555-5555-5555-5555-555555555555",
+      display_name: "Rush",
+    };
+    const rush: MentionRole = {
+      role_id: "role-rush",
+      name: "Rush",
+      member_ids: [BOB.user_id],
+      mentionable: true,
+    };
+    expect(resolveMentions("@Rush", [...roster, one, two], [rush])).toEqual([]);
+  });
+
+  it("leaves a member their name when the matching role has no holders", () => {
+    const moose = {
+      user_id: "44444444-4444-4444-4444-444444444444",
+      display_name: "Moose",
+    };
+    const empty: MentionRole = {
+      role_id: "role-moose",
+      name: "Moose",
+      member_ids: [],
+      mentionable: true,
+    };
+    expect(resolveMentions("@Moose", [...roster, moose], [empty])).toEqual([
+      moose.user_id,
+    ]);
   });
 
   it("reaches nobody when two roles fold to the same name", () => {
@@ -375,6 +413,11 @@ describe("resolveMentions with roles", () => {
 });
 
 describe("mentionPickerEntries", () => {
+  it("never offers a role whose label the tokenizer would drop", () => {
+    const long = { name: "A".repeat(65), mentionable: true };
+    expect(mentionPickerEntries([], [long], "")).toEqual([]);
+  });
+
   const roster = [JANE, JANET, BOB];
   const roles = [
     { name: "Officers", mentionable: true },
@@ -410,6 +453,8 @@ describe("mentionPickerEntries", () => {
   });
 });
 
+// Moved from `apps/web/components/chat/mention-suggestion.spec.ts` when the
+// label became shared with mobile's composer.
 describe("mentionLabelFor", () => {
   it("strips internal whitespace so the label matches the mention resolver's no-space tier", () => {
     expect(mentionLabelFor("Jane Doe")).toBe("JaneDoe");
@@ -470,11 +515,9 @@ describe("mentionSuggestions", () => {
   ];
 
   it("offers every reachable member in roster order for an empty query", () => {
-    expect(mentionSuggestions(roster, "").map((s) => s.member.user_id)).toEqual([
-      JANE.user_id,
-      JANET.user_id,
-      BOB.user_id,
-    ]);
+    expect(mentionSuggestions(roster, "").map((s) => s.member.user_id)).toEqual(
+      [JANE.user_id, JANET.user_id, BOB.user_id],
+    );
   });
 
   it("matches anywhere in the display name, ignoring case", () => {
@@ -501,9 +544,9 @@ describe("mentionSuggestions", () => {
       })),
       { user_id: "zoe", display_name: "Zoe Park" },
     ];
-    expect(mentionSuggestions(roster, "zoe").map((s) => s.member.user_id)).toEqual([
-      "zoe",
-    ]);
+    expect(
+      mentionSuggestions(roster, "zoe").map((s) => s.member.user_id),
+    ).toEqual(["zoe"]);
   });
 
   it("reads iOS's curly apostrophe as the straight one, both ways", () => {
@@ -511,12 +554,12 @@ describe("mentionSuggestions", () => {
       { user_id: "straight", display_name: "Sean O'Brien" },
       { user_id: "curly", display_name: "Pat O’Neil" },
     ];
-    expect(mentionSuggestions(roster, "o’br").map((s) => s.member.user_id)).toEqual([
-      "straight",
-    ]);
-    expect(mentionSuggestions(roster, "o'ne").map((s) => s.member.user_id)).toEqual([
-      "curly",
-    ]);
+    expect(
+      mentionSuggestions(roster, "o’br").map((s) => s.member.user_id),
+    ).toEqual(["straight"]);
+    expect(
+      mentionSuggestions(roster, "o'ne").map((s) => s.member.user_id),
+    ).toEqual(["curly"]);
   });
 
   it("caps the list", () => {
@@ -538,11 +581,19 @@ describe("mentionSuggestions", () => {
 describe("activeMentionQuery", () => {
   it("opens on a bare `@` at the caret", () => {
     expect(activeMentionQuery("@", 1)).toEqual({ start: 0, query: "", end: 1 });
-    expect(activeMentionQuery("hi @", 4)).toEqual({ start: 3, query: "", end: 4 });
+    expect(activeMentionQuery("hi @", 4)).toEqual({
+      start: 3,
+      query: "",
+      end: 4,
+    });
   });
 
   it("reads the text between the `@` and the caret", () => {
-    expect(activeMentionQuery("hi @pa", 6)).toEqual({ start: 3, query: "pa", end: 6 });
+    expect(activeMentionQuery("hi @pa", 6)).toEqual({
+      start: 3,
+      query: "pa",
+      end: 6,
+    });
     // Caret mid-word: only what is before it is the query, but the handle
     // runs on to its end, so a pick replaces all of it.
     expect(activeMentionQuery("hi @paul now", 6)).toEqual({

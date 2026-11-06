@@ -2785,7 +2785,7 @@ Afterwards every settings change lights the `#chapter-audit` badge again, for ev
 
 One column, `roles.mentionable`, default `true`. Nothing was backfilled.
 
-**Revert the API and clients forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API ignores the column, so every role is pingable by anyone again, which is what `true` already meant; `GET /v1/roles` still returns it, which every client ignores.
+**Revert the API and clients forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API has no role mentions at all, so it ignores the column: an `@Officers` token falls back to member-name matching and usually reaches nobody, and the picker stops offering roles. `GET /v1/roles` still returns the column, which every client ignores.
 
 **Keep the column unless it is itself the problem.** Dropping it forgets which roles an officer switched off. To remove it anyway, do it in a later forward migration after the code revert has shipped:
 

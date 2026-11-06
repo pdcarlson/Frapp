@@ -30,7 +30,7 @@ export interface MentionRoleView extends MentionRole {
  *
  * Split out of `ChatService` when roles became mentionable (2026-11-06, owner
  * direction "roles should be attable"): resolution now needs the chapter's
- * roles and, for a whole-chapter role, the sender's permissions, and the
+ * roles and, for a role an officer switched off, the sender's permissions, and the
  * picker needs the same answer the resolver gives, so both read it here.
  *
  * The rule (`spec/behavior/chat/README.md` § Role mentions; owner direction
@@ -81,10 +81,19 @@ export class ChatMentionService {
     try {
       // `user_id, display_name, role_ids` only: see
       // `findChapterMemberIdentities`. Roles in parallel, since a token can
-      // name either.
+      // name either. A failed roles read costs only the role mentions: member
+      // mentions resolved before roles existed, and still do without them.
       const [candidates, roles] = await Promise.all([
         this.memberRepo.findChapterMemberIdentities(chapterId),
-        this.rbac.findByChapter(chapterId),
+        this.rbac.findByChapter(chapterId).catch((error: unknown) => {
+          logThrowable(
+            this.logger,
+            'warn',
+            `Failed to read roles for mentions in chapter ${chapterId}; resolving members only`,
+            error,
+          );
+          return [];
+        }),
       ]);
       if (candidates.length === 0) return [];
 

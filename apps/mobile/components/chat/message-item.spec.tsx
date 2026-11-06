@@ -377,10 +377,13 @@ describe("a row that mentions the viewer", () => {
     expect(highlights(tree)).toHaveLength(0);
   });
 
+  it("draws nothing for a deleted message", () => {
+    const tree = renderItem(message({ is_deleted: true, mentions: [VIEWER] }));
+    expect(highlights(tree)).toHaveLength(0);
+  });
+
   it("draws nothing for the viewer's own message that names them", () => {
-    const tree = renderItem(
-      message({ sender_id: VIEWER, mentions: [VIEWER] }),
-    );
+    const tree = renderItem(message({ sender_id: VIEWER, mentions: [VIEWER] }));
     expect(highlights(tree)).toHaveLength(0);
   });
 
@@ -452,9 +455,9 @@ describe("the viewer's own reaction takes the chapter accent", () => {
     const mine = JSON.stringify(chip("👍").props.style);
     expect(mine).toContain('"backgroundColor":"#251A33"');
     expect(mine).toContain('"borderColor":"#5C3E8A"');
-    expect(JSON.stringify(chip("👍").findByType("Text" as never).props.style)).toContain(
-      '"color":"#C49A3A"',
-    );
+    expect(
+      JSON.stringify(chip("👍").findByType("Text" as never).props.style),
+    ).toContain('"color":"#C49A3A"');
     expect(JSON.stringify(chip("🔥").props.style)).not.toContain("#251A33");
   });
 });
@@ -486,7 +489,9 @@ describe("the reaction row", () => {
     expect(add).toBeDefined();
     expect(drawnText(add!)).toBe("+");
     // After the reaction chips, as the board draws `5` then `+`.
-    const labels = pressables(tree).map((node) => node.props.accessibilityLabel);
+    const labels = pressables(tree).map(
+      (node) => node.props.accessibilityLabel,
+    );
     expect(labels.indexOf(ADD_REACTION_A11Y_LABEL)).toBeGreaterThan(
       labels.indexOf("🔥, 1"),
     );
@@ -495,7 +500,9 @@ describe("the reaction row", () => {
     // Reach grows up and down only (components.md §11): chips sit 6pt apart,
     // so a sideways overhang would hand the + the reaction chip's right edge.
     const chips = pressables(tree).filter((node) =>
-      ["🔥, 1", ADD_REACTION_A11Y_LABEL].includes(node.props.accessibilityLabel),
+      ["🔥, 1", ADD_REACTION_A11Y_LABEL].includes(
+        node.props.accessibilityLabel,
+      ),
     );
     expect(chips).toHaveLength(2);
     for (const node of chips) {
@@ -956,9 +963,8 @@ describe("delivery status (#1910)", () => {
     expect(drawn).toHaveLength(0);
     expect(JSON.stringify(tree.toJSON())).not.toContain("Discard this message");
     expect(
-      tree.root.findAll(
-        (node) => node.props.accessibilityHint === "Sending",
-      ).length,
+      tree.root.findAll((node) => node.props.accessibilityHint === "Sending")
+        .length,
     ).toBeGreaterThan(0);
   });
 });

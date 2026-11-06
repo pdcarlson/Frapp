@@ -1,13 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  Ban,
-  Flag,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
-} from "lucide-react";
+import { Ban, Flag, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
@@ -317,6 +311,9 @@ export function MessageItem({
   const mentionsViewer =
     !!viewerId &&
     message.sender_id !== viewerId &&
+    // A deleted message no longer counts as a mention anywhere else (the
+    // unread badge skips it, the push is gone), so its tombstone stays plain.
+    !message.is_deleted &&
     message.mentions.includes(viewerId);
   // Frapp's own posts (the welcome, the audit bridge, a poll's closing notice,
   // an invite-accept DM) wear the crest, not initials: the sender is the
@@ -951,7 +948,13 @@ export function MessageItem({
         "group/message relative px-5 pb-0.5",
         // An audit stack's first line sits 8 below the row above: a log line
         // is not a new speaker, so it takes less than a run's 16.
-        auditLine ? (showHeader ? "pt-2" : "pt-0.5") : showHeader ? "pt-4" : "pt-0.5",
+        auditLine
+          ? showHeader
+            ? "pt-2"
+            : "pt-0.5"
+          : showHeader
+            ? "pt-4"
+            : "pt-0.5",
         // Delineation without a bubble (§11): the whole row lifts one surface
         // step under a pointer, with keyboard focus inside it, or once tapped.
         // Pointer feedback, not information, so the ~1.1:1 step is enough.

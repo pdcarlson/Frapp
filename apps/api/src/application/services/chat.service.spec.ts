@@ -3489,7 +3489,7 @@ describe('ChatService', () => {
         await expect(send('@Officers meeting at 8')).resolves.toEqual([
           'user-2',
         ]);
-        // A small role never needs the sender's permissions.
+        // A role whose switch is on never needs the sender's permissions.
         expect(mockRbac.getEffectivePermissions).not.toHaveBeenCalledWith(
           'ch-1',
           'user-1',

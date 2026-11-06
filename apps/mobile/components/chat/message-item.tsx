@@ -293,6 +293,9 @@ export function MessageRowFrame({
   const mentionsViewer =
     !!viewerId &&
     message.sender_id !== viewerId &&
+    // A deleted message no longer counts as a mention anywhere else (the
+    // unread badge skips it, the push is gone), so its tombstone stays plain.
+    !message.is_deleted &&
     message.mentions.includes(viewerId);
   // Resolved once and used for both the author line and the avatar initials —
   // two lookups would be two chances for them to drift apart. Both come from
@@ -326,7 +329,9 @@ export function MessageRowFrame({
       disabled={!onOpenActions}
       style={[styles.row, startsRun ? styles.rowStartsRun : styles.rowFollows]}
     >
-      {mentionsViewer ? <MentionHighlight style={styles.mentionHighlight} /> : null}
+      {mentionsViewer ? (
+        <MentionHighlight style={styles.mentionHighlight} />
+      ) : null}
       {quote ? (
         <View style={styles.quoteLine}>
           {/* From the avatar's centre up and across to the quote, so the quote
