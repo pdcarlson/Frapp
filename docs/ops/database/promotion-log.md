@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-06: Backwork search covers department, professor and tags
+
+### 20261106190000_backwork_search_wider.sql
+
+- **Purpose**: Adds `search_backwork_resources(p_chapter_id, p_query, p_limit)`, a read-only SQL function (security invoker, EXECUTE for `service_role` only) that `GET /v1/search` now uses for its Backwork source. It matches title, course, department code and name, professor and tags, ranks word matches by `ts_rank_cd`, and falls back to `pg_trgm` word similarity so a typo still matches (#585). Creates the `extensions` schema if missing and `pg_trgm` in it. The rule is in [`spec/behavior/search.md`](../../../spec/behavior/search.md#global-search) § Global search. Nothing is rewritten; `backwork_resources.search_vector` stays.
+- **Checks**: After `db push`, `select extnamespace::regnamespace from pg_extension where extname = 'pg_trgm';` returns `extensions`, `select has_function_privilege('authenticated', 'public.search_backwork_resources(uuid, text, integer)', 'execute');` returns `false`, and `select id from public.search_backwork_resources('<a chapter id>', '<a professor name>', 20);` returns that professor's files.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API doesn't call the function. The newer API against an unmigrated database fails the Backwork source of every search, which `SearchService` logs and answers as an empty Backwork group; the other groups are unaffected. `create ... if not exists` and `create or replace` make re-applying idempotent. If `pg_trgm` is already installed in another schema on a hosted project, `create extension if not exists` leaves it there and the function's `extensions.word_similarity` call fails: check the query above first. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-backwork-search-wider-20261106190000) § Rollback backwork search wider.
+
 ## 2026-11-06: A Discord import's progress per category
 
 ### 20261106170000_discord_import_category_progress.sql

@@ -2797,6 +2797,18 @@ drop index if exists public.chat_channels_one_default_per_chapter;
 alter table public.chat_channels drop column if exists is_default;
 ```
 
+## Rollback backwork search wider (20261106190000)
+
+* **Migration**: `20261106190000_backwork_search_wider.sql`
+
+One function, `search_backwork_resources`, and the `pg_trgm` extension in the `extensions` schema. No row changed.
+
+**Revert the code forward and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API searches `backwork_resources.search_vector` again, which this migration left in place, so Backwork search goes back to title and course number. To remove the function anyway, do it in a later forward migration, not by hand. Leave `pg_trgm` unless nothing else uses it:
+
+```sql
+drop function if exists public.search_backwork_resources(uuid, text, integer);
+```
+
 ## Rollback the backwork 100 MB limit (20261106153000)
 
 * **Migration**: `20261106153000_backwork_bucket_100mb.sql`

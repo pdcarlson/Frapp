@@ -179,6 +179,7 @@ await import("./tiers/discord-import-category-progress.mjs");
 await import("./tiers/dm-one-per-pair.mjs");
 await import("./tiers/document-one-row-per-object.mjs");
 await import("./tiers/default-channel-descriptions.mjs");
+await import("./tiers/backwork-search.mjs");
 
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,
