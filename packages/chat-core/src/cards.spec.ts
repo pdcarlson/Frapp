@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  auditChangeSummary,
+  auditLineText,
+  isAuditLine,
   pointsChange,
   readAnnouncementBody,
   readEventPayload,
@@ -320,21 +321,40 @@ describe("readAnnouncementBody", () => {
   });
 });
 
-describe("auditChangeSummary", () => {
-  const audit = (diff: Record<string, unknown>) => ({
-    action: "role_updated",
+describe("auditLineText", () => {
+  const audit = (action: string, diff: Record<string, unknown>) => ({
+    action,
     actor_user_id: null,
     diff,
   });
 
-  it("lists the fields the change touched, in the diff's order", () => {
-    expect(auditChangeSummary(audit({ permissions: {}, name: {} }))).toBe(
-      "Changed: permissions, name",
+  it("says what a known action did in words, and lists the fields as words", () => {
+    expect(
+      auditLineText(audit("chapter_profile_updated", { accent_color: {} })),
+    ).toEqual({ phrase: "updated the chapter profile", detail: "accent color" });
+    expect(
+      auditLineText(audit("role_updated", { permissions: {}, name: {} })),
+    ).toEqual({ phrase: "edited a role", detail: "permissions, name" });
+  });
+
+  it("never draws an unknown action as its key", () => {
+    expect(auditLineText(audit("dues_schedule_changed", {})).phrase).toBe(
+      "dues schedule changed",
     );
   });
 
-  it("says when the change touched no field", () => {
-    expect(auditChangeSummary(audit({}))).toBe("No field changes recorded");
+  it("has no detail when the change touched no field", () => {
+    expect(auditLineText(audit("member_removed", {})).detail).toBe(null);
+  });
+});
+
+describe("isAuditLine", () => {
+  it("is a system_audit row with a readable payload, and nothing else", () => {
+    const payload = { action: "chapter_config_updated", diff: {} };
+    expect(isAuditLine({ kind: "system_audit", payload })).toBe(true);
+    // The server's own notices carry no payload: they stay sentences.
+    expect(isAuditLine({ kind: "system_audit", payload: null })).toBe(false);
+    expect(isAuditLine({ kind: "text", payload })).toBe(false);
   });
 });
 
