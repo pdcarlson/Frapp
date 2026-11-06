@@ -146,6 +146,9 @@ breached the jscpd ratchet; the package is the cutover, not a second copy.
 - **One PostHog project for staging and production.** A shared dataset aliases staging
   traffic onto production funnels and makes the deleted-users automation (#709) unsafe to
   reason about. Staging project `569878` must not become that shared dataset.
+  **Correction (2026-11-06):** on the free plan's one-project limit, `569878` was renamed
+  "Frapp production" and staging stops sending to it (its `POSTHOG_API_KEY` is removed), so it
+  is production's alone, not shared (#1173).
 - **Client-held `ANALYTICS_HMAC_SALT` or a PostHog personal API key.** A browser
   or RN bundle is readable; either secret would let the analytics dataset be
   rainbow-tabled or queried from the client. The write-only `phc_` project
