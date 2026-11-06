@@ -4,7 +4,7 @@
  * The board (option `1c`, pin 2) calls the collapse state a remembered user
  * preference, and the first-paint contract (`1s`) budgets zero layout shift
  * above the fold. Those two together rule out reading the preference from
- * `localStorage` in an effect: the server would render 220px, the client would
+ * `localStorage` in an effect: the server would render 240px, the client would
  * correct to 56px after hydration, and every route would open with a visible
  * jump of the entire content column.
  *

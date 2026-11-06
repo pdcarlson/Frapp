@@ -1,0 +1,156 @@
+import { useRef, useState } from "react";
+import { Share } from "react-native";
+import { useCreateInvite, useInvites } from "@repo/hooks";
+import { serverMessageOf } from "@repo/api-sdk";
+import { inviteTokenOf, webJoinUrl } from "./invite-link";
+
+/**
+ * The setup invite step's links (`spec/behavior/onboarding.md`, owner pick
+ * 2026-11-06 "Share first").
+ *
+ * An invite lets one person in and lapses after a day, so every press of
+ * Share invite mints a fresh link and opens the share sheet with it. The
+ * founder never sees a token or a "Create another link" button; they press
+ * Share once per person. Nothing is minted before a press, so a founder who
+ * skips the step leaves no invite behind.
+ *
+ * A sheet closed without sending keeps its link for the next press, where the
+ * platform says so: iOS reports the dismissal, Android's chooser can't tell
+ * and always reports shared, so there a backed-out sheet lists its link too.
+ *
+ * Shared links are listed newest first and watched while the step is open,
+ * so a link that someone redeems reads Joined.
+ */
+
+/** The role a setup invite grants: the chapter's default, by name. */
+export const INVITE_ROLE = "Member";
+
+/** How often the step re-reads the chapter's invites to mark a link Joined. */
+export const INVITE_WATCH_INTERVAL_MS = 15_000;
+
+export const SHARE_FAILED_MESSAGE =
+  "Couldn't open the share sheet. Try again, or invite members from the web dashboard.";
+
+export interface SharedInvite {
+  token: string;
+  /** 1 for the first link shared on this step. */
+  number: number;
+}
+
+/**
+ * The link rides in the message on both platforms: iOS hands a separate
+ * `url` item only to the targets that take one, and Copy can drop it, while a
+ * link inside the text survives every target and still draws Messages'
+ * preview card.
+ */
+export function inviteShareContent(
+  url: string,
+  chapterName: string,
+): { message: string } {
+  return { message: `Join ${chapterName} on Frapp\n${url}` };
+}
+
+/** The tokens in a `GET /v1/invites` answer that have been redeemed. */
+export function usedInviteTokens(list: unknown): Set<string> {
+  const used = new Set<string>();
+  if (!Array.isArray(list)) return used;
+  for (const row of list) {
+    if (!row || typeof row !== "object") continue;
+    const { token, used_at } = row as { token?: unknown; used_at?: unknown };
+    if (typeof token === "string" && used_at) used.add(token);
+  }
+  return used;
+}
+
+export function useInviteShares({
+  active,
+  chapterName,
+  onError,
+}: {
+  /** True while the invite step is on screen. */
+  active: boolean;
+  chapterName: string;
+  onError: (message: string | null) => void;
+}) {
+  const createInvite = useCreateInvite();
+  const [minting, setMinting] = useState(false);
+  const [shared, setShared] = useState<SharedInvite[]>([]);
+  // A mint already in flight, so a second press waits for its link rather
+  // than making another for the same person.
+  const pending = useRef<Promise<string | null> | null>(null);
+  // The link of a sheet closed without sending, kept for the next press.
+  const unsent = useRef<string | null>(null);
+  // Sheets asked for and not yet answered. iOS never answers a sheet whose
+  // target was cancelled inside it (`RCTActionSheetManager`), so this only
+  // decides whether a refusal is worth showing, never whether Share works.
+  const opening = useRef(0);
+
+  const invites = useInvites({
+    enabled: active && shared.length > 0,
+    refetchInterval: INVITE_WATCH_INTERVAL_MS,
+  });
+  const used = usedInviteTokens(invites.data);
+
+  function mint(): Promise<string | null> {
+    if (pending.current) return pending.current;
+    setMinting(true);
+    const run = (async () => {
+      try {
+        const token = inviteTokenOf(
+          await createInvite.mutateAsync({ role: INVITE_ROLE }),
+        );
+        if (!token) {
+          onError("The invite did not return a token. Try again in a moment.");
+        }
+        return token;
+      } catch (caught) {
+        onError(
+          serverMessageOf(caught) ??
+            "Couldn't create an invite. You can invite members from the web dashboard.",
+        );
+        return null;
+      } finally {
+        pending.current = null;
+        setMinting(false);
+      }
+    })();
+    pending.current = run;
+    return run;
+  }
+
+  async function share() {
+    onError(null);
+    const token = unsent.current ?? (await mint());
+    if (!token) return;
+    unsent.current = token;
+    opening.current += 1;
+    let result: { action?: string };
+    try {
+      result = await Share.share(
+        inviteShareContent(webJoinUrl(token), chapterName),
+      );
+    } catch {
+      // A second sheet over one already showing is refused; the first is
+      // fine, so only a refusal with nothing else open is news.
+      if (opening.current === 1) onError(SHARE_FAILED_MESSAGE);
+      return;
+    } finally {
+      opening.current -= 1;
+    }
+    if (result?.action === "dismissedAction") return;
+    if (unsent.current === token) unsent.current = null;
+    setShared((rows) =>
+      rows.some((row) => row.token === token)
+        ? rows
+        : [{ token, number: rows.length + 1 }, ...rows],
+    );
+  }
+
+  return {
+    /** A press is waiting on its link. */
+    busy: minting,
+    shared,
+    isJoined: (token: string) => used.has(token),
+    share,
+  };
+}
