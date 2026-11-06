@@ -241,15 +241,15 @@ describe("EventsPage subscription gating", () => {
     render(<EventsPage />);
 
     expect(newEvent()).toBeDisabled();
-    // The calendar's days, and the dashed + on today, are more ways into the
-    // same dialog; gating only the header button would leave a live path to a
-    // doomed form.
+    // The calendar's days are more ways into the same dialog; gating only the
+    // header button would leave a live path to a doomed form. The dashed +
+    // on today isn't drawn at all while the days are off.
     for (const day of screen.getAllByRole("button", {
       name: /^create event on/i,
     })) {
       expect(day).toBeDisabled();
     }
-    expect(screen.getByTestId("calendar-first-event-slot")).toBeDisabled();
+    expect(screen.queryByTestId("calendar-first-event-slot")).toBeNull();
     expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
   });
 

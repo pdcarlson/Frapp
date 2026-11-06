@@ -23,6 +23,7 @@ const {
   eventsRef,
   eventsEnabled,
   eventsModuleOn,
+  permissionsFailed,
 } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
   createTaskMutate: vi.fn(),
@@ -37,6 +38,8 @@ const {
   // Every `enabled` the board passed to `useEvents`, to prove when it reads.
   eventsEnabled: [] as boolean[],
   eventsModuleOn: { current: true },
+  // The permissions read failed (or can't run) rather than still loading.
+  permissionsFailed: { current: false },
 }));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
@@ -113,6 +116,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
       permissionsRef.current === undefined
         ? undefined
         : { permissions: permissionsRef.current },
+    fetchStatus:
+      permissionsRef.current === undefined && !permissionsFailed.current
+        ? "fetching"
+        : "idle",
+    isError: permissionsFailed.current,
   }),
   useEvents: (options?: { enabled?: boolean }) => {
     eventsEnabled.push(options?.enabled ?? true);
@@ -141,8 +149,25 @@ vi.mock("@/lib/stores/chapter-store", () => ({
     selector({ activeChapterId: "chap-1" }),
 }));
 
+// `tasks:manage` is answered from `permissionsRef`, with a stand-in for the
+// real gate's offline chip when the read failed, so the board's own branching
+// is tested against the answer the gate would give. Every other gate on the
+// page (the notice's billing link) passes through, as before.
 vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Can: ({
+    children,
+    permission,
+  }: {
+    children: React.ReactNode;
+    permission: string;
+  }) =>
+    permission !== "tasks:manage" ? (
+      <>{children}</>
+    ) : permissionsFailed.current ? (
+      <span>Permissions unavailable</span>
+    ) : permissionsRef.current?.includes(permission) ? (
+      <>{children}</>
+    ) : null,
 }));
 
 vi.mock("@/lib/hooks/use-toast", () => ({
@@ -167,6 +192,7 @@ const deleteButtons = () =>
 
 beforeEach(() => {
   permissionsRef.current = ["tasks:manage"];
+  permissionsFailed.current = false;
   eventsRef.current = [];
   eventsEnabled.length = 0;
   eventsModuleOn.current = true;
@@ -701,6 +727,31 @@ describe("TasksBoard add row", () => {
     expect(screen.getByLabelText("Task title")).toHaveValue("Order pizza");
   });
 
+  it("puts focus back on a blank title instead of sending it", async () => {
+    await openRowWithEverything();
+    fireEvent.change(screen.getByLabelText("Task title"), {
+      target: { value: "   " },
+    });
+    fireEvent.submit(addForm());
+
+    expect(createTaskMutate).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Task title")).toHaveFocus();
+  });
+
+  it("closes only the list on Escape inside the assignee picker", async () => {
+    render(<TasksBoard />);
+    await userEvent.click(trigger());
+    await userEvent.type(screen.getByLabelText("Task title"), "Order pizza");
+    await userEvent.click(screen.getByRole("combobox", { name: "Assignee" }));
+    expect(screen.getByRole("option", { name: "Cole Martin" })).toBeVisible();
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.queryByRole("option", { name: "Cole Martin" })).toBeNull();
+    expect(addForm()).toBeInTheDocument();
+    expect(screen.getByLabelText("Task title")).toHaveValue("Order pizza");
+  });
+
   it("closes on Escape and hands focus back to the row", async () => {
     render(<TasksBoard />);
     await userEvent.click(trigger());
@@ -811,6 +862,20 @@ describe("TasksBoard member with nothing assigned", () => {
     expect(screen.getByRole("region", { name: "To do" })).toBeInTheDocument();
     expect(screen.queryByText(/nothing on your plate/i)).toBeNull();
     expect(eventsEnabled.every((enabled) => !enabled)).toBe(true);
+  });
+
+  it("keeps the columns, and says why, when the permissions read failed", () => {
+    // Not the loading window: nothing would ever answer it, so a blank page
+    // here would stay blank (#1211's pattern).
+    permissionsRef.current = undefined;
+    permissionsFailed.current = true;
+    render(<TasksBoard />);
+
+    const todo = screen.getByRole("region", { name: "To do" });
+    expect(
+      within(todo).getByText("Permissions unavailable"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/nothing on your plate/i)).toBeNull();
   });
 
   it("never flashes the line at an officer while permissions load", () => {

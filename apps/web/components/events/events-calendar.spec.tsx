@@ -83,6 +83,28 @@ describe("EventsCalendar", () => {
     expect(day.toDateString()).toBe(new Date().toDateString());
   });
 
+  it("gives a creator whose days are off the fact, not the how", () => {
+    // A lapsed chapter or an offline officer: every day is disabled, so
+    // "Pick a day" would be an instruction nothing on the page can follow.
+    render(
+      <EventsCalendar
+        events={[]}
+        monthAnchor={startOfMonth(new Date())}
+        onMonthAnchorChange={vi.fn()}
+        onSelectEvent={vi.fn()}
+        onCreateOnDay={vi.fn()}
+        canCreate
+        chapterHasEvents={false}
+        createDisabled
+      />,
+    );
+
+    expect(
+      screen.getByText("Nothing on the calendar yet."),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("calendar-first-event-slot")).toBeNull();
+  });
+
   it("gives a member the dates as text, with no create and no +", () => {
     renderEmptyCalendar(false);
 
@@ -98,7 +120,21 @@ describe("EventsCalendar", () => {
   });
 
   it("drops the line and the + once the chapter has an event", () => {
-    renderCalendar();
+    // On this month, so today is in the grid and a + could be drawn on it.
+    render(
+      <EventsCalendar
+        events={[
+          { id: "evt-1", name: "Rush", start_time: new Date().toISOString() },
+        ]}
+        monthAnchor={startOfMonth(new Date())}
+        onMonthAnchorChange={vi.fn()}
+        onSelectEvent={vi.fn()}
+        onCreateOnDay={vi.fn()}
+        canCreate
+        chapterHasEvents
+        createDisabled={false}
+      />,
+    );
 
     expect(
       screen.queryByText("Pick a day to schedule the first event."),

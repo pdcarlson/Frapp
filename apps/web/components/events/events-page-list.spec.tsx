@@ -311,6 +311,21 @@ describe("EventsPage empty states", () => {
     expect(cardFilledContainers(container)).toEqual([]);
   });
 
+  it("waits for the events read before picking a tab", () => {
+    // Picked on the loading render, `events` would be [] and every chapter,
+    // events or not, would open on the calendar and stay there.
+    eventsQuery.data = undefined;
+    const { rerender } = render(<EventsPage />);
+
+    eventsQuery.data = EVENTS;
+    rerender(<EventsPage />);
+
+    expect(screen.getByRole("tab", { name: "List" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
   it("stays on the calendar once the first event arrives", () => {
     eventsQuery.data = [];
     const { rerender } = render(<EventsPage />);

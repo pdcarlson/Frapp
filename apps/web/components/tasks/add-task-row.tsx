@@ -135,9 +135,12 @@ export function AddTaskRow({
       aria-label="Add a task"
       onSubmit={(event) => void submit(event)}
       onKeyDown={(event) => {
-        // A Radix Select handles its own Escape while its list is open and
-        // stops it there, so this only closes the row from a field.
-        if (event.key === "Escape") {
+        // An open Select list (and any other Radix layer) dismisses itself on
+        // Escape with `preventDefault`, not `stopPropagation`, and React still
+        // bubbles that key here from the portal. Closing the row too would
+        // throw away the draft the officer only meant to close a list over.
+        // Held while a create runs, like Cancel.
+        if (event.key === "Escape" && !event.defaultPrevented && !pending) {
           event.preventDefault();
           close();
         }
@@ -244,9 +247,17 @@ export function AddTaskRow({
         </Button>
         {/*
           Not gated: it only closes the row, and a lapsed chapter still needs
-          a way out of a form it can't submit.
+          a way out of a form it can't submit. Held while a create runs: the
+          write can't be called back, and its result would land on whatever
+          the row holds by then.
         */}
-        <Button size="toolbar" variant="ghost" type="button" onClick={close}>
+        <Button
+          size="toolbar"
+          variant="ghost"
+          type="button"
+          disabled={pending}
+          onClick={close}
+        >
           Cancel
         </Button>
       </div>

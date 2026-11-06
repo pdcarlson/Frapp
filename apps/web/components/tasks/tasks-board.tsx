@@ -101,11 +101,19 @@ export function TasksBoard() {
   const confirmTask = useConfirmTask();
   const rejectTask = useRejectTask();
   const deleteTask = useDeleteTask();
-  const { data: permissionsPayload } = useMyPermissions();
+  const permissionsQuery = useMyPermissions();
+  const permissionsPayload = permissionsQuery.data;
   // `GET /v1/tasks` returns the whole chapter's board to `tasks:manage` and
   // only your own tasks to everyone else (`TaskController.list`).
   const canManage = can("tasks:manage", permissionsPayload?.permissions);
   const permissionsKnown = permissionsPayload !== undefined;
+  // In flight with no answer yet: the one window where an empty board can't
+  // tell an officer's columns from a member's line, so it draws neither for
+  // that moment. A read that failed or can't run (offline) is not this: the
+  // board draws its columns and the `<Can>` in To do says why the add row
+  // isn't there, and retries after the outage.
+  const permissionsLoading =
+    !permissionsKnown && permissionsQuery.fetchStatus === "fetching";
   const moduleGate = useChapterModuleGateState();
   const nowTick = useNow();
   // A member with nothing assigned sees one line instead of the board, and
@@ -345,9 +353,10 @@ export function TasksBoard() {
   return (
     <div className="space-y-6">
       {/*
-        Outside the `tasks:manage` <Can>: the assignee-facing Start / Mark
-        complete controls are gated too, so a member with no manage permission
-        still needs the explanation for why their own board went read-only.
+        For every viewer, not only `tasks:manage`: the assignee-facing Start /
+        Mark complete controls are gated too, so a member with no manage
+        permission still needs the explanation for why their own board went
+        read-only.
       */}
       <SubscriptionNotice gate={gate} feature="managing tasks" />
 
@@ -360,7 +369,7 @@ export function TasksBoard() {
         <InlineNote>
           {nextUpLine(eventsOn ? eventsQuery.data : undefined, nowTick)}
         </InlineNote>
-      ) : !permissionsKnown && tasks.length === 0 ? null : (
+      ) : permissionsLoading && tasks.length === 0 ? null : (
         /*
           Flush, not carded. Each column used to be a `<Card>` with a title,
           a description and (under Awaiting confirmation) a footer explaining
@@ -386,13 +395,16 @@ export function TasksBoard() {
                   The add row is the board's only way to create a task, so
                   it stays at the top of To do once the column fills up.
                 */}
-                {column.status === "TODO" && canManage ? (
-                  <AddTaskRow
-                    members={members}
-                    gate={gate}
-                    pending={createTask.isPending}
-                    onCreate={createFromDraft}
-                  />
+                {column.status === "TODO" &&
+                (canManage || !permissionsKnown) ? (
+                  <Can permission="tasks:manage">
+                    <AddTaskRow
+                      members={members}
+                      gate={gate}
+                      pending={createTask.isPending}
+                      onCreate={createFromDraft}
+                    />
+                  </Can>
                 ) : null}
                 {list.length === 0 ? (
                   column.status === "TODO" && canManage ? null : (

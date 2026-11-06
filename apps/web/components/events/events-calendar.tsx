@@ -32,8 +32,8 @@ type EventsCalendarProps = {
   /**
    * Whether the chapter has any event at all, before search and filters. A
    * chapter with none gets one line under the month (how to make the first
-   * event, or that nothing is scheduled yet) and, for a creator, a dashed "+"
-   * on today where the first event will land.
+   * event, or that nothing is scheduled yet) and, for a creator whose days
+   * are live, a dashed "+" on today where the first event will land.
    */
   chapterHasEvents: boolean;
   createDisabled: boolean;
@@ -199,7 +199,12 @@ export function EventsCalendar({
 
       {chapterHasEvents ? null : (
         <InlineNote>
-          {canCreate
+          {/*
+            The how only when a day can actually be pressed: a lapsed
+            chapter or an offline officer gets the fact, and the notice
+            above the toolbar says why the days are off.
+          */}
+          {canCreate && !createDisabled
             ? stateMicrocopy.events.calendarFirstEvent
             : stateMicrocopy.events.calendarNothingYet}
         </InlineNote>
@@ -273,17 +278,18 @@ export function EventsCalendar({
                   number above is the same action and the one a keyboard or a
                   screen reader reaches, so this stays out of both.
                 */}
-                {isToday && canCreate && !chapterHasEvents ? (
+                {isToday &&
+                canCreate &&
+                !createDisabled &&
+                !chapterHasEvents ? (
                   <button
                     type="button"
                     tabIndex={-1}
                     aria-hidden="true"
-                    disabled={createDisabled}
-                    title={createTitle}
                     data-testid="calendar-first-event-slot"
                     className={cn(
                       "flex h-7 items-center justify-center rounded-xs border border-dashed border-input text-muted-foreground transition-colors",
-                      "hover:bg-card-hover hover:text-foreground disabled:pointer-events-none disabled:text-disabled",
+                      "hover:bg-card-hover hover:text-foreground",
                     )}
                     onClick={() => onCreateOnDay(day)}
                   >
