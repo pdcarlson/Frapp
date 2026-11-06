@@ -611,20 +611,10 @@ export class RbacService {
    * queue needs `members:view` **and** `channels:manage`, and notifying a member
    * who holds only the second would send them to a queue that 403s.
    *
-   * **Three reads, not one per member.** `getEffectivePermissions` costs a
-   * membership read and a role read per member; walking the roster through it
-   * would be ~2N queries on a request path. This loads the roster, the
-   * chapter's roles and its custom roles once each, and flattens in memory
-   * through the same `flattenPermissionSets` the guard and
-   * {@link resolvePermissionSet} use, so the three cannot disagree about who
-   * holds what (the wildcard only from a live role, never a custom one).
-   *
-   * **Re-scoped to the chapter twice over.** All three reads filter on
-   * `chapter_id`, and the role maps below additionally drop any row whose
-   * `chapter_id` is not this one — a member's `role_ids` array is not
-   * foreign-keyed, so a stale or cross-chapter id in it must contribute
-   * nothing, exactly as the per-member resolver's `findByIds(ids, chapterId)`
-   * guarantees.
+   * **Three reads, not one per member**, through
+   * {@link getChapterMemberAccess}, which owns the chapter-wide resolve and its
+   * re-scoping; walking the roster through `getEffectivePermissions` would be
+   * ~2N queries on a request path.
    */
   async findUserIdsWithPermissions(
     chapterId: string,
@@ -650,7 +640,8 @@ export class RbacService {
    *
    * `top_role_order` is the smallest `display_order` among the member's live
    * roles in this chapter (lower ranks higher, as on the Roles page), or `null`
-   * for a member who holds none. Custom roles carry no order and do not count.
+   * for a member who holds none. Custom roles rank on their own scale
+   * (`chapter_custom_roles.rank`) and do not count toward it.
    *
    * **Re-scoped to the chapter twice over.** All three reads filter on
    * `chapter_id`, and the role maps below additionally drop any row whose

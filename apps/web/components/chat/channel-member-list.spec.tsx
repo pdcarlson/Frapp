@@ -28,9 +28,16 @@ const NAMES: Record<string, string> = {
   "u-officer": "Amy Officer",
   "u-member": "Bob Member",
   "u-idle": "Cal Idle",
+  "u-blank": "",
 };
+const roster = vi.hoisted(() => ({
+  value: {} as { isPending?: boolean; isError?: boolean; refetch?: () => void },
+}));
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async () => ({
+  memberLabel: (
+    await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks")
+  ).memberLabel,
   useChannelMembers: () => ({
     data: undefined,
     isPending: false,
@@ -39,9 +46,14 @@ vi.mock("@repo/hooks", () => ({
     ...membersQuery.value,
   }),
   useMemberDisplayNames: () => ({
-    nameFor: (id: string) => NAMES[id] ?? null,
+    byId: NAMES,
     avatarFor: () => null,
-    roleColorFor: (id: string) => (id === "u-officer" ? "#5865F2" : null),
+    roleColorFor: (id: string) =>
+      id === "u-officer" || id === "u-member" ? "#5865F2" : null,
+    isPending: false,
+    isError: false,
+    refetch: vi.fn(),
+    ...roster.value,
   }),
 }));
 
@@ -107,13 +119,19 @@ describe("ChannelMemberList", () => {
         { user_id: "u-officer", role_rank: 2 },
         { user_id: "u-pres", role_rank: 0 },
         { user_id: "u-idle", role_rank: null },
-        { user_id: "u-unknown", role_rank: 1 },
+        { user_id: "u-blank", role_rank: null },
+        { user_id: "u-gone0001", role_rank: 1 },
       ],
     };
+    roster.value = {};
     presence.value = {
       isReady: true,
       statusOf: (id) =>
-        id === "u-idle" ? "idle" : id === "u-member" ? "offline" : "online",
+        id === "u-idle"
+          ? "idle"
+          : id === "u-member" || id === "u-blank"
+            ? "offline"
+            : "online",
     };
   });
 
@@ -122,23 +140,61 @@ describe("ChannelMemberList", () => {
 
     const online = screen.getByRole("list", { name: /Online/ });
     const items = within(online).getAllByRole("listitem");
-    expect(items).toHaveLength(2);
+    expect(items).toHaveLength(3);
     expect(items[0]).toHaveTextContent("Zed President");
-    expect(items[1]).toHaveTextContent("Amy Officer");
+    // A reader the roster cannot name is still listed, under the fallback.
+    expect(items[1]).toHaveTextContent(/Member u-gon/);
+    expect(items[2]).toHaveTextContent("Amy Officer");
     expect(screen.getByText("Amy Officer")).toHaveStyle({ color: "#5865F2" });
     expect(screen.getByRole("list", { name: /Idle/ })).toHaveTextContent(
       "Cal Idle",
     );
-    expect(screen.getByRole("list", { name: /Offline/ })).toHaveTextContent(
-      "Bob Member",
+  });
+
+  it("lists a member who never set a name, and dims offline rows without losing contrast", () => {
+    render(<ChannelMemberList channelId="chan-1" />);
+
+    const offline = screen.getByRole("list", { name: /Offline/ });
+    const [colored, blank] = within(offline).getAllByRole("listitem");
+    // A role-colored offline name keeps its full color: only the avatar fades.
+    const coloredName = within(colored!).getByText("Bob Member");
+    expect(coloredName).toHaveStyle({ color: "#5865F2" });
+    expect(coloredName.className).not.toMatch(/opacity/);
+    expect(colored!.querySelector("[aria-hidden='true']")?.className).toMatch(
+      /opacity-50/,
     );
-    // A reader the roster cannot name is left out, never shown as an id.
-    expect(screen.queryByText(/u-unknown/)).not.toBeInTheDocument();
+    // An empty display name falls back to the id label, muted while offline.
+    expect(within(blank!).getByText(/^Member u-bla/)).toHaveClass(
+      "text-muted-foreground",
+    );
+  });
+
+  it("holds the skeleton until the roster has the names", () => {
+    roster.value = { isPending: true };
+    render(<ChannelMemberList channelId="chan-1" />);
+    expect(screen.queryAllByRole("listitem")).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("holds the skeleton without a channel, or while not enabled", () => {
+    const { rerender } = render(<ChannelMemberList channelId={null} />);
+    expect(screen.queryAllByRole("listitem")).toHaveLength(0);
+    rerender(<ChannelMemberList channelId="chan-1" enabled={false} />);
+    expect(screen.queryAllByRole("listitem")).toHaveLength(0);
   });
 
   it("offers a retry when the read fails", () => {
     const refetch = vi.fn();
     membersQuery.value = { isError: true, refetch };
+    render(<ChannelMemberList channelId="chan-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it("offers a retry that reruns the roster when the names fail", () => {
+    const refetch = vi.fn();
+    roster.value = { isError: true, refetch };
     render(<ChannelMemberList channelId="chan-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));

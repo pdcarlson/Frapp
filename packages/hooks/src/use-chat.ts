@@ -96,16 +96,24 @@ export function usePinnedMessages(channelId: string) {
 /**
  * Everyone who can read a channel, with their top role rank (#3536). Ids and
  * ranks only: the member list joins names, avatars and role colors from
- * {@link useMemberDisplayNames}'s roster and presence from the chapter
- * presence socket, both of which Chat already holds.
+ * `useMemberDisplayNames`'s roster and presence from the chapter presence
+ * socket, both of which Chat already holds.
+ *
+ * Keyed under `["members", chapterId, …]`, not `["channels", …]`, on purpose.
+ * Every member and role mutation invalidates the members prefix (a role grant
+ * changes who reads a ROLE_GATED channel), while the channels prefix is
+ * invalidated by every read receipt, so under it this chapter-wide read would
+ * refetch twice on each channel switch. A channel edit names it explicitly
+ * (`useUpdateChannel`).
  */
 export function useChannelMembers(
   channelId: string | null | undefined,
   options?: { enabled?: boolean },
 ) {
   const client = useFrappClient();
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["channels", channelId, "members"],
+    queryKey: ["members", chapterId, "channel", channelId],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/channels/{id}/members", {
         params: { path: { id: channelId as string } },
@@ -114,7 +122,7 @@ export function useChannelMembers(
       return data;
     },
     staleTime: 60_000,
-    enabled: !!channelId && (options?.enabled ?? true),
+    enabled: !!chapterId && !!channelId && (options?.enabled ?? true),
   });
 }
 
@@ -320,6 +328,7 @@ export function useCreateChannel() {
 export function useUpdateChannel() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
   return useMutation({
     mutationFn: async ({
       id,
@@ -354,6 +363,10 @@ export function useUpdateChannel() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
+      // `required_permissions` decides who reads a ROLE_GATED channel.
+      queryClient.invalidateQueries({
+        queryKey: ["members", chapterId, "channel"],
+      });
       // The effective-level response is a function of the channel SET and each
       // channel NAME (`defaultLevelFor` is name-keyed), so a create, rename or
       // delete can change it. Lifting the prefs key out of the ["channels"]

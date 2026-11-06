@@ -33,9 +33,7 @@ export function usePermissionsCatalog() {
   return useQuery({
     queryKey: ["roles", chapterId, "permissions-catalog"],
     queryFn: async () => {
-      const { data, error } = await client.GET(
-        "/v1/roles/permissions-catalog",
-      );
+      const { data, error } = await client.GET("/v1/roles/permissions-catalog");
       if (error) throw error;
       return data;
     },
@@ -81,6 +79,11 @@ export function useUpdateRole() {
       queryClient.invalidateQueries({
         queryKey: ["members", chapterId, "roster"],
       });
+      // A role's permissions decide who reads a ROLE_GATED channel, and its
+      // order ranks the channel member list (#3536).
+      queryClient.invalidateQueries({
+        queryKey: ["members", chapterId, "channel"],
+      });
     },
   });
 }
@@ -105,12 +108,19 @@ export function useDeleteRole() {
       queryClient.invalidateQueries({
         queryKey: ["members", chapterId, "roster"],
       });
+      // A role's permissions decide who reads a ROLE_GATED channel, and its
+      // order ranks the channel member list (#3536).
+      queryClient.invalidateQueries({
+        queryKey: ["members", chapterId, "channel"],
+      });
       // Deleting a role can clear `chapters.default_invite_role_id` server-side
       // via `on delete set null` (#422). The config query has a 5-minute
       // staleTime, so without this the Settings card keeps showing the deleted
       // id and warns that the default "no longer exists" — about a setting the
       // server has already nulled.
-      queryClient.invalidateQueries({ queryKey: ["chapter-config", chapterId] });
+      queryClient.invalidateQueries({
+        queryKey: ["chapter-config", chapterId],
+      });
     },
   });
 }

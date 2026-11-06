@@ -266,7 +266,7 @@ adding that filter would make the bookmark vanish, the opposite of this rule.
 
 - Member online status is tracked via Supabase Realtime Presence.
 - Presence heartbeat: ~30 seconds. If no heartbeat is received, the user is marked offline.
-- Online status is visible in the member list sidebar and in DM conversations. The web **Directory** (`/members`) renders it today; the DM and channel member lists do not yet.
+- Online status is visible in the member list sidebar and in DM conversations. The web **Directory** (`/members`) and the web channel member list (§ Member list above) render it; the DM view and mobile do not yet.
 - Statuses: Online, Idle (app open but inactive for >5 minutes), Offline.
 
 **Two presence topics, deliberately.** They answer different questions and must not be merged:

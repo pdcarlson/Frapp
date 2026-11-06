@@ -238,8 +238,8 @@ vi.mock("./use-unblock-flow", () => ({
 // The member list owns its own reads and has its own spec; here it is only a
 // column the shell decides to show.
 vi.mock("./channel-member-list", () => ({
-  ChannelMemberList: ({ channelId }: { channelId: string }) => (
-    <div data-testid="channel-member-list" data-channel-id={channelId} />
+  ChannelMemberList: ({ channelId }: { channelId: string | null }) => (
+    <div data-testid="channel-member-list" data-channel-id={channelId ?? ""} />
   ),
 }));
 
@@ -3769,5 +3769,61 @@ describe("ChatShell member list", () => {
       "chan-general",
     );
     expect(document.cookie).not.toContain("frapp_chat_members_hidden");
+  });
+
+  it("shows no toggle and no column on a 1:1 DM", () => {
+    stubWide(true);
+    channelsQueryState.value = {
+      data: [
+        ...CHANNELS,
+        {
+          id: "chan-dm",
+          name: "dm-viewer-other",
+          type: "DM",
+          member_ids: ["viewer", "other"],
+        },
+      ],
+    };
+    try {
+      render(<ChatShell initialChannelId="chan-dm" />);
+      expect(
+        screen.queryByRole("button", { name: /members/i }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("complementary", { name: "Members" }),
+      ).not.toBeInTheDocument();
+    } finally {
+      channelsQueryState.value = {};
+    }
+  });
+
+  it("holds the column's place while the channel list loads", () => {
+    stubWide(true);
+    channelsQueryState.value = { isPending: true, data: undefined };
+    try {
+      render(<ChatShell />);
+      expect(
+        within(
+          screen.getByRole("complementary", { name: "Members" }),
+        ).getByTestId("channel-member-list"),
+      ).toHaveAttribute("data-channel-id", "");
+    } finally {
+      channelsQueryState.value = {};
+    }
+  });
+
+  it("closes a sheet the window outgrew, so it never reopens by itself", () => {
+    stubWide(false);
+    const { rerender } = render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Show members" }));
+    expect(screen.getByRole("dialog", { name: "Members" })).toBeInTheDocument();
+
+    stubWide(true);
+    rerender(<ChatShell />);
+    expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
+
+    stubWide(false);
+    rerender(<ChatShell />);
+    expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
   });
 });

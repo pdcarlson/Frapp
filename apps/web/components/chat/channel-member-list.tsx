@@ -1,7 +1,11 @@
 "use client";
 
 import { useId, useMemo } from "react";
-import { useChannelMembers, useMemberDisplayNames } from "@repo/hooks";
+import {
+  memberLabel,
+  useChannelMembers,
+  useMemberDisplayNames,
+} from "@repo/hooks";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { EYEBROW } from "@/components/ui/typography";
 import { Skeleton } from "@/components/shared/async-states";
@@ -75,34 +79,47 @@ export function groupChannelMembers(
  *
  * Read-only rows. Nothing here is a control yet, so the rows are list items
  * rather than buttons, and the list is announced by its heading.
+ *
+ * `channelId: null` draws the skeleton: the shell mounts the column before the
+ * channel list resolves, so the timeline does not lose 240px a beat after
+ * first paint. `enabled: false` also holds the skeleton without reading, for a
+ * column CSS has hidden below 1280px.
  */
-export function ChannelMemberList({ channelId }: { channelId: string }) {
+export function ChannelMemberList({
+  channelId,
+  enabled = true,
+}: {
+  channelId: string | null;
+  enabled?: boolean;
+}) {
   const headingId = useId();
-  const membersQuery = useChannelMembers(channelId);
-  const { nameFor, avatarFor, roleColorFor } = useMemberDisplayNames();
+  const membersQuery = useChannelMembers(channelId, { enabled });
+  const roster = useMemberDisplayNames();
+  const { byId, avatarFor, roleColorFor } = roster;
   const presence = useChapterPresenceContext();
 
   const groups = useMemo(() => {
-    const rows: ChannelMemberRow[] = (membersQuery.data ?? []).flatMap(
-      (member) => {
-        const name = nameFor(member.user_id);
-        // A reader the roster cannot name (a membership whose user row is
-        // gone) is left out rather than shown as a bare id.
-        if (!name) return [];
-        return [
-          {
-            userId: member.user_id,
-            name,
-            avatarUrl: avatarFor(member.user_id),
-            roleColor: roleColorFor(member.user_id),
-            roleRank: member.role_rank,
-            status: presence.isReady ? presence.statusOf(member.user_id) : null,
-          },
-        ];
-      },
+    const rows: ChannelMemberRow[] = (membersQuery.data ?? []).map(
+      (member) => ({
+        userId: member.user_id,
+        // `memberLabel`, never a drop: a member who never set a name (or whose
+        // roster row is missing) still reads the channel, so they are listed
+        // as "Member 2f4a1c" like every other member surface (#2422).
+        name: memberLabel(byId[member.user_id], member.user_id),
+        avatarUrl: avatarFor(member.user_id),
+        roleColor: roleColorFor(member.user_id),
+        roleRank: member.role_rank,
+        status: presence.isReady ? presence.statusOf(member.user_id) : null,
+      }),
     );
     return groupChannelMembers(rows);
-  }, [membersQuery.data, nameFor, avatarFor, roleColorFor, presence]);
+  }, [membersQuery.data, byId, avatarFor, roleColorFor, presence]);
+
+  // Names come from the roster, so a list without them is not ready either;
+  // a failure of either read gets the error, and Retry reruns whichever failed.
+  const failed = membersQuery.isError || roster.isError;
+  const loading =
+    !channelId || !enabled || membersQuery.isPending || roster.isPending;
 
   return (
     <section
@@ -113,19 +130,22 @@ export function ChannelMemberList({ channelId }: { channelId: string }) {
         Members
       </h2>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
-        {membersQuery.isPending ? (
-          <MemberListSkeleton />
-        ) : membersQuery.isError ? (
+        {failed ? (
           <div className="space-y-2 px-2 py-4 text-center text-caption text-muted-foreground">
             <p>Couldn&apos;t load members.</p>
             <button
               type="button"
-              onClick={() => void membersQuery.refetch()}
+              onClick={() => {
+                if (membersQuery.isError) void membersQuery.refetch();
+                if (roster.isError) roster.refetch();
+              }}
               className="font-semibold text-foreground underline-offset-2 hover:underline"
             >
               Retry
             </button>
           </div>
+        ) : loading ? (
+          <MemberListSkeleton />
         ) : (
           groups.map((group) => <MemberGroup key={group.key} group={group} />)
         )}

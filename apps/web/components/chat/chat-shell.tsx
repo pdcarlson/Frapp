@@ -46,12 +46,8 @@ import {
 import { can, isAnnouncementChannel } from "@repo/validation";
 import { ChevronLeft, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet } from "@/components/ui/sheet";
+import { PanelContent, PanelHeader } from "@/components/shared/panel";
 import { persistMembersHidden, useIsWideChat } from "@/lib/chat/members-panel";
 import { IconButton } from "@/components/ui/icon-button";
 import { useChapterStore } from "@/lib/stores/chapter-store";
@@ -608,6 +604,13 @@ export function ChatShell({
   // A 1:1 DM has no list worth showing: its two members are the header's own
   // title and the viewer.
   const showMemberList = !!activeChannel && activeChannel.type !== "DM";
+  // Radix never reports a close it did not cause, so a sheet the window
+  // outgrew, or whose channel became a 1:1 DM, is closed here, during render
+  // (React's pattern for state derived from a change). Left open in state, it
+  // would pop back up by itself on the next narrowing.
+  if (membersSheetOpen && (isWideChat || !showMemberList)) {
+    setMembersSheetOpen(false);
+  }
 
   // DM channels are stored as `dm-<uuidA>-<uuidB>`; the header, the composer
   // placeholder and the sidebar must all show the resolved title instead.
@@ -1520,6 +1523,9 @@ export function ChatShell({
             : "empty";
   const timelineReady =
     channelsPaneState === "ready" && !requestedChannelMissing;
+  const memberColumnMounted =
+    !membersHidden &&
+    (showMemberList || (!activeChannel && channelsPaneState === "loading"));
 
   /**
    * Whether focus is in `ComposerShell` right now — the one thing the upgrade
@@ -2305,29 +2311,38 @@ export function ChatShell({
       {/*
         Members, 240px on the right from 1280px (#3536), the same step as the
         channels column so the timeline reads as the floor between two rails.
-        Hidden by CSS below `xl` rather than by the width hook, so first paint
-        is right on the server's markup.
+        Hidden by CSS below `xl` rather than by the width hook, so the server's
+        markup is already right for the member's width and remembered choice.
+        Mounted while the channel list is still loading too (as a skeleton),
+        so the timeline does not lose 240px a beat after first paint; it only
+        goes away if the channel turns out to be a 1:1 DM.
       */}
-      {showMemberList && activeChannel && !membersHidden ? (
+      {memberColumnMounted ? (
         <aside
           aria-label="Members"
           className="hidden w-60 shrink-0 flex-col border-l border-border bg-surface-1 xl:flex"
         >
-          <ChannelMemberList channelId={activeChannel.id} />
+          {/*
+            Reads only once the width hook confirms the column is on screen:
+            below 1280px CSS hides it, and the sheet has its own copy.
+          */}
+          <ChannelMemberList
+            channelId={activeChannel?.id ?? null}
+            enabled={isWideChat}
+          />
         </aside>
       ) : null}
-      <Sheet
-        open={membersSheetOpen && showMemberList && !isWideChat}
-        onOpenChange={setMembersSheetOpen}
-      >
-        <SheetContent side="right" className="flex w-72 flex-col gap-0 p-0">
-          <SheetHeader className="border-b border-border px-4 py-3">
-            <SheetTitle className="text-label">Members</SheetTitle>
-          </SheetHeader>
+      <Sheet open={membersSheetOpen} onOpenChange={setMembersSheetOpen}>
+        {/*
+          A Panel, §9's surface for a list that grows: the member list is the
+          panel's whole body and owns its one scroll.
+        */}
+        <PanelContent>
+          <PanelHeader>Members</PanelHeader>
           {activeChannel ? (
             <ChannelMemberList channelId={activeChannel.id} />
           ) : null}
-        </SheetContent>
+        </PanelContent>
       </Sheet>
 
       {confirmDialog}
