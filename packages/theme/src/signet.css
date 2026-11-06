@@ -134,10 +134,15 @@
      * literal: the recipe's look on the incoming bubble a mention usually sat on
      * when this was chosen, with the alpha taken out. The compact layout puts it
      * on the row instead (`--background`, or `--surface-1` hovered); the literal
-     * was kept, and its 5.54:1 is its own pair's, whatever is under it. Fixed and
-     * never accent-derived, like the red. */
-    --mention-chip: #4C3A1A;
-    --mention-chip-text: #FAA81A;
+     * was kept, and its figure is its own pair's, whatever is under it. Fixed and
+     * never accent-derived, like the red.
+     *
+     * Muted on 2026-11-06 at the owner's request ("way less intrusive", set
+     * beside Discord's chip): the brown fill and saturated amber at weight 600
+     * read louder than the message around them. Now a faint warm fill with a
+     * pale amber handle at body weight, 10.65:1. */
+    --mention-chip: #2D2617;
+    --mention-chip-text: #EED7A8;
 
     /* ── Card-filled control hover ────────────────────────────────
      * The ShadCN scaffold's `--secondary` and `--accent` (and their
