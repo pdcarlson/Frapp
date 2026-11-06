@@ -85,3 +85,10 @@ export function isWithinArchiveUploadSizeLimit(byteLength: number): boolean {
  * alike.
  */
 export const MAX_WARNINGS = 50;
+
+/**
+ * What an imported author's avatar is registered as against the archive
+ * ceilings. A 128px PNG is rarely half this; declaring nothing would leave
+ * avatars uncounted.
+ */
+export const AVATAR_DECLARED_BYTES = 64 * 1024;

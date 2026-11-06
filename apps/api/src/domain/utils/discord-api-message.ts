@@ -29,6 +29,7 @@ import type {
   DiscordExportUser,
 } from './discord-export';
 import { asString } from './json-guards';
+import type { DiscordGuildMemberProfile } from '../adapters/discord.interface';
 
 /** A Discord API attachment, as much of it as we read. */
 export interface DiscordApiAttachment {
@@ -51,10 +52,15 @@ export interface DiscordApiUser {
   bot?: boolean | null;
 }
 
-/** The author's guild membership, when the response carried one. */
+/**
+ * The author's guild membership. Discord's REST messages carry none; the
+ * worker fills it from the member read (see {@link withServerProfiles}).
+ */
 export interface DiscordApiMessageMember {
-  /** Per-server nickname — what the channel actually showed at the time. */
+  /** Per-server nickname — what the server shows first. */
   nick?: string | null;
+  /** Per-server avatar hash, shown over the account's own. */
+  avatar?: string | null;
 }
 
 export interface DiscordApiMessage {
@@ -170,25 +176,114 @@ export function discordAttachmentKey(
 }
 
 /**
+ * What the server shows a user as, by Discord user id: their member profile,
+ * `null` when they are not a member (left, or the account is gone), and
+ * `undefined` when it could not be read.
+ */
+export type ServerProfileLookup = (
+  userId: string,
+) => DiscordGuildMemberProfile | null | undefined;
+
+/**
+ * `message` with the author's and every mentioned user's server profile on it,
+ * where it is known.
+ *
+ * Discord's REST message names its author and mentioned users by their
+ * account (`global_name`, `username`, `avatar`) and never by the server's
+ * nickname or per-server avatar, so an import that read only the message
+ * labelled "Moiz Steenhuis" by his account name "Pinstripe". The worker reads
+ * each member once and lays it on here, under `member`, where
+ * {@link toExportShapeMessage} already looks. The account fields are left as
+ * Discord sent them: a member who left keeps the name Discord itself shows for
+ * them, their account's.
+ */
+export function withServerProfiles(
+  message: DiscordApiMessage,
+  lookup: ServerProfileLookup,
+): DiscordApiMessage {
+  const memberOf = (
+    userId: string | null,
+    existing: DiscordApiMessageMember | null | undefined,
+  ): DiscordApiMessageMember | null | undefined => {
+    const profile = userId ? lookup(userId) : undefined;
+    if (!profile) return existing;
+    return { nick: profile.nick, avatar: profile.guildAvatar };
+  };
+  return {
+    ...message,
+    member: memberOf(asString(message.author?.id), message.member),
+    mentions: message.mentions?.map((user) => ({
+      ...user,
+      member: memberOf(asString(user?.id), user?.member),
+    })),
+  };
+}
+
+/** A Discord avatar hash: 32 hex digits, `a_`-prefixed when animated. */
+const AVATAR_HASH = /^(?:a_)?[0-9a-f]{32}$/i;
+const SNOWFLAKE = /^\d{1,25}$/;
+
+/**
+ * The author's avatar as the server showed it, as a key to store it under and
+ * the CDN address to copy it from. Null for an author with Discord's default
+ * avatar (no hash), which Frapp draws as initials instead.
+ *
+ * The server's own avatar for the member wins over the account's, as in
+ * Discord. Requested at 128px as a still PNG: the bubble draws it at 32 or 40,
+ * and an animated avatar's first frame is what a still archive keeps.
+ *
+ * The key carries the hash, so a member who changes their avatar between two
+ * imports is stored again rather than overwritten, and is checked against
+ * Discord's formats because it becomes part of a storage path.
+ */
+export function discordAvatarAsset(
+  message: Pick<DiscordApiMessage, 'author' | 'member'>,
+  guildId: string | null,
+): { key: string; url: string } | null {
+  const userId = asString(message.author?.id);
+  if (!userId || !SNOWFLAKE.test(userId)) return null;
+  const guildAvatar = asString(message.member?.avatar);
+  if (guildId && SNOWFLAKE.test(guildId) && guildAvatar) {
+    if (!AVATAR_HASH.test(guildAvatar)) return null;
+    return {
+      key: `avatars/${userId}/${guildAvatar}.png`,
+      url: `https://cdn.discordapp.com/guilds/${guildId}/users/${userId}/avatars/${guildAvatar}.png?size=128`,
+    };
+  }
+  const avatar = asString(message.author?.avatar);
+  if (!avatar || !AVATAR_HASH.test(avatar)) return null;
+  return {
+    key: `avatars/${userId}/${avatar}.png`,
+    url: `https://cdn.discordapp.com/avatars/${userId}/${avatar}.png?size=128`,
+  };
+}
+
+/**
  * One Discord API message, in the shape `toImportedMessage` already consumes.
  *
  * Field-for-field notes where the two vocabularies disagree:
  *
- *  * `nickname` ← `member.nick`. The per-server nickname is what the channel
- *    displayed at the time, which is what an archive is for, and it is what
- *    `resolveAuthorName` prefers. It is only present when the response carried
- *    a member object; absent, the name falls through to the account name,
- *    which is the same outcome the DCE path has for an export without it.
+ *  * `nickname` ← `member.nick`. The per-server nickname is what the server
+ *    shows, and it is what `resolveAuthorName` prefers. Discord's REST message
+ *    carries no member, so it is there only once {@link withServerProfiles}
+ *    put it there; absent (a member who left, or a read that failed), the name
+ *    falls through to the account name, as Discord itself shows a departed
+ *    member.
  *  * `name` ← `global_name` before `username`. `global_name` is the display
  *    name modern clients show; `username` is the handle. Preferring the
  *    handle would make every imported message read like a mention.
  *  * `attachments[].url` ← {@link discordAttachmentKey}, **not** the CDN URL.
- *  * `avatarUrl` ← always null. Avatars are not fetched on this path (see the
- *    worker); a null here is the same state the DCE path has when the admin
- *    exported without `--media`, and `author_avatar_path` already handles it.
+ *  * `avatarUrl` ← {@link discordAvatarAsset}'s key, which the worker copies
+ *    into the archive beside the page's attachments and which resolves through
+ *    the same manifest. Null for a default avatar, the same state the DCE path
+ *    has when the admin exported without `--media`.
+ *  * `mentions[].nickname` ← the mentioned member's `member.nick`, filled the
+ *    same way, so a person reads the same in a mention as on their own
+ *    messages.
  */
 export function toExportShapeMessage(
   message: DiscordApiMessage,
+  guildId: string | null = null,
 ): DiscordExportMessage {
   const author: DiscordExportUser = {
     id: asString(message.author?.id),
@@ -198,7 +293,7 @@ export function toExportShapeMessage(
     discriminator: asString(message.author?.discriminator),
     nickname: asString(message.member?.nick),
     isBot: message.author?.bot === true,
-    avatarUrl: null,
+    avatarUrl: discordAvatarAsset(message, guildId)?.key ?? null,
   };
 
   const attachments: DiscordExportAttachment[] = (message.attachments ?? [])
