@@ -2,7 +2,7 @@
 
 // Scheduled watch: every scheduled routine must leave a run record.
 //
-// The five routines (docs/ci-cd/routines.md) run as Claude Code Routines, whose
+// The three routines (docs/ci-cd/routines.md) run as Claude scheduled tasks, whose
 // run status nothing in this repo can read. That status also says less than it
 // looks: on 2026-09-17 three routines died about 7 seconds after firing and
 // wrote nothing anywhere, and on 2026-09-30 Hygiene Scan read SUCCEEDED while
@@ -42,32 +42,48 @@ export const HEARTBEAT_ISSUE = 2966;
 const HOUR = 60 * 60 * 1000;
 
 /**
- * Each routine's schedule as `list_triggers` stored it on 2026-09-30: UTC, from
- * the ET times entered in the Routines UI during daylight saving (EDT). That
- * is the earliest UTC time a fire can have: in EST a fire either stays put or
- * moves an hour later (routines.md § Settings says the docs don't say which),
- * never earlier. So re-enter a changed schedule here as its EDT-time UTC.
- * `weekday` is 0 (Sunday) to 6, or absent for a daily routine. routines.md
- * § Settings links here; a schedule change there moves this row too.
+ * Each routine's schedule in UTC, as its America/New_York time falls during
+ * daylight saving (EDT). That is the earliest UTC time a fire can have: the
+ * tasks are stored with `CRON_TZ=America/New_York`, so in EST a fire lands an
+ * hour later, never earlier (`list_triggers` on 2026-11-06, in EST, showed
+ * Beta Watch's next run at 13:07Z). So enter a changed schedule here as its EDT-time
+ * UTC. `weekday` is 0 (Sunday) to 6, or absent for a daily routine. `since` is
+ * when the routine's scheduled task was created: a fire before it is not
+ * judged, so a routine isn't reported missing for runs it never had.
+ * routines.md § Settings links here; a schedule change there moves this row
+ * too.
  */
+// The three tasks' `created_at` in `list_triggers` was 2026-11-06T19:44:01Z to
+// 19:44:08Z.
+const CREATED_2026_11_06 = Date.parse("2026-11-06T19:44:00Z");
 export const ROUTINES = [
+  // 08:07 ET daily.
   {
-    slug: "issue-curator",
-    name: "Issue Curator",
+    slug: "beta-watch",
+    name: "Beta Watch",
     minute: 7,
     hour: 12,
-    weekday: 5,
+    since: CREATED_2026_11_06,
   },
-  { slug: "issue-triage", name: "Issue Triage", minute: 7, hour: 13 },
+  // Sunday 21:07 ET, which is Monday in UTC: done before Monday's Beta Watch,
+  // which fires into the same session.
   {
-    slug: "pr-followups",
-    name: "PR Follow-ups",
+    slug: "board-sweep",
+    name: "Board Sweep",
     minute: 7,
-    hour: 11,
+    hour: 1,
     weekday: 1,
+    since: CREATED_2026_11_06,
   },
-  { slug: "docs-upkeep", name: "Docs Upkeep", minute: 7, hour: 11, weekday: 3 },
-  { slug: "hygiene-scan", name: "Hygiene Scan", minute: 7, hour: 3 },
+  // Wednesday 23:07 ET, which is Thursday in UTC.
+  {
+    slug: "weekly-upkeep",
+    name: "Weekly Upkeep",
+    minute: 7,
+    hour: 3,
+    weekday: 4,
+    since: CREATED_2026_11_06,
+  },
 ];
 
 // How much later than the computed fire a real one can land: the hour a
@@ -76,7 +92,9 @@ export const ROUTINES = [
 // manual run earlier that day can't stand in for a scheduled run that died.
 export const DST_SHIFT_MS = HOUR;
 // How long a run gets to start late, finish and post its record before its
-// fire is judged. Hygiene Scan, the longest, has taken about an hour.
+// fire is judged. The old Hygiene Scan, now a Weekly Upkeep phase, took about an
+// hour. The Board Sweep's three phases may take longer, but its Sunday-night
+// fire is judged by Monday's 19:20 run, about 17 hours later.
 export const RUN_ALLOWANCE_MS = 4 * HOUR;
 
 export const RECORD_PATTERN =
@@ -85,7 +103,7 @@ export const RECORD_PATTERN =
 // or bold. Stripped before matching, so a record isn't dropped for its markup.
 const LEADING_MARKUP = /^(?:[>*_`-]+\s*)+/;
 
-// Pages of heartbeat comments to read. Five routines post about nine records a
+// Pages of heartbeat comments to read. Three routines post about nine records a
 // week, so a hundred-comment page covers months. The issue is public, so a
 // flood of other comments could push the records past the cap; a read that
 // hits it is reported unreadable rather than judged on part of the list.
@@ -170,7 +188,8 @@ export function parseRecords(comments) {
 /**
  * Each routine's verdict for its due fire.
  *
- * - `not-judged`: the fire is before `judgeFrom`, the watch's first run.
+ * - `not-judged`: the fire is before `judgeFrom`, the watch's first run, or
+ *   before the routine's own `since`.
  * - `missing`: no record since the fire's computed time.
  * - `stopped` / `done`: the newest record since then says so.
  *
@@ -181,6 +200,8 @@ export function evaluateHeartbeat({ records, now, judgeFrom }) {
     const fire = dueFire(routine, now);
     const base = { slug: routine.slug, name: routine.name, fire };
     if (fire < judgeFrom) return { ...base, status: "not-judged" };
+    if (fire < (routine.since ?? -Infinity))
+      return { ...base, status: "not-judged", beforeTask: true };
     const latest = records
       .filter((r) => r.routine === routine.slug && r.createdAt >= fire)
       .at(-1);
@@ -217,6 +238,8 @@ export function describeRoutine(r) {
   if (r.status === "stopped")
     return `${r.name}: its ${iso(r.fire)} run stopped${r.reason ? ` (${r.reason})` : ""}`;
   if (r.status === "done") return `${r.name}: done`;
+  if (r.beforeTask)
+    return `${r.name}: not judged (its ${iso(r.fire)} run predates its scheduled task)`;
   return `${r.name}: not judged (its ${iso(r.fire)} run predates this watch)`;
 }
 
@@ -312,9 +335,9 @@ export function buildAlertIssueBody({ verdict, repo, runUrl }) {
     "",
     ...lines,
     "",
-    `Each routine ends its run by commenting a run record on [the heartbeat issue](${heartbeat}) ([format](${routinesDoc})). No record usually means the session died at startup, which the Routine may still report as a failed or even a succeeded run; a \`stopped\` record says why in its next line.`,
+    `Each routine ends its run by commenting a run record on [the heartbeat issue](${heartbeat}) ([format](${routinesDoc})). No record usually means the session died at startup, which the scheduled task may still report as a failed or even a succeeded run; a \`stopped\` record says why in its next line.`,
     "",
-    "Open the routine at claude.ai/code/routines, read its last session, and fix the cause. Running the routine again posts a fresh record, and the next heartbeat run closes this. Don't post a record by hand to clear it.",
+    `The routines are scheduled tasks bound to the Frapp project thread *Redefine Frapp scheduled routines* ([how they run](https://github.com/${repo}/blob/main/docs/ci-cd/routines.md)). Read that thread's latest run, and the task's last run in \`list_triggers\`, and fix the cause. Running the routine again posts a fresh record, and the next heartbeat run closes this. Don't post a record by hand to clear it.`,
   ];
   if (runUrl) body.push("", `Run: ${runUrl}`);
   return body.join("\n");
@@ -347,7 +370,7 @@ export async function runWatchdog({
     fetchImpl,
     alert: ALERT,
     buildRecoveryBody: () =>
-      `Every routine's latest scheduled run left a done record.${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
+      `Every judged routine's latest scheduled run left a done record.${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
   });
   // As the other daily watchdogs: a clean run that can't read its alert is red,
   // because a lasting read failure means the next real failure can't raise one
