@@ -4,10 +4,12 @@ import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
   useCurrentUser,
+  usePermissionList,
   useServiceEntries,
   useViewerUserId,
   type ServiceEntryStatus,
 } from "@repo/hooks";
+import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { useRefetchAll } from "@/components/pull-to-refresh";
@@ -42,6 +44,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * never drew this screen, so the siblings are the reference.
  */
 export default function ServiceHoursScreen() {
+  const canLog = can("service:log", usePermissionList());
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const sheetRef = useRef<BottomSheetModal>(null);
@@ -160,7 +163,11 @@ export default function ServiceHoursScreen() {
       back={BACK_TO_MORE}
       title="Service hours"
       refresh={refresh}
-      createAction={{ label: "Log service hours", onPress: openSheet }}
+      // Filing is `service:log` (`POST /v1/service-entries`), which the seeded
+      // New Member and Alumni roles don't hold: they see their history only.
+      createAction={
+        canLog ? { label: "Log service hours", onPress: openSheet } : undefined
+      }
     >
       {/* Only stated once the entries are actually in hand. `summary` derives
           from `rows`, which is empty while the query is pending or errored — so

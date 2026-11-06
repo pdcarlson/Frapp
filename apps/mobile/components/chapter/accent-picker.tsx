@@ -12,6 +12,7 @@ import {
   normalizeAccentInput,
   type AccentSwatch,
 } from "@repo/hooks/chapter-identity";
+import { useFieldReveal } from "@repo/hooks/field-reveal";
 import { SignetTokens } from "@repo/theme/signet";
 import { sheetFieldStyles } from "@/components/sheet-scaffold";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
@@ -42,10 +43,18 @@ export type AccentPickerProps = {
   /**
    * Called with `false` while the custom field holds text that is not a color
    * yet, and `true` once it is again (or a swatch is tapped). `onChange` keeps
-   * the last valid color meanwhile, so a caller that saves disables its save
-   * on `false` rather than saving a color the field no longer shows.
+   * the last valid color meanwhile, so a caller that saves refuses to save on
+   * `false` rather than saving a color the field no longer shows. It refuses
+   * on press, with `showError`, and keeps its save pressable: a greyed save
+   * over a hint that waits for blur says nothing (components.md § Text input,
+   * "When an error shows").
    */
   onValidityChange?: (valid: boolean) => void;
+  /**
+   * The caller tried to save: the custom field's hint shows now if the field
+   * isn't a color yet, without waiting for the member to leave it.
+   */
+  showError?: boolean;
   /** What a screen reader calls the group of swatches. */
   label?: string;
   /** The organization's official colors, shown first. Empty or absent hides the row. */
@@ -84,12 +93,16 @@ export function AccentPicker({
   label = "Accent color",
   orgColors = [],
   disabled = false,
+  showError = false,
   inputComponent: Input = TextInput,
   focusColor,
 }: AccentPickerProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens, focusColor);
   const [hexFocused, setHexFocused] = useState(false);
+  // "#4" is on its way to "#4F2683": the hint waits for the member to leave
+  // the field (components.md § Text input, "When an error shows").
+  const reveal = useFieldReveal<"hex">();
 
   // A preset the organization already offers is shown once, under the
   // organization, so one color is never two radios in the same group.
@@ -214,7 +227,7 @@ export function AccentPicker({
             <Input
               value={draft}
               onChangeText={typeHex}
-              placeholder="#4F2683"
+              placeholder="e.g. #4F2683"
               placeholderTextColor={tokens.color.text.muted}
               autoCapitalize="characters"
               autoCorrect={false}
@@ -225,7 +238,10 @@ export function AccentPicker({
               // it then saves the second tap that tap was asking for.
               autoFocus
               onFocus={() => setHexFocused(true)}
-              onBlur={() => setHexFocused(false)}
+              onBlur={() => {
+                setHexFocused(false);
+                reveal.blur("hex");
+              }}
               style={[
                 styles.input,
                 styles.inputFlex,
@@ -233,7 +249,7 @@ export function AccentPicker({
               ]}
             />
           </View>
-          {draftInvalid ? (
+          {draftInvalid && (showError || reveal.shows("hex")) ? (
             <Text style={styles.helperText}>
               Enter six hex digits, like #4F2683.
             </Text>

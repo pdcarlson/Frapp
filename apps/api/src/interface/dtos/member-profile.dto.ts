@@ -39,6 +39,9 @@ export class MemberProfileDto {
   graduation_year: number | null;
 
   @ApiProperty({ type: String, nullable: true })
+  major: string | null;
+
+  @ApiProperty({ type: String, nullable: true })
   current_city: string | null;
 
   @ApiProperty({ type: String, nullable: true })

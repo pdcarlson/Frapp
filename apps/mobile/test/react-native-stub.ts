@@ -69,6 +69,14 @@ export const reactNativeStub = {
     hairlineWidth: 1,
   },
   useColorScheme: () => "dark",
+  // The tab bar's quick-actions panel spans the window (`glass-tab-bar.tsx`):
+  // an iPhone 17's 402pt.
+  useWindowDimensions: () => ({
+    width: 402,
+    height: 874,
+    scale: 3,
+    fontScale: 1,
+  }),
   View: "View",
   Text: "Text",
   Pressable: "Pressable",
