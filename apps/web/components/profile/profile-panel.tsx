@@ -17,8 +17,8 @@ import {
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
   isNotificationCategoryKey,
-  isUtcOffset,
   NOTIFICATION_CATEGORIES,
+  localTimeZone,
   rowsToNotificationCategoryState,
   timeZoneCity,
   type NotificationCategoryKey,
@@ -86,20 +86,6 @@ type UserSettings = Partial<
  * and its referrers cannot drift apart into a dangling id.
  */
 const OFFLINE_NOTE_ID = "notification-categories-offline";
-
-/**
- * This browser's zone, for a member switching quiet hours on with no zone
- * stored. An offset (some runtimes report a custom system zone as `-05:00`) is
- * refused by the server (#2361), so it falls back like mobile's default does.
- */
-function browserTimeZone(): string {
-  try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return tz && !isUtcOffset(tz) ? tz : "America/New_York";
-  } catch {
-    return "America/New_York";
-  }
-}
 
 export function ProfilePanel() {
   const { toast } = useToast();
@@ -169,6 +155,25 @@ export function ProfilePanel() {
     }
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [settingsQuery.data, updateSettings.isPending, updateSettings.isError]);
+
+  /*
+   * Switching off clears the stored window, so the last one is kept here and
+   * comes back when the member switches on again on this page. Mobile keeps
+   * the same thing on the device; a fresh page load falls back to 10 PM to 8 AM.
+   */
+  const lastWindow = useRef<{ start: string; end: string; tz: string | null }>(
+    null,
+  );
+  useEffect(() => {
+    const stored = settingsQuery.data;
+    if (stored?.quiet_hours_start && stored.quiet_hours_end) {
+      lastWindow.current = {
+        start: stored.quiet_hours_start,
+        end: stored.quiet_hours_end,
+        tz: stored.quiet_hours_tz?.trim() || null,
+      };
+    }
+  }, [settingsQuery.data]);
 
   /*
    * Screen-scale states, in the order `spec/ui/design-system/README.md` §4
@@ -258,8 +263,11 @@ export function ProfilePanel() {
   const quietHoursOn = Boolean(
     storedSettings?.quiet_hours_start && storedSettings?.quiet_hours_end,
   );
-  const browserZone = browserTimeZone();
+  const browserZone = localTimeZone();
   const storedZone = storedSettings?.quiet_hours_tz?.trim() || null;
+  // A window stored with no zone is evaluated in UTC by the server, so that is
+  // the zone the line below names (spec/behavior/notifications.md § Quiet Hours).
+  const zoneInForce = storedZone ?? "UTC";
 
   async function saveQuietHours(
     patch: UserSettings,
@@ -302,14 +310,15 @@ export function ProfilePanel() {
       );
       return;
     }
-    // The zone a member already has stays theirs: this browser's tzdata can be
-    // older than the server's, so it never re-judges a stored zone. Only a
-    // member with none gets this browser's.
+    // The window and zone a member had before switching off come back. A
+    // remembered zone is never re-judged here (this browser's tzdata can be
+    // older than the server's); only a member with none gets this browser's.
+    const last = lastWindow.current;
     void saveQuietHours(
       {
-        quiet_hours_start: settingsDraft.quiet_hours_start || "22:00",
-        quiet_hours_end: settingsDraft.quiet_hours_end || "08:00",
-        quiet_hours_tz: storedZone ?? browserZone,
+        quiet_hours_start: last?.start ?? "22:00",
+        quiet_hours_end: last?.end ?? "08:00",
+        quiet_hours_tz: last?.tz ?? browserZone,
       },
       "Quiet hours on",
     );
@@ -753,11 +762,11 @@ export function ProfilePanel() {
                   </div>
                   {/* The zone is a fact, not a field. A member who never set
                       one got this browser's when they switched quiet hours on,
-                      so this line only speaks up when the stored zone is
+                      so this line only speaks up when the zone in force is
                       another one, and offers the one fix that needs no list. */}
-                  {storedZone && storedZone !== browserZone ? (
+                  {zoneInForce !== browserZone ? (
                     <p className="text-sm text-muted-foreground">
-                      Times are in {timeZoneCity(storedZone)} time.{" "}
+                      Times are in {timeZoneCity(zoneInForce)} time.{" "}
                       <button
                         type="button"
                         className="font-medium text-foreground underline underline-offset-4"

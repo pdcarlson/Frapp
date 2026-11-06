@@ -145,7 +145,10 @@ describe("QuietHoursSection", () => {
     expect(onWindowChange).toHaveBeenCalledWith({ ...WINDOW, start: "23:00" });
   });
 
-  it("saves a pending change when the screen closes mid-spin", () => {
+  // Leaving mid-spin drops the half-turned value rather than saving it from a
+  // stale render: an unmount flush once switched quiet hours back on when a
+  // member turned them off with a wheel still settling.
+  it("saves nothing when the times close mid-spin", () => {
     const { tree, onWindowChange } = render();
 
     act(() =>
@@ -153,8 +156,21 @@ describe("QuietHoursSection", () => {
     );
     act(() => tree.unmount());
     mounted.splice(mounted.indexOf(tree), 1);
+    act(() => vi.advanceTimersByTime(QUIET_HOURS_COMMIT_DELAY_MS));
 
-    expect(onWindowChange).toHaveBeenCalledWith({ ...WINDOW, end: "06:30" });
+    expect(onWindowChange).not.toHaveBeenCalled();
+  });
+
+  it("drops a spin that comes back to where it started", () => {
+    const { tree, onWindowChange } = render();
+    const start = () => pickerFor(tree, "Quiet hours start");
+
+    act(() => start().props.onChange(...pick("22:30")));
+    act(() => start().props.onChange(...pick("22:00")));
+    act(() => vi.advanceTimersByTime(QUIET_HOURS_COMMIT_DELAY_MS));
+
+    expect(onWindowChange).not.toHaveBeenCalled();
+    expect(dateToTimeOfDay(start().props.value)).toBe("22:00");
   });
 
   it("can't be changed while the account's first read is in flight", () => {
@@ -189,6 +205,29 @@ describe("QuietHoursSection", () => {
     const { tree } = render();
 
     expect(screenText(tree)).not.toContain("Time zone");
+  });
+
+  // The server evaluates a window stored with no zone in UTC.
+  it("names UTC when the account has a window but no zone", () => {
+    const { tree, onWindowChange } = render({ storedZoneMissing: true });
+
+    const text = screenText(tree);
+    expect(text).toContain("Time zone");
+    expect(text).toContain("UTC");
+
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Time zone",
+    );
+    act(() => row.props.onPress());
+    const buttons = vi.mocked(Alert.alert).mock.calls[0][2] ?? [];
+    act(() => buttons.find((b) => b.text === "Use New York")?.onPress?.());
+
+    expect(onWindowChange).toHaveBeenCalledWith({
+      ...WINDOW,
+      tz: "America/New_York",
+    });
   });
 
   it("offers this phone's zone when the stored one differs, and only on a tap", () => {

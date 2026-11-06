@@ -300,6 +300,7 @@ export default function PreferencesScreen() {
     chapterId,
     quietHoursSync,
     categorySync,
+    storedZoneMissing,
   } = useNotificationPreferencesSync();
 
   // `can`, never a bare `includes` — an owner's grant is the wildcard `*`, so a
@@ -419,6 +420,7 @@ export default function PreferencesScreen() {
         quietHoursWindow={quietHoursWindow}
         onWindowChange={setQuietHoursWindow}
         deviceTimeZone={deviceTimeZone()}
+        storedZoneMissing={storedZoneMissing}
         windowEditable={quietHoursSync !== "loading"}
       />
 

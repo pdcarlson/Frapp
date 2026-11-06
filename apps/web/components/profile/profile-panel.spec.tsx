@@ -283,6 +283,51 @@ describe("ProfilePanel — quiet hours switch and zone", () => {
     });
   });
 
+  // The server evaluates a window stored with no zone in UTC, so that is the
+  // zone the line names, with the same one-click fix.
+  it("names UTC when a window is stored with no zone", async () => {
+    mocks.settingsQuery.data = { ...ON, quiet_hours_tz: null };
+    render(<ProfilePanel />);
+
+    expect(screen.getByText(/times are in utc time/i)).toBeTruthy();
+    await userEvent.click(
+      screen.getByRole("button", { name: /use new york time/i }),
+    );
+    await waitFor(() => {
+      expect(lastSettingsBody()).toEqual({
+        quiet_hours_tz: "America/New_York",
+      });
+    });
+  });
+
+  it("brings back the member's window and zone when switched off and on", async () => {
+    mocks.settingsQuery.data = {
+      ...ON,
+      quiet_hours_start: "23:15",
+      quiet_hours_end: "06:45",
+      quiet_hours_tz: "Europe/Lisbon",
+    };
+    const { rerender } = render(<ProfilePanel />);
+
+    await userEvent.click(quietSwitch());
+    await waitFor(() => {
+      expect(lastSettingsBody()).toMatchObject({ quiet_hours_start: null });
+    });
+
+    // What the off save leaves stored.
+    mocks.settingsQuery.data = OFF;
+    rerender(<ProfilePanel />);
+    await userEvent.click(quietSwitch());
+
+    await waitFor(() => {
+      expect(lastSettingsBody()).toEqual({
+        quiet_hours_start: "23:15",
+        quiet_hours_end: "06:45",
+        quiet_hours_tz: "Europe/Lisbon",
+      });
+    });
+  });
+
   it("refuses the switch offline and says so", async () => {
     mocks.settingsQuery.data = ON;
     mockOffline.value = true;

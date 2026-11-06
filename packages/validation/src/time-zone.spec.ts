@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isSupportedTimeZone, isUtcOffset, timeZoneCity } from "./time-zone";
+import {
+  FALLBACK_TIME_ZONE,
+  isSupportedTimeZone,
+  isUtcOffset,
+  localTimeZone,
+  timeZoneCity,
+} from "./time-zone";
 
 describe("isSupportedTimeZone", () => {
   it("accepts named zones the runtime can resolve", () => {
@@ -109,5 +115,29 @@ describe("timeZoneCity", () => {
     expect(timeZoneCity("America/Los_Angeles")).toBe("Los Angeles");
     expect(timeZoneCity("America/Argentina/Buenos_Aires")).toBe("Buenos Aires");
     expect(timeZoneCity("UTC")).toBe("UTC");
+  });
+});
+
+describe("localTimeZone", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function reportZone(timeZone: string) {
+    vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
+      ...new Intl.DateTimeFormat().resolvedOptions(),
+      timeZone,
+    });
+  }
+
+  it("answers the runtime's named zone", () => {
+    reportZone("Europe/Lisbon");
+    expect(localTimeZone()).toBe("Europe/Lisbon");
+  });
+
+  // The server refuses offsets (#2361), so one must never seed a save.
+  it("falls back when the runtime reports an offset", () => {
+    reportZone("-05:00");
+    expect(localTimeZone()).toBe(FALLBACK_TIME_ZONE);
   });
 });

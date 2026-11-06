@@ -12,6 +12,7 @@ import {
   defaultNotificationCategoryState,
   isNotificationCategoryKey,
   isUtcOffset,
+  localTimeZone,
   MAX_TIME_ZONE_LENGTH,
   rowsToNotificationCategoryState,
   type NotificationCategoryKey,
@@ -49,7 +50,6 @@ export const QUIET_HOURS_WINDOW_STORAGE_KEY = "frapp.mobile.quiet-hours-window";
 
 const DEFAULT_QUIET_HOURS_START = "22:00";
 const DEFAULT_QUIET_HOURS_END = "08:00";
-const FALLBACK_QUIET_HOURS_TZ = "America/New_York";
 
 /**
  * Mirrors the API contract in `UpdateUserSettingsDto` (HH:mm or HH:mm:ss), and
@@ -63,21 +63,10 @@ const FALLBACK_QUIET_HOURS_TZ = "America/New_York";
 const TIME_OF_DAY_PATTERN = /^(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/;
 
 /**
- * The device's zone, as the default for a member who has never set one. Some
- * runtimes report a custom system zone as an offset (`TZ=GMT-5` gives
- * `"-05:00"` on Node 24), and the server rejects offsets on every runtime
- * (#2361), so an offset falls back too rather than seeding a PATCH that 400s.
+ * This phone's zone (`localTimeZone` in @repo/validation, shared with web
+ * Profile). Named here so the screen and its specs have one seam to mock.
  */
-export function deviceTimeZone(): string {
-  try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return tz && tz.length > 0 && !isUtcOffset(tz)
-      ? tz
-      : FALLBACK_QUIET_HOURS_TZ;
-  } catch {
-    return FALLBACK_QUIET_HOURS_TZ;
-  }
-}
+export const deviceTimeZone = localTimeZone;
 
 /**
  * Postgres `time` columns come back as `HH:mm:ss`; the web profile inputs and our
@@ -293,6 +282,13 @@ export type NotificationPreferencesSync = {
   chapterId: string | null;
   quietHoursSync: SyncIndicator;
   categorySync: SyncIndicator;
+  /**
+   * The server holds a window but no zone, so it evaluates the window in UTC
+   * (spec/behavior/notifications.md § Quiet Hours). `quietHoursWindow.tz`
+   * shows this phone's zone instead (the repair a PATCH would make), so
+   * Settings needs this to say what is actually in force.
+   */
+  storedZoneMissing: boolean;
 };
 
 export function useNotificationPreferencesSync(): NotificationPreferencesSync {
@@ -569,5 +565,9 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
     chapterId,
     quietHoursSync,
     categorySync,
+    storedZoneMissing:
+      quietHoursEnabled &&
+      settingsQuery.isSuccess &&
+      !settingsQuery.data?.quiet_hours_tz?.trim(),
   };
 }

@@ -624,8 +624,10 @@ export type { MentionCandidate, MentionSpan } from "./mentions";
 
 // ── Time zones (issue #687) ──────────────────────────────────────────────────
 export {
+  FALLBACK_TIME_ZONE,
   isSupportedTimeZone,
   isUtcOffset,
+  localTimeZone,
   MAX_TIME_ZONE_LENGTH,
   timeZoneCity,
 } from "./time-zone";

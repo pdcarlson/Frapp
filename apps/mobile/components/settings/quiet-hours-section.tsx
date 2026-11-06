@@ -46,20 +46,22 @@ export function formatTimeOfDay(value: string): string {
 }
 
 /**
- * "22:00" as today's 10 PM on this phone's clock. The picker shows and returns
+ * "22:00" as 10 PM on this phone's clock. The picker shows and returns
  * wall-clock time, and the window is wall-clock time in its own zone, so only
  * the hours and minutes carry over; the date and the phone's zone don't matter.
  */
 export function timeOfDayToDate(value: string): Date {
   const [hours, minutes] = value.split(":").map(Number);
-  const date = new Date();
-  date.setHours(
+  // A fixed mid-January day rather than today, so no wall-clock time falls in
+  // a daylight-saving gap: on a spring-forward day `02:30` would read back as
+  // `03:30` and be saved that way on OK.
+  return new Date(
+    2001,
+    0,
+    15,
     Number.isFinite(hours) ? hours : 0,
     Number.isFinite(minutes) ? minutes : 0,
-    0,
-    0,
   );
-  return date;
 }
 
 /** A picked `Date` back to `HH:mm`, read off the same wall clock. */
@@ -77,6 +79,11 @@ type QuietHoursSectionProps = {
   /** This phone's zone (`deviceTimeZone()` in the sync hook). */
   deviceTimeZone: string;
   /**
+   * A window is stored with no zone, so the server runs it in UTC. The row
+   * says so and offers this phone's zone, like a stored zone that differs.
+   */
+  storedZoneMissing?: boolean;
+  /**
    * False while the account's first read is in flight. An edit then would be
    * kept only locally and overwritten by the window the read returns (#2938).
    */
@@ -89,9 +96,11 @@ export function QuietHoursSection({
   quietHoursWindow,
   onWindowChange,
   deviceTimeZone,
+  storedZoneMissing = false,
   windowEditable,
 }: QuietHoursSectionProps) {
-  const zoneDiffers = quietHoursWindow.tz !== deviceTimeZone;
+  const zoneInForce = storedZoneMissing ? "UTC" : quietHoursWindow.tz;
+  const zoneDiffers = zoneInForce !== deviceTimeZone;
 
   function confirmUsePhoneZone() {
     const city = timeZoneCity(deviceTimeZone);
@@ -141,7 +150,7 @@ export function QuietHoursSection({
           {zoneDiffers ? (
             <ListRow
               label="Time zone"
-              value={timeZoneCity(quietHoursWindow.tz)}
+              value={timeZoneCity(zoneInForce)}
               description={`This phone is on ${timeZoneCity(deviceTimeZone)} time.`}
               disabled={!windowEditable}
               onPress={confirmUsePhoneZone}
@@ -178,19 +187,22 @@ function QuietHoursTimeRow({
   // The iOS wheel reports every position it passes through. Saving each would
   // send a burst of PATCHes whose order the network doesn't promise, so the
   // row shows the wheel's value at once and saves it once the wheel rests.
+  //
+  // Nothing is saved on unmount. The rows unmount when the switch turns quiet
+  // hours off, and a save then would come from a render where they were still
+  // on, so it would switch them straight back on. A spin abandoned within the
+  // delay by leaving the screen is the accepted cost.
   const [draft, setDraft] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef<string | null>(null);
-  const onChangeRef = useRef(onChange);
+  const latest = useRef({ value, onChange });
   useEffect(() => {
-    onChangeRef.current = onChange;
-  }, [onChange]);
+    latest.current = { value, onChange };
+  }, [value, onChange]);
 
-  // Leaving the screen mid-spin still saves the last position.
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current);
-      if (pending.current !== null) onChangeRef.current(pending.current);
     },
     [],
   );
@@ -208,7 +220,14 @@ function QuietHoursTimeRow({
       timer.current = null;
       const toSave = pending.current;
       pending.current = null;
-      if (toSave !== null && toSave !== value) onChangeRef.current(toSave);
+      // Compared with the value in force now, not when the spin began: the
+      // window can change underneath (a save on web). A change saves and the
+      // new value clears the draft; no change clears it here.
+      if (toSave !== null && toSave !== latest.current.value) {
+        latest.current.onChange(toSave);
+      } else {
+        setDraft(null);
+      }
     }, QUIET_HOURS_COMMIT_DELAY_MS);
   }
 

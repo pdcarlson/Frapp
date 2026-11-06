@@ -111,3 +111,22 @@ export function isSupportedTimeZone(tz: unknown): tz is string {
 export function timeZoneCity(tz: string): string {
   return (tz.split("/").pop() ?? tz).replace(/_/g, " ");
 }
+
+/** The zone {@link localTimeZone} answers when the runtime gives no usable one. */
+export const FALLBACK_TIME_ZONE = "America/New_York";
+
+/**
+ * This device's or browser's zone: what quiet hours default to on mobile s16
+ * and web Profile, and the zone both offer in place of a different stored one.
+ * Some runtimes report a custom system zone as an offset (`TZ=GMT-5` gives
+ * `"-05:00"` on Node 24), and the server rejects offsets on every runtime
+ * (#2361), so an offset falls back too rather than seeding a PATCH that 400s.
+ */
+export function localTimeZone(): string {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return tz && !isUtcOffset(tz) ? tz : FALLBACK_TIME_ZONE;
+  } catch {
+    return FALLBACK_TIME_ZONE;
+  }
+}
