@@ -106,6 +106,15 @@ export interface MemberDisplayNames {
    */
   isPending: boolean;
   isError: boolean;
+  /**
+   * Whether a roster read has ever landed. TanStack keeps the last good data
+   * through a failed refetch, so `isError` with `hasData` means stale names
+   * that still draw, and a surface should keep them rather than swap in an
+   * error (#3536).
+   */
+  hasData: boolean;
+  /** A read is in flight, the first or a retry, for a Retry control's busy state. */
+  isFetching: boolean;
   /** Re-runs the roster read, so a caller's retry control can recover names. */
   refetch: () => void;
 }
@@ -180,6 +189,8 @@ export function useMemberDisplayNames(): MemberDisplayNames {
     roleColorFor,
     isPending: query.isPending,
     isError: query.isError,
+    hasData: query.data !== undefined,
+    isFetching: query.isFetching,
     refetch,
   };
 }
