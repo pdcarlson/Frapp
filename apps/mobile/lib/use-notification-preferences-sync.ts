@@ -68,7 +68,7 @@ const TIME_OF_DAY_PATTERN = /^(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/;
  * `"-05:00"` on Node 24), and the server rejects offsets on every runtime
  * (#2361), so an offset falls back too rather than seeding a PATCH that 400s.
  */
-function resolveDeviceTimeZone(): string {
+export function deviceTimeZone(): string {
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     return tz && tz.length > 0 && !isUtcOffset(tz)
@@ -120,14 +120,14 @@ function normalizeTimeOfDay(value: unknown): string | null {
  * error on an already-broken row beats silent corruption of a correct one.
  */
 function normalizeTimeZone(value: unknown): string {
-  if (typeof value !== "string") return resolveDeviceTimeZone();
+  if (typeof value !== "string") return deviceTimeZone();
   const trimmed = value.trim();
   if (
     trimmed.length === 0 ||
     trimmed.length > MAX_TIME_ZONE_LENGTH ||
     isUtcOffset(trimmed)
   ) {
-    return resolveDeviceTimeZone();
+    return deviceTimeZone();
   }
   return trimmed;
 }
@@ -183,15 +183,15 @@ const DEFAULT_CACHED: CachedPreferences = {
 };
 
 /**
- * The pre-catalog blob's two toggles, and the categories they stood for.
+ * The pre-catalog blob's toggles that still have a category to stand for.
  *
  * A member upgrading has a blob in this shape sitting on their device. Dropping
  * it would silently re-enable a category they turned off, offline, with no
  * server round trip to correct it — so it migrates rather than being discarded
- * with the other unknown keys.
+ * with the other unknown keys. `dmAlertsEnabled` mapped to `chat`, whose switch
+ * was dropped (2026-11-06), so it is now stripped like any key nothing reads.
  */
 const LEGACY_CATEGORY_KEYS: Record<string, NotificationCategoryKey> = {
-  dmAlertsEnabled: "chat",
   eventRemindersEnabled: "events",
 };
 
@@ -233,7 +233,7 @@ export function defaultQuietHoursWindow(): QuietHoursWindow {
   return {
     start: DEFAULT_QUIET_HOURS_START,
     end: DEFAULT_QUIET_HOURS_END,
-    tz: resolveDeviceTimeZone(),
+    tz: deviceTimeZone(),
   };
 }
 

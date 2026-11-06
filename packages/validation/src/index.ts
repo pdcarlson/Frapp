@@ -626,8 +626,8 @@ export type { MentionCandidate, MentionSpan } from "./mentions";
 export {
   isSupportedTimeZone,
   isUtcOffset,
-  normalizeTimeZoneInput,
   MAX_TIME_ZONE_LENGTH,
+  timeZoneCity,
 } from "./time-zone";
 
 // ── Notification categories (issue #564; mobile half shipped in C4 of #937) ──

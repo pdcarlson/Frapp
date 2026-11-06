@@ -16,7 +16,18 @@ import { isBetaOffModule } from "./beta-off-modules";
  * ## What the API actually emits
  *
  * Grepping `category: '…'` across `apps/api/src` yields eight distinct values.
- * Six are here. The other two are deliberately absent:
+ * Five are here. The other three are deliberately absent:
+ *
+ * - **`chat`** — dropped as a switch on 2026-11-06 (the owner's iOS testing:
+ *   "Do we really want users to be able to turn off chat?"). It silenced every
+ *   chat push at once, DMs and @mentions included, which is how a member
+ *   misses the message that mattered and blames the app. Chat is tuned where
+ *   the noise is instead: a level per channel and per DM
+ *   (`chat_notification_preferences`, ADR-06), set from the conversation, plus
+ *   quiet hours for the night. The server stops honouring the switch too, so a
+ *   row an older build wrote can't keep a member muted with no control left to
+ *   undo it: `NotificationService` reads a preference only for a key in this
+ *   catalog (`isNotificationCategoryKey`).
  *
  * - **`announcements`** — still absent, but for a different reason than it used
  *   to be. The old blocker was gate ordering: the preference was checked before
@@ -84,16 +95,6 @@ export interface NotificationCategory {
 }
 
 export const NOTIFICATION_CATEGORIES = [
-  {
-    key: "chat",
-    label: "Chat",
-    // The coarse switch. Per-channel and per-kind levels are a separate
-    // tri-state in `chat_notification_preferences` (ADR-06) that the push
-    // worker resolves *after* this gate, so turning this off silences chat
-    // regardless of what those say.
-    description: "Mentions, direct messages, and new messages in your channels.",
-    defaultEnabled: true,
-  },
   {
     key: "events",
     label: "Events",

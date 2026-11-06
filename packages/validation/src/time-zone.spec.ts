@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  isSupportedTimeZone,
-  isUtcOffset,
-  normalizeTimeZoneInput,
-  MAX_TIME_ZONE_LENGTH,
-} from "./time-zone";
+import { isSupportedTimeZone, isUtcOffset, timeZoneCity } from "./time-zone";
 
 describe("isSupportedTimeZone", () => {
   it("accepts named zones the runtime can resolve", () => {
@@ -68,18 +63,6 @@ describe("isSupportedTimeZone", () => {
     expect(isSupportedTimeZone("Etc/GMT-14")).toBe(true);
     expect(isSupportedTimeZone("EST")).toBe(true);
   });
-
-  // The predicate and the normalizer must never disagree, so a client and the
-  // server reach the same conclusion on the same runtime. This asserts the
-  // agreement, not what either answers, so it holds whatever `Intl` decides.
-  it("keeps isSupportedTimeZone and normalizeTimeZoneInput in agreement", () => {
-    for (const candidate of ["-05:00", "+05:30", "Etc/GMT+5", "EST", "UTC"]) {
-      const accepted = isSupportedTimeZone(candidate);
-      const normalized = normalizeTimeZoneInput(candidate);
-      expect(normalized === undefined).toBe(!accepted);
-      if (accepted) expect(normalized).toBe(candidate);
-    }
-  });
 });
 
 // The offset guard must run before the fail-open, or a client on an ICU build
@@ -121,34 +104,10 @@ describe("isUtcOffset", () => {
   });
 });
 
-describe("normalizeTimeZoneInput", () => {
-  // This null-vs-undefined contract is the sole gate on the web save path, and
-  // conflating the two is precisely how a partial PATCH wipes a stored zone.
-  it("returns null for an explicit clear", () => {
-    expect(normalizeTimeZoneInput(null)).toBeNull();
-    expect(normalizeTimeZoneInput("")).toBeNull();
-    expect(normalizeTimeZoneInput("   ")).toBeNull();
-  });
-
-  it("returns null for undefined — callers must treat absent separately", () => {
-    // Callers that can distinguish "field never loaded" MUST check for
-    // `undefined` before calling this, or they will send a clear they did not
-    // mean. apps/web/components/profile/profile-panel.tsx does exactly that.
-    expect(normalizeTimeZoneInput(undefined)).toBeNull();
-  });
-
-  it("returns the trimmed value for an accepted zone", () => {
-    expect(normalizeTimeZoneInput("  America/Chicago ")).toBe(
-      "America/Chicago",
-    );
-  });
-
-  it("returns undefined for a value the server would reject", () => {
-    expect(normalizeTimeZoneInput("Mars/Olympus")).toBeUndefined();
-    expect(normalizeTimeZoneInput("-05:00")).toBeUndefined();
-    expect(normalizeTimeZoneInput(42)).toBeUndefined();
-    expect(
-      normalizeTimeZoneInput("A".repeat(MAX_TIME_ZONE_LENGTH + 1)),
-    ).toBeUndefined();
+describe("timeZoneCity", () => {
+  it("names the city, with spaces for underscores", () => {
+    expect(timeZoneCity("America/Los_Angeles")).toBe("Los Angeles");
+    expect(timeZoneCity("America/Argentina/Buenos_Aires")).toBe("Buenos Aires");
+    expect(timeZoneCity("UTC")).toBe("UTC");
   });
 });

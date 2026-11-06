@@ -1,6 +1,10 @@
 /**
- * Time-zone validation shared by the API DTO, the web profile panel, and the
- * mobile preferences screen.
+ * Time-zone validation for the API DTO, and the clients' zone helpers.
+ *
+ * (2026-11-06) Neither client takes a typed zone any more: mobile s16 and web
+ * Profile use the device's or browser's zone, and offer it in place of a
+ * different stored one. So `isSupportedTimeZone` now guards only the server,
+ * and the form-input normalizer that web's typed field needed is gone.
  *
  * Centralizing the rule prevents the layers from drifting apart: a client that
  * accepts what the server rejects produces a save that fails with no
@@ -100,20 +104,10 @@ export function isSupportedTimeZone(tz: unknown): tz is string {
 }
 
 /**
- * Normalizes a timezone field coming off a form or an API payload.
- *
- * Returns `null` for "the member cleared this", which is distinct from "the
- * member typed something invalid" (`undefined`). A blank input is a clear, not a
- * validation error — the web panel binds the field to `""`, so treating blank as
- * invalid would leave a member unable to turn quiet hours off.
+ * `America/Los_Angeles` -> "Los Angeles": the part of a zone name a member
+ * recognises, for the line that says which zone quiet hours run in (mobile
+ * s16 and web Profile). Display only; the stored value is the full name.
  */
-export function normalizeTimeZoneInput(
-  value: unknown,
-): string | null | undefined {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== "string") return undefined;
-
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return null;
-  return isSupportedTimeZone(trimmed) ? trimmed : undefined;
+export function timeZoneCity(tz: string): string {
+  return (tz.split("/").pop() ?? tz).replace(/_/g, " ");
 }
