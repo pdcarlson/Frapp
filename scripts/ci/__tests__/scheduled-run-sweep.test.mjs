@@ -12,6 +12,7 @@ import {
   buildIssueBody,
   cancelledStreak,
   exitCodeFor,
+  heldSinceMs,
   main,
   markerIn,
   problemsIn,
@@ -47,6 +48,9 @@ function run(id, { status = "completed", conclusion = "success", startedHoursAgo
   };
 }
 
+// Past the stuck limit, inside the uncancellable one: a run this sweep clears.
+const STUCK = run(7001, { status: "in_progress", startedHoursAgo: 7 });
+// The incident's run: 30 days in, so an earlier sweep's force-cancel evidently didn't take.
 const ZOMBIE = run(37337018741, { status: "in_progress", startedHoursAgo: 24 * 30 });
 
 /** GitHub routes for one workflow, plus the alert lookup and writes. */
@@ -59,12 +63,22 @@ function github({
   cancelStatus = 202,
   issues = [],
   lookupStatus = 200,
+  jobsStatus = 200,
+  // Run id → its jobs. By default a run's one job started when the run did.
+  jobs = {},
 } = {}) {
   const runs = (list) => ({ total_count: list.length, workflow_runs: list });
+  const everyRun = [...inProgress, ...queued];
+  const jobsBody = (calls) => {
+    const id = Number(calls.at(-1).url.match(/\/runs\/(\d+)\/jobs/)[1]);
+    const held = everyRun.find((r) => r.id === id);
+    return { jobs: jobs[id] ?? [{ id: id * 10, started_at: held?.run_started_at ?? null }] };
+  };
   return makeFetchMock([
     { method: "GET", path: `/actions/workflows/${workflow}/runs?status=in_progress`, status: readStatus, body: runs(inProgress) },
     { method: "GET", path: `/actions/workflows/${workflow}/runs?status=queued`, body: runs(queued) },
     { method: "GET", path: `/actions/workflows/${workflow}/runs?event=schedule`, body: runs(scheduled) },
+    { method: "GET", path: "/jobs?per_page=100", status: jobsStatus, body: jobsBody },
     { method: "POST", path: "/force-cancel", status: cancelStatus, body: {} },
     { method: "GET", path: `/repos/${REPO}/issues?state=all`, status: lookupStatus, body: issues },
     { method: "POST", path: `/repos/${REPO}/issues/`, status: 201, body: { id: 1 } },
@@ -86,7 +100,7 @@ function writes(calls) {
 }
 
 function okResult(workflow, extra = {}) {
-  return { workflow, ok: true, cleared: [], uncancellable: [], streak: [], ...extra };
+  return { workflow, ok: true, cleared: [], uncancellable: [], streak: [], holderFound: false, ...extra };
 }
 
 const STREAK = [1, 2, 3].map((id) => run(id, { conclusion: "cancelled", startedHoursAgo: id * 24 }));
@@ -116,6 +130,19 @@ describe("stuckRuns", () => {
   });
 });
 
+describe("heldSinceMs", () => {
+  it("is the earliest job start, so time spent pending behind another run doesn't count", () => {
+    const waited = run(1, { status: "in_progress", startedHoursAgo: 8 });
+    const jobs = [{ started_at: hoursAgo(1) }, { started_at: hoursAgo(2) }, { started_at: null }];
+    assert.equal(heldSinceMs(waited, jobs), Date.parse(hoursAgo(2)));
+  });
+
+  it("falls back to the run's start when no job has started", () => {
+    const queued = run(1, { status: "queued", startedHoursAgo: 8 });
+    assert.equal(heldSinceMs(queued, []), Date.parse(queued.run_started_at));
+  });
+});
+
 describe("cancelledStreak", () => {
   it("is the newest completed runs that were cancelled, up to the first that wasn't", () => {
     const list = [
@@ -138,37 +165,67 @@ describe("cancelledStreak", () => {
 });
 
 describe("sweepWorkflow", () => {
+  const sweep = (fetchImpl) => sweepWorkflow({ token: "t", repo: REPO, fetchImpl, workflow: "production-guardrails.yml", now: NOW });
+  const clearedIds = (result) => result.cleared.map(({ run: r }) => r.id);
+
   it("force-cancels a run holding the group past the limit, and leaves a young one", async () => {
     const young = run(5, { status: "in_progress", startedHoursAgo: 1 });
-    const { fetchImpl, calls } = github({ inProgress: [ZOMBIE, young] });
-    const result = await sweepWorkflow({ token: "t", repo: REPO, fetchImpl, workflow: "production-guardrails.yml", now: NOW });
+    const { fetchImpl, calls } = github({ inProgress: [STUCK, young] });
+    const result = await sweep(fetchImpl);
     assert.equal(result.ok, true);
-    assert.deepEqual(result.cleared.map((r) => r.id), [ZOMBIE.id]);
+    assert.deepEqual(clearedIds(result), [STUCK.id]);
+    assert.equal(result.cleared[0].heldSince, STUCK.run_started_at);
+    assert.equal(result.holderFound, true);
     assert.deepEqual(
       cancels(calls).map((call) => call.url),
-      [`https://api.github.com/repos/${REPO}/actions/runs/${ZOMBIE.id}/force-cancel`],
+      [`https://api.github.com/repos/${REPO}/actions/runs/${STUCK.id}/force-cancel`],
     );
+  });
+
+  it("leaves a run that waited pending for hours and only now holds the group: its jobs started recently", async () => {
+    const waited = run(8, { status: "in_progress", startedHoursAgo: 8 });
+    const { fetchImpl, calls } = github({ inProgress: [waited], jobs: { 8: [{ id: 80, started_at: hoursAgo(0.5) }] } });
+    const result = await sweep(fetchImpl);
+    assert.deepEqual(result.cleared, []);
+    assert.equal(result.holderFound, false);
+    assert.deepEqual(cancels(calls), []);
   });
 
   it("also clears a run queued past the limit: queued already holds the group", async () => {
     const stale = run(6, { status: "queued", startedHoursAgo: 9 });
-    const { fetchImpl } = github({ queued: [stale] });
-    const result = await sweepWorkflow({ token: "t", repo: REPO, fetchImpl, workflow: "production-guardrails.yml", now: NOW });
-    assert.deepEqual(result.cleared.map((r) => r.id), [6]);
+    const { fetchImpl } = github({ queued: [stale], jobs: { 6: [] } });
+    const result = await sweep(fetchImpl);
+    assert.deepEqual(clearedIds(result), [6]);
   });
 
-  it("counts a 409 as cleared: the run finished in the meantime", async () => {
-    const { fetchImpl } = github({ inProgress: [ZOMBIE], cancelStatus: 409 });
-    const result = await sweepWorkflow({ token: "t", repo: REPO, fetchImpl, workflow: "production-guardrails.yml", now: NOW });
-    assert.deepEqual(result.cleared.map((r) => r.id), [ZOMBIE.id]);
+  it("counts a 409 as cleared: GitHub answers it for a run that already completed", async () => {
+    const { fetchImpl } = github({ inProgress: [STUCK], cancelStatus: 409 });
+    const result = await sweep(fetchImpl);
+    assert.deepEqual(clearedIds(result), [STUCK.id]);
     assert.deepEqual(result.uncancellable, []);
   });
 
   it("reports a run it couldn't cancel", async () => {
-    const { fetchImpl } = github({ inProgress: [ZOMBIE], cancelStatus: 403 });
-    const result = await sweepWorkflow({ token: "t", repo: REPO, fetchImpl, workflow: "production-guardrails.yml", now: NOW });
+    const { fetchImpl } = github({ inProgress: [STUCK], cancelStatus: 403 });
+    const result = await sweep(fetchImpl);
     assert.deepEqual(result.cleared, []);
-    assert.deepEqual(result.uncancellable, [{ run: ZOMBIE, status: 403 }]);
+    assert.deepEqual(result.uncancellable, [{ run: STUCK, heldSince: STUCK.run_started_at, status: 403, accepted: false }]);
+  });
+
+  it("reports a run still holding the group past the uncancellable limit, though force-cancel was accepted", async () => {
+    const { fetchImpl, calls } = github({ inProgress: [ZOMBIE] });
+    const result = await sweep(fetchImpl);
+    assert.equal(cancels(calls).length, 1, "it still tries");
+    assert.deepEqual(result.cleared, []);
+    assert.deepEqual(result.uncancellable, [{ run: ZOMBIE, heldSince: ZOMBIE.run_started_at, status: 202, accepted: true }]);
+  });
+
+  it("leaves a stuck candidate alone, and reads as unread, when its jobs can't be read", async () => {
+    const { fetchImpl, calls } = github({ inProgress: [STUCK], jobsStatus: 500 });
+    const result = await sweep(fetchImpl);
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 500);
+    assert.deepEqual(cancels(calls), []);
   });
 
   it("cancels nothing when a read failed", async () => {
@@ -191,7 +248,10 @@ describe("problemsIn and the marker", () => {
   it("raises for a streak at the threshold, not below it, and for every run that couldn't be cancelled", () => {
     const below = okResult("a.yml", { streak: STREAK.slice(0, CANCELLED_STREAK_ALERT_AT - 1) });
     const at = okResult("b.yml", { streak: STREAK.slice(0, CANCELLED_STREAK_ALERT_AT) });
-    const stuck = okResult("c.yml", { uncancellable: [{ run: ZOMBIE, status: 500 }] });
+    const stuck = okResult("c.yml", {
+      holderFound: true,
+      uncancellable: [{ run: ZOMBIE, heldSince: ZOMBIE.run_started_at, status: 500, accepted: false }],
+    });
     const problems = problemsIn([stuck, below, at]);
     assert.deepEqual(
       problems.map((p) => [p.kind, p.workflow]),
@@ -201,6 +261,15 @@ describe("problemsIn and the marker", () => {
       ],
     );
     assert.equal(sweepMarker(problems), `<!-- scheduled-run-sweep: streak:b.yml,stuck:${ZOMBIE.id} -->`);
+  });
+
+  it("raises no streak for a workflow whose stuck run this sweep found: that run explains it", () => {
+    const cleared = okResult("production-uptime.yml", {
+      holderFound: true,
+      streak: STREAK,
+      cleared: [{ run: STUCK, heldSince: STUCK.run_started_at }],
+    });
+    assert.deepEqual(problemsIn([cleared]), []);
   });
 
   it("keys a streak by workflow, so a streak growing by a run is no change", () => {
@@ -228,6 +297,20 @@ describe("updateAlert", () => {
     assert.match(created.body, /`staging-conformance\.yml`: its last 3 scheduled runs were cancelled/);
     assert.match(created.body, /actions\/runs\/1\)/);
     assert.match(created.body, /<!-- scheduled-run-sweep: streak:staging-conformance\.yml -->/);
+  });
+
+  it("says when an accepted force-cancel evidently didn't take", async () => {
+    const { fetchImpl, calls } = github();
+    const results = [
+      okResult("production-guardrails.yml", {
+        holderFound: true,
+        uncancellable: [{ run: ZOMBIE, heldSince: ZOMBIE.run_started_at, status: 202, accepted: true }],
+      }),
+    ];
+    await updateAlert({ token: "t", repo: REPO, fetchImpl, results });
+    const created = JSON.parse(writes(calls)[0].body);
+    assert.match(created.body, /more than 12 hours\. Force-cancel was accepted, but an earlier sweep's evidently didn't take/);
+    assert.match(created.body, /stuck:37337018741/);
   });
 
   it("stays quiet when the open alert already names exactly these problems", async () => {
@@ -274,8 +357,8 @@ describe("updateAlert", () => {
 });
 
 describe("runSweep", () => {
-  it("clears the incident's zombie and stays green: a cleared run is a warning, not an alert", async () => {
-    const { fetchImpl, calls } = github({ inProgress: [ZOMBIE] });
+  it("clears a stuck run and stays green, even with the cancelled runs it caused: a cleared run is a warning, not an alert", async () => {
+    const { fetchImpl, calls } = github({ inProgress: [STUCK], scheduled: STREAK });
     const lines = [];
     let summary = "";
     const outcome = await runSweep({
@@ -293,7 +376,7 @@ describe("runSweep", () => {
     assert.equal(outcome.alert.action, "none");
     assert.equal(exitCodeFor(outcome), 0);
     assert.ok(lines.some((line) => line.startsWith("::warning::production-guardrails.yml: force-cancelled")));
-    assert.match(summary, /\| `production-guardrails\.yml` \| 0 \| \[run 37337018741\]/);
+    assert.match(summary, /\| `production-guardrails\.yml` \| 3 \| \[run 7001\]/);
   });
 });
 
@@ -366,7 +449,7 @@ describe("scheduled-run-sweep.yml", () => {
     const { keys } = jobs[0];
     assert.equal(keys.get("if"), "github.ref == 'refs/heads/main'");
     assert.deepEqual(Object.fromEntries(keys.get("permissions")), { contents: "read", actions: "write", issues: "write" });
-    assert.equal(keys.get("timeout-minutes"), "5");
+    assert.equal(keys.get("timeout-minutes"), "10");
     assert.doesNotMatch(code, /environment:/);
   });
 

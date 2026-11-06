@@ -8,10 +8,10 @@ name: Scheduled run sweep
 # cancelled, with no alert, when the next one queues. Production guardrails and
 # Staging conformance sat frozen that way for 30 days (2026-10-05 to 11-04). A
 # watchdog can't free itself, because its own run is the one waiting, so this
-# workflow does it from outside: it force-cancels a watched run still holding
-# its group six hours after it started, and raises one `incident` alert when a
-# run can't be cancelled or a watchdog's last three scheduled runs were
-# cancelled. When it fires and clears: docs/ops/alert-routing.md.
+# workflow does it from outside: it force-cancels a watched run that has held
+# its group for six hours, and raises one `incident` alert when such a run
+# can't be cleared or, with no stuck run in sight, a watchdog's last three
+# scheduled runs were cancelled. When it fires and clears: docs/ops/alert-routing.md.
 #
 # Deliberately NO concurrency group: a group is exactly what one stuck run can
 # hold, and this workflow must not freeze the way the ones it frees do. Two
@@ -43,7 +43,9 @@ jobs:
   sweep:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # The workflows are swept concurrently, so a slow API costs about one
+    # retried read (3 x 15 s plus backoff) per stage, not fourteen in a row.
+    timeout-minutes: 10
     permissions:
       contents: read
       # Force-cancel a stuck run of a watched workflow.

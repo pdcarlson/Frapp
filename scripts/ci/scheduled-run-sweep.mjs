@@ -16,19 +16,27 @@
 // this sweep runs from its own workflow, on its own schedule, and per watched
 // workflow:
 //
-//   - Stuck: a run still `in_progress` or `queued` STUCK_AFTER_MINUTES after it
-//     started is force-cancelled. That is far past every watched workflow's
-//     total `timeout-minutes` (a test pins it), so the run is no longer doing
-//     work and cancelling it can't cut one short. Force-cancel, not cancel,
-//     because a run that outlived its own timeouts already ignored one stop;
-//     GitHub documents force-cancel for a run that doesn't respond to cancel.
-//     A cleared run is a warning, not an alert: the watchdog runs again next
-//     time. A run that can't be cancelled is an alert.
+//   - Stuck: a run still `in_progress` or `queued` that has held the group
+//     for STUCK_AFTER_MINUTES is force-cancelled. "Held since" is its earliest
+//     job's start, not the run's creation: a run that waited `pending` behind
+//     another only starts its jobs once it gets the group, and must not be
+//     cut short for time it spent waiting. Six hours is far past every
+//     watched workflow's total `timeout-minutes` (a test pins it), so a run
+//     that old is no longer doing work. Force-cancel, not cancel, because a
+//     run that outlived its own timeouts already ignored one stop; GitHub
+//     documents force-cancel for a run that doesn't respond to cancel. A
+//     cleared run is a warning, not an alert: the watchdog runs again next
+//     time. A run that refuses the cancel, or still holds the group
+//     UNCANCELLABLE_AFTER_MINUTES in (so an earlier sweep's accepted
+//     force-cancel didn't take), is an alert.
 //   - Streak: its newest CANCELLED_STREAK_ALERT_AT completed scheduled runs
-//     were all cancelled. Whatever the cause (a stuck run this sweep can't
-//     see or clear, or someone cancelling them), the watchdog is dark. Only
-//     `schedule` runs count: a burst of `workflow_run` triggers legitimately
-//     cancels pending runs, and a dispatch is a person who will see it.
+//     were all cancelled, and no stuck run explains it. Whatever the cause (a
+//     run holding the group that this sweep can't see, or someone cancelling
+//     them), the watchdog is dark. Only `schedule` runs count: a burst of
+//     `workflow_run` triggers legitimately cancels pending runs, and a
+//     dispatch is a person who will see it. A workflow whose stuck run this
+//     sweep found is judged by that run alone: its cancelled runs are what
+//     the stuck run caused, and clearing it is the fix.
 //
 // One alert covers both. A hidden marker in its body names what it was raised
 // for, so it comments when that set changes, not on every sweep, and it closes
@@ -86,15 +94,25 @@ export const WATCHED_WORKFLOWS = [
   "supabase-quota.yml",
 ];
 
-/** A run this long after it started is stuck. Six hours, GitHub's default job timeout. */
+/** A run that has held its group this long is stuck. Six hours, GitHub's default job timeout. */
 export const STUCK_AFTER_MINUTES = 360;
+
+/**
+ * A stuck run still holding its group this long is reported even when
+ * force-cancel answered 202: GitHub accepts the request and acts later, so a
+ * 202 alone doesn't prove the run left. Two sweep intervals past
+ * STUCK_AFTER_MINUTES, so at least one earlier sweep already tried.
+ */
+export const UNCANCELLABLE_AFTER_MINUTES = 720;
 
 /**
  * How many newest completed scheduled runs, all cancelled, raise the alert.
  * Three, not two: `production-uptime.yml` is scheduled every 15 minutes, and a
  * burst of late cron starts can cancel two pending runs in a row while one
- * healthy run finishes. For a daily watchdog three is three days dark, against
- * the 30 that went unseen.
+ * healthy run finishes. It is the backstop for a holder this sweep can't see:
+ * a daily watchdog reaches it about four days in (the first pending run is
+ * cancelled when the third queues), against the 30 that went unseen. A stuck
+ * run it can see alerts within UNCANCELLABLE_AFTER_MINUTES if it won't clear.
  */
 export const CANCELLED_STREAK_ALERT_AT = 3;
 
@@ -116,7 +134,11 @@ export function runStartMs(run) {
   return Number.isFinite(ms) ? ms : null;
 }
 
-/** Runs that still hold the group `limitMinutes` after they started, oldest first. */
+/**
+ * Runs in a holding status that were created at least `limitMinutes` ago,
+ * oldest first: the only runs that can have held the group that long. Whether
+ * one has is `heldSinceMs`, from its jobs.
+ */
 export function stuckRuns(runs, now, limitMinutes = STUCK_AFTER_MINUTES) {
   const cutoff = now.getTime() - limitMinutes * 60_000;
   return runs
@@ -126,6 +148,19 @@ export function stuckRuns(runs, now, limitMinutes = STUCK_AFTER_MINUTES) {
       return started !== null && started <= cutoff;
     })
     .sort((a, b) => runStartMs(a) - runStartMs(b));
+}
+
+/**
+ * When a run started holding its concurrency group: its earliest job's start.
+ * A run's jobs start only once it has the group, so this leaves out time spent
+ * `pending` behind another run. A run with no started job falls back to the
+ * run's own start; it has done no work, so nothing is cut short.
+ */
+export function heldSinceMs(run, jobs) {
+  const starts = (jobs ?? [])
+    .map((job) => (typeof job?.started_at === "string" ? Date.parse(job.started_at) : Number.NaN))
+    .filter(Number.isFinite);
+  return starts.length > 0 ? Math.min(...starts) : runStartMs(run);
 }
 
 /**
@@ -159,8 +194,11 @@ async function readRuns({ token, repo, fetchImpl, workflow, query }) {
 
 /**
  * Read one workflow's runs, force-cancel its stuck ones, and measure its
- * cancelled streak. Returns `{ workflow, ok, cleared, uncancellable, streak }`;
- * `ok` is false when any read failed, and then nothing was cancelled.
+ * cancelled streak. Returns `{ workflow, ok, cleared, uncancellable, streak }`,
+ * where `cleared` is `[{ run, heldSince }]` and `uncancellable` is
+ * `[{ run, heldSince, status, accepted }]`. `ok` is false when a runs read
+ * failed (then nothing was cancelled) or a stuck candidate's jobs couldn't be
+ * read (then that run was left alone).
  */
 export async function sweepWorkflow({ token, repo, fetchImpl, workflow, now }) {
   const reads = await Promise.all([
@@ -171,25 +209,49 @@ export async function sweepWorkflow({ token, repo, fetchImpl, workflow, now }) {
     readRuns({ token, repo, fetchImpl, workflow, query: "event=schedule&status=completed&per_page=10" }),
   ]);
   const failed = reads.find((read) => !read.ok);
-  if (failed) return { workflow, ok: false, status: failed.status, cleared: [], uncancellable: [], streak: [] };
+  if (failed) return { workflow, ok: false, status: failed.status, cleared: [], uncancellable: [], streak: [], holderFound: false };
 
   const holding = reads.slice(0, HOLDING_STATUSES.length).flatMap((read) => read.runs);
   const streak = cancelledStreak(reads.at(-1).runs);
 
   const cleared = [];
   const uncancellable = [];
+  let jobsFailed = null;
   for (const run of stuckRuns(holding, now)) {
+    const jobs = await ghRequest({
+      token,
+      fetchImpl,
+      path: `/repos/${repo}/actions/runs/${run.id}/jobs?per_page=100`,
+      retry: true,
+    });
+    if (!jobs.ok || !Array.isArray(jobs.data?.jobs)) {
+      // Without its jobs this run's holding time is unknown: leave it, say so.
+      jobsFailed = jobsFailed ?? jobs.status;
+      continue;
+    }
+    const since = heldSinceMs(run, jobs.data.jobs);
+    const heldMinutes = (now.getTime() - since) / 60_000;
+    if (heldMinutes < STUCK_AFTER_MINUTES) continue;
+
+    const heldSince = new Date(since).toISOString();
     const result = await ghRequest({
       token,
       fetchImpl,
       method: "POST",
       path: `/repos/${repo}/actions/runs/${run.id}/force-cancel`,
     });
-    // 202 accepted. 409 means it is no longer running, which is what we wanted.
-    if (result.ok || result.status === 409) cleared.push(run);
-    else uncancellable.push({ run, status: result.status });
+    // 202 accepted, acted on later. 409 is GitHub's answer for a run that
+    // already completed. Either is a clear, unless the run has held the group
+    // so long that an earlier sweep's accepted force-cancel evidently didn't take.
+    const accepted = result.ok || result.status === 409;
+    if (accepted && heldMinutes < UNCANCELLABLE_AFTER_MINUTES) cleared.push({ run, heldSince });
+    else uncancellable.push({ run, heldSince, status: result.status, accepted });
   }
-  return { workflow, ok: true, cleared, uncancellable, streak };
+  const holderFound = cleared.length > 0 || uncancellable.length > 0;
+  if (jobsFailed !== null) {
+    return { workflow, ok: false, status: jobsFailed, cleared, uncancellable, streak, holderFound };
+  }
+  return { workflow, ok: true, cleared, uncancellable, streak, holderFound };
 }
 
 // ── The alert ───────────────────────────────────────────────────────────────
@@ -198,11 +260,12 @@ export async function sweepWorkflow({ token, repo, fetchImpl, workflow, now }) {
 export function problemsIn(results) {
   const problems = [];
   for (const result of results) {
-    if (result.streak.length >= CANCELLED_STREAK_ALERT_AT) {
+    // A stuck run found this sweep explains the cancellations behind it.
+    if (!result.holderFound && result.streak.length >= CANCELLED_STREAK_ALERT_AT) {
       problems.push({ kind: "streak", workflow: result.workflow, runs: result.streak });
     }
-    for (const { run, status } of result.uncancellable) {
-      problems.push({ kind: "stuck", workflow: result.workflow, run, status });
+    for (const entry of result.uncancellable) {
+      problems.push({ kind: "stuck", workflow: result.workflow, ...entry });
     }
   }
   return problems.sort((a, b) => problemKey(a).localeCompare(problemKey(b)));
@@ -238,11 +301,10 @@ function describeProblem(problem) {
       `(newest: ${runLink(problem.runs[0])}). Usually a run of it is holding its concurrency group.`
     );
   }
-  const started = problem.run.run_started_at ?? problem.run.created_at;
-  return (
-    `- \`${problem.workflow}\`: ${runLink(problem.run)} has held its concurrency group since ${started}, ` +
-    `more than ${STUCK_AFTER_MINUTES / 60} hours, and force-cancelling it failed (HTTP ${problem.status}).`
-  );
+  const held = `- \`${problem.workflow}\`: ${runLink(problem.run)} has held its concurrency group since ${problem.heldSince}`;
+  return problem.accepted
+    ? `${held}, more than ${UNCANCELLABLE_AFTER_MINUTES / 60} hours. Force-cancel was accepted, but an earlier sweep's evidently didn't take.`
+    : `${held}, more than ${STUCK_AFTER_MINUTES / 60} hours, and force-cancelling it failed (HTTP ${problem.status}).`;
 }
 
 function runLine(runUrl) {
@@ -281,7 +343,7 @@ export function buildCommentBody({ problems, reopened }) {
 
 export function buildRecoveryBody({ runUrl }) {
   return [
-    "**Cleared.** No watched workflow has a run stuck past clearing, and none has its last " +
+    "**Cleared.** No watched workflow has a stuck run this sweep couldn't clear, and none has its last " +
       `${CANCELLED_STREAK_ALERT_AT} scheduled runs cancelled.`,
     "",
     runLine(runUrl),
@@ -331,7 +393,7 @@ function defaultWriteSummary(markdown) {
 
 function summaryRow(result) {
   if (!result.ok) return `| \`${result.workflow}\` | unread (HTTP ${result.status}) | | |`;
-  const cleared = result.cleared.map(runLink).join(", ") || "none";
+  const cleared = result.cleared.map(({ run }) => runLink(run)).join(", ") || "none";
   const stuck = result.uncancellable.map(({ run }) => runLink(run)).join(", ") || "none";
   return `| \`${result.workflow}\` | ${result.streak.length} | ${cleared} | ${stuck} |`;
 }
@@ -347,25 +409,30 @@ export async function runSweep({
   writeSummary = defaultWriteSummary,
   logger = console,
 } = {}) {
-  const results = [];
-  // One workflow at a time: the reads are few, and a cancel is easier to follow in order.
-  for (const workflow of workflows) {
-    const result = await sweepWorkflow({ token, repo, fetchImpl, workflow, now });
-    results.push(result);
+  // All workflows at once, so a slow API costs one request budget, not fourteen
+  // in a row inside the job's timeout. Results keep the list's order.
+  const results = await Promise.all(
+    workflows.map((workflow) => sweepWorkflow({ token, repo, fetchImpl, workflow, now })),
+  );
+  for (const result of results) {
+    const { workflow } = result;
     if (!result.ok) {
-      logger.log?.(`::error::${workflow}: its runs could not be read (HTTP ${result.status}), so nothing of it was cancelled.`);
-      continue;
+      logger.log?.(`::error::${workflow}: its runs or a stuck run's jobs could not be read (HTTP ${result.status}).`);
     }
-    for (const run of result.cleared) {
+    for (const { run, heldSince } of result.cleared) {
       logger.log?.(
-        `::warning::${workflow}: force-cancelled ${run.html_url ?? `run ${run.id}`}, ${run.status} since ` +
-          `${run.run_started_at ?? run.created_at}. It held the concurrency group, so later runs could not start.`,
+        `::warning::${workflow}: force-cancelled ${run.html_url ?? `run ${run.id}`}, holding its concurrency group ` +
+          `since ${heldSince}, so later runs could not start.`,
       );
     }
-    for (const { run, status } of result.uncancellable) {
-      logger.log?.(`::error::${workflow}: run ${run.id} is stuck and force-cancel failed (HTTP ${status}).`);
+    for (const { run, status, accepted } of result.uncancellable) {
+      logger.log?.(
+        accepted
+          ? `::error::${workflow}: run ${run.id} still holds its group past ${UNCANCELLABLE_AFTER_MINUTES / 60} hours despite force-cancel.`
+          : `::error::${workflow}: run ${run.id} is stuck and force-cancel failed (HTTP ${status}).`,
+      );
     }
-    if (result.streak.length >= CANCELLED_STREAK_ALERT_AT) {
+    if (!result.holderFound && result.streak.length >= CANCELLED_STREAK_ALERT_AT) {
       logger.log?.(`::error::${workflow}: its last ${result.streak.length} scheduled runs were cancelled.`);
     }
   }
