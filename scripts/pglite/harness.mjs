@@ -3,6 +3,9 @@
 
 import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
+// `pg_trgm` backs backwork search's typo tolerance
+// (`20261106190000_backwork_search_wider.sql`).
+import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm";
 // PGlite 0.5 unbundled the non-contrib extensions into their own packages —
 // `./vector`, `./age`, `./pg_uuidv7` and friends all disappeared from the
 // `exports` map, so this import is `@electric-sql/pglite-pgvector` now. The
@@ -21,7 +24,7 @@ export const REPO_ROOT = process.cwd();
 // noise) — and it is what lets the AI corpus migrations (ADR-13 §13) replay
 // here instead of forcing a carve-out out of this gate. See the `pg_available_
 // extensions` landmark in `landmarks.mjs`, which fails if this registration is ever dropped.
-export const db = new PGlite({ extensions: { pgcrypto, vector } });
+export const db = new PGlite({ extensions: { pgcrypto, pg_trgm, vector } });
 await db.waitReady;
 
 export let missing = 0;
