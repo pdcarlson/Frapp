@@ -48,7 +48,7 @@ Files are stored in Supabase Storage under `chapters/{chapter_id}/backwork/{reso
 
 As with chapter documents, the signed URL comes back on `GET /v1/backwork/{id}` under the key **`downloadUrl`**, and clients read it through `selectDownloadUrl` in `@repo/hooks` rather than naming a spelling at the call site — see [`chapter-docs.md`](./chapter-docs.md) § Storage for why (#1040).
 
-Backwork's size ceiling is its own: **50 MB per file** (`MAX_BACKWORK_UPLOAD_BYTES`), above the 25 MB every other member upload keeps, because scanned exams run large (#3487). The `backwork` bucket's `file_size_limit` mirrors it.
+Backwork's size ceiling is its own: **100 MB per file** (`MAX_BACKWORK_UPLOAD_BYTES`), above the 25 MB every other member upload keeps, because scanned exams run large (#3487). It equals the hosted projects' global storage limit, which caps every bucket, so raising it also means raising that limit in the Supabase dashboard. The `backwork` bucket's `file_size_limit` mirrors it.
 
 The file-type allowlist is the `document` kind in `@repo/validation`, shared with chapter documents and chat — including `image/gif` and legacy Office (`.doc` / `.xls` / `.ppt`). Membership and the rationale: [`content-validation.md`](../../docs/security/content-validation.md) § Validations Required.
 
