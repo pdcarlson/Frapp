@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 /**
- * The Ask dialog offers Documents only where the chapter has it (#1982).
+ * The Ask popover offers Documents only where the chapter has it (#1982).
  *
  * Documents can be switched off per chapter. Offering it anyway sends a member
  * to a screen whose reads the API refuses. The gate is the same member-readable
@@ -42,7 +42,7 @@ describe("AskPill", () => {
     gate.current = (key) => key !== "documents";
     await openAsk();
     expect(screen.queryByRole("link", { name: "Open Documents" })).toBeNull();
-    expect(screen.queryByText(/live under Documents/)).toBeNull();
+    expect(screen.queryByText(/live in Documents/)).toBeNull();
   });
 
   it("keeps Documents while the chapter read is in flight, so nothing flashes out", async () => {

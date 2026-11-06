@@ -14,7 +14,10 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
-import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding";
+import {
+  useChapterBranding,
+  type ChapterBranding,
+} from "@/lib/chapter-branding";
 import { initialsFor } from "@/lib/more/narrow";
 import { FilterChips } from "@/components/filter-chips";
 import {
@@ -27,6 +30,8 @@ import {
   useSheetBackgroundStyle,
   useSheetVisit,
   useTallSheetProps,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 import { CalendarGlyph } from "@/components/tasks/task-glyphs";
 import { TITLE_MAX_LENGTH } from "@/lib/tasks/limits";
@@ -148,6 +153,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const backgroundStyle = useSheetBackgroundStyle();
     const pickerSheet = useTallSheetProps();
     const pickerRef = useRef<BottomSheetModal>(null);
+    const closeSheet = useSheetClose(ref);
+    const closePicker = useSheetClose(pickerRef);
     const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
       useSheetVisit(ref);
 
@@ -335,129 +342,137 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
 
     return (
       <>
-      <BottomSheetModal
-        ref={ref}
-        enableDynamicSizing
-        keyboardBehavior="interactive"
-        backgroundStyle={backgroundStyle}
-        handleComponent={SheetGrabber}
-        backdropComponent={SheetScrim}
-        onAnimate={onAnimate}
-        onDismiss={closed}
-      >
-        <BottomSheetView style={styles.body}>
-          <SheetHeader
-            title="New task"
-            onCancel={cancel}
-            cancelDisabled={pending}
-          />
+        <BottomSheetModal
+          ref={ref}
+          enableDynamicSizing
+          keyboardBehavior="interactive"
+          backgroundStyle={backgroundStyle}
+          handleComponent={SheetGrabber}
+          backdropComponent={SheetScrim}
+          onAnimate={onAnimate}
+          onDismiss={closed}
+        >
+          <SheetBackToClose onClose={closeSheet} />
+          <BottomSheetView
+            onAccessibilityEscape={closeSheet}
+            style={styles.body}
+          >
+            <SheetHeader
+              title="New task"
+              onCancel={cancel}
+              cancelDisabled={pending}
+            />
 
-          {/* The focus ring is the wrapper, not the field — see the header. It
+            {/* The focus ring is the wrapper, not the field — see the header. It
               tracks real focus rather than "has text", which would leave the
               ring lit on a filled field nobody is editing. */}
-          <View style={[styles.ring, titleFocused ? styles.ringActive : null]}>
-            <BottomSheetTextInput
-              value={title}
-              onChangeText={setTitle}
-              onFocus={() => setTitleFocused(true)}
-              onBlur={() => setTitleFocused(false)}
-              // Read-only while the create runs: it sent what was typed when
-              // Create was pressed, and its success clears that.
-              editable={!pending}
-              placeholder="Collect ride-share forms"
-              placeholderTextColor={tokens.color.text.muted}
-              accessibilityLabel="Task title"
-              maxLength={TITLE_MAX_LENGTH}
-              style={[
-                styles.field,
-                titleFocused ? styles.fieldFocused : null,
-              ]}
-            />
-          </View>
-
-          <View style={styles.splitRow}>
-            <View style={[styles.field, styles.splitField]}>
-              <CalendarGlyph color={tokens.color.text.mutedForeground} />
-              <Text style={styles.fieldValue}>
-                {formatDueFieldLabel(dueDate)}
-              </Text>
-            </View>
-
-            <View style={[styles.field, styles.splitField]}>
-              <Text style={[styles.pointsSign, { color: accent }]}>+</Text>
+            <View
+              style={[styles.ring, titleFocused ? styles.ringActive : null]}
+            >
               <BottomSheetTextInput
-                value={pointsInput}
-                onChangeText={setPointsInput}
+                value={title}
+                onChangeText={setTitle}
+                onFocus={() => setTitleFocused(true)}
+                onBlur={() => setTitleFocused(false)}
+                // Read-only while the create runs: it sent what was typed when
+                // Create was pressed, and its success clears that.
                 editable={!pending}
-                placeholder="pts"
+                placeholder="Collect ride-share forms"
                 placeholderTextColor={tokens.color.text.muted}
-                accessibilityLabel="Point reward"
-                keyboardType="number-pad"
-                style={styles.pointsInput}
+                accessibilityLabel="Task title"
+                maxLength={TITLE_MAX_LENGTH}
+                style={[
+                  styles.field,
+                  titleFocused ? styles.fieldFocused : null,
+                ]}
               />
             </View>
-          </View>
 
-          <FilterChips
-            chips={presets.map((preset) => ({
-              value: preset.id,
-              label: preset.label,
-            }))}
-            selected={dueChipId}
-            onSelect={(value) => {
-              const preset = presets.find((each) => each.id === value);
-              if (preset && !pending) setDue(dueChoiceOf(preset));
-            }}
-            accessibilityLabel="Due date"
-          />
+            <View style={styles.splitRow}>
+              <View style={[styles.field, styles.splitField]}>
+                <CalendarGlyph color={tokens.color.text.mutedForeground} />
+                <Text style={styles.fieldValue}>
+                  {formatDueFieldLabel(dueDate)}
+                </Text>
+              </View>
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Assignee: ${assigneeLabel}`}
-            accessibilityHint="Choose who this task is for."
-            accessibilityState={{ disabled: pending }}
-            disabled={pending}
-            onPress={() => {
-              setSearch("");
-              pickerRef.current?.present();
-            }}
-            style={styles.assigneeRow}
-          >
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{initialsFor(assigneeName)}</Text>
+              <View style={[styles.field, styles.splitField]}>
+                <Text style={[styles.pointsSign, { color: accent }]}>+</Text>
+                <BottomSheetTextInput
+                  value={pointsInput}
+                  onChangeText={setPointsInput}
+                  editable={!pending}
+                  placeholder="pts"
+                  placeholderTextColor={tokens.color.text.muted}
+                  accessibilityLabel="Point reward"
+                  keyboardType="number-pad"
+                  style={styles.pointsInput}
+                />
+              </View>
             </View>
-            <Text style={styles.fieldValue} numberOfLines={1}>
-              {assigneeLabel}
-            </Text>
-            <Text style={styles.assigneeHint}>assignee</Text>
-          </Pressable>
 
-          {pointsInvalid ? (
-            <Text style={styles.error}>
-              Points must be a whole number, up to 100,000.
-            </Text>
-          ) : null}
+            <FilterChips
+              chips={presets.map((preset) => ({
+                value: preset.id,
+                label: preset.label,
+              }))}
+              selected={dueChipId}
+              onSelect={(value) => {
+                const preset = presets.find((each) => each.id === value);
+                if (preset && !pending) setDue(dueChoiceOf(preset));
+              }}
+              accessibilityLabel="Due date"
+            />
 
-          {refusal ? <Text style={styles.error}>{refusal}</Text> : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Assignee: ${assigneeLabel}`}
+              accessibilityHint="Choose who this task is for."
+              accessibilityState={{ disabled: pending }}
+              disabled={pending}
+              onPress={() => {
+                setSearch("");
+                pickerRef.current?.present();
+              }}
+              style={styles.assigneeRow}
+            >
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {initialsFor(assigneeName)}
+                </Text>
+              </View>
+              <Text style={styles.fieldValue} numberOfLines={1}>
+                {assigneeLabel}
+              </Text>
+              <Text style={styles.assigneeHint}>assignee</Text>
+            </Pressable>
 
-          {submitFailed ? (
-            <Text style={styles.error}>
-              That didn&apos;t save. Your task is still here — try again.
-            </Text>
-          ) : null}
+            {pointsInvalid ? (
+              <Text style={styles.error}>
+                Points must be a whole number, up to 100,000.
+              </Text>
+            ) : null}
 
-          <SheetPrimaryButton
-            label={createTask.isPending ? "Creating…" : "Create task"}
-            onPress={submit}
-            disabled={!canSubmit}
-            accessibilityHint={refusal ?? undefined}
-            accent={accent}
-            onAccent={tokens.color.gold.onHouse}
-          />
-        </BottomSheetView>
-      </BottomSheetModal>
+            {refusal ? <Text style={styles.error}>{refusal}</Text> : null}
 
-      {/* A second, stacked sheet rather than an inline list.
+            {submitFailed ? (
+              <Text style={styles.error}>
+                That didn&apos;t save. Your task is still here — try again.
+              </Text>
+            ) : null}
+
+            <SheetPrimaryButton
+              label={createTask.isPending ? "Creating…" : "Create task"}
+              onPress={submit}
+              disabled={!canSubmit}
+              accessibilityHint={refusal ?? undefined}
+              accent={accent}
+              onAccent={tokens.color.gold.onHouse}
+            />
+          </BottomSheetView>
+        </BottomSheetModal>
+
+        {/* A second, stacked sheet rather than an inline list.
           `BottomSheetFlatList` must be a **direct** child of the sheet: nested
           inside a `BottomSheetView` under `enableDynamicSizing`, the view writes
           its frame height and the scrollable writes its content height to the
@@ -468,78 +483,79 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           defaults on and adds a content-height detent below 100%, so a short or
           filtered roster would open the picker short and shrink it per
           keystroke. */}
-      <BottomSheetModal
-        ref={pickerRef}
-        // A tall sheet (`components.md` § Surface size): the whole roster,
-        // and a search the keyboard would otherwise squeeze into a sliver of
-        // the old 70% box.
-        {...pickerSheet}
-        keyboardBehavior="interactive"
-        backgroundStyle={backgroundStyle}
-        handleComponent={SheetGrabber}
-        backdropComponent={SheetScrim}
-      >
-        <BottomSheetFlatList
-          data={filteredRoster}
-          keyExtractor={(row: RosterMember) => row.userId}
-          contentContainerStyle={styles.pickerContent}
-          keyboardShouldPersistTaps="handled"
-          // The title and search stay pinned while the roster scrolls under
-          // them, so the field is still there after a long scroll.
-          stickyHeaderIndices={[0]}
-          ListHeaderComponent={
-            <View style={styles.pickerHeader}>
-              <TallSheetHeader
-                title="Assign to"
-                onClose={() => pickerRef.current?.dismiss()}
-              />
-              {/* Not `SearchField` from `components/filter-chips.tsx`: that is a
+        <BottomSheetModal
+          ref={pickerRef}
+          // A tall sheet (`components.md` § Surface size): the whole roster,
+          // and a search the keyboard would otherwise squeeze into a sliver of
+          // the old 70% box.
+          {...pickerSheet}
+          keyboardBehavior="interactive"
+          backgroundStyle={backgroundStyle}
+          handleComponent={SheetGrabber}
+          backdropComponent={SheetScrim}
+        >
+          <SheetBackToClose onClose={closePicker} />
+          <BottomSheetFlatList
+            onAccessibilityEscape={closePicker}
+            data={filteredRoster}
+            keyExtractor={(row: RosterMember) => row.userId}
+            contentContainerStyle={styles.pickerContent}
+            keyboardShouldPersistTaps="handled"
+            // The title and search stay pinned while the roster scrolls under
+            // them, so the field is still there after a long scroll.
+            stickyHeaderIndices={[0]}
+            ListHeaderComponent={
+              <View style={styles.pickerHeader}>
+                <TallSheetHeader title="Assign to" onClose={closePicker} />
+                {/* Not `SearchField` from `components/filter-chips.tsx`: that is a
                   plain `TextInput`, and inside a gorhom sheet a plain input
                   breaks the sheet's keyboard coordination — `patterns.md` makes
                   `BottomSheetTextInput` mandatory here. */}
-              <BottomSheetTextInput
-                value={search}
-                onChangeText={setSearch}
-                placeholder="Search members"
-                placeholderTextColor={tokens.color.text.muted}
-                accessibilityLabel="Search members"
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.field}
-              />
-            </View>
-          }
-          ListEmptyComponent={
-            <Text style={styles.pickerEmpty}>
-              {rosterQuery.isPending
-                ? "Loading your chapter…"
-                : "No members match that search."}
-            </Text>
-          }
-          renderItem={({ item }: { item: RosterMember }) => (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{
-                selected: item.userId === effectiveAssigneeId,
-              }}
-              onPress={() => {
-                setAssigneeId(item.userId);
-                setSearch("");
-                pickerRef.current?.dismiss();
-              }}
-              style={styles.pickerRow}
-            >
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{initialsFor(item.name)}</Text>
+                <BottomSheetTextInput
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder="Search members"
+                  placeholderTextColor={tokens.color.text.muted}
+                  accessibilityLabel="Search members"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={styles.field}
+                />
               </View>
-              <Text style={styles.fieldValue} numberOfLines={1}>
-                {item.name ?? memberFallbackLabel(item.userId)}
+            }
+            ListEmptyComponent={
+              <Text style={styles.pickerEmpty}>
+                {rosterQuery.isPending
+                  ? "Loading your chapter…"
+                  : "No members match that search."}
               </Text>
-            </Pressable>
-          )}
-        />
-      </BottomSheetModal>
-    </>
+            }
+            renderItem={({ item }: { item: RosterMember }) => (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{
+                  selected: item.userId === effectiveAssigneeId,
+                }}
+                onPress={() => {
+                  setAssigneeId(item.userId);
+                  setSearch("");
+                  pickerRef.current?.dismiss();
+                }}
+                style={styles.pickerRow}
+              >
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>
+                    {initialsFor(item.name)}
+                  </Text>
+                </View>
+                <Text style={styles.fieldValue} numberOfLines={1}>
+                  {item.name ?? memberFallbackLabel(item.userId)}
+                </Text>
+              </Pressable>
+            )}
+          />
+        </BottomSheetModal>
+      </>
     );
   },
 );

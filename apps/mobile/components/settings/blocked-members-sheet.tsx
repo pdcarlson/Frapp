@@ -30,6 +30,8 @@ import {
   SheetHeader,
   SheetScrim,
   useSheetBackgroundStyle,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 import {
   EmptyState,
@@ -65,6 +67,7 @@ export const BLOCKED_MEMBERS_EMPTY_BODY =
 
 export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
   function BlockedMembersSheet(_props, ref) {
+    const closeSheet = useSheetClose(ref);
     const { tokens } = useFrappTheme();
     const brand = useChapterBranding();
     const styles = createStyles(tokens, brand);
@@ -86,11 +89,6 @@ export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
           .sort((a, b) => a.label.localeCompare(b.label)),
       [blockList.ids, nameFor],
     );
-
-    function dismiss() {
-      if (typeof ref === "function" || !ref?.current) return;
-      ref.current.dismiss();
-    }
 
     // Only a confirmed read may say the list is empty. An unavailable read
     // with a cached list still shows that list (everyone on it is blocked) but
@@ -187,12 +185,12 @@ export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
       >
-        <BottomSheetScrollView contentContainerStyle={styles.body}>
-          <SheetHeader
-            title={BLOCKED_MEMBERS_TITLE}
-            onCancel={dismiss}
-            cancelLabel="Done"
-          />
+        <SheetBackToClose onClose={closeSheet} />
+        <BottomSheetScrollView
+          onAccessibilityEscape={closeSheet}
+          contentContainerStyle={styles.body}
+        >
+          <SheetHeader title={BLOCKED_MEMBERS_TITLE} />
           {body}
         </BottomSheetScrollView>
       </BottomSheetModal>

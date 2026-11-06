@@ -5,6 +5,7 @@ import { act } from "react";
 import { AccessibilityInfo, Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { SheetHeader } from "@/components/sheet-scaffold";
 
 // The report settles in a microtask after the press, so its state update lands
 // inside an async `act`; React only accepts that when told this is a test env.
@@ -186,6 +187,43 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
       minute: "2-digit",
     });
     expect(text(tree)).toContain(`You · Today at ${time}`);
+  });
+
+  it("opens on that line, with no Message title over the menu", () => {
+    // components.md § Chrome weight: an action menu draws no title and no
+    // Cancel. The grabber, the scrim, Android back and VoiceOver's escape
+    // close it (`SheetBackToClose`, `useSheetClose`).
+    const tree = render(OWN);
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Text" &&
+          node.props.children === "Message",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("draws no chevron on a row that acts in place", () => {
+    const chevrons = (tree: ReactTestRenderer) =>
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Text" && node.props.children === "›",
+      ).length;
+    // Reply, Edit and Delete all act here.
+    expect(chevrons(render(OWN))).toBe(0);
+    // Block acts here too; only Report opens a sheet of its own.
+    const blockable = render({
+      ...SOMEONE_ELSES,
+      messageId: "m1",
+      blockUserId: BLOCKED,
+      senderName: "Blake",
+      senderInDirectory: true,
+      senderLabel: "Blake",
+      sentAt: SENT_AT,
+      reactedWith: [],
+    });
+    expect(text(blockable)).toContain("Block Blake");
+    expect(chevrons(blockable)).toBe(1);
   });
 
   it("offers Reply, Edit and Delete on your own message, and never Report or Block", () => {
@@ -517,6 +555,20 @@ describe("MessageActionsSheet — report", () => {
     expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
       REPORT_SENT_TITLE,
     );
+  });
+
+  it("titles the sent sheet with no header Done beside its primary Done", async () => {
+    // components.md § Chrome weight: never a header Done and a primary Done.
+    report.mutateAsync.mockResolvedValue(filed());
+    const tree = render(target);
+    pressByLabel(tree, "Spam");
+    act(() => sendButton(tree).props.onPress());
+    await flush();
+
+    const headers = tree.root.findAllByType(SheetHeader);
+    const sent = headers.find((h) => h.props.title === REPORT_SENT_TITLE);
+    expect(sent).toBeDefined();
+    expect(sent!.props.onCancel).toBeUndefined();
   });
 
   it("says it was already reported, rather than 'Report sent', when the API hands back the open report", async () => {

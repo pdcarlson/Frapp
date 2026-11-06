@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { AdjustGlyph } from "@/components/points/points-glyphs";
 import { useAdjustPoints, useMembers } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -189,8 +188,7 @@ export function PointsAdjustmentDialog({
         aria-describedby={undefined}
       >
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <AdjustGlyph className="h-5 w-5" />
+          <DialogTitle>
             Adjust points
           </DialogTitle>
         </DialogHeader>

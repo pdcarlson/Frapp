@@ -73,6 +73,7 @@ import {
 import { messageActionsFor, rosterMembership } from "@/lib/chat/blocks";
 import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
+import { writeLastChannel } from "@/lib/chat/last-channel";
 import { useThreadBlockList } from "@/lib/chat/use-thread-block-list";
 import {
   postRefusalHint,
@@ -95,7 +96,10 @@ import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
 import { selectionHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
+import {
+  type ChapterBranding,
+  useChapterBranding,
+} from "@/lib/chapter-branding";
 
 const NO_DEPARTED: ReadonlySet<string> = new Set();
 
@@ -348,6 +352,15 @@ export default function ChatThreadScreen() {
       markReadMutate(channelId);
       return () => markReadMutate(channelId);
     }, [channelId, markReadMutate]),
+  );
+  // The channel the next launch opens (`lib/chat/last-channel.ts`). On focus,
+  // like the read mark, because this screen stays mounted between visits.
+  useFocusEffect(
+    useCallback(() => {
+      if (channelId && viewerId) {
+        writeLastChannel(viewerId, chapterId, channelId);
+      }
+    }, [channelId, viewerId, chapterId]),
   );
 
   /**

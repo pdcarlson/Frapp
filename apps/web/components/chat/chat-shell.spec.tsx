@@ -240,7 +240,15 @@ vi.mock("@repo/hooks", async () => ({
   ...(await vi
     .importActual<typeof import("@repo/hooks")>("@repo/hooks")
     .then(
-      ({ resolveAuthorName, sidebarMutedChannelIds, sidebarUnreadCounts }) => ({
+      ({
+        landingChannelId,
+        lastChannelStorageKey,
+        resolveAuthorName,
+        sidebarMutedChannelIds,
+        sidebarUnreadCounts,
+      }) => ({
+        landingChannelId,
+        lastChannelStorageKey,
         resolveAuthorName,
         sidebarMutedChannelIds,
         sidebarUnreadCounts,
@@ -880,6 +888,8 @@ function chatChannelResult(
 }
 
 beforeEach(() => {
+  // The shell remembers the last channel per browser; start every case cold.
+  window.localStorage.clear();
   slashGateReads.orgConfigError = false;
   slashGateReads.enabledModules = null;
   slashGateReads.recruitment = undefined;
@@ -2138,6 +2148,27 @@ describe("ChatShell hide conversation (#2303)", () => {
 
     // The re-read list still carries the row, flagged: the shell must not
     // keep it open just because it can still resolve it.
+    channelsQueryState.value = {
+      data: [...CHANNELS, { ...DM, hidden: true }],
+    };
+    await act(async () => write.resolve());
+
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveTextContent("chan-general");
+    });
+  });
+
+  it("lands on #general after hiding the open DM, not on the channel the page loaded with", async () => {
+    window.localStorage.setItem(
+      "frapp.chat.last-channel.viewer-1.chapter-1",
+      "chan-random",
+    );
+    channelsQueryState.value = { data: [...CHANNELS, DM] };
+    const write = pending();
+    mockLeaveMutateAsync.mockReturnValue(write.promise);
+    render(<ChatShell initialChannelId="chan-dm" />);
+
+    fireEvent.click(screen.getByTestId("hide-conversation"));
     channelsQueryState.value = {
       data: [...CHANNELS, { ...DM, hidden: true }],
     };
@@ -3560,5 +3591,85 @@ describe("ChatShell heading level", () => {
     expect(screen.getAllByRole("heading", { level: 2 }).length).toBeGreaterThan(
       0,
     );
+  });
+});
+
+/**
+ * Chat opens where this browser last left it (owner, 2026-11-05: "Mobile
+ * opens up to the last channel you were in. like discord"), per member and
+ * chapter, and falls back to #general when that channel is gone.
+ */
+describe("ChatShell opens on the last channel", () => {
+  const key = "frapp.chat.last-channel.viewer-1.chapter-1";
+
+  it("opens the channel this browser was last in", () => {
+    window.localStorage.setItem(key, "chan-random");
+    render(<ChatShell />);
+    expect(mockUseChatChannel).toHaveBeenLastCalledWith("chan-random");
+  });
+
+  it("falls back to #general when the last channel is no longer listed", () => {
+    window.localStorage.setItem(key, "chan-deleted");
+    render(<ChatShell />);
+    expect(mockUseChatChannel).toHaveBeenLastCalledWith("chan-general");
+  });
+
+  it("remembers the channel a link opened, for this member and chapter only", () => {
+    render(<ChatShell initialChannelId="chan-random" />);
+    expect(window.localStorage.getItem(key)).toBe("chan-random");
+    expect(
+      window.localStorage.getItem("frapp.chat.last-channel.viewer-2.chapter-1"),
+    ).toBeNull();
+  });
+
+  it("lets a link win over the remembered channel", () => {
+    window.localStorage.setItem(key, "chan-random");
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(mockUseChatChannel).toHaveBeenLastCalledWith("chan-general");
+  });
+
+  it("lets a link by channel name win too", () => {
+    // Onboarding's completion redirect passes the literal `general`.
+    window.localStorage.setItem(key, "chan-random");
+    render(<ChatShell initialChannelId="general" />);
+    expect(mockUseChatChannel).toHaveBeenLastCalledWith("chan-general");
+  });
+
+  it("waits for the member's identity before landing", () => {
+    // Landing on #general first would stamp its read cursor, then jump.
+    window.localStorage.setItem(key, "chan-random");
+    setViewer(null);
+    const { rerender } = render(<ChatShell />);
+    expect(mockUseChatChannel).not.toHaveBeenCalledWith("chan-general");
+
+    setViewer("viewer-1");
+    rerender(<ChatShell />);
+    expect(mockUseChatChannel).toHaveBeenLastCalledWith("chan-random");
+  });
+
+  it("remembers a member with no chapter claim under the sole key", () => {
+    chapterStoreState.value = null;
+    try {
+      render(<ChatShell initialChannelId="chan-random" />);
+      expect(
+        window.localStorage.getItem("frapp.chat.last-channel.viewer-1.sole"),
+      ).toBe("chan-random");
+    } finally {
+      chapterStoreState.value = "chapter-1";
+    }
+  });
+
+  it("does not write the old chapter's channel under the new chapter's key", () => {
+    const nextKey = "frapp.chat.last-channel.viewer-1.chapter-2";
+    window.localStorage.setItem(nextKey, "chan-announcements");
+    const { rerender } = render(<ChatShell initialChannelId="chan-random" />);
+    try {
+      // The chapter id changes one commit before the old list is cleared.
+      chapterStoreState.value = "chapter-2";
+      rerender(<ChatShell initialChannelId="chan-random" />);
+      expect(window.localStorage.getItem(nextKey)).toBe("chan-announcements");
+    } finally {
+      chapterStoreState.value = "chapter-1";
+    }
   });
 });
