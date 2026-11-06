@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AuthApiError, AuthRetryableFetchError } from "@supabase/supabase-js";
 import { isSessionOver } from "./rejected-session";
 
@@ -58,5 +58,24 @@ describe("isSessionOver, not a verdict", () => {
     expect(
       isSessionOver({ data: { user: null }, error: new AuthSessionMissingError() }),
     ).toBe(false);
+  });
+});
+
+describe("leaveWhenSignedOutElsewhere", () => {
+  it("sends a dashboard tab to /sign-in and leaves signed-out routes alone", async () => {
+    const { leaveWhenSignedOutElsewhere } = await import("./rejected-session");
+    const assign = vi.fn();
+    for (const [path, expected] of [
+      ["/members", 1],
+      ["/sign-in", 0],
+      ["/join", 0],
+      ["/no-access", 0],
+    ] as const) {
+      assign.mockClear();
+      vi.stubGlobal("location", { pathname: path, assign });
+      leaveWhenSignedOutElsewhere();
+      expect(assign).toHaveBeenCalledTimes(expected);
+    }
+    vi.unstubAllGlobals();
   });
 });

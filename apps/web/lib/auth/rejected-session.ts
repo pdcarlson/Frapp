@@ -46,6 +46,27 @@ export function isSessionOver(result: {
 }
 
 let checking = false;
+/** Set once this tab is on its way to `/sign-in` with the notice. */
+let leaving = false;
+
+/** Routes a signed-out visitor belongs on; nothing here sends them away. */
+const SIGNED_OUT_ROUTES = ["/sign-in", "/sign-up", "/join", "/no-access", "/auth"];
+
+/**
+ * The session ended outside this tab's own sign-out paths: another tab of the
+ * same browser signed out (they share the session cookie, and Supabase tells
+ * every tab), so this one is left on a dashboard whose reads carry no token.
+ * Go to `/sign-in`, unless this tab is already leaving with the notice, whose
+ * URL must not be overwritten, or is on a route that is fine signed out.
+ */
+export function leaveWhenSignedOutElsewhere(): void {
+  if (leaving) return;
+  const path = window.location.pathname;
+  if (SIGNED_OUT_ROUTES.some((r) => path === r || path.startsWith(`${r}/`))) {
+    return;
+  }
+  window.location.assign("/sign-in");
+}
 
 /**
  * Sign out and land on `/sign-in` once the API has refused this session and
@@ -67,12 +88,14 @@ let checking = false;
 export async function handleRejectedSession(): Promise<void> {
   if (checking) return;
   checking = true;
-  let leaving = false;
   try {
     const supabase = createSupabaseBrowserClient();
     const { data: local } = await supabase.auth.getSession();
     if (!local.session) return;
     if (!isSessionOver(await supabase.auth.getUser())) return;
+    // Before the sign-out: its `SIGNED_OUT` reaches the identity effect in
+    // `frapp-client-provider.tsx`, which must not send this tab to a bare
+    // `/sign-in` over the URL that carries the notice.
     leaving = true;
     await signOutCurrentSession({ scope: "local" });
     const url = new URL("/sign-in", window.location.origin);
