@@ -404,8 +404,9 @@ export class DiscordImportWorkerService {
       }
     }
 
-    // What a role mention reads as (#2875), read once per slice so a role
-    // renamed in Frapp mid-import is named as it is now from the next slice on.
+    // What a role mention reads as (#2875): its Discord name. The Frapp roles
+    // are read once per slice only for the fallback, an entry whose Discord
+    // name was never recorded.
     const frappRoleNames = new Map(
       (await this.rbac.findByChapter(chapterId)).map((role) => [
         role.id,
