@@ -421,7 +421,7 @@ radius utilities do nothing to a control the browser paints itself (#3186, 2026-
 
 Owner pick 2026-11-05 ("Floating bar, no glow"). The recipe is `signetGlass` in `packages/theme/src/glass.ts`. Mobile reads it through `GlassSurface`; web's dialog and sheet scrims spell the scrim blur as a Tailwind class (`backdrop-blur-[6px]`), so a change to `scrimBlur` moves both.
 
-**Glass is chrome only.** It is for what floats over content: the mobile tab bar, back capsules, the floating create button, and the blur under a sheet or dialog scrim. Never a sheet, a card or an input. Those stay solid steps on the ladder (§2) so their text keeps the contrast measured against a known fill.
+**Glass is chrome only.** It is for what floats over content: the mobile tab bar and its quick-actions + and panel, back capsules, the floating create button, and the blur under a sheet or dialog scrim. Never a sheet, a card or an input. Those stay solid steps on the ladder (§2) so their text keeps the contrast measured against a known fill.
 
 | Part | Value |
 | ---- | ----- |

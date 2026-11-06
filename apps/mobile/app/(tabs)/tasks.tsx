@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { AppState, StyleSheet, Text, View } from "react-native";
-import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
   useCurrentUser,
@@ -28,7 +27,6 @@ import {
 } from "@/components/state-block";
 import { TaskRow, TaskRowSkeleton } from "@/components/tasks/task-row";
 import { PointsSummaryCard } from "@/components/tasks/points-summary-card";
-import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import { selectTaskRows, type TaskRowModel } from "@/lib/tasks/board";
 import { selectHouseRank, selectPointsSummary } from "@/lib/tasks/points-card";
 import { nextTapSequence } from "@/lib/tasks/transitions";
@@ -72,7 +70,6 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 export default function TasksScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const sheetRef = useRef<BottomSheetModal>(null);
 
   const chapterId = useActiveChapterId();
   const viewerUserId = useViewerUserId();
@@ -105,7 +102,7 @@ export default function TasksScreen() {
   // tab (the AppState listener below, which `useFocusEffect` never sees). A tab
   // is never unmounted and the JS context survives days of backgrounding, so a
   // mount-only clock would keep bucketing by the day the app was opened, and
-  // the sheet's "Today" chip would file a task already overdue.
+  // a task due today would sit under the wrong day.
   const [now, setNow] = useState(() => new Date());
   useFocusEffect(
     useCallback(() => {
@@ -127,7 +124,6 @@ export default function TasksScreen() {
   );
 
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   /**
    * The member copy for a gate refusal on a status toggle, or `null` (#2710).
    *
@@ -318,44 +314,12 @@ export default function TasksScreen() {
   }
 
   return (
-    <ScreenShell
-      title="Tasks"
-      refresh={refresh}
-      createAction={
-        canManageTasks
-          ? {
-              label: "New task",
-              onPress: () => {
-                setNotice(null);
-                sheetRef.current?.present();
-              },
-            }
-          : undefined
-      }
-    >
+    <ScreenShell title="Tasks" refresh={refresh}>
       <PointsSummaryCard summary={summary} rank={rank} />
 
-      {notice ? <Text style={styles.notice}>{notice}</Text> : null}
       {refusal ? <Text style={styles.refusal}>{refusal}</Text> : null}
 
       {renderBoard()}
-
-      <NewTaskSheet
-        // A new sheet per chapter: a kept draft's assignee is a member of the
-        // chapter it was started in, and the API refuses one who isn't.
-        key={chapterId ?? "no-chapter"}
-        ref={sheetRef}
-        now={now}
-        // A task assigned to someone else never appears on this board, so
-        // dismissing into an unchanged screen reads as a failed create.
-        onCreated={(assigneeName, wasSelf) =>
-          setNotice(
-            wasSelf
-              ? null
-              : `Assigned to ${assigneeName ?? "your chapter member"}.`,
-          )
-        }
-      />
     </ScreenShell>
   );
 }
@@ -365,10 +329,6 @@ function createStyles(tokens: SignetTokens) {
     // `ScreenShell`'s gap, between the caption and its rows.
     skeleton: {
       gap: tokens.spacing.md,
-    },
-    notice: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
     },
     refusal: {
       ...typeRole(tokens.typography.role.caption),
