@@ -16,9 +16,7 @@ function actions(over: Partial<ChannelRowActions> = {}): ChannelRowActions {
   };
 }
 
-function renderRow(
-  props: Partial<Parameters<typeof ChannelRowMenu>[0]> = {},
-) {
+function renderRow(props: Partial<Parameters<typeof ChannelRowMenu>[0]> = {}) {
   return render(
     <ul>
       <ChannelRowMenu
@@ -89,8 +87,24 @@ describe("ChannelRowMenu", () => {
       "Mute",
     ]);
     expect(radios[1]).toHaveAttribute("aria-checked", "true");
-    fireEvent.click(radios[2]!);
+    // The checked level again writes nothing: Radix still calls back, and a
+    // write would pin an explicit level over the channel's default.
+    fireEvent.click(radios[1]!);
+    expect(onSet).not.toHaveBeenCalled();
+
+    await open();
+    await user.click(screen.getByRole("menuitem", { name: /Notifications/ }));
+    const again = await screen.findAllByRole("menuitemradio");
+    fireEvent.click(again[2]!);
     expect(onSet).toHaveBeenCalledWith("c-gen", "off");
+  });
+
+  it("locks Notifications while the level is unknown", async () => {
+    renderRow({ actions: actions({ notificationLevelFor: () => undefined }) });
+    await open();
+    expect(
+      screen.getByRole("menuitem", { name: /Notifications/ }),
+    ).toHaveAttribute("data-disabled");
   });
 
   it("opens nothing when the row has no action at all", () => {

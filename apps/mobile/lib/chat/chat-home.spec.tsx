@@ -52,11 +52,13 @@ const {
   markReadMutate,
   setLevelMutate,
   deleteMutateAsync,
+  connection,
 } = vi.hoisted(() => ({
   permissionList: { value: [] as string[] },
   markReadMutate: vi.fn(),
   setLevelMutate: vi.fn(),
   deleteMutateAsync: vi.fn(),
+  connection: { writeBlockedReason: null as string | null },
   // The officer setup checklist's state (#3535's hook), null for a member.
   setupChecklist: { value: null as unknown },
   setupChecklistOptions: { value: undefined as unknown },
@@ -224,9 +226,10 @@ vi.mock("@repo/hooks", async () => {
     DELETE_CHANNEL_LABEL: actual.DELETE_CHANNEL_LABEL,
     MARK_AS_READ_LABEL: actual.MARK_AS_READ_LABEL,
     CHANNEL_NOTIFICATIONS_LABEL: actual.CHANNEL_NOTIFICATIONS_LABEL,
+    CHANNEL_LEVEL_DETAIL: actual.CHANNEL_LEVEL_DETAIL,
     usePermissionList: () => permissionList.value,
     useMarkChannelRead: () => ({ mutate: markReadMutate }),
-    useSetChannelNotificationLevel: () => ({ mutate: setLevelMutate }),
+    useSetChannelNotificationLevel: () => ({ mutateAsync: setLevelMutate }),
     useDeleteChannel: () => ({ mutateAsync: deleteMutateAsync }),
   };
 });
@@ -244,6 +247,10 @@ const branding = vi.hoisted(() => {
   };
   return { unnamed, current: { ...unnamed } };
 });
+
+vi.mock("@/lib/connection/use-connection", () => ({
+  useConnection: () => ({ writeBlockedReason: connection.writeBlockedReason }),
+}));
 
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => branding.current,
@@ -344,6 +351,7 @@ beforeEach(() => {
   categoriesData.value = [];
   unreadData.value = [];
   levelsData.value = [];
+  connection.writeBlockedReason = null;
   notificationsData.value = [];
   queryErrors.unread = false;
   queryErrors.levels = false;
@@ -796,20 +804,80 @@ describe("Chat home sidebar arrangement (#2877)", () => {
 
   it("sets a level from the menu's Notifications view", () => {
     channelsData.value = [general];
+    levelsData.value = [{ channel_id: general.id, level: "all" }];
+    setLevelMutate.mockResolvedValue(undefined);
     const tree = render();
 
     longPress(tree, "general");
-    pressItem(tree, "Notifications");
+    pressItem(tree, "Notifications, All");
     expect(menuLabels(tree)).toEqual([
       "Every message. Notify me whenever anyone posts here.",
       "Only @mentions. Notify me when someone addresses me.",
       "Mute. No notifications — but @mentions still reach you.",
     ]);
     pressItem(tree, "Mute. No notifications — but @mentions still reach you.");
-    expect(setLevelMutate).toHaveBeenCalledWith(
-      { channelId: general.id, level: "off" },
-      expect.anything(),
+    expect(setLevelMutate).toHaveBeenCalledWith({
+      channelId: general.id,
+      level: "off",
+    });
+  });
+
+  it("locks Notifications while the level is unknown, and while offline", () => {
+    channelsData.value = [general];
+    const notificationsRow = (tree: ReactTestRenderer) =>
+      menu(tree).find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          String(node.props.accessibilityLabel).startsWith("Notifications"),
+      );
+
+    // No levels yet: a pick would overwrite a level the member can't see.
+    levelsData.value = [];
+    const loading = render();
+    longPress(loading, "general");
+    expect(notificationsRow(loading).props.disabled).toBe(true);
+
+    levelsData.value = [{ channel_id: general.id, level: "all" }];
+    connection.writeBlockedReason = "Reconnect to make changes.";
+    const offline = render();
+    longPress(offline, "general");
+    const row = notificationsRow(offline);
+    expect(row.props.disabled).toBe(true);
+    expect(row.props.accessibilityHint).toBe("Reconnect to make changes.");
+    act(() => row.props.onPress());
+    expect(menuLabels(offline)).toContain("Notifications, All");
+  });
+
+  it("opens the menu from the screen reader's Channel actions", () => {
+    channelsData.value = [general];
+    const tree = render();
+    const row = rowNamed(tree, "general");
+    const actionsAction = row
+      .findAll(
+        (node) =>
+          Array.isArray(node.props.accessibilityActions) &&
+          typeof node.props.onAccessibilityAction === "function",
+      )
+      .at(0)!;
+    expect(
+      actionsAction.props.accessibilityActions.map(
+        (action: { label: string }) => action.label,
+      ),
+    ).toContain("Channel actions");
+    act(() =>
+      actionsAction.props.onAccessibilityAction({
+        nativeEvent: { actionName: "actions" },
+      }),
     );
+    expect(menu(tree).props.target?.channelId).toBe(general.id);
+  });
+
+  it("offers Notifications on a hidden conversation's row", () => {
+    channelsData.value = [dmBobHidden];
+    const tree = render();
+    act(() => hiddenToggle(tree).props.onPress());
+    longPress(tree, "Bob Diaz");
+    expect(menuLabels(tree)).toEqual(["Notifications"]);
   });
 
   it("offers Delete channel only with channels:manage, and asks first", () => {

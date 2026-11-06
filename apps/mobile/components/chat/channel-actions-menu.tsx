@@ -15,6 +15,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
+  CHANNEL_LEVEL_DETAIL,
   CHANNEL_NOTIFICATIONS_LABEL,
   DELETE_CHANNEL_LABEL,
   HIDE_CONVERSATION_LABEL,
@@ -33,13 +34,6 @@ import { useFocusOnOpen } from "@/lib/overlay";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { NOTIFICATION_LEVEL_OPTIONS } from "./notification-level-control";
-
-/** The level's word on the Notifications row, as web's menu shows it. */
-export const LEVEL_DETAIL: Record<ChatNotificationLevel, string> = {
-  all: "All",
-  mentions: "Mentions",
-  off: "Muted",
-};
 
 export interface ChannelActionsMenuTarget {
   channelId: string;
@@ -79,6 +73,7 @@ export function ChannelActionsMenu({
   onClose,
   onAction,
   onSetLevel,
+  writeBlockedReason,
 }: {
   target: ChannelActionsMenuTarget | null;
   onClose: () => void;
@@ -88,6 +83,12 @@ export function ChannelActionsMenu({
     target: ChannelActionsMenuTarget,
   ) => void;
   onSetLevel: (channelId: string, level: ChatNotificationLevel) => void;
+  /**
+   * Why a queueless write is blocked right now (`useConnection`), or `null`.
+   * A level pick is one, so Notifications locks with it, as the thread
+   * header's level control does.
+   */
+  writeBlockedReason: string | null;
 }) {
   return (
     <Modal
@@ -105,6 +106,7 @@ export function ChannelActionsMenu({
           onClose={onClose}
           onAction={onAction}
           onSetLevel={onSetLevel}
+          writeBlockedReason={writeBlockedReason}
         />
       ) : null}
     </Modal>
@@ -116,6 +118,7 @@ function MenuBody({
   onClose,
   onAction,
   onSetLevel,
+  writeBlockedReason,
 }: {
   target: ChannelActionsMenuTarget;
   onClose: () => void;
@@ -124,6 +127,7 @@ function MenuBody({
     target: ChannelActionsMenuTarget,
   ) => void;
   onSetLevel: (channelId: string, level: ChatNotificationLevel) => void;
+  writeBlockedReason: string | null;
 }) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
@@ -146,8 +150,17 @@ function MenuBody({
     return Math.max(insets.top + EDGE, target.pageY - GAP - menuHeight);
   })();
 
+  // A pick while the level is unknown would overwrite a level the member
+  // can't see, and one offline would only fail, so both lock the row.
+  const levelsBlockedReason = writeBlockedReason
+    ? writeBlockedReason
+    : target.level
+      ? null
+      : "Loading your notification settings.";
+
   const run = (key: ChannelRowActionKey) => {
     if (key === "notifications") {
+      if (levelsBlockedReason) return;
       setView("levels");
       return;
     }
@@ -215,9 +228,11 @@ function MenuBody({
                 const destructive = key === "delete";
                 const firstOfficer =
                   index === target.actions.member.length && index > 0;
+                const disabled =
+                  key === "notifications" && levelsBlockedReason !== null;
                 const detail =
                   key === "notifications" && target.level
-                    ? LEVEL_DETAIL[target.level]
+                    ? CHANNEL_LEVEL_DETAIL[target.level]
                     : null;
                 return (
                   <Pressable
@@ -226,6 +241,11 @@ function MenuBody({
                     accessibilityLabel={
                       detail ? `${label(key)}, ${detail}` : label(key)
                     }
+                    accessibilityHint={
+                      disabled ? (levelsBlockedReason ?? undefined) : undefined
+                    }
+                    accessibilityState={disabled ? { disabled } : undefined}
+                    disabled={disabled}
                     onPress={() => run(key)}
                     style={({ pressed }) => [
                       styles.row,
@@ -238,6 +258,7 @@ function MenuBody({
                       style={[
                         styles.rowLabel,
                         destructive ? styles.destructive : null,
+                        disabled ? styles.disabledLabel : null,
                       ]}
                     >
                       {label(key)}
@@ -368,6 +389,7 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
     },
     destructive: { color: tokens.color.semantic.destructiveText },
+    disabledLabel: { color: tokens.color.text.mutedForeground },
     trailing: {
       flexDirection: "row",
       alignItems: "center",

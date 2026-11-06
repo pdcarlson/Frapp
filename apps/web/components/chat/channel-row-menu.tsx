@@ -12,6 +12,7 @@ import {
   Trash2,
 } from "lucide-react";
 import {
+  CHANNEL_LEVEL_DETAIL,
   CHANNEL_NOTIFICATIONS_LABEL,
   COPY_CHANNEL_LINK_LABEL,
   DELETE_CHANNEL_LABEL,
@@ -36,7 +37,6 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { LEVEL_DETAIL } from "./channel-menu";
 import { NOTIFICATION_LEVEL_OPTIONS } from "./notification-level-popover";
 
 const DESTRUCTIVE_ITEM_CLASS =
@@ -151,8 +151,11 @@ export function ChannelRowMenu({
       case "notifications":
         return (
           <ContextMenuSub key={key}>
+            {/* Locked while the level is unknown, as the header's panel is:
+                a pick then would overwrite a level the member can't see. */}
             <ContextMenuSubTrigger
-              detail={level ? LEVEL_DETAIL[level] : undefined}
+              disabled={!level}
+              detail={level ? CHANNEL_LEVEL_DETAIL[level] : undefined}
             >
               <Bell aria-hidden="true" />
               {CHANNEL_NOTIFICATIONS_LABEL}
@@ -160,12 +163,16 @@ export function ChannelRowMenu({
             <ContextMenuSubContent className="min-w-[180px]">
               <ContextMenuRadioGroup
                 value={level ?? ""}
-                onValueChange={(next) =>
+                onValueChange={(next) => {
+                  // Radix calls this for the checked item too. Re-picking the
+                  // current level must not write it: that would pin an
+                  // explicit level over the channel's default.
+                  if (next === level) return;
                   actions?.onSetNotificationLevel(
                     channel.id,
                     next as ChatNotificationLevel,
-                  )
-                }
+                  );
+                }}
               >
                 {NOTIFICATION_LEVEL_OPTIONS.map((option) => (
                   <ContextMenuRadioItem key={option.level} value={option.level}>

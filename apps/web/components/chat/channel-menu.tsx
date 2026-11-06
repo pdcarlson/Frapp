@@ -24,6 +24,7 @@ import { BookmarksPanel, type BookmarkEntry } from "./bookmarks-popover";
 import { NotificationLevelPanel } from "./notification-level-popover";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
+  CHANNEL_LEVEL_DETAIL,
   HIDE_CONVERSATION_CONFIRM_ACTION,
   HIDE_CONVERSATION_CONFIRM_BODY,
   HIDE_CONVERSATION_LABEL,
@@ -119,16 +120,6 @@ type ChannelMenuProps = {
     pinned: boolean;
     onToggle: () => void;
   };
-};
-
-/**
- * The Notifications row's trailing word: the level the channel is on. The
- * rail's right-click menu reads it too, so the two say the same thing.
- */
-export const LEVEL_DETAIL: Record<ChatNotificationLevel, string> = {
-  all: "All",
-  mentions: "Mentions",
-  off: "Muted",
 };
 
 type MenuRow = {
@@ -231,7 +222,9 @@ export function ChannelMenu({
       view: "notifications",
       label: "Notifications",
       Glyph: MuteGlyph,
-      detail: notificationLevel ? LEVEL_DETAIL[notificationLevel] : undefined,
+      detail: notificationLevel
+        ? CHANNEL_LEVEL_DETAIL[notificationLevel]
+        : undefined,
     },
     ...(hideConversation
       ? [

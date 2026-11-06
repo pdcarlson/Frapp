@@ -42,10 +42,6 @@ import {
   useSetSidebarSectionCollapsed,
   useSidebarPreferences,
   landingChannelId,
-  useDeleteChannel,
-  deleteChannelConfirmTitle,
-  DELETE_CHANNEL_CONFIRM_BODY,
-  DELETE_CHANNEL_LABEL,
 } from "@repo/hooks";
 import { can, isAnnouncementChannel } from "@repo/validation";
 import { ChevronLeft, X } from "lucide-react";
@@ -61,7 +57,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
-import { asArray, cn, getErrorMessage } from "@/lib/utils";
+import { asArray, cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { chatDeepLink } from "@/lib/chat/chat-links";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
@@ -76,6 +72,7 @@ import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { vocab } from "@repo/org-archetypes";
 import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { useDeleteChannelFlow } from "./use-delete-channel-flow";
 import {
   classifyMessage,
   hiddenQuoteText,
@@ -1045,78 +1042,66 @@ export function ChatShell({
   // offers is `channelRowActions`' call in `@repo/hooks`, scoped to the
   // member's permissions; these are what each one does.
   const router = useRouter();
-  const deleteChannelAsync = useDeleteChannel().mutateAsync;
-  const setNotificationLevelMutate = setNotificationLevel.mutate;
+  const deleteChannelFlow = useDeleteChannelFlow(confirm);
+  // Its own mutation instance, not the header's: sharing one moved the
+  // header's `isError`/`variables` to whichever channel the rail last changed
+  // (clearing the open channel's "not saved" alert) and locked the header
+  // while a rail write was pending.
+  const setRailNotificationLevelAsync =
+    useSetChannelNotificationLevel().mutateAsync;
   const rowActions = useMemo<ChannelRowActions>(
     () => ({
       permissions: permissionsPayload?.permissions,
       onMarkRead: (channelId) => markReadMutate(channelId),
       notificationLevelFor: (channelId) => levelByChannelId.get(channelId),
+      // The header's alert only shows on the open channel, and a rail change
+      // is usually to one that isn't, so a failure toasts. Per call, because
+      // `mutate`'s per-call `onError` runs only for the latest call.
       onSetNotificationLevel: (channelId, level) =>
-        setNotificationLevelMutate(
-          { channelId, level },
-          {
-            // The header's alert only shows on the open channel, and a rail
-            // change is usually to one that isn't, so a failure toasts.
-            onError: () =>
-              toast({
-                variant: "destructive",
-                description: "Couldn't change notifications. Try again.",
-              }),
-          },
+        void setRailNotificationLevelAsync({ channelId, level }).catch(() =>
+          toast({
+            variant: "destructive",
+            description: "Couldn't change notifications. Try again.",
+          }),
         ),
       onCopyLink: (channelId) => {
         const url = `${window.location.origin}${chatDeepLink({ channelId })}`;
-        navigator.clipboard.writeText(url).then(
-          () => toast({ description: "Link copied" }),
-          () =>
+        void (async () => {
+          try {
+            // Inside the try: without a secure context `navigator.clipboard`
+            // is undefined and the call throws before any promise exists.
+            await navigator.clipboard.writeText(url);
+            toast({ description: "Link copied" });
+          } catch {
             toast({
               variant: "destructive",
               title: "Copy failed",
               description: "Open the channel and copy the address bar.",
-            }),
-        );
+            });
+          }
+        })();
       },
       onEdit: (channelId) =>
         router.push(`/chat-admin?channel=${encodeURIComponent(channelId)}`),
       onDelete: (channelId) => {
         const name =
           channels.find((c) => c.id === channelId)?.name ?? "this channel";
-        void (async () => {
-          const confirmed = await confirm({
-            title: deleteChannelConfirmTitle(name),
-            description: DELETE_CHANNEL_CONFIRM_BODY,
-            confirmLabel: DELETE_CHANNEL_LABEL,
-          });
-          if (!confirmed) return;
-          try {
-            await deleteChannelAsync(channelId);
-            setSelectedChannelId((current) =>
-              current === channelId ? null : current,
-            );
-            toast({ description: `#${name} deleted.` });
-          } catch (error) {
-            toast({
-              variant: "destructive",
-              description: getErrorMessage(
-                error,
-                "Couldn't delete the channel.",
-              ),
-            });
-          }
-        })();
+        void deleteChannelFlow({ id: channelId, name }, () =>
+          setSelectedChannelId((current) =>
+            current === channelId ? null : current,
+          ),
+        );
       },
     }),
     [
       permissionsPayload?.permissions,
       markReadMutate,
       levelByChannelId,
-      setNotificationLevelMutate,
+      setRailNotificationLevelAsync,
       toast,
       router,
       channels,
-      confirm,
-      deleteChannelAsync,
+      deleteChannelFlow,
     ],
   );
 

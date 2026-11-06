@@ -102,6 +102,7 @@ import {
   ChannelActionsMenu,
   type ChannelActionsMenuTarget,
 } from "@/components/chat/channel-actions-menu";
+import { useConnection } from "@/lib/connection/use-connection";
 import { pressHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -203,6 +204,9 @@ export default function ChatHomeScreen() {
   const markRead = useMarkChannelRead();
   const setNotificationLevel = useSetChannelNotificationLevel();
   const deleteChannel = useDeleteChannel();
+  // A level pick is a queueless write, so the menu locks it offline the way
+  // the thread header's level control does (connection-state.md).
+  const { writeBlockedReason } = useConnection();
   const [menuTarget, setMenuTarget] = useState<
     | (ChannelActionsMenuTarget & {
         onTogglePin: () => void;
@@ -634,6 +638,30 @@ export default function ChatHomeScreen() {
                       unreadCount={0}
                       mentionCount={0}
                       onPress={() => reopenHidden(channel)}
+                      // Hidden, a DM offers no pin and no hide, so its menu
+                      // holds Notifications, as web's right-click does.
+                      onLongPress={(event) => {
+                        pressHaptic();
+                        setMenuTarget({
+                          channelId: channel.id,
+                          name: displayChannelName(
+                            channel,
+                            viewerId,
+                            memberNames,
+                          ),
+                          pageY: event?.nativeEvent.pageY ?? windowHeight / 3,
+                          pinned: false,
+                          level: levelFor(channel.id),
+                          actions: channelRowActions({
+                            channel: { ...channel, hidden: true },
+                            unread: false,
+                            pinned: null,
+                            permissions,
+                            surface: { copyLink: false, edit: false },
+                          }),
+                          onTogglePin: () => {},
+                        });
+                      }}
                     />
                   ))
                 : null}
@@ -647,18 +675,20 @@ export default function ChatHomeScreen() {
         target={menuTarget}
         onClose={closeMenu}
         onAction={(key) => runMenuAction(key)}
-        onSetLevel={(channelId, level) =>
-          setNotificationLevel.mutate(
-            { channelId, level },
-            {
-              onError: () =>
-                Alert.alert(
-                  "Couldn't change notifications",
-                  "Nothing changed. Check your connection and try again.",
-                ),
-            },
-          )
-        }
+        writeBlockedReason={writeBlockedReason}
+        onSetLevel={(channelId, level) => {
+          // Per call, not `mutate`'s per-call `onError`: TanStack runs that
+          // only for the latest call, so a quick second change would swallow
+          // the first one's failure.
+          setNotificationLevel
+            .mutateAsync({ channelId, level })
+            .catch(() =>
+              Alert.alert(
+                "Couldn't change notifications",
+                "Nothing changed. Check your connection and try again.",
+              ),
+            );
+        }}
       />
     </ScreenShell>
   );

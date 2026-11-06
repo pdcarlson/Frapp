@@ -1,4 +1,5 @@
 import { can, isDirectChannel } from "@repo/validation";
+import { isSystemChannel } from "./channel-start";
 import { canHideConversation } from "./hide-conversation";
 
 /**
@@ -10,8 +11,12 @@ import { canHideConversation } from "./hide-conversation";
  * The rule the owner set: the menu is scoped to the member's permissions. A
  * member sees only what the server would let them do, so an officer row is
  * there only with `channels:manage`, the permission `PATCH` and
- * `DELETE /v1/channels/{id}` check. This only hides what the server would
- * refuse anyway; it grants nothing.
+ * `DELETE /v1/channels/{id}` check. That part only hides what the server
+ * would refuse anyway; it grants nothing.
+ *
+ * Leaving Delete off DMs and `#chapter-audit` is this menu's own caution, not
+ * a server rule: `DELETE /v1/channels/{id}` checks only `channels:manage` and
+ * the chapter, so a client that skips this rule has no backstop (#3633).
  */
 
 /** The actions, in menu order. */
@@ -33,12 +38,14 @@ export const DELETE_CHANNEL_LABEL = "Delete channel";
 export const MANAGE_CHANNELS_PERMISSION = "channels:manage";
 
 /**
- * Channels the server writes to itself. Their rows offer no Edit or Delete:
- * `#chapter-audit` is the audit log's mirror, and deleting it from a rail by a
- * stray right-click would take the chapter's record with it. Chat settings can
- * still reach it deliberately.
+ * The short word for a channel's notification level, shown beside the menu's
+ * Notifications row on both clients.
  */
-const SYSTEM_CHANNEL_NAMES: ReadonlySet<string> = new Set(["chapter-audit"]);
+export const CHANNEL_LEVEL_DETAIL = {
+  all: "All",
+  mentions: "Mentions",
+  off: "Muted",
+} as const satisfies Record<"all" | "mentions" | "off", string>;
 
 export interface ChannelRowActionInput {
   channel: { type: string; name: string; hidden?: boolean | null };
@@ -83,8 +90,10 @@ export function channelRowActions({
   if (canHideConversation(channel) && !channel.hidden) member.push("hide");
 
   const officer: ChannelRowActionKey[] = [];
-  const chapterChannel =
-    !isDirectChannel(channel) && !SYSTEM_CHANNEL_NAMES.has(channel.name);
+  // A system channel (`#chapter-audit`, the audit log's mirror) offers no
+  // Edit or Delete: deleting it by a stray right-click would take the
+  // chapter's record with it. Chat settings can still reach it deliberately.
+  const chapterChannel = !isDirectChannel(channel) && !isSystemChannel(channel);
   if (chapterChannel && can(MANAGE_CHANNELS_PERMISSION, permissions)) {
     if (surface.edit) officer.push("edit");
     officer.push("delete");
