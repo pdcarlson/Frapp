@@ -28,12 +28,12 @@ import { denseListClassName } from "@/components/shared/table-controls";
 import { Button } from "@/components/ui/button";
 
 /**
- * The empty state's body, web's own: web offers no Block, so it says where a
- * member can block someone. Every other string on this card is shared with
+ * The empty state's body, web's own because it names where web's Block is (a
+ * message's More menu, #2687). Every other string on this card is shared with
  * mobile's sheet (`@repo/chat-core/block-copy`).
  */
 export const BLOCKED_MEMBERS_EMPTY_BODY_WEB =
-  "Block someone from a message or their profile in the mobile app. Their messages in this chapter's chat are hidden from you here too, and they aren't told.";
+  "Block someone from a message's More menu in chat. Their messages in this chapter's chat are hidden from you, and they aren't told.";
 
 /**
  * `/profile` → Blocked members: the one place on web a block can always be

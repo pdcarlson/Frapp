@@ -125,7 +125,7 @@ export interface MessageItemProps {
   /**
    * Opens the message actions sheet (reply, edit, delete, report, block —
    * #2257, #2775). Passed only for a row that offers them
-   * (`canOpenMessageActions` in `lib/chat/blocks.ts`): a confirmed, undeleted
+   * (`canOpenMessageActions` in `@repo/chat-core/message-actions`): a confirmed, undeleted
    * message, the viewer's own included.
    */
   onOpenActions?: () => void;

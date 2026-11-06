@@ -38,8 +38,8 @@ export interface UnblockFlow {
 /**
  * Unblock for every web surface that offers it — the timeline's tombstone and
  * `/profile`'s Blocked members list — so the question, the copy and the cache
- * choreography exist once (#2313). Web offers no Block: only mobile does, from
- * a message or the directory.
+ * choreography exist once (#2313). Block from a message is `useBlockFlow`
+ * (#2687).
  *
  * The one refresh `@repo/hooks` cannot do itself is here: the chat caches'
  * key lives in `@repo/chat-core`, which that leaf package must not import, so
