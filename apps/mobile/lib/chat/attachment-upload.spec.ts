@@ -455,24 +455,20 @@ describe("pickAndUploadPhoto", () => {
 });
 
 describe("uploadFailureReason", () => {
-  it("reads the API's reason off a thrown 4xx body", () => {
-    expect(uploadFailureReason({ statusCode: 400, message: "Too big" })).toBe(
-      "Too big",
-    );
-    // class-validator answers with a list.
+  it("words a thrown 4xx body through the shared map, never its field names", () => {
     expect(
       uploadFailureReason({
         statusCode: 400,
-        message: ["filename must be a string"],
+        message: 'Content type "image/tiff" is not allowed',
       }),
-    ).toBe("filename must be a string");
-    // Every reason, joined, as web shows the same body (#2199).
+    ).toBe("That file type isn't supported.");
+    // class-validator answers with a list, written for a developer.
     expect(
       uploadFailureReason({
         statusCode: 400,
         message: ["filename must be a string", "content_type is not allowed"],
       }),
-    ).toBe("filename must be a string, content_type is not allowed");
+    ).not.toMatch(/filename|content_type/);
   });
 
   it.each([
@@ -506,13 +502,13 @@ describe("uploadFailureReason", () => {
       "channel-1",
       vi.fn().mockRejectedValue({
         statusCode: 403,
-        message: "You can't post in this channel",
+        message: "You do not have access to this channel",
       }),
     );
 
     expect(result).toEqual({
       status: "refused",
-      reason: "You can't post in this channel",
+      reason: "You don't have access to this channel.",
     });
   });
 

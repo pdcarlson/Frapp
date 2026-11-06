@@ -1,3 +1,4 @@
+import { errorCopy } from "@repo/hooks/error-copy";
 import { serverMessageOf, statusOf } from "@repo/api-sdk";
 import { isTransientCheckInFailure } from "@repo/hooks";
 import {
@@ -161,7 +162,7 @@ export function checkInFailure(
   }
   return {
     kind: "error",
-    message: serverMessageOf(error) ?? "Couldn't check you in.",
+    message: errorCopy(error, "Couldn't check you in."),
     attemptOnly: isAttemptOnly(error),
   };
 }

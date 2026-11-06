@@ -105,13 +105,13 @@ describe("SettingsFieldsTab", () => {
     });
   });
 
-  it("creates a text field with the drafted key, label, and max length", async () => {
+  it("creates a text field from its name (the key is derived) and max length", async () => {
     const user = userEvent.setup();
     mockCreate.mockResolvedValue({});
     render(<SettingsFieldsTab canManage />);
 
-    await user.type(screen.getByLabelText("Key"), "graduation_year");
-    await user.type(screen.getByLabelText("Label"), "Graduation year");
+    expect(screen.queryByLabelText("Key")).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("Name"), "Graduation year");
     // Default type is text → the max-length input is shown.
     await user.type(screen.getByLabelText(/max length/i), "4");
     await user.click(screen.getByRole("button", { name: /add field/i }));
@@ -129,7 +129,7 @@ describe("SettingsFieldsTab", () => {
 
   it("disables editing controls when the caller cannot manage", () => {
     render(<SettingsFieldsTab canManage={false} />);
-    expect(screen.getByLabelText("Key")).toBeDisabled();
+    expect(screen.getByLabelText("Name")).toBeDisabled();
     expect(
       screen.getByRole("button", { name: /add field/i }),
     ).toBeDisabled();
@@ -151,10 +151,7 @@ describe("SettingsFieldsTab max length guard (#2206)", () => {
 
   function draftField() {
     render(<SettingsFieldsTab canManage />);
-    fireEvent.change(screen.getByLabelText("Key"), {
-      target: { value: "graduation_year" },
-    });
-    fireEvent.change(screen.getByLabelText("Label"), {
+    fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "Graduation year" },
     });
   }

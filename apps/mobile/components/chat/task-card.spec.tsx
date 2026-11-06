@@ -379,13 +379,15 @@ describe("TaskCard — actions", () => {
   it("relays any other refusal", async () => {
     confirmTask.mockRejectedValue({
       statusCode: 400,
-      message: "Task has already been confirmed",
+      message: "Points have already been awarded for this task",
     });
     state.permissions = ["tasks:manage"];
     state.live = liveTask({ status: "COMPLETED", stored_status: "COMPLETED" });
     const tree = render("admin-2");
     await press(tree, "Confirm");
-    expect(screenText(tree)).toContain("Task has already been confirmed");
+    expect(screenText(tree)).toContain(
+      "Points were already given for this task.",
+    );
     // Not a gate's refusal, so the member can try again.
     expect(button(tree, "Confirm").props.disabled).toBe(false);
   });

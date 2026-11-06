@@ -251,7 +251,7 @@ export function RolesAndPermissionsPage() {
         title: "Couldn't save role",
         description: getErrorMessage(
           error,
-          "Retry in a moment. The API rejected the update.",
+          "Your change wasn't saved. Try again in a moment.",
         ),
         variant: "destructive",
       });

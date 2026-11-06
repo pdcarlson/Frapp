@@ -129,8 +129,8 @@ export function useDocumentUpload(gate: SubscriptionGate) {
         body: file,
         contentType,
         upsert: true,
-        describeRejection: (status) =>
-          `Storage rejected upload (${status}). Retry or check file size.`,
+        describeRejection: () =>
+          "The file didn't upload. Check its size and try again.",
       });
 
       await confirmUpload.mutateAsync({
@@ -152,10 +152,7 @@ export function useDocumentUpload(gate: SubscriptionGate) {
     } catch (error) {
       toast({
         title: "Couldn't upload document",
-        description: getErrorMessage(
-          error,
-          "Retry the upload. Signed URLs expire quickly.",
-        ),
+        description: getErrorMessage(error, "Try the upload again."),
         variant: "destructive",
       });
     } finally {

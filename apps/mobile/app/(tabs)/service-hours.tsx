@@ -7,9 +7,8 @@ import {
   usePermissionList,
   useServiceEntries,
   useViewerUserId,
-  type ServiceEntryStatus,
 } from "@repo/hooks";
-import { can } from "@repo/validation";
+import { STATUS_LABELS, can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { useRefetchAll } from "@/components/pull-to-refresh";
@@ -148,7 +147,7 @@ export default function ServiceHoursScreen() {
             isLast={index === rows.length - 1}
             trailing={
               <StatusChip
-                label={STATUS_LABELS[row.status]}
+                label={STATUS_LABELS.serviceEntry[row.status]}
                 hue={serviceStatusHue(row.status, tokens)}
               />
             }
@@ -209,12 +208,6 @@ export default function ServiceHoursScreen() {
     </ScreenShell>
   );
 }
-
-const STATUS_LABELS: Record<ServiceEntryStatus, string> = {
-  PENDING: "Pending",
-  APPROVED: "Approved",
-  REJECTED: "Rejected",
-};
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({

@@ -24,8 +24,7 @@ import { formatDay, formatDayTime } from "@repo/formatting";
  * the decorative use of a semantic hue §5 forbids.
  *
  * **Why a boolean rather than a status token.** `writing.md` §5 lists `OPEN` in
- * the vocabulary it governs and requires the server's own token to be rendered
- * rather than a re-cased version — but the server sends no token here. The
+ * the vocabulary it governs — but the server sends no token here. The
  * poll DTO carries `isExpired: boolean`, which the API derives from either
  * `expires_at` passing *or* the creator manually closing the poll early
  * (`PollService.isPollExpired`, #379 — the API's `isPollClosed`

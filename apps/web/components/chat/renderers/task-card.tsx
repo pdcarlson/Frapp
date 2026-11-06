@@ -229,7 +229,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
                   { id: payload.task_id, body: { status: "COMPLETED" } },
                   onFailure(
                     "Couldn't complete task",
-                    "The API rejected the transition.",
+                    "Try again in a moment.",
                   ),
                 )
               }

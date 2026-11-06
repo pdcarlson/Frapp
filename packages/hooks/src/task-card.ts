@@ -1,3 +1,4 @@
+import { STATUS_LABELS } from "@repo/validation";
 import type { TaskStatus } from "./use-tasks";
 
 /**
@@ -11,12 +12,8 @@ import type { TaskStatus } from "./use-tasks";
  */
 
 /** The member-facing word for each status, on every task card. */
-export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  TODO: "To do",
-  IN_PROGRESS: "In progress",
-  COMPLETED: "Awaiting confirmation",
-  OVERDUE: "Overdue",
-};
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> =
+  STATUS_LABELS.task;
 
 /**
  * The word a task card's status badge shows.

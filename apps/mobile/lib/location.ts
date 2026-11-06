@@ -1,3 +1,4 @@
+import { MemberFacingError } from "@repo/hooks/error-copy";
 import * as Location from "expo-location";
 
 /**
@@ -112,6 +113,6 @@ export async function requireForegroundFix(
   deniedMessage: string,
 ): Promise<LocationFix> {
   const permission = await requestForegroundPermission();
-  if (!permission.granted) throw new Error(deniedMessage);
+  if (!permission.granted) throw new MemberFacingError(deniedMessage);
   return readForegroundFix();
 }

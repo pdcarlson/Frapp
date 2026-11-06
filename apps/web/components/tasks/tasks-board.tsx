@@ -1,5 +1,6 @@
 "use client";
 
+import { STATUS_LABELS } from "@repo/validation";
 import { useMemo, useState } from "react";
 import { CheckCircle2, Loader2, Plus, Trash2, Undo2 } from "lucide-react";
 import {
@@ -99,10 +100,22 @@ const COLUMNS: {
   label: string;
   empty: string;
 }[] = [
-  { status: "TODO", label: "To do", empty: "No tasks" },
-  { status: "IN_PROGRESS", label: "In progress", empty: "No tasks" },
-  { status: "COMPLETED", label: "Awaiting confirmation", empty: "No tasks" },
-  { status: "OVERDUE", label: "Overdue", empty: "Nothing overdue" },
+  { status: "TODO", label: STATUS_LABELS.task.TODO, empty: "No tasks" },
+  {
+    status: "IN_PROGRESS",
+    label: STATUS_LABELS.task.IN_PROGRESS,
+    empty: "No tasks",
+  },
+  {
+    status: "COMPLETED",
+    label: STATUS_LABELS.task.COMPLETED,
+    empty: "No tasks",
+  },
+  {
+    status: "OVERDUE",
+    label: STATUS_LABELS.task.OVERDUE,
+    empty: "Nothing overdue",
+  },
 ];
 
 export function TasksBoard() {
@@ -223,7 +236,7 @@ export function TasksBoard() {
         title: "Couldn't update task",
         description: getErrorMessage(
           error,
-          "The API rejected the transition. Only the assignee or admins can move tasks.",
+          "Only the person it's assigned to, or an officer, can move this task.",
         ),
         variant: "destructive",
       });
@@ -252,7 +265,7 @@ export function TasksBoard() {
     const result = await confirm({
       title: `Reject completion of "${task.title}"?`,
       description:
-        "The task goes back to IN_PROGRESS and the assignee is notified to keep working.",
+        "The task goes back to In progress, and the assignee is told to keep working.",
       confirmLabel: "Reject completion",
       tone: "destructive",
       comment: {

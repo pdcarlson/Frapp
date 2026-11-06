@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 
 import { useMemo, useState } from "react";
 import { Loader2, Trash2 } from "lucide-react";
-import { getArchetype } from "@repo/org-archetypes";
 import type { ChapterCustomRole } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,13 +29,8 @@ import {
   dashboardCheckboxHitAreaClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
-import {
-  asArray,
-  getErrorMessage,
-  guardIntDraft,
-  parseGuardedInt,
-} from "@/lib/utils";
-import { intDraftRefusal } from "./int-draft-refusal";
+import { asArray, getErrorMessage } from "@/lib/utils";
+import { keyFromLabel } from "@/lib/key-from-label";
 import { normalizeRoleOptions } from "@/lib/roles";
 import { can } from "@repo/validation";
 import { RolesAndPermissionsPage } from "@/components/roles/roles-page";
@@ -60,8 +54,6 @@ import { SettingsListCardSkeleton } from "@/components/settings/settings-skeleto
 type PermissionCatalogEntry = { key: string; permission: string };
 
 type Props = {
-  /** The chapter's active archetype key (drives the role pack). */
-  archetypeKey: string;
   /** Whether the caller holds `chapter-config:manage`. */
   canManage: boolean;
   /** The system permission catalog (capability rows + custom-role multi-select). */
@@ -115,7 +107,6 @@ type Props = {
  * are actually one.
  */
 export function SettingsRolesTab({
-  archetypeKey,
   canManage,
   catalog,
   configUnavailable,
@@ -123,13 +114,6 @@ export function SettingsRolesTab({
   onSaveDefaultInviteRole,
   isSavingConfig,
 }: Props) {
-  // `4e` draws the pack as a label in the header ("Role pack: Fraternity").
-  // The archetype's own `label` is that string; `archetypeKey` is the slug.
-  const packLabel = useMemo(
-    () => getArchetype(archetypeKey).label,
-    [archetypeKey],
-  );
-
   return (
     <div className="space-y-8">
       {/*
@@ -139,7 +123,7 @@ export function SettingsRolesTab({
         (`rbac.controller.ts`). They are separately grantable, so the section
         reads its own.
       */}
-      <RolesMatrixSection packLabel={packLabel} />
+      <RolesMatrixSection />
 
       {/*
         Role lifecycle: create, rename, recolour, reorder, delete, and the
@@ -169,7 +153,7 @@ export function SettingsRolesTab({
  * fetches, and all three are exactly the reads that let this tab render when
  * the chapter-config call is refused.
  */
-function RolesMatrixSection({ packLabel }: { packLabel: string | null }) {
+function RolesMatrixSection() {
   const { isOffline } = useNetwork();
   /*
    * **`roles:manage`, not the tab's `canManage`.** A cell PATCHes
@@ -215,7 +199,6 @@ function RolesMatrixSection({ packLabel }: { packLabel: string | null }) {
           {rolesQuery.isSuccess
             ? `${roles.length} ${roles.length === 1 ? "role" : "roles"}`
             : "Roles"}
-          {packLabel ? ` · ${packLabel} role pack` : null}
         </p>
       </div>
     </div>
@@ -382,10 +365,7 @@ function DefaultInviteRoleCard({
 }
 
 const EMPTY_DRAFT = {
-  key: "",
   label: "",
-  /** Text, so the field can be emptied mid-edit; its floor is checked at save. */
-  rank: "99",
   capabilities: [] as string[],
 };
 
@@ -414,12 +394,6 @@ function CustomView({
     [catalog],
   );
 
-  function setRank(raw: string) {
-    const next = guardIntDraft(raw);
-    if (next === undefined) return;
-    setDraft((prev) => ({ ...prev, rank: next }));
-  }
-
   function toggleDraftCapability(permission: string) {
     setDraft((prev) => ({
       ...prev,
@@ -431,19 +405,18 @@ function CustomView({
 
   async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!draft.key.trim() || !draft.label.trim()) return;
-    const rank = parseGuardedInt(draft.rank);
-    if (rank === undefined) {
-      toast({
-        ...intDraftRefusal(draft.rank, 0, "Rank")!,
-        variant: "destructive",
-      });
-      return;
-    }
+    const label = draft.label.trim();
+    if (!label) return;
+    // The key and the order are the system's, not the officer's: the key is
+    // derived from the name, and a new role goes after the existing ones.
+    const rank = roles.reduce((max, role) => Math.max(max, role.rank), 0) + 1;
     try {
       await createRole.mutateAsync({
-        key: draft.key.trim(),
-        label: draft.label.trim(),
+        key: keyFromLabel(
+          label,
+          roles.map((role) => role.key),
+        ),
+        label,
         rank,
         capabilities: draft.capabilities,
       });
@@ -455,10 +428,7 @@ function CustomView({
     } catch (error) {
       toast({
         title: "Couldn't create custom role",
-        description: getErrorMessage(
-          error,
-          "The key may already be in use. Retry with a different key.",
-        ),
+        description: getErrorMessage(error, "Check the name and try again."),
         variant: "destructive",
       });
     }
@@ -552,11 +522,6 @@ function CustomView({
         <Card>
           <CardHeader>
             <CardTitle>Custom roles</CardTitle>
-            <CardDescription>
-              A role applies on the member&apos;s next request. Core roles
-              can&apos;t be deleted. Saving writes an entry to the chapter audit
-              log.
-            </CardDescription>
           </CardHeader>
           <CardContent>
             {roles.length === 0 ? (
@@ -575,10 +540,6 @@ function CustomView({
                       <div className="min-w-0">
                         <span className="text-sm font-medium">
                           {role.label}
-                        </span>
-                        <span className="ml-2 font-mono text-xs text-muted-foreground">
-                          {role.key} · rank {role.rank}
-                          {role.core ? " · core" : ""}
                         </span>
                       </div>
                       {!role.core ? (
@@ -634,55 +595,23 @@ function CustomView({
         <Card>
           <CardHeader>
             <CardTitle>Create a custom role</CardTitle>
-            <CardDescription>
-              The key is a lowercase slug (letters, numbers, underscores),
-              unique per chapter.
-            </CardDescription>
           </CardHeader>
           <form onSubmit={handleCreate}>
             <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="grid gap-1.5">
-                  <Label htmlFor="custom-role-key">Key</Label>
-                  <Input
-                    id="custom-role-key"
-                    value={draft.key}
-                    disabled={!canManage}
-                    placeholder="pledge_educator"
-                    onChange={(event) =>
-                      setDraft((prev) => ({ ...prev, key: event.target.value }))
-                    }
-                  />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="custom-role-label">Label</Label>
-                  <Input
-                    id="custom-role-label"
-                    value={draft.label}
-                    disabled={!canManage}
-                    placeholder="Pledge Educator"
-                    onChange={(event) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        label: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="custom-role-rank">Rank</Label>
-                  <Input
-                    id="custom-role-rank"
-                    type="number"
-                    min={0}
-                    step={1}
-                    inputMode="numeric"
-                    aria-label="Rank"
-                    value={draft.rank}
-                    disabled={!canManage}
-                    onChange={(event) => setRank(event.target.value)}
-                  />
-                </div>
+              <div className="grid gap-1.5 sm:max-w-sm">
+                <Label htmlFor="custom-role-label">Name</Label>
+                <Input
+                  id="custom-role-label"
+                  value={draft.label}
+                  disabled={!canManage}
+                  placeholder="e.g. Pledge Educator"
+                  onChange={(event) =>
+                    setDraft((prev) => ({
+                      ...prev,
+                      label: event.target.value,
+                    }))
+                  }
+                />
               </div>
               <div className="grid gap-1.5">
                 <span className="text-sm font-medium">Capabilities</span>
@@ -716,10 +645,7 @@ function CustomView({
               <Button
                 type="submit"
                 disabled={
-                  !canManage ||
-                  createRole.isPending ||
-                  !draft.key.trim() ||
-                  !draft.label.trim()
+                  !canManage || createRole.isPending || !draft.label.trim()
                 }
               >
                 {createRole.isPending ? (

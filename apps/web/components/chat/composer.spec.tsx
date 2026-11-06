@@ -1221,8 +1221,7 @@ describe("Composer attachment ticket contract", () => {
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Couldn't upload file",
-          description:
-            "Upload URL response missing signed URL or storage path.",
+          description: "Retry in a moment.",
         }),
       ),
     );
@@ -1242,8 +1241,7 @@ describe("Composer attachment ticket contract", () => {
     await waitFor(() =>
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
-          description:
-            "Upload URL response missing signed URL or storage path.",
+          description: "Retry in a moment.",
         }),
       ),
     );
@@ -1323,9 +1321,12 @@ describe("uploadFailureDescription (#2199)", () => {
     expect(uploadFailureDescription(undefined)).toBe("Retry in a moment.");
   });
 
-  it("keeps a thrown Error's message, as before", () => {
+  it("words a thrown Error through the shared map, never its raw text", () => {
     expect(uploadFailureDescription(new Error("Upload failed (413)"))).toBe(
-      "Upload failed (413)",
+      "Retry in a moment.",
+    );
+    expect(uploadFailureDescription(new TypeError("Failed to fetch"))).toMatch(
+      /Check your connection/,
     );
   });
 });

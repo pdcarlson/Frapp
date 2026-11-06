@@ -50,6 +50,7 @@
  * Imports stay subpath-only for the same reason the runtime's do.
  */
 
+import { MemberFacingError } from "@repo/hooks/error-copy";
 import {
   useCallback,
   useEffect,
@@ -122,7 +123,8 @@ async function withFailureMessage(
       described = input.description ?? input.title;
     });
   } catch {
-    throw new Error(described ?? fallback);
+    // chat-core already worded it for the member (`classifyChatError`).
+    throw new MemberFacingError(described ?? fallback);
   }
 }
 
@@ -645,7 +647,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const edit = useCallback(
     async (messageId: string, content: string) => {
       if (!channelId || !ctx) {
-        throw new Error("Couldn't edit message. Try again.");
+        throw new MemberFacingError("Couldn't edit message. Try again.");
       }
       await withFailureMessage(
         (onError) =>
@@ -659,7 +661,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const remove = useCallback(
     async (messageId: string) => {
       if (!channelId || !ctx) {
-        throw new Error("Couldn't delete message. Try again.");
+        throw new MemberFacingError("Couldn't delete message. Try again.");
       }
       await withFailureMessage(
         (onError) =>
