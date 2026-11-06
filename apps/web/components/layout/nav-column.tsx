@@ -1,6 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useMemo, useRef } from "react";
+import { ChevronRight } from "lucide-react";
 import {
   countsAddressMember,
   sidebarUnreadCounts,
@@ -17,22 +18,37 @@ import { ChannelListSkeleton } from "@/components/chat/channel-list-skeleton";
 import { asArray, cn } from "@/lib/utils";
 
 /**
- * `/chat`'s left column from `lg` up: one 240px column with two faces (owner,
- * 2026-11-05; the rules are `spec/ui/design-system/components.md` § 7).
+ * The desktop shell's left column, on every route from `lg` up: one column, one
+ * chapter band, one geometry (`spec/ui/design-system/components.md` § 7).
  *
- * - **Channels** (the default): `ChatShell` portals its channels pane into the
- *   slot, with a back arrow beside the Channels heading.
- * - **Modules**: the ordinary nav. Every row but Chat navigates away; Chat
- *   slides the channels back.
+ * It holds two faces in the same box:
  *
- * The chapter switcher stays pinned above both, in a 48px band that lines up
- * with the top bar, so the Channels header below it lines up with the thread's
- * channel header. The width is the old channels column's: the nav's 220px and
- * the channels' 240px no longer sit side by side.
+ * - **Modules**, the ordinary nav. Off `/chat` it is the only face showing.
+ * - **Channels**, on `/chat` only and shown by default there: `ChatShell`
+ *   portals its channels pane into the slot, with a back arrow beside the
+ *   Channels heading. On `/chat` every module row navigates away except Chat,
+ *   which slides the channels back.
+ *
+ * **Why one column rather than a nav on most routes and a chat column on
+ * `/chat`** (Paul, 2026-11-06: "weird sidebar behavior and jumps when
+ * switching from chat to anything else"). The two used to be separate components:
+ * a 220px nav whose chapter row sat in its 8px padding, and a 240px chat
+ * column whose chapter row sat in a 48px hairlined band. Every trip between
+ * Chat and another module swapped one for the other, so the column changed
+ * width by 20px, the chapter row moved 4px, every module row moved 4px the
+ * other way, and the band's hairline came and went. Now the box, the band and
+ * the module rows never move, and arriving at Chat is the same slide the back
+ * arrow uses rather than a swap.
+ *
+ * The chapter switcher sits in a 48px band that lines up with the top bar, so
+ * the Channels header below it lines up with the thread's channel header. The
+ * width is 240px, the old channels column's, expanded on every route; the
+ * 56px rail is a preference that applies off Chat only, since channels need
+ * their names.
  *
  * Until chat's pane arrives (server render, hydration, the route loader) and
  * whenever it is gone (the segment's error boundary), the slot is empty and a
- * placeholder holds the column, with its own back arrow: the module nav must
+ * placeholder holds the face, with its own back arrow: the module nav must
  * stay reachable when chat itself is not there to offer the way back.
  *
  * The slide is the standard transition (`motion.ts`), horizontal in the
@@ -40,12 +56,19 @@ import { asArray, cn } from "@/lib/utils";
  * out of view is `inert`, so neither a tab stop nor a screen reader lands in it.
  */
 
-type ChatNavColumnProps = {
-  face: NavFace;
+type NavColumnProps = {
+  /**
+   * The face `/chat` has chosen, or `null` on every other route, where the
+   * modules face is the column.
+   */
+  chatFace: NavFace | null;
   onShowModules: () => void;
   onShowChannels: () => void;
   /** Receives the channels face's container (`NavFaceContext.channelsSlot`). */
   channelsSlotRef: (node: HTMLDivElement | null) => void;
+  /** The rail preference. Ignored on `/chat`. */
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   permissions: readonly string[] | null | undefined;
   isModuleEnabled?: (moduleKey: string) => boolean;
   pathname: string;
@@ -105,16 +128,44 @@ function useChatHasUnread(): boolean {
   ]);
 }
 
-export function ChatNavColumn({
-  face,
+/**
+ * What the Chat row trails on `/chat`'s modules face: the unread dot, when
+ * there is something new, and the chevron that says the row goes somewhere.
+ * A component of its own so the unread reads run only on `/chat`, while the
+ * nav around it stays one mounted instance on every route.
+ */
+function ChatRowTrailing() {
+  const hasUnread = useChatHasUnread();
+  return (
+    <>
+      {hasUnread ? (
+        <>
+          <span
+            aria-hidden="true"
+            className="h-1.5 w-1.5 rounded-full bg-foreground"
+          />
+          <span className="sr-only">, unread messages</span>
+        </>
+      ) : null}
+      <ChevronRight className="h-3.5 w-3.5 text-muted" aria-hidden="true" />
+    </>
+  );
+}
+
+export function NavColumn({
+  chatFace,
   onShowModules,
   onShowChannels,
   channelsSlotRef,
+  collapsed,
+  onToggleCollapsed,
   permissions,
   isModuleEnabled,
   pathname,
-}: ChatNavColumnProps) {
-  const hasUnread = useChatHasUnread();
+}: NavColumnProps) {
+  const onChat = chatFace !== null;
+  const face: NavFace = chatFace ?? "modules";
+  const isCollapsed = collapsed && !onChat;
   const modulesRef = useRef<HTMLDivElement>(null);
   const channelsRef = useRef<HTMLDivElement | null>(null);
   const previousFace = useRef(face);
@@ -136,7 +187,7 @@ export function ChatNavColumn({
     const target =
       face === "modules"
         ? modulesRef.current?.querySelector<HTMLElement>(
-            '[aria-current="page"]',
+            '[aria-current="page"], [aria-current="true"]',
           )
         : channelsRef.current?.querySelector<HTMLElement>("[data-nav-back]");
     target?.focus();
@@ -145,11 +196,26 @@ export function ChatNavColumn({
   const showingChannels = face === "channels";
 
   return (
-    <div className="box-border flex w-60 shrink-0 flex-col border-r border-border bg-surface-1">
-      <div className="box-border min-h-12 shrink-0 border-b border-border px-2 pt-1">
-        <ChapterNavHeader collapsed={false} />
+    <div
+      className={cn(
+        "box-border flex shrink-0 flex-col border-r border-border bg-surface-1",
+        isCollapsed ? "w-14" : "w-60",
+      )}
+    >
+      <div
+        className={cn(
+          "box-border min-h-12 shrink-0 border-b border-border px-2 pt-1",
+          isCollapsed && "flex justify-center",
+        )}
+      >
+        <ChapterNavHeader collapsed={isCollapsed} />
       </div>
       <div className="relative min-h-0 flex-1 overflow-hidden">
+        {/*
+          The channels face is mounted on every route, out of view and inert
+          off `/chat`, so arriving at Chat slides it in rather than swapping
+          the column, and chat's pane has its slot from the first frame.
+        */}
         <div
           ref={channelsRef}
           inert={!showingChannels}
@@ -182,17 +248,24 @@ export function ChatNavColumn({
           style={SLIDE_STYLE}
           className={cn(
             SLIDE,
-            "p-2 pt-1",
+            // No top padding: the nav's own 4px under the band puts the first
+            // row 52px down, where the old sidebar had it.
+            "p-2 pt-0",
+            isCollapsed && "items-center",
             showingChannels ? "-translate-x-full opacity-0" : "translate-x-0",
           )}
         >
           <AppNav
-            variant="face"
-            collapsed={false}
+            collapsed={isCollapsed}
+            onToggleCollapsed={onChat ? undefined : onToggleCollapsed}
             permissions={permissions}
             isModuleEnabled={isModuleEnabled}
             pathname={pathname}
-            chatRow={{ onSelect: onShowChannels, hasUnread }}
+            chatRow={
+              onChat
+                ? { onSelect: onShowChannels, trailing: <ChatRowTrailing /> }
+                : undefined
+            }
           />
         </div>
       </div>

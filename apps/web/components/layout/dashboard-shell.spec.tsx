@@ -389,7 +389,7 @@ describe("DashboardShell", () => {
   it("honours the server-read collapse preference on first render", () => {
     // Read from a cookie by the dashboard layout so the first paint is already
     // the right width. If this regressed to a client-side read, the nav would
-    // render at 220px and snap to 56px after hydration on every route.
+    // render at 240px and snap to 56px after hydration on every route.
     render(
       <DashboardShell defaultNavCollapsed>
         <p>route content</p>
@@ -600,14 +600,64 @@ describe("DashboardShell", () => {
           <BackToMenu />
         </DashboardShell>,
       );
-      expect(container.querySelector("[data-nav-channels-slot]")).toBeNull();
+      // The channels face stays mounted, out of view and out of reach, so
+      // arriving at Chat slides it in rather than swapping the column.
+      const slot = container.querySelector("[data-nav-channels-slot]");
+      expect(slot!.closest("[inert]")).not.toBeNull();
+      const nav = screen.getByRole("navigation", { name: "Primary" });
+      expect(nav.closest("[inert]")).toBeNull();
       expect(screen.getByText("no nav face")).toBeInTheDocument();
       expect(
-        within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
-          "link",
-          { name: "Chat" },
-        ),
+        within(nav).getByRole("link", { name: "Chat" }),
       ).toHaveAttribute("href", "/chat");
+    });
+
+    it("keeps one column across Chat and every other route (Paul, 2026-11-06)", () => {
+      // The jump: Chat used to swap a 240px column with a hairlined 48px
+      // chapter band for a 220px nav with its chapter row in 8px of padding.
+      mockPathname.value = "/events";
+      const { container, rerender } = render(
+        <DashboardShell>content</DashboardShell>,
+      );
+      const column = () =>
+        container.querySelector("[data-nav-channels-slot]")!.closest(
+          ".border-r",
+        ) as HTMLElement;
+      const switcher = () =>
+        screen.getByRole("button", { name: /chapter menu/i });
+      const before = { column: column(), switcher: switcher() };
+      expect(before.column.className).toContain("w-60");
+
+      mockPathname.value = "/chat";
+      rerender(<DashboardShell>content</DashboardShell>);
+      // The same nodes: nothing was unmounted, so nothing can jump.
+      expect(column()).toBe(before.column);
+      expect(switcher()).toBe(before.switcher);
+      expect(column().className).toContain("w-60");
+
+      mockPathname.value = "/tasks";
+      rerender(<DashboardShell>content</DashboardShell>);
+      expect(column()).toBe(before.column);
+      expect(switcher()).toBe(before.switcher);
+    });
+
+    it("lets the rail apply off Chat only", () => {
+      mockPathname.value = "/events";
+      const { container, rerender } = render(
+        <DashboardShell defaultNavCollapsed>content</DashboardShell>,
+      );
+      const column = () =>
+        container.querySelector("[data-nav-channels-slot]")!.closest(
+          ".border-r",
+        ) as HTMLElement;
+      expect(column().className).toContain("w-14");
+
+      mockPathname.value = "/chat";
+      rerender(<DashboardShell defaultNavCollapsed>content</DashboardShell>);
+      expect(column().className).toContain("w-60");
+      expect(
+        screen.queryByRole("button", { name: /expand navigation/i }),
+      ).not.toBeInTheDocument();
     });
   });
 });

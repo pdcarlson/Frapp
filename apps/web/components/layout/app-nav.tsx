@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import type { ReactNode } from "react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useHiddenUnsetFeatures } from "@repo/hooks";
 import { cn } from "@/lib/utils";
 import { ChapterNavHeader } from "@/components/layout/chapter-nav-header";
@@ -13,21 +14,23 @@ import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
 
 /**
- * The flush-left navigation column: 220px expanded, 56px as an icon rail.
+ * The module nav: 240px expanded, 56px as an icon rail.
  *
- * Geometry is board option `1b` (expanded) and `1c` (rail). `--surface-1` field,
- * one hairline on the right, 8px of padding, 2px between rows.
+ * Geometry is board option `1b` (expanded) and `1c` (rail): 8px of padding,
+ * 2px between rows. The width was 220px until 2026-11-06, when one column
+ * started serving every route (`nav-column.tsx`).
+ *
+ * **It is not the column.** From `lg` up it is the modules face of the
+ * shell's one left column (`nav-column.tsx`), which owns the width, the
+ * surface, the hairline and the pinned chapter row. On `/chat` the column also
+ * holds the channel list, and this nav slides in over it from a back arrow.
+ * Below `lg` it renders inside the mobile drawer (`variant="drawer"`), with the
+ * chapter row on top, always expanded, and no toggle.
  *
  * **Collapsing is a preference, not a breakpoint.** The responsive contract is
  * still two states switching once at `lg` (`spec/ui/web-dashboard/README.md`):
- * below `lg` this component renders inside the mobile drawer, always expanded,
- * and the rail never appears there. Adding a viewport tier would be a spec
+ * the rail never appears in the drawer. Adding a viewport tier would be a spec
  * change; letting a desktop user narrow their own nav is not.
- *
- * **On `/chat` it is a face, not the column** (`variant="face"`, 2026-11-05):
- * from `lg` up the left column there is the channel list, and this nav slides
- * in over it from a back arrow (`chat-nav-column.tsx`). The face has no chrome,
- * no collapse toggle and no chapter header, which the column pins above both.
  *
  * Section headings are derived, never declared — a heading renders only when at
  * least one of its items survives the permission, module and setup gates, so a
@@ -44,17 +47,18 @@ type AppNavProps = {
   pathname: string;
   onNavigate?: () => void;
   /**
-   * The drawer reuses this component wholesale rather than duplicating the nav
-   * ("the drawer is the sidebar"). It supplies its own heading and scroll
-   * container, so it suppresses the collapse toggle and the outer chrome.
+   * `column` is the desktop column's modules face (`nav-column.tsx`), which
+   * pins the chapter row above it. The drawer reuses this component wholesale
+   * rather than duplicating the nav ("the drawer is the sidebar"), with the
+   * chapter row on top, no collapse toggle and no rail.
    */
-  variant?: "sidebar" | "drawer" | "face";
+  variant?: "column" | "drawer";
   /**
-   * The module face of `/chat`'s left column (`nav-face.tsx`): the Chat row
-   * slides the channel list back instead of linking to the open route, and
-   * carries an unread dot while the channels are out of sight.
+   * `/chat`'s modules face (`nav-face.tsx`): the Chat row slides the channel
+   * list back instead of linking to the open route, and trails what the column
+   * gives it (the unread dot and a chevron).
    */
-  chatRow?: { onSelect: () => void; hasUnread: boolean };
+  chatRow?: { onSelect: () => void; trailing: ReactNode };
   className?: string;
 };
 
@@ -82,15 +86,11 @@ export function AppNav({
   isModuleEnabled,
   pathname,
   onNavigate,
-  variant = "sidebar",
+  variant = "column",
   chatRow,
   className,
 }: AppNavProps) {
-  // The face shares the drawer's shape: no outer chrome and no collapse
-  // toggle. It also leaves the chapter header out, because the column it sits
-  // in keeps that header pinned above both faces.
-  const isFace = variant === "face";
-  const isDrawer = variant === "drawer" || isFace;
+  const isDrawer = variant === "drawer";
   // The drawer has no room to be a rail and no toggle to leave it, so it is
   // always expanded regardless of the stored preference.
   const isCollapsed = collapsed && !isDrawer;
@@ -143,26 +143,7 @@ export function AppNav({
             hiddenFeatures={hiddenFeatures}
             collapsed={isCollapsed}
             {...(chatRow && item.id === "chat"
-              ? {
-                  onSelect: chatRow.onSelect,
-                  trailing: (
-                    <>
-                      {chatRow.hasUnread ? (
-                        <>
-                          <span
-                            aria-hidden="true"
-                            className="h-1.5 w-1.5 rounded-full bg-foreground"
-                          />
-                          <span className="sr-only">, unread messages</span>
-                        </>
-                      ) : null}
-                      <ChevronRight
-                        className="h-3.5 w-3.5 text-muted"
-                        aria-hidden="true"
-                      />
-                    </>
-                  ),
-                }
+              ? { onSelect: chatRow.onSelect, trailing: chatRow.trailing }
               : {})}
           />
         ))}
@@ -175,19 +156,14 @@ export function AppNav({
   return (
     <div
       className={cn(
-        "flex min-h-0 flex-col",
-        isDrawer
-          ? "flex-1"
-          : cn(
-              "box-border shrink-0 border-r border-border bg-surface-1 p-2",
-              isCollapsed ? "w-[56px] items-center" : "w-[220px]",
-            ),
+        "flex min-h-0 flex-1 flex-col",
+        isCollapsed && "items-center",
         className,
       )}
     >
-      {isFace ? null : (
-        <ChapterNavHeader collapsed={isCollapsed} onNavigate={onNavigate} />
-      )}
+      {isDrawer ? (
+        <ChapterNavHeader collapsed={false} onNavigate={onNavigate} />
+      ) : null}
       <nav
         aria-label="Primary"
         className={cn(
@@ -197,7 +173,7 @@ export function AppNav({
       >
         {sections}
       </nav>
-      {isDrawer ? null : (
+      {isDrawer || !onToggleCollapsed ? null : (
         <div
           className={cn(
             "mt-auto flex pt-2",
