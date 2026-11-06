@@ -1188,9 +1188,9 @@ export function MessageItem({
           /*
           The bar's zero-height track, sticky inside the message's cell and as
           wide as the row. At rest it sits on the content's top edge, and the
-          bar centres itself on the row's. Once the row's top scrolls under the top of the timeline,
-          the track holds the bar on screen while the message scrolls under
-          it, so a tall message (an image, a long import) keeps its actions in
+          bar centres itself on the row's. Once the row's top scrolls under
+          the top of the timeline, the track holds the bar on screen while the
+          message scrolls under it, so a tall message (an image, a long import) keeps its actions in
           reach rather than clipping them at the pane's edge. It lets go once
           the message's own bottom passes the top of the pane. The offset is
           the bar's half height plus a margin, past `--row-pt`: 34px tall on a
