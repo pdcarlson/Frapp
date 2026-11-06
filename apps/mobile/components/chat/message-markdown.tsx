@@ -18,11 +18,12 @@ import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import { isOpenableHref } from "@repo/chat-core/links";
 import {
-  MESSAGE_MARKDOWN_ELEMENTS,
+  MESSAGE_RENDER_ELEMENTS,
   isElement,
   layOutMessageBody,
   remarkBareUrls,
   remarkDepthCap,
+  remarkMentionChips,
   skipsMarkdownParse,
   textOf,
   type HastNode,
@@ -44,7 +45,9 @@ import {
  * element allowlist from `@repo/chat-core/markdown`. So a body gets the same
  * bold, italic, code and links on both clients, parsed by the same parser.
  * Mobile adds `remarkBareUrls`, because it has linked a bare URL since #2775
- * and web doesn't yet (#2862).
+ * and web doesn't yet (#2862). `@Name` takes the in-body mention chip, from
+ * the same `remarkMentionChips` web runs (`components.md` § In-body mention
+ * chip).
  *
  * **The whole body is one `Text`.** Bold, italic, code and links are `Text`s
  * nested in it, so the body keeps what one `Text` gives it:
@@ -115,7 +118,9 @@ function collectLinks(root: HastNode): MessageLink[] {
 
 type TextFlowResult = Omit<ParsedMessageMarkdown, "body">;
 
-const ALLOWED: ReadonlySet<string> = new Set(MESSAGE_MARKDOWN_ELEMENTS);
+/** The formatting set plus the mention chip (`MESSAGE_RENDER_ELEMENTS`). */
+const ALLOWED_ELEMENTS = MESSAGE_RENDER_ELEMENTS;
+const ALLOWED: ReadonlySet<string> = new Set(ALLOWED_ELEMENTS);
 
 /**
  * The rehype pass that shapes the tree for one `Text`: the shared line layout
@@ -170,9 +175,12 @@ export function parseMessageMarkdown(content: string): ParsedMessageMarkdown {
       // the source positions a bare URL is measured by.
       [remarkBareUrls, { content }],
       remarkBreaks,
+      // The RAW body, not the text remark decoded: `&#64;Jane` notifies
+      // nobody, so it must not draw as a mention (`markdown-mentions.ts`).
+      [remarkMentionChips, { content }],
     ],
     rehypePlugins: [[rehypeTextFlow, { result, source: flatten ? "" : content }]],
-    allowedElements: MESSAGE_MARKDOWN_ELEMENTS,
+    allowedElements: ALLOWED_ELEMENTS,
     unwrapDisallowed: true,
     components: COMPONENTS,
   });
@@ -251,6 +259,21 @@ function Code({ children }: { children?: ReactNode }) {
   );
 }
 
+/**
+ * `@Name` as the in-body mention chip: the fixed amber pair on the handle
+ * alone, at the weight of the run around it, the rest of the row untouched. A nested `Text` takes a
+ * fill but not padding or a radius, so the chip is the tinted run itself,
+ * where web pads it by a few pixels and rounds it by 5.
+ */
+function Mention({ children }: { children?: ReactNode }) {
+  const { styles, bold, italic } = useMarkdownContext();
+  return (
+    <Text style={[styles.mention, { fontFamily: faceFor(bold, italic) }]}>
+      {children}
+    </Text>
+  );
+}
+
 const COMPONENTS: Components = {
   p: ({ children }) => <>{children}</>,
   strong: ({ children }) => <Emphasis bold>{children}</Emphasis>,
@@ -263,6 +286,7 @@ const COMPONENTS: Components = {
     <Code>{textOf((node ?? { type: "root" }) as HastNode).replace(/\n$/, "")}</Code>
   ),
   br: () => "\n",
+  mark: ({ children }) => <Mention>{children}</Mention>,
   a: function Link({ node, children }) {
     const { styles, onLongPress } = useMarkdownContext();
     // The same decision `collectLinks` makes, so the row's accessibility
@@ -389,6 +413,10 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.popover,
     },
     codeBold: { fontWeight: "700" },
+    mention: {
+      backgroundColor: tokens.color.semantic.mentionChip,
+      color: tokens.color.semantic.mentionChipText,
+    },
     codeItalic: { fontStyle: "italic" },
   });
 }
