@@ -12,7 +12,7 @@ import Svg, { Circle, Path } from "react-native-svg";
  */
 
 const STROKE_WIDTH = 1.6;
-/** iconography.md §1's inactive fill, as `mute-glyph.tsx` draws it. */
+/** iconography.md §1's inactive fill. */
 const INACTIVE_FILL = "rgba(255,255,255,0.06)";
 
 export function LocationGlyph({

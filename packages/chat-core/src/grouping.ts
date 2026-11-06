@@ -10,6 +10,7 @@
  * the only place a date appears in the thread.
  */
 import { dayDelta, parseInstant } from "@repo/formatting";
+import { isAuditLine } from "./cards";
 import { isCardMessage } from "./message-actions";
 
 /**
@@ -61,6 +62,8 @@ export interface GroupableMessage extends MessageAuthorKey {
   kind?: string | null;
   reply_to_id?: string | null;
   is_deleted?: boolean;
+  /** Read only to tell an audit line (`isAuditLine`) from a card. */
+  payload?: unknown;
 }
 
 /** A row as the thread draws it: in full, or as a blocked member's tombstone. */
@@ -121,7 +124,12 @@ function startsRun(
   }
   // The quote above a reply needs the author line under it.
   if (message.reply_to_id) return true;
+  // Audit lines stack: one under another draws tight, with no gap between
+  // them, however far apart in time (each line carries its own time).
+  if (isAuditLine(message) && isAuditLine(prev.message)) return false;
   // A card is its own object in the channel; its author line says who ran it.
+  // An audit line draws no author line, but still breaks the run around it,
+  // so the message after it names its author again.
   if (isCardMessage(message) || isCardMessage(prev.message)) return true;
   const at = parseInstant(message.created_at);
   const before = parseInstant(prev.message.created_at);

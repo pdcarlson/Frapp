@@ -1034,7 +1034,9 @@ describe("ThreadMessageRow — record cards (#3383)", () => {
     points: { payload: POINTS, eyebrow: "Points" },
     hours: { payload: HOURS, eyebrow: "Service hours" },
     announcement: { payload: { body: "Dues are due Friday" }, eyebrow: "Announcement" },
-    system_audit: { payload: AUDIT, eyebrow: "Audit" },
+    // An audit line, not a card (components.md §11 § Audit lines): its words
+    // stand where the eyebrow would.
+    system_audit: { payload: AUDIT, eyebrow: "edited a role" },
     rush: {
       payload: {
         candidate_id: "cand-1",
@@ -1123,10 +1125,26 @@ describe("ThreadMessageRow — record cards (#3383)", () => {
         ),
       ),
     );
-    expect(text).toContain("role_updated");
-    expect(text).toContain("by Blake");
+    expect(text).toContain("Blake ");
+    expect(text).toContain("edited a role");
+    expect(text).not.toContain("role_updated");
     expect(text).not.toContain(BLOCKED.slice(0, 6));
-    expect(text).toContain("Changed: permissions");
+    expect(text).toContain("permissions");
+  });
+
+  it("draws an audit entry as a line with no author line", () => {
+    const tree = renderRow(
+      visible(
+        message({
+          kind: "system_audit",
+          sender_id: SYSTEM_SENDER_ID,
+          content: "role_updated: permissions",
+          payload: AUDIT,
+        }),
+      ),
+    );
+    expect(tree.root.findAll((node) => node.props.testID === "audit-line")).toHaveLength(1);
+    expect(tree.root.findAll((node) => node.props.testID === "system-avatar")).toHaveLength(0);
   });
 
   it("draws the server's own notices, which carry no audit payload, as their sentence", () => {

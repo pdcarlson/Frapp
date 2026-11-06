@@ -374,7 +374,11 @@ describe("MessageItem compact layout (#2873)", () => {
       message({ sender_id: VIEWER, _status: "pending" }),
     );
     expect(bodyOf(container).className).toContain("text-muted-foreground");
-    expect(screen.getByText("Sending…")).toBeInTheDocument();
+    // The gray text is the whole pending state on screen: no caption and no
+    // spinner under it (owner decision 2026-11-06). A screen reader hears it.
+    expect(screen.queryByText("Sending…")).not.toBeInTheDocument();
+    expect(screen.getByText("Sending")).toHaveClass("sr-only");
+    expect(container.querySelector(".animate-spin")).toBeNull();
   });
 
   it("dims a failed message's text and says so in the danger tone", () => {

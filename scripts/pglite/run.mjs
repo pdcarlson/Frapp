@@ -171,6 +171,7 @@ await import("./tiers/hide-direct-message.mjs");
 await import("./tiers/private-channel-members.mjs");
 await import("./tiers/sidebar-section-fold.mjs");
 await import("./tiers/unread-counts-blocked-sender.mjs");
+await import("./tiers/unread-counts-skip-audit-mirror.mjs");
 await import("./tiers/discord-author-links.mjs");
 await import("./tiers/discord-import-purge.mjs");
 await import("./tiers/discord-import-merge-target.mjs");

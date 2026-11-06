@@ -100,7 +100,10 @@ export function ChatCardShell({
       accessible={false}
       onLongPress={onOpenActions}
       disabled={!onOpenActions}
-      style={styles.card}
+      style={[
+        styles.card,
+        message._status === "pending" ? styles.cardPending : null,
+      ]}
     >
       <View accessible={hasActions} {...a11yActions}>
         {header}
@@ -146,7 +149,8 @@ function CardDeliveryChrome({
   const styles = useCardStyles();
   switch (chrome.status) {
     case "pending":
-      return <Text style={styles.metaText}>Sending…</Text>;
+      // The card dims instead (`styles.cardPending`): no line under it.
+      return null;
     case "failed":
       return (
         <View style={styles.failedRow}>
@@ -451,6 +455,8 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
     },
+    // In flight: the whole card grays, as a pending message's text does.
+    cardPending: { opacity: 0.5 },
     eyebrowRow: {
       flexDirection: "row",
       alignItems: "center",

@@ -34,8 +34,8 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * same split the app-icon badge makes (`lib/notifications/use-badge-sync.ts`).
  *
  * The bell is the inbox's glyph and nothing else's: a channel's alert level
- * draws a speaker (`components/chat/mute-glyph.tsx`), so the two controls
- * never share a silhouette.
+ * sits behind the thread header's `⋯` (`notification-level-control.tsx`), so
+ * the two controls never share a silhouette.
  */
 export function NotificationsBell() {
   const router = useRouter();

@@ -454,7 +454,8 @@ export function MessageItem({
   const reactions = groupReactions(message, viewerId);
   const chrome = deliveryChrome(message);
   // A send still in flight or failed reads as not yet posted.
-  const muted = chrome.status === "pending" || chrome.status === "failed";
+  const pending = chrome.status === "pending";
+  const muted = pending || chrome.status === "failed";
 
   // Mount the renderer only when the message actually has files. The query hook
   // inside reaches for `FrappClientProvider`, so mounting unconditionally would
@@ -548,11 +549,21 @@ export function MessageItem({
       onJumpToParent={text ? undefined : quoteJump(message, onJumpToParent)}
     >
       {text ? (
-        <View accessible={"accessibilityActions" in bodyA11y} {...bodyA11y}>
+        <View
+          accessible={"accessibilityActions" in bodyA11y}
+          // The gray body is the whole pending state on screen (§11 § What
+          // rides the row); a screen reader hears it here instead.
+          accessibilityHint={pending ? "Sending" : undefined}
+          {...bodyA11y}
+        >
           {text}
         </View>
       ) : null}
-      {attachments}
+      {attachments && pending ? (
+        <View style={styles.pendingFiles}>{attachments}</View>
+      ) : (
+        attachments
+      )}
       {text ? null : <OwnLineMarkers message={message} />}
       <DeliveryLine
         chrome={chrome}
@@ -614,7 +625,10 @@ function DeliveryLine({
     case "confirmed":
       return null;
     case "pending":
-      return <Text style={styles.metaText}>Sending…</Text>;
+      // Nothing under the row: the body draws gray until the server confirms
+      // it, so a send never pushes the thread up a line and back
+      // (components.md §11 § What rides the row, owner decision 2026-11-06).
+      return null;
     case "failed":
       return (
         <View style={styles.failedRow}>
@@ -910,6 +924,8 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
     },
     bodyMuted: { color: tokens.color.text.mutedForeground },
+    // A photo still uploading dims like the gray text beside it.
+    pendingFiles: { opacity: 0.5 },
     trailing: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
