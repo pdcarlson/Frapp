@@ -456,3 +456,68 @@ describe('DiscordBotGatewayService.discoverChannels: who can read what', () => {
     );
   });
 });
+
+describe('DiscordBotGatewayService: people as the server shows them', () => {
+  let get: jest.SpyInstance;
+
+  beforeEach(() => {
+    get = jest.spyOn(REST.prototype, 'get');
+  });
+
+  afterEach(() => {
+    get.mockRestore();
+  });
+
+  it('reads a member: nickname and server avatar from the member, the rest from the account', async () => {
+    get.mockResolvedValue({
+      nick: 'Moiz Steenhuis',
+      avatar: 'b'.repeat(32),
+      user: {
+        id: '42',
+        username: 'pinstripe_',
+        global_name: 'Pinstripe',
+        avatar: 'a'.repeat(32),
+      },
+    });
+
+    await expect(gateway().fetchGuildMember('7', '42')).resolves.toEqual({
+      userId: '42',
+      nick: 'Moiz Steenhuis',
+      guildAvatar: 'b'.repeat(32),
+      globalName: 'Pinstripe',
+      username: 'pinstripe_',
+      avatar: 'a'.repeat(32),
+    });
+    expect(get).toHaveBeenCalledWith('/guilds/7/members/42');
+  });
+
+  it('answers null for someone not in the server, and for an answer about someone else', async () => {
+    get.mockRejectedValueOnce(
+      Object.assign(new Error('Unknown Member'), { status: 404 }),
+    );
+    await expect(gateway().fetchGuildMember('7', '42')).resolves.toBeNull();
+
+    get.mockResolvedValueOnce({ nick: 'Someone', user: { id: '43' } });
+    await expect(gateway().fetchGuildMember('7', '42')).resolves.toBeNull();
+  });
+
+  it('throws any other refusal, so the caller can tell a failed read from a departed member', async () => {
+    get.mockRejectedValue(
+      Object.assign(new Error('Service Unavailable'), { status: 503 }),
+    );
+    await expect(gateway().fetchGuildMember('7', '42')).rejects.toMatchObject({
+      status: 503,
+    });
+  });
+
+  it("reads a departed member's account avatar", async () => {
+    get.mockResolvedValueOnce({ id: '42', avatar: 'a'.repeat(32) });
+    await expect(gateway().fetchUserAvatar('42')).resolves.toBe('a'.repeat(32));
+    expect(get).toHaveBeenCalledWith('/users/42');
+
+    get.mockRejectedValueOnce(
+      Object.assign(new Error('Unknown User'), { status: 404 }),
+    );
+    await expect(gateway().fetchUserAvatar('42')).resolves.toBeNull();
+  });
+});
