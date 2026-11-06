@@ -9,10 +9,7 @@ import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
 } from '#domain/repositories/member.repository.interface';
-import {
-  SystemPermissions,
-  SystemRoleKeys,
-} from '#domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 import type { ChapterMemberIdentity } from '#domain/entities/member.entity';
 import type { Role } from '#domain/entities/role.entity';
 import { RbacService } from './rbac.service';
@@ -22,10 +19,10 @@ import { logThrowable } from '../../infrastructure/observability/log-throwable';
 export interface MentionRoleView extends MentionRole {
   color: string | null;
   /**
-   * Whether the role is a whole-chapter ping: the seeded Member role, or any
-   * role more than half the chapter holds. Only an officer may send one.
+   * The role's own switch (`roles.mentionable`): whether any member may ping
+   * it. `mentionable` is that, or the sender being able to ping any role.
    */
-  chapter_wide: boolean;
+  open_to_all: boolean;
 }
 
 /**
@@ -36,10 +33,12 @@ export interface MentionRoleView extends MentionRole {
  * roles and, for a whole-chapter role, the sender's permissions, and the
  * picker needs the same answer the resolver gives, so both read it here.
  *
- * The rule (`spec/behavior/chat/README.md` § Role mentions): any member may
- * `@` a role, except a role that covers most of the chapter, which only a
- * member holding `channels:manage` (or the wildcard) may. A mention gets past
- * a mute, so `@Member` from anyone would be a chapter-wide ping no mute stops.
+ * The rule (`spec/behavior/chat/README.md` § Role mentions; owner direction
+ * 2026-11-06, "anyone can ping any role by default. officers can change
+ * defaults"): any member may `@` a role whose switch is on, which every role's
+ * is until an officer turns it off. A role switched off can still be pinged by
+ * a member who can manage channels or roles, the way Discord lets a moderator
+ * ping a role that is not mentionable.
  */
 @Injectable()
 export class ChatMentionService {
@@ -91,13 +90,13 @@ export class ChatMentionService {
 
       const views = mentionRoleViews(roles, candidates);
       // The sender's permissions cost two more reads, so they are fetched only
-      // when a token names a whole-chapter role, the one case they decide.
+      // when a token names a role that is switched off, the one case they decide.
       const named = new Set(tokens.map(foldMentionName));
       const needsOfficer = views.some(
-        (view) => view.chapter_wide && named.has(foldMentionName(view.name)),
+        (view) => !view.open_to_all && named.has(foldMentionName(view.name)),
       );
       const officer = needsOfficer
-        ? canPingWholeChapter(
+        ? canPingAnyRole(
             await this.rbac.getEffectivePermissions(chapterId, senderId),
           )
         : false;
@@ -132,25 +131,26 @@ export class ChatMentionService {
       this.rbac.findByChapter(chapterId),
       this.rbac.getEffectivePermissions(chapterId, userId),
     ]);
-    const officer = canPingWholeChapter(permissions);
+    const officer = canPingAnyRole(permissions);
     return mentionRoleViews(roles, candidates)
       .filter((view) => view.member_ids.length > 0)
       .map((view) => withMentionable(view, officer));
   }
 }
 
-/** Whether a member may send a whole-chapter role ping. */
-export function canPingWholeChapter(permissions: readonly string[]): boolean {
+/** Whether a member may ping a role whose switch is off. */
+export function canPingAnyRole(permissions: readonly string[]): boolean {
   return (
     permissions.includes(SystemPermissions.WILDCARD) ||
-    permissions.includes(SystemPermissions.CHANNELS_MANAGE)
+    permissions.includes(SystemPermissions.CHANNELS_MANAGE) ||
+    permissions.includes(SystemPermissions.ROLES_MANAGE)
   );
 }
 
 /**
- * Every role of the chapter with its holders, in role order, and whether it
- * is a whole-chapter ping. `mentionable` is left for the caller to set, since
- * it depends on who is sending.
+ * Every role of the chapter with its holders, in role order, and its own
+ * switch. `mentionable` is left for the caller to set, since it depends on
+ * who is sending.
  */
 export function mentionRoleViews(
   roles: readonly Role[],
@@ -173,9 +173,8 @@ export function mentionRoleViews(
         name: role.name,
         color: role.color,
         member_ids: memberIds,
-        chapter_wide:
-          role.system_key === SystemRoleKeys.MEMBER ||
-          memberIds.length * 2 > members.length,
+        // A row read before the column existed has no value: on, its default.
+        open_to_all: role.mentionable !== false,
         mentionable: false,
       };
     });
@@ -185,5 +184,5 @@ function withMentionable(
   view: MentionRoleView,
   officer: boolean,
 ): MentionRoleView {
-  return { ...view, mentionable: officer || !view.chapter_wide };
+  return { ...view, mentionable: officer || view.open_to_all };
 }

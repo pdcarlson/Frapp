@@ -11770,6 +11770,10 @@
               "#A9B4C2"
             ],
             "description": "One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color."
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it."
           }
         },
         "required": [
@@ -11810,6 +11814,10 @@
               "#A9B4C2"
             ],
             "description": "One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color."
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it."
           }
         }
       },
@@ -12326,7 +12334,7 @@
           },
           "mentionable": {
             "type": "boolean",
-            "description": "Whether the caller may `@` this role. False for a role that covers most of the chapter (the Member role, or one more than half the members hold) unless the caller holds `channels:manage`: a mention gets past a mute, so that would be a chapter-wide ping no mute stops. A token naming a role the sender may not ping reaches nobody."
+            "description": "Whether the caller may `@` this role: its own switch (`mentionable` on the role, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming a role the sender may not ping reaches nobody."
           }
         },
         "required": [

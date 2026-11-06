@@ -68,7 +68,7 @@ describe('ChatController', () => {
           name: 'Officers',
           color: null,
           member_ids: ['u-1'],
-          chapter_wide: false,
+          open_to_all: true,
           mentionable: true,
         },
       ]),

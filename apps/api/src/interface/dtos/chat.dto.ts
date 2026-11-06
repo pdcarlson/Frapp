@@ -427,7 +427,7 @@ export class MentionRoleDto {
   @ApiProperty({
     type: Boolean,
     description:
-      'Whether the caller may `@` this role. False for a role that covers most of the chapter (the Member role, or one more than half the members hold) unless the caller holds `channels:manage`: a mention gets past a mute, so that would be a chapter-wide ping no mute stops. A token naming a role the sender may not ping reaches nobody.',
+      'Whether the caller may `@` this role: its own switch (`mentionable` on the role, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming a role the sender may not ping reaches nobody.',
   })
   mentionable: boolean;
 }

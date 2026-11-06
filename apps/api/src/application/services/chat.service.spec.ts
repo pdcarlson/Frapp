@@ -3442,7 +3442,11 @@ describe('ChatService', () => {
     const role = (
       id: string,
       name: string,
-      extra: Partial<{ system_key: string | null; display_order: number }> = {},
+      extra: Partial<{
+        system_key: string | null;
+        display_order: number;
+        mentionable: boolean;
+      }> = {},
     ) => ({
       id,
       chapter_id: 'ch-1',
@@ -3452,6 +3456,7 @@ describe('ChatService', () => {
       is_system: false,
       display_order: 1,
       color: null,
+      mentionable: true,
       created_at: '2026-11-06T00:00:00Z',
       ...extra,
     });
@@ -3461,7 +3466,11 @@ describe('ChatService', () => {
         seedRoster();
         mockRbac.findByChapter.mockResolvedValue([
           role('r-officers', 'Officers'),
-          role('r-member', 'Member', { system_key: 'MEMBER', display_order: 9 }),
+          role('r-member', 'Member', {
+            system_key: 'MEMBER',
+            display_order: 9,
+            mentionable: false,
+          }),
         ]);
         mockMessageRepo.create.mockResolvedValue(baseMessage);
       });
@@ -3487,7 +3496,7 @@ describe('ChatService', () => {
         );
       });
 
-      it('lets a member without channels:manage ping nobody with the Member role', async () => {
+      it('lets a member ping nobody through a role an officer switched off', async () => {
         mockRbac.getEffectivePermissions.mockResolvedValue(['members:view']);
         await expect(send('@Member read this')).resolves.toEqual([]);
         expect(mockRbac.getEffectivePermissions).toHaveBeenCalledWith(
@@ -3496,7 +3505,7 @@ describe('ChatService', () => {
         );
       });
 
-      it('lets an officer ping the whole chapter through the Member role', async () => {
+      it('lets an officer ping a role that is switched off', async () => {
         mockRbac.getEffectivePermissions.mockResolvedValue(['channels:manage']);
         await expect(send('@Member read this')).resolves.toEqual([
           'user-1',
@@ -3505,16 +3514,20 @@ describe('ChatService', () => {
         ]);
       });
 
-      it('treats a custom role most of the chapter holds as whole-chapter', async () => {
-        mockRbac.findByChapter.mockResolvedValue([role('r-member', 'Brothers')]);
-        mockRbac.getEffectivePermissions.mockResolvedValue([]);
-        await expect(send('@Brothers hi')).resolves.toEqual([]);
-        mockRbac.getEffectivePermissions.mockResolvedValue(['*']);
+      it('lets anyone ping a role whose switch is on, however big', async () => {
+        // On by default (owner, 2026-11-06): a role everyone holds included.
+        mockRbac.findByChapter.mockResolvedValue([
+          role('r-member', 'Brothers'),
+        ]);
         await expect(send('@Brothers hi')).resolves.toEqual([
           'user-1',
           'user-2',
           'user-3',
         ]);
+        expect(mockRbac.getEffectivePermissions).not.toHaveBeenCalledWith(
+          'ch-1',
+          'user-1',
+        );
       });
 
       it('re-resolves a role mention on edit as the editor', async () => {

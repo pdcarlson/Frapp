@@ -35,7 +35,10 @@ const AUDIT_TARGET_TYPE = 'role';
  * toggle changes one permission, and the whole array twice would bury it.
  */
 type RoleUpdateDiff = Partial<
-  Record<'name' | 'color' | 'display_order', { from: unknown; to: unknown }>
+  Record<
+    'name' | 'color' | 'display_order' | 'mentionable',
+    { from: unknown; to: unknown }
+  >
 > & { permissions?: { added: string[]; removed: string[] } };
 
 /** The chapter's next-highest-ranked role that has at least one live holder,
@@ -736,7 +739,12 @@ export class RbacService {
  */
 function diffRole(before: Role, after: Role): RoleUpdateDiff {
   const diff: RoleUpdateDiff = {};
-  for (const field of ['name', 'color', 'display_order'] as const) {
+  for (const field of [
+    'name',
+    'color',
+    'display_order',
+    'mentionable',
+  ] as const) {
     if (before[field] !== after[field]) {
       diff[field] = { from: before[field], to: after[field] };
     }

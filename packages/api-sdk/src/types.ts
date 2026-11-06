@@ -3679,6 +3679,8 @@ export interface components {
              * @enum {string|null}
              */
             color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
+            /** @description Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it. */
+            mentionable?: boolean;
         };
         UpdateRoleDto: {
             name?: string;
@@ -3689,6 +3691,8 @@ export interface components {
              * @enum {string|null}
              */
             color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
+            /** @description Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it. */
+            mentionable?: boolean;
         };
         TransferPresidencyDto: {
             /** Format: uuid */
@@ -3859,7 +3863,7 @@ export interface components {
             name: string;
             /** @description The role’s palette color, or null. */
             color: string | null;
-            /** @description Whether the caller may `@` this role. False for a role that covers most of the chapter (the Member role, or one more than half the members hold) unless the caller holds `channels:manage`: a mention gets past a mute, so that would be a chapter-wide ping no mute stops. A token naming a role the sender may not ping reaches nobody. */
+            /** @description Whether the caller may `@` this role: its own switch (`mentionable` on the role, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming a role the sender may not ping reaches nobody. */
             mentionable: boolean;
         };
         ChannelNotificationPreferenceDto: {
