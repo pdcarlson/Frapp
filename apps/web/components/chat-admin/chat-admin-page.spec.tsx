@@ -13,14 +13,15 @@ import { networkMock } from "@/tests/network";
 /*
  * Chat Admin's channel structure (#2500): flush on the page surface, its
  * states from the nested family, a background read that fails keeps what is
- * already loaded, and the create dialog tells the three types apart truthfully.
+ * already loaded, and the create panel tells the three types apart truthfully.
  *
  * The report queue above it has its own spec (`chat-reports-card.spec.tsx`)
  * and is stubbed here; so is the screen-level `<Can>`, whose fallbacks
  * `can-fallback.spec.tsx` pins.
  */
 
-const { mockOffline, reads, updateChannel } = vi.hoisted(() => ({
+const { mockOffline, reads, updateChannel, mockCreateChannel } = vi.hoisted(() => ({
+  mockCreateChannel: vi.fn(),
   mockOffline: { value: false },
   updateChannel: { mutateAsync: (() => Promise.resolve()) as (...args: unknown[]) => Promise<unknown> },
   reads: {
@@ -42,7 +43,10 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     usePermissionsCatalog: () => reads.catalog,
     useRoles: () => ({ data: [] }),
     useMemberDisplayNames: () => ({ nameFor: () => null }),
-    useCreateChannel: mutation,
+    useCreateChannel: () => ({
+      mutateAsync: mockCreateChannel,
+      isPending: false,
+    }),
     useUpdateChannel: () => ({
       mutateAsync: (...args: unknown[]) => updateChannel.mutateAsync(...args),
       isPending: false,
@@ -194,7 +198,7 @@ describe("ChatAdminPage — row heights", () => {
   });
 });
 
-describe("ChatAdminPage — the create dialog", () => {
+describe("ChatAdminPage — the create panel", () => {
   it("says a private channel is for its members, and that the type is final", () => {
     render(<ChatAdminPage />);
     fireEvent.click(screen.getByRole("button", { name: "New channel" }));
@@ -207,6 +211,39 @@ describe("ChatAdminPage — the create dialog", () => {
       dialog.getByText(/type can.t be changed after it.s created/),
     ).toBeInTheDocument();
     expect(dialog.queryByText(/visible to every member/)).toBeNull();
+  });
+
+  // The footer's Create sits outside the form and submits it through `form=`.
+  it("creates the channel from the footer's Create button", async () => {
+    mockCreateChannel.mockResolvedValue({});
+    render(<ChatAdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "rush-planning" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create channel" }));
+
+    await waitFor(() =>
+      expect(mockCreateChannel).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "rush-planning", type: "PUBLIC" }),
+      ),
+    );
+  });
+
+  // Cancel sets state directly, and Radix fires no `onOpenChange` for that, so
+  // it has to drop the draft itself the way the X and Escape do.
+  it("drops the draft on Cancel, so the next New channel starts empty", () => {
+    render(<ChatAdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "rush-planning" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+
+    expect(screen.getByLabelText("Name")).toHaveValue("");
   });
 });
 

@@ -19,7 +19,13 @@ import { initialsFor, metaLine, num, records, str } from "./narrow";
 import { formatGraduationYear } from "./profile";
 
 export interface DirectoryRow {
-  /** `users.id` — the id every other surface keys members on. */
+  /**
+   * `members.id`, the id `GET /v1/members/{id}` takes. Not `userId`: the
+   * profile route looks the member row up by its own id, so passing the user
+   * id there is a 404 for every member.
+   */
+  memberId: string;
+  /** `users.id`, the id every other surface keys members on. */
   userId: string;
   displayName: string;
   initials: string;
@@ -29,14 +35,16 @@ export interface DirectoryRow {
 }
 
 function toRow(row: Record<string, unknown>): DirectoryRow | null {
+  const memberId = str(row, "id");
   const userId = str(row, "user_id");
-  if (!userId) return null;
+  if (!memberId || !userId) return null;
 
   // `display_name` is `NOT NULL DEFAULT ''`, so absent and empty are the same
   // case and both fall back rather than rendering a blank row — to the label
   // web shows for the same member, so the two platforms agree on who it is.
   const displayName = memberLabel(str(row, "display_name"), userId);
   return {
+    memberId,
     userId,
     displayName,
     initials: initialsFor(str(row, "display_name")),

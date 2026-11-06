@@ -512,6 +512,24 @@ describe("Composer typed slash dispatch respects the module gate (#2993)", () =>
     expect(onSlashDispatch).not.toHaveBeenCalled();
   });
 
+  it("says it needs a connection when the module read can't run offline (#3160)", async () => {
+    // The channel can still read as connected while the member-view read is
+    // paused, so the gate's own offline state has to carry the reason.
+    const { onSlashDispatch } = typeAndSend(POLL, {
+      isModuleEnabled: () => false,
+      slashCommandsStatus: "offline",
+    });
+
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "/poll needs a connection" }),
+    );
+    expect(mockToast).not.toHaveBeenCalledWith(
+      expect.objectContaining({ title: "/poll isn't ready yet" }),
+    );
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+    expect(editor.getText()).toBe(POLL);
+  });
+
   it("says it needs a connection while offline, not that the modules are loading", async () => {
     // Offline, the module read can't answer either; "try again in a moment"
     // would be the wrong reason.

@@ -13,6 +13,28 @@ beforeEach(() => {
 });
 
 describe("PermissionCheckboxGrid", () => {
+  it("scrolls inside its own box on a page, but not in a panel (components.md § Surface size)", () => {
+    const props = {
+      catalog: [{ key: "MEMBERS_VIEW", permission: "members:view" }],
+      catalogLoading: false,
+      catalogUnavailable: false,
+      selected: new Set<string>(),
+      onToggle: () => {},
+    };
+    const box = (container: HTMLElement) =>
+      container.querySelector("input[type=checkbox]")!.closest("label")!
+        .parentElement!;
+
+    const onPage = render(<PermissionCheckboxGrid {...props} />);
+    expect(box(onPage.container)).toHaveClass("max-h-48", "overflow-y-auto");
+    onPage.unmount();
+
+    // A panel's body is the one scroller, so the grid grows instead.
+    const inPanel = render(<PermissionCheckboxGrid {...props} inPanel />);
+    expect(box(inPanel.container)).not.toHaveClass("max-h-48");
+    expect(box(inPanel.container)).not.toHaveClass("overflow-y-auto");
+  });
+
   it("lists a selected gate the catalog does not, so it can be seen and unticked (#2818)", () => {
     // A channel imported "Same as Discord" whose role was deleted since: no
     // role holds the permission, so no catalog lists it.

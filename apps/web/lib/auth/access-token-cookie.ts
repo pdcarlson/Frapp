@@ -6,8 +6,10 @@
  * Not because a refresh would be needed: `proxy.ts` already calls
  * `supabase.auth.getSession()` on every protected route, ahead of the render,
  * and it is the one place that *can* write refreshed cookies back. By the time
- * the `(dashboard)` layout runs, the token in the jar is whatever the proxy
- * settled on.
+ * the `(dashboard)` layout runs for a navigation, the token in the jar is
+ * whatever the proxy settled on. A router prefetch of a dashboard route skips
+ * the proxy (its `config` says why), so there the layout may read a token the
+ * proxy never refreshed; nothing here checks `exp`, so that is harmless.
  *
  * It is because of where a second call would run. A Server Component's cookie
  * store is read-only, so `@supabase/ssr`'s `setAll` is a caught no-op there

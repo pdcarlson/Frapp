@@ -16,7 +16,7 @@ import type { PermissionCatalogEntry } from "./permission-checkbox-grid";
  * change who reads it. The role names beside each option are what tells an
  * admin who that is; a permission string alone does not.
  *
- * Shared by chat admin's create dialog and edit panel and the Discord
+ * Shared by chat admin's create panel and in-page edit pane and the Discord
  * import's channel step, which choose the same thing.
  */
 export function useGateCatalog(systemCatalog: PermissionCatalogEntry[]): {
