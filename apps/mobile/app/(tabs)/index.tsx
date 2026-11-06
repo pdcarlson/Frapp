@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
@@ -72,7 +72,11 @@ import {
   type ChannelSummary,
 } from "@/lib/chat/channel-list";
 import { confirmHideConversation } from "@/lib/chat/hide-conversation-prompt";
-import { claimChatLaunch, readLastChannel } from "@/lib/chat/last-channel";
+import {
+  claimChatLaunch,
+  readLastChannel,
+  settleChatLaunch,
+} from "@/lib/chat/last-channel";
 import { openChannelRowActions } from "@/lib/chat/channel-row-actions";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -233,9 +237,12 @@ export default function ChatHomeScreen() {
     (owner, 2026-11-05). Once per app process, only once the list has
     answered, so a channel that was deleted or is no longer visible falls
     through to this list instead of a thread that cannot load. A notification
-    tap that launched the app goes where it points instead
+    tap that launched the app goes where it points instead, and so does
+    anything the member does before the list answers: leaving chat home
+    settles the launch, and so does the launch window running out
     (`lib/chat/last-channel.ts`). Back from the thread returns here.
   */
+  useFocusEffect(useCallback(() => () => settleChatLaunch(), []));
   const chapterId = useActiveChapterId();
   const listAnswered = channelsQuery.isSuccess;
   useEffect(() => {

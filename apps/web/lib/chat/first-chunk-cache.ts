@@ -160,11 +160,11 @@ export const FIRST_CHUNK_MESSAGE_LIMIT = 30;
  *
  * One would be enough if the channel a cold load lands on were always the one
  * the member last read — it is not. `chat-shell.tsx` resolves the active
- * channel from `?channel=`, then `#general`, then the first row, so a member
- * who was reading `#social` can be sent to `#general` by a plain reload, and a
- * deep link can name a third. Keeping the few most recent tails means the
- * cache is warm for whichever of those the shell picks, without this module
- * having to know the selection rule (and without changing it).
+ * channel from `?channel=`, then this browser's last channel, then `#general`,
+ * then the first row, so another tab, a deleted channel or a deep link can each
+ * send a load somewhere other than the last tail written. Keeping the few most
+ * recent tails means the cache is warm for whichever of those the shell picks;
+ * eviction pins the landing channel on top (`evictOldestTails`).
  */
 export const FIRST_CHUNK_CHANNEL_LIMIT = 3;
 
@@ -680,27 +680,33 @@ async function evictOldestTails(
   scope: FirstChunkScope,
 ): Promise<void> {
   const key = [scope.userId, scope.chapterId];
-  const [tails, list] = await Promise.all([
+  const [tails, list, scopeRow] = await Promise.all([
     db.channelTails.where("[userId+chapterId]").equals(key).toArray(),
     db.channelLists.get(key as [string, string]),
+    db.viewerIds.get(key as [string, string]),
   ]);
   if (tails.length <= FIRST_CHUNK_CHANNEL_LIMIT) return;
   /*
     Recency alone would evict the channel a cold load actually lands on.
 
-    The shell's default is fixed (`#general`, else the first row), not
-    most-recent — so a member who reads `#general` and then three other
-    channels makes `#general` the oldest tail and loses it, and their next
-    reload goes straight to the one channel with nothing cached. Pinning it
-    costs one slot and covers the commonest cold load there is.
-    `landingChannelId` in `@repo/hooks` holds the rule both sides read; it
-    starts from the member's last channel, which recency would keep anyway,
-    and falls back to that fixed default.
+    The shell opens on the member's last channel, else `#general`, else the
+    first row (`landingChannelId` in `@repo/hooks`, the rule both sides
+    read). The last channel is usually the newest tail anyway, but a member
+    who reads `#general` and then three other channels in another tab makes
+    `#general` the oldest tail, and a device with no last channel would
+    reload straight into the one channel with nothing cached. Pinning the
+    landing channel costs one slot and covers the commonest cold load.
+
+    The last-channel key is in `users.id` space while this scope is keyed by
+    the auth uid, so it is read through the scope row's cached viewer id.
+    With none cached yet, the pin falls back to the fixed default.
   */
   const pinned = list
     ? landingChannelId(
         list.channels,
-        readLastChannel(scope.userId, scope.chapterId),
+        scopeRow?.viewerUserId
+          ? readLastChannel(scopeRow.viewerUserId, scope.chapterId)
+          : null,
       )
     : null;
   const evictable = tails

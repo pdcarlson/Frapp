@@ -3,6 +3,7 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { Alert } from "react-native";
+import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
@@ -1108,6 +1109,29 @@ describe("Chat home opens the last channel on launch", () => {
     answered();
     settleChatLaunch();
     vi.mocked(AsyncStorage.getItem).mockResolvedValue("c-general");
+    render();
+    await settle();
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+
+  it("does not jump when the list only answers after launch", async () => {
+    // Offline or a failed first fetch: the member has moved on by now.
+    resetChatLaunchForTests(Date.now() - 60_000);
+    answered();
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue("c-general");
+    render();
+    await settle();
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+
+  it("does not jump once the member has left chat home", async () => {
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue("c-general");
+    render();
+    await settle();
+    act(() => {
+      (expoRouter as unknown as { __blur: () => void }).__blur();
+    });
+    answered();
     render();
     await settle();
     expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();

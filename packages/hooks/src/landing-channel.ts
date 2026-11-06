@@ -7,8 +7,9 @@
  *
  * - web's `chat-shell.tsx`, as the last rung of the open channel, after
  *   `?channel=` and after a still-valid selection;
- * - web's first-chunk cache, which never evicts this channel's tail, because
- *   it is the one a cold load paints first;
+ * - web's first-chunk cache, which pins this channel's tail against
+ *   eviction, because it is the one a cold load paints first (it reads the
+ *   last channel through the scope's cached `users.id`);
  * - mobile's chat home, which opens this channel on launch when the member
  *   was last in one (`lastChannelLandingId`, no fallback there: with no last
  *   channel the phone stays on the list).

@@ -290,16 +290,15 @@ and restoring a local-first warm paint, and carries the options with what each c
 as of 2026-09-14, subject to the correction above. Until then this page recorded it as absent and
 said "cached channel readable" therefore measured a network round trip, which it did.
 
-**One half of the clause is served differently from how it is worded, and the difference is
-visible in a miss.** `1s` says "channel list + **last active channel id** from cache"; the shell's
-channel selection is unchanged, and the cache instead keeps the tails of the three most recently
-read channels plus — pinned against eviction — the channel a cold load actually lands on
-([`default-channel.ts`](../../../apps/web/lib/chat/default-channel.ts), which `chat-shell.tsx` and
-the cache's eviction now both read, because they disagreed and the disagreement evicted exactly the
-tail the next reload asked for). Persisting a *selection* would change which channel a reload lands
-on, which is a UX decision rather than a caching one. The consequence to keep in mind when reading
-the numbers below: a member whose landing channel is outside those four pays the cold number, not
-the warm one.
+**The "last active channel id" half of the clause is built as of 2026-11-05.** `1s` says "channel
+list + last active channel id from cache". Chat now opens on the member's last channel, remembered
+per browser, member and chapter ([`spec/behavior/chat/README.md` § Where Chat opens](../../behavior/chat/README.md#where-chat-opens)),
+and the cache keeps the tails of the three most recently read channels plus, pinned against
+eviction, the channel a cold load lands on (`landingChannelId` in
+[`packages/hooks/src/landing-channel.ts`](../../../packages/hooks/src/landing-channel.ts), which
+`chat-shell.tsx` and the cache's eviction both read, because a disagreement evicts exactly the tail
+the next reload asks for). The consequence to keep in mind when reading the numbers below: a member
+whose landing channel is outside those four pays the cold number, not the warm one.
 
 [`apps/web/lib/chat/first-chunk-cache.ts`](../../../apps/web/lib/chat/first-chunk-cache.ts) holds it
 in an IndexedDB database of its own, keyed by Supabase auth uid + chapter id; the layer, its wipe

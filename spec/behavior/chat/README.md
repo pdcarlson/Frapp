@@ -53,9 +53,9 @@ Chat is not a module — it is the spine of the app, and every other capability 
 Added 2026-11-05, owner direction ("Mobile opens up to the last channel you were in. like discord").
 
 - **Chat opens on the member's last channel**, remembered per device, member and chapter: a phone and a laptop each open where they left off. It is device state, not a server preference.
-- **Mobile:** launching the app opens that channel's thread, with back going to chat home. It happens once per app process, never on a later return to chat home, and a notification tap that launched the app opens its own target instead. With no remembered channel, launch stays on chat home.
-- **Web:** `/chat` with no `?channel=` opens it; a link and a channel picked in this visit both win over it.
-- **Fallback:** a remembered channel that is deleted, no longer visible to the member, or a DM they hid is skipped. Web then opens `#general`, else the first channel.
+- **Mobile:** launching the app opens that channel's thread, with back going to chat home. It happens once per app process and only at launch: never on a later return to chat home, never once the member has left chat home, and never when the channel list only answers after launch (a slow or offline start). A notification tap that launched the app opens its own target instead. With no remembered channel, launch stays on chat home.
+- **Web:** `/chat` with no `?channel=` opens it, once the member's identity is known (so `#general` is never opened and marked read on the way). A link, by channel id or name, and a channel picked in this visit both win over it. A member whose token carries no chapter claim is remembered under a "sole" chapter key, as on mobile.
+- **Fallback:** a remembered channel that is deleted, no longer visible to the member, or a DM they hid is skipped. Web then opens `#general`, else the first channel. The same applies in the middle of a visit: hiding the open DM, or the open channel disappearing, lands on `#general`.
 - One rule for both clients: `landingChannelId` / `lastChannelLandingId` in [`packages/hooks/src/landing-channel.ts`](../../../packages/hooks/src/landing-channel.ts). Web's first-chunk cache pins the same channel's tail against eviction.
 
 ## Direct Messages

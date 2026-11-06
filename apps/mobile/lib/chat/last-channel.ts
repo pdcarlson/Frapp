@@ -40,16 +40,25 @@ export function writeLastChannel(
 }
 
 /*
-  Once per app process. The jump belongs to launch, not to every return to
-  chat home: coming back from a thread, a tab, or the background must leave the
-  member on the list they went back to.
+  Once per app process, and only at launch. The jump belongs to launch, not to
+  every return to chat home: coming back from a thread, a tab, or the
+  background must leave the member on the list they went back to.
+
+  "At launch" is a window from when this module loads (the push runtime
+  imports it from the root layout, so that is app start). A list that only
+  answers after it (offline, a slow or failed first fetch), or a chat home that
+  first mounts later (the app launched into another tab, and tabs mount
+  lazily), would otherwise pull the member out of whatever they had moved on
+  to. Chat home also settles it when it loses focus.
 */
+const LAUNCH_WINDOW_MS = 10_000;
+let launchStartedAt = Date.now();
 let launchSettled = false;
 
 /**
  * Called by anything else that decides where launch goes: a notification tap
- * (`use-push-runtime.ts`) opens its own target, and the last channel must not
- * open on top of it.
+ * (`use-push-runtime.ts`) opens its own target, and the member leaving chat
+ * home has chosen somewhere else. The last channel must not open on top.
  */
 export function settleChatLaunch(): void {
   launchSettled = true;
@@ -57,16 +66,18 @@ export function settleChatLaunch(): void {
 
 /**
  * Whether chat home may still make the launch jump. Claims it on `true`, so
- * the jump happens at most once. A tap that launched the app and has not been
- * taken yet also settles it.
+ * the jump happens at most once. Past the launch window, or with a tap that
+ * launched the app and has not been taken yet, it settles without jumping.
  */
-export function claimChatLaunch(): boolean {
+export function claimChatLaunch(now: number = Date.now()): boolean {
   if (launchSettled) return false;
   launchSettled = true;
+  if (now - launchStartedAt > LAUNCH_WINDOW_MS) return false;
   return !hasLaunchNotificationTap();
 }
 
-/** Test seam: a fresh process. */
-export function resetChatLaunchForTests(): void {
+/** Test seam: a fresh process, launched at `startedAt`. */
+export function resetChatLaunchForTests(startedAt: number = Date.now()): void {
   launchSettled = false;
+  launchStartedAt = startedAt;
 }

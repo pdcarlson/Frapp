@@ -95,7 +95,7 @@ A screen reached from another one draws a back row above its title, as the board
 
 ## Launch
 
-Launch opens the last channel the member was in, then back goes to chat home (s04), the way Discord does (owner, 2026-11-05). Once per app process, and a notification tap that launched the app wins. The rule and its fallbacks: [`spec/behavior/chat/README.md` § Where Chat opens](../../behavior/chat/README.md#where-chat-opens). Implementation: [`apps/mobile/lib/chat/last-channel.ts`](../../../apps/mobile/lib/chat/last-channel.ts).
+Launch opens the last channel the member was in, then back goes to chat home (s04), the way Discord does (owner, 2026-11-05). Once per app process and only at launch (a list that answers late, or a member who has already left chat home, gets no jump), and a notification tap that launched the app wins. The rule and its fallbacks: [`spec/behavior/chat/README.md` § Where Chat opens](../../behavior/chat/README.md#where-chat-opens). Implementation: [`apps/mobile/lib/chat/last-channel.ts`](../../../apps/mobile/lib/chat/last-channel.ts).
 
 ## Deep links
 
