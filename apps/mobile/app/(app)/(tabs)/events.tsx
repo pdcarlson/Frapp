@@ -22,6 +22,10 @@ import {
 } from "@/components/state-block";
 import { AccentChip, StatusChip } from "@/components/status-chip";
 import { AskSheet } from "@/components/ask/ask-sheet";
+import {
+  NewEventSheet,
+  useCanCreateEvents,
+} from "@/components/events/new-event-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
 import { isAskAvailable } from "@/lib/ask/flag";
 import {
@@ -50,6 +54,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * it opens is hosted here rather than routed to, per
  * `spec/ui/mobile/patterns.md` § Bottom sheets.
  *
+ * An officer who can create events (`events:create`) gets the screen's
+ * floating create button, which opens the New event sheet; the empty state
+ * points at it, as Tasks' does.
+ *
  * The board's Going / Can't buttons and "Going ✓" marker are not drawn: RSVP
  * has no server model yet (`spec/behavior/events.md`), and they come back with
  * the endpoint (#1035), as on s07.
@@ -60,6 +68,8 @@ export default function EventsScreen() {
   const router = useRouter();
   const eventsQuery = useEvents();
   const askSheetRef = useRef<BottomSheetModal>(null);
+  const newEventRef = useRef<BottomSheetModal>(null);
+  const canCreateEvents = useCanCreateEvents();
 
   // One `now` per render so every row agrees on what "today" and "open" mean,
   // and it ticks so a check-in window opens and closes on a tab that never
@@ -106,7 +116,9 @@ export default function EventsScreen() {
         <EmptyState
           glyph="◷"
           title="Nothing scheduled"
-          body="Your chapter has nothing coming up."
+          // The title says it; only the way to change it is worth a line
+          // (`writing.md` § 4, Empty states).
+          body={canCreateEvents ? "Tap + to add an event." : undefined}
         />
       );
     }
@@ -150,6 +162,14 @@ export default function EventsScreen() {
     <ScreenShell
       title="Events"
       refresh={refresh}
+      createAction={
+        canCreateEvents
+          ? {
+              label: "New event",
+              onPress: () => newEventRef.current?.present(),
+            }
+          : undefined
+      }
       headerAction={
         // No pill in a build without Ask (#2259) — see `app/(app)/(tabs)/index.tsx`.
         isAskAvailable() ? (
@@ -160,6 +180,14 @@ export default function EventsScreen() {
       {renderList()}
 
       <AskSheet ref={askSheetRef} />
+      {canCreateEvents ? (
+        // A new sheet per chapter, so a kept draft never files into another.
+        <NewEventSheet
+          key={chapterId ?? "no-chapter"}
+          ref={newEventRef}
+          now={now}
+        />
+      ) : null}
     </ScreenShell>
   );
 }
