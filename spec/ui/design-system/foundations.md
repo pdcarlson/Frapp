@@ -123,6 +123,7 @@ The accent is a signal, so it goes only where a member has to act or notice. The
 4. **A link in running text**, through Button's `link` variant or an inline anchor.
 5. **The chapter's own mark:** its letters, crest or chosen color where the chapter is the subject (the accent picker, the chapter card).
 6. **Where the member is:** the active row of a navigation list (the sidebar, the channel list, the Settings rail, the mobile tab bar) and the open item of a list-and-detail page (the folder you are in, the role you are editing). Only the active one; its neighbours' hover is neutral.
+7. **A message that addresses the member:** a chat row whose server-resolved mentions include them wears the accent-subtle fill with a 2px accent bar ([`components.md`](components.md) §11, "A row that mentions you"). *(Added 2026-11-06, owner direction "do what discord does".)* It is the one row tint in chat, and it marks being addressed, not unread: the channel list's badges stay §5's red.
 
 **Everything else is neutral**, from the text ladder (§4) and the surface ladder (§2):
 

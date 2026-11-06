@@ -82,6 +82,7 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
     created_at: new Date(2026, 7, 16, 17, 9).toISOString(),
     client_message_id: "client-1",
     attachment_count: 0,
+    mentions: [],
     reactions: {},
     actions: [],
     _status: "confirmed",
@@ -343,6 +344,51 @@ describe("the viewer's own name is neutral", () => {
     expect(flat).not.toContain("#C49A3A");
     expect(flat).not.toContain("#2B2009");
     expect(flat).toContain("Casey");
+  });
+});
+
+// A message that @-mentions the viewer wears the chapter accent behind the
+// whole row, the way Discord marks a ping (components.md §11). The list is the
+// server's resolved `mentions`, not a re-read of the body.
+describe("a row that mentions the viewer", () => {
+  const highlights = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        node.props.testID === "message-mentions-viewer",
+    );
+
+  it("draws the accent-subtle fill with an accent bar", () => {
+    const tree = renderItem(
+      message({ content: "@You look", mentions: [OTHER, VIEWER] }),
+    );
+    const [fill] = highlights(tree);
+    expect(fill).toBeDefined();
+    const style = JSON.stringify(fill!.props.style);
+    expect(style).toContain('"backgroundColor":"#251A33"');
+    expect(style).toContain('"borderLeftColor":"#C49A3A"');
+    expect(style).toContain('"borderLeftWidth":2');
+    // It sits behind the row and never takes a press meant for the row.
+    expect(fill!.props.pointerEvents).toBe("none");
+  });
+
+  it("draws nothing when someone else is mentioned", () => {
+    const tree = renderItem(message({ mentions: [OTHER] }));
+    expect(highlights(tree)).toHaveLength(0);
+  });
+
+  it("draws nothing for the viewer's own message that names them", () => {
+    const tree = renderItem(
+      message({ sender_id: VIEWER, mentions: [VIEWER] }),
+    );
+    expect(highlights(tree)).toHaveLength(0);
+  });
+
+  it("trusts the server list, not an @ in the body", () => {
+    // The body reads like a ping, but the server resolved nobody (a masked
+    // or unresolved handle), so the row stays plain.
+    const tree = renderItem(message({ content: "@Casey hi", mentions: [] }));
+    expect(highlights(tree)).toHaveLength(0);
   });
 });
 

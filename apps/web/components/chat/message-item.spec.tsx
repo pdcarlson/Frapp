@@ -43,6 +43,7 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
     created_at: new Date(2026, 7, 16, 17, 9).toISOString(),
     client_message_id: "client-1",
     attachment_count: 0,
+    mentions: [],
     reactions: {},
     actions: [],
     _status: "confirmed",
@@ -418,6 +419,43 @@ describe("MessageItem compact layout (#2873)", () => {
  * The action bar floats over the row's top-right corner, icon-only
  * (`components.md` §11 § Per-message actions; #2247's action-bar item).
  */
+// A message that @-mentions the viewer wears the chapter accent, the way
+// Discord marks a ping (components.md §11). The list is the server's resolved
+// `mentions`, not a re-read of the body.
+describe("MessageItem mentions the viewer", () => {
+  it("tints the row with the accent-subtle fill and an accent bar", () => {
+    renderItem(message({ content: "@You look", mentions: [OTHER, VIEWER] }));
+    const row = screen.getByRole("listitem");
+    expect(row).toHaveAttribute("data-mentions-viewer", "true");
+    expect(row.className).toContain("bg-accent-subtle");
+    expect(row.className).toContain("shadow-[inset_2px_0_0_var(--primary)]");
+    // The tint is information, so a pointer deepens it rather than swapping
+    // it for the neutral surface lift.
+    expect(row.className).not.toContain("hover:bg-surface-1");
+  });
+
+  it("leaves the row plain when someone else is mentioned", () => {
+    renderItem(message({ mentions: [OTHER] }));
+    const row = screen.getByRole("listitem");
+    expect(row).not.toHaveAttribute("data-mentions-viewer");
+    expect(row.className).not.toContain("bg-accent-subtle");
+  });
+
+  it("leaves the viewer's own message plain", () => {
+    renderItem(message({ sender_id: VIEWER, mentions: [VIEWER] }));
+    expect(screen.getByRole("listitem")).not.toHaveAttribute(
+      "data-mentions-viewer",
+    );
+  });
+
+  it("trusts the server list, not an @ in the body", () => {
+    renderItem(message({ content: "@Alice hi", mentions: [] }));
+    expect(screen.getByRole("listitem")).not.toHaveAttribute(
+      "data-mentions-viewer",
+    );
+  });
+});
+
 describe("MessageItem action bar", () => {
   function bar(container: HTMLElement): HTMLElement {
     const found = container.querySelector<HTMLElement>(

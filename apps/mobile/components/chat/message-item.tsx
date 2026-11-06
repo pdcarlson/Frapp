@@ -10,6 +10,7 @@ import {
   type AccessibilityActionInfo,
   type StyleProp,
   type TextStyle,
+  type ViewStyle,
 } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { emojiFromActionType } from "@repo/chat-core/types";
@@ -285,6 +286,14 @@ export function MessageRowFrame({
 }) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
+  // A row that @-mentions the viewer wears the chapter accent the way Discord
+  // marks one (components.md §11, see `MentionHighlight`). The list is the
+  // server's (`chat_messages.mentions`), the same set the notifier used, and a
+  // viewer's own message never lights up.
+  const mentionsViewer =
+    !!viewerId &&
+    message.sender_id !== viewerId &&
+    message.mentions.includes(viewerId);
   // Resolved once and used for both the author line and the avatar initials —
   // two lookups would be two chances for them to drift apart. Both come from
   // `@repo/hooks`: `sender_id` is nullable, so an imported archive message has
@@ -317,6 +326,7 @@ export function MessageRowFrame({
       disabled={!onOpenActions}
       style={[styles.row, startsRun ? styles.rowStartsRun : styles.rowFollows]}
     >
+      {mentionsViewer ? <MentionHighlight style={styles.mentionHighlight} /> : null}
       {quote ? (
         <View style={styles.quoteLine}>
           {/* From the avatar's centre up and across to the quote, so the quote
@@ -669,6 +679,26 @@ function DeliveryLine({
 }
 
 /**
+ * The fill behind a row that @-mentions the viewer: the chapter's
+ * accent-subtle (step 3) with a 2pt accent bar on its leading edge, as
+ * Discord marks a ping. Its own component for the reason `AccentText` gives:
+ * only a row that mentions the viewer calls `useChapterBranding()`.
+ */
+function MentionHighlight({ style }: { style: StyleProp<ViewStyle> }) {
+  const { accentSubtle, accentPrimary } = useChapterBranding();
+  return (
+    <View
+      testID="message-mentions-viewer"
+      pointerEvents="none"
+      style={[
+        style,
+        { backgroundColor: accentSubtle, borderLeftColor: accentPrimary },
+      ]}
+    />
+  );
+}
+
+/**
  * Text in the chapter's accent (step 11). Its own component so that only a
  * row that draws the accent calls `useChapterBranding()`: the hook reaches for
  * `FrappClientProvider` (#1007), so a row that never fails never needs it.
@@ -855,6 +885,16 @@ function createStyles(tokens: SignetTokens) {
     // A run starts 16 below the row above; a follow-on sits 2 below.
     rowStartsRun: { paddingTop: tokens.spacing.lg },
     rowFollows: { paddingTop: 2 },
+    // Behind the whole row, edge to edge, so the gutter and text stay where
+    // every other row has them; the 2pt bar sits inside the 16pt inset.
+    mentionHighlight: {
+      position: "absolute",
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+      borderLeftWidth: 2,
+    },
     quoteLine: {
       flexDirection: "row",
       alignItems: "flex-start",
