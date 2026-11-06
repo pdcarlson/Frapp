@@ -17,13 +17,14 @@ import {
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
   isNotificationCategoryKey,
+  localTimeZone,
   MAJOR_MAX_LENGTH,
-  normalizeTimeZoneInput,
   PROFILE_ALUMNI_SECTION,
   PROFILE_FIELD_COPY,
   shownNotificationCategories,
   rowsToNotificationCategoryState,
   showsAfterGraduation,
+  timeZoneCity,
   type NotificationCategoryKey,
 } from "@repo/validation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -115,7 +116,6 @@ export function ProfilePanel() {
   const [profileDraft, setProfileDraft] = useState<CurrentUser>({});
   const [settingsDraft, setSettingsDraft] = useState<UserSettings>({});
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const [timeZoneError, setTimeZoneError] = useState<string | null>(null);
 
   // The server payload the draft was last seeded from, so a re-seed can tell a
   // field the member edited from one they left alone.
@@ -157,14 +157,28 @@ export function ProfilePanel() {
     if (settingsQuery.data) {
       /* eslint-disable react-hooks/set-state-in-effect -- re-seed settings draft from the query except while a save is in flight or failed */
       setSettingsDraft(settingsQuery.data);
-      // The draft is being replaced wholesale — a refetch on window focus can do
-      // this while an error is showing — so the message must go with the value
-      // it was about. Otherwise the field reverts to its stored (valid) zone
-      // while still flagged invalid.
-      setTimeZoneError(null);
     }
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [settingsQuery.data, updateSettings.isPending, updateSettings.isError]);
+
+  /*
+   * Switching off clears the stored window, so the last one is kept here and
+   * comes back when the member switches on again on this page. Mobile keeps
+   * the same thing on the device; a fresh page load falls back to 10 PM to 8 AM.
+   */
+  const lastWindow = useRef<{ start: string; end: string; tz: string | null }>(
+    null,
+  );
+  useEffect(() => {
+    const stored = settingsQuery.data;
+    if (stored?.quiet_hours_start && stored.quiet_hours_end) {
+      lastWindow.current = {
+        start: stored.quiet_hours_start,
+        end: stored.quiet_hours_end,
+        tz: stored.quiet_hours_tz?.trim() || null,
+      };
+    }
+  }, [settingsQuery.data]);
 
   /*
    * Screen-scale states, in the order `spec/ui/design-system/README.md` §4
@@ -244,48 +258,30 @@ export function ProfilePanel() {
     }
   }
 
-  async function handleSettingsSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    try {
-      // Validate only what the member typed; never re-judge what the server
-      // stored. Two distinct reasons to leave the field alone:
-      //
-      //   - `undefined` — the draft never loaded it. It must stay `undefined` so
-      //     the PATCH omits it, or we would tell the server to clear a zone we
-      //     never showed anyone.
-      //   - unchanged from the server's value — this browser's tzdata can be
-      //     older than the server's, so our verdict on a stored zone can be a
-      //     confident false negative. Blocking on it would abort the whole save
-      //     over a field the member never touched, and "fixing" it would
-      //     overwrite a zone the server considers perfectly valid.
-      //
-      // A value the member actually edited is ours to check (blank = clear, so
-      // someone holding an unusable zone can always save their way out of it).
-      const rawTz = settingsDraft.quiet_hours_tz;
-      const serverTz = settingsQuery.data?.quiet_hours_tz;
-      let tz: string | null | undefined;
-      if (rawTz === undefined || rawTz === serverTz) {
-        tz = undefined;
-      } else {
-        tz = normalizeTimeZoneInput(rawTz);
-        if (tz === undefined) {
-          setTimeZoneError(
-            "Enter a time zone name this server recognizes, like America/Chicago. A fixed offset such as -05:00 is not accepted.",
-          );
-          return;
-        }
-      }
-      setTimeZoneError(null);
+  /*
+   * Quiet hours are on exactly when a window is stored: the server derives
+   * enforcement from `quiet_hours_start`/`quiet_hours_end`, so the switch reads
+   * the stored row, never the draft (spec/behavior/notifications.md § Quiet
+   * Hours). Turning it off clears the window; turning it on stores the times
+   * in the draft, or 10 PM to 8 AM for a member who has none.
+   */
+  const storedSettings = settingsQuery.data;
+  const quietHoursOn = Boolean(
+    storedSettings?.quiet_hours_start && storedSettings?.quiet_hours_end,
+  );
+  const browserZone = localTimeZone();
+  const storedZone = storedSettings?.quiet_hours_tz?.trim() || null;
+  // A window stored with no zone is evaluated in UTC by the server, so that is
+  // the zone the line below names (spec/behavior/notifications.md § Quiet Hours).
+  const zoneInForce = storedZone ?? "UTC";
 
-      await updateSettings.mutateAsync({
-        quiet_hours_start: settingsDraft.quiet_hours_start ?? undefined,
-        quiet_hours_end: settingsDraft.quiet_hours_end ?? undefined,
-        quiet_hours_tz: tz,
-      });
-      toast({
-        title: "Quiet hours saved",
-        description: "Quiet hours updated.",
-      });
+  async function saveQuietHours(
+    patch: UserSettings,
+    successTitle: string,
+  ): Promise<void> {
+    try {
+      await updateSettings.mutateAsync(patch);
+      toast({ title: successTitle });
     } catch (error) {
       toast({
         title: "Couldn't save quiet hours",
@@ -296,6 +292,62 @@ export function ProfilePanel() {
         variant: "destructive",
       });
     }
+  }
+
+  function refuseOffline(): boolean {
+    if (!isOffline) return false;
+    toast({
+      title: "You're offline",
+      description: "Reconnect to change quiet hours. Nothing has been changed.",
+    });
+    return true;
+  }
+
+  function handleQuietHoursToggle(on: boolean) {
+    if (refuseOffline()) return;
+    if (!on) {
+      void saveQuietHours(
+        {
+          quiet_hours_start: null,
+          quiet_hours_end: null,
+          quiet_hours_tz: null,
+        },
+        "Quiet hours off",
+      );
+      return;
+    }
+    // The window and zone a member had before switching off come back. A
+    // remembered zone is never re-judged here (this browser's tzdata can be
+    // older than the server's); only a member with none gets this browser's.
+    const last = lastWindow.current;
+    void saveQuietHours(
+      {
+        quiet_hours_start: last?.start ?? "22:00",
+        quiet_hours_end: last?.end ?? "08:00",
+        quiet_hours_tz: last?.tz ?? browserZone,
+      },
+      "Quiet hours on",
+    );
+  }
+
+  async function handleSettingsSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (refuseOffline()) return;
+    // Times only. The zone has its own control below, so a save here never
+    // touches it, and a blank time can't clear the window by accident: the
+    // switch is what turns quiet hours off.
+    await saveQuietHours(
+      {
+        quiet_hours_start: settingsDraft.quiet_hours_start || undefined,
+        quiet_hours_end: settingsDraft.quiet_hours_end || undefined,
+      },
+      "Quiet hours saved",
+    );
+  }
+
+  function handleUseBrowserZone() {
+    if (refuseOffline()) return;
+    void saveQuietHours({ quiet_hours_tz: browserZone }, "Time zone updated");
   }
 
   async function handleSignOut() {
@@ -716,70 +768,79 @@ export function ProfilePanel() {
             restyled.
           */}
           {preferencesState ?? (
-            <form className="space-y-4" onSubmit={handleSettingsSubmit}>
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="grid gap-2">
-                  <Label htmlFor="quiet-start">Start</Label>
-                  <Input
-                    id="quiet-start"
-                    type="time"
-                    value={settings.quiet_hours_start ?? ""}
-                    onChange={(event) =>
-                      setSettingsDraft((prev) => ({
-                        ...prev,
-                        quiet_hours_start: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="quiet-end">End</Label>
-                  <Input
-                    id="quiet-end"
-                    type="time"
-                    value={settings.quiet_hours_end ?? ""}
-                    onChange={(event) =>
-                      setSettingsDraft((prev) => ({
-                        ...prev,
-                        quiet_hours_end: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="quiet-tz">Timezone</Label>
-                  <Input
-                    id="quiet-tz"
-                    value={settings.quiet_hours_tz ?? ""}
-                    onChange={(event) => {
-                      setTimeZoneError(null);
-                      setSettingsDraft((prev) => ({
-                        ...prev,
-                        quiet_hours_tz: event.target.value,
-                      }));
-                    }}
-                    placeholder="e.g. America/Chicago"
-                    aria-invalid={timeZoneError ? true : undefined}
-                    aria-describedby={
-                      timeZoneError ? "quiet-tz-error" : undefined
-                    }
-                  />
-                  {timeZoneError ? (
-                    <p id="quiet-tz-error" className="text-sm text-destructive">
-                      {timeZoneError}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-4">
+                <Label htmlFor="quiet-hours-switch">Quiet hours</Label>
+                <Switch
+                  id="quiet-hours-switch"
+                  checked={quietHoursOn}
+                  aria-disabled={isOffline || undefined}
+                  onCheckedChange={handleQuietHoursToggle}
+                />
+              </div>
+              {/* The times only while quiet hours are on: off, there is
+                  nothing for them to govern (owner, 2026-11-06). */}
+              {quietHoursOn ? (
+                <form className="space-y-4" onSubmit={handleSettingsSubmit}>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-2">
+                      <Label htmlFor="quiet-start">From</Label>
+                      <Input
+                        id="quiet-start"
+                        type="time"
+                        required
+                        value={settings.quiet_hours_start ?? ""}
+                        onChange={(event) =>
+                          setSettingsDraft((prev) => ({
+                            ...prev,
+                            quiet_hours_start: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="quiet-end">To</Label>
+                      <Input
+                        id="quiet-end"
+                        type="time"
+                        required
+                        value={settings.quiet_hours_end ?? ""}
+                        onChange={(event) =>
+                          setSettingsDraft((prev) => ({
+                            ...prev,
+                            quiet_hours_end: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                  {/* The zone is a fact, not a field. A member who never set
+                      one got this browser's when they switched quiet hours on,
+                      so this line only speaks up when the zone in force is
+                      another one, and offers the one fix that needs no list. */}
+                  {zoneInForce !== browserZone ? (
+                    <p className="text-sm text-muted-foreground">
+                      Times are in {timeZoneCity(zoneInForce)} time.{" "}
+                      <button
+                        type="button"
+                        className="font-medium text-foreground underline underline-offset-4"
+                        onClick={handleUseBrowserZone}
+                      >
+                        Use {timeZoneCity(browserZone)} time
+                      </button>
                     </p>
                   ) : null}
-                </div>
-              </div>
-              <div className="flex items-center justify-end gap-2">
-                <Button type="submit" disabled={updateSettings.isPending}>
-                  {updateSettings.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : null}
-                  Save quiet hours
-                </Button>
-              </div>
-            </form>
+                  <div className="flex items-center justify-end gap-2">
+                    <Button type="submit" disabled={updateSettings.isPending}>
+                      {updateSettings.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : null}
+                      Save quiet hours
+                    </Button>
+                  </div>
+                </form>
+              ) : null}
+            </div>
           )}
         </ProfileSection>
 
@@ -923,6 +984,12 @@ export function ProfilePanel() {
                 one a member is most likely to go looking for, and does not
                 pretend the grid is exhaustive.
               */}
+              {/* Chat has no switch here: a channel or DM is muted where it
+                  is read (the catalog's docblock in @repo/validation says why
+                  the coarse Chat switch was dropped, 2026-11-06). */}
+              <p className="text-sm text-muted-foreground">
+                Mute a channel or DM from the chat itself.
+              </p>
               {isNotificationCategoryKey("announcements") ? null : (
                 <p className="text-sm text-muted-foreground">
                   Chapter announcements always arrive. They can carry
