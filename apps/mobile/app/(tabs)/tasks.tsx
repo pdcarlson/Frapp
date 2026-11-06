@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { AppState, StyleSheet, Text, View } from "react-native";
-import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
   useCurrentUser,
@@ -15,6 +14,7 @@ import {
 import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { useRefetchAll } from "@/components/pull-to-refresh";
+import { onTaskCreated } from "@/lib/tasks/task-created";
 import { ScreenShell } from "@/components/screen-shell";
 import {
   SectionHeader,
@@ -28,7 +28,6 @@ import {
 } from "@/components/state-block";
 import { TaskRow, TaskRowSkeleton } from "@/components/tasks/task-row";
 import { PointsSummaryCard } from "@/components/tasks/points-summary-card";
-import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import { selectTaskRows, type TaskRowModel } from "@/lib/tasks/board";
 import { selectHouseRank, selectPointsSummary } from "@/lib/tasks/points-card";
 import { nextTapSequence } from "@/lib/tasks/transitions";
@@ -72,7 +71,6 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 export default function TasksScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const sheetRef = useRef<BottomSheetModal>(null);
 
   const chapterId = useActiveChapterId();
   const viewerUserId = useViewerUserId();
@@ -128,6 +126,21 @@ export default function TasksScreen() {
 
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // New task opens from the tab bar's quick actions now
+  // (`components/quick-actions/quick-actions-host.tsx`). A task assigned to
+  // someone else never appears on this board, so say where it went, or the
+  // create reads as a failed one.
+  useEffect(
+    () =>
+      onTaskCreated((assigneeName, wasSelf) =>
+        setNotice(
+          wasSelf
+            ? null
+            : `Assigned to ${assigneeName ?? "your chapter member"}.`,
+        ),
+      ),
+    [],
+  );
   /**
    * The member copy for a gate refusal on a status toggle, or `null` (#2710).
    *
@@ -318,44 +331,13 @@ export default function TasksScreen() {
   }
 
   return (
-    <ScreenShell
-      title="Tasks"
-      refresh={refresh}
-      createAction={
-        canManageTasks
-          ? {
-              label: "New task",
-              onPress: () => {
-                setNotice(null);
-                sheetRef.current?.present();
-              },
-            }
-          : undefined
-      }
-    >
+    <ScreenShell title="Tasks" refresh={refresh}>
       <PointsSummaryCard summary={summary} rank={rank} />
 
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
       {refusal ? <Text style={styles.refusal}>{refusal}</Text> : null}
 
       {renderBoard()}
-
-      <NewTaskSheet
-        // A new sheet per chapter: a kept draft's assignee is a member of the
-        // chapter it was started in, and the API refuses one who isn't.
-        key={chapterId ?? "no-chapter"}
-        ref={sheetRef}
-        now={now}
-        // A task assigned to someone else never appears on this board, so
-        // dismissing into an unchanged screen reads as a failed create.
-        onCreated={(assigneeName, wasSelf) =>
-          setNotice(
-            wasSelf
-              ? null
-              : `Assigned to ${assigneeName ?? "your chapter member"}.`,
-          )
-        }
-      />
     </ScreenShell>
   );
 }

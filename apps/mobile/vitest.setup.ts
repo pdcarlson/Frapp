@@ -247,13 +247,24 @@ vi.mock("react-native-gesture-handler", () => {
     const gesture: Record<string, unknown> & {
       handlers: Record<string, (...args: unknown[]) => void>;
     } = { kind, handlers: {} };
-    for (const method of ["onStart", "onChange", "onUpdate", "onEnd"]) {
+    for (const method of [
+      "onStart",
+      "onChange",
+      "onUpdate",
+      "onEnd",
+      "onFinalize",
+    ]) {
       gesture[method] = (handler: (...args: unknown[]) => void) => {
         gesture.handlers[method] = handler;
         return gesture;
       };
     }
-    for (const method of ["averageTouches", "numberOfTaps"]) {
+    for (const method of [
+      "averageTouches",
+      "numberOfTaps",
+      "runOnJS",
+      "minDistance",
+    ]) {
       gesture[method] = () => gesture;
     }
     return gesture;
@@ -330,6 +341,8 @@ vi.mock("react-native-reanimated", () => {
     // Setup's live mark zooms in; join's views and setup's steps fade in.
     ZoomIn: entering({ animation: "ZoomIn" }),
     FadeIn: entering({ animation: "FadeIn" }),
+    // The quick-actions panel and its scrim fade out as they close.
+    FadeOut: entering({ animation: "FadeOut" }),
     ReduceMotion: { System: "system", Always: "always", Never: "never" },
   };
 });

@@ -124,20 +124,6 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useUpdateTaskStatus: () => ({ mutateAsync }),
 }));
 
-// The sheet has its own rendered spec; here it would only bring its own hooks.
-// It keeps the clock it was handed, which is what its chips read, and the
-// instance it is, which is what holds a kept draft.
-let sheetNow: Date | undefined;
-let sheetInstance: object | undefined;
-vi.mock("@/components/tasks/new-task-sheet", () => ({
-  NewTaskSheet: ({ now }: { now?: Date }) => {
-    sheetNow = now;
-    const [instance] = React.useState(() => ({}));
-    sheetInstance = instance;
-    return null;
-  },
-}));
-
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
@@ -148,6 +134,7 @@ vi.mock("@/lib/haptics", () => ({
 }));
 
 import TasksScreen from "@/app/(tabs)/tasks";
+import { announceTaskCreated } from "@/lib/tasks/task-created";
 
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
 const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
@@ -369,19 +356,20 @@ describe("Task status toggle haptic", () => {
 describe("Tasks board clock", () => {
   it("re-reads its clock when the member comes back to the app on this tab", () => {
     // A board left open overnight: no navigation focus fires on the return,
-    // and the New task sheet's "Today" must mean the new day.
+    // and "Due today" must mean the new day.
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       vi.setSystemTime(new Date(2026, 8, 28, 22));
       const tree = render();
-      expect(sheetNow?.getDate()).toBe(28);
+      const rowNow = () => (row(tree).props.now as Date).getDate();
+      expect(rowNow()).toBe(28);
 
       vi.setSystemTime(new Date(2026, 8, 29, 8));
       act(() => appStateListener()("background"));
-      expect(sheetNow?.getDate()).toBe(28);
+      expect(rowNow()).toBe(28);
       act(() => appStateListener()("active"));
 
-      expect(sheetNow?.getDate()).toBe(29);
+      expect(rowNow()).toBe(29);
       act(() => tree.unmount());
     } finally {
       vi.useRealTimers();
@@ -390,31 +378,36 @@ describe("Tasks board clock", () => {
 });
 
 /**
- * The New task sheet is the host's per chapter: a kept draft's assignee is a
- * member of the chapter it was started in, and the API refuses one who isn't.
- * The Tasks tab stays mounted across a chapter switch, so only a new sheet
- * drops the draft.
+ * New task opens from the tab bar's quick actions, over any screen. A task
+ * assigned to someone else never appears on this board, so the board says
+ * where it went, or the create reads as a failed one.
  */
-describe("Tasks board's New task sheet across chapters", () => {
-  it("mounts a new sheet when the active chapter changes, and only then", () => {
+describe("Tasks board after a New task from quick actions", () => {
+  const notice = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map((node) => [node.props.children].flat().join(""))
+      .find((text) => text.startsWith("Assigned to"));
+
+  it("says who a task went to when it went to someone else", () => {
     const tree = render();
-    const first = sheetInstance;
-    const rerender = () =>
-      act(() =>
-        tree.update(
-          <FrappThemeProvider>
-            <TasksScreen />
-          </FrappThemeProvider>,
-        ),
-      );
-
-    rerender();
-    expect(sheetInstance).toBe(first);
-
-    chapterId = "chapter-2";
-    rerender();
-    expect(sheetInstance).not.toBe(first);
+    act(() => announceTaskCreated("Sam Rivera", false));
+    expect(notice(tree)).toBe("Assigned to Sam Rivera.");
     act(() => tree.unmount());
+  });
+
+  it("says nothing when the officer assigned it to themselves", () => {
+    const tree = render();
+    act(() => announceTaskCreated("Sam Rivera", false));
+    act(() => announceTaskCreated(null, true));
+    expect(notice(tree)).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("stops listening once the board is gone", () => {
+    const tree = render();
+    act(() => tree.unmount());
+    expect(() => announceTaskCreated("Sam Rivera", false)).not.toThrow();
   });
 });
 
