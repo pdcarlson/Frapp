@@ -12,7 +12,10 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { asRoute } from "@/lib/href";
-import { webAppOrigin } from "@/lib/onboarding/chapter-wizard/invite-link";
+import {
+  webAppHost,
+  webAppOrigin,
+} from "@/lib/onboarding/chapter-wizard/invite-link";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { IconButton } from "@/components/icon-button";
 import { CloseGlyph } from "@/components/control-glyphs";
@@ -59,7 +62,7 @@ export const SETUP_CHECKLIST_WEB_HINT = "Opens this step in the web app.";
 export function setupChecklistOpenFailedBody(
   origin: string = webAppOrigin(),
 ): string {
-  return `Sign in at ${origin.replace(/^https?:\/\//, "")} on a computer to finish this step.`;
+  return `Sign in at ${webAppHost(origin)} on a computer to finish this step.`;
 }
 
 export function setupChecklistWebUrl(

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Platform, Share } from "react-native";
+import { Share } from "react-native";
 import { useCreateInvite, useInvites } from "@repo/hooks";
 import { serverMessageOf } from "@repo/api-sdk";
 import { inviteTokenOf, webJoinUrl } from "./invite-link";
@@ -8,11 +8,15 @@ import { inviteTokenOf, webJoinUrl } from "./invite-link";
  * The setup invite step's links (`spec/behavior/onboarding.md`, owner pick
  * 2026-11-06 "Share first").
  *
- * An invite lets one person in and lapses after a day, so every share sends
- * a fresh link: one is minted as the step opens, so the share sheet opens at
- * once, and the next is minted as soon as one goes out. The founder never sees
- * a token or a "Create another link" button; they press Share once per
- * person. A sheet dismissed without sending keeps its link for the next press.
+ * An invite lets one person in and lapses after a day, so every press of
+ * Share invite mints a fresh link and opens the share sheet with it. The
+ * founder never sees a token or a "Create another link" button; they press
+ * Share once per person. Nothing is minted before a press, so a founder who
+ * skips the step leaves no invite behind.
+ *
+ * A sheet closed without sending keeps its link for the next press, where the
+ * platform says so: iOS reports the dismissal, Android's chooser can't tell
+ * and always reports shared, so there a backed-out sheet lists its link too.
  *
  * Shared links are listed newest first and watched while the step is open,
  * so a link that someone redeems reads Joined.
@@ -24,21 +28,26 @@ export const INVITE_ROLE = "Member";
 /** How often the step re-reads the chapter's invites to mark a link Joined. */
 export const INVITE_WATCH_INTERVAL_MS = 15_000;
 
+export const SHARE_FAILED_MESSAGE =
+  "Couldn't open the share sheet. Try again, or invite members from the web dashboard.";
+
 export interface SharedInvite {
   token: string;
   /** 1 for the first link shared on this step. */
   number: number;
 }
 
+/**
+ * The link rides in the message on both platforms: iOS hands a separate
+ * `url` item only to the targets that take one, and Copy can drop it, while a
+ * link inside the text survives every target and still draws Messages'
+ * preview card.
+ */
 export function inviteShareContent(
   url: string,
   chapterName: string,
-  os: string = Platform.OS,
-): { message: string; url?: string } {
-  const message = `Join ${chapterName} on Frapp`;
-  // iOS sends `url` as its own item, so Messages draws the link as a preview
-  // card under the line. Android shares one string, so the link rides in it.
-  return os === "ios" ? { message, url } : { message: `${message}\n${url}` };
+): { message: string } {
+  return { message: `Join ${chapterName} on Frapp\n${url}` };
 }
 
 /** The tokens in a `GET /v1/invites` answer that have been redeemed. */
@@ -64,13 +73,17 @@ export function useInviteShares({
   onError: (message: string | null) => void;
 }) {
   const createInvite = useCreateInvite();
-  const [ready, setReady] = useState<string | null>(null);
   const [minting, setMinting] = useState(false);
-  const [sharing, setSharing] = useState(false);
   const [shared, setShared] = useState<SharedInvite[]>([]);
-  // A mint already in flight, so the step opening and a fast press don't
-  // make two links for one person.
+  // A mint already in flight, so a second press waits for its link rather
+  // than making another for the same person.
   const pending = useRef<Promise<string | null> | null>(null);
+  // The link of a sheet closed without sending, kept for the next press.
+  const unsent = useRef<string | null>(null);
+  // Sheets asked for and not yet answered. iOS never answers a sheet whose
+  // target was cancelled inside it (`RCTActionSheetManager`), so this only
+  // decides whether a refusal is worth showing, never whether Share works.
+  const opening = useRef(0);
 
   const invites = useInvites({
     enabled: active && shared.length > 0,
@@ -88,9 +101,7 @@ export function useInviteShares({
         );
         if (!token) {
           onError("The invite did not return a token. Try again in a moment.");
-          return null;
         }
-        setReady(token);
         return token;
       } catch (caught) {
         onError(
@@ -107,47 +118,39 @@ export function useInviteShares({
     return run;
   }
 
-  /** Mint the first link as the step opens. */
-  function prepare() {
-    if (!ready && !pending.current) void mint();
-  }
-
   async function share() {
-    if (sharing) return;
     onError(null);
-    setSharing(true);
+    const token = unsent.current ?? (await mint());
+    if (!token) return;
+    unsent.current = token;
+    opening.current += 1;
+    let result: { action?: string };
     try {
-      const token = ready ?? (await mint());
-      if (!token) return;
-      let result: { action?: string };
-      try {
-        result = await Share.share(
-          inviteShareContent(webJoinUrl(token), chapterName),
-        );
-      } catch {
-        onError("Couldn't open the share sheet. Try again.");
-        return;
-      }
-      // iOS says when the sheet closed without sending; Android can't tell
-      // and always reports shared.
-      if (result?.action === "dismissedAction") return;
-      setShared((rows) => [{ token, number: rows.length + 1 }, ...rows]);
-      setReady(null);
-      void mint();
+      result = await Share.share(
+        inviteShareContent(webJoinUrl(token), chapterName),
+      );
+    } catch {
+      // A second sheet over one already showing is refused; the first is
+      // fine, so only a refusal with nothing else open is news.
+      if (opening.current === 1) onError(SHARE_FAILED_MESSAGE);
+      return;
     } finally {
-      setSharing(false);
+      opening.current -= 1;
     }
+    if (result?.action === "dismissedAction") return;
+    if (unsent.current === token) unsent.current = null;
+    setShared((rows) =>
+      rows.some((row) => row.token === token)
+        ? rows
+        : [{ token, number: rows.length + 1 }, ...rows],
+    );
   }
 
   return {
-    /** A link is minted and waiting for the next press. */
-    hasReady: ready !== null,
-    minting,
-    /** The first press is waiting on its link. */
-    busy: sharing && ready === null && minting,
+    /** A press is waiting on its link. */
+    busy: minting,
     shared,
     isJoined: (token: string) => used.has(token),
-    prepare,
     share,
   };
 }

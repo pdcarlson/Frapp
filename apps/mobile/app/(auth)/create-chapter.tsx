@@ -334,8 +334,6 @@ export default function CreateChapter() {
   function afterPrimer() {
     if (activated) {
       setStep("invite");
-      // The first link is minted as the step opens, so Share opens at once.
-      invite.prepare();
     } else {
       finish();
     }
@@ -634,8 +632,6 @@ export default function CreateChapter() {
                     and lasts 24 hours.
                   </Text>
                   <InviteLinksCard
-                    hasReady={invite.hasReady}
-                    minting={invite.minting}
                     shared={invite.shared}
                     isJoined={invite.isJoined}
                   />

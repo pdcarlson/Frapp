@@ -2,17 +2,9 @@ import { describe, expect, it } from "vitest";
 import { inviteShareContent, usedInviteTokens } from "./use-invite-shares";
 
 describe("inviteShareContent", () => {
-  const url = "https://app.frapp.live/join?token=tok123";
-
-  it("gives iOS the link as its own item, so Messages draws a preview card", () => {
-    expect(inviteShareContent(url, "FIJI", "ios")).toEqual({
-      message: "Join FIJI on Frapp",
-      url,
-    });
-  });
-
-  it("puts the link in the one string Android shares", () => {
-    expect(inviteShareContent(url, "FIJI", "android")).toEqual({
+  it("carries the link inside the message, which every target keeps", () => {
+    const url = "https://app.frapp.live/join?token=tok123";
+    expect(inviteShareContent(url, "FIJI")).toEqual({
       message: `Join FIJI on Frapp\n${url}`,
     });
   });

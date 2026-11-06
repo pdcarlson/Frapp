@@ -3,43 +3,28 @@ import { SignetTokens } from "@repo/theme/signet";
 import { LinkGlyph } from "@/components/control-glyphs";
 import { SectionHeader } from "@/components/list-section";
 import type { SharedInvite } from "@/lib/onboarding/chapter-wizard/use-invite-shares";
-import { webAppOrigin } from "@/lib/onboarding/chapter-wizard/invite-link";
+import { webAppHost } from "@/lib/onboarding/chapter-wizard/invite-link";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * The setup invite step's body (owner pick 2026-11-06, "Share first"): a card
- * that says a link is ready, never the link itself, and the links already
- * shared, newest first, each Not used yet or Joined.
+ * that says what a press of Share invite sends, never a link itself, and the
+ * links already shared, newest first, each Not used yet or Joined.
  *
- * The link's token means nothing to a founder, so it isn't drawn. Its host is,
- * so they can see where the link goes. While the next link is being made the
- * card's title reads in muted ink rather than drawing a spinner, so nothing
- * moves. Gold here is the house's, not the chapter's: setup is drawn before
- * the founder is inside the chapter (`spec/behavior/branding.md`).
+ * A token means nothing to a founder, so none is drawn. The host is, so they
+ * can see where a link goes. Gold here is the house's, not the chapter's:
+ * setup is drawn before the founder is inside the chapter
+ * (`spec/behavior/branding.md`).
  */
 export function InviteLinksCard({
-  hasReady,
-  minting,
   shared,
   isJoined,
 }: {
-  hasReady: boolean;
-  minting: boolean;
   shared: readonly SharedInvite[];
   isJoined: (token: string) => boolean;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const host = webAppOrigin().replace(/^https?:\/\//, "");
-  const title = hasReady
-    ? "Invite link ready"
-    : minting
-      ? "Making a link"
-      : "No link yet";
-  const detail =
-    hasReady || minting
-      ? `${host}, good for 24 hours`
-      : "Tap Share invite to try again.";
 
   return (
     <View style={styles.stack}>
@@ -48,13 +33,10 @@ export function InviteLinksCard({
           <LinkGlyph color={tokens.color.gold.askText} />
         </View>
         <View style={styles.copy}>
-          <Text
-            accessibilityLiveRegion="polite"
-            style={[styles.title, hasReady ? null : styles.titleWaiting]}
-          >
-            {title}
+          <Text style={styles.title}>A new link for each person</Text>
+          <Text style={styles.detail}>
+            {`${webAppHost()}, good for 24 hours`}
           </Text>
-          <Text style={styles.detail}>{detail}</Text>
         </View>
       </View>
 
@@ -123,9 +105,6 @@ function createStyles(tokens: SignetTokens) {
     title: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
-    },
-    titleWaiting: {
-      color: tokens.color.text.muted,
     },
     detail: {
       ...typeRole(tokens.typography.role.caption),

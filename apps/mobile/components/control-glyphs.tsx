@@ -4,10 +4,12 @@ import { Frame, paint } from "@/components/more/more-glyphs";
 
 /**
  * The verbs an icon-only control draws (`spec/ui/design-system/components.md`
- * § Icon-only actions, `iconography.md` §6.1.5): close or dismiss, edit, and
- * mark all read. Control furniture, so they draw only the §1 stroke recipe's
- * detail strokes, with no silhouette fill, from `more-glyphs.tsx`'s `Frame`
- * and `paint`, so a change to the recipe reaches them too.
+ * § Icon-only actions, `iconography.md` §6.1.5): close or dismiss, edit, mark
+ * all read and share. Share also leads a labelled button (setup's `Share
+ * invite`), and the invite link's own mark, `LinkGlyph`, lives here beside
+ * it. Control furniture, so they draw only the §1 stroke recipe's detail
+ * strokes, with no silhouette fill, from `more-glyphs.tsx`'s `Frame` and
+ * `paint`, so a change to the recipe reaches them too.
  *
  * One file, so every dismiss on mobile is the same ×: the network banner, the
  * thread's error banner, the composer's chips, the image viewer, the

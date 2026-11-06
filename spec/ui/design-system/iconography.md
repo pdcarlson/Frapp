@@ -258,7 +258,8 @@ viewer draws the same intents in Lucide (`Download`, `X`, `ChevronLeft`,
 ### 6.1.5 Mobile control glyphs (stroke recipe, shipped)
 
 The verbs an icon-only control draws ([components.md § Icon-only
-actions](components.md#icon-only-actions)) live in one file,
+actions](components.md#icon-only-actions)), plus share's companion mark for an
+invite link, live in one file,
 `apps/mobile/components/control-glyphs.tsx`, so every dismiss on mobile is the
 same ×. Detail strokes only, no silhouette fill, at 20px (§2's icon-button
 size) unless a caller passes another size. Color comes from the surface: the
