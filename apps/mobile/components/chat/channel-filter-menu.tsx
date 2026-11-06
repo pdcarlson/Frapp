@@ -1,7 +1,14 @@
 import { useCallback, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
-import { HIDE_MUTED_LABEL, UNREAD_ONLY_LABEL } from "@repo/hooks";
+import { useFocusEffect } from "expo-router";
+import {
+  FILTER_CHANNELS_LABEL,
+  FILTER_CHANNELS_ON_LABEL,
+  HIDE_MUTED_LABEL,
+  UNREAD_ONLY_LABEL,
+  type SidebarFilterChange,
+} from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { Toggle } from "@/components/toggle";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -27,8 +34,6 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * the scroll offset never matters.
  */
 
-export const FILTER_CHANNELS_LABEL = "Filter channels";
-
 const MENU_WIDTH = 264;
 
 export type ChannelFilterMenuState = {
@@ -49,6 +54,11 @@ export function useChannelFilterMenu(): ChannelFilterMenuState {
   // The overlay takes every tap while it is up, so Android back closes it
   // instead of leaving the tab.
   useBackToClose(visible, close);
+  // The tab bar sits outside the overlay and still takes taps, and a push can
+  // open a thread over the tab. Chat home stays mounted under either, so
+  // close on blur: an open menu would otherwise hold Android back on the
+  // next screen and still be open on return.
+  useFocusEffect(useCallback(() => close, [close]));
   return { visible, anchor, open, close };
 }
 
@@ -84,7 +94,7 @@ export function ChannelFilterButton({
       ref={ref}
       accessibilityRole="button"
       accessibilityLabel={
-        active ? `${FILTER_CHANNELS_LABEL}, filters on` : FILTER_CHANNELS_LABEL
+        active ? FILTER_CHANNELS_ON_LABEL : FILTER_CHANNELS_LABEL
       }
       accessibilityState={{ expanded: menu.visible }}
       hitSlop={8}
@@ -126,7 +136,8 @@ export function ChannelFilterMenu({
   menu: ChannelFilterMenuState;
   unreadOnly: boolean;
   hideMuted: boolean;
-  onChange: (change: { unreadOnly: boolean } | { hideMuted: boolean }) => void;
+  /** Passes straight to `useSetSidebarFilter`, as web's filters do. */
+  onChange: (change: SidebarFilterChange) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -177,8 +188,8 @@ export function ChannelFilterMenu({
               onValueChange={(value) =>
                 onChange(
                   row.key === "unreadOnly"
-                    ? { unreadOnly: value }
-                    : { hideMuted: value },
+                    ? { unread_only: value }
+                    : { hide_muted: value },
                 )
               }
             />

@@ -72,12 +72,13 @@ type ScreenShellProps = {
    */
   refresh?: ScreenRefresh;
   /**
-   * Drawn last, over the whole screen and outside the scroll view, for a
-   * menu that opens from a control in the body (Chat home's channel filters).
-   * Last in paint order and hit-testing, as `spec/ui/mobile/patterns.md`
-   * § Overlays requires; render `null` while nothing is open.
+   * A menu that opens from a control in the body (Chat home's channel
+   * filters), drawn as `spec/ui/mobile/patterns.md` § Overlays requires: last,
+   * over the whole screen and outside the scroll view, so it is on top in
+   * paint order and hit-testing, and, while `open`, with the screen under it
+   * hidden from screen readers. `content` renders nothing while closed.
    */
-  overlay?: ReactNode;
+  overlay?: { open: boolean; content: ReactNode };
   children: ReactNode;
 };
 
@@ -131,45 +132,76 @@ export function ScreenShell({
       {/* First in the tree so a screen reader reaches the screen's one create
           action without swiping past every row; drawn over them by zIndex. */}
       {createAction ? <FloatingCreateButton {...createAction} /> : null}
-      <SafeAreaView
-        style={styles.safeArea}
-        edges={["top", "left", "right", "bottom"]}
-      >
-        {/* Unpadded, so the pinned row sits where the content starts. */}
-        <View style={styles.safeArea}>
-          {back ? <PinnedBackRow back={back} trailing={backAction} /> : null}
-          <ScrollView
-            contentContainerStyle={[
-              styles.content,
-              back ? { paddingTop: pinnedBackClearance(tokens) } : null,
-              { paddingBottom: tokens.spacing.lg + clearance },
-            ]}
-            refreshControl={
-              refresh ? <ThemedRefreshControl refresh={refresh} /> : undefined
-            }
-          >
-            <View style={styles.header}>
-              <View style={styles.headerRow}>
-                {titleMark}
-                <Text accessibilityRole="header" style={styles.title}>
-                  {title}
-                </Text>
-                {headerAction ? (
-                  <View style={styles.headerAction}>{headerAction}</View>
+      <CoveredByOverlay covered={overlay?.open}>
+        <SafeAreaView
+          style={styles.safeArea}
+          edges={["top", "left", "right", "bottom"]}
+        >
+          {/* Unpadded, so the pinned row sits where the content starts. */}
+          <View style={styles.safeArea}>
+            {back ? <PinnedBackRow back={back} trailing={backAction} /> : null}
+            <ScrollView
+              contentContainerStyle={[
+                styles.content,
+                back ? { paddingTop: pinnedBackClearance(tokens) } : null,
+                { paddingBottom: tokens.spacing.lg + clearance },
+              ]}
+              refreshControl={
+                refresh ? <ThemedRefreshControl refresh={refresh} /> : undefined
+              }
+            >
+              <View style={styles.header}>
+                <View style={styles.headerRow}>
+                  {titleMark}
+                  <Text accessibilityRole="header" style={styles.title}>
+                    {title}
+                  </Text>
+                  {headerAction ? (
+                    <View style={styles.headerAction}>{headerAction}</View>
+                  ) : null}
+                </View>
+                {subtitle ? (
+                  <Text style={styles.subtitle}>{subtitle}</Text>
                 ) : null}
               </View>
-              {subtitle ? (
-                <Text style={styles.subtitle}>{subtitle}</Text>
-              ) : null}
-            </View>
-            {children}
-          </ScrollView>
-        </View>
-      </SafeAreaView>
-      {overlay}
+              {children}
+            </ScrollView>
+          </View>
+        </SafeAreaView>
+      </CoveredByOverlay>
+      {overlay?.content}
     </View>
   );
 }
+
+/**
+ * The screen under an open overlay, out of the accessibility tree
+ * (`patterns.md` § Overlays): `accessibilityViewIsModal` is iOS-only, so
+ * TalkBack would otherwise reach the rows under the menu. Only a screen that
+ * has an overlay gets the wrapper, and `collapsable={false}` keeps it a real
+ * native view, so toggling `covered` never moves the screen between parents.
+ */
+function CoveredByOverlay({
+  covered,
+  children,
+}: {
+  covered: boolean | undefined;
+  children: ReactNode;
+}) {
+  if (covered === undefined) return <>{children}</>;
+  return (
+    <View
+      collapsable={false}
+      style={coveredStyle}
+      accessibilityElementsHidden={covered}
+      importantForAccessibility={covered ? "no-hide-descendants" : "auto"}
+    >
+      {children}
+    </View>
+  );
+}
+
+const coveredStyle = { flex: 1 } as const;
 
 export function InfoCard({
   title,

@@ -58,7 +58,15 @@ as $$
     left(m.content, 500),
     m.kind,
     case when m.kind = 'system_audit' then m.payload end,
-    coalesce((m.metadata ->> 'attachment_count')::integer, 0),
+    -- `metadata` is the sender's own JSON on a send with no attachments, so
+    -- a bare cast would let one odd value ("x", 1.5, 3e9) fail this whole
+    -- read for the chapter. Only a whole number in range counts.
+    case
+      when jsonb_typeof(m.metadata -> 'attachment_count') = 'number'
+       and (m.metadata ->> 'attachment_count') ~ '^[0-9]{1,6}$'
+      then (m.metadata ->> 'attachment_count')::integer
+      else 0
+    end,
     m.created_at
   from chat_channels c
   cross join lateral (

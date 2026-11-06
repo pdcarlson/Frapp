@@ -17,6 +17,7 @@ import {
   sidebarSections,
   sidebarUnreadCounts,
   resolveAuthorLabel,
+  resolveAuthorName,
   useCategories,
   useChannelLatestMessages,
   useChannelNotificationPreferences,
@@ -41,7 +42,10 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { channelPreviewLine } from "@repo/chat-core/channel-preview";
+import {
+  channelPreviewLine,
+  NO_MESSAGES_PREVIEW,
+} from "@repo/chat-core/channel-preview";
 import { formatListStamp } from "@repo/formatting";
 import { ChapterMark } from "@/components/chapter-mark";
 import { useRefetchAll } from "@/components/pull-to-refresh";
@@ -343,14 +347,19 @@ export default function ChatHomeScreen() {
         isDirect={isDirect}
         isPinned={pinned}
         preview={
-          latest
-            ? channelPreviewLine(latest, {
-                isDirect,
-                viewerId,
-                authorLabel: (author) =>
-                  resolveAuthorLabel(author, nameFor, viewerId),
-              })
-            : null
+          // Held blank until the previews answer (or if they fail), so no
+          // row grows when they arrive.
+          !latestQuery.isSuccess
+            ? ""
+            : latest
+              ? channelPreviewLine(latest, {
+                  isOneToOne: channel.type === "DM",
+                  viewerId,
+                  nameOf: (author) => resolveAuthorName(author, nameFor),
+                  fallbackLabel: (author) =>
+                    resolveAuthorLabel(author, nameFor, null),
+                })
+              : NO_MESSAGES_PREVIEW
         }
         timestamp={latest ? formatListStamp(latest.created_at) : null}
         isMuted={mutedChannelIds?.has(channel.id) ?? false}
@@ -415,20 +424,17 @@ export default function ChatHomeScreen() {
       title={chapterName ?? "Frapp"}
       titleMark={<ChapterMark />}
       refresh={refresh}
-      overlay={
-        <ChannelFilterMenu
-          menu={filterMenu}
-          unreadOnly={preferences.filters.unreadOnly}
-          hideMuted={preferences.filters.hideMuted}
-          onChange={(change) =>
-            setSidebarFilter(
-              "unreadOnly" in change
-                ? { unread_only: change.unreadOnly }
-                : { hide_muted: change.hideMuted },
-            )
-          }
-        />
-      }
+      overlay={{
+        open: filterMenu.visible,
+        content: (
+          <ChannelFilterMenu
+            menu={filterMenu}
+            unreadOnly={preferences.filters.unreadOnly}
+            hideMuted={preferences.filters.hideMuted}
+            onChange={setSidebarFilter}
+          />
+        ),
+      }}
       headerAction={
         <View style={styles.headerActions}>
           {/* No pill at all in a build without Ask (#2259): `AskSheet`

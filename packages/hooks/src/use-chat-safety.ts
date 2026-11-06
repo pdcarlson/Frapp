@@ -13,6 +13,7 @@ import { createChapterQueryKeys } from "./chapter-query-keys";
 import {
   bookmarkKeys,
   CHANNEL_LIST_KEY,
+  CHANNEL_LATEST_MESSAGES_KEY,
   CHANNEL_UNREAD_COUNTS_KEY,
 } from "./use-chat";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
@@ -311,6 +312,11 @@ async function applyConfirmedBlockChange(
   // something next refetches the counts.
   void queryClient.invalidateQueries({
     queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+  });
+  // And Chat home's previews: `get_channel_latest_messages` skips a blocked
+  // sender the same way, so a cached row would keep showing what they wrote.
+  void queryClient.invalidateQueries({
+    queryKey: CHANNEL_LATEST_MESSAGES_KEY,
   });
   // And the channel list, re-read together with the counts: a hidden 1:1 DM
   // stays hidden only while no member the viewer has not blocked has written

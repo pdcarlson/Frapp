@@ -3,7 +3,7 @@ import { SYSTEM_SENDER_ID } from "@repo/validation";
 import {
   channelPreviewLine,
   type ChannelLatestMessage,
-  type PreviewAuthorLabel,
+  type PreviewNames,
 } from "./channel-preview";
 
 const VIEWER = "user-viewer";
@@ -11,13 +11,17 @@ const NAMES: Record<string, string> = {
   "user-jake": "Jake Morales",
   "user-paul": "Paul Carlson",
 };
-// Stands in for `resolveAuthorLabel` bound to a roster and the viewer.
-const authorLabel: PreviewAuthorLabel = (author) =>
-  author.sender_id === VIEWER
-    ? "You"
-    : ((author.sender_id && NAMES[author.sender_id]) ??
-      author.author_name ??
-      "Unknown member");
+NAMES[VIEWER] = "Vic Viewer";
+// Stand in for `resolveAuthorName` and `resolveAuthorLabel` (no viewer)
+// bound to a roster.
+const names: PreviewNames = {
+  nameOf: (author) =>
+    (author.sender_id && NAMES[author.sender_id]) || author.author_name || null,
+  fallbackLabel: (author) =>
+    author.sender_id
+      ? `Member ${author.sender_id.slice(0, 6)}`
+      : "Unknown member",
+};
 
 function latest(over: Partial<ChannelLatestMessage>): ChannelLatestMessage {
   return {
@@ -34,8 +38,8 @@ function latest(over: Partial<ChannelLatestMessage>): ChannelLatestMessage {
   };
 }
 
-const channel = { isDirect: false, viewerId: VIEWER, authorLabel };
-const dm = { isDirect: true, viewerId: VIEWER, authorLabel };
+const channel = { isOneToOne: false, viewerId: VIEWER, ...names };
+const dm = { isOneToOne: true, viewerId: VIEWER, ...names };
 
 describe("channelPreviewLine", () => {
   it("leads a channel message with the sender's first name", () => {
@@ -56,9 +60,27 @@ describe("channelPreviewLine", () => {
     ).toBe("minutes doc is uploaded");
   });
 
+  it("keeps the sender's name in a group DM, whose row names several people", () => {
+    expect(channelPreviewLine(latest({}), channel)).toBe(
+      "Jake: I've got the van, 3 seats left",
+    );
+  });
+
+  it("shows an unnamed sender's whole fallback label, never a cut one", () => {
+    expect(
+      channelPreviewLine(
+        latest({ sender_id: "2f4a1c99-x", content: "hi" }),
+        channel,
+      ),
+    ).toBe("Member 2f4a1c: hi");
+  });
+
   it("flattens markdown and newlines to one line", () => {
     expect(
-      channelPreviewLine(latest({ content: "**Dinner** at\n6 in the [hall](https://x.y)" }), channel),
+      channelPreviewLine(
+        latest({ content: "**Dinner** at\n6 in the [hall](https://x.y)" }),
+        channel,
+      ),
     ).toBe("Jake: Dinner at 6 in the hall");
   });
 
@@ -84,6 +106,22 @@ describe("channelPreviewLine", () => {
     });
     expect(channelPreviewLine(row, channel)).toBe(
       "Paul updated the chapter profile",
+    );
+  });
+
+  it("names the viewer as the actor on their own audit line, as the thread does", () => {
+    const row = latest({
+      sender_id: SYSTEM_SENDER_ID,
+      content: "",
+      kind: "system_audit",
+      payload: {
+        action: "chapter_profile_updated",
+        actor_user_id: VIEWER,
+        diff: { accent_color: {} },
+      },
+    });
+    expect(channelPreviewLine(row, channel)).toBe(
+      "Vic updated the chapter profile",
     );
   });
 

@@ -65,6 +65,7 @@ const {
   levelsData: { value: [] as { channel_id: string; level: string }[] },
   // `GET /v1/channels/latest` (2026-11-06): each channel's latest message.
   latestData: {
+    answered: true,
     value: [] as {
       channel_id: string;
       message_id: string;
@@ -226,7 +227,13 @@ vi.mock("@repo/hooks", async () => {
         ({ [ALICE]: "Alice Chen", [BOB]: "Bob Diaz" })[id] ?? null,
     }),
     resolveAuthorLabel: actual.resolveAuthorLabel,
-    useChannelLatestMessages: () => query(latestData.value, refetches.latest),
+    resolveAuthorName: actual.resolveAuthorName,
+    FILTER_CHANNELS_LABEL: actual.FILTER_CHANNELS_LABEL,
+    FILTER_CHANNELS_ON_LABEL: actual.FILTER_CHANNELS_ON_LABEL,
+    useChannelLatestMessages: () => ({
+      ...query(latestData.value, refetches.latest),
+      isSuccess: latestData.answered,
+    }),
     useLeaveChannel: () => ({ mutateAsync: leaveMutateAsync }),
     useGetOrCreateDm: () => ({ mutate: reopenMutate }),
   };
@@ -343,6 +350,7 @@ function hiddenToggle(tree: ReactTestRenderer) {
 beforeEach(() => {
   vi.clearAllMocks();
   latestData.value = [];
+  latestData.answered = true;
   setupChecklist.value = null;
   channelsData.value = [general, dmAlice, dmBobHidden, group];
   categoriesData.value = [];
@@ -1339,12 +1347,41 @@ describe("Chat home previews (2026-11-06 redesign)", () => {
     expect(byName.social.preview).toBe("You: see you at 6");
     expect(byName["Alice Chen"].preview).toBe("minutes doc is up");
     expect(byName.general.timestamp).toEqual(expect.any(String));
-    // No message yet: one line, no time.
+    // No message yet: still two lines, so every row is the same height.
     const quiet = rows(tree).find(
       (row) => !["general", "social", "Alice Chen"].includes(row.props.name),
     )!;
-    expect(quiet.props.preview).toBeNull();
+    expect(quiet.props.preview).toBe("No messages yet");
     expect(quiet.props.timestamp).toBeNull();
+  });
+
+  it("names the sender in a group DM, whose row names several people", () => {
+    channelsData.value = [group];
+    latestData.value = [latest(group.id, "2026-09-25T17:00:00Z")];
+    expect(rows(render())[0]!.props.preview).toBe("Alice: see you at 6");
+  });
+
+  it("names an unnamed sender by the thread's whole fallback label", () => {
+    channelsData.value = [general];
+    latestData.value = [
+      latest(general.id, "2026-09-25T17:00:00Z", {
+        sender_id: "99999999-9999-4999-8999-999999999999",
+      }),
+    ];
+    expect(rows(render())[0]!.props.preview).toMatch(
+      /^Member \S+: see you at 6$/,
+    );
+  });
+
+  it("holds each preview line blank until the previews answer, so no row grows", () => {
+    channelsData.value = [general, dmAlice];
+    latestData.answered = false;
+    expect(
+      rows(render()).map((row) => [row.props.preview, row.props.timestamp]),
+    ).toEqual([
+      ["", null],
+      ["", null],
+    ]);
   });
 
   it("draws a muted row quiet, in place", () => {

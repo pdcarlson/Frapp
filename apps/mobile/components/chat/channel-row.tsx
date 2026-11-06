@@ -57,8 +57,10 @@ export interface ChannelRowProps {
   /**
    * The latest message's one-line preview and its time (2026-11-06), from
    * `GET /v1/channels/latest` through `channelPreviewLine` and
-   * `formatListStamp`. A channel with no message passes neither and draws
-   * as one line.
+   * `formatListStamp`. Chat home passes `""` while the previews load, which
+   * holds the line blank, so the rows don't grow when they arrive (pending
+   * states never shift layout). Leave it out for a row that never has one,
+   * such as a hidden DM, which then draws as one line.
    */
   preview?: string | null;
   timestamp?: string | null;
@@ -201,12 +203,13 @@ export function ChannelRow({
           </Text>
           {isMuted ? <MutedGlyph color={tokens.color.text.muted} /> : null}
         </View>
-        {preview ? (
+        {preview != null ? (
           <Text
             numberOfLines={1}
             style={looksUnread ? styles.previewUnread : styles.previewRead}
           >
-            {preview}
+            {/* A space, not "", so a pending line keeps its height. */}
+            {preview || " "}
           </Text>
         ) : null}
       </View>
@@ -280,6 +283,7 @@ export function UnreadBadge({
 
 /** Title-bar widths, cycled, so the placeholder list doesn't read as a grid. */
 const SKELETON_TITLE_WIDTHS = ["42%", "28%", "55%", "36%", "48%"] as const;
+const SKELETON_PREVIEW_WIDTHS = ["70%", "58%", "76%", "64%", "52%"] as const;
 
 /**
  * Chat home's loading state: a section caption and channel-shaped rows on the
@@ -303,13 +307,26 @@ export function ChannelListSkeleton({ rows = 5 }: { rows?: number }) {
       {Array.from({ length: rows }, (_, index) => (
         <View key={index} style={styles.row}>
           <SkeletonBlock width={tokens.spacing.md} height={tokens.spacing.lg} />
-          <View style={styles.skeletonTitle}>
-            <SkeletonBlock
-              width={
-                SKELETON_TITLE_WIDTHS[index % SKELETON_TITLE_WIDTHS.length]
-              }
-              height={tokens.spacing.md}
-            />
+          <View style={styles.skeletonBody}>
+            <View style={styles.skeletonTitle}>
+              <SkeletonBlock
+                width={
+                  SKELETON_TITLE_WIDTHS[index % SKELETON_TITLE_WIDTHS.length]
+                }
+                height={tokens.spacing.md}
+              />
+            </View>
+            {/* The preview line every listed row carries (2026-11-06). */}
+            <View style={styles.skeletonPreview}>
+              <SkeletonBlock
+                width={
+                  SKELETON_PREVIEW_WIDTHS[
+                    index % SKELETON_PREVIEW_WIDTHS.length
+                  ]
+                }
+                height={tokens.spacing.sm}
+              />
+            </View>
           </View>
         </View>
       ))}
@@ -371,10 +388,18 @@ function createStyles(tokens: SignetTokens) {
       minHeight: tokens.touch.minimum,
       justifyContent: "center",
     },
-    // A body line's height, so a skeleton row stands as tall as a real one.
-    skeletonTitle: {
+    // The row body's two lines at their own heights and gap, so a skeleton
+    // row stands as tall as a real one.
+    skeletonBody: {
       flex: 1,
+      gap: 2,
+    },
+    skeletonTitle: {
       height: tokens.typography.role.body.lineHeight,
+      justifyContent: "center",
+    },
+    skeletonPreview: {
+      height: tokens.typography.role.caption.lineHeight,
       justifyContent: "center",
     },
     sigil: {
