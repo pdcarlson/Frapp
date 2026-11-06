@@ -69,6 +69,7 @@ describe('BackworkService', () => {
   beforeEach(async () => {
     mockResourceRepo = {
       findById: jest.fn(),
+      findByIds: jest.fn(),
       findByChapter: jest.fn(),
       findByFileHash: jest.fn(),
       create: jest.fn(),
@@ -486,6 +487,62 @@ describe('BackworkService', () => {
       await expect(service.findById('res-x', 'ch-1')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('getDownloadUrls', () => {
+    it('signs forced downloads and answers in the order asked', async () => {
+      mockResourceRepo.findByIds.mockResolvedValue([
+        { ...baseResource, id: 'res-2', storage_path: 'ch-1/b.pdf' },
+        { ...baseResource, id: 'res-1', storage_path: 'ch-1/a.pdf' },
+      ]);
+      mockStorageProvider.getSignedDownloadUrls.mockResolvedValue({
+        'ch-1/a.pdf': 'https://signed/a',
+        'ch-1/b.pdf': 'https://signed/b',
+      });
+
+      const result = await service.getDownloadUrls(['res-1', 'res-2'], 'ch-1');
+
+      expect(mockResourceRepo.findByIds).toHaveBeenCalledWith(
+        ['res-1', 'res-2'],
+        'ch-1',
+      );
+      expect(mockStorageProvider.getSignedDownloadUrls).toHaveBeenCalledWith(
+        'backwork',
+        ['ch-1/b.pdf', 'ch-1/a.pdf'],
+        expect.any(Number),
+        true,
+      );
+      expect(result).toEqual([
+        { id: 'res-1', download_url: 'https://signed/a' },
+        { id: 'res-2', download_url: 'https://signed/b' },
+      ]);
+    });
+
+    it('leaves out ids from another chapter and objects that would not sign', async () => {
+      mockResourceRepo.findByIds.mockResolvedValue([
+        { ...baseResource, id: 'res-1', storage_path: 'ch-1/a.pdf' },
+        { ...baseResource, id: 'res-2', storage_path: 'ch-1/b.pdf' },
+      ]);
+      mockStorageProvider.getSignedDownloadUrls.mockResolvedValue({
+        'ch-1/a.pdf': 'https://signed/a',
+      });
+
+      const result = await service.getDownloadUrls(
+        ['res-1', 'res-2', 'other-chapter'],
+        'ch-1',
+      );
+
+      expect(result).toEqual([
+        { id: 'res-1', download_url: 'https://signed/a' },
+      ]);
+    });
+
+    it('signs nothing when no id is in the chapter', async () => {
+      mockResourceRepo.findByIds.mockResolvedValue([]);
+
+      await expect(service.getDownloadUrls(['x'], 'ch-1')).resolves.toEqual([]);
+      expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
     });
   });
 
