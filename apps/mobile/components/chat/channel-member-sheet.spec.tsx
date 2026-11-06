@@ -22,6 +22,8 @@ const state = vi.hoisted(() => ({
   roster: {} as {
     isPending?: boolean;
     isError?: boolean;
+    hasData?: boolean;
+    isFetching?: boolean;
     refetch?: () => void;
   },
   channelIds: [] as unknown[],
@@ -54,6 +56,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     roleColorFor: (id: string) => (id === "u-officer" ? "#5865F2" : null),
     isPending: false,
     isError: false,
+    hasData: true,
+    isFetching: false,
     refetch: vi.fn(),
     ...state.roster,
   }),
@@ -140,7 +144,7 @@ describe("MemberRows", () => {
     const membersRefetch = vi.fn();
     const rosterRefetch = vi.fn();
     state.members = { isError: true, refetch: membersRefetch };
-    state.roster = { isError: true, refetch: rosterRefetch };
+    state.roster = { isError: true, hasData: false, refetch: rosterRefetch };
     const tree = render(<MemberRows channelId="chan-1" />);
 
     expect(text(tree)).toContain("Couldn't load members");
@@ -155,6 +159,56 @@ describe("MemberRows", () => {
     );
     expect(membersRefetch).toHaveBeenCalledTimes(1);
     expect(rosterRefetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("MemberRows, one read failing", () => {
+  const retry = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.type === ("Pressable" as never) &&
+        (node.props.accessibilityLabel === "Try again" ||
+          node.props.accessibilityLabel === "Retrying"),
+    );
+
+  it("fails on the roster alone, and Retry reruns only the roster", () => {
+    const membersRefetch = vi.fn();
+    const rosterRefetch = vi.fn();
+    state.members = { ...state.members, refetch: membersRefetch };
+    state.roster = { isError: true, hasData: false, refetch: rosterRefetch };
+    const tree = render(<MemberRows channelId="chan-1" />);
+
+    expect(text(tree)).toContain("Couldn't load members");
+    act(() => retry(tree).props.onPress());
+    expect(rosterRefetch).toHaveBeenCalledTimes(1);
+    expect(membersRefetch).not.toHaveBeenCalled();
+  });
+
+  it("fails on the members read alone, and Retry reruns only that", () => {
+    const membersRefetch = vi.fn();
+    const rosterRefetch = vi.fn();
+    state.members = { isError: true, refetch: membersRefetch };
+    state.roster = { refetch: rosterRefetch };
+    const tree = render(<MemberRows channelId="chan-1" />);
+
+    act(() => retry(tree).props.onPress());
+    expect(membersRefetch).toHaveBeenCalledTimes(1);
+    expect(rosterRefetch).not.toHaveBeenCalled();
+  });
+
+  it("is busy while the roster retry is in flight", () => {
+    state.roster = { isError: true, hasData: false, isFetching: true };
+    const tree = render(<MemberRows channelId="chan-1" />);
+    expect(retry(tree).props.disabled).toBe(true);
+  });
+
+  it("keeps a list it can still draw through a failed background refetch", () => {
+    state.members = { ...state.members, isError: true };
+    state.roster = { isError: true, hasData: true };
+    const tree = render(<MemberRows channelId="chan-1" />);
+
+    expect(text(tree)).not.toContain("Couldn't load members");
+    expect(rowNames(tree)).toHaveLength(4);
   });
 });
 

@@ -118,6 +118,7 @@ vi.mock("@/components/chat/message-actions-sheet", async () => {
 });
 
 const presentMemberSheet = vi.fn();
+const dismissMemberSheet = vi.fn();
 vi.mock("@/components/chat/channel-member-sheet", async () => {
   const { createElement, forwardRef, useImperativeHandle } =
     await import("react");
@@ -130,7 +131,7 @@ vi.mock("@/components/chat/channel-member-sheet", async () => {
     ) {
       useImperativeHandle(ref, () => ({
         present: presentMemberSheet,
-        dismiss: () => {},
+        dismiss: dismissMemberSheet,
       }));
       return createElement("ChannelMemberSheet", props);
     }),
@@ -1670,6 +1671,34 @@ describe("chat thread member list (#3536)", () => {
     channelType = "DM";
     const tree = render();
     expect(membersButtons(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  // The sheet draws through the app's sheet provider, and the screen stays
+  // mounted, so it would outlive the channel it lists.
+  it("closes the sheet when the screen blurs", () => {
+    const tree = render();
+    act(() => refocus());
+    expect(dismissMemberSheet).toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("closes the sheet when the thread switches channel", () => {
+    const tree = render();
+    dismissMemberSheet.mockClear();
+    params = { channelId: OTHER_CHANNEL };
+    rerender(tree);
+    expect(dismissMemberSheet).toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("closes the sheet when the channel turns out to be a 1:1 DM", () => {
+    const tree = render();
+    dismissMemberSheet.mockClear();
+    channelType = "DM";
+    rerender(tree);
+    expect(membersButtons(tree)).toHaveLength(0);
+    expect(dismissMemberSheet).toHaveBeenCalled();
     act(() => tree.unmount());
   });
 

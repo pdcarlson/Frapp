@@ -31,7 +31,12 @@ const NAMES: Record<string, string> = {
   "u-blank": "",
 };
 const roster = vi.hoisted(() => ({
-  value: {} as { isPending?: boolean; isError?: boolean; refetch?: () => void },
+  value: {} as {
+    isPending?: boolean;
+    isError?: boolean;
+    hasData?: boolean;
+    refetch?: () => void;
+  },
 }));
 
 vi.mock("@repo/hooks", async () => ({
@@ -50,6 +55,8 @@ vi.mock("@repo/hooks", async () => ({
       id === "u-officer" || id === "u-member" ? "#5865F2" : null,
     isPending: false,
     isError: false,
+    hasData: true,
+    isFetching: false,
     refetch: vi.fn(),
     ...roster.value,
   }),
@@ -192,10 +199,31 @@ describe("ChannelMemberList", () => {
 
   it("offers a retry that reruns the roster when the names fail", () => {
     const refetch = vi.fn();
-    roster.value = { isError: true, refetch };
+    roster.value = { isError: true, hasData: false, refetch };
     render(<ChannelMemberList channelId="chan-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(refetch).toHaveBeenCalled();
+  });
+
+  it("keeps a list it can still draw through a failed background refetch", () => {
+    membersQuery.value = { ...membersQuery.value, isError: true };
+    roster.value = { isError: true, hasData: true };
+    render(<ChannelMemberList channelId="chan-1" />);
+
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.getByText("Amy Officer")).toBeTruthy();
+  });
+
+  it("reruns only the read that failed", () => {
+    const membersRefetch = vi.fn();
+    const rosterRefetch = vi.fn();
+    membersQuery.value = { ...membersQuery.value, refetch: membersRefetch };
+    roster.value = { isError: true, hasData: false, refetch: rosterRefetch };
+    render(<ChannelMemberList channelId="chan-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(rosterRefetch).toHaveBeenCalled();
+    expect(membersRefetch).not.toHaveBeenCalled();
   });
 });

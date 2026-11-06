@@ -18,6 +18,10 @@ import {
 } from "@/components/state-block";
 import { NavGlyph } from "@/components/nav-glyph";
 import {
+  SectionHeader,
+  SectionHeaderSkeleton,
+} from "@/components/list-section";
+import {
   SheetBackToClose,
   SheetGrabber,
   SheetScrim,
@@ -140,18 +144,27 @@ export function MemberRows({ channelId }: { channelId: string | null }) {
     [membersQuery.data, byId, roleColorFor],
   );
 
-  // Names come from the roster, so a list without them isn't ready either; a
-  // failure of either read gets the error, and Retry reruns whichever failed.
-  if (membersQuery.isError || roster.isError) {
+  // Names come from the roster, so a list without them isn't ready either.
+  // A read fails the sheet only when it has nothing to draw: TanStack keeps
+  // the last good data through a failed refetch, and a list the member just
+  // saw shouldn't turn into an error on a background blip (the rule
+  // `member-detail-sheet.tsx` follows). Retry reruns only what failed, and is
+  // busy while that read is in flight.
+  const membersFailed = membersQuery.isError && membersQuery.data === undefined;
+  const rosterFailed = roster.isError && !roster.hasData;
+  if (membersFailed || rosterFailed) {
     return (
       <ErrorState
         title="Couldn't load members"
         body="The list of who can read this channel couldn't reach the server."
         onRetry={() => {
-          if (membersQuery.isError) void membersQuery.refetch();
-          if (roster.isError) roster.refetch();
+          if (membersFailed) void membersQuery.refetch();
+          if (rosterFailed) roster.refetch();
         }}
-        isRetrying={membersQuery.isFetching}
+        isRetrying={
+          (membersFailed && membersQuery.isFetching) ||
+          (rosterFailed && roster.isFetching)
+        }
       />
     );
   }
@@ -161,9 +174,9 @@ export function MemberRows({ channelId }: { channelId: string | null }) {
 
   return (
     <View>
-      <Text style={styles.eyebrow}>
+      <SectionHeader>
         {rows.length === 1 ? "1 member" : `${rows.length} members`}
-      </Text>
+      </SectionHeader>
       {rows.map((row) => (
         <View
           key={row.userId}
@@ -208,12 +221,7 @@ function MemberRowsSkeleton() {
   const styles = createStyles(tokens);
   return (
     <SkeletonRegion label="Loading members">
-      <View style={styles.skeletonCaption}>
-        <SkeletonBlock
-          width={tokens.spacing["3xl"]}
-          height={tokens.spacing.sm}
-        />
-      </View>
+      <SectionHeaderSkeleton />
       {SKELETON_NAME_WIDTHS.map((width, index) => (
         <View key={index} style={styles.row}>
           <SkeletonBlock
@@ -253,18 +261,6 @@ function createStyles(tokens: SignetTokens) {
     body: {
       paddingHorizontal: tokens.spacing.lg,
       paddingBottom: tokens.spacing.xl,
-    },
-    eyebrow: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      textTransform: "uppercase",
-      letterSpacing: 0.6,
-      paddingBottom: tokens.spacing.xs,
-    },
-    skeletonCaption: {
-      // About the caption's line box, so the rows barely move when it lands.
-      paddingVertical: tokens.spacing.xs,
-      marginBottom: tokens.spacing.xs,
     },
     row: {
       height: ROW_HEIGHT,

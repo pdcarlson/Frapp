@@ -651,6 +651,19 @@ export default function ChatThreadScreen() {
   // are already the header.
   const memberSheetRef = useRef<BottomSheetModal>(null);
   const showMemberList = !!openChannel && openChannel.channel.type !== "DM";
+  // The sheet closes on a blur or a channel switch, for the mute menu's
+  // reason below: this screen stays mounted, and the sheet draws through the
+  // app's sheet provider, so left up it would sit over the next channel (a
+  // push can switch it to a 1:1 DM, which has no list) or another tab.
+  useFocusEffect(
+    useCallback(() => {
+      if (!channelId) return;
+      return () => memberSheetRef.current?.dismiss();
+    }, [channelId]),
+  );
+  useEffect(() => {
+    if (!showMemberList) memberSheetRef.current?.dismiss();
+  }, [showMemberList]);
   const [actionTarget, setActionTarget] = useState<Omit<
     MessageActionsTarget,
     "reactedWith"

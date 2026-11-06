@@ -111,9 +111,14 @@ export function ChannelMemberList({
     return groupChannelMembers(rows);
   }, [membersQuery.data, byId, avatarFor, roleColorFor, presence]);
 
-  // Names come from the roster, so a list without them is not ready either;
-  // a failure of either read gets the error, and Retry reruns whichever failed.
-  const failed = membersQuery.isError || roster.isError;
+  // Names come from the roster, so a list without them is not ready either.
+  // A read fails the list only when it has nothing to draw: TanStack keeps
+  // the last good data through a failed refetch, so a background blip leaves
+  // the list up rather than swapping it for an error. Retry reruns only what
+  // failed.
+  const membersFailed = membersQuery.isError && membersQuery.data === undefined;
+  const rosterFailed = roster.isError && !roster.hasData;
+  const failed = membersFailed || rosterFailed;
   const loading =
     !channelId || !enabled || membersQuery.isPending || roster.isPending;
 
@@ -132,8 +137,8 @@ export function ChannelMemberList({
             <button
               type="button"
               onClick={() => {
-                if (membersQuery.isError) void membersQuery.refetch();
-                if (roster.isError) roster.refetch();
+                if (membersFailed) void membersQuery.refetch();
+                if (rosterFailed) roster.refetch();
               }}
               className="font-semibold text-foreground underline-offset-2 hover:underline"
             >
