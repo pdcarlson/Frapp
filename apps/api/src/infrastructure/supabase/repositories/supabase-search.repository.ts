@@ -3,6 +3,7 @@ import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient } from '../database.types';
 import type { PagedQueryResult } from '../supabase.utils';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { chunkIds } from '#domain/utils/chunk-ids';
 import type {
   ISearchRepository,
   SearchChannelAccessRow,
@@ -77,6 +78,22 @@ export const EVENT_SEARCH_COLUMNS =
  */
 const MESSAGE_SEARCH_COLUMNS =
   'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, is_pinned, pinned_at, edited_at, is_deleted, created_at';
+
+/**
+ * The order `searchMessages` asks PostgREST for, `created_at desc, id desc`,
+ * applied to the merged batches. Timestamps compare as instants first, since
+ * the offset PostgREST writes need not match from row to row. Then the
+ * strings break ties: `Date` stops at milliseconds, and the column keeps
+ * microseconds.
+ */
+function newestFirst(a: ChatMessage, b: ChatMessage): number {
+  const byInstant = Date.parse(b.created_at) - Date.parse(a.created_at);
+  if (byInstant !== 0) return byInstant;
+  if (a.created_at !== b.created_at)
+    return a.created_at < b.created_at ? 1 : -1;
+  if (a.id === b.id) return 0;
+  return a.id < b.id ? 1 : -1;
+}
 
 @Injectable()
 export class SupabaseSearchRepository implements ISearchRepository {
@@ -217,22 +234,44 @@ export class SupabaseSearchRepository implements ISearchRepository {
    * now finds "attached". Substring matching within a word ("tach") is gone,
    * which needs `pg_trgm` — not installed, and not registered in the PGlite CI
    * gate. That is a separate decision with its own index cost.
+   *
+   * CHUNKED CHANNEL FILTER (#3265). A chapter-wide search hands this every
+   * channel the caller may read, and a Discord-imported chapter has hundreds.
+   * One `.in()` list of them overflows the request line: the local gateway
+   * returns `414 URI Too Long` somewhere between 200 and 250 uuids
+   * (`ID_CHUNK_SIZE` records the measurement), which failed the source and
+   * turned every chapter-wide search into a 500. So the list goes out in
+   * `chunkIds` batches, concurrently, and the batches are merged here.
+   *
+   * The merge matches the single query, top `limit` included: the newest
+   * `limit` rows overall must sit inside the newest `limit` of whichever batch
+   * holds them, so taking `limit` per batch, sorting the union by the same
+   * key and cutting to `limit` loses nothing. `id` breaks `created_at` ties in
+   * both the query and the merge, so which row wins a tie doesn't depend on
+   * how the channels happened to be batched.
    */
   async searchMessages(
     channelIds: string[],
     query: string,
     limit: number,
   ): Promise<ChatMessage[]> {
-    const { data, error } = (await this.supabase
-      .from('chat_messages')
-      .select(MESSAGE_SEARCH_COLUMNS)
-      .in('channel_id', channelIds)
-      .textSearch('content_search', query, TEXT_SEARCH)
-      .eq('is_deleted', false)
-      .limit(limit)
-      .order('created_at', { ascending: false })) as QueryResult<ChatMessage>;
-    if (error) throw new SupabaseQueryError(error);
-    return data ?? [];
+    const batches = await Promise.all(
+      chunkIds(channelIds).map(async (batch) => {
+        const { data, error } = (await this.supabase
+          .from('chat_messages')
+          .select(MESSAGE_SEARCH_COLUMNS)
+          .in('channel_id', batch)
+          .textSearch('content_search', query, TEXT_SEARCH)
+          .eq('is_deleted', false)
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(limit)) as QueryResult<ChatMessage>;
+        if (error) throw new SupabaseQueryError(error);
+        return data ?? [];
+      }),
+    );
+    if (batches.length === 1) return batches[0];
+    return batches.flat().sort(newestFirst).slice(0, limit);
   }
 
   async findChannelsForAccess(
