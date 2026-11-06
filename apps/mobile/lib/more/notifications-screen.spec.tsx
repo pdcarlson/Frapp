@@ -21,13 +21,14 @@ vi.mock("@/lib/chapter-branding", () => ({
     textMark: null,
   }),
 }));
+import { useRouter } from "expo-router";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
-import { screenText } from "@/test/screen-text";
+import { drawnText, screenText } from "@/test/screen-text";
 
 /**
- * #2101. s19 splits its rows into TODAY and EARLIER by "now", and a tab
- * screen is never unmounted. React Query's structural sharing keeps the data
+ * #2101. s19 splits its rows into TODAY and EARLIER by "now", and the
+ * screen can stay up overnight. React Query's structural sharing keeps the data
  * reference stable across a refetch that returns the same rows, so a
  * `new Date()` read once would leave an 11:47 PM row under TODAY at 12:10 AM.
  * This pins that the split moves on the shared ticking clock.
@@ -140,6 +141,50 @@ describe("Notifications back row (#3022)", () => {
 
   it("draws ‹ Chat, the screen the bell opens it from", () => {
     expectBackRow(render(), "Chat", "/");
+  });
+});
+
+/**
+ * A tapped notification pushes a screen, but pops down to a tab, so the inbox
+ * never stacks a second tab bar over itself (`spec/ui/mobile/navigation.md`
+ * § Going back).
+ */
+describe("Notifications row target", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    inbox.data = null;
+  });
+
+  const read = (id: string, target: string) => ({
+    id,
+    title: `About ${target}`,
+    body: null,
+    created_at: CREATED_AT.toISOString(),
+    read_at: CREATED_AT.toISOString(),
+    data: { target: { screen: target } },
+  });
+
+  it("pops down to a tab and pushes any other screen", () => {
+    inbox.data = [read("n-tasks", "tasks"), read("n-dues", "billing")];
+    const router = vi.mocked(useRouter)();
+    vi.mocked(router.push).mockClear();
+    vi.mocked(router.dismissTo).mockClear();
+    const tree = render();
+    const row = (title: string) =>
+      tree.root.find(
+        (node) =>
+          (node.type as unknown as string) === "Pressable" &&
+          drawnText(node).includes(title),
+      );
+
+    act(() => row("About tasks").props.onPress());
+    expect(router.dismissTo).toHaveBeenCalledWith("/tasks");
+    expect(router.push).not.toHaveBeenCalled();
+
+    act(() => row("About billing").props.onPress());
+    expect(router.push).toHaveBeenCalledWith("/dues");
   });
 });
 

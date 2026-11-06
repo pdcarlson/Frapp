@@ -6,6 +6,7 @@ import { readAuthToken } from "./auth-token";
 import { readClientVersion } from "./client-version";
 import { useAuthSession } from "./auth-session";
 import { queryClient } from "./query-client";
+import { forgetDuesMemory } from "./dues/visit-memory";
 
 export { AUTH_TOKEN_STORAGE_KEY } from "./auth-token";
 export { useIsApiAuthenticated } from "./use-is-api-authenticated";
@@ -66,6 +67,8 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
     if (previous === undefined || previous === null) return;
     if (previous === chapterId) return;
     queryClient.clear();
+    // A chapter switch ends Dues' hold (`spec/ui/mobile/screens.md` s11).
+    forgetDuesMemory();
   }, [chapterId]);
 
   /* eslint-disable react-hooks/refs -- getChapterId is invoked per request by SDK middleware, not while constructing the client; capturing chapterId would stale in-flight calls */

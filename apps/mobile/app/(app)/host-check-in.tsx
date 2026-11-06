@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useScreenBelow } from "@/lib/back-target";
+import { goBackTo } from "@/lib/href";
 import QRCode from "react-native-qrcode-svg";
 import {
   countCheckedIn,
@@ -261,7 +262,7 @@ export default function HostCheckInScreen() {
           // Android's back do (`spec/ui/mobile/navigation.md` § Going back);
           // More, whose Host check-in row is the one way in, when nothing is
           // under it. "End" names no place, so it needs no label from it.
-          onPress={() => (below ? below.goBack() : router.navigate("/more"))}
+          onPress={() => (below ? below.goBack() : goBackTo(router, "/more"))}
           style={({ pressed }) => [styles.end, pressed ? styles.pressed : null]}
         >
           <Text style={styles.endText}>✕ End</Text>

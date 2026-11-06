@@ -185,8 +185,8 @@ describe("resolveAuthGate", () => {
   });
 
   /**
-   * `(app)/(tabs)/_layout.tsx` is frozen and still calls this with only the session.
-   * Those omitted fields must not hold the tab navigator forever, and must not
+   * `(app)/_layout.tsx` is frozen and still calls this with only the session.
+   * Those omitted fields must not hold the app stack forever, and must not
    * type-error the hotspot file. AppRuntime is the one that then walks a new
    * member out onto s02/s03.
    */

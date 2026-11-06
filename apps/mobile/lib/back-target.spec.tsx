@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import React, { act } from "react";
 import { create } from "react-test-renderer";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { stackScreen } from "@/test/stack-screen";
 import {
   screenBelowName,
@@ -147,6 +147,32 @@ describe("useHoldSwipeBack", () => {
 
     act(() => tree.update(at(false)));
     expect(navigation.setOptions).toHaveBeenLastCalledWith({
+      gestureEnabled: true,
+    });
+  });
+
+  it("holds the outer stack too, which owns the swipe for a pushed group", () => {
+    // create-chapter sits in `(auth)`, pushed as a group over the app: the
+    // root stack's swipe pops the whole group.
+    const outer = { setOptions: vi.fn() };
+    const { navigation, element } = stackScreen(
+      [{ name: "find" }],
+      <Holder hold />,
+    );
+    Object.assign(navigation, { getParent: () => outer });
+    let tree!: ReturnType<typeof create>;
+    act(() => {
+      tree = create(element);
+    });
+    expect(navigation.setOptions).toHaveBeenLastCalledWith({
+      gestureEnabled: false,
+    });
+    expect(outer.setOptions).toHaveBeenLastCalledWith({
+      gestureEnabled: false,
+    });
+
+    act(() => tree.unmount());
+    expect(outer.setOptions).toHaveBeenLastCalledWith({
       gestureEnabled: true,
     });
   });

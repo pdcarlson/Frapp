@@ -16,7 +16,7 @@ Visual truth: [`../design-system/reference/canvas-screens.dc.html`](../design-sy
 
 ## Inventory
 
-Status legend — **Live**: route exists and carries real content. **Routed, stub**: the route exists and is reachable, but the drawn screen is not built — the nav restructure pre-created it so later slices only add files (see the hotspot freeze in [`navigation.md`](navigation.md)). **Sheet**: gorhom sheet component hosted by a parent screen. It normally has no route of its own — s17 is the single exception, and honestly so: `(app)/(tabs)/_layout.tsx` is frozen and registers `<Tabs.Screen name="ask" options={{ title: "Ask", href: null }} />`, expo-router throws for a registration with no backing file (`lib/routes.spec.ts` pins that), so `ask.tsx` stays and presents the same sheet the pill does rather than drawing a second copy of s17 — or, in a build without Ask, redirects to Chat home.
+Status legend — **Live**: route exists and carries real content. **Routed, stub**: the route exists and is reachable, but the drawn screen is not built — the nav restructure pre-created it so later slices only add files (see the hotspot freeze in [`navigation.md`](navigation.md)). **Sheet**: gorhom sheet component hosted by a parent screen. It normally has no route of its own — s17 is the single exception, and honestly so: `(app)/_layout.tsx` registers `ask` on the stack, and `lib/routes.spec.ts` holds that every registration there has a backing file, so `ask.tsx` stays (it also keeps a stale `frapp://ask` link landing somewhere real) and presents the same sheet the pill does rather than drawing a second copy of s17 — or, in a build without Ask, redirects to Chat home.
 
 | ID | Canvas label | Route (`apps/mobile/app/`) | Status |
 | --- | ------------ | -------------------------- | ------ |
@@ -57,7 +57,7 @@ These pre-Signet screens had no Canvas counterpart and have been **deleted**:
 | `(tabs)/points-details.tsx` | Absorbed into Tasks (s08) and Profile (s15) stat cards; the ledger stays authoritative in [`../../behavior/points.md`](../../behavior/points.md). The s08 half has landed as the balance + house-rank card; no standalone leaderboard list replaced the deleted one, by design. |
 | `(tabs)/notification-targets.tsx` | Notification preferences live in Settings (s16); opt-in happens via the contextual primer (s03 and [`patterns.md`](patterns.md)). |
 | `(tabs)/onboarding-tour.tsx` | Replaced by the first-run screen (s03) — join flow behavior in [`../../behavior/onboarding.md`](../../behavior/onboarding.md). |
-| `(app)/documents-reports.tsx` | Split: documents become s12; reports remain web-only and do not return to mobile. |
+| `(tabs)/documents-reports.tsx` | Split: documents become s12; reports remain web-only and do not return to mobile. |
 
 ## Renames
 

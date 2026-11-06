@@ -8,6 +8,7 @@ import { AccessibilityInfo, Platform } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { createFrappClient } from "@repo/api-sdk";
 import { FrappThemeProvider } from "@/lib/theme";
+import { stackScreen } from "@/test/stack-screen";
 import { drawnText, screenText, textHeadings } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
@@ -28,7 +29,8 @@ import { requireForegroundFix } from "@/lib/location";
  * A subscription refusal is the one check-in failure that must not re-arm
  * anything: the chapter stays refused until an officer sorts out billing, so
  * a live scanner or manual field only invites a retry that cannot win. Every
- * other failure keeps both armed. And because a tab screen is never unmounted,
+ * other failure keeps both armed. And because the screen can stay mounted (under
+ * another screen, in the background, or handed new params by a link),
  * the refusal has to clear when the member comes back, or the scanner stays
  * dead at the next event until a force-quit.
  *
@@ -462,10 +464,10 @@ describe("Check-in's success moment", () => {
       "You're checked in. +10 pts",
     );
 
-    // To the event it confirmed, not `back()`: a hidden tab's history lands
-    // on Chat home.
+    // Nothing is under the screen in this spec (no stack), so it opens the
+    // event it confirmed; over the event's detail it pops instead.
     act(() => pressableDrawing(tree, "Back to event").props.onPress());
-    expect(router().navigate).toHaveBeenCalledWith({
+    expect(router().dismissTo).toHaveBeenCalledWith({
       pathname: "/event-details",
       params: { id: "evt-1" },
     });
@@ -861,6 +863,7 @@ describe("Check-in before its event has loaded", () => {
 describe("Check-in's way out", () => {
   beforeEach(() => {
     vi.mocked(router().navigate).mockClear();
+    vi.mocked(router().dismissTo).mockClear();
   });
 
   const close = (tree: ReactTestRenderer) =>
@@ -876,7 +879,7 @@ describe("Check-in's way out", () => {
     });
     const tree = render();
     act(() => close(tree).props.onPress());
-    expect(router().navigate).toHaveBeenCalledWith({
+    expect(router().dismissTo).toHaveBeenCalledWith({
       pathname: "/event-details",
       params: { id: "evt-1" },
     });
@@ -884,11 +887,34 @@ describe("Check-in's way out", () => {
     act(() => tree.unmount());
   });
 
+  it("pops back to the event detail it was opened from, as the swipe does", () => {
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      eventId: "evt-1",
+    });
+    const { element, navigation } = stackScreen(
+      [{ name: "(tabs)" }, { name: "event-details" }],
+      <FrappThemeProvider>
+        <CheckInScreen />
+      </FrappThemeProvider>,
+    );
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(element, {
+        createNodeMock: (node) =>
+          node.type === "BottomSheetModal" ? sheetHandle : null,
+      });
+    });
+    act(() => close(tree).props.onPress());
+    expect(navigation.goBack).toHaveBeenCalledTimes(1);
+    expect(router().dismissTo).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
   it("goes to Events when there is no event to go back to", () => {
     vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
     const tree = render();
     act(() => close(tree).props.onPress());
-    expect(router().navigate).toHaveBeenCalledWith("/events");
+    expect(router().dismissTo).toHaveBeenCalledWith("/events");
     act(() => tree.unmount());
   });
 });
@@ -1243,7 +1269,7 @@ describe("Check-in's camera and torch", () => {
   });
 
   it("lets the camera, and the torch, go when the member leaves", () => {
-    // The tab screen stays mounted after the member leaves; a camera left
+    // The screen stays mounted under anything pushed over it; a camera left
     // mounted would keep running, torch and all, behind the next screen.
     const tree = render();
     act(() => torch(tree).props.onPress());

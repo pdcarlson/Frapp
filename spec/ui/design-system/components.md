@@ -71,14 +71,7 @@ Owner rule, 2026-11-05: chrome is as light as the job allows, on web and mobile 
 
 ### Going back (mobile)
 
-Owner rule, 2026-11-06 ("On every screen, I should be able to swipe to the left to get back … give the users what they'd expect"): every mobile screen a member is taken to goes back by the platform's own gesture, the edge swipe on iOS and the back button or back gesture on Android, and every drawn way back does exactly what that gesture does.
-
-- **Screens are pushed, never hidden tabs.** Anything outside the four tabs slides in over them and covers the tab bar; the tabs are one swipe away. A hidden tab has no back gesture, which is why, until 2026-11-06, no screen past the tabs could be swiped away.
-- **No screen turns the gesture off.** One may hold it for a moment while an overlay of its own takes drags (the photo viewer), and releases it when the overlay closes. A sheet needs no hold.
-- **The back capsule names where the swipe goes.** `‹ Events` over an event opened from Events, `‹ Chat` over the same event opened from Chat home. A close control (✕, `✕ End`) goes back the same way.
-- **Going back closes the screen.** What a member would be hurt to lose (a typed message, a payment waiting on the server) is kept outside it.
-
-The mechanics, the screens and the specs that pin them: [`../mobile/navigation.md` § Going back](../mobile/navigation.md#going-back).
+Owner rule, 2026-11-06 ("On every screen, I should be able to swipe to the left to get back … give the users what they'd expect"): every mobile screen past the four tabs goes back by the platform's own gesture, the edge swipe on iOS and the back button or back gesture on Android, and every drawn way back (the back capsule, a ✕) does exactly what that gesture does. Which screens, the one allowed hold, and the specs that pin it: [`../mobile/navigation.md` § Going back](../mobile/navigation.md#going-back), the rule's one home.
 
 ## 3. Buttons
 

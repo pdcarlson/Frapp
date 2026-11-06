@@ -45,6 +45,7 @@ import { jumpToLatestLabel } from "@/components/chat/jump-to-latest-button";
 import { reactionActionType } from "@repo/chat-core/types";
 import type { UseChatChannelResult } from "@/lib/chat/use-chat-channel";
 import { FrappThemeProvider } from "@/lib/theme";
+import { stackScreen } from "@/test/stack-screen";
 import { flatStyle } from "@/test/flat-style";
 import { screenText } from "@/test/screen-text";
 
@@ -422,6 +423,34 @@ beforeEach(() => {
   channelRow = "found";
   channelType = "PUBLIC";
   queryClient = new QueryClient();
+});
+
+describe("chat thread way back", () => {
+  // `spec/ui/mobile/navigation.md` § Going back: ‹ pops the stack, exactly as
+  // the edge swipe does, and names what is under the thread.
+  it("pops to the screen it was opened from, and names it", () => {
+    const { element, navigation } = stackScreen(
+      [{ name: "(tabs)" }, { name: "directory" }],
+      <Screen />,
+    );
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(element);
+    });
+    act(() => byLabel(tree, "Back to directory").props.onPress());
+    expect(navigation.goBack).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(expoRouter.useRouter)().dismissTo).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("goes to Chat home with nothing under it", () => {
+    const tree = render();
+    act(() => byLabel(tree, "Back to chat").props.onPress());
+    expect(vi.mocked(expoRouter.useRouter)().dismissTo).toHaveBeenCalledWith(
+      "/",
+    );
+    act(() => tree.unmount());
+  });
 });
 
 describe("chat thread identity gate (#2250)", () => {

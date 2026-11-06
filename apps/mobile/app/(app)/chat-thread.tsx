@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useScreenBelow } from "@/lib/back-target";
+import { goBackTo } from "@/lib/href";
 import {
   Alert,
   FlatList,
@@ -945,7 +946,7 @@ export default function ChatThreadScreen() {
               // Pops the thread, as the edge swipe does, to whatever opened
               // it (Chat home, a member's card, a notification), and to Chat
               // home when nothing is under it (`lib/back-target.ts`).
-              onPress={() => (below ? below.goBack() : router.navigate("/"))}
+              onPress={() => (below ? below.goBack() : goBackTo(router, "/"))}
               style={({ pressed }) => (pressed ? styles.pressed : null)}
             >
               <Text style={styles.backChevron}>‹</Text>

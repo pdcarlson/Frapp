@@ -225,7 +225,7 @@ describe("a screen's boundary", () => {
 
     expect(buttonLabels(tree)).toEqual([BACK_LABEL, SCREEN_ERROR_COPY.retry]);
     press(tree, BACK_LABEL);
-    expect(vi.mocked(useRouter)().navigate).toHaveBeenCalledWith("/");
+    expect(vi.mocked(useRouter)().dismissTo).toHaveBeenCalledWith("/");
   });
 
   it("draws no back row where the tab bar is the way out", () => {
@@ -270,7 +270,7 @@ describe("when a screen's boundary tries again", () => {
   });
 
   it("clears a fallback when the screen is opened for something else", () => {
-    // Tab screens stay mounted, so a failed event must not keep its fallback
+    // A screen can stay mounted while its params change, so a failed event must not keep its fallback
     // when the member opens a different one on the same screen.
     const { Bomb, state } = makeBomb();
     const navigation = fakeNavigation();

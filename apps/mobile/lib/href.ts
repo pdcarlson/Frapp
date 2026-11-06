@@ -23,18 +23,34 @@ export function isTabHref(href: Href): boolean {
   return TAB_PATHS.has(pathname);
 }
 
+/** The slice of expo-router's router these helpers call. */
+type TabRouter = {
+  push: (href: Href) => void;
+  navigate: (href: Href) => void;
+  dismissTo: (href: Href) => void;
+};
+
 /**
  * Opens an in-app link whose destination isn't known until run time (a
  * notification's target): a pushed screen goes on the stack, so the swipe
- * back returns where the member was, and a tab is navigated to, which pops
- * the stack back to the tabs and switches to it. Pushing a tab would stack a
- * second copy of the tab navigator, tab bar and all, over the screen
- * (`spec/ui/mobile/navigation.md` § Going back).
+ * back returns where the member was, and a tab is reached by popping the stack
+ * back down to the tabs (`dismissTo`) and switching to it. Pushing a tab, or
+ * navigating to one, from a pushed screen would stack a second copy of the
+ * tab navigator, tab bar and all, over the screen: expo-router's stack only
+ * reuses a route that is already on top (`spec/ui/mobile/navigation.md`
+ * § Going back).
  */
-export function openHref(
-  router: { push: (href: Href) => void; navigate: (href: Href) => void },
-  href: Href,
-): void {
-  if (isTabHref(href)) router.navigate(href);
+export function openHref(router: TabRouter, href: Href): void {
+  if (isTabHref(href)) router.dismissTo(href);
   else router.push(href);
+}
+
+/**
+ * A drawn way back's fixed destination, for when nothing is under the screen
+ * to pop to: a tab is popped down to, for the reason `openHref` gives, and any
+ * other screen is navigated to.
+ */
+export function goBackTo(router: TabRouter, href: Href): void {
+  if (isTabHref(href)) router.dismissTo(href);
+  else router.navigate(href);
 }

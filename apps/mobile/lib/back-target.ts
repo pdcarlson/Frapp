@@ -109,19 +109,39 @@ export function useScreenBelow(): ScreenBelow | null {
 }
 
 /**
- * While `hold` is true, the iOS edge swipe can't pop this screen. For an
- * in-tree overlay that covers the screen and takes its own drags (s05's photo
- * viewer, which pans a zoomed photo): a swipe that started a pan and popped
- * the thread instead would close the conversation under the member's finger.
- * Android's back is the overlay's own (`useBackToClose` in `lib/overlay.ts`),
- * which closes it first. Released when `hold` turns false or the caller
- * unmounts. A no-op outside a stack screen.
+ * While `hold` is true, the iOS edge swipe can't pop this screen. For a screen
+ * whose own content would be lost to the swipe:
+ *
+ * - An in-tree overlay that covers the screen and takes its own drags (s05's
+ *   photo viewer, which pans a zoomed photo): a swipe that started a pan and
+ *   popped the thread instead would close the conversation under the
+ *   member's finger.
+ * - A step inside one route that the swipe can't step back through
+ *   (create-chapter's confirm and colour steps): the swipe would pop the
+ *   whole flow and drop what was entered, where the drawn ‹ and Android's
+ *   back step back one step.
+ *
+ * Android's back is the screen's own there (`useBackToClose` in
+ * `lib/overlay.ts`). Held on this screen's navigator and every one it is
+ * nested in, since the swipe that pops a flow pushed as a group (`(auth)`
+ * over the app) belongs to the outer stack. Released when `hold` turns false
+ * or the caller unmounts. A no-op outside a navigator.
  */
 export function useHoldSwipeBack(hold: boolean): void {
   const navigation = useContext(NavigationContext);
   useEffect(() => {
     if (!navigation || !hold) return;
-    navigation.setOptions({ gestureEnabled: false });
-    return () => navigation.setOptions({ gestureEnabled: true });
+    const held: { setOptions: (options: object) => void }[] = [];
+    for (
+      let at: typeof navigation | undefined = navigation;
+      at;
+      at = at.getParent?.()
+    ) {
+      at.setOptions({ gestureEnabled: false });
+      held.push(at);
+    }
+    return () => {
+      for (const at of held) at.setOptions({ gestureEnabled: true });
+    };
   }, [navigation, hold]);
 }

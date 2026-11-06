@@ -521,18 +521,20 @@ export default function CheckInScreen() {
    * the edge swipe and Android's back do (`spec/ui/mobile/navigation.md`
    * § Going back). Anything else under it (a `frapp://` link opened over the
    * tabs) gets the fixed destination, so "Back to event" still lands on the
-   * event.
+   * event: popped down to (`dismissTo`), which takes this screen's place
+   * rather than going on top of it, so the swipe from there doesn't come back
+   * here.
    */
   const leaveTo = (toEventId: string) => {
     if (below?.name === "event-details") {
       below.goBack();
     } else if (toEventId) {
-      router.navigate({
+      router.dismissTo({
         pathname: "/event-details",
         params: { id: toEventId },
       });
     } else {
-      router.navigate("/events");
+      router.dismissTo("/events");
     }
   };
 

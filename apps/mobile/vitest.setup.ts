@@ -113,13 +113,15 @@ vi.mock("expo-router", () => {
     push: vi.fn(),
     replace: vi.fn(),
     navigate: vi.fn(),
+    dismissTo: vi.fn(),
     back: vi.fn(),
     // Nothing behind the screen unless a spec says otherwise
     // (`mockReturnValue(true)`, as the chapter picker's does).
     canGoBack: vi.fn(() => false),
   };
   // Every mounted focus effect, re-runnable as one "the member came back"
-  // event. A tab screen is never unmounted, so state that must not outlive a
+  // event. A tab screen is never unmounted (a pushed one unmounts on back, which
+  // a spec models as a remount), so state that must not outlive a
   // visit (a subscription refusal, #2297) is cleared on refocus, and a spec
   // can only prove that by refocusing: `act(() => __refocus())`. `__blur` is
   // the half before it, for a screen that must go quiet while another screen

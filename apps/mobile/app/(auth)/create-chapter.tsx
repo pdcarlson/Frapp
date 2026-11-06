@@ -75,6 +75,7 @@ import {
 import { pickAndSetChapterLogo } from "@/lib/onboarding/chapter-wizard/chapter-logo";
 import { useSelectChapter } from "@/lib/select-chapter";
 import { usePushPrimer } from "@/lib/notifications/use-push-primer";
+import { useHoldSwipeBack } from "@/lib/back-target";
 import { useBackToClose } from "@/lib/overlay";
 import { successHaptic } from "@/lib/haptics";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
@@ -283,12 +284,16 @@ export default function CreateChapter() {
   }
 
   function finish() {
-    router.replace("/");
+    router.dismissTo("/");
   }
 
   // Android back steps back through setup, and once the chapter exists it
   // leaves for chat: there is no going back to before the chapter was made.
   useBackToClose(step === "confirm" || step === "color", goBack);
+  // The iOS swipe can't step back through these steps, which are one route,
+  // and popping the flow would drop what was entered (navigation.md § Going
+  // back).
+  useHoldSwipeBack(step === "confirm" || step === "color");
   useBackToClose(created, finish);
 
   async function submitChapter() {

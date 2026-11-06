@@ -325,7 +325,7 @@ describe("Service hours on a subscription refusal (#2410)", () => {
   });
 
   it("clears the refusal once the sheet closes", () => {
-    // A tab screen is never unmounted, so without the reset an officer fixing
+    // The screen can stay up for days, so without the reset an officer fixing
     // billing would leave Submit dead until a force-quit. Reopening is the
     // member's deliberate second try.
     failure = REFUSED;

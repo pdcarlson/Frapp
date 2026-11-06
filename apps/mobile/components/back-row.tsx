@@ -5,6 +5,7 @@ import Svg, { Path } from "react-native-svg";
 import { SignetTokens } from "@repo/theme/signet";
 import { GlassSurface } from "@/components/glass-surface";
 import { useScreenBelow } from "@/lib/back-target";
+import { goBackTo } from "@/lib/href";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -161,7 +162,7 @@ function BackRowView({
         onPress={() => {
           if (onPress) onPress();
           else if (popsTo) popsTo.goBack();
-          else if (href) router.navigate(href);
+          else if (href) goBackTo(router, href);
         }}
         style={styles.target}
       >

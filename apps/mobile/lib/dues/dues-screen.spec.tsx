@@ -991,7 +991,7 @@ describe("Dues after a captured payment", () => {
   });
 
   it("ends the hold when the chapter changes", async () => {
-    // The tab stays mounted through a chapter switch. Until the next
+    // The screen can stay mounted through a chapter switch. Until the next
     // chapter's list loads, nothing says the paid invoice left OPEN, so the
     // pending line would stand on that chapter's skeleton.
     const tree = mount();

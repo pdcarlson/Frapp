@@ -99,7 +99,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * the screen ({@link DuesScreen}), or when the app is closed. Nothing else
  * ends it. Leaving the screen and coming back, or leaving the app and coming
  * back, doesn't: the captured payments outlive the screen ({@link
- * useHeldPayments}), since Dues is pushed on the stack and unmounts when the
+ * useDuesMemory}), since Dues is pushed on the stack and unmounts when the
  * member goes back, so the hold is there on the return, and the return
  * re-reads the list, which the list's 30s staleTime would otherwise skip.
  *
