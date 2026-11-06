@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 /**
  * Whether a CSS media query matches, kept live. `false` on the server and
@@ -6,15 +6,23 @@ import { useSyncExternalStore } from "react";
  * draw that with CSS breakpoints and use this only for what a control does.
  * Shared by the shell's desktop column (`nav-face.tsx`) and Chat's member
  * list (`lib/chat/members-panel.ts`).
+ *
+ * `subscribe` is memoized on the query: a fresh function each render would
+ * make `useSyncExternalStore` drop and re-add the listener on every render of
+ * the chat shell, which re-renders on every message.
  */
 export function useMediaQuery(query: string): boolean {
-  return useSyncExternalStore(
-    (onChange) => {
+  const subscribe = useCallback(
+    (onChange: () => void) => {
       if (typeof window === "undefined" || !window.matchMedia) return () => {};
       const mql = window.matchMedia(query);
       mql.addEventListener("change", onChange);
       return () => mql.removeEventListener("change", onChange);
     },
+    [query],
+  );
+  return useSyncExternalStore(
+    subscribe,
     () =>
       typeof window !== "undefined" && !!window.matchMedia
         ? window.matchMedia(query).matches
