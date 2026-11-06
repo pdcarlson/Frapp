@@ -38,6 +38,56 @@ describe("apps/web/proxy.ts", () => {
     });
   });
 
+  test("matcher gates every protected and auth route, skipping only dashboard prefetches", async () => {
+    // Compiled by Next's own build-time matcher code, so this checks what a
+    // deployment actually runs, not a hand-copied regex.
+    const { config, PROTECTED_ROUTE_PREFIXES, AUTH_ROUTES } = await import(
+      "../proxy"
+    );
+    // Internal Next module: it exports this at runtime, but its type
+    // declarations leave it out.
+    const { getMiddlewareMatchers } = (await import(
+      "next/dist/build/analysis/get-page-static-info.js"
+    )) as unknown as {
+      getMiddlewareMatchers: (
+        matcher: unknown,
+        nextConfig: { basePath: string; i18n: undefined },
+      ) => { regexp: string; missing?: unknown[] }[];
+    };
+    const compiled = getMiddlewareMatchers(config.matcher, {
+      basePath: "",
+      i18n: undefined,
+    }).map((m) => ({ re: new RegExp(m.regexp), skipsPrefetch: !!m.missing }));
+    const onNavigation = (path: string) => compiled.some((m) => m.re.test(path));
+    const onPrefetch = (path: string) =>
+      compiled.some((m) => !m.skipsPrefetch && m.re.test(path));
+
+    // Static routes: Next reuses their prefetch as the navigation, so the
+    // proxy must run on the prefetch too.
+    const staticRoutes = ["/", ...AUTH_ROUTES, "/join", "/no-access", "/dashboard"];
+    for (const path of staticRoutes) {
+      expect(onNavigation(path), path).toBe(true);
+      expect(onPrefetch(path), path).toBe(true);
+    }
+    expect(onNavigation("/index.rsc"), "/index.rsc").toBe(true);
+
+    const dynamicPrefixes = PROTECTED_ROUTE_PREFIXES.filter(
+      (prefix) => !staticRoutes.includes(prefix),
+    );
+    expect(dynamicPrefixes.length).toBeGreaterThan(15);
+    for (const prefix of dynamicPrefixes) {
+      for (const path of [prefix, `${prefix}/x`]) {
+        expect(onNavigation(path), path).toBe(true);
+        expect(onPrefetch(path), path).toBe(false);
+      }
+      expect(onNavigation(`${prefix}x`), `${prefix}x`).toBe(false);
+    }
+
+    for (const path of ["/robots.txt", "/auth/callback", "/_next/static/a.js"]) {
+      expect(onNavigation(path), path).toBe(false);
+    }
+  });
+
   test("proxy() returns a passthrough NextResponse when env is missing", async () => {
     const { proxy } = await import("../proxy");
     const { NextRequest } = await import("next/server");

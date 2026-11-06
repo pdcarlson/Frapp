@@ -2,8 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { assignResolvedRedirect } from "./lib/auth/redirect";
 
-const AUTH_ROUTES = ["/sign-in", "/sign-up"];
-const PROTECTED_ROUTE_PREFIXES = [
+export const AUTH_ROUTES = ["/sign-in", "/sign-up"];
+export const PROTECTED_ROUTE_PREFIXES = [
   "/dashboard",
   "/members",
   "/alumni",
@@ -18,6 +18,7 @@ const PROTECTED_ROUTE_PREFIXES = [
   "/study",
   "/polls",
   "/chat",
+  "/chat-admin",
   "/points",
   "/billing",
   "/reports",
@@ -175,31 +176,56 @@ export async function proxy(request: NextRequest) {
   return responseHolder.current;
 }
 
+/**
+ * Which requests run the proxy at all.
+ *
+ * On Vercel the proxy is its own function invocation, billed as Fluid Active
+ * CPU on top of the page render it guards. The `(dashboard)` layout is dynamic
+ * (it reads cookies), so every visible nav `<Link>` prefetches with a server
+ * request, and about twenty of them fire on each dashboard page load. Running
+ * the session check on those doubled the function count for nothing, so the
+ * second entry below skips router prefetches (`next-router-prefetch`) for the
+ * `(dashboard)` routes only. That is safe there, and only there, because:
+ *
+ * - A prefetch of a dynamic route stops at its `loading.tsx` boundary, so the
+ *   real navigation is always a separate, non-prefetch request, and the proxy
+ *   runs on that one.
+ * - The dashboard renders no member data on the server. Data comes from the
+ *   API with the member's own token, so an unsigned prefetch gets an empty
+ *   shell and no more.
+ *
+ * Everything else keeps the proxy on every request, prefetch or not:
+ *
+ * - `/`, the auth routes, `/join`, `/no-access` and `/dashboard` are static.
+ *   Next prefetches a static route whole and reuses that for the navigation
+ *   with no second request, so a skipped prefetch would skip the redirect.
+ * - `/` stays the plain string because Next only adds the root's transport
+ *   forms (`/index.rsc` and the like) to a source that is exactly `"/"`.
+ * - Only Next's own header is excluded, not the browser's `Purpose: prefetch`.
+ *   A browser prerender is activated as the navigation itself.
+ *
+ * The dashboard skip also assumes nothing does a *full* prefetch of a dashboard
+ * route (`prefetch={true}` on a `<Link>`, or `router.prefetch` with the full
+ * kind), which is reused the same way. Nothing does one today.
+ *
+ * Next reads this object statically at build time, so it must stay a literal:
+ * a `.map()` over `PROTECTED_ROUTE_PREFIXES` would be silently ignored. That
+ * is why the dashboard prefixes are written out again in the regex.
+ * `tests/proxy.spec.ts` compiles this with Next's own matcher code and checks
+ * it against both arrays above, so the two cannot drift apart unnoticed.
+ */
 export const config = {
   matcher: [
     "/",
     "/sign-in",
     "/sign-up",
     "/join",
-    "/dashboard/:path*",
-    "/members/:path*",
-    "/alumni/:path*",
-    "/roles/:path*",
-    "/events/:path*",
-    "/tasks/:path*",
-    "/service/:path*",
-    "/documents/:path*",
-    "/backwork/:path*",
-    "/discord-import/:path*",
-    "/geofences/:path*",
-    "/study/:path*",
-    "/polls/:path*",
-    "/chat/:path*",
-    "/points/:path*",
-    "/billing/:path*",
-    "/reports/:path*",
-    "/profile/:path*",
-    "/settings/:path*",
     "/no-access",
+    "/dashboard/:path*",
+    {
+      source:
+        "/((?:members|alumni|roles|events|tasks|service|documents|backwork|discord-import|geofences|study|polls|chat|chat-admin|points|billing|reports|profile|settings)(?:/.*)?)",
+      missing: [{ type: "header", key: "next-router-prefetch" }],
+    },
   ],
 };
