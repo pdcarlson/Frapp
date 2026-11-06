@@ -101,6 +101,26 @@ export function useProfessors() {
  * Deletes one resource (`backwork:admin`). The API removes the row; the
  * `["backwork"]` prefix invalidation refreshes the library list.
  */
+/**
+ * Signed links for the files a zip will hold, asked for when the zip button is
+ * pressed and never cached, for the same reason as `useFetchBackworkResource`:
+ * the links expire. The API takes at most `MAX_BACKWORK_ZIP_FILES` ids and
+ * leaves out any it can't sign, in the order asked.
+ */
+export function useFetchBackworkDownloadUrls() {
+  const client = useFrappClient();
+  return useCallback(
+    async (ids: string[]) => {
+      const { data, error } = await client.GET("/v1/backwork/download-urls", {
+        params: { query: { ids: ids.join(",") } },
+      });
+      if (error) throw error;
+      return data.files;
+    },
+    [client],
+  );
+}
+
 export function useDeleteBackworkResource() {
   const client = useFrappClient();
   const queryClient = useQueryClient();

@@ -1,4 +1,6 @@
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsIn,
   IsInt,
@@ -10,7 +12,8 @@ import {
   Min,
   ValidateIf,
 } from 'class-validator';
-import { YEAR_MAX } from '@repo/validation';
+import { Transform } from 'class-transformer';
+import { MAX_BACKWORK_ZIP_FILES, YEAR_MAX } from '@repo/validation';
 import { INT4_MAX } from '#domain/constants/field-limits';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -172,4 +175,50 @@ export class MergeBackworkTaxonomyResponseDto {
     description: 'Count of resources reassigned from source to target',
   })
   reassigned: number;
+}
+
+/**
+ * One comma-separated value, or the key repeated: both arrive as a list. A
+ * part that isn't a string passes through for `@IsUUID` to refuse.
+ */
+function splitIdList(value: unknown): unknown[] {
+  const parts: unknown[] = Array.isArray(value) ? value : [value];
+  return parts
+    .flatMap((part) => (typeof part === 'string' ? part.split(',') : [part]))
+    .map((part) => (typeof part === 'string' ? part.trim() : part))
+    .filter((part) => part !== '');
+}
+
+export class BackworkDownloadUrlsQueryDto {
+  @ApiProperty({
+    description: `Comma-separated resource ids to sign, at most ${MAX_BACKWORK_ZIP_FILES}`,
+    type: String,
+    example:
+      '3f0c1d9e-0000-4000-8000-000000000001,3f0c1d9e-0000-4000-8000-000000000002',
+  })
+  @Transform(({ value }: { value: unknown }) => splitIdList(value))
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_BACKWORK_ZIP_FILES)
+  @IsUUID(undefined, { each: true })
+  ids: string[];
+}
+
+export class BackworkDownloadUrlDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({
+    description: 'Short-lived signed URL that downloads the file',
+  })
+  download_url: string;
+}
+
+export class BackworkDownloadUrlsResponseDto {
+  @ApiProperty({
+    type: [BackworkDownloadUrlDto],
+    description:
+      'In the order asked. An id not in this chapter, or that could not be signed, is left out.',
+  })
+  files: BackworkDownloadUrlDto[];
 }

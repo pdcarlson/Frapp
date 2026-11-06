@@ -29,7 +29,13 @@ const {
   mockOffline,
   resourcesQuery,
   mockPush,
+  mockFetchDownloadUrls,
+  mockBuildZip,
+  mockSaveBlob,
 } = vi.hoisted(() => ({
+  mockFetchDownloadUrls: vi.fn(),
+  mockBuildZip: vi.fn(),
+  mockSaveBlob: vi.fn(),
   mockPush: vi.fn(),
   mockCurrentChapter: vi.fn(),
   mockRequestUpload: vi.fn().mockResolvedValue({}),
@@ -74,6 +80,7 @@ const RESOURCE = {
   document_variant: "Student Copy",
   tags: null,
   is_redacted: false,
+  storage_path: "chapter-1/bw-1.pdf",
   created_at: "2026-08-01T00:00:00Z",
 };
 
@@ -82,6 +89,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCurrentChapter: () => mockCurrentChapter(),
   useBackworkResources: () => resourcesQuery,
   useFetchBackworkResource: () => mockFetchResource,
+  useFetchBackworkDownloadUrls: () => mockFetchDownloadUrls,
   useDeleteBackworkResource: () => ({ mutateAsync: mockDeleteResource }),
   useMyPermissions: () => ({
     data: { permissions: mockPermissions.value },
@@ -116,6 +124,14 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useUpdateProfessor: () => ({ mutateAsync: mockUpdateProfessor }),
   useDeleteProfessor: () => ({ mutateAsync: vi.fn() }),
   useMergeProfessors: () => ({ mutateAsync: vi.fn() }),
+}));
+
+// The zip's fetching and file building have their own spec
+// (`lib/backwork-zip.spec.ts`); the page's job is what it asks for.
+vi.mock("@/lib/backwork-zip", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/backwork-zip")>()),
+  buildBackworkZip: mockBuildZip,
+  saveBlob: mockSaveBlob,
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -1479,5 +1495,106 @@ describe("BackworkPage hand-off to bulk upload", () => {
     mockPermissions.value = [];
     render(<BackworkPage />);
     expect(screen.queryByTestId("bulk-drop-zone")).toBeNull();
+  });
+});
+
+describe("BackworkPage zip download", () => {
+  const library = (count: number) =>
+    Array.from({ length: count }, (_, n) => ({
+      ...RESOURCE,
+      id: `bw-${n}`,
+      title: `Homework ${n}`,
+      storage_path: `chapter-1/bw-${n}.pdf`,
+    }));
+  const zipButton = () => screen.queryByRole("button", { name: /as a zip/ });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resolvedResourcesQuery();
+    mockPermissions.value = ["backwork:upload", "backwork:admin"];
+    chapter.active();
+    mockFetchDownloadUrls.mockImplementation(async (ids: string[]) =>
+      ids.map((id) => ({ id, download_url: `https://signed/${id}` })),
+    );
+    mockBuildZip.mockResolvedValue({ blob: new Blob(["zip"]), added: 2, missed: 0 });
+  });
+
+  it("offers no zip until a search or filter narrows the list", async () => {
+    resourcesQuery.data = library(2);
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+    expect(zipButton()).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Search backwork"), "homework");
+    expect(
+      await screen.findByRole("button", { name: "Download 2 files as a zip" }),
+    ).toBeEnabled();
+  });
+
+  it("zips the narrowed files under their titles and saves the zip", async () => {
+    resourcesQuery.data = library(2);
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+    await user.type(screen.getByLabelText("Search backwork"), "homework");
+    await user.click(await screen.findByRole("button", { name: /as a zip/ }));
+
+    await waitFor(() => expect(mockSaveBlob).toHaveBeenCalledTimes(1));
+    expect(mockFetchDownloadUrls).toHaveBeenCalledWith(
+      expect.arrayContaining(["bw-0", "bw-1"]),
+    );
+    const [entries] = mockBuildZip.mock.calls[0]!;
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        { name: "Homework 0.pdf", url: "https://signed/bw-0" },
+        { name: "Homework 1.pdf", url: "https://signed/bw-1" },
+      ]),
+    );
+    expect(mockSaveBlob.mock.calls[0]![1]).toMatch(/^backwork-\d{4}-\d{2}-\d{2}\.zip$/);
+  });
+
+  it("won't zip more than 50 files", async () => {
+    resourcesQuery.data = library(51);
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+    await user.type(screen.getByLabelText("Search backwork"), "homework");
+
+    const button = await screen.findByRole("button", { name: /as a zip/ });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("title", expect.stringContaining("50 files or fewer"));
+  });
+
+  it("says when the files are too big to zip", async () => {
+    resourcesQuery.data = library(2);
+    const { ZipTooLargeError } = await import("@/lib/backwork-zip");
+    mockBuildZip.mockRejectedValue(new ZipTooLargeError());
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+    await user.type(screen.getByLabelText("Search backwork"), "homework");
+    await user.click(await screen.findByRole("button", { name: /as a zip/ }));
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Couldn't make the zip",
+          description: expect.stringContaining("250 MB"),
+        }),
+      ),
+    );
+    expect(mockSaveBlob).not.toHaveBeenCalled();
+  });
+
+  it("says how many files it left out", async () => {
+    resourcesQuery.data = library(2);
+    mockBuildZip.mockResolvedValue({ blob: new Blob(["zip"]), added: 1, missed: 1 });
+    const user = userEvent.setup();
+    render(<BackworkPage />);
+    await user.type(screen.getByLabelText("Search backwork"), "homework");
+    await user.click(await screen.findByRole("button", { name: /as a zip/ }));
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Zipped 1 of 2 files" }),
+      ),
+    );
   });
 });

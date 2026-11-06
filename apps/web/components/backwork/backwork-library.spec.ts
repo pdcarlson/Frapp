@@ -26,6 +26,7 @@ function resource(overrides: Partial<BackworkResource>): BackworkResource {
     document_variant: null,
     tags: null,
     is_redacted: false,
+    storage_path: "chapter/r.pdf",
     created_at: "2026-01-01T00:00:00Z",
     ...overrides,
   };
