@@ -65,8 +65,15 @@ with it off, against an id that matches no one, a working key answers `202` with
 - **2026-11-06, key check:** a real run of the step against a made-up id returned `202`
   `{"persons_found": 0, ..., "deletion_errors": []}`, so the key is accepted with the scope it
   needs. No `account-deleted` events existed yet, so there was nothing to clean up afterwards.
-- **End to end: not yet done.** It needs production sending to PostHog (the deploy after
-  2026-11-06), then a throwaway account that signs in on a client, does a few things, and is
-  deleted in the app. Pass: one workflow run with a `202` naming one person, and once PostHog's
-  deletion job has run (it is asynchronous and can take days),
-  `SELECT count() FROM events WHERE distinct_id = '<pseudonym>'` returns 0.
+- **2026-11-06 21:58Z, first real deletion:** the production API had picked up its key at
+  21:52Z, and Paul deleted an account in the app. The `account-deleted` event arrived, the
+  workflow ran within a second, and the delete call returned `202` with `persons_found: 0`. That
+  was correct: the only data under that pseudonym was the deletion event itself. Mobile had no
+  PostHog key yet, and the account sent no chapter events in those six minutes. So the live
+  chain works, but deleting a real person's events has not been seen yet.
+- **Still to see:** an account with a person and events. That needs a client sending to
+  PostHog (a mobile build or OTA with `EXPO_PUBLIC_POSTHOG_KEY`, or web after a production
+  deploy), or chapter activity through the API. Then delete the account in the app. Pass: the
+  run's `202` names one person, and once PostHog's deletion job has run (it is asynchronous and
+  can take days), `SELECT count() FROM events WHERE distinct_id = '<pseudonym>'` counts nothing
+  but, at most, the `account-deleted` event.
