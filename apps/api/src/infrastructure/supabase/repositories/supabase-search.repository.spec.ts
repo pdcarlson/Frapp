@@ -5,6 +5,7 @@ import {
   SupabaseSearchRepository,
 } from './supabase-search.repository';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { ID_CHUNK_SIZE } from '#domain/utils/chunk-ids';
 import type { FrappSupabaseClient } from '../database.types';
 import {
   CHAPTER_B,
@@ -395,6 +396,8 @@ describe('SupabaseSearchRepository — query shape', () => {
     expect(messages.order).toHaveBeenCalledWith('created_at', {
       ascending: false,
     });
+    // The tie-break the batch merge repeats (#3265).
+    expect(messages.order).toHaveBeenCalledWith('id', { ascending: false });
     // Not `*`: that would ship the stored tsvector back with every hit.
     expect(messages.select).not.toHaveBeenCalledWith('*');
     expect(String(messages.select.mock.calls[0][0])).not.toContain(
@@ -497,5 +500,199 @@ describe('SupabaseSearchRepository — query shape', () => {
     // and the tsvector is still excluded, which is why the list is explicit
     expect(EVENT_SEARCH_COLUMNS).not.toContain('search_vector');
     expect(BACKWORK_SEARCH_COLUMNS).not.toContain('search_vector');
+  });
+});
+
+/**
+ * A chapter-wide search hands `searchMessages` every channel the caller may
+ * read. A Discord-imported chapter has hundreds, and one `.in()` list of them
+ * overflows the request line (`414 URI Too Long` past ~200 uuids), which used
+ * to fail the source and turn the search into a 500 (#3265).
+ */
+describe('SupabaseSearchRepository — message search over many channels (#3265)', () => {
+  const CHANNEL_COUNT = 250;
+  const channelId = (n: number) =>
+    `0a000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const messageId = (n: number) =>
+    `0a000000-0000-4000-9000-${String(n).padStart(12, '0')}`;
+  const at = (minute: number) =>
+    new Date(Date.UTC(2026, 2, 1, 0, minute)).toISOString();
+  const otherChapterChannelId = (n: number) =>
+    `0b000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const OTHER_CHAPTER_CHANNEL = otherChapterChannelId(0);
+
+  type SeededMessage = {
+    id: string;
+    channel_id: string;
+    content: string;
+    content_search: string;
+    is_deleted: boolean;
+    created_at: string;
+  };
+
+  const message = (
+    n: number,
+    channel: number,
+    minute: number,
+    overrides: Partial<SeededMessage> = {},
+  ): SeededMessage => ({
+    id: messageId(n),
+    channel_id: channelId(channel),
+    content: 'budget is due',
+    content_search: 'budget is due',
+    is_deleted: false,
+    created_at: at(minute),
+    ...overrides,
+  });
+
+  // Thirty matches spread over every batch of 100: message i lands in
+  // channel (i * 37) % 250, so consecutive timestamps alternate batches and
+  // the newest ten come from all three. Two of them share a timestamp across
+  // batches right at the cut (10th and 11th newest), and the newest rows of
+  // all are deleted or don't match, so the merge has to drop them.
+  const matches = Array.from({ length: 30 }, (_, i) =>
+    message(i, (i * 37) % CHANNEL_COUNT, i),
+  );
+  matches[19] = message(19, 5, 20);
+  matches[20] = message(20, 205, 20);
+  const messages: SeededMessage[] = [
+    ...matches,
+    message(100, 120, 500, { is_deleted: true }),
+    message(101, 230, 501, {
+      content: 'lunch order',
+      content_search: 'lunch order',
+    }),
+    // The newest match of all, in another chapter's channel that is not in
+    // the list: only the channels handed in are read.
+    {
+      ...message(102, 0, 502),
+      channel_id: OTHER_CHAPTER_CHANNEL,
+    },
+  ];
+
+  const allChannels = Array.from({ length: CHANNEL_COUNT }, (_, n) =>
+    channelId(n),
+  );
+
+  const newestTen = () =>
+    messages
+      .filter(
+        (m) =>
+          m.channel_id !== OTHER_CHAPTER_CHANNEL &&
+          !m.is_deleted &&
+          m.content_search.includes('budget'),
+      )
+      .sort((a, b) =>
+        a.created_at === b.created_at
+          ? b.id.localeCompare(a.id)
+          : b.created_at.localeCompare(a.created_at),
+      )
+      .slice(0, 10)
+      .map((m) => m.id);
+
+  let harness: TenantHarness;
+  let repo: SupabaseSearchRepository;
+
+  beforeEach(() => {
+    harness = createTenantHarness({
+      tables: {
+        chat_channels: [
+          ...allChannels.map((id) =>
+            inA({
+              id,
+              type: 'PUBLIC',
+              member_ids: null,
+              required_permissions: null,
+            }),
+          ),
+          // Chapter B's twins, one of which holds the newest match of all.
+          ...allChannels.map((_, n) =>
+            inB({
+              id: otherChapterChannelId(n),
+              type: 'PUBLIC',
+              member_ids: null,
+              required_permissions: null,
+            }),
+          ),
+        ],
+        chat_messages: messages,
+      },
+      untenantedTables: ['chat_messages'],
+      parentTenant: {
+        chat_messages: { column: 'channel_id', table: 'chat_channels' },
+      },
+    });
+    repo = new SupabaseSearchRepository(harness.client);
+  });
+
+  /** Every `.in('channel_id', …)` list the repository sent. */
+  const channelFilters = (from: jest.SpyInstance) =>
+    from.mock.results.flatMap(
+      (result) =>
+        (result.value as { in: jest.Mock }).in.mock.calls as [
+          string,
+          string[],
+        ][],
+    );
+
+  it('returns the newest matches across every channel, capped at the limit', async () => {
+    const from = jest.spyOn(harness.client, 'from');
+
+    const hits = await repo.searchMessages(allChannels, 'budget', 10);
+
+    expect(hits.map((h) => h.id)).toEqual(newestTen());
+    // The tie at the cut resolves by id, as the query's own order does.
+    expect(hits[9].id).toBe(messageId(20));
+
+    const filters = channelFilters(from);
+    expect(filters.length).toBe(3);
+    for (const [column, ids] of filters) {
+      expect(column).toBe('channel_id');
+      expect(ids.length).toBeLessThanOrEqual(ID_CHUNK_SIZE);
+    }
+    // Every channel is searched exactly once.
+    expect(filters.flatMap(([, ids]) => ids).sort()).toEqual(
+      [...allChannels].sort(),
+    );
+  });
+
+  it('keeps a short channel list to the one query it always was', async () => {
+    const from = jest.spyOn(harness.client, 'from');
+    const few = allChannels.slice(0, ID_CHUNK_SIZE);
+
+    const hits = await repo.searchMessages(few, 'budget', 10);
+
+    expect(channelFilters(from)).toEqual([['channel_id', few]]);
+    expect(hits.length).toBe(10);
+  });
+
+  it('fails the source when any batch fails, rather than returning part of it', async () => {
+    const from = jest.spyOn(harness.client, 'from');
+    let calls = 0;
+    from.mockImplementation(() => {
+      calls += 1;
+      const chain: Record<string, jest.Mock> & { then?: unknown } = {};
+      for (const method of [
+        'select',
+        'in',
+        'textSearch',
+        'eq',
+        'order',
+        'limit',
+      ]) {
+        chain[method] = jest.fn(() => chain);
+      }
+      const result =
+        calls === 2
+          ? { data: null, error: { code: '414', message: 'URI Too Long' } }
+          : { data: [], error: null };
+      chain.then = (resolve: (v: unknown) => unknown) =>
+        Promise.resolve(result).then(resolve);
+      return chain as never;
+    });
+
+    await expect(
+      repo.searchMessages(allChannels, 'budget', 10),
+    ).rejects.toBeInstanceOf(SupabaseQueryError);
   });
 });
