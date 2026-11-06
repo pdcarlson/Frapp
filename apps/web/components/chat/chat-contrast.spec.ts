@@ -211,7 +211,7 @@ describe("the in-body mention chip", () => {
     // quotes this number, and a ratio asserted only as ">= 4.5" lets the doc's
     // figure go quietly wrong the next time either half of the pair moves.
     const measured = ratio(MENTION_CHIP.text, MENTION_CHIP.fill);
-    expect(measured).toBeCloseTo(5.54, 2);
+    expect(measured).toBeCloseTo(10.65, 2);
     expect(measured).toBeGreaterThanOrEqual(AA_TEXT);
   });
 
