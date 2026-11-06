@@ -1,17 +1,18 @@
 ---
 name: issue-triage
 description: >
-  Run the Issue Triage routine (2 of 5) — process the GitHub `triage` inbox (dedup, set priority,
+  Run the triage phase of the weekly Board Sweep routine — process the GitHub `triage` inbox (dedup, set priority,
   backfill Agent briefs, promote to Backlog) and groom the existing Backlog so `/next` always has
-  clean, correctly-ranked work. Use when the scheduled "Issue Triage" routine fires, or when asked
+  clean, correctly-ranked work. Use when the Board Sweep reaches this phase, or when asked
   to triage the inbox or groom the board.
 ---
 
-# Issue Triage (routine 2 of 5)
+# Issue Triage (phase 3 of the Board Sweep)
 
-You keep the board clean so [`/next`](../../commands/next.md) always has good work to pull. On
-Fridays the run follows the weekly [`issue-curator`](../issue-curator/SKILL.md) by about an hour;
-it runs daily either way and does two jobs:
+You keep the board clean so [`/next`](../../commands/next.md) always has good work to pull. Once a
+week it runs last in the [`board-sweep`](../board-sweep/SKILL.md) session, after
+[`pr-followups`](../pr-followups/SKILL.md) and [`issue-curator`](../issue-curator/SKILL.md) have filed,
+and does two jobs:
 (A) process the `triage` inbox, and (B) groom a batch of the Backlog (open issues with no state
 label). `/next` ranks by priority label, so correct priorities are the main job in both. The run
 is done when every inbox item is promoted or held with a reason, a Backlog batch is groomed, and
@@ -114,13 +115,13 @@ List every open issue labeled `triage`. For each:
 
 ## Pass B — Backlog grooming
 
-Groom about 25 Backlog issues per run, oldest-groomed first, so successive runs cover the whole
+Groom about 50 Backlog issues per run, oldest-groomed first, so successive runs cover the whole
 Backlog. Much of the `suggestion` backlog lands unprioritized, and a correct priority is what
 keeps real work from being buried under suggestions in `/next`.
 
 Skip `parked` issues. They're off the beta and v1 path on purpose, and `/next` doesn't claim them,
 so grooming them only spends the run (owner decision 2026-09-23, #2565; see the roster in
-routines.md). Don't count them toward the 25, and don't add or remove the label: that's the
+routines.md). Don't count them toward the batch, and don't add or remove the label: that's the
 owner's.
 
 - **Priority:** set one on any `suggestion`-owned issue missing it, and fix obviously wrong ones,
@@ -171,10 +172,9 @@ This runs unattended. Work through both passes without stopping to summarize or 
 and put any status note in the same message as your next tool call. End the run when the inbox
 and the Backlog batch are done, or when nothing more can move (the GitHub MCP is unavailable, or
 the marker-count guard failed and body writes are off). A run that only organizes and holds is
-still a success. Your last tracker write is the [run record](../../../docs/ci-cd/routines.md#run-record-all-routines),
-`routine=issue-triage`, with the outcome that section defines (a guard that turned body writes
-off makes it `stopped`). With the MCP unavailable there is no record to post, and none is posted
-any other way. The final message is this report, which the routine surfaces to the maintainer:
+still a success. This phase posts no run record of its own: the
+[`board-sweep`](../board-sweep/SKILL.md) record covers it, and a guard that turned body writes off
+makes that record `stopped`. This report is your section of the sweep's run report:
 
 - Marker-count guard result, and the probe result if you edited bodies (noting any leg you
   couldn't run).

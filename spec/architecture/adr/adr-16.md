@@ -12,7 +12,7 @@
 
 Work tracking today is **GitHub Issues** — see amendment 5 and [`github-pm.md`](../../../docs/ci-cd/github-pm.md).
 
-**Read amendments 4–10 below with one caveat.** Amendments **5–7 and 10 are current**; amendments 8 and 9 are removed (see the note in their place). Amendment **4 is not as originally written**: it predates the Linear retirement by five days, so it still calls the routines "Linear Issue Curator"/"Linear Triage", names `.claude/skills/linear-curator/` and `linear-triage/` (renamed since to `issue-curator/` and `issue-triage/`), and its "Unchanged and reaffirmed" bullet states *"issues are born in Linear, never GitHub"* — **which amendment 5 explicitly reverses**. **Corrected 2026-09-09:** the other surviving claim — that automations live only on Claude Code Routines and Cursor was retired — was reversed by **amendment 8**. **Corrected 2026-09-10:** amendment 8 then ranked Cursor primary and scheduled Claude teardown; **amendment 9** reverses that ranking. **Corrected 2026-09-22:** amendment 10 retired Cursor again, so that claim holds once more; amendments 8–9 are removed. What remains historically true of amendment 4 is the 2026-08-03 move of scheduled agents onto Claude Code Routines (the scheduled path today). It also cites amendments 1–3 by number in four places; those are removed, and what they said is: (1) the original keyless MCP access model, (2) a `LINEAR_API_KEY`/GraphQL exception to it, and (3) that Linear's 250-issue cap bound on *active* (Started + Unstarted) issues rather than Backlog — a cap that no longer applies to anything, GitHub Issues having none.
+**Read amendments 4–10 below with one caveat.** Amendments **5–7 and 10 are current**; amendments 8 and 9 are removed (see the note in their place). Amendment **4 is not as originally written**: it predates the Linear retirement by five days, so it still calls the routines "Linear Issue Curator"/"Linear Triage", names `.claude/skills/linear-curator/` and `linear-triage/` (renamed since to `issue-curator/` and `issue-triage/`), and its "Unchanged and reaffirmed" bullet states *"issues are born in Linear, never GitHub"* — **which amendment 5 explicitly reverses**. **Corrected 2026-09-09:** the other surviving claim — that automations live only on Claude Code Routines and Cursor was retired — was reversed by **amendment 8**. **Corrected 2026-09-10:** amendment 8 then ranked Cursor primary and scheduled Claude teardown; **amendment 9** reverses that ranking. **Corrected 2026-09-22:** amendment 10 retired Cursor again, so that claim holds once more; amendments 8–9 are removed. What remains historically true of amendment 4 is the 2026-08-03 move of scheduled agents onto Claude Code Routines (the scheduled path until 2026-11-06, when amendment 11 moved the routines to Claude scheduled tasks bound to a project thread). It also cites amendments 1–3 by number in four places; those are removed, and what they said is: (1) the original keyless MCP access model, (2) a `LINEAR_API_KEY`/GraphQL exception to it, and (3) that Linear's 250-issue cap bound on *active* (Started + Unstarted) issues rather than Backlog — a cap that no longer applies to anything, GitHub Issues having none.
 
 #### ADR-16 amendment 4 — backlog automations move to Claude Code Routines; Cursor retired (2026-08-03)
 
@@ -235,7 +235,8 @@ restore `LINEAR_API_KEY`.
 **What stays:** `.claude/**`, the Claude Code web Setup script (`scripts/cloud-sandbox-setup.sh`),
 SessionStart ([`.claude/hooks/session-start.sh`](../../../.claude/hooks/session-start.sh)), and the
 bringup in `scripts/cloud-sandbox-up.sh`, which was shared and is now Claude Code web's alone. Skills
-stay under `.claude/skills/`. Claude Code Routines are the scheduled path; their prompts live in
+stay under `.claude/skills/`. Claude Code Routines are the scheduled path (**corrected 2026-11-06:**
+Claude scheduled tasks bound to a project thread replaced them, amendment 11); their prompts live in
 [`routines.md`](../../../docs/ci-cd/routines.md). The review gate is the Git pre-push hook
 from the 2026-09-16 correction above, satisfied by `/diff-review`.
 
@@ -247,3 +248,45 @@ Cursor to be removed entirely, and a contract nobody runs still reads as current
 
 **Trigger to revisit:** none scheduled. Bringing back Cursor, or adding another cloud harness with
 its own repo contract, is a new decision and a new amendment, not a restore of the deleted files.
+
+#### ADR-16 amendment 11 — three routines for the beta, run as project scheduled tasks (2026-11-06)
+
+**Context:** the five Routines lived on a claude.ai account the owner stopped using, and they
+stopped with it: the last run records on #2966 date from 2026-10-29, and the heartbeat alert
+#3206 has been open since. Their run records also showed how little most runs did. From
+2026-10-13 Issue Triage made no writes on any day, because the inbox is about 113 items that are
+nearly all the owner's own holds. Hygiene Scan sat behind its own PR #3321 for three weeks and
+usually could not run its gates. The Curator's 2026-10-23 run stopped part way. Meanwhile the
+product was entering its store beta (TestFlight and Play internal testing), and the signals that
+mattered most there (tester feedback, TestFlight and Play crashes, store reviews) were read by
+nothing. The owner is also short on weekly usage.
+
+**Decision (owner, 2026-11-06):** replace the five with three, defined in
+[`routines.md`](../../../docs/ci-cd/routines.md):
+
+1. **Beta Watch** (new, daily): reads production Sentry, TestFlight feedback and crashes, Play
+   crashes and store reviews, files one issue per real problem, and posts to the owner only when
+   something new needs him. No repo writes.
+2. **Board Sweep** (weekly): PR Follow-ups, the Curator and Triage run as three phases of one
+   session, in that order, with one run record and one post that carries only decisions waiting on
+   the owner.
+3. **Weekly Upkeep** (weekly): Docs Upkeep and Hygiene Scan in alternate weeks, with
+   at most one upkeep PR open at a time.
+
+They are created by an agent as scheduled tasks bound to a Frapp project thread, not in the
+Routines UI, so each fire resumes that thread's session and posts to the owner there, and an agent
+can edit them with `update_trigger`. That reverses the "create them in the UI" advice in
+`routines.md`, which came from a 2026-09-22 agent-created Routine that lost its repository and
+connectors. A bound task carries its session's repository and connectors instead.
+
+**What this changes and what it does not.** The five skills stay as the phases' behavior
+contracts. The shared ownership boundary, the product-code ban (Hygiene Scan still excepted,
+amendment 7), the never-self-merge rule, the pre-push review gate and the run record all stand.
+The run count drops from about 17 a week to about 9.
+
+**Alternatives rejected:** recreating the five as they were (the owner's third option on the
+decision card), which spends most of its runs confirming nothing changed; and Beta Watch alone
+until launch, which would leave PR follow-ups unharvested through the busiest stretch of merges.
+
+**Trigger to revisit:** the store launch, or production PostHog going live (#1173), which would
+give Beta Watch or the Board Sweep a product-usage source.

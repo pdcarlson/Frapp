@@ -422,4 +422,4 @@ Frapp's cloud agent environment is **Claude Code web** (ADR-16 amendment 10). Pu
 
 ## Scheduled backlog agents
 
-**Claude Code Routines** are the scheduled path. Canonical prompts, cron, and enable notes: [`docs/ci-cd/routines.md`](../../docs/ci-cd/routines.md). Do not restate liveness here. Linear stays retired (ADR-16 amendment 5).
+**Claude scheduled tasks in the Frapp project** are the scheduled path. Canonical prompts, cron, and enable notes: [`docs/ci-cd/routines.md`](../../docs/ci-cd/routines.md). Do not restate liveness here. Linear stays retired (ADR-16 amendment 5).

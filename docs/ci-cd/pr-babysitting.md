@@ -164,8 +164,9 @@ Two earlier claims about this tool are corrected: on this surface the call does 
 returning a live trigger id. It simply *asks*, and asking is what disqualifies it from unattended
 runs — not failing. Owner's standing preference (2026-08-08): don't call it. The other three layers
 carried PR #743 unaided — three `CI wake` comments (CI, Docs checks, Links) plus the merge
-notification, none of which prompted. Anything genuinely needing a schedule is a real Routine
-created in the UI, which works fine. If a session does call it and it prompts, say so once, never
+notification, none of which prompted. Anything genuinely needing a schedule is a scheduled task
+created with `create_trigger` from a project thread, as the routines are ([`routines.md`](routines.md));
+that call doesn't ask the owner each time the way `send_later` does. If a session does call it and it prompts, say so once, never
 re-arm, and never ship a settings change to "fix" it — that would be the fourth attempt at a fix
 that has already failed three times.
 
