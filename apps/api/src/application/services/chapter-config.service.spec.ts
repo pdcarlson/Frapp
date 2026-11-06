@@ -873,7 +873,7 @@ describe('ChapterConfigService — branding accent (#795)', () => {
         contrastChecks: [
           {
             role: '--signet-accent-text',
-            against: '#131211',
+            against: '#0A0A0A',
             ratio: 4.4954,
             passes: false,
           },
@@ -888,7 +888,7 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       await service.recomputeAndPersistPalette(CHAPTER_ID);
 
       expect(warn).toHaveBeenCalledWith(
-        `Signet accent contrast below AA for chapter ${CHAPTER_ID}: --signet-accent-text on #131211 = 4.49:1`,
+        `Signet accent contrast below AA for chapter ${CHAPTER_ID}: --signet-accent-text on #0A0A0A = 4.49:1`,
       );
       expect(warn).toHaveBeenCalledWith(
         `Signet accent fill below 3:1 for chapter ${CHAPTER_ID}: --signet-accent-primary on --popover = 2.99:1`,

@@ -355,7 +355,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
     /*
       `--surface-1` at radius 16 with a hairline, which is `4d`'s own
       `#1A1A1A` / `rgba(255,255,255,.08)` / `border-radius:16px` and **not** the
-      `<Card>` primitive: `card.tsx` paints `--card` (`#211E1A`), one rung up
+      `<Card>` primitive: `card.tsx` paints `--card`, one rung up
       the ladder from what the board draws here. This is the only framed block
       the board puts on the page, and it earns the frame by being the one thing
       on the screen that is not a list.

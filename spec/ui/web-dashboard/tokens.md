@@ -193,6 +193,11 @@ sheet is option `3a`.
 | `--input` (interactive edge) | `rgba(255,255,255,0.14)` | `rgba(255,255,255,.14)` |
 | `--foreground` / `--muted-foreground` / `--muted` / `--disabled` | `#EDEAE3` / `#A9A399` / `#78716A` / `#57534C` | the same four, and the board calls the text ladder "unchanged" |
 
+> **Superseded 2026-11-05.** The owner replaced this warm ladder with a darker, pure neutral one
+> (`#0A0A0A` / `#111111` / `#171717` / `#1E1E1E`, text `#EBEBEB` / `#A3A3A3` / `#737373` /
+> `#525252`). The table above is the lock as it was settled; the current values and the reasons
+> live in [`../design-system/foundations.md`](../design-system/foundations.md) §2 and §4.
+
 This closes the lock as stated. The board does **not** close L-06 or L-08, which it was also hoped to
 settle: L-06 is still open, and L-08 was closed separately by
 [#2153](https://github.com/pdcarlson/Frapp/issues/2153) re-exporting the mark, not by anything the
@@ -211,7 +216,7 @@ change that reaches one should know the board already has a position on it.
 | ---- | ------- | ---------- |
 | `--primary-hover` | `#D2AD37` | `#C9A63A` |
 | `--primary-foreground` | `#292109` | `#2A2000` |
-| `--accent-subtle` | `#282314` | `#2A2410` |
+| `--accent-subtle` | `#272213` (`#282314` before the 2026-11-05 neutral ladder) | `#2A2410` |
 | `--accent-border` | `#5F522C` | `#6B5A24` |
 | `--accent-text` | `#E7C86B` | `#F0CD5E` |
 | `--gold-ask-fill` / `--gold-ask-border` / `--gold-ask-text` | `#251E0E` / `#6B5619` / `#F4CB63` | `#2A2410` / `#6B5A24` / `#F0CD5E` |

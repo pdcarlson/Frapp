@@ -14,7 +14,7 @@ Signet, the design system behind the Frapp product (see [`../brand-identity.md`]
 
 Principles:
 
-1. **Warm dark, not black.** The base is a warm charcoal ladder, lifted off the pure-black floor. Values: [`foundations.md`](foundations.md).
+1. **Dark and neutral.** The base is a near-black, pure neutral graphite ladder, so nothing on a surface competes with the accent. It was a warm charcoal ladder until 2026-11-05, when the owner moved it darker and neutral. Values: [`foundations.md`](foundations.md) §2.
 2. **Elevation is a lighter surface.** Depth comes from stepping up the surface ladder and low-opacity white hairlines — never drop shadows.
 3. **One accent engine.** Chapters personalize through a generated 12-step scale seeded from one hex; house gold is Signet's own accent and the default seed. No component references the seed hex; only the generated roles paint, and the engine contrast-gates the ones carrying text, the solid fill and its hover shade. Mechanics: [`accent-engine.md`](accent-engine.md).
 4. **Consumer ergonomics.** Body text never below 16px, touch targets ≥ 44px, friendly plain-language copy ([`writing.md`](writing.md)).

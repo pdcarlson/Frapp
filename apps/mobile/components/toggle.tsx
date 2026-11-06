@@ -23,7 +23,7 @@ type ToggleProps = {
  * A native switch can't draw a separate 1px border, so the off state carries
  * the border's 14% white as its track colour: on iOS it tints the switch over
  * the elevated `ios_backgroundColor`, and on Android it is the track. Without
- * it the off track is #2A2621 on a #211E1A card, about 1.1:1, and only the
+ * it the off track is the elevated step on a card, about 1.1:1, and only the
  * thumb shows.
  *
  * `activeThumbColor` is react-native-web's name for the on-state thumb, which

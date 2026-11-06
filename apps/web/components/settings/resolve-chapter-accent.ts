@@ -73,7 +73,8 @@ export type ResolveChapterAccentOptions = {
  *
  * The rounding is deliberate and long-standing: it is what this resolver has
  * always compared against 4.5, and it is what `contrastOnBackground` reports.
- * Against the dark card the Settings preview passes (`#211E1A`), 9,686 hex
+ * Against the dark card the Settings preview passed before the 2026-11-05
+ * neutral ladder (`#211E1A`; it is `#171717` now and the count was not re-run), 9,686 hex
  * colors score in `[4.495, 4.5)` and pass only because of it, so tightening to
  * exact comparison would flip the preview's verdict on accents chapters
  * already use. The shared math in `@repo/color` is exact;

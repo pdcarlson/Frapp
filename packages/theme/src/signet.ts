@@ -1,5 +1,5 @@
 /**
- * Signet design tokens — the dark-first warm palette.
+ * Signet design tokens — the dark-first neutral graphite palette.
  *
  * This started as an ADDITIVE entrypoint beside the legacy bone/bronze/ink
  * tokens, with `apps/mobile` its first consumer. It is now the ONLY token set
@@ -139,20 +139,20 @@ export type SignetTokens = {
 const SIGNET_DARK: SignetTokens = {
   color: {
     surface: {
-      background: "#131211",
-      surface1: "#1A1A1A",
-      card: "#211E1A",
-      popover: "#2A2621",
+      background: "#0A0A0A",
+      surface1: "#111111",
+      card: "#171717",
+      popover: "#1E1E1E",
     },
     border: {
       hairline: "rgba(255,255,255,0.08)",
       input: "rgba(255,255,255,0.14)",
     },
     text: {
-      foreground: "#EDEAE3",
-      mutedForeground: "#A9A399",
-      muted: "#78716A",
-      disabled: "#57534C",
+      foreground: "#EBEBEB",
+      mutedForeground: "#A3A3A3",
+      muted: "#737373",
+      disabled: "#525252",
     },
     semantic: {
       success: "#3FB950",

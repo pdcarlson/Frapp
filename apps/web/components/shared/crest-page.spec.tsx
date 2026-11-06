@@ -111,14 +111,13 @@ describe("the crest", () => {
     },
   );
 
-  it("is drawn on the mark's own field, so the tile edge does not show", () => {
-    // `--surface-1` is `#1A1A1A`, which since #2153 is the committed raster's
-    // field exactly. That equality is what lets the wash the board draws at
-    // `opacity:.9` be dropped without the crest reading as a pasted-on square.
+  it("is drawn on the ladder step nearest the mark's field, so the tile edge does not show", () => {
+    // The raster's field is `#1A1A1A`. Until 2026-11-05 `--surface-1` was that
+    // exact hex; the neutral ladder moved it to `#111111` (1.085:1, a visible
+    // square), so the page paints `--card` (`#171717`, 1.03:1). That is what
+    // lets the board's `opacity:.9` wash be dropped.
     const { container } = render(<NotFound />);
-    expect(container.querySelector("main")?.className).toMatch(
-      /\bbg-surface-1\b/,
-    );
+    expect(container.querySelector("main")?.className).toMatch(/\bbg-card\b/);
     expect(container.querySelector("img")?.className).not.toMatch(/\bopacity-/);
   });
 

@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
  * Not `--popover`, and not the deleted scaffold `--accent` (#3036), which held
  * `--popover`'s own value: a menu sits on `--popover`, the top step of the
  * ladder, so a row highlighted with it moved an invisible cursor.
- * `--card-hover` sits above every ladder step, 1.199:1 on `--popover`
+ * `--card-hover` sits above every ladder step, 1.194:1 on `--popover`
  * (`shared/elevation-contrast.spec.ts`), which reads as a state where the
  * ladder's own ~1.1:1 steps do not.
  */
