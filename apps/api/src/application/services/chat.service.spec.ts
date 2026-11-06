@@ -3321,6 +3321,67 @@ describe('ChatService', () => {
   // injects `NotificationService` at all, and `chat-read-surface-ledger.spec.ts`
   // fails if a notify call reappears in this file.
 
+  describe('getLatestMessages', () => {
+    const latest = (channelId: string) => ({
+      channel_id: channelId,
+      message_id: `m-${channelId}`,
+      sender_id: 'user-2',
+      author_name: null,
+      content: 'see you at 6',
+      kind: 'text',
+      payload: null,
+      attachment_count: 0,
+      created_at: '2026-11-06T18:00:00Z',
+    });
+
+    it('drops channels the caller cannot read, and DMs they hid', async () => {
+      // A preview says far more than a count about a conversation between two
+      // other members, so this filter carries the same weight as the unread one.
+      const theirs: ChatChannel = {
+        ...baseChannel,
+        id: 'private-not-mine',
+        type: 'PRIVATE',
+        member_ids: ['someone-else', 'another'],
+      };
+      const hiddenDm: ChatChannel = {
+        ...baseChannel,
+        id: 'ch-dm',
+        type: 'DM',
+        member_ids: ['user-1', 'user-2'],
+      };
+      mockChannelRepo.findByIds.mockResolvedValue([
+        baseChannel,
+        theirs,
+        hiddenDm,
+      ]);
+      mockMessageRepo.findLatestPerChannel.mockResolvedValue([
+        latest(baseChannel.id),
+        latest(theirs.id),
+        latest(hiddenDm.id),
+      ]);
+      mockReadReceiptRepo.findHiddenChannelIds.mockResolvedValue(
+        new Set([hiddenDm.id]),
+      );
+
+      await expect(
+        service.getLatestMessages('ch-1', 'user-1'),
+      ).resolves.toEqual([latest(baseChannel.id)]);
+      expect(mockMessageRepo.findLatestPerChannel).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+      );
+    });
+
+    it('answers an empty list without an access lookup when no channel has a message', async () => {
+      mockMessageRepo.findLatestPerChannel.mockResolvedValue([]);
+
+      await expect(service.getLatestMessages('ch-1', 'user-1')).resolves.toEqual(
+        [],
+      );
+      expect(mockChannelRepo.findByIds).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getUnreadCounts', () => {
     const PRIVATE_OTHERS: ChatChannel = {
       ...baseChannel,

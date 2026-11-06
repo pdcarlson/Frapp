@@ -890,6 +890,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The latest message in every channel the caller can read, for the channel list previews */
+        get: operations["ChatController_getLatestMessages_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/notification-preferences": {
         parameters: {
             query?: never;
@@ -3831,6 +3848,29 @@ export interface components {
             unread_count: number;
             /** @description Subset of unread_count that mentions the caller. Mentions are resolved server-side at send time. */
             mention_count: number;
+        };
+        ChannelLatestMessageDto: {
+            /** Format: uuid */
+            channel_id: string;
+            /** Format: uuid */
+            message_id: string;
+            /**
+             * Format: uuid
+             * @description The sender's `users.id`, or null for an imported archive message, which carries `author_name` instead.
+             */
+            sender_id: string | null;
+            author_name: string | null;
+            /** @description The message body, cut to its first 500 characters. Empty for a card or a file-only message. */
+            content: string;
+            /** @description The message kind (`text`, `event`, `system_audit`, ...). */
+            kind: string;
+            /** @description The audit payload, set only when `kind` is `system_audit`; null for every other kind. */
+            payload: {
+                [key: string]: unknown;
+            } | null;
+            attachment_count: number;
+            /** Format: date-time */
+            created_at: string;
         };
         ChannelNotificationPreferenceDto: {
             /** Format: uuid */
@@ -7144,6 +7184,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChannelUnreadCountDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_getLatestMessages_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelLatestMessageDto"][];
                 };
             };
             /** @description Error */

@@ -24,6 +24,7 @@ export {
   formatDayTime,
   formatDayTimeRange,
   formatDueLabel,
+  formatListStamp,
   formatRelativeDayTime,
   formatTimestampFull,
   formatWeekdayDay,
