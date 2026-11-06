@@ -3,6 +3,7 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { Alert } from "react-native";
+import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
@@ -87,6 +88,12 @@ const {
       isError: false,
       isFetching: false,
       refetch: vi.fn(),
+    } as {
+      isPending: boolean;
+      isError: boolean;
+      isFetching: boolean;
+      isSuccess?: boolean;
+      refetch: ReturnType<typeof vi.fn>;
     },
   },
   // Each read's refetch but the channels' (in `channelsState`), so a pull is
@@ -118,6 +125,9 @@ vi.mock("@repo/hooks", async () => {
   });
   return {
     canHideConversation: actual.canHideConversation,
+    lastChannelLandingId: actual.lastChannelLandingId,
+    lastChannelStorageKey: actual.lastChannelStorageKey,
+    useActiveChapterId: () => "chapter-1",
     groupChannelsByCategory: actual.groupChannelsByCategory,
     otherMemberId: actual.otherMemberId,
     directChannelDisplayName: actual.directChannelDisplayName,
@@ -204,6 +214,11 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import ChatHomeScreen from "@/app/(tabs)/index";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  resetChatLaunchForTests,
+  settleChatLaunch,
+} from "@/lib/chat/last-channel";
 import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
 import { SearchGlyph } from "@/components/search-glyph";
 import {
@@ -1043,5 +1058,82 @@ describe("Chat home press feedback", () => {
       expect(clip.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
       expect(resting).not.toHaveProperty("marginHorizontal");
     }
+  });
+});
+
+/**
+ * Launch opens the last channel the member was in, like Discord (owner,
+ * 2026-11-05), once per app process and only once the list has answered.
+ */
+describe("Chat home opens the last channel on launch", () => {
+  const answered = () => {
+    channelsState.value = { ...channelsState.value, isSuccess: true };
+  };
+  beforeEach(() => resetChatLaunchForTests());
+
+  async function settle() {
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+
+  it("opens the remembered channel, once", async () => {
+    answered();
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue("c-general");
+    render();
+    await settle();
+    expect(AsyncStorage.getItem).toHaveBeenCalledWith(
+      `frapp.chat.last-channel.${VIEWER}.chapter-1`,
+    );
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: "c-general" },
+    });
+
+    // Back from the thread lands here again; nothing re-opens.
+    vi.mocked(vi.mocked(useRouter)().push).mockClear();
+    render();
+    await settle();
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+
+  it("stays on the list when the remembered channel is gone or hidden", async () => {
+    answered();
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue(dmBobHidden.id);
+    render();
+    await settle();
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+
+  it("stands aside for a notification tap", async () => {
+    answered();
+    settleChatLaunch();
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue("c-general");
+    render();
+    await settle();
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+
+  it("does not jump when the list only answers after launch", async () => {
+    // Offline or a failed first fetch: the member has moved on by now.
+    resetChatLaunchForTests(Date.now() - 60_000);
+    answered();
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue("c-general");
+    render();
+    await settle();
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+
+  it("does not jump once the member has left chat home", async () => {
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue("c-general");
+    render();
+    await settle();
+    act(() => {
+      (expoRouter as unknown as { __blur: () => void }).__blur();
+    });
+    answered();
+    render();
+    await settle();
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
   });
 });

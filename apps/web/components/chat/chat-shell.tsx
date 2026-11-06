@@ -40,6 +40,7 @@ import {
   useSetSidebarFilter,
   useSetSidebarSectionCollapsed,
   useSidebarPreferences,
+  landingChannelId,
 } from "@repo/hooks";
 import { can, isAnnouncementChannel } from "@repo/validation";
 import { ChevronLeft, X } from "lucide-react";
@@ -54,7 +55,7 @@ import {
   useMaskedRefresh,
   useThreadBlockList,
 } from "@/lib/chat/use-thread-block-list";
-import { coldLoadDefaultChannelId } from "@/lib/chat/default-channel";
+import { readLastChannel, writeLastChannel } from "@/lib/chat/last-channel";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
@@ -487,8 +488,8 @@ export function ChatShell({
   }, [initialChannelId, refetchChannels]);
 
   // A caller can pass a channel *name* (onboarding's completion redirect
-  // uses the literal `general`, matching `activeChannelId`'s own by-name
-  // fallback below) as well as an id — so "missing" means neither matches.
+  // uses the literal `general`) as well as an id, and `activeChannelId`
+  // resolves either, so "missing" means neither matches.
   const requestedChannelMissing =
     !channelTargetDismissed &&
     initialChannelId !== null &&
@@ -498,19 +499,75 @@ export function ChatShell({
     !channels.some(
       (ch) => ch.id === initialChannelId || ch.name === initialChannelId,
     );
+  /*
+    The member's last channel is remembered per browser, member and chapter.
+    A member whose token carries no chapter claim still has a working channel
+    list (sole membership resolves server-side), so they are keyed "sole",
+    as on mobile, rather than never being remembered.
+  */
+  const lastChannelChapter = activeChapterId ?? "sole";
   const activeChannelId = useMemo(() => {
     if (requestedChannelMissing) return null;
-    if (
-      selectedChannelId &&
-      channels.some((ch) => ch.id === selectedChannelId)
-    ) {
-      return selectedChannelId;
+    if (selectedChannelId) {
+      const selected =
+        channels.find((ch) => ch.id === selectedChannelId) ??
+        channels.find((ch) => ch.name === selectedChannelId);
+      if (selected) return selected.id;
     }
     if (channels.length === 0) return null;
-    // Shared with the first-chunk cache, which pins this channel's tail against
-    // eviction — the two rules have to be one rule or the cache misses here.
-    return coldLoadDefaultChannelId(channels);
-  }, [selectedChannelId, channels, requestedChannelMissing]);
+    /*
+      Landing waits for identity: the stored channel is keyed by member, and
+      landing on `#general` first would stamp its read cursor (the mark-read
+      effect below) over messages the member never saw, then jump a render
+      later. A selection or a link above never waits.
+
+      Read fresh, not once at mount: a fallback later in the visit (hiding
+      the open DM, the open channel deleted) reads the channel that was just
+      open, which `landingChannelId` skips as hidden or missing, so it lands
+      on `#general` rather than on a channel from page load.
+
+      Shared with the first-chunk cache, which pins this channel's tail
+      against eviction: the two rules have to be one rule or the cache
+      misses here.
+    */
+    if (!userId) return null;
+    return landingChannelId(
+      channels,
+      readLastChannel(userId, lastChannelChapter),
+    );
+  }, [
+    selectedChannelId,
+    channels,
+    requestedChannelMissing,
+    userId,
+    lastChannelChapter,
+  ]);
+  /*
+    On a chapter switch the new chapter id lands one commit before the old
+    chapter's channel list is cleared (`FrappProvider` drops the query cache
+    in an effect that runs after this one), so the open channel would be
+    written under the new chapter's key. Writes wait until the list changes.
+  */
+  const lastChannelWrite = useRef({
+    chapterId: lastChannelChapter,
+    list: channels,
+    staleList: null as typeof channels | null,
+  });
+  useEffect(() => {
+    const guard = lastChannelWrite.current;
+    if (guard.chapterId !== lastChannelChapter) {
+      // A claim arriving (null to an id) is not a switch: the list is the
+      // same chapter's.
+      if (activeChapterId !== null && guard.chapterId !== "sole") {
+        guard.staleList = guard.list;
+      }
+      guard.chapterId = lastChannelChapter;
+    }
+    guard.list = channels;
+    if (!activeChannelId || channels === guard.staleList) return;
+    guard.staleList = null;
+    writeLastChannel(userId, lastChannelChapter, activeChannelId);
+  }, [activeChannelId, userId, activeChapterId, lastChannelChapter, channels]);
 
   const activeChannel = useMemo(
     () => channels.find((ch) => ch.id === activeChannelId) ?? null,
