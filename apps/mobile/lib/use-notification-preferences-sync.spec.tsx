@@ -190,7 +190,7 @@ describe("useNotificationPreferencesSync", () => {
       PREFERENCE_STORAGE_KEY,
       JSON.stringify({
         quietHoursEnabled: false,
-        categories: { chat: false, events: true },
+        categories: { points: false, events: true },
       }),
     );
 
@@ -204,7 +204,7 @@ describe("useNotificationPreferencesSync", () => {
     });
 
     expect(result.current.quietHoursEnabled).toBe(false);
-    expect(result.current.categories.chat).toBe(false);
+    expect(result.current.categories.points).toBe(false);
     expect(result.current.categories.events).toBe(true);
     expect(result.current.isAuthenticated).toBe(false);
     expect(result.current.quietHoursSync).toBe("cached");
@@ -217,7 +217,7 @@ describe("useNotificationPreferencesSync", () => {
       PREFERENCE_STORAGE_KEY,
       JSON.stringify({
         quietHoursEnabled: false,
-        categories: { chat: true, events: true },
+        categories: { points: true, events: true },
       }),
     );
 
@@ -236,7 +236,7 @@ describe("useNotificationPreferencesSync", () => {
         if (path === "/v1/notifications/preferences") {
           return {
             data: [
-              { category: "chat", is_enabled: false },
+              { category: "points", is_enabled: false },
               { category: "events", is_enabled: true },
             ],
             error: null,
@@ -252,7 +252,7 @@ describe("useNotificationPreferencesSync", () => {
 
     await waitFor(() => {
       expect(result.current.quietHoursEnabled).toBe(true);
-      expect(result.current.categories.chat).toBe(false);
+      expect(result.current.categories.points).toBe(false);
     });
 
     expect(result.current.categories.events).toBe(true);
@@ -354,7 +354,7 @@ describe("useNotificationPreferencesSync", () => {
 
       act(() => {
         result.current.setQuietHoursEnabled(true);
-        result.current.setCategory("chat", false);
+        result.current.setCategory("points", false);
       });
 
       await waitFor(() => {
@@ -428,7 +428,7 @@ describe("useNotificationPreferencesSync", () => {
       GET: vi.fn(async (path: string) => {
         if (path === "/v1/notifications/preferences") {
           return {
-            data: [{ category: "chat", is_enabled: false }],
+            data: [{ category: "points", is_enabled: false }],
             error: null,
           };
         }
@@ -444,11 +444,11 @@ describe("useNotificationPreferencesSync", () => {
       expect(result.current.categorySync).toBe("synced");
     });
 
-    expect(result.current.categories.chat).toBe(false);
+    expect(result.current.categories.points).toBe(false);
     expect(result.current.categories.billing).toBe(true);
   });
 
-  it("PATCHes category 'chat' when toggling DM alerts with auth + chapter", async () => {
+  it("PATCHes the category when a switch is toggled with auth + chapter", async () => {
     mockState.secureStoreToken = "test-token";
 
     const { client, patch } = createStatefulPreferencesClient();
@@ -464,14 +464,14 @@ describe("useNotificationPreferencesSync", () => {
     });
 
     act(() => {
-      result.current.setCategory("chat", false);
+      result.current.setCategory("points", false);
     });
 
     await waitFor(() => {
       expect(patch).toHaveBeenCalledWith("/v1/notifications/preferences", {
         body: {
           chapter_id: "chapter-42",
-          category: "chat",
+          category: "points",
           is_enabled: false,
         },
       });
@@ -480,11 +480,11 @@ describe("useNotificationPreferencesSync", () => {
     // Still false once the settled refetch has confirmed it — the round trip,
     // not just the optimistic flash.
     await waitFor(() => {
-      expect(result.current.categories.chat).toBe(false);
+      expect(result.current.categories.points).toBe(false);
     });
 
     await waitFor(() => {
-      expect(persistedPreferences()?.categories?.chat).toBe(false);
+      expect(persistedPreferences()?.categories?.points).toBe(false);
     });
   });
 
@@ -1019,14 +1019,14 @@ describe("useNotificationPreferencesSync", () => {
     });
 
     act(() => {
-      result.current.setCategory("chat", false);
+      result.current.setCategory("points", false);
     });
 
-    expect(result.current.categories.chat).toBe(false);
+    expect(result.current.categories.points).toBe(false);
     expect(patch).not.toHaveBeenCalled();
 
     await waitFor(() => {
-      expect(persistedPreferences()?.categories?.chat).toBe(false);
+      expect(persistedPreferences()?.categories?.points).toBe(false);
     });
   });
 
@@ -1079,7 +1079,7 @@ describe("useNotificationPreferencesSync", () => {
       JSON.stringify({
         quietHoursEnabled: true,
         dmAlertsEnabled: false,
-        eventRemindersEnabled: true,
+        eventRemindersEnabled: false,
         digestEmailsEnabled: true,
       }),
     );
@@ -1093,8 +1093,11 @@ describe("useNotificationPreferencesSync", () => {
       expect(result.current.isHydrated).toBe(true);
     });
 
-    expect(result.current.categories.chat).toBe(false);
-    expect(result.current.categories.events).toBe(true);
+    // `dmAlertsEnabled` stood for `chat`, which has no switch any more.
+    expect(result.current.categories.events).toBe(false);
+    expect(
+      (result.current.categories as Record<string, unknown>).chat,
+    ).toBeUndefined();
 
     await waitFor(() => {
       const parsed = persistedPreferences();
@@ -1116,7 +1119,7 @@ describe("useNotificationPreferencesSync", () => {
       PREFERENCE_STORAGE_KEY,
       JSON.stringify({
         quietHoursEnabled: true,
-        categories: { chat: false, announcements: false, whatever: true },
+        categories: { points: false, announcements: false, whatever: true },
       }),
     );
 
@@ -1129,7 +1132,7 @@ describe("useNotificationPreferencesSync", () => {
       expect(result.current.isHydrated).toBe(true);
     });
 
-    expect(result.current.categories.chat).toBe(false);
+    expect(result.current.categories.points).toBe(false);
     expect(
       (result.current.categories as Record<string, unknown>).announcements,
     ).toBeUndefined();
@@ -1163,7 +1166,7 @@ describe("useNotificationPreferencesSync — server reconciliation (#312)", () =
       GET: vi.fn(async (path: string) => {
         if (path === "/v1/notifications/preferences") {
           return {
-            data: [{ category: "chat", is_enabled: true }],
+            data: [{ category: "points", is_enabled: true }],
             error: null,
           };
         }
@@ -1182,12 +1185,12 @@ describe("useNotificationPreferencesSync — server reconciliation (#312)", () =
     });
 
     act(() => {
-      result.current.setCategory("chat", false);
+      result.current.setCategory("points", false);
     });
 
     // Optimistic first…
     await waitFor(() => {
-      expect(result.current.categories.chat).toBe(false);
+      expect(result.current.categories.points).toBe(false);
     });
 
     // …then the settled refetch corrects it. Under the applied-ref latch this
@@ -1197,7 +1200,7 @@ describe("useNotificationPreferencesSync — server reconciliation (#312)", () =
       release();
     });
     await waitFor(() => {
-      expect(result.current.categories.chat).toBe(true);
+      expect(result.current.categories.points).toBe(true);
     });
   });
 
@@ -1252,7 +1255,7 @@ describe("useNotificationPreferencesSync — server reconciliation (#312)", () =
       GET: vi.fn(async (path: string) => {
         if (path === "/v1/notifications/preferences") {
           return {
-            data: [{ category: "chat", is_enabled: true }],
+            data: [{ category: "points", is_enabled: true }],
             error: null,
           };
         }
@@ -1265,7 +1268,7 @@ describe("useNotificationPreferencesSync — server reconciliation (#312)", () =
       wrapper: createWrapper(client, "chapter-1", makeQueryClient()),
     });
 
-    // Wait for the *server's* answer, not the catalog default — `chat` is
+    // Wait for the *server's* answer, not the catalog default — `points` is
     // enabled by default, so asserting `true` alone would pass at first render
     // and the toggle below would fire before auth resolved.
     await waitFor(() => {
@@ -1274,11 +1277,11 @@ describe("useNotificationPreferencesSync — server reconciliation (#312)", () =
     });
 
     act(() => {
-      result.current.setCategory("chat", false);
+      result.current.setCategory("points", false);
     });
 
     await waitFor(() => {
-      expect(result.current.categories.chat).toBe(false);
+      expect(result.current.categories.points).toBe(false);
     });
 
     await act(async () => {
@@ -1293,7 +1296,7 @@ describe("useNotificationPreferencesSync — server reconciliation (#312)", () =
     // accepted. This is a deliberate change from the pre-#312 behaviour, where
     // the failed value stuck for the rest of the session.
     await waitFor(() => {
-      expect(result.current.categories.chat).toBe(true);
+      expect(result.current.categories.points).toBe(true);
     });
   });
 });
