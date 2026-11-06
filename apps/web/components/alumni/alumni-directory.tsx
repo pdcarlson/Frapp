@@ -38,6 +38,7 @@ type AlumniRow = {
   bio: string | null;
   avatar_url: string | null;
   graduation_year: number | null;
+  major?: string | null;
   current_city: string | null;
   current_company: string | null;
   email: string | null;
@@ -312,6 +313,7 @@ export function AlumniDirectory() {
             */
             const meta = [
               alum.graduation_year ? `Class of ${alum.graduation_year}` : null,
+              alum.major,
               alum.current_company,
               alum.current_city,
             ]
