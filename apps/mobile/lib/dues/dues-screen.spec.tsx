@@ -84,14 +84,30 @@ let invoicesError = false;
 let viewerError = false;
 /** `null` while `/v1/users/me` hasn't answered. */
 let viewerId: string | null = VIEWER;
+let chapterModules: Record<string, boolean> = {};
 const refetchInvoices = vi.fn();
 const refetchViewer = vi.fn();
 const payInvoice = vi.fn();
 const awaitPaid = vi.fn();
 
+// `@repo/validation`'s beta list, emptied so these specs draw the screen a
+// chapter with dues on sees. The beta's own case, dues off, sets
+// `betaOff.keys`.
+const betaOff = vi.hoisted(() => ({ keys: [] as string[] }));
+vi.mock("@repo/validation/beta-off-modules", () => ({
+  get BETA_OFF_MODULES() {
+    return betaOff.keys;
+  },
+  isBetaOffModule: (key: string) => betaOff.keys.includes(key),
+}));
+afterEach(() => {
+  betaOff.keys = [];
+});
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => chapterId,
+  useCurrentChapter: () => ({ data: { enabled_modules: chapterModules } }),
   useViewerUserId: () => viewerId,
   useCurrentUser: () => ({
     isError: viewerError,
@@ -256,6 +272,35 @@ function mount() {
   mounted.push(tree);
   return tree;
 }
+
+describe("Dues while dues is off", () => {
+  afterEach(() => {
+    chapterModules = {};
+  });
+
+  function redirects(tree: ReactTestRenderer) {
+    return tree.root.findAll((node) => (node.type as unknown) === "Redirect");
+  }
+
+  it("sends a way in that skips More back to More, for the beta", () => {
+    betaOff.keys = ["dues"];
+    const tree = mount();
+    expect(redirects(tree).map((node) => node.props.href)).toEqual(["/more"]);
+    expect(tree.root.findAllByType(BalanceCardSkeleton)).toHaveLength(0);
+  });
+
+  // A member must still be able to pay an invoice the chapter already sent.
+  it("stays open for a chapter that switched dues off itself", () => {
+    chapterModules = { dues: false };
+    const tree = mount();
+    expect(redirects(tree)).toHaveLength(0);
+  });
+
+  it("draws the screen while dues is on", () => {
+    const tree = mount();
+    expect(redirects(tree)).toHaveLength(0);
+  });
+});
 
 describe("Dues loading", () => {
   it("loads as the balance card and the list it becomes, not one card of bars", () => {
