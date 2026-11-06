@@ -282,6 +282,7 @@ the chapter accent in a back-row slot (2026-11-05).
 | Dismiss, close, remove | `CloseGlyph` (an ×) | the network banner, the thread's error banner, the composer's reply and attachment chips (16px), the image viewer (24px), the service-hours proof row, Chat home's setup-checklist hide (16px) | Lucide `X` |
 | Edit | `PencilGlyph` | Profile's back row | Lucide `Pencil` |
 | Mark all read | `CheckAllGlyph` (two checks) | the Notifications screen header | Lucide `CheckCheck` |
+| Back | `BackGlyph` (a left chevron), in the chapter accent | the chat thread header (2026-11-06; it was a typed `‹`) | Lucide `ChevronLeft` |
 
 ### 6.2 Web Dashboard shell (Signet duotone)
 

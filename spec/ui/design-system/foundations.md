@@ -191,6 +191,14 @@ shipped on both platforms before it was written down here.
 
 Sizes MUST come from the scale above. Inventing an off-scale font size in screen code — including arithmetic on a role token, e.g. `tokens.type.section - 2` — is a defect, exactly as a raw hex value is ([`../mobile/README.md`](../mobile/README.md)).
 
+### Aligning a row (2026-11-06)
+
+A row that puts an icon beside text, or two type roles side by side, centers every item on the row's middle: `items-center` on web, `alignItems: "center"` on mobile. Paul's bar is that nothing in a row reads as sitting higher or lower than its neighbours. Figtree's cap height is centered in its own line box, so centered items of different roles line up on their capitals and land within a pixel of a shared baseline anyway.
+
+- **Baseline alignment is for text-only rows**, such as the chat author line (name, then time). Never use it on a row whose first item is an icon, or a box that starts with one: an icon has no text baseline, so the browser takes the icon's bottom edge instead and drops the text after it about 4px. That was the web channel header on every private channel, DM and the audit channel until 2026-11-06 ([`channel-header-title.tsx`](../../../apps/web/components/chat/channel-header-title.tsx)).
+- **A control glyph is drawn, not typed.** A character such as `‹` sits on the font's x-height rather than the line's middle, so it lands low in a centered row and changes size with the type role. Use the SVG from the platform's glyph file (on mobile, `BackGlyph` in `apps/mobile/components/control-glyphs.tsx`, [iconography.md](iconography.md) §6.1.5).
+- **A dot separator stays type.** The `•` between a name and its description is a character in the description's role, centered with it, not a drawn circle.
+
 ### Amendment: the three marketing type roles (landing only)
 
 The six roles above are the **product** scale and bind every product surface. A storefront headline is not a product heading, and the largest locked role — `display`, 32 — is not a hero. So the landing surface carries three additional roles **above** the scale, added with the token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) and drawn on the reskin's System sheet ([`../landing/reference/canvas/System.dc.html`](../landing/reference/canvas/System.dc.html)).

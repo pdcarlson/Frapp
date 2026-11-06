@@ -60,3 +60,18 @@ export function CheckAllGlyph({
     </Frame>
   );
 }
+
+/**
+ * Back: a left chevron, the chat thread header's way out. Drawn, never typed:
+ * a `‹` character sits on the text's x-height, so in a centered row its ink
+ * lands below the title's middle (foundations.md §7, Aligning a row). Same
+ * path as the back row's capsule arrow and the image viewer's previous.
+ */
+export function BackGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M14.5 6l-6 6 6 6" {...detail} />
+    </Frame>
+  );
+}
