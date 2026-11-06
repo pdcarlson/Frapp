@@ -124,3 +124,25 @@ describe('UpdateChannelDto.default_notification_level', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
+
+describe('UpdateChannelDto.is_default', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  const transform = (body: Record<string, unknown>) =>
+    pipe.transform(body, { type: 'body', metatype: UpdateChannelDto });
+
+  it('accepts true and false, and absent', async () => {
+    await expect(transform({ is_default: true })).resolves.toMatchObject({
+      is_default: true,
+    });
+    await expect(transform({ is_default: false })).resolves.toMatchObject({
+      is_default: false,
+    });
+    await expect(transform({})).resolves.toBeDefined();
+  });
+
+  it('refuses null, which would reach a not-null column', async () => {
+    await expect(transform({ is_default: null })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+});

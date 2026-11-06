@@ -129,6 +129,16 @@ export class UpdateChannelDto {
   @IsOptional()
   @IsIn(CHAT_NOTIFICATION_LEVELS)
   default_notification_level?: (typeof CHAT_NOTIFICATION_LEVELS)[number] | null;
+
+  @ApiPropertyOptional({
+    description:
+      "Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. Refused as `true` on a DM or group DM.",
+  })
+  // Not `@IsOptional()`, which lets `null` through to a not-null column (a
+  // 500): absent skips validation, `null` is refused as not a boolean.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsStrictBoolean()
+  is_default?: boolean;
 }
 
 export class CreateDmDto {

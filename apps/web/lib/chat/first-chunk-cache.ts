@@ -160,9 +160,10 @@ export const FIRST_CHUNK_MESSAGE_LIMIT = 30;
  *
  * One would be enough if the channel a cold load lands on were always the one
  * the member last read — it is not. `chat-shell.tsx` resolves the active
- * channel from `?channel=`, then this browser's last channel, then `#general`,
- * then the first row, so another tab, a deleted channel or a deep link can each
- * send a load somewhere other than the last tail written. Keeping the few most
+ * channel from `?channel=`, then this browser's last channel, then the
+ * chapter default, then `#general`, then the first row, so another tab, a
+ * deleted channel or a deep link can each send a load somewhere other than the
+ * last tail written. Keeping the few most
  * recent tails means the cache is warm for whichever of those the shell picks;
  * eviction pins the landing channel on top (`evictOldestTails`).
  */
@@ -689,9 +690,9 @@ async function evictOldestTails(
   /*
     Recency alone would evict the channel a cold load actually lands on.
 
-    The shell opens on the member's last channel, else `#general`, else the
-    first row (`landingChannelId` in `@repo/hooks`, the rule both sides
-    read). The last channel is usually the newest tail anyway, but a member
+    The shell opens on the member's last channel, else the chapter default,
+    else `#general`, else the first row (`landingChannelId` in `@repo/hooks`,
+    the rule both sides read). The last channel is usually the newest tail anyway, but a member
     who reads `#general` and then three other channels in another tab makes
     `#general` the oldest tail, and a device with no last channel would
     reload straight into the one channel with nothing cached. Pinning the

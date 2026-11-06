@@ -46,6 +46,7 @@ describe('ActivityFeedService', () => {
     created_at: '2026-01-01T00:00:00.000Z',
     archived_at: null,
     default_notification_level: null,
+    is_default: false,
     // Read-only, and this member is not an officer.
     can_post: false,
   };

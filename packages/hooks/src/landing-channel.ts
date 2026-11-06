@@ -1,7 +1,9 @@
 /**
  * Which channel Chat opens on when nothing named one: the member's last
- * channel, else `#general`, else the first row (owner, 2026-11-05: "Mobile
- * opens up to the last channel you were in. like discord").
+ * channel, else the chapter's default channel (`is_default`, set by an
+ * officer), else `#general`, else the first row (owner, 2026-11-05: "Mobile
+ * opens up to the last channel you were in. like discord"; 2026-11-06: the
+ * chapter picks a default, members do not).
  *
  * One rule for every reader, so they cannot disagree:
  *
@@ -23,7 +25,13 @@
  * conversation they just put away. A remembered channel the member can no
  * longer see is simply absent from the list and falls through.
  */
-export type LandingChannel = { id: string; name: string; hidden?: boolean };
+export type LandingChannel = {
+  id: string;
+  name: string;
+  hidden?: boolean;
+  /** The chapter's default channel, from `GET /v1/channels`. */
+  is_default?: boolean;
+};
 
 /** The remembered channel, when it is still listed and not hidden. */
 export function lastChannelLandingId(
@@ -43,6 +51,7 @@ export function landingChannelId(
   const listed = channels.filter((channel) => !channel.hidden);
   return (
     lastChannelLandingId(listed, lastChannelId) ??
+    listed.find((channel) => channel.is_default)?.id ??
     listed.find((channel) => channel.name === "general")?.id ??
     listed[0]?.id ??
     null
