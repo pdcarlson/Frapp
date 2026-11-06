@@ -54,6 +54,7 @@ import { Label } from "@/components/ui/label";
 import { AccentSwatches } from "@/components/settings/accent-swatches";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
 import { CrestTile } from "@/components/layout/crest-tile";
 import {
   Command,
@@ -133,7 +134,9 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   // are chapter-scoped, so nothing can be uploaded before the create lands.
   const [logo, setLogo] = useState<ChapterLogoUpload | null>(null);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard(
+    "Select the link and copy it manually.",
+  );
   const [acceptedLegal, setAcceptedLegal] = useState(false);
   const [emailInput, setEmailInput] = useState("");
   const [emailStatus, setEmailStatus] = useState<"idle" | "sending" | "sent">(
@@ -292,18 +295,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   }
 
   async function copyInviteLink() {
-    if (!inviteLink) return;
-    try {
-      await navigator.clipboard.writeText(inviteLink);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast({
-        title: "Copy failed",
-        description: "Select the link and copy it manually.",
-        variant: "destructive",
-      });
-    }
+    if (inviteLink) await copy(inviteLink);
   }
 
   function parseEmailInput(value: string): string[] {

@@ -55,8 +55,11 @@ Rules:
 1. A state change **recolors** the glyph (stroke + fill together). It MUST NOT
    swap to a solid-filled variant — solid fills are not part of the duotone
    family.
-2. Tab bar active state = accent duotone glyph + 700-weight label. No pill or
-   container shape behind the glyph.
+2. Tab bar active state = accent duotone glyph + 700-weight label, on a soft
+   capsule (white at 8%) the full height of the pill's row, as iOS 26's own
+   bars draw it. Corrected 2026-11-06 with the glass tab pill (owner pick, the
+   quick-actions mockup): this rule used to read "No pill or container shape
+   behind the glyph", which held for the flat bar.
 3. Locked emblem B is a brand asset, not an icon — it never takes
    the duotone treatment or the chapter accent (see
    [brand identity](../brand-identity.md)).
@@ -192,6 +195,15 @@ Screens that have not been reskinned yet still draw Ionicons per §5. Each
 cluster replaces its own as it rebuilds; there is no separate icon migration.
 
 ### 6.1.2 Mobile More hub (Signet duotone, shipped)
+
+The tab bar's quick-actions panel (`apps/mobile/components/quick-actions/quick-actions-panel.tsx`,
+[`navigation.md` § Quick actions](../mobile/navigation.md#quick-actions)) draws
+each action at 26px on a 58pt glass disc, in `text.foreground`, with the nav
+shape of the place it leads: New event `events`, New task `tasks`, Message
+`chat`, Check in `checkIn` (Phosphor `map-pin`, added for it), Host check-in
+`hostCheckIn`, Log hours `service`, Study `study`, Upload `documents`. The
+active tab in the pill sits on a soft capsule (white at 8%) under its accent
+glyph and bold label, as iOS 26's own bars draw it, since 2026-11-06.
 
 The More hub's leading row glyphs (s09, #1048) live in
 `apps/mobile/components/more/more-glyphs.tsx` at 20px (§2's list-row size)

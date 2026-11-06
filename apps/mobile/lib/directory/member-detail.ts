@@ -38,7 +38,10 @@ export interface MemberDetail {
   initials: string;
   email: string | null;
   bio: string | null;
-  /** e.g. `"Acme Inc. · Chicago · '27"`, or `null` when nothing is known. */
+  /**
+   * e.g. `"Economics · Acme Inc. · Chicago · '27"`, or `null` when nothing is
+   * known.
+   */
   meta: string | null;
   /** e.g. `"Aug 21, 2026"`, or `null` when the timestamp can't be parsed. */
   joinedLabel: string | null;
@@ -62,6 +65,7 @@ export function selectMemberDetail(data: unknown): MemberDetail | null {
     email: str(data, "email"),
     bio: str(data, "bio"),
     meta: metaLine([
+      str(data, "major"),
       str(data, "current_company"),
       str(data, "current_city"),
       formatGraduationYear(num(data, "graduation_year")),
