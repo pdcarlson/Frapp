@@ -18,7 +18,8 @@ import type { MessageLink } from "./message-markdown";
 
 /**
  * The frame every mobile chat card shares: the poll, event, task, points,
- * service hours, rush candidate, announcement and audit cards (#3185, #3383).
+ * service hours, rush candidate and announcement cards (#3185, #3383). An
+ * audit entry is a line, not a card (`system-audit-card.tsx`).
  *
  * `thread-message-row.tsx` puts a card inside `MessageRowFrame`, which draws
  * the reply quote, the avatar and the author line every row has. The frame
@@ -100,9 +101,18 @@ export function ChatCardShell({
       accessible={false}
       onLongPress={onOpenActions}
       disabled={!onOpenActions}
-      style={styles.card}
+      style={[
+        styles.card,
+        message._status === "pending" ? styles.cardPending : null,
+      ]}
     >
-      <View accessible={hasActions} {...a11yActions}>
+      <View
+        accessible={hasActions || message._status === "pending"}
+        // The dimmed card is the whole pending state on screen; a screen
+        // reader hears it here.
+        accessibilityHint={message._status === "pending" ? "Sending" : undefined}
+        {...a11yActions}
+      >
         {header}
       </View>
       {children}
@@ -146,7 +156,8 @@ function CardDeliveryChrome({
   const styles = useCardStyles();
   switch (chrome.status) {
     case "pending":
-      return <Text style={styles.metaText}>Sending…</Text>;
+      // The card dims instead (`styles.cardPending`): no line under it.
+      return null;
     case "failed":
       return (
         <View style={styles.failedRow}>
@@ -451,6 +462,8 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
     },
+    // In flight: the whole card grays, as a pending message's text does.
+    cardPending: { opacity: 0.5 },
     eyebrowRow: {
       flexDirection: "row",
       alignItems: "center",

@@ -11,6 +11,7 @@ import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 import {
   auditMirrorClientId,
   ChatBridgeWorkerService,
+  isAuditMirrorRow,
 } from './chat-bridge-worker.service';
 import { reopenDelayMs } from './worker-subscription';
 import { fakeRealtime } from '#test/helpers/fake-realtime';
@@ -372,5 +373,20 @@ describe('ChatBridgeWorkerService — the audit-log subscription', () => {
 
     expect(realtime.removeChannel).toHaveBeenCalledWith(first);
     expect(channels()).toHaveLength(1);
+  });
+});
+
+describe('isAuditMirrorRow', () => {
+  it('knows a mirror from a server notice and from a member message', () => {
+    const mirror = auditMirrorClientId('a1');
+    expect(
+      isAuditMirrorRow({ kind: 'system_audit', client_message_id: mirror }),
+    ).toBe(true);
+    expect(
+      isAuditMirrorRow({ kind: 'system_audit', client_message_id: null }),
+    ).toBe(false);
+    expect(isAuditMirrorRow({ kind: 'text', client_message_id: mirror })).toBe(
+      false,
+    );
   });
 });

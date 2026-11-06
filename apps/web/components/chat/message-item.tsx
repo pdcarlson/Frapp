@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   Ban,
   Flag,
-  Loader2,
   MoreHorizontal,
   Pencil,
   Trash2,
@@ -24,7 +23,13 @@ import {
   CHIP,
   CHIP_HIT_AREA,
 } from "./chip";
-import { BookmarkGlyph, PinGlyph, ThreadGlyph } from "./chat-glyphs";
+import {
+  AuditGlyph,
+  BookmarkGlyph,
+  PinGlyph,
+  ThreadGlyph,
+} from "./chat-glyphs";
+import { isAuditLine } from "@repo/chat-core/cards";
 import { ImportedReactionChips } from "./imported-reaction-chips";
 import { selectImportedReactions } from "./imported-reactions";
 import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
@@ -310,6 +315,11 @@ export function MessageItem({
   // an invite-accept DM) wear the crest, not initials: the sender is the
   // product, not a member (#3347).
   const isSystemPost = message.sender_id === SYSTEM_SENDER_ID;
+  // A `#chapter-audit` entry draws as one quiet line: the shield in the
+  // gutter, no author line (§11 § Audit lines). Its renderer draws the words.
+  const auditLine = !message.is_deleted && isAuditLine(message);
+  // Its author line is never drawn, whatever the run says.
+  const drawsHeader = showHeader && !auditLine;
   const avatarSrc = isSystemPost ? SYSTEM_AVATAR_SRC : avatarUrl;
   const isPending = message._status === "pending";
   const isFailed = message._status === "failed";
@@ -600,7 +610,7 @@ export function MessageItem({
     !message.is_deleted &&
     (isCardMessage(message) || message.content.trim().length === 0);
 
-  const body = (
+  const renderer = (
     <MessageRenderer
       message={message}
       viewerId={viewerId}
@@ -611,6 +621,13 @@ export function MessageItem({
       muted={isPending || isFailed}
     />
   );
+  // A card in flight has no text to gray, so the whole card dims instead.
+  const body =
+    isPending && isCardMessage(message) ? (
+      <div className="opacity-50">{renderer}</div>
+    ) : (
+      renderer
+    );
 
   // Deleted content has nothing left to react to. Reaction rows for a message
   // are never deleted server-side (only the message's own content/metadata
@@ -862,9 +879,6 @@ export function MessageItem({
           onClick={(event) => void saveEdit(event.detail === 0)}
           disabled={isSavingEdit || editValue.trim().length === 0}
         >
-          {isSavingEdit ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-          ) : null}
           Save
         </button>
       </div>
@@ -895,7 +909,9 @@ export function MessageItem({
               CHIP.base,
               CHIP.neutral,
               CHIP_HIT_AREA,
-              "gap-1 disabled:opacity-60",
+              // Wide enough for "Retrying…", so the label swap never
+              // nudges what sits beside it.
+              "min-w-[5.5rem] justify-center gap-1 disabled:opacity-60",
             )}
             onClick={() => {
               const replay = message._replay;
@@ -915,14 +931,7 @@ export function MessageItem({
               }
             }}
           >
-            {isRetrying ? (
-              <>
-                <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-                Retrying…
-              </>
-            ) : (
-              "Retry"
-            )}
+            {isRetrying ? "Retrying…" : "Retry"}
           </button>
         ) : null}
       </div>
@@ -933,7 +942,9 @@ export function MessageItem({
       role="listitem"
       className={cn(
         "group/message relative px-5 pb-0.5",
-        showHeader ? "pt-4" : "pt-0.5",
+        // An audit stack's first line sits 8 below the row above: a log line
+        // is not a new speaker, so it takes less than a run's 16.
+        auditLine ? (showHeader ? "pt-2" : "pt-0.5") : showHeader ? "pt-4" : "pt-0.5",
         // Delineation without a bubble (§11): the whole row lifts one surface
         // step under a pointer, with keyboard focus inside it, or once tapped.
         // Pointer feedback, not information, so the ~1.1:1 step is enough.
@@ -948,7 +959,11 @@ export function MessageItem({
       <div className="flex gap-3">
         {/* The 32px gutter, held open on every row of a run. */}
         <div className="w-8 shrink-0">
-          {showHeader ? (
+          {auditLine ? (
+            <div className="flex h-5 items-center justify-center">
+              <AuditGlyph className="h-3.5 w-3.5 text-muted" />
+            </div>
+          ) : showHeader ? (
             <Avatar
               className="h-8 w-8"
               aria-hidden="true"
@@ -1003,7 +1018,7 @@ export function MessageItem({
           )}
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
-          {showHeader ? (
+          {drawsHeader ? (
             <div
               data-slot="author-line"
               className="flex min-w-0 items-baseline gap-2 leading-5"
@@ -1037,12 +1052,13 @@ export function MessageItem({
             virtualized scroll.
           */}
           <div role="status" aria-live="polite" aria-atomic="true">
-            {isPending ? (
-              <p className="mt-0.5 flex items-center gap-1.5 text-caption text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-                Sending…
-              </p>
-            ) : null}
+            {/*
+              Pending draws nothing here: the body is already gray, which is
+              the whole pending state on screen, so a send never adds a line
+              and takes it away again (§11 § What rides the row, owner
+              decision 2026-11-06). A screen reader still hears it.
+            */}
+            {isPending ? <span className="sr-only">Sending</span> : null}
             {isUnconfirmed ? (
               <p className="mt-0.5 text-caption text-muted-foreground">
                 {message._error ?? "Not confirmed"}

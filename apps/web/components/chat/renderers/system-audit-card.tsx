@@ -1,14 +1,11 @@
 "use client";
 
-import { AuditGlyph } from "../chat-glyphs";
-import { EYEBROW, MESSAGE_CARD } from "../chip";
-import { Card } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
-  auditChangeSummary,
+  auditLineText,
   readSystemAuditPayload,
 } from "@repo/chat-core/cards";
+import { formatTimeOfDay } from "@repo/formatting";
 import { actorLabel, type NameResolver } from "@repo/hooks";
 
 interface SystemAuditCardProps {
@@ -18,18 +15,23 @@ interface SystemAuditCardProps {
 }
 
 /**
- * `#chapter-audit` system message. The one card
- * that keeps `font-mono` for its action: an audit row's action is a
- * key, which is exactly what foundations.md §7 reserves the mono role for. The
- * actor is a member's name, so it is not mono: `actorLabel` gives the
- * roster's name, "Frapp" for the system, or the member fallback, never the
- * bare id prefix this card used to draw.
+ * A `#chapter-audit` entry: one quiet line, not a card (`components.md` §11
+ * § Audit lines, owner decision 2026-11-06). Mobile's twin is
+ * `apps/mobile/components/chat/system-audit-card.tsx`.
  *
- * The payload reader is `@repo/chat-core/cards`, which mobile's card reads
- * too. Only the audit mirror writes the payload; the server's own notices (a
- * poll closing, an invite accepted, the chapter welcome) are `system_audit`
- * rows without one, whose `content` is the whole sentence, so the fallback
- * draws that sentence in the card frame in the body face.
+ *   [shield]  Paul updated the chapter profile · accent color   2:32 PM
+ *
+ * `MessageItem` draws the shield in the gutter and no author line
+ * (`isAuditLine`); this draws the words. The actor is the one word in the
+ * foreground; the rest is caption in the muted foreground, so entries read as
+ * a log under the conversation. `actorLabel` gives the roster's name,
+ * "Frapp" for the system, or the member fallback, never a bare id prefix,
+ * and the action reads as words (`auditLineText`), never as its key.
+ *
+ * Only the audit mirror writes the payload; the server's own notices (a poll
+ * closing, an invite accepted, the chapter welcome) are `system_audit` rows
+ * without one, whose `content` is the whole sentence, so the fallback draws
+ * that sentence in the card frame in the body face.
  */
 export function SystemAuditCard({ message, nameFor }: SystemAuditCardProps) {
   const payload = readSystemAuditPayload(message);
@@ -41,27 +43,17 @@ export function SystemAuditCard({ message, nameFor }: SystemAuditCardProps) {
     );
   }
   const actor = actorLabel(payload.actor_user_id, nameFor);
+  const { phrase, detail } = auditLineText(payload);
   return (
-    <Card className={cn(MESSAGE_CARD)}>
-      <div
-        className={cn(
-          EYEBROW,
-          "flex items-center gap-1.5 text-muted-foreground",
-        )}
-      >
-        <AuditGlyph className="h-4 w-4" /> Audit
-      </div>
-      <div className="mt-2 flex flex-wrap items-baseline gap-x-2 text-caption">
-        <span className="font-mono font-semibold text-foreground">
-          {payload.action}
-        </span>
-        {actor ? (
-          <span className="text-muted-foreground">by {actor}</span>
-        ) : null}
-      </div>
-      <div className="mt-2 font-mono text-caption text-muted-foreground">
-        {auditChangeSummary(payload)}
-      </div>
-    </Card>
+    <p className="text-caption leading-5 text-muted-foreground">
+      {actor ? (
+        <span className="font-semibold text-foreground">{actor} </span>
+      ) : null}
+      {phrase}
+      {detail ? ` · ${detail}` : null}
+      <time dateTime={message.created_at} className="ml-2 text-muted">
+        {formatTimeOfDay(message.created_at)}
+      </time>
+    </p>
   );
 }

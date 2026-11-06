@@ -45,6 +45,7 @@ import {
   WORKER_SUBSCRIPTION_DOWN_AFTER_MS,
   WorkerSubscription,
 } from './worker-subscription';
+import { isAuditMirrorRow } from './chat-bridge-worker.service';
 
 interface ChatMessageRow {
   id: string;
@@ -62,6 +63,8 @@ interface ChatMessageRow {
    * not set it.
    */
   mentions: string[] | null;
+  /** `audit:<id>` on an audit mirror (`isAuditMirrorRow`); a UUID or null otherwise. */
+  client_message_id?: string | null;
   created_at: string;
 }
 
@@ -494,6 +497,7 @@ export class ChatPushWorkerService
     // messages in a `mentions` channel push nobody.
     let senderName: Promise<string | null> | null = null;
 
+    const isAuditMirror = isAuditMirrorRow(row);
     for (const recipientId of recipientIds) {
       const prefs = prefsByUser.get(recipientId) ?? [];
       const decision = decidePush({
@@ -502,6 +506,7 @@ export class ChatPushWorkerService
         recipientIsPresent: presenceMap.has(recipientId),
         hasMention: mentions.includes(recipientId),
         preferences: prefs,
+        isAuditMirror,
       });
       if (decision !== 'send') continue;
 
