@@ -25,9 +25,11 @@ import {
 } from "@/components/documents/folder-management";
 import { FolderRail } from "@/components/documents/folder-rail";
 import {
-  UploadDocumentDialog,
+  DocumentsPageDropTarget,
+  UploadDocumentPanel,
   useDocumentUpload,
-} from "@/components/documents/upload-document-dialog";
+} from "@/components/documents/upload-document-panel";
+import { documentTypeOptions } from "@/lib/documents/upload-defaults";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
@@ -140,7 +142,21 @@ export function DocumentsPage() {
     );
   }, [activeFolder, documents]);
 
-  const upload = useDocumentUpload(gate);
+  /*
+    The upload panel's type chips: the common types plus every type this
+    chapter has already filed under, read off the documents in hand. Free text
+    on the wire until #3642, so this keeps new uploads on the spellings the
+    library already uses.
+  */
+  const typeOptions = useMemo(
+    () => documentTypeOptions(documents.map((doc) => doc.document_type)),
+    [documents],
+  );
+  const folderNames = useMemo(
+    () => folders.map((folder) => folder.name),
+    [folders],
+  );
+  const upload = useDocumentUpload(gate, { activeFolder, typeOptions });
   /*
     Which rows' deletes are in flight — a set, not a scalar. `useDeleteDocument` is pessimistic —
     the row only disappears once the DELETE round-trips — so without this
@@ -250,7 +266,17 @@ export function DocumentsPage() {
     <div className="space-y-6">
       <PageActions>
         <Can permission="chapter_docs:upload">
-          <UploadDocumentDialog gate={gate} upload={upload} />
+          <UploadDocumentPanel
+            gate={gate}
+            upload={upload}
+            folders={folderNames}
+            typeOptions={typeOptions}
+          />
+          <DocumentsPageDropTarget
+            gate={gate}
+            upload={upload}
+            activeFolder={activeFolder}
+          />
         </Can>
       </PageActions>
       {/*

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Upload } from "lucide-react";
 import { formatBytes } from "@repo/formatting";
 import { DocumentsGlyph } from "@/components/layout/nav-glyphs";
 import { DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -256,11 +257,11 @@ function fileExtensionLabel(name: string): string | null {
  * step — so choosing a file changes what the well says rather than replacing
  * one control with another and shifting every field below it.
  *
- * **It is not a drop target and does not look like one.** The board labels this
- * a "drop zone", but drag-and-drop is behavior and this lane is chrome, so what
- * ships is the well and its file row without a drop handler. Styling it as a
- * target that silently ignores a drop would be the worse half of the board to
- * take.
+ * **It is a drop target** (2026-11-06): a file dragged onto the well is taken
+ * exactly as if it had been picked, and the well lights to the neutral hover
+ * step while one is over it (`foundations.md` §6: hover is neutral, never the
+ * accent). Only the first file of a multi-file drop is taken; these sheets
+ * upload one file, and bulk backwork has its own queue.
  *
  * **The hint is field help, not the paragraph the board deletes.** `1j` says
  * "no instructional paragraph", which is about the block of prose that used to
@@ -289,6 +290,26 @@ export function UploadFileField({
   onSelect: (file: File | null) => void;
 }) {
   const extension = file ? fileExtensionLabel(file.name) : null;
+  const [dragOver, setDragOver] = React.useState(false);
+
+  /*
+    `preventDefault` on every drag event over the well, disabled or not, so a
+    stray drop never makes the browser open the file in place of the app.
+  */
+  const dropHandlers = {
+    onDragOver: (event: React.DragEvent) => {
+      event.preventDefault();
+      if (!disabled) setDragOver(true);
+    },
+    onDragLeave: () => setDragOver(false),
+    onDrop: (event: React.DragEvent) => {
+      event.preventDefault();
+      setDragOver(false);
+      if (disabled) return;
+      const dropped = event.dataTransfer.files?.[0];
+      if (dropped) onSelect(dropped);
+    },
+  };
 
   /*
     A `<label>` styled as the affordance, over an `sr-only` input.
@@ -356,10 +377,17 @@ export function UploadFileField({
       */}
       <Label htmlFor={id}>{label}</Label>
       <div
+        data-testid={`${id}-well`}
+        {...dropHandlers}
         className={cn(
-          "rounded-lg border border-dashed bg-card p-4",
+          "rounded-lg border border-dashed p-4 transition-colors",
           FOCUS_RING_OFFSET_WITHIN,
-          error ? "border-destructive" : "border-input",
+          dragOver ? "bg-card-hover" : "bg-card",
+          error
+            ? "border-destructive"
+            : dragOver
+              ? "border-muted-foreground"
+              : "border-input",
         )}
       >
         {file ? (
@@ -382,7 +410,11 @@ export function UploadFileField({
             {picker}
           </div>
         ) : (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="flex flex-col items-center gap-2 py-5 text-center">
+            <Upload aria-hidden className="h-6 w-6 text-muted-foreground" />
+            <p className="text-label font-semibold text-foreground">
+              Drop a file here
+            </p>
             {picker}
             {/*
               Rendered here when the well is empty and, below, `sr-only` once a
@@ -394,7 +426,7 @@ export function UploadFileField({
             */}
             <p
               id={fieldHintId(id)}
-              className="min-w-0 flex-1 text-caption text-muted"
+              className="max-w-xs text-caption text-muted"
             >
               {hint}
             </p>
