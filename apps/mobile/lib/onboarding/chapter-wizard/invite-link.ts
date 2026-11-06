@@ -11,13 +11,21 @@ import { mintJoinUrl, PRODUCTION_APP_ORIGIN } from "@repo/validation";
  */
 
 export function webAppOrigin(
-  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+  // A static `process.env.EXPO_PUBLIC_*` read, the only form babel-preset-expo
+  // inlines into a build (`lib/ask/flag.ts`). Read through an alias of
+  // `process.env` it was always undefined on device, so a staging build
+  // shared production join links for its staging tokens.
+  fromEnv: string | undefined = process.env.EXPO_PUBLIC_APP_URL,
 ): string {
-  const fromEnv = env.EXPO_PUBLIC_APP_URL;
   if (typeof fromEnv === "string" && fromEnv.trim().length > 0) {
     return fromEnv.trim().replace(/\/$/, "");
   }
   return PRODUCTION_APP_ORIGIN;
+}
+
+/** The web app's host, as a line of copy names it: `app.frapp.live`. */
+export function webAppHost(origin: string = webAppOrigin()): string {
+  return origin.replace(/^https?:\/\//, "");
 }
 
 export function webJoinUrl(
