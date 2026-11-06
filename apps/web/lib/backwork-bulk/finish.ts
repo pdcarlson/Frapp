@@ -47,7 +47,8 @@ export type FinishJob<Doc> = {
 /** Second try when a flattened file comes out over the cap. */
 const SMALLER: FlattenOptions = { dpi: 110, quality: 0.7 };
 
-const BACKWORK_YEAR_MIN = 1900;
+/** The API's `@Min` on a Backwork resource's `year` (`backwork.dto.ts`). */
+export const BACKWORK_YEAR_MIN = 1900;
 
 /**
  * `POST /v1/backwork/upload-url` allows 10 a minute per member. A fast run
