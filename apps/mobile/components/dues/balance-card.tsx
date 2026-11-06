@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { StatusChip } from "@/components/status-chip";
+import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   dueChipHue,
@@ -198,7 +199,35 @@ export function BalanceCard({
   );
 }
 
+/**
+ * The balance card before the invoices load, on the card's own styles: the
+ * label line, the amount at the display size, and the pay button.
+ * `CardListSkeleton` places it above the history list.
+ */
+export function BalanceCardSkeleton() {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const { caption, display } = tokens.typography.role;
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.metaRow}>
+        <SkeletonText role={caption} width="30%" />
+      </View>
+      <SkeletonText role={display} width="40%" style={styles.skeletonAmount} />
+      <SkeletonBlock
+        width="100%"
+        height={tokens.touch.buttonLarge}
+        radius={tokens.radius.control}
+        style={styles.skeletonButton}
+      />
+    </View>
+  );
+}
+
 function createStyles(tokens: SignetTokens) {
+  // Shared by the card's lines and its skeleton's, so the two can't drift.
+  const margin = { amount: tokens.spacing.sm, button: tokens.spacing.lg };
   return StyleSheet.create({
     card: {
       borderRadius: tokens.radius.cardLarge,
@@ -223,7 +252,7 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.display),
       letterSpacing: -0.8,
       color: tokens.color.text.foreground,
-      marginTop: tokens.spacing.sm,
+      marginTop: margin.amount,
     },
     amountFraction: {
       // The drawn second tier: the cents sit at roughly half the dollar size in
@@ -239,7 +268,14 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
       alignItems: "center",
       justifyContent: "center",
-      marginTop: tokens.spacing.lg,
+      marginTop: margin.button,
+    },
+    // The skeleton's lines take the margins the real ones do, from `margin`.
+    skeletonAmount: {
+      marginTop: margin.amount,
+    },
+    skeletonButton: {
+      marginTop: margin.button,
     },
     payButtonPressed: {
       opacity: 0.85,

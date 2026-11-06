@@ -16,7 +16,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useListChapters } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { useAuthSession } from "@/lib/auth-session";
-import { ChoiceRow } from "@/components/auth/choice-row";
+import { ChoiceRow, ChoiceRowSkeleton } from "@/components/auth/choice-row";
+import { SkeletonRegion } from "@/components/state-block";
 import { BackRow } from "@/components/back-row";
 import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
 import { useSelectChapter } from "@/lib/select-chapter";
@@ -235,10 +236,13 @@ export default function ChapterPicker() {
 
         <View style={styles.body}>
           {isPending ? (
-            <View style={styles.stateBlock}>
-              <ActivityIndicator color={tokens.color.text.muted} />
-              <Text style={styles.helperText}>Loading your chapters…</Text>
-            </View>
+            // Chapter rows in the list's own spacing, so the list lands in
+            // place instead of replacing a centred spinner.
+            <SkeletonRegion label="Loading your chapters" style={styles.list}>
+              {[0, 1].map((index) => (
+                <ChoiceRowSkeleton key={index} index={index} />
+              ))}
+            </SkeletonRegion>
           ) : isError ? (
             <View style={styles.stateBlock}>
               <Text style={styles.errorText}>
