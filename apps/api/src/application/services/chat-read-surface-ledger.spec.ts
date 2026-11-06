@@ -550,6 +550,15 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 12,
     entries: [MEMBER_TEXT],
   },
+  'application/workers/discord-import-worker.service.ts': {
+    calls: 1,
+    entries: [
+      {
+        status: 'no-foreign-content',
+        why: "A Discord import ended (`importFinishedNotification`), to the admin who set it up: a message count and the Discord server's name. No chapter member's text.",
+      },
+    ],
+  },
 };
 
 /**

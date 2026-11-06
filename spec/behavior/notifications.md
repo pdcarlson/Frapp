@@ -41,11 +41,14 @@ Every notification payload includes a `target` object with screen and parameters
 push (`apps/api/src/application/services/notification.service.ts`), which is what lets
 a tap mark the row read without a lookup. The `target` itself carries **only** the keys
 its emitter sets: `chat` sends `channelId`, `events` sends `eventId`, `tasks` sends
-`taskId`, and `billing` / `points` / `service` / `members` / `chat_reports` send a bare
-`screen`. `chat_reports` names the officer report queue (the new-report notification,
-[`chat/README.md`](./chat/README.md#report)); web resolves it to `/chat-admin`, and
-mobile, which has no queue, falls through to the notification list like any screen it
-does not route. Every chat row and push also carries `senderId`, the sending member's
+`taskId`, and `billing` / `points` / `service` / `members` / `chat_reports` /
+`discord_import` send a bare `screen`. `chat_reports` names the officer report queue
+(the new-report notification, [`chat/README.md`](./chat/README.md#report)); web
+resolves it to `/chat-admin`, and mobile, which has no queue, falls through to the
+notification list like any screen it does not route. `discord_import` is the notice
+that a Discord import finished or stopped on an error, sent to the admin who set it up
+([`chat/README.md`](./chat/README.md#imported-archive-messages)); web resolves it to
+`/discord-import`, and mobile, which has no import page, falls through the same way. Every chat row and push also carries `senderId`, the sending member's
 `users.id`, which the in-app list uses to withhold a blocked member's rows
 ([`chat/README.md`](./chat/README.md#what-a-block-does-and-does-not-hide), #2715). A
 bundled chat burst adds `bundled: true` and `count` (`chat-push-worker.service.ts`
@@ -329,6 +332,7 @@ Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge l
 | Admin         | Invite accepted                                                    | SILENT                      |
 | Admin         | Role change on a member                                            | SILENT                      |
 | Admin         | Chat message reported (to report-queue officers; never the reported sender or the reporter; content-free) | NORMAL |
+| Admin         | Discord import finished, or stopped on an error (to the admin who set it up, while they hold `channels:manage`; not when an admin stopped it, nor for a failed deletion) | NORMAL |
 
 ## Pre-Event Reminders
 

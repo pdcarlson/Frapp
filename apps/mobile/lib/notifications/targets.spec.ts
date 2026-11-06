@@ -50,6 +50,12 @@ describe("resolveNotificationTarget", () => {
     ).toEqual({ pathname: "/notifications" });
   });
 
+  it("sends the Discord import notice to the list, since its page is web-only", () => {
+    expect(
+      resolveNotificationTarget(payload({ screen: "discord_import" })),
+    ).toEqual({ pathname: "/notifications" });
+  });
+
   it("renames the event param to what s07 reads", () => {
     // The payload spells it `eventId`; the route reads `id`. Getting this wrong
     // opens a detail screen that can never load.
