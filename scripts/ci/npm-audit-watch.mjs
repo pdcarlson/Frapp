@@ -10,16 +10,20 @@
 // way: the first anyone heard of it was every PR failing the day after.
 //
 // So this runs the same gate, `scripts/check-npm-audit.mjs`, on main once a
-// day, as a child process. Same script and same exit codes, so the verdict here
-// is the one the next PR would get: nothing in this file re-decides what counts
-// as a finding.
+// day, as a child process, and reads its exit code with the gate's own meaning:
+// nothing in this file re-decides what counts as a finding. The one difference
+// from the PR job is time: that job is capped at 5 minutes, this one lets the
+// gate use its whole retry budget, so a slow registry can cut a PR's run short
+// where it doesn't cut this one.
 //
 // Two alerts, each with its own title, because they clear on different facts:
 //
-//   - AUDIT_ALERT: the gate did not pass. Exit 1 is a finding (an
+//   - AUDIT_ALERT: the gate did not pass. Exit 1 is usually a finding (an
 //     unallowlisted high or critical advisory, an expired entry still shielding
-//     one, a malformed allowlist). Exit 2 is no verdict: npm never produced a
-//     report, after the gate's own retries. Both raise it, fail closed, because
+//     one, a malformed allowlist), but the gate also exits 1 on any other
+//     error it throws, so the alert quotes its output rather than naming a
+//     cause. Exit 2 is no verdict: npm never produced a report, after the
+//     gate's own retries. Both raise it, fail closed, because
 //     a registry that stays unreachable would otherwise turn this watch off
 //     with every run looking quiet. It closes on a run the gate passes.
 //   - EXPIRY_ALERT: an allowlist entry's `expires` is within
@@ -50,6 +54,7 @@ import { fileURLToPath } from "node:url";
 
 import { parseAllowlistSource, validateAllowlist } from "../check-npm-audit.mjs";
 import { defineAlert, findAlertIssuesDetailed, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
+import { NPM_AUDIT_GATE_DOC } from "./lib/ops-docs.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
@@ -92,12 +97,13 @@ export function runGate() {
 
 /**
  * The gate's exit code, read with its own meaning (check-npm-audit.mjs header):
- * 0 passed, 1 something in the report must be acted on, 2 no report. Anything
- * else (a signal, a spawn failure) also established nothing.
+ * 0 passed; 1 failed, which is a finding to act on unless the gate itself
+ * threw; 2 no report. Anything else (a signal, a spawn failure) also
+ * established nothing.
  */
 export function classifyGate(status) {
   if (status === 0) return "passed";
-  if (status === 1) return "findings";
+  if (status === 1) return "failed";
   return "no-verdict";
 }
 
@@ -120,9 +126,19 @@ function runLine(runUrl) {
 }
 
 function verdictLine(verdict) {
-  return verdict === "findings"
-    ? "The gate found something to act on: an unallowlisted high or critical advisory, an expired allowlist entry still shielding one, or a malformed allowlist."
+  return verdict === "failed"
+    ? "The gate **failed** (exit 1). That is usually something to act on: an unallowlisted high or critical advisory, an " +
+        "expired allowlist entry still shielding one, or a malformed allowlist. The gate also exits 1 when it throws, so " +
+        "read its output below for which."
     : "The gate reached **no verdict**: npm never produced an audit report, after the gate's own retries. Nothing about the dependency tree is known, so this is not a clean bill either.";
+}
+
+function whyLine(verdict) {
+  return verdict === "failed"
+    ? "**Why it matters.** A finding fails every PR's `dependency-audit` check the same way, whatever its diff, and it is a real " +
+        "advisory in what we ship."
+    : "**Why it matters.** While npm can't produce a report, nothing watches for new advisories. PRs may hit the same failure, " +
+        "and their job gives up sooner than this one.";
 }
 
 function fenced(gate) {
@@ -138,10 +154,9 @@ export function buildAuditIssueBody({ verdict, gate, runUrl }) {
     "",
     fenced(gate),
     "",
-    "**Why it matters.** Until this is fixed, every PR's `dependency-audit` check fails the same way, whatever its diff. " +
-      "A finding is also a real advisory in what we ship.",
+    whyLine(verdict),
     "",
-    "**What to do.** For a finding, follow `docs/security/security-fixes.md` § npm audit sweep + CI gate: fix it " +
+    `**What to do.** Follow \`${NPM_AUDIT_GATE_DOC}\` § Prevention: for a finding, fix it ` +
       "(`npm audit fix`, or a targeted bump), or, only when a fix can't land now, add an allowlist entry with a reason, " +
       "a tracking issue and an expiry. For no verdict, read the run log: a lasting registry or network failure, or a " +
       "broken lockfile, are the usual causes.",
@@ -202,12 +217,14 @@ export function expiryMarker(expiring) {
 /** The marker line in an issue body, or null. */
 export function markerIn(body) {
   if (typeof body !== "string") return null;
-  return body.split("\n").find((line) => line.startsWith(MARKER_PREFIX)) ?? null;
+  // A body edited in GitHub's web UI comes back with CRLF line endings.
+  const line = body.split("\n").find((candidate) => candidate.startsWith(MARKER_PREFIX));
+  return line === undefined ? null : line.trimEnd();
 }
 
 function describeExpiry(entry, today) {
   const when = entry.expires < today ? `expired ${entry.expires}` : `expires ${entry.expires}`;
-  const pkg = entry.package ? ` (${entry.package})` : "";
+  const pkg = entry.package ? ` (\`${entry.package}\`)` : "";
   return `- \`${entry.ghsa}\`${pkg}: ${when}, tracked by ${entry.trackedBy}`;
 }
 
@@ -220,7 +237,7 @@ export function buildExpiryIssueBody({ expiring, today, runUrl }) {
     "",
     "**What to do, per entry.** Fix the advisory and delete the entry; or re-triage it and renew `expires` with the " +
       "reason it still can't be fixed; or, when the gate already lists it as stale (its advisory no longer applies), " +
-      "delete it. Policy: `docs/security/security-fixes.md` § npm audit sweep + CI gate.",
+      `delete it. Policy: \`${NPM_AUDIT_GATE_DOC}\` § The gate.`,
     "",
     runLine(runUrl),
     "",
@@ -269,6 +286,9 @@ export async function runExpiryWatch({ token, repo, fetchImpl, today, runUrl, re
 
   const expiring = expiringEntries({ entries, today });
   const lookup = await findAlertIssuesDetailed({ token, repo, fetchImpl, alert: EXPIRY_ALERT });
+  // Without the open alert's marker, a raise could say "changed" about entries
+  // that didn't, and a resolve would read again anyway. Try tomorrow.
+  if (!lookup.lookupOk) return { action: "unread" };
 
   if (expiring.length === 0) {
     return resolveAlert({ token, repo, fetchImpl, alert: EXPIRY_ALERT, lookup, buildRecoveryBody: buildExpiryRecoveryBody });
@@ -278,11 +298,11 @@ export async function runExpiryWatch({ token, repo, fetchImpl, today, runUrl, re
 
   // One notice per set of expiring entries, not one a day: the alert already
   // says what to do, and a daily "still expiring" comment is noise.
-  const open = lookup.lookupOk ? lookup.issues.find((issue) => issue.state === "open") : undefined;
+  const open = lookup.issues.find((issue) => issue.state === "open");
   if (open && markerIn(open.body) === expiryMarker(expiring)) {
     return { action: "unchanged", issueNumber: open.number };
   }
-  return raiseAlert({
+  const raised = await raiseAlert({
     token,
     repo,
     fetchImpl,
@@ -293,6 +313,10 @@ export async function runExpiryWatch({ token, repo, fetchImpl, today, runUrl, re
     // The body holds the marker, so it has to track the current set.
     refreshBodyOnRaise: true,
   });
+  if (raised.bodyRefreshFailed) {
+    logger.log?.("::warning::The expiry comment was posted, but the issue body still lists an earlier set, so tomorrow's run comments again.");
+  }
+  return raised;
 }
 
 // ── Run ─────────────────────────────────────────────────────────────────────
@@ -333,7 +357,7 @@ export async function runNpmAuditWatch({
     if (audit.action === "failed") logger.log?.("::error::The audit passes, but its alert issue could not be closed.");
     if (audit.action === "unread") logger.log?.("::error::The audit passes, but the alert issues could not be read, so none was closed.");
   } else {
-    logger.log?.(`::error::npm audit gate on main: ${verdict === "findings" ? "findings to act on" : "no verdict"} (exit ${result.status}).`);
+    logger.log?.(`::error::npm audit gate on main: ${verdict === "failed" ? "failed" : "no verdict"} (exit ${result.status}).`);
     audit = await raiseAlert({
       token,
       repo,

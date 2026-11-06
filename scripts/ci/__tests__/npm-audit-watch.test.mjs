@@ -87,7 +87,7 @@ function watch({ mock, status = 0, stdout = "npm audit: ok", stderr = "", entrie
 describe("classifyGate", () => {
   it("reads the gate's exit codes with the gate's own meaning", () => {
     assert.equal(classifyGate(0), "passed");
-    assert.equal(classifyGate(1), "findings");
+    assert.equal(classifyGate(1), "failed");
     assert.equal(classifyGate(2), "no-verdict");
   });
 
@@ -138,6 +138,11 @@ describe("expiry marker", () => {
     assert.equal(markerIn(buildExpiryIssueBody({ expiring: [SOON], today: TODAY, runUrl: "" })), before);
   });
 
+  it("reads the marker back from a body the web UI saved with CRLF line endings", () => {
+    const body = buildExpiryIssueBody({ expiring: [SOON], today: TODAY, runUrl: "" }).replaceAll("\n", "\r\n");
+    assert.equal(markerIn(`${body}\r\n\r\n---\r\n_agent note_`), expiryMarker([SOON]));
+  });
+
   it("finds no marker in a body without one", () => {
     assert.equal(markerIn("plain body"), null);
     assert.equal(markerIn(null), null);
@@ -156,7 +161,7 @@ describe("runNpmAuditWatch: the audit alert", () => {
   it("files one alert with the gate's output when it finds something, and exits 1", async () => {
     const mock = github();
     const result = await watch({ mock, status: 1, stderr: "❌ Unallowlisted HIGH/CRITICAL advisories (1):\n  - GHSA-xxxx" });
-    assert.equal(result.verdict, "findings");
+    assert.equal(result.verdict, "failed");
     assert.equal(result.audit.action, "created");
     const [issue] = created(mock);
     assert.equal(issue.title, AUDIT_ALERT.title);
@@ -229,6 +234,23 @@ describe("runExpiryWatch", () => {
     assert.equal(markerIn(JSON.parse(patch.body).body), expiryMarker([another, SOON]));
   });
 
+  it("touches nothing when the alerts can't be read, so it never claims a change it can't see", async () => {
+    const mock = github({ lookupStatus: 500 });
+    const result = await run(mock, [FAR, SOON]);
+    assert.equal(result.action, "unread");
+    assert.equal(mock.calls.filter((c) => c.method !== "GET").length, 0);
+  });
+
+  it("code-formats a package name, so a scoped one is not an @-mention", async () => {
+    const mock = github();
+    await run(mock, [entry("GHSA-wwww-xxxx-cccc", "2026-11-09", { package: "@scope/pkg" })]);
+    assert.match(created(mock)[0].body, /\(`@scope\/pkg`\)/);
+  });
+
+  it("names its window in its title, which can't be derived because it is the lookup key", () => {
+    assert.match(EXPIRY_ALERT.title, new RegExp(`within ${EXPIRY_WARNING_DAYS} days`));
+  });
+
   it("closes the warning when nothing is inside the window", async () => {
     const mock = github({ issues: [openIssue(EXPIRY_ALERT, 7)] });
     const result = await run(mock, [FAR]);
@@ -250,6 +272,21 @@ describe("runExpiryWatch", () => {
   });
 });
 
+describe("exitCodeFor", () => {
+  const passed = { verdict: "passed", audit: { action: "none" } };
+
+  it("exits 1 when the gate passes but the expiry alert could not be written or read", () => {
+    assert.equal(exitCodeFor({ ...passed, expiry: { action: "failed" } }), 1);
+    assert.equal(exitCodeFor({ ...passed, expiry: { action: "unread" } }), 1);
+  });
+
+  it("exits 0 for every other expiry outcome when the gate passes", () => {
+    for (const action of ["none", "closed", "created", "commented", "reopened", "unchanged", "skipped"]) {
+      assert.equal(exitCodeFor({ ...passed, expiry: { action } }), 0, action);
+    }
+  });
+});
+
 describe("main", () => {
   it("hands the run its token, repo and run link", async () => {
     let seen;
@@ -267,7 +304,7 @@ describe("main", () => {
 
 describe("the alert bodies", () => {
   it("point at the policy doc and the gate the PRs run", () => {
-    const body = buildAuditIssueBody({ verdict: "findings", gate: { stdout: "", stderr: "x" }, runUrl: "" });
+    const body = buildAuditIssueBody({ verdict: "failed", gate: { stdout: "", stderr: "x" }, runUrl: "" });
     assert.match(body, /docs\/security\/security-fixes\.md/);
     assert.match(body, /scripts\/check-npm-audit\.mjs/);
   });
@@ -280,6 +317,11 @@ describe("npm-audit-watch.yml", () => {
     assert.match(code, /schedule:\n\s+# [^\n]*\n(?:\s+#[^\n]*\n)*\s+- cron: "30 8 \* \* \*"/);
     assert.match(code, /workflow_dispatch:/);
     assert.match(code, /cancel-in-progress: false/);
+  });
+
+  it("runs only on main, so a dispatch from a branch can't open or close the alerts about main", () => {
+    const [job] = workflowJobs(WORKFLOW);
+    assert.equal(job.keys.get("if"), "github.ref == 'refs/heads/main'");
   });
 
   it("has one job, bounded, with issues: write as its only write scope", () => {

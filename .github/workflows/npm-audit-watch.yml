@@ -10,7 +10,11 @@ name: npm audit watch
 # alert, when an entry in scripts/npm-audit-allowlist.json expires within 7
 # days. When each fires and clears: docs/ops/alert-routing.md.
 #
-# Reads only the lockfile and the npm registry: no secrets and no environment.
+# Reads the lockfile and the npm registry, and writes the alert issues with
+# GITHUB_TOKEN: no other secret, and no environment.
+#
+# Runs only on main: a dispatch from another branch would audit that branch's
+# lockfile and still raise or close the alerts about main.
 #
 # Semantics live in scripts/ci/npm-audit-watch.mjs.
 # Unit tests: scripts/ci/__tests__/npm-audit-watch.test.mjs
@@ -35,6 +39,7 @@ concurrency:
 
 jobs:
   audit:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # The gate's own worst case is three npm attempts at 330 s each plus 70 s
     # of backoff, about 18 minutes (check-npm-audit.mjs, "Transport retry").
