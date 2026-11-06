@@ -286,6 +286,6 @@ A UI change is not ready unless it passes:
 7. Responsive/adaptive behavior checks
 8. Copy clarity per [`writing.md`](writing.md) — no placeholder language
 9. De-Google guardrails respected per their Binds column (§2) — behavioral bans on every surface, visual bans on Signet surfaces
-10. Each changed screen passes the checks in [`principles.md`](principles.md), on web and mobile, at its real-scale volumes
+10. Each changed screen passes the checks in [`principles.md`](principles.md), on web and mobile, at its real-scale volumes, or each failed check is filed and named in the PR
 
 Icon standards: [`iconography.md`](iconography.md). Typography roles: [`foundations.md`](foundations.md). Logos, favicons, Open Graph, and asset sync: [`../assets.md`](../assets.md).

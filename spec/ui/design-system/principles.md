@@ -2,16 +2,16 @@
 
 > Seven rules every Frapp screen is checked against, on web and mobile alike, written as yes/no checks so a screenshot can pass or fail them. They came out of the owner's design asks of 2026-11-04 to 2026-11-06: each ask traced back to one of these seven causes, so a screen that passes them shouldn't need the ask. The detailed recipes stay where they are ([`components.md`](components.md), [`foundations.md`](foundations.md), [`writing.md`](writing.md), [`../mobile/patterns.md`](../mobile/patterns.md)); this page links to them rather than restating them.
 
-**How to use it.** Before a UI change ships, walk each changed screen through the checks below at real scale (§5's numbers) on both platforms. A failed check is fixed in the change, or filed per [`file-follow-up`](../../../.claude/skills/file-follow-up/SKILL.md) and named in the PR. Cite a check by its id (`P3.2`). [`README.md`](README.md) §8 makes this list part of the quality gate.
+**How to use it.** Before a UI change ships, walk each changed screen through the checks below at real scale (P5's volumes) on both platforms. A failed check is fixed in the change, or filed per [`file-follow-up`](../../../.claude/skills/file-follow-up/SKILL.md) and named in the PR. Cite a check by its id (`P3.2`). [`README.md`](README.md) §8 makes this list part of the quality gate.
 
 **House rules that bind every check** (owner rules, 2026-11-05 and 2026-11-06):
 
-- No emoji anywhere: product UI, copy, mockups, proposal pages. Icons are drawn glyphs ([`iconography.md`](iconography.md)).
-- Controls are compact: every height is a step of [`foundations.md`](foundations.md) §9's control size scale, never a bigger one picked for emphasis.
-- The accent marks only the six things [`foundations.md`](foundations.md) §6 lists.
+- No emoji in anything Frapp draws or writes: chrome, copy, mockups, proposal pages. Icons are drawn glyphs ([`iconography.md`](iconography.md)). Members' own emoji (in messages, reactions) are their content and stay.
+- Controls are compact: sizes come from [`foundations.md`](foundations.md) §9's control size scale (with the exceptions it lists), never a bigger step picked for emphasis.
+- The accent goes only where [`foundations.md` § Where the accent goes](foundations.md#where-the-accent-goes-2026-11-05) allows it.
 - Mobile chrome is the floating glass direction ([`foundations.md`](foundations.md) §15): glass tab pill, round glass +, nothing glass inside content.
 - Be bold. The old design system was flawed, so an existing pattern is not a precedent; a rule here beats a pattern already on screen.
-- Every visual change is drawn as a before/after and recorded in these docs in the same change.
+- A visual change the owner reviews is shown as a before/after; one that changes a documented pattern updates that doc in the same change.
 
 ---
 
@@ -23,10 +23,10 @@ A screen shows what it is through its layout. Words that describe the screen, te
 | --- | --- |
 | P1.1 | A line under a title restates the title or says what the page is for ("Manage your chapter's events here"). |
 | P1.2 | A helper sentence sits under a control whose label, placeholder or glyph already says it. |
-| P1.3 | A screen at zero data shows a card or an illustration with a sentence instead of its real layout ([`components.md`](components.md) §10 Empty; the first action sits where the first item will go). |
-| P1.4 | A feature a member can't use yet (not set up, no permission) shows a page explaining that, rather than being hidden or pointing at the one step that turns it on. |
+| P1.3 | A search, filter or quiet period that matched nothing shows a card instead of one line where the rows would be, or an empty card carries more than its title, a line that says something new, and its first action ([`components.md`](components.md) §10 Empty, [`writing.md`](writing.md) §4). |
+| P1.4 | A feature a member will never use here (no permission, module off, not set up and can't be set up by them) shows a page explaining that instead of being hidden. Recoverable states (a lapsed subscription, a permission check that couldn't run) stay visible, disabled, with their reason ([`README.md`](README.md) §5 rule 4). |
 | P1.5 | A dialog or sheet opens with a paragraph before the first thing to do. |
-| P1.6 | A notice or banner stays on screen after the member has acted on it or can't act on it. |
+| P1.6 | A notice or banner stays on screen after the member has acted on it, or after what it reports has cleared. |
 
 ## P2. Never expose internals
 
@@ -34,7 +34,7 @@ The member sees the chapter's words, never the system's.
 
 | Check | Fails when |
 | --- | --- |
-| P2.1 | A permission key, enum or status constant shows (`events:create`, `IN_PROGRESS`, `ROLE_GATED`, `PRESIDENT`). [`writing.md`](writing.md) §3 has the replacement copy. |
+| P2.1 | A permission key, internal enum or code shows (`events:create`, `IN_PROGRESS`, `ROLE_GATED`, `PRESIDENT`, `chapter.module.disabled`). The status tokens [`writing.md`](writing.md) §5 lists (`PAID`, `OVERDUE`, `PENDING` …) are the exception: they render as the server's token. |
 | P2.2 | An id, uuid, hostname, file path, storage key, or a raw filename where the content itself is the point (an image) shows. |
 | P2.3 | An error shows its HTTP status, server message or stack, rather than [`writing.md`](writing.md) §3's what-happened-and-what-to-do. |
 | P2.4 | A placeholder identity shows: "Member 000000", "Unknown", an account handle where the chapter knows the person's name, an empty avatar where an image exists. |
@@ -71,7 +71,7 @@ A tap is answered where it happened, at once, and the layout around it holds sti
 
 ## P5. Built for a real chapter, not a demo
 
-Every list, row and label is checked at the size of a real imported chapter. The reference volumes are the owner's own chapter, imported from Discord (prod, 2026-11-06):
+Every list, row and label is checked at the size of a real imported chapter. The reference volumes are the owner's own chapter, imported from Discord, counted with read-only SQL on 2026-11-06 (row counts and `percentile_cont` over `chat_messages` for that chapter); recount when the import changes:
 
 | Thing | Real scale |
 | --- | --- |
@@ -113,6 +113,6 @@ Whatever a member's thumb or keyboard expects from their platform works, on ever
 | P7.2 | Mobile: content sits under the notch, the home indicator or the tab bar; the keyboard covers the field being typed into ([`../mobile/patterns.md`](../mobile/patterns.md) § Keyboard avoidance). |
 | P7.3 | Web: Escape doesn't close the top layer, or a click outside a popover doesn't. |
 | P7.4 | A list item that has actions has no long-press (mobile) or right-click / hover menu (web) to reach them. |
-| P7.5 | A touch target is under 44 points, or a pointer target is under the §9 scale. |
+| P7.5 | A touch target is under 44 points, or a pointer target is under [`foundations.md`](foundations.md) §9's scale. |
 | P7.6 | A date or time is typed rather than picked with the platform's picker, or text that a member would copy (a code, an address) can't be selected. |
 | P7.7 | A list that updates from the server has no pull to refresh (mobile), or a link that looks like one doesn't open. |
