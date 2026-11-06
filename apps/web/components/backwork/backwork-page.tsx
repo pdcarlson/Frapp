@@ -7,10 +7,12 @@ import {
   useRef,
   useState,
 } from "react";
+import Link from "next/link";
 import {
   Check,
   ChevronDown,
   Download,
+  FolderUp,
   Filter,
   Loader2,
   Merge,
@@ -579,6 +581,13 @@ export function BackworkPage() {
               onOpenChange={setCleanupOpen}
               gate={gate}
             />
+          </Can>
+          <Can permission="backwork:upload">
+            <Button asChild size="toolbar" variant="secondary" className="gap-2">
+              <Link href="/backwork/upload">
+                <FolderUp className="h-4 w-4" aria-hidden="true" /> Bulk upload
+              </Link>
+            </Button>
           </Can>
           <Can permission="backwork:upload">
             <BackworkUploadSheet gate={gate}>

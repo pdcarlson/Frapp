@@ -8,6 +8,7 @@ import {
   gutterBleed,
   PressableRow,
   SectionHeader,
+  SectionHeaderSkeleton,
 } from "@/components/list-section";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
@@ -15,7 +16,9 @@ import {
   EmptyState,
   ErrorState,
   NoChapterState,
-  SkeletonLines,
+  SkeletonBlock,
+  SkeletonRegion,
+  SkeletonText,
 } from "@/components/state-block";
 import { AccentChip, StatusChip } from "@/components/status-chip";
 import { AskSheet } from "@/components/ask/ask-sheet";
@@ -81,8 +84,7 @@ export default function EventsScreen() {
     // showed its loading state forever.
     if (!chapterId) return <NoChapterState noun="events" />;
 
-    // The tile stands in for the row's date block.
-    if (eventsQuery.isPending) return <SkeletonLines lines={2} showTile />;
+    if (eventsQuery.isPending) return <EventListSkeleton />;
 
     if (eventsQuery.isError) {
       // An explicit retry as well as the pull (#3385): a button is the
@@ -332,8 +334,84 @@ function EventRowFlat({
   );
 }
 
+/** Event name widths, cycled, so the placeholder rows don't read as a grid. */
+const SKELETON_NAME_WIDTHS = ["62%", "48%", "56%", "52%"] as const;
+
+/** Flat rows drawn under the next-event card's placeholder. */
+const SKELETON_FLAT_ROWS = 3;
+
+/**
+ * The list's loading state, on the loaded list's own styles: the next event
+ * as {@link EventRowCard} (the 52pt date column, the name and meta lines, a
+ * chip where the points land), then a group caption and flat rows as
+ * {@link EventRowFlat} draws them, hairline-split. Which caption lands (This
+ * week or Later) depends on the data, so it is a bar.
+ *
+ * Exported so `components/screen-skeletons.spec.tsx` can pin its shape.
+ */
+export function EventListSkeleton({
+  rows = SKELETON_FLAT_ROWS,
+}: {
+  rows?: number;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const { body, caption, headline, title } = tokens.typography.role;
+
+  return (
+    <SkeletonRegion label="Loading chapter events" style={styles.skeletonList}>
+      <View style={styles.card}>
+        <View style={styles.dateBlock}>
+          <SkeletonText role={caption} width="70%" />
+          <SkeletonText role={headline} width="50%" />
+        </View>
+        <View style={styles.body}>
+          <SkeletonText role={title} width={SKELETON_NAME_WIDTHS[0]} />
+          <SkeletonText role={caption} width="40%" />
+          <View style={styles.footer}>
+            <SkeletonBlock
+              width={tokens.spacing["3xl"]}
+              height={tokens.spacing.xl}
+            />
+          </View>
+        </View>
+      </View>
+
+      <View>
+        <SectionHeaderSkeleton width="22%" />
+        {Array.from({ length: rows }, (_, index) => (
+          <View
+            key={index}
+            style={[styles.flatRow, index === 0 ? null : styles.flatDivider]}
+          >
+            <View style={styles.dateBlock}>
+              <SkeletonText role={caption} width="70%" />
+              <SkeletonText role={title} width="44%" />
+            </View>
+            <View style={styles.body}>
+              <SkeletonText
+                role={body}
+                width={
+                  SKELETON_NAME_WIDTHS[
+                    (index + 1) % SKELETON_NAME_WIDTHS.length
+                  ]!
+                }
+              />
+              <SkeletonText role={caption} width="46%" />
+            </View>
+          </View>
+        ))}
+      </View>
+    </SkeletonRegion>
+  );
+}
+
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    // `ScreenShell`'s gap, which spaces the real cards.
+    skeletonList: {
+      gap: tokens.spacing.md,
+    },
     card: {
       flexDirection: "row",
       gap: tokens.spacing.md,

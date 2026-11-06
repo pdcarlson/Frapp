@@ -54,6 +54,16 @@ const MEMBERS = [MARCUS, CHARLES, ANDRE, DANIEL];
 const ALUMNI = [CHARLES, DANIEL];
 
 function read(data: unknown, refetch = vi.fn()) {
+  if (state.pending) {
+    return {
+      data: undefined,
+      isPending: true,
+      isError: false,
+      isSuccess: false,
+      isFetching: true,
+      refetch,
+    };
+  }
   return {
     data,
     isPending: false,
@@ -64,7 +74,7 @@ function read(data: unknown, refetch = vi.fn()) {
   };
 }
 
-const state = vi.hoisted(() => ({ search: [] as unknown[] }));
+const state = vi.hoisted(() => ({ search: [] as unknown[], pending: false }));
 
 // One refetch per read, so a pull can be checked against each of them.
 const refetches = vi.hoisted(() => ({
@@ -103,7 +113,10 @@ vi.mock("@/components/directory/member-detail-sheet", () => ({
   MemberDetailSheet: () => null,
 }));
 
-import DirectoryScreen, { MemberRow } from "@/app/(tabs)/directory";
+import DirectoryScreen, {
+  MemberListSkeleton,
+  MemberRow,
+} from "@/app/(tabs)/directory";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { DirectoryGlyph } from "@/components/more/more-glyphs";
 import { SearchGlyph } from "@/components/search-glyph";
@@ -199,6 +212,7 @@ function countOf(tree: ReactTestRenderer, value: string) {
 
 beforeEach(() => {
   state.search = [];
+  state.pending = false;
   for (const refetch of Object.values(refetches)) {
     refetch.mockReset().mockResolvedValue(undefined);
   }
@@ -346,6 +360,7 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
 
 describe("s13's member rows", () => {
   const ROW: DirectoryRow = {
+    memberId: "m-u-1",
     userId: "u-1",
     displayName: "Marcus Reid",
     initials: "MR",
@@ -401,6 +416,90 @@ describe("s13's member rows", () => {
     expect(JSON.stringify(row.props.style({ pressed: true }))).not.toContain(
       signetDarkTokens.color.surface.card,
     );
+  });
+});
+
+describe("s13's loading state", () => {
+  // components.md §10: the skeleton is the rows it becomes, on the row's own
+  // frame and hairline, with the avatar's circle where the initials land.
+  it("draws member rows on the member row's frame", () => {
+    let real!: ReactTestRenderer;
+    let skeleton!: ReactTestRenderer;
+    act(() => {
+      real = create(
+        <FrappThemeProvider>
+          <MemberRow
+            row={{
+              memberId: "m-1",
+              userId: "u-1",
+              displayName: "Marcus Reid",
+              initials: "MR",
+              meta: null,
+              avatarUrl: null,
+            }}
+            onPress={vi.fn()}
+          />
+        </FrappThemeProvider>,
+      );
+      skeleton = create(
+        <FrappThemeProvider>
+          <MemberListSkeleton label="Loading chapter members" rows={2} />
+        </FrappThemeProvider>,
+      );
+    });
+    const flat = (style: unknown) =>
+      Object.assign({}, ...[style].flat(Infinity)) as Record<string, unknown>;
+    const pressable = real.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    const realRow = flat(pressable.props.style({ pressed: false }));
+    const [region, firstRow] = skeleton.root.findAllByType("View" as never);
+
+    expect(region!.props.accessibilityRole).toBe("progressbar");
+    expect(region!.props.accessibilityLabel).toBe("Loading chapter members");
+    const row = flat(firstRow!.props.style);
+    for (const key of [
+      "paddingVertical",
+      "paddingHorizontal",
+      "marginHorizontal",
+      "minHeight",
+      "borderBottomWidth",
+      "gap",
+    ]) {
+      expect(row[key]).toBe(realRow[key]);
+    }
+    const [avatar] = skeleton.root.findAllByType("Animated.View" as never);
+    expect(flat(avatar!.props.style).width).toBe(40);
+    expect(flat(avatar!.props.style).borderRadius).toBe(20);
+  });
+});
+
+describe("s13's loading label", () => {
+  // writing.md §7: the skeleton is named for the list that loads. A search
+  // looks across both lists, so it names neither tab's.
+  const label = (tree: ReactTestRenderer) =>
+    (
+      list(tree).props.ListEmptyComponent as React.ReactElement<{
+        label: string;
+      }>
+    ).props.label;
+
+  it("names the tab's list, or the search", () => {
+    state.pending = true;
+    const tree = render();
+    expect(label(tree)).toBe("Loading chapter members");
+
+    act(() => chips(tree).onSelect("alumni"));
+    expect(label(tree)).toBe("Loading alumni directory");
+
+    const field = inHeader(
+      tree,
+      (element) =>
+        (element.type as unknown) === SearchFieldStandIn &&
+        element.props.accessibilityLabel === "Search the directory",
+    ) as { onChangeText: (text: string) => void };
+    act(() => field.onChangeText("r"));
+    expect(label(tree)).toBe("Searching chapter members");
   });
 });
 

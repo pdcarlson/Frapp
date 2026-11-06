@@ -1,6 +1,7 @@
 import { ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
+import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -39,7 +40,56 @@ export function HistoryRow({ title, meta, trailing, isLast }: HistoryRowProps) {
   );
 }
 
+/** Title widths, cycled, so the placeholder list doesn't read as a grid. */
+const TITLE_WIDTHS = ["55%", "40%", "48%", "62%"] as const;
+
+/**
+ * History rows that haven't loaded, on {@link HistoryRow}'s own styles: the
+ * same padding, line boxes and hairlines, and a block where the trailing chip
+ * or figure lands. Placed inside a `SkeletonRegion`
+ * (`components/state-block.tsx`), which gives them their pulse and their one
+ * accessible name.
+ */
+export function HistoryRowsSkeleton({
+  rows = 3,
+  trailingWidth,
+}: {
+  rows?: number;
+  /** The trailing slot's width: a status chip's, or a figure's. */
+  trailingWidth: number;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const { label, caption } = tokens.typography.role;
+
+  return (
+    <View>
+      {Array.from({ length: rows }, (_, index) => (
+        <View
+          key={index}
+          style={[styles.row, index === rows - 1 ? null : styles.rowDivided]}
+        >
+          <View style={styles.text}>
+            <SkeletonText
+              role={label}
+              width={TITLE_WIDTHS[index % TITLE_WIDTHS.length]!}
+            />
+            <SkeletonText
+              role={caption}
+              width="34%"
+              style={styles.metaSkeleton}
+            />
+          </View>
+          {/* A status chip's height (`status-chip.tsx`), at the chip radius. */}
+          <SkeletonBlock width={trailingWidth} height={tokens.spacing.xl} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function createStyles(tokens: SignetTokens) {
+  const META_MARGIN_TOP = 2;
   return StyleSheet.create({
     row: {
       flexDirection: "row",
@@ -62,7 +112,11 @@ function createStyles(tokens: SignetTokens) {
     meta: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
-      marginTop: 2,
+      marginTop: META_MARGIN_TOP,
+    },
+    // The meta line's margin, shared so the skeleton's can't drift from it.
+    metaSkeleton: {
+      marginTop: META_MARGIN_TOP,
     },
   });
 }

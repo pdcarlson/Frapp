@@ -1,6 +1,7 @@
 import { ReactNode, useMemo } from "react";
 import {
   ActivityIndicator,
+  type DimensionValue,
   Platform,
   Pressable,
   type PressableAndroidRippleConfig,
@@ -12,6 +13,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
+import { SkeletonText } from "@/components/state-block";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -38,6 +40,74 @@ export function SectionHeader({ children }: { children: string }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   return <Text style={styles.sectionHeader}>{children}</Text>;
+}
+
+/**
+ * A {@link SectionHeader} that hasn't loaded, for a screen whose captions come
+ * from its data (Notifications' Today / Earlier). A screen whose caption is
+ * fixed draws the real {@link SectionHeader} in its skeleton instead.
+ */
+export function SectionHeaderSkeleton({
+  width = "18%",
+}: {
+  width?: DimensionValue;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <SkeletonText
+      role={tokens.typography.role.caption}
+      width={width}
+      style={styles.sectionHeaderSkeleton}
+    />
+  );
+}
+
+/** Label widths, cycled, so a placeholder list doesn't read as a grid. */
+const ROW_LABEL_WIDTHS = ["52%", "38%", "60%", "44%"] as const;
+
+/**
+ * A {@link ListRow} that hasn't loaded, on the row's own padding and line
+ * boxes, so a `ListSection` of these is as tall as the one it becomes. Placed
+ * inside a real {@link ListSection}, which draws the frame and the inset
+ * hairlines, inside a `SkeletonRegion` (`components/state-block.tsx`).
+ */
+export function ListRowSkeleton({
+  index = 0,
+  description = false,
+  variant = "default",
+}: {
+  /** The row's place in its list, which picks its label width. */
+  index?: number;
+  /** Draw the caption line a row with a `description` carries. */
+  description?: boolean;
+  /** `detail`: a short label on the left and the value on the right. */
+  variant?: "default" | "detail";
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const { label, caption } = tokens.typography.role;
+  const width = ROW_LABEL_WIDTHS[index % ROW_LABEL_WIDTHS.length];
+
+  if (variant === "detail") {
+    return (
+      <View style={styles.row}>
+        <SkeletonText role={label} width="22%" />
+        <View style={styles.rowSkeletonValue}>
+          <SkeletonText role={label} width={width} />
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.row}>
+      <View style={styles.rowText}>
+        <SkeletonText role={label} width={width} />
+        {description ? <SkeletonText role={caption} width="30%" /> : null}
+      </View>
+    </View>
+  );
 }
 
 /** A rounded container whose children are separated by inset hairlines. */
@@ -359,13 +429,20 @@ export function ListRow({
 }
 
 function createStyles(tokens: SignetTokens) {
+  // Shared so the caption's placeholder can't drift from the caption.
+  const sectionHeaderMarginTop = tokens.spacing.sm;
   return StyleSheet.create({
     sectionHeader: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
       textTransform: "uppercase",
       letterSpacing: 0.6,
-      marginTop: tokens.spacing.sm,
+      marginTop: sectionHeaderMarginTop,
+    },
+    // The caption's line box with its top margin; the uppercase tracking
+    // doesn't change its height.
+    sectionHeaderSkeleton: {
+      marginTop: sectionHeaderMarginTop,
     },
     section: {
       // `card` at radius 14, the fill and radius web's grouped lists take
@@ -394,6 +471,11 @@ function createStyles(tokens: SignetTokens) {
     rowText: {
       flex: 1,
       gap: tokens.spacing.xs,
+    },
+    // The detail row's value side: the rest of the row, its bar at the right.
+    rowSkeletonValue: {
+      flex: 1,
+      alignItems: "flex-end",
     },
     rowLabel: {
       ...typeRole(tokens.typography.role.label),

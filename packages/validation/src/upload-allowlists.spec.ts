@@ -3,6 +3,8 @@ import {
   DOCUMENT_UPLOAD_SURFACES,
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_LABEL,
+  MAX_BACKWORK_UPLOAD_BYTES,
+  MAX_BACKWORK_UPLOAD_LABEL,
   acceptAttribute,
   contentTypeByExtension,
   fileExtension,
@@ -128,6 +130,30 @@ describe("inspectUploadFile", () => {
         type: "image/gif",
         size: MAX_UPLOAD_BYTES + 1,
       }),
+    ).toEqual({ ok: false, reason: "size" });
+  });
+
+  it("holds backwork to its own 50 MB cap without raising the shared one", () => {
+    expect(MAX_BACKWORK_UPLOAD_BYTES).toBe(52_428_800);
+    expect(MAX_BACKWORK_UPLOAD_LABEL).toBe("50 MB");
+    const scan = { name: "final.pdf", type: "application/pdf" };
+    expect(
+      inspectUploadFile(
+        "document",
+        { ...scan, size: MAX_UPLOAD_BYTES + 1 },
+        MAX_BACKWORK_UPLOAD_BYTES,
+      ),
+    ).toEqual({ ok: true, contentType: "application/pdf" });
+    expect(
+      inspectUploadFile(
+        "document",
+        { ...scan, size: MAX_BACKWORK_UPLOAD_BYTES + 1 },
+        MAX_BACKWORK_UPLOAD_BYTES,
+      ),
+    ).toEqual({ ok: false, reason: "size" });
+    // Every other caller passes no ceiling and keeps 25 MB.
+    expect(
+      inspectUploadFile("document", { ...scan, size: MAX_UPLOAD_BYTES + 1 }),
     ).toEqual({ ok: false, reason: "size" });
   });
 

@@ -26,7 +26,9 @@ import { SETTINGS_TOOLS } from "@/components/settings/settings-access";
  * they read "Settings › Study zones" and the parent links back. The parent is
  * the nav row that claims the route in its `activeFor`, so it is named and
  * linked exactly as that row is, and it shows only when that row does: a
- * member the nav hides Settings from is not handed a link to it here. A
+ * member the nav hides Settings from is not handed a link to it here.
+ * A page reached from inside a nav row's own page reads the same way under
+ * that row, "Backwork › Bulk upload" (`SUB_PAGE_TITLES`). A
  * top-level route has no parent: prefixing the chapter name ("Phi Gamma Delta ›
  * Study hours") would repeat the chapter switcher that sits beside it in the
  * nav, and a caret that leads nowhere new is decoration.
@@ -42,6 +44,14 @@ export type PageTitle = {
 /** Routes that are not nav rows. Profile hangs off the account menu. */
 const OFF_NAV_TITLES: Readonly<Record<string, string>> = {
   "/profile": "Profile",
+};
+
+/**
+ * Pages under a nav row that read as their own step, titled under that row
+ * ("Backwork › Bulk upload") with the same visibility rule as a Settings tool.
+ */
+const SUB_PAGE_TITLES: Readonly<Record<string, string>> = {
+  "/backwork/upload": "Bulk upload",
 };
 
 function matchesRoute(pathname: string, href: string): boolean {
@@ -75,6 +85,14 @@ export function resolvePageTitle(
   const navItem = DASHBOARD_NAV_ITEMS.find((item) =>
     matchesRoute(pathname, item.href),
   );
+  const subPage = Object.entries(SUB_PAGE_TITLES).find(([href]) =>
+    matchesRoute(pathname, href),
+  );
+  if (navItem && subPage) {
+    return isNavItemVisible(navItem)
+      ? { title: subPage[1], parent: { label: navItem.label, href: navItem.href } }
+      : { title: subPage[1] };
+  }
   if (navItem) return { title: navItem.label };
 
   const offNav = Object.entries(OFF_NAV_TITLES).find(([href]) =>

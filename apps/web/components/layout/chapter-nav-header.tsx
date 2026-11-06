@@ -28,6 +28,7 @@ import { hasSettingsDestination } from "@/components/settings/settings-access";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 import { Skeleton } from "@/components/shared/async-states";
+import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
 
 /**
  * The 40px chapter row at the top of the left nav.
@@ -129,8 +130,11 @@ export function ChapterNavHeader({
     };
   }, [chapterData]);
 
+  const { confirmDrop, confirmDropDialog } = useConfirmDropBulkUploads();
+
   async function handleSelect(chapterId: string) {
     if (switchingTo || chapterId === activeChapterId) return;
+    if (!(await confirmDrop("switch"))) return;
     setSwitchingTo(chapterId);
     try {
       const switched = await selectChapter(chapterId);
@@ -240,6 +244,7 @@ export function ChapterNavHeader({
             </li>
           ))}
         </ul>
+        {confirmDropDialog}
       </div>
     );
   }
@@ -353,6 +358,7 @@ export function ChapterNavHeader({
           </DropdownMenuItem>
         ) : null}
       </DropdownMenuContent>
+      {confirmDropDialog}
     </DropdownMenu>
   );
 }

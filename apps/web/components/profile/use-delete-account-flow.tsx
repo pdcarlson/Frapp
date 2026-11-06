@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useDeleteAccount } from "@repo/hooks";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { signOutCurrentSession } from "@/lib/auth/session";
+import { bulkDropNotice } from "@/lib/backwork-bulk/session";
 
 /** What both callers say when a deletion didn't finish. */
 export const DELETE_ACCOUNT_FAILED = {
@@ -31,10 +32,13 @@ export function useDeleteAccountFlow({ onFailed }: { onFailed: () => void }) {
   const [isDeleting, setIsDeleting] = useState(false);
 
   async function start() {
+    // One dialog, not two: what Bulk upload would drop joins this one.
+    const bulkDrop = bulkDropNotice("delete-account");
     const confirmed = await confirm({
       title: "Delete your account?",
-      description:
-        'This cannot be undone. Your profile and contact details are erased; chapter history you took part in stays, anonymized as "Deleted User". See the Privacy Policy for what is kept and for how long.',
+      description: `This cannot be undone. Your profile and contact details are erased; chapter history you took part in stays, anonymized as "Deleted User". See the Privacy Policy for what is kept and for how long.${
+        bulkDrop ? ` ${bulkDrop}` : ""
+      }`,
       confirmLabel: "Delete account",
       tone: "destructive",
     });
