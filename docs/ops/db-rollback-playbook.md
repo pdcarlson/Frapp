@@ -2769,6 +2769,20 @@ alter table public.chat_message_reports
   drop column if exists reported_attachments;
 ```
 
+## Rollback the chapter default channel (20261106010000)
+
+* **Migration**: `20261106010000_chat_channels_is_default.sql`
+
+One column on `chat_channels`, `is_default` (not null, default false), a partial unique index, `chat_channels_one_default_per_chapter`, and the RPC `set_chat_channel_default`. No row is rewritten.
+
+**Revert the code forward and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API never writes the column and the reverted clients never read it, so a chapter that set a default simply opens on `#general` again. To remove the column anyway, do it in a later forward migration, not by hand:
+
+```sql
+drop function if exists public.set_chat_channel_default(uuid, uuid);
+drop index if exists public.chat_channels_one_default_per_chapter;
+alter table public.chat_channels drop column if exists is_default;
+```
+
 ## Rollback the backwork 50 MB limit (20261105230000)
 
 * **Migration**: `20261105230000_backwork_bucket_50mb.sql`

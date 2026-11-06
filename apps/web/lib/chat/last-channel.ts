@@ -5,7 +5,8 @@ import { lastChannelStorageKey } from "@repo/hooks";
  * (`@repo/hooks` `landing-channel.ts` owns the rule that reads it).
  *
  * localStorage, best-effort: a private window, blocked site data or a full
- * quota throws or reads empty, and Chat then opens on `#general` as before.
+ * quota throws or reads empty, and Chat then opens on the chapter default,
+ * else `#general`.
  */
 export function readLastChannel(
   userId: string | null | undefined,

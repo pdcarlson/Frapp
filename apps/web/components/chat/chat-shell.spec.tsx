@@ -3628,6 +3628,20 @@ describe("ChatShell opens on the last channel", () => {
     expect(mockUseChatChannel).toHaveBeenLastCalledWith("chan-general");
   });
 
+  it("opens the chapter default when this browser has no last channel", () => {
+    channelsQueryState.value = {
+      data: CHANNELS.map((ch) =>
+        ch.id === "chan-random" ? { ...ch, is_default: true } : ch,
+      ),
+    };
+    try {
+      render(<ChatShell />);
+      expect(mockUseChatChannel).toHaveBeenLastCalledWith("chan-random");
+    } finally {
+      channelsQueryState.value = {};
+    }
+  });
+
   it("lets a link by channel name win too", () => {
     // Onboarding's completion redirect passes the literal `general`.
     window.localStorage.setItem(key, "chan-random");

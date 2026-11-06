@@ -83,6 +83,7 @@ describe('Chat hot path (e2e)', () => {
     created_at: '2026-01-01T00:00:00.000Z',
     archived_at: null,
     default_notification_level: null,
+    is_default: false,
   };
 
   const announcementsChannel: ChatChannel = {
@@ -150,6 +151,7 @@ describe('Chat hot path (e2e)', () => {
     addPrivateChannelMember: jest.fn(),
     removePrivateChannelMember: jest.fn(),
     removeUserFromPrivateChannels: jest.fn(),
+    setDefault: jest.fn(),
   };
   const categoryRepoMock: jest.Mocked<IChatCategoryRepository> = {
     findByChapter: jest.fn(),
