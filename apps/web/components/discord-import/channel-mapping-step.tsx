@@ -12,9 +12,15 @@ import { Switch } from "@/components/ui/switch";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
 import {
-  dashboardFilterSelectClassName,
-  dashboardFormSelectClassName,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   dashboardTableCheckboxClassName,
+  dashboardToolbarHeightClassName,
 } from "@/components/shared/table-controls";
 import {
   PermissionCheckboxGrid,
@@ -39,6 +45,10 @@ import {
   type SidebarGroups,
 } from "./sidebar-groups";
 import { SidebarPreview } from "./sidebar-preview";
+import {
+  bulkVisibilityState,
+  type BulkVisibilityState,
+} from "./bulk-visibility";
 
 type Visibility = NonNullable<ChannelChoice["visibility"]>;
 type ReadersOf = (channel: StagedChannel) => SameAsDiscordReaders | null;
@@ -253,6 +263,7 @@ export function ChannelMappingStep({
   const serverVisibility = useBulkVisibility(
     readable,
     choices,
+    readersOf,
     (visibility, permissions) =>
       bulk(readable, withVisibility(visibility, permissions, readersOf)),
   );
@@ -301,20 +312,10 @@ export function ChannelMappingStep({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Every channel starts as a new Frapp channel with its Discord name,
-        except a public one whose name a whole-chapter Frapp channel already
-        has, which starts merged into it. Channels given the same new name land
-        in one channel. Change only what you need to. Anything that still needs
-        a decision is listed under Needs attention.
+        {knowsPrivacy
+          ? "Each channel comes over as a new channel, or joins a public Frapp channel with the same name. Change only what you need to."
+          : "An export doesn't say which channels were private, so choose who can read the new channels: all at once here, or per category."}
       </p>
-      {knowsPrivacy ? null : (
-        <p className="text-sm text-muted-foreground">
-          An export does not say which channels were private in Discord, so
-          choose who can read each new channel. &ldquo;Set who can
-          read&hellip;&rdquo; answers every channel, or a whole category, at
-          once.
-        </p>
-      )}
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
         <p className="text-sm">
@@ -344,8 +345,10 @@ export function ChannelMappingStep({
           </Button>
           <BulkVisibilitySelect
             label="Who can read every new channel"
+            scope="every new channel"
             bulk={serverVisibility}
             offersDiscord={offersDiscord}
+            visibleLabel
           />
         </div>
         <BulkRestrictPanel
@@ -441,10 +444,9 @@ function KeepCategoriesSwitch({
           id="keep-discord-categories-hint"
           className="text-sm text-muted-foreground"
         >
-          Each new channel goes into a sidebar category named after its Discord
-          one{knowsOrder ? ", in Discord's order" : ""}. Where your chapter
-          already has a category by that name, the channel goes there. Merged
-          channels stay where they are. Every member can see category names.
+          New channels go into sidebar categories named after Discord&rsquo;s
+          {knowsOrder ? ", in the same order" : ""}. Every member sees category
+          names.
         </p>
       </div>
       <Switch
@@ -466,9 +468,7 @@ function NeedsAttention({
 }) {
   if (issues.length === 0) {
     return (
-      <p className="rounded-lg border border-border p-3 text-sm text-muted-foreground">
-        Nothing needs attention. Continue when the list below looks right.
-      </p>
+      <p className="text-sm text-muted-foreground">Nothing needs attention.</p>
     );
   }
   return (
@@ -563,6 +563,7 @@ function CategoryGroup({
   const groupVisibility = useBulkVisibility(
     group.channels,
     choices,
+    readersOf,
     (visibility, permissions) =>
       onBulk(withVisibility(visibility, permissions, readersOf)),
   );
@@ -648,6 +649,7 @@ function CategoryGroup({
           </Button>
           <BulkVisibilitySelect
             label={`Who can read the new channels in ${group.name}`}
+            scope={`the new channels in ${group.name}`}
             bulk={groupVisibility}
             offersDiscord={group.channels.some((channel) => readersOf(channel))}
           />
@@ -718,37 +720,48 @@ function withVisibility(
 }
 
 interface BulkVisibility {
+  /** What the channels in reach share now, or null when none is new. */
+  state: BulkVisibilityState | null;
+  /** This control's permission grid is open. */
   restricting: boolean;
+  /** Opens or shuts the grid while the channels are restricted. */
+  toggleGrid: () => void;
   permissions: ReadonlySet<string>;
   choose: (value: string) => void;
   toggle: (permission: string) => void;
 }
 
 /**
- * One "Set who can read…" control: the whole chapter applies at once;
- * restricted opens a permission grid that applies on every tick.
- *
- * The ticks are read off the choices, never kept beside them: a permission
- * shows ticked only while every new channel in scope is restricted to it. So
- * the grid cannot show a restriction the channels do not hold, whether a
- * whole-chapter choice came from this control, another level's, or a row.
+ * One "Who can read" control over many channels. It shows what the channels
+ * in its reach hold now, read off the choices and never kept beside them, so
+ * a pick visibly sticks, and a row or a category changed by hand turns it to
+ * Mixed. Restricted applies at once and opens a permission grid that applies
+ * on every tick; until one is ticked, Needs attention lists the channels.
+ * The grid stays shut for a restriction made elsewhere (a row has its own,
+ * and "Permissions" beside the control opens this one), and closes once the
+ * channels stop being restricted.
  */
 function useBulkVisibility(
   targets: readonly StagedChannel[],
   choices: Record<string, ChannelChoice>,
+  readersOf: ReadersOf,
   apply: (visibility: Visibility, permissions: ReadonlySet<string>) => void,
 ): BulkVisibility {
-  const [restricting, setRestricting] = useState(false);
+  const [picked, setPicked] = useState(false);
   const permissions = sharedRestriction(targets, choices);
+  const state = bulkVisibilityState(targets, choices, readersOf);
   return {
-    restricting,
+    state,
+    restricting: picked && state === "restricted",
+    toggleGrid: () => setPicked(!picked),
     permissions,
     choose(value) {
       if (value === "chapter" || value === "discord") {
-        setRestricting(false);
+        setPicked(false);
         apply(value, new Set());
       } else if (value === "restricted") {
-        setRestricting(true);
+        setPicked(true);
+        apply("restricted", permissions);
       }
     },
     toggle(permission) {
@@ -782,30 +795,83 @@ function sharedRestriction(
   return shared;
 }
 
+const BULK_LABELS: Record<Exclude<BulkVisibilityState, "unset">, string> = {
+  discord: "Same as Discord",
+  chapter: "Whole chapter",
+  restricted: "Restricted",
+  mixed: "Mixed",
+};
+
 function BulkVisibilitySelect({
   label,
+  scope,
   bulk,
   offersDiscord,
+  visibleLabel = false,
 }: {
   label: string;
+  /** Names the permissions button: "every new channel", a category's. */
+  scope: string;
   bulk: BulkVisibility;
   /** Some channel in scope was private in Discord with its readers known. */
   offersDiscord: boolean;
+  /** Say "Who can read" beside it; the category rows leave it to the header. */
+  visibleLabel?: boolean;
 }) {
+  const state = bulk.state;
   return (
-    <select
-      aria-label={label}
-      className={cn(dashboardFilterSelectClassName, "w-auto")}
-      value=""
-      onChange={(event) => bulk.choose(event.target.value)}
-    >
-      <option value="">Set who can read…</option>
-      {offersDiscord ? (
-        <option value="discord">Private ones: same as Discord</option>
+    <div className="flex items-center gap-2">
+      {visibleLabel ? (
+        <span className="text-sm text-muted-foreground" aria-hidden>
+          Who can read
+        </span>
       ) : null}
-      <option value="chapter">All: whole chapter</option>
-      <option value="restricted">All: restricted…</option>
-    </select>
+      <Select
+        // Mixed and unset are states, never choices: the trigger shows them,
+        // the list offers only answers.
+        value={
+          state && state !== "mixed" && state !== "unset" ? state : undefined
+        }
+        onValueChange={bulk.choose}
+        disabled={state === null}
+      >
+        <SelectTrigger
+          aria-label={label}
+          className={cn(
+            dashboardToolbarHeightClassName,
+            "w-auto min-w-40 gap-2 text-sm",
+          )}
+        >
+          <SelectValue
+            placeholder={
+              state === "mixed"
+                ? BULK_LABELS.mixed
+                : state === "unset"
+                  ? "Choose…"
+                  : "No new channels"
+            }
+          />
+        </SelectTrigger>
+        <SelectContent>
+          {offersDiscord ? (
+            <SelectItem value="discord">{BULK_LABELS.discord}</SelectItem>
+          ) : null}
+          <SelectItem value="chapter">{BULK_LABELS.chapter}</SelectItem>
+          <SelectItem value="restricted">{BULK_LABELS.restricted}</SelectItem>
+        </SelectContent>
+      </Select>
+      {state === "restricted" ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={bulk.toggleGrid}
+          aria-expanded={bulk.restricting}
+          aria-label={`Permissions for ${scope}`}
+        >
+          Permissions
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
@@ -955,12 +1021,13 @@ function ChannelRow({
             >
               Who can read it
             </Label>
-            <select
-              id={`visibility-${channel.channelId}`}
-              className={dashboardFormSelectClassName}
-              value={shownVisibility ?? ""}
-              onChange={(event) => {
-                const value = event.target.value;
+            <Select
+              // A key per answered state: Radix keeps showing the last value
+              // when it goes back to undefined, which "Same as Discord" with
+              // no mapped role does.
+              key={shownVisibility ?? "unanswered"}
+              value={shownVisibility}
+              onValueChange={(value) => {
                 onPatch({
                   visibility:
                     value === "chapter" ||
@@ -975,17 +1042,22 @@ function ChannelRow({
                 });
               }}
             >
-              {shownVisibility === undefined ? (
-                <option value="">Choose…</option>
-              ) : null}
-              {readers ? (
-                <option value="discord" disabled={readers.roles.length === 0}>
-                  Same as Discord
-                </option>
-              ) : null}
-              <option value="chapter">Whole chapter</option>
-              <option value="restricted">Restricted</option>
-            </select>
+              <SelectTrigger id={`visibility-${channel.channelId}`}>
+                <SelectValue placeholder="Choose…" />
+              </SelectTrigger>
+              <SelectContent>
+                {readers ? (
+                  <SelectItem
+                    value="discord"
+                    disabled={readers.roles.length === 0}
+                  >
+                    Same as Discord
+                  </SelectItem>
+                ) : null}
+                <SelectItem value="chapter">Whole chapter</SelectItem>
+                <SelectItem value="restricted">Restricted</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
       ) : null}
@@ -1001,7 +1073,7 @@ function ChannelRow({
         <p className="text-xs text-muted-foreground">
           Readable by {discordReaders.roles.join(", ")}.
           {discordReaders.ignored.length > 0
-            ? ` Left out, because they are set to Ignore: ${discordReaders.ignored.join(", ")}.`
+            ? ` Left out, because they are set to Skip: ${discordReaders.ignored.join(", ")}.`
             : ""}
         </p>
       ) : null}
@@ -1032,21 +1104,21 @@ function ChannelRow({
           <Label htmlFor={`target-${channel.channelId}`} className="text-xs">
             Merge into
           </Label>
-          <select
-            id={`target-${channel.channelId}`}
-            className={dashboardFormSelectClassName}
-            value={choice?.targetChannelId ?? ""}
-            onChange={(event) =>
-              onPatch({ targetChannelId: event.target.value || undefined })
-            }
+          <Select
+            value={choice?.targetChannelId}
+            onValueChange={(value) => onPatch({ targetChannelId: value })}
           >
-            <option value="">Pick a channel…</option>
-            {existingNames.map((existing) => (
-              <option key={existing.id} value={existing.id}>
-                #{existing.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger id={`target-${channel.channelId}`}>
+              <SelectValue placeholder="Pick a channel…" />
+            </SelectTrigger>
+            <SelectContent>
+              {existingNames.map((existing) => (
+                <SelectItem key={existing.id} value={existing.id}>
+                  #{existing.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       ) : null}
 
@@ -1073,6 +1145,11 @@ function UnreadableGroup({
   rescanning: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [howOpen, setHowOpen] = useState(false);
+  const link = cn(
+    "text-sm text-accent-text underline-offset-2 hover:underline",
+    FOCUS_RING,
+  );
   return (
     <section className="rounded-lg border border-border">
       <div className="flex flex-wrap items-start justify-between gap-3 p-3">
@@ -1081,25 +1158,40 @@ function UnreadableGroup({
             Frapp can&apos;t read these ({channels.length})
           </p>
           <p className="text-sm text-muted-foreground">
-            Discord hides them from the Frapp bot, so they will be skipped. To
-            import them, either allow the bot&apos;s own Frapp role View Channel
-            and Read Message History on each channel (Edit Channel →
-            Permissions; a category allow reaches only the channels still synced
-            to it), which keeps it read-only, or give the Frapp bot a role that
-            can see them (Server Settings → Members → Frapp), which is quicker
-            but lends it everything that role can do. Then scan again.
+            Discord hides them from the Frapp bot, so they&rsquo;ll be skipped.
           </p>
-          <button
-            type="button"
-            onClick={() => setOpen(!open)}
-            aria-expanded={open}
-            className={cn(
-              "text-sm text-accent-text underline-offset-2 hover:underline",
-              FOCUS_RING,
-            )}
-          >
-            {open ? "Hide the list" : "Show which channels"}
-          </button>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            <button
+              type="button"
+              onClick={() => setOpen(!open)}
+              aria-expanded={open}
+              className={link}
+            >
+              {open ? "Hide the list" : "Show which channels"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setHowOpen(!howOpen)}
+              aria-expanded={howOpen}
+              className={link}
+            >
+              How to import them
+            </button>
+          </div>
+          {howOpen ? (
+            <ul className="list-disc space-y-1 pl-5 pt-1 text-sm text-muted-foreground">
+              <li>
+                Read-only: on each channel, Edit Channel → Permissions, allow
+                the Frapp role View Channel and Read Message History. A category
+                allow reaches only channels still synced to it.
+              </li>
+              <li>
+                Quicker: Server Settings → Members → Frapp, give it a role that
+                can see them. It gets everything that role can do.
+              </li>
+              <li>Then scan again.</li>
+            </ul>
+          ) : null}
         </div>
         {onRescan ? (
           <Button

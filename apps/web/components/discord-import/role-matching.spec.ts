@@ -80,6 +80,25 @@ describe("matchFrappRole (#2818)", () => {
     expect(matched("Rush Chair")).toBeNull();
   });
 
+  it("does not read a past, pledge-class or assistant title as the officer", () => {
+    // Real roles from a chapter's server: each would have read the
+    // officer's own channels.
+    expect(matched("Past Treasurer")).toBeNull();
+    expect(matched("PC President")).toBeNull();
+    expect(matched("Pledge Class President")).toBeNull();
+    expect(matched("Former VP")).toBeNull();
+    expect(matched("Assistant Treasurer")).toBeNull();
+    // A role the chapter itself named that way still matches by name.
+    expect(
+      matchFrappRole("Past President", [
+        ...frappRoles,
+        { id: "past", name: "Past President", system_key: null },
+      ])?.role.id,
+    ).toBe("past");
+    // One word is the title itself.
+    expect(matched("Pledges")).toEqual(["new-member", "close"]);
+  });
+
   it("matches seeded roles by system key, so a renamed one still matches", () => {
     const renamed = frappRoles.map((role) =>
       role.id === "secretary" ? { ...role, name: "Scribe" } : role,

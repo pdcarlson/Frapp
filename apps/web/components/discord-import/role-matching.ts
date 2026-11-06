@@ -101,6 +101,25 @@ const CLOSE_MATCHES: Record<string, { aliases: string[]; whole?: true }> = {
   },
 };
 
+/**
+ * First words that make a title someone other than the officer it ends with.
+ * Only close matches check them: a chapter that has a role literally named
+ * "Past President" still matches it by name.
+ */
+const NOT_THE_OFFICER = new Set([
+  "past",
+  "former",
+  "ex",
+  "old",
+  "outgoing",
+  "pc",
+  "pledge",
+  "class",
+  "assistant",
+  "asst",
+  "deputy",
+]);
+
 function endsWith(name: readonly string[], alias: readonly string[]): boolean {
   if (alias.length === 0 || alias.length > name.length) return false;
   const offset = name.length - alias.length;
@@ -124,6 +143,10 @@ export function matchFrappRole(
   if (same) return { role: same, kind: "same-name" };
 
   const name = words(discordName);
+  // A past, pledge-class or assistant title names someone who is not the
+  // officer: "Past Treasurer" and "PC President" (a pledge class's own
+  // president) must not read the officer's channels.
+  if (NOT_THE_OFFICER.has(name[0] ?? "") && name.length > 1) return null;
   let best: { role: FrappRole; length: number } | null = null;
   for (const [systemKey, { aliases, whole }] of Object.entries(CLOSE_MATCHES)) {
     const role = frappRoles.find(
