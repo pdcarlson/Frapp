@@ -468,7 +468,7 @@ describe("Log service hours sheet", () => {
       description: string;
     };
 
-  it("opens from the header's + tile", () => {
+  it("opens from the floating create button", () => {
     present.mockClear();
     const tree = render();
     act(() => logButton(tree).props.onPress());

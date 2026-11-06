@@ -1,9 +1,30 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter, type Href } from "expo-router";
+import Svg, { Path } from "react-native-svg";
 import { SignetTokens } from "@repo/theme/signet";
+import { GlassSurface } from "@/components/glass-surface";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+
+/** The capsule as drawn: 36pt tall and fully round. */
+export const BACK_CAPSULE_HEIGHT = 36;
+
+/**
+ * The row's touch target, 44pt (`touch.minimum`), with the capsule centred in
+ * it. The target is the row itself rather than a hit slop, because the glass
+ * clips to its capsule and a slop outside a clipping parent takes no touches.
+ */
+export const BACK_ROW_HEIGHT = 44;
+
+/**
+ * Top padding a screen's scrolling content takes under a pinned row: the row's
+ * offset, its height and the gap to the title. The capsule lands where an
+ * in-flow row's would, 8pt down with 12pt under it.
+ */
+export function pinnedBackClearance(tokens: SignetTokens): number {
+  return tokens.spacing.xs + BACK_ROW_HEIGHT + tokens.spacing.sm;
+}
 
 /** Where a back row leads: the name it shows, and the route it opens. */
 export type BackTarget = {
@@ -26,7 +47,7 @@ type BackRowProps = {
   label: string;
   /**
    * A control at the row's far end, where the board draws s15's Edit
-   * (`‹ More` … `Edit`) and s12's upload glyph, and setup its progress ticks.
+   * (`‹ More` … `Edit`), and setup its progress ticks.
    * Optional; every other screen draws the row alone.
    */
   trailing?: ReactNode;
@@ -58,10 +79,16 @@ type BackRowProps = {
  * off Chat home would land on Chat under a row that says More. Android's back
  * button keeps the history behavior, which is where a member expects it.
  *
- * Drawn in the chapter accent, as s05's `‹` and the active tab are. The board
- * bakes house gold here because its mock chapter is gold; the owner's rule
- * (2026-11-04, `spec/behavior/branding.md`) puts the accent on every back
- * arrow inside a chapter, and keeps house gold for places with no chapter.
+ * A glass capsule, `‹ Events` in a bubble of its own (owner ask 2026-11-05,
+ * `spec/ui/mobile/navigation.md` § Back rows). `ScreenShell` pins it at the
+ * top left so it never scrolls away; a screen that draws the row inline (the
+ * auth steps) gets the same capsule in place.
+ *
+ * The arrow is the chapter accent, as s05's `‹` and the active tab are, and
+ * the name is foreground. The board bakes house gold here because its mock
+ * chapter is gold; the owner's rule (2026-11-04, `spec/behavior/branding.md`)
+ * puts the accent on every back arrow inside a chapter, and keeps house gold
+ * for places with no chapter.
  *
  * Sign-in, join, setup and the chapter picker draw the same row (`‹ Back`,
  * `‹ More`), as the board's s02 does. They pass `house`, because `(auth)` has
@@ -103,52 +130,134 @@ function BackRowView({
 }: BackRowProps & { color: string }) {
   const router = useRouter();
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens, color);
+  const styles = createStyles(tokens);
+  // Held state drives the capsule's lift. The glass, not the target, is what
+  // lifts, so the feedback keeps the capsule's shape on every platform rather
+  // than an Android ripple filling the 44pt rectangle around it.
+  const [held, setHeld] = useState(false);
 
   return (
-    <View style={styles.row}>
+    <View style={styles.row} testID="back-row">
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel ?? `Back to ${label}`}
         accessibilityState={disabled ? { disabled } : undefined}
         disabled={disabled}
-        // The drawn row is a 16pt line of text; the slop brings the target to
-        // the 44pt minimum without moving the title down.
-        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        onPressIn={() => setHeld(true)}
+        onPressOut={() => setHeld(false)}
         onPress={() => {
           if (onPress) onPress();
           else if (href) router.navigate(href);
         }}
-        style={({ pressed }) =>
-          disabled ? styles.disabled : pressed ? styles.pressed : null
-        }
+        style={styles.target}
       >
-        <Text style={styles.text}>{`‹ ${label}`}</Text>
+        <GlassSurface
+          style={[
+            styles.capsule,
+            held && !disabled ? styles.held : null,
+            disabled ? styles.disabled : null,
+          ]}
+        >
+          <View style={styles.content}>
+            <Svg
+              width={18}
+              height={18}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={color}
+              strokeWidth={2.2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <Path d="m14.5 6-6 6 6 6" />
+            </Svg>
+            <Text style={styles.text}>{label}</Text>
+          </View>
+        </GlassSurface>
       </Pressable>
       {trailing}
     </View>
   );
 }
 
-function createStyles(tokens: SignetTokens, color: string) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     row: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      marginBottom: tokens.spacing.sm,
+      gap: tokens.spacing.sm,
+      // The 44pt target already carries 4pt of air under the capsule.
+      marginBottom: tokens.spacing.xs,
     },
-    pressed: {
-      opacity: 0.6,
+    target: {
+      alignSelf: "flex-start",
+      minHeight: BACK_ROW_HEIGHT,
+      justifyContent: "center",
     },
-    // The whole row dims while it holds: a control that can't respond looks it.
+    capsule: {
+      height: BACK_CAPSULE_HEIGHT,
+      borderRadius: BACK_CAPSULE_HEIGHT / 2,
+    },
+    // A press lifts the glass to the popover step, as a list row lifts.
+    held: {
+      backgroundColor: tokens.color.surface.popover,
+    },
+    content: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+      // Tighter on the arrow's side, as drawn, so the glyph sits in the curve.
+      paddingLeft: tokens.spacing.sm,
+      paddingRight: tokens.spacing.md,
+    },
+    // The whole capsule dims while it holds: a control that can't respond looks it.
     disabled: {
       opacity: 0.5,
     },
     text: {
-      // The board's 16pt regular line, which is the body role.
-      ...typeRole(tokens.typography.role.body),
-      color,
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
   });
+}
+
+/**
+ * A back capsule pinned over a screen's top left, so the way back never
+ * scrolls away (`spec/ui/mobile/navigation.md` § Back rows). Render it inside
+ * a plain View that fills the safe area's content box, before the scroll
+ * view: first in the tree, so a screen reader meets it before the title, and
+ * `zIndex` draws it over the content that scrolls under it. The scroll view's
+ * content takes `pinnedBackClearance` at its top.
+ *
+ * It reads no insets. An absolute child ignores its parent's padding, so a
+ * `SafeAreaView` parent would put it under the notch, and adding
+ * `useSafeAreaInsets().top` by hand double-counts whenever something above
+ * the screen (the offline banner) has already taken the inset and the native
+ * safe area pads 0. Inside an unpadded View within the safe area, it sits
+ * where the content starts whatever pushed it there.
+ */
+export function PinnedBackRow({
+  back,
+  trailing,
+}: {
+  back: BackTarget;
+  trailing?: ReactNode;
+}) {
+  const { tokens } = useFrappTheme();
+  return (
+    <View
+      style={{
+        position: "absolute",
+        zIndex: 1,
+        top: tokens.spacing.xs,
+        left: tokens.spacing.lg,
+        right: tokens.spacing.lg,
+      }}
+      pointerEvents="box-none"
+    >
+      <BackRow label={back.label} href={back.href} trailing={trailing} />
+    </View>
+  );
 }

@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { backArrowColor } from "@/test/back-row";
 import React from "react";
 import { act } from "react";
 import { BackHandler, Platform } from "react-native";
@@ -266,10 +267,8 @@ describe("the email form", () => {
         node.props.accessibilityLabel === "Back to sign-in options",
     );
     const text = back.find((node) => isHost(node, "Text"));
-    expect(text.props.children).toBe("‹ Back");
-    expect(flatStyle(text.props.style).color).toBe(
-      signetDarkTokens.color.gold.askText,
-    );
+    expect(text.props.children).toBe("Back");
+    expect(backArrowColor(back)).toBe(signetDarkTokens.color.gold.askText);
   });
 
   it("marks the chosen mode in house gold, as the flow's other selections are", () => {

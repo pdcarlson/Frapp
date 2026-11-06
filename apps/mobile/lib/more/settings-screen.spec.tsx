@@ -193,7 +193,7 @@ describe("Settings back row (#3022)", () => {
   it("draws ‹ More above the title", () => {
     const tree = render();
 
-    expect(screenText(tree).startsWith("‹ More\nSettings")).toBe(true);
+    expect(screenText(tree).startsWith("More\nSettings")).toBe(true);
     expectBackRow(tree, "More", "/more");
   });
 });

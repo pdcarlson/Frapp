@@ -177,7 +177,7 @@ type ScreenEvents = {
  * navigator types `tabBarStyle` as an animated style; `display` is never
  * animated, so flattening it as a plain style reads it correctly.
  */
-function hidesTabBar(tabBarStyle: unknown): boolean {
+export function hidesTabBar(tabBarStyle: unknown): boolean {
   return StyleSheet.flatten(tabBarStyle as StyleProp<ViewStyle>)?.display === "none";
 }
 
