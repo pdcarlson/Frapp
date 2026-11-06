@@ -1876,3 +1876,82 @@ describe("MessageItem reaction chip ownership (#2243)", () => {
     expect(onUnreact).not.toHaveBeenCalled();
   });
 });
+
+describe("MessageItem Report and Block (#2687)", () => {
+  const everyoneIsMember = () => true;
+
+  it("offers Report and Block on someone else's message, behind More", async () => {
+    const onReport = vi.fn();
+    const onBlock = vi.fn();
+    renderItemWithProps({ onReport, onBlock, isMember: everyoneIsMember });
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: "Report message" }),
+    );
+    expect(onReport).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "msg-1" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: "Block Alice Chen" }),
+    );
+    expect(onBlock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "msg-1" }),
+    );
+  });
+
+  it("does not pin the bar open when a menu item is chosen", async () => {
+    const onToggleTapReveal = vi.fn();
+    renderItemWithProps({
+      onReport: vi.fn(),
+      onBlock: vi.fn(),
+      isMember: everyoneIsMember,
+      onToggleTapReveal,
+    });
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: "Report message" }),
+    );
+    expect(onToggleTapReveal).not.toHaveBeenCalled();
+  });
+
+  it("offers neither on the viewer's own message", () => {
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER }),
+      onReport: vi.fn(),
+      onBlock: vi.fn(),
+      isMember: everyoneIsMember,
+    });
+    expect(
+      screen.queryByRole("button", { name: "More actions" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps Report but drops Block for a sender known to have left", async () => {
+    renderItemWithProps({
+      onReport: vi.fn(),
+      onBlock: vi.fn(),
+      isMember: () => false,
+    });
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(
+      screen.getByRole("menuitem", { name: "Report message" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: /^Block/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("drops Block for Frapp's own posts", async () => {
+    renderItemWithProps({
+      message: message({ sender_id: SYSTEM_SENDER_ID }),
+      onReport: vi.fn(),
+      onBlock: vi.fn(),
+      isMember: everyoneIsMember,
+    });
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(
+      screen.queryByRole("menuitem", { name: /^Block/ }),
+    ).not.toBeInTheDocument();
+  });
+});

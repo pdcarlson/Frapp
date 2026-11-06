@@ -743,22 +743,25 @@ Member-safety copy (#2257, #2313). The behavior each string describes is owned b
 Each string lives once, in the file named in its row's last column. Copy both clients
 say lives in `packages/chat-core/src/block-copy.ts` (`block-copy` below); copy that
 names a control only one client has lives with that client, under `apps/mobile/` or
-`apps/web/`. Web offers Unblock but not yet Report or Block (#2687).
+`apps/web/`. Both clients offer Report, Block and Unblock (#2687); the report copy lives in
+`packages/chat-core/src/report-copy.ts` (`report-copy` below).
 
 | State | Title | Description | Home |
 |---|---|---|---|
-| Block confirmation | `Block <name>?` | `Their messages in this chapter's chat will be hidden from you. They won't be told, and they can still post where you both are. Poll votes still count, and they stay in the directory. You can unblock them anytime in Settings.` · confirm `Block`. The directory clause appears only when the loaded roster lists them | mobile `lib/chat/block-actions.ts` (`blockConfirmBody`) |
+| Block confirmation | `Block <name>?` | `Their messages in this chapter's chat will be hidden from you. They won't be told, and they can still post where you both are. Poll votes still count, and they stay in the directory. You can unblock them anytime in Settings.` (web: `from your profile.`) · confirm `Block`. The directory clause appears only when the loaded roster lists them | `block-copy` (`blockConfirmTitle`, `blockConfirmBody`) |
 | Unblock confirmation | `Unblock <name>?` | `Their messages in this chapter's chat will show again. They won't be told.` · confirm `Unblock` | `block-copy` (`unblockConfirmTitle`, `UNBLOCK_CONFIRM_BODY`) |
-| Block failed | `Couldn't block <name>` | `Nothing changed. Check your connection and try again.` Also any 404 other than the one below | mobile `lib/chat/block-actions.ts`, body from `block-copy` (`BLOCK_FAILURE_BODY`) |
+| Block failed | `Couldn't block <name>` | `Nothing changed. Check your connection and try again.` Also any 404 other than the one below (an alert on mobile, a toast on web) | `block-copy` (`blockFailedTitle`, `BLOCK_FAILURE_BODY`) |
 | Unblock failed | `Couldn't unblock <name>` | `Nothing changed. Check your connection and try again.` (an alert on mobile, a toast on web) | `block-copy` (`unblockFailedTitle`, `BLOCK_FAILURE_BODY`) |
-| Block refused, not a member | `Couldn't block <name>` | `This member is no longer in your chapter, so there's nothing to block.` Only for a 404 whose message is `Member not found` (`isMemberNotFound`) | mobile `lib/chat/block-actions.ts` |
+| Block refused, not a member | `Couldn't block <name>` | `This member is no longer in your chapter, so there's nothing to block.` Only for a 404 whose message is `Member not found` (`isMemberNotFound`) | `block-copy` (`BLOCK_NOT_A_MEMBER_BODY`) |
 | Actions sheet, Report row | — | `Report message` · `Your chapter's officers will be able to see it.` | mobile `components/chat/message-actions-sheet.tsx` |
+| Action bar More menu (web) | — | `More actions` (the button's name) · `Report message`; `Block <name>` (destructive) | web `components/chat/message-item.tsx`; the Block label is `block-copy` (`blockActionLabel`) on every surface |
+| Report form | `Report message` | `Why are you reporting it?` · the reasons · `Details (optional)` · `Send report`. Mobile's field placeholder reads `Add details (optional)` | `report-copy` (`REPORT_FORM_TITLE`, `REPORT_FORM_PROMPT`, `REPORT_SEND_LABEL`, `REPORT_REASON_LABELS`); the details field's label is each client's own |
 | Block / Unblock rows (message actions sheet and the directory's member sheet) | — | `Block <name>` · `Hides their messages from you in this chapter's chat. They aren't told.`; `Unblock <name>` · `Their messages in this chapter's chat show again.` (directory only) | mobile `lib/chat/block-actions.ts` (`BLOCK_ROW_DESCRIPTION`, `UNBLOCK_ROW_DESCRIPTION`) |
-| Report sent | `Report sent` | `Your chapter's officers can see this report. The member you reported isn't told.` | mobile `lib/chat/report-reasons.ts` |
-| Already reported | `Already reported` | `You already reported this message, and that report is still open. Your chapter's officers can see it.` | mobile `lib/chat/report-reasons.ts` |
-| Report failed, form open | — | `Your report didn't send. Check your connection and try again.` — no response, a 5xx, or any status the next row doesn't list | mobile `lib/chat/report-reasons.ts` (`reportFailureBody`) |
-| Report refused (403 / 404 / 409), form open | — | `This message can't be reported anymore. It may have been deleted, or you may no longer have access to where it was posted.` | mobile `lib/chat/report-reasons.ts` (`reportFailureBody`) |
-| Report failed after the form was dismissed | `Couldn't send your report` | Whichever of the two bodies above applies (an alert) | mobile `lib/chat/report-reasons.ts` |
+| Report sent | `Report sent` | `Your chapter's officers can see this report. The member you reported isn't told.` · then `Block <name>` where the sender can be blocked, and `Done` | `report-copy` (`REPORT_SENT_TITLE`, `REPORT_SENT_BODY`) |
+| Already reported | `Already reported` | `You already reported this message, and that report is still open. Your chapter's officers can see it.` | `report-copy` (`REPORT_ALREADY_TITLE`, `REPORT_ALREADY_BODY`) |
+| Report failed, form open | — | `Your report didn't send. Check your connection and try again.` — no response, a 5xx, or any status the next row doesn't list | `report-copy` (`reportFailureBody`) |
+| Report refused (403 / 404 / 409), form open | — | `This message can't be reported anymore. It may have been deleted, or you may no longer have access to where it was posted.` | `report-copy` (`reportFailureBody`) |
+| Report failed after the form was dismissed | `Couldn't send your report` | Whichever of the two bodies above applies (an alert; mobile only, since web's dialog stays open until the request answers) | `report-copy` (`REPORT_FAILED_TITLE`) |
 | Tombstone | — | `Message from a member you blocked` · action `Unblock` | `block-copy` (`TOMBSTONE_TEXT`) |
 | Tombstone, unblocked since | — | `Hidden while you had this member blocked` · action `Reload` only while the post-unblock re-read has failed (a spinner while it runs) | `block-copy` (`TOMBSTONE_STALE_TEXT`) |
 | Tombstone Reload failed again | `Couldn't reload these messages` | `Check your connection and try again.` (an alert on mobile, a toast on web) | `block-copy` (`MASKED_RELOAD_FAILED_TITLE`, `MASKED_RELOAD_FAILED_BODY`) |
@@ -770,7 +773,7 @@ names a control only one client has lives with that client, under `apps/mobile/`
 | Jump to a held message (web) | — | `That message is waiting on your block list. It opens once the list loads.` · action `Dismiss`, in place of "Finding that message..." or any of the unreachable lines above (§ Chat (dashboard)) | web `components/chat/chat-shell.tsx` |
 | Blocked members, list | `Blocked members` | `Blocks apply in this chapter only.` above the rows, each with `Unblock` | `block-copy` (`BLOCKED_MEMBERS_TITLE`, `BLOCKED_MEMBERS_SCOPE`) |
 | Blocked members, empty (mobile) | `You haven't blocked anyone in this chapter` | `Block someone from a message or their profile in the directory. Their messages in this chapter's chat are hidden from you, and they aren't told.` | title `block-copy`; body mobile `components/settings/blocked-members-sheet.tsx` |
-| Blocked members, empty (web) | `You haven't blocked anyone in this chapter` | `Block someone from a message or their profile in the mobile app. Their messages in this chapter's chat are hidden from you here too, and they aren't told.` | title `block-copy`; body web `components/profile/blocked-members-card.tsx` (`BLOCKED_MEMBERS_EMPTY_BODY_WEB`) |
+| Blocked members, empty (web) | `You haven't blocked anyone in this chapter` | `Block someone from a message's More menu in chat. Their messages in this chapter's chat are hidden from you, and they aren't told.` | title `block-copy`; body web `components/profile/blocked-members-card.tsx` (`BLOCKED_MEMBERS_EMPTY_BODY_WEB`) |
 | Blocked members, first read failed | `Couldn't load your blocked members` | `Check your connection and try again. Your blocks haven't changed.` · action `Retry` | `block-copy` |
 | Blocked members, first read waiting for the network | `Couldn't load your blocked members` | `You're offline. This list loads when you're back online. Your blocks haven't changed.` · no action | `block-copy` |
 | Blocked members, refresh failed over a cached list | — | `Couldn't refresh this list. It may be missing a recent change.` above the cached rows · action `Retry`, or `Retries when you're back online` while the read waits for the network | `block-copy` |

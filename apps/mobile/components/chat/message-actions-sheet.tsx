@@ -25,7 +25,7 @@ import {
   useReportMessage,
   type ChatReportReason,
 } from "@repo/hooks";
-import { UNNAMED_MEMBER } from "@repo/chat-core/block-copy";
+import { UNNAMED_MEMBER, blockActionLabel } from "@repo/chat-core/block-copy";
 import { dayDividerLabel } from "@repo/chat-core/grouping";
 import { formatTimeOfDay } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
@@ -52,8 +52,11 @@ import {
   REPORT_REASON_OPTIONS,
   REPORT_SENT_BODY,
   REPORT_SENT_TITLE,
+  REPORT_FORM_PROMPT,
+  REPORT_FORM_TITLE,
+  REPORT_SEND_LABEL,
   reportFailureBody,
-} from "@/lib/chat/report-reasons";
+} from "@repo/chat-core/report-copy";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -87,7 +90,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * `stackBehavior="replace"`), where s19 stacks its assignee picker on top.
  *
  * **Which rows show is decided by the caller**, from `messageActionsFor` in
- * `lib/chat/blocks.ts`: Report and Block never show on the viewer's own
+ * `@repo/chat-core/message-actions`: Report and Block never show on the viewer's own
  * message, and `canBlock` is false for the system actor, imported rows and a
  * sender a block attempt already proved has left the chapter — never merely
  * because the cached roster does not list them yet.
@@ -420,13 +423,13 @@ export const MessageActionsSheet = forwardRef<
           {target?.canReport ? (
             <ListSection>
               <ListRow
-                label="Report message"
+                label={REPORT_FORM_TITLE}
                 description="Your chapter's officers will be able to see it."
                 onPress={openReport}
               />
               {canBlock ? (
                 <ListRow
-                  label={`Block ${senderLabel}`}
+                  label={blockActionLabel(senderLabel)}
                   description={BLOCK_ROW_DESCRIPTION}
                   action
                   destructive
@@ -470,7 +473,7 @@ export const MessageActionsSheet = forwardRef<
               {canBlock ? (
                 <ListSection>
                   <ListRow
-                    label={`Block ${senderLabel}`}
+                    label={blockActionLabel(senderLabel)}
                     description={BLOCK_ROW_DESCRIPTION}
                     action
                     destructive
@@ -488,10 +491,10 @@ export const MessageActionsSheet = forwardRef<
           ) : (
             <>
               <SheetHeader
-                title="Report message"
+                title={REPORT_FORM_TITLE}
                 onCancel={() => reportRef.current?.dismiss()}
               />
-              <Text style={styles.caption}>Why are you reporting it?</Text>
+              <Text style={styles.caption}>{REPORT_FORM_PROMPT}</Text>
               <View accessibilityRole="radiogroup" style={styles.reasons}>
                 {REPORT_REASON_OPTIONS.map((option) => {
                   const selected = option.reason === reason;
@@ -543,7 +546,7 @@ export const MessageActionsSheet = forwardRef<
                 </Text>
               ) : null}
               <SheetPrimaryButton
-                label={report.isPending ? "Sending…" : "Send report"}
+                label={report.isPending ? "Sending…" : REPORT_SEND_LABEL}
                 onPress={submitReport}
                 disabled={!reason || report.isPending || !target}
                 accent={accent}

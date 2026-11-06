@@ -93,12 +93,19 @@ import {
 } from "./message-timeline";
 import { Composer, ComposerShell, notifyDispatchOutcome } from "./composer";
 import {
+  canBlockSender,
   channelAllowsReplies,
   DELETE_MESSAGE_CONFIRM_BODY,
   DELETE_MESSAGE_CONFIRM_LABEL,
   DELETE_MESSAGE_CONFIRM_TITLE,
   replyTargetId,
+  departedIn,
+  noDepartedMembers,
+  rosterMembership,
+  withDeparted,
+  type DepartedMembers,
 } from "@repo/chat-core/message-actions";
+import { blockActionLabel } from "@repo/chat-core/block-copy";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
 import { SetupChecklistSection } from "./setup-checklist";
@@ -108,6 +115,11 @@ import type { BookmarkEntry } from "./bookmarks-popover";
 import { ReconnectPill } from "./reconnect-pill";
 import { BlockListNotice } from "./block-list-notice";
 import { useUnblockFlow } from "./use-unblock-flow";
+import { useBlockFlow } from "./use-block-flow";
+import {
+  ReportMessageDialog,
+  type ReportTarget,
+} from "./report-message-dialog";
 import { compactControlClassName } from "@/components/shared/table-controls";
 import {
   NavBackButton,
@@ -267,6 +279,8 @@ export function ChatShell({
     nameFor,
     avatarFor,
     roleColorFor,
+    isPending: rosterPending,
+    isError: rosterError,
   } = useMemberDisplayNames();
   // Per-channel notification levels, from their own endpoint rather than the
   // channel payload — the same split unread counts use, and for the same
@@ -796,6 +810,55 @@ export function ChatShell({
       void reloadMaskedCopies(senderId);
     },
     [reloadMaskedCopies],
+  );
+
+  // Report and Block from a row's More menu (#2687), the rules mobile's
+  // actions sheet uses, with the same `DepartedMembers` bookkeeping.
+  const blockFlow = useBlockFlow();
+  const { requestBlock } = blockFlow;
+  const [departed, setDeparted] = useState<DepartedMembers>(() =>
+    noDepartedMembers(activeChapterId),
+  );
+  const departedIds = departedIn(departed, activeChapterId);
+  const isMember = useMemo(
+    () =>
+      rosterMembership(
+        { byId: memberNames, isPending: rosterPending, isError: rosterError },
+        departedIds,
+      ),
+    [memberNames, rosterPending, rosterError, departedIds],
+  );
+  const handleBlock = useCallback(
+    (message: ChatMessage) => {
+      const senderId = message.sender_id;
+      if (!senderId) return;
+      void requestBlock({
+        userId: senderId,
+        // The name the menu item showed, which falls back to an imported
+        // row's `author_name` where the roster has no entry yet.
+        name: resolveAuthorName(message, nameFor),
+        inDirectory: isMember(senderId) === true,
+      }).then((result) => {
+        if (result !== "not-a-member") return;
+        setDeparted((previous) =>
+          withDeparted(previous, activeChapterId, senderId),
+        );
+      });
+    },
+    [activeChapterId, isMember, nameFor, requestBlock],
+  );
+  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+  const handleReport = useCallback(
+    (message: ChatMessage) => {
+      const canBlock = !!userId && canBlockSender(message, userId, isMember);
+      const name = resolveAuthorName(message, nameFor);
+      setReportTarget({
+        messageId: message.id,
+        onBlock: canBlock ? () => handleBlock(message) : undefined,
+        blockLabel: canBlock ? blockActionLabel(name) : null,
+      });
+    },
+    [handleBlock, isMember, nameFor, userId],
   );
 
   // A custom role can hold `channels:manage` without also being a chapter
@@ -2212,6 +2275,9 @@ export function ChatShell({
                 bookmarkedMessageIds={bookmarkedMessageIds}
                 onToggleBookmark={handleToggleBookmark}
                 canManageChannel={canManageChannel}
+                onReport={handleReport}
+                onBlock={handleBlock}
+                isMember={isMember}
               />
             </div>
             {/*
@@ -2351,6 +2417,12 @@ export function ChatShell({
 
       {confirmDialog}
       {unblockFlow.confirmDialog}
+      {blockFlow.confirmDialog}
+      <ReportMessageDialog
+        key={reportTarget?.messageId ?? "closed"}
+        target={reportTarget}
+        onClose={() => setReportTarget(null)}
+      />
     </div>
   );
 }
