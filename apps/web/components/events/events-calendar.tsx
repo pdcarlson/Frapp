@@ -1,12 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Repeat } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Repeat } from "lucide-react";
 import { EventsGlyph } from "@/components/events/chapter-ops-glyphs";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
 import { compactControlClassName } from "@/components/shared/table-controls";
+import { InlineNote } from "@/components/shared/inline-note";
+import { stateMicrocopy } from "@/lib/state-microcopy";
 import { formatTimeOfDay, localIsoDate, parseInstant } from "@repo/formatting";
 
 type EventRow = Record<string, unknown>;
@@ -22,6 +24,18 @@ type EventsCalendarProps = {
    * clicked, not a silently inert control.
    */
   onCreateOnDay: (day: Date) => void;
+  /**
+   * The viewer holds `events:create`. Without it a day number is a plain
+   * date: no button, and no dashed "+" on today.
+   */
+  canCreate: boolean;
+  /**
+   * Whether the chapter has any event at all, before search and filters. A
+   * chapter with none gets one line under the month (how to make the first
+   * event, or that nothing is scheduled yet) and, for a creator, a dashed "+"
+   * on today where the first event will land.
+   */
+  chapterHasEvents: boolean;
   createDisabled: boolean;
   /**
    * Ties the disabled create button to its explanation, matching every other
@@ -73,10 +87,25 @@ function buildMonthGrid(monthAnchor: Date): Date[] {
   return days;
 }
 
+// The date in a day cell: a round chip that a creator can press. Today gets
+// the raised fill and a ring; a day outside the month is muted.
+function dayNumberClassName(isToday: boolean, isCurrentMonth: boolean) {
+  return cn(
+    "flex h-7 w-7 items-center justify-center self-start rounded-full border border-transparent text-xs font-semibold",
+    isToday
+      ? "bg-popover font-bold text-foreground ring-1 ring-inset ring-input"
+      : isCurrentMonth
+        ? "text-foreground"
+        : "text-muted-foreground",
+  );
+}
+
 export function EventsCalendar({
   events,
   onSelectEvent,
   onCreateOnDay,
+  canCreate,
+  chapterHasEvents,
   createDisabled,
   createDescribedBy,
   createTitle,
@@ -168,6 +197,14 @@ export function EventsCalendar({
         </div>
       </div>
 
+      {chapterHasEvents ? null : (
+        <InlineNote>
+          {canCreate
+            ? stateMicrocopy.events.calendarFirstEvent
+            : stateMicrocopy.events.calendarNothingYet}
+        </InlineNote>
+      )}
+
       {/*
         A hairline frame on the page surface, not a card: the grid's 1px gaps
         show `--border` between cells that paint `--background`.
@@ -207,26 +244,52 @@ export function EventsCalendar({
                   isCurrentMonth ? "bg-background" : "bg-surface-1",
                 )}
               >
-                <button
-                  type="button"
-                  disabled={createDisabled}
-                  title={createTitle}
-                  aria-label={`Create event on ${dayLabel}`}
-                  aria-describedby={createDescribedBy}
-                  className={cn(
-                    "flex h-7 w-7 items-center justify-center self-start rounded-full border border-transparent text-xs font-semibold transition-colors",
-                    FOCUS_RING,
-                    "hover:bg-card-hover disabled:pointer-events-none disabled:text-disabled",
-                    isToday
-                      ? "bg-popover font-bold text-foreground ring-1 ring-inset ring-input"
-                      : isCurrentMonth
-                        ? "text-foreground"
-                        : "text-muted-foreground",
-                  )}
-                  onClick={() => onCreateOnDay(day)}
-                >
-                  {day.getDate()}
-                </button>
+                {canCreate ? (
+                  <button
+                    type="button"
+                    disabled={createDisabled}
+                    title={createTitle}
+                    aria-label={`Create event on ${dayLabel}`}
+                    aria-describedby={createDescribedBy}
+                    className={cn(
+                      dayNumberClassName(isToday, isCurrentMonth),
+                      "transition-colors",
+                      FOCUS_RING,
+                      "hover:bg-card-hover disabled:pointer-events-none disabled:text-disabled",
+                    )}
+                    onClick={() => onCreateOnDay(day)}
+                  >
+                    {day.getDate()}
+                  </button>
+                ) : (
+                  <span className={dayNumberClassName(isToday, isCurrentMonth)}>
+                    {day.getDate()}
+                  </span>
+                )}
+
+                {/*
+                  Rule 2 of the empty-states plan: the first action sits where
+                  the first item will go. A pointer target only: the day
+                  number above is the same action and the one a keyboard or a
+                  screen reader reaches, so this stays out of both.
+                */}
+                {isToday && canCreate && !chapterHasEvents ? (
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    disabled={createDisabled}
+                    title={createTitle}
+                    data-testid="calendar-first-event-slot"
+                    className={cn(
+                      "flex h-7 items-center justify-center rounded-xs border border-dashed border-input text-muted-foreground transition-colors",
+                      "hover:bg-card-hover hover:text-foreground disabled:pointer-events-none disabled:text-disabled",
+                    )}
+                    onClick={() => onCreateOnDay(day)}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
 
                 <div className="flex flex-col gap-1">
                   {visibleEvents.map((event) => {

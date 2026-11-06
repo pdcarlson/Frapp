@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { cardFilledContainers } from "@/tests/card-surfaces";
 import { EventsCalendar, startOfMonth } from "./events-calendar";
@@ -23,9 +23,29 @@ function renderCalendar() {
       onMonthAnchorChange={vi.fn()}
       onSelectEvent={vi.fn()}
       onCreateOnDay={vi.fn()}
+      canCreate
+      chapterHasEvents
       createDisabled={false}
     />,
   );
+}
+
+// A chapter with no events, on this month, so today is in the grid.
+function renderEmptyCalendar(canCreate: boolean) {
+  const onCreateOnDay = vi.fn();
+  const view = render(
+    <EventsCalendar
+      events={[]}
+      monthAnchor={startOfMonth(new Date())}
+      onMonthAnchorChange={vi.fn()}
+      onSelectEvent={vi.fn()}
+      onCreateOnDay={onCreateOnDay}
+      canCreate={canCreate}
+      chapterHasEvents={false}
+      createDisabled={false}
+    />,
+  );
+  return { ...view, onCreateOnDay };
 }
 
 describe("EventsCalendar", () => {
@@ -45,5 +65,46 @@ describe("EventsCalendar", () => {
       screen.getByRole("heading", { name: "November 2026" }),
     ).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  it("says how to make the first event, and puts a + on today", () => {
+    const { onCreateOnDay } = renderEmptyCalendar(true);
+
+    expect(
+      screen.getByText("Pick a day to schedule the first event."),
+    ).toBeInTheDocument();
+    const slot = screen.getByTestId("calendar-first-event-slot");
+    // A pointer target only: the day number is the keyboard's way in.
+    expect(slot).toHaveAttribute("aria-hidden", "true");
+    expect(slot).toHaveAttribute("tabindex", "-1");
+    fireEvent.click(slot);
+    expect(onCreateOnDay).toHaveBeenCalledTimes(1);
+    const day = onCreateOnDay.mock.calls[0]![0] as Date;
+    expect(day.toDateString()).toBe(new Date().toDateString());
+  });
+
+  it("gives a member the dates as text, with no create and no +", () => {
+    renderEmptyCalendar(false);
+
+    expect(
+      screen.getByText("Nothing on the calendar yet."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^create event on/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("calendar-first-event-slot"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("drops the line and the + once the chapter has an event", () => {
+    renderCalendar();
+
+    expect(
+      screen.queryByText("Pick a day to schedule the first event."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("calendar-first-event-slot"),
+    ).not.toBeInTheDocument();
   });
 });
