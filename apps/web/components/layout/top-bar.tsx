@@ -7,6 +7,7 @@ import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 import { FindBar } from "@/components/layout/find-bar";
 import { AskPill } from "@/components/layout/ask-pill";
 import { AccountMenu } from "@/components/layout/account-menu";
+import { ConnectionPill } from "@/components/shared/connection-pill";
 import { NotificationsGlyph } from "@/components/layout/nav-glyphs";
 import type { PageTitle } from "@/components/layout/page-title";
 
@@ -34,12 +35,16 @@ import type { PageTitle } from "@/components/layout/page-title";
  * find field off-center as the title or the right cluster changes width. The
  * title truncates inside that cell rather than pushing the field.
  *
+ * **The connection pill lives here** (2026-11-06), first in the right
+ * cluster. It used to float just below the bar, over the first row of every
+ * page, where it covered chat's channel header. In the bar it covers nothing,
+ * and from `lg` the right cell's `flex-1` absorbs it without moving the find
+ * field (`components/shared/connection-pill.tsx`).
+ *
  * Not `sticky`. The column this bar heads never scrolls (`<main>` does), so
- * there is nothing to stick to, and the connection banner floats below the bar
- * rather than competing with it for `top: 0` (#1746, #2244). No `z-index`
- * either: a positioned, z-indexed bar would be a stacking context capping the
- * find results' `z-50` at the bar's level, and the banner (`z-40`) floats
- * right where those results open.
+ * there is nothing to stick to (#1746). No `z-index` either: a positioned,
+ * z-indexed bar would be a stacking context capping the find results' `z-50`
+ * at the bar's level.
  */
 
 type TopBarProps = {
@@ -112,6 +117,7 @@ export function TopBar({
       <FindBar className="min-w-0 flex-1 basis-0 sm:max-w-[520px]" />
 
       <div className="flex shrink-0 items-center justify-end gap-1.5 lg:min-w-0 lg:flex-1">
+        <ConnectionPill placement="top-bar" />
         <button
           type="button"
           onClick={onOpenNotifications}

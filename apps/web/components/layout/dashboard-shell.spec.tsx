@@ -101,7 +101,7 @@ vi.mock("@/components/layout/dashboard-notification-drawer", () => ({
 
 import { DashboardShell } from "./dashboard-shell";
 import { useNavFace } from "./nav-face";
-import { DASHBOARD_SHELL_ATTR } from "@/components/shared/offline-banner-focus";
+import { DASHBOARD_SHELL_ATTR } from "@/components/shared/connection-pill-focus";
 
 afterEach(() => {
   mockPathname.value = "/events";

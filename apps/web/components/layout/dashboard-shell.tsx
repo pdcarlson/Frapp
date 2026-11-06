@@ -161,12 +161,12 @@ export function DashboardShell({
 
   return (
     /*
-      The visible viewport's height. The connection banner floats over the
-      page (`offline-banner.tsx`) and takes no layout space, so nothing here
+      The visible viewport's height. The connection pill sits in the top bar
+      (`connection-pill.tsx`) and takes no row of its own, so nothing here
       makes room for it. This used to subtract the banner's published height,
       and that is exactly what moved the whole shell down every time the state
-      left ONLINE (#2244). `data-dashboard-shell` is how the banner knows to sit
-      below the top bar instead of over it.
+      left ONLINE (#2244). `data-dashboard-shell` is how the root layout's
+      floating pill knows to stand down while the bar carries one.
 
       `dvh`, not `vh`: on a phone browser whose toolbar can hide, `100vh` is
       the viewport with the toolbar hidden, so a shell that clips its overflow

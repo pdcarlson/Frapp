@@ -778,9 +778,6 @@ vi.mock("./channel-menu", () => ({
     </div>
   ),
 }));
-vi.mock("./reconnect-pill", () => ({
-  ReconnectPill: () => null,
-}));
 vi.mock("./message-timeline", async () => {
   const React = await import("react");
   const MessageTimeline = React.forwardRef<

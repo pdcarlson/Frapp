@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { MembersGlyph } from "./chat-glyphs";
 import { ChannelMemberList } from "./channel-member-list";
 import { channelDescription } from "@repo/hooks/channel-start";
+import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { ChannelMark, ChannelStart } from "./channel-start";
 import { EmptyState, ErrorState } from "@/components/shared/async-states";
 import {
@@ -112,7 +113,6 @@ import { SetupChecklistSection } from "./setup-checklist";
 import { ChannelMenu } from "./channel-menu";
 import type { ChatSearchHit } from "./chat-search-popover";
 import type { BookmarkEntry } from "./bookmarks-popover";
-import { ReconnectPill } from "./reconnect-pill";
 import { BlockListNotice } from "./block-list-notice";
 import { useUnblockFlow } from "./use-unblock-flow";
 import { useBlockFlow } from "./use-block-flow";
@@ -700,6 +700,11 @@ export function ChatShell({
   }, [membersQuery.data]);
 
   const channel = useChatChannel(activeChannelId);
+  // The top bar's connection pill says what this channel's realtime transport
+  // is doing, folded with the app's own connection state, so the header no
+  // longer draws a pill of its own (`spec/ui/resilience/connection-state.md`
+  // § One indicator).
+  useReportOpenChatTransport(activeChannelId ? channel.connection : null);
   const { toast } = useToast();
 
   // The member's own arrangement of the rail (#2877): pins, folds, filters.
@@ -1870,7 +1875,6 @@ export function ChatShell({
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <ReconnectPill status={channel.connection} />
             {showMemberList ? (
               <Button
                 variant="ghost"

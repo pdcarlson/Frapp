@@ -189,20 +189,6 @@ export function DirectMessageGlyph({ className, active }: ChatGlyphProps) {
   );
 }
 
-/** Connection lost. Cloud filled, the slash is a detail stroke. */
-export function OfflineGlyph({ className, active }: ChatGlyphProps) {
-  return (
-    <Svg className={className}>
-      <path
-        d="M7.5 18.5a4 4 0 01-.4-8A5.5 5.5 0 0117.7 11a3.8 3.8 0 01-.2 7.5z"
-        {...stroke}
-        {...fillProps(active)}
-      />
-      <path d="M4.5 4.5l15 15" {...detail} />
-    </Svg>
-  );
-}
-
 /** Pin location on an event card. Pin body filled, dot stroke-only. */
 export function LocationGlyph({ className, active }: ChatGlyphProps) {
   return (

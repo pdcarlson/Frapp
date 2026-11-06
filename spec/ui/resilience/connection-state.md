@@ -102,11 +102,11 @@ opening a browser.
 
 ## UI Indicators
 
-| State | Banner | Write Actions | Read Actions |
+| State | Indicator (drawn label, then the sentence) | Write Actions | Read Actions |
 |-------|--------|--------------|--------------|
-| ONLINE | None | Enabled | Enabled (live data) |
-| DEGRADED | "Slow connection. Some features may be delayed." (amber) | Enabled (with extended timeouts) | Enabled (from cache + refetch) |
-| OFFLINE | "You're offline. Showing cached data." (red/amber) | **Labeled where a queue exists; refused with "Reconnect to make changes." where none does — usually by disabling the control, but not where its appearance carries state** — see below | Enabled (from cache) |
+| ONLINE | None, unless the open chat's transport has something to say ([§ One indicator](#one-indicator)) | Enabled | Enabled (live data) |
+| DEGRADED | "Slow connection" / "Slow connection. Some features may be delayed." (amber dot) | Enabled (with extended timeouts) | Enabled (from cache + refetch) |
+| OFFLINE | "Offline" / "You're offline. Showing cached data." (red dot); with a chat open, "You're offline. Messages you send go out when you reconnect. Photos and files need a connection." | **Labeled where a queue exists; refused with "Reconnect to make changes." where none does — usually by disabling the control, but not where its appearance carries state** — see below | Enabled (from cache) |
 
 **The copy above lost its leading ⚡ / 📡.** Those predate Signet's iconography
 rule, which governs glyphs on these surfaces and does not admit emoji
@@ -118,25 +118,28 @@ verbatim and mobile ships them exactly. `apps/web` shipped a **third** variant u
 than merely divergent. Web mutations no longer pause-and-resume offline; they reject
 (see [`web-dashboard/README.md`](../web-dashboard/README.md) § Surviving data contracts),
 so a global banner promising a sync would have contradicted principle 1, "actions must
-never appear to succeed when they haven't". The queue promise belongs at the one
-control that has a queue — the composer's own label — not in page chrome that renders
-on every route. The lucide `WifiOff` / `Zap` icons
-(`apps/web/components/shared/offline-banner.tsx`) are still web-only, left for the
-reskin.
+never appear to succeed when they haven't". The queue promise is said only where a
+queue exists: the indicator's sentence carries it while a chat is open, and on no
+other screen ([§ One indicator](#one-indicator)). (It was the composer's own label
+until 2026-11-06.) The lucide `WifiOff` / `Zap` icons web drew went with the
+pill's dot.
 
 **Write gating is "labeled, never blocked, wherever an outbox exists."** The
 disabled-with-tooltip rule holds only where a failed write is *lost*. It must not be
 applied to a surface with a queue: the chat composer's `sendMessage` enqueues to the
 outbox and returns before touching the network, so gating it would defeat the queue
-built to make composing-while-offline work — it stays enabled and gains the label
-"You're offline — messages send when you reconnect."
+built to make composing-while-offline work — it stays enabled, and the label is the
+one indicator's chat sentence, "Messages you send go out when you reconnect." (It
+was a line under the composer, "You're offline — messages send when you reconnect.",
+until 2026-11-06, when it was the third offline notice on one screen.)
 
 **Web violated this until the #920 chat slice.** `apps/web` passed `disabled`
 into the composer on `connection === "offline"`, and `submit()` returned early
 on the same flag — so Send greyed out and Enter did nothing at all, with no
 explanation, on the one surface built to survive being offline. (The draft
 itself survived; the loss was the send, not the text.) The composer now takes an
-`isOffline` prop that only renders the label;
+`isOffline` prop that only gates the slash commands below (it rendered the
+offline label until 2026-11-06);
 `packages/chat-core/src/chat-client.ts` has had the "Offline: the row is safely
 queued" branch the whole time, unreachable from web.
 
@@ -210,40 +213,77 @@ attribute. (Nine sat under 3:1 undimmed until the accent engine's fill floor,
 system's ban on that idiom. So the visual signal here is the cursor, and the
 *explanation* is carried by `aria-describedby` and the note, not by dimming.
 
-Banner behavior:
-- Appears at the top of the content area (below header bar). On web it takes no layout
-  space: it is a fixed overlay floating just below the top bar, so a state change never
-  moves the shell, the top bar or a page title (#2244; it used to sit in flow above the
-  shell and push everything down). Routes with no bar, such as sign-in, float it
-  at the top of the viewport. Floating means it covers the first row of content, which
-  is why only its dismiss control takes a pointer: a tap on the rest of it reaches the
-  page underneath. **Mobile deviates,
-  deliberately:** the banner is mounted above the navigator in `app/_layout.tsx`, not
-  below each screen's header. "Below the header bar" is a web-shaped rule written for
-  a dashboard chrome; a global banner belongs above every screen, and moving it under
-  each header would mean editing the frozen `apps/mobile/components/screen-shell.tsx`
-  ([`mobile/navigation.md`](../mobile/navigation.md) § Hotspot freeze). **Since
-  2026-11-06 mobile floats too:** a compact pill (32 tall, popover surface, a dot in
-  the state's color, a short label in caption) drawn just under the status bar over
-  whatever screen or sheet is open, so it takes no layout space and nothing moves when
-  it comes or goes. It is mounted after the sheet provider in `app/_layout.tsx`, whose
+## One indicator
+
+*(2026-11-06, Paul: "same offline indicator in 3 places. similar issue with weak
+connection.")* A web chat screen used to say offline three times at once: the global
+banner floating over the channel header ("You're offline. Showing cached data."), the
+chat's own transport pill in that header ("Offline — messages will send when you
+reconnect"), and a line under the composer ("You're offline — messages send when you
+reconnect."). A slow connection stacked "Slow connection" over the chat's
+"Reconnecting…" or "Real-time updates paused…". Mobile did the same with its pill, a
+tinted transport band under the thread header and the composer's hint line.
+
+**The rule: one connection indicator per screen, on both surfaces, in one place.**
+It is a small pill: a dot in the state's color (danger for offline, warning for
+everything that still works, slowly), a short label, and the whole sentence as its
+accessible name, its hover title on web, and what a tap opens on mobile. What it says
+comes from one function, `connectionIndicator` in `@repo/validation`, which folds two
+sources:
+
+- the app's connection state (this file's state machine), on every screen, and
+- the realtime transport of the chat that is open, or nothing on any other screen.
+  A chat reports it through `useReportOpenChatTransport` (`@repo/hooks`) instead of
+  drawing it.
+
+The app state wins whenever it is not ONLINE, because a slow or dead API is the cause
+and a reconnecting or polling transport only its symptom. Only on a healthy
+connection does the transport speak: "Live updates paused" (the sentence
+[`message-delivery.md`](message-delivery.md#receiving-messages-realtime) holds
+normative) or "Reconnecting…". With a chat open, the offline sentence carries the
+outbox's promise, which is true there and nowhere else.
+
+| App state | Open chat's transport | Label | Sentence |
+|---|---|---|---|
+| OFFLINE (or the transport says offline) | none | Offline | You're offline. Showing cached data. |
+| OFFLINE (or the transport says offline) | any | Offline | You're offline. Messages you send go out when you reconnect. Photos and files need a connection. |
+| DEGRADED | any | Slow connection | Slow connection. Some features may be delayed. |
+| ONLINE | polling | Live updates paused | Real-time updates paused. Polling for new messages. |
+| ONLINE | reconnecting | Reconnecting… | Reconnecting to live updates. |
+| ONLINE | live, or none | nothing | |
+
+Indicator behavior:
+- **Web: in the top bar**, first in its right cluster, before the notifications bell
+  (`apps/web/components/shared/connection-pill.tsx`). It floated just below the bar
+  from #2244 until 2026-11-06, which kept it out of the layout but put it over the
+  first row of every page, chat's channel header included. In the bar it covers
+  nothing, and from `lg` the right cell's `flex-1` absorbs it without moving the find
+  field. Below `sm` it draws the dot alone. Routes with no bar (sign-in, onboarding)
+  float the same pill at the top of the viewport, taking no pointer; that one hides
+  itself whenever the dashboard shell is mounted, so only one is ever drawn or in the
+  accessibility tree. No dismiss control on web: the pill covers nothing.
+- **Mobile: floating at the top of the window**, over the header. It is mounted above the
+  navigator in `app/_layout.tsx`, not below each screen's header, because a global
+  indicator belongs above every screen and moving it under each header would mean
+  editing the frozen `apps/mobile/components/screen-shell.tsx`
+  ([`mobile/navigation.md`](../mobile/navigation.md) § Hotspot freeze). It is a compact
+  pill (32 tall, popover surface, the dot, the label in caption) drawn just under the
+  status bar over whatever screen or sheet is open, so it takes no layout space and
+  nothing moves when it comes or goes. It is mounted after the sheet provider, whose
   portal host paints every open sheet and scrim, which is what puts it over a sheet.
-  It draws "Slow connection" or "Offline" rather than the sentence above, so it fits
-  between a header's back capsule and its right-hand controls; the sentence is its
-  accessible name ([`writing.md`](../design-system/writing.md) § Connection banner).
   It used to be a full-width tinted band in flow, which pushed every screen, an open
-  sheet included, down by a line. Only the pill takes touches.
+  sheet included, down by a line. Only the pill takes touches. A tap on its label
+  opens the sentence in place, and a tap again closes it.
 - 200ms slide-down animation. **Mobile ships the 200ms as an opacity transition, not a
   translate** — the duration is the spec's, the motion is not. Opacity alone runs on the
   native driver (it shared the JS driver with a height collapse until the pill stopped
   taking layout, 2026-11-06). Recorded as drift rather than smuggled: nothing about the
   placement forces a fade, so a later pass may make it a real slide.
 - Auto-dismisses when state improves
-- User can manually dismiss (it reappears if state hasn't changed after 30s). Web
-  shows it again at once on any change of state, since the dismissal was of the state
-  it named. On mobile a dismissed pill fades out and unmounts, and it took no layout
-  space to begin with (corrected 2026-11-06: this said a dismissed bar stayed laid out
-  for 30s, which `components/network-banner.tsx` had already fixed)
+- On mobile the member can dismiss it (it reappears if what it says hasn't changed after
+  30s, and at once when it says something new). A dismissed pill fades out and
+  unmounts, and it took no layout space to begin with. Web dropped its dismiss control
+  with the move into the top bar (2026-11-06).
 - Announced, not merely drawn: `accessibilityRole="alert"` +
   `accessibilityLiveRegion="polite"` on mobile, `role="alert"` + `aria-live="polite"`
   on web. A member using a screen reader needs to know a write is about to fail as
@@ -252,8 +292,8 @@ Banner behavior:
 ## Implementation
 
 **Mobile has one connection model for the UI.** `apps/mobile/lib/connection/`:
-`state.ts` holds the copy and write-gating (`connectionBannerCopy`,
-`writeBlockedReason`) and re-exports `deriveConnectionState` from
+`state.ts` holds the write-gating (`writeBlockedReason`; the indicator's copy is
+`connectionIndicator` in `@repo/validation`) and re-exports `deriveConnectionState` from
 `@repo/validation` — the same function web's `NetworkProvider` calls, so the
 two surfaces cannot disagree about the three states. `monitor.ts` is the
 process singleton that feeds it

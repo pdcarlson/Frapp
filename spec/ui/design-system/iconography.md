@@ -374,7 +374,6 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Private / role-gated channel | `LockGlyph` |
 | Show or hide the channel member list (#3536), filled while shown | `MembersGlyph` (the nav set's `DirectoryGlyph`, re-exported); mobile's thread header draws the same shape, `NAV_GLYPHS.directory`, through `NavGlyph` |
 | Direct or group message | `DirectMessageGlyph` |
-| Connection lost | `OfflineGlyph` |
 | Reply to a message | `ThreadGlyph` |
 | Per-channel notification level / mute: a speaker (box and cone, split by a detail stroke) with two waves, an × for the waves when muted. Not a bell, since #3362: the bell is the notification inbox's. The box, split and second wave keep it apart from `AnnouncementGlyph`'s single horn and wave | `MuteGlyph` |
 | Event location | `LocationGlyph` |

@@ -25,7 +25,6 @@ import {
 } from "@/components/ui/popover";
 import {
   AttachGlyph,
-  OfflineGlyph,
   ReactionGlyph,
   SlashCommandGlyph,
 } from "./chat-glyphs";
@@ -1620,20 +1619,6 @@ export function Composer({
           </Button>
         </div>
       </div>
-      {/*
-        The offline label is deliberately NOT a live region. `ReconnectPill` in
-        the same header already announces the connection change from the same
-        `channel.connection` source, and `OfflineBanner` announces it again from
-        the root layout — three polite regions would read one event three times.
-        This is the label beside the control, which is what spec/ui/resilience/connection-state.md asks
-        the queued surface to carry.
-      */}
-      {isOffline ? (
-        <p className="mt-2 flex items-center gap-1.5 text-caption text-muted-foreground">
-          <OfflineGlyph className="h-4 w-4 shrink-0" />
-          You&rsquo;re offline — messages send when you reconnect.
-        </p>
-      ) : null}
       {paletteMounted ? (
         <SlashPalette
           open={palette.open}
