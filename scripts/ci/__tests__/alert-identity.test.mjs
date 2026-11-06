@@ -13,6 +13,7 @@ import {
 } from "../lib/alert-issue.mjs";
 import * as checkMigrationDrift from "../check-migration-drift.mjs";
 import * as deployAlert from "../deploy-alert.mjs";
+import * as npmAuditWatch from "../npm-audit-watch.mjs";
 import * as prBaseSync from "../pr-base-sync.mjs";
 import * as productionAuthConformance from "../production-auth-conformance.mjs";
 import * as productionBackupEnv from "../production-backup-env.mjs";
@@ -79,6 +80,11 @@ const ALERTS = [
     script: "production-backup-freshness",
     alert: watch.alert,
   })),
+  // The audit failing, and an allowlist entry about to expire (#3367).
+  ...[
+    ["audit", npmAuditWatch.AUDIT_ALERT],
+    ["expiry", npmAuditWatch.EXPIRY_ALERT],
+  ].map(([key, alert]) => ({ name: `npm-audit-watch:${key}`, script: "npm-audit-watch", alert })),
   // One alert per Sentry project and environment (#2489).
   ...Object.entries(sentrySourcemapsAlert.ALERTS).map(([key, alert]) => ({
     name: `sentry-sourcemaps-alert:${key}`,
