@@ -15,13 +15,19 @@
  * drop the old id. `NotificationService.registerPushToken` returns the existing
  * row for the same (user, token) pair and creates a new row when the token
  * string changes, so the superseded id is never updated in place.
+ *
+ * ## Why every register POSTs, even when storage already holds the token (#2617)
+ *
+ * The stored row is this device's memory of the server, not the server. The
+ * API drops rows on its own: `DeviceNotRegistered` receipts prune them, a
+ * second account signing in on the same device takes the token over
+ * (`registerPushToken` deletes the other user's row), and an account or data
+ * wipe cascades them away. A "stored token matches, skip" shortcut never
+ * notices any of that, so push stayed dead for the install until a sign-out
+ * cleared storage. The POST is idempotent, so it runs on every register.
  */
 
-import {
-  isAlreadyRegistered,
-  narrowPushTokenRow,
-  type PushTokenRow,
-} from "./push-registration";
+import { narrowPushTokenRow, type PushTokenRow } from "./push-registration";
 
 /**
  * `getExpoPushTokenAsync` may emit `onDevicePushToken` before it resolves.
@@ -30,6 +36,30 @@ import {
  * listener again after this returns.
  */
 let registerInFlight = false;
+
+const permissionGrantedListeners = new Set<() => void>();
+
+/**
+ * Subscribes to "the member just granted push permission" (#2617).
+ *
+ * The auth-edge register runs at sign-in, before the s03 primer or Settings'
+ * push switch has asked the OS. Neither platform's token call checks
+ * permission (iOS `registerForRemoteNotifications`, Android's FCM token), so
+ * that register should already have a row, but nothing proves it on a device.
+ * Registering again on the grant takes the question off the table, and costs
+ * one idempotent POST. Returns the unsubscribe.
+ */
+export function onPushPermissionGranted(listener: () => void): () => void {
+  permissionGrantedListeners.add(listener);
+  return () => {
+    permissionGrantedListeners.delete(listener);
+  };
+}
+
+/** Called by `acceptPrimer()` when the OS reports permission granted. */
+export function notifyPushPermissionGranted(): void {
+  for (const listener of permissionGrantedListeners) listener();
+}
 
 export function sessionOwnsPushRegistration(
   isAuthenticated: boolean,
@@ -55,7 +85,7 @@ export async function registerCurrentPushToken(deps: {
       if (!token || deps.isCancelled()) return;
 
       const stored = await deps.readStored();
-      if (isAlreadyRegistered(stored, token) || deps.isCancelled()) return;
+      if (deps.isCancelled()) return;
 
       const supersededId =
         stored?.id && stored.token !== token ? stored.id : null;
@@ -63,7 +93,11 @@ export async function registerCurrentPushToken(deps: {
       const created = await deps.register({ token });
       if (deps.isCancelled()) return;
 
-      const row = narrowPushTokenRow(created);
+      // An unreadable response must not throw away a row id this device
+      // already holds for the same token: sign-out needs it to deregister.
+      const row =
+        narrowPushTokenRow(created) ??
+        (stored?.id && stored.token === token ? stored : null);
       await deps.writeStored(row ?? { id: null, token });
       if (!row?.id) {
         deps.warn?.(

@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   deregisterStoredPushToken,
+  notifyPushPermissionGranted,
+  onPushPermissionGranted,
   registerCurrentPushToken,
   sessionOwnsPushRegistration,
 } from "./push-token-lifecycle";
@@ -42,13 +44,27 @@ describe("sessionOwnsPushRegistration", () => {
 });
 
 describe("registerCurrentPushToken", () => {
-  it("skips a re-register when the stored row already matches", async () => {
+  it("POSTs again when the stored row already matches, because the server may have dropped it (#2617)", async () => {
     const d = deps({
       id: "row-ExponentPushToken[new]",
       token: "ExponentPushToken[new]",
     });
     await registerCurrentPushToken(d);
-    expect(d.register).not.toHaveBeenCalled();
+    expect(d.register).toHaveBeenCalledWith({ token: "ExponentPushToken[new]" });
+    expect(d.remove).not.toHaveBeenCalled();
+  });
+
+  it("keeps the stored row id when the POST response can't be read", async () => {
+    const d = deps({ id: "row-old", token: "ExponentPushToken[new]" });
+    d.register.mockResolvedValueOnce(
+      undefined as unknown as { id: string; token: string },
+    );
+    await registerCurrentPushToken(d);
+    expect(d.stored.current).toEqual({
+      id: "row-old",
+      token: "ExponentPushToken[new]",
+    });
+    expect(d.warn).not.toHaveBeenCalled();
     expect(d.remove).not.toHaveBeenCalled();
   });
 
@@ -141,6 +157,18 @@ describe("registerCurrentPushToken", () => {
     });
     expect(d.remove).not.toHaveBeenCalled();
     expect(d.warn).toHaveBeenCalled();
+  });
+});
+
+describe("onPushPermissionGranted", () => {
+  it("calls listeners on a grant until they unsubscribe", () => {
+    const listener = vi.fn();
+    const unsubscribe = onPushPermissionGranted(listener);
+    notifyPushPermissionGranted();
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
+    notifyPushPermissionGranted();
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });
 
