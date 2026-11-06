@@ -16,6 +16,7 @@ const row = (overrides: Partial<ImportRow>): ImportRow => ({
   source: "upload",
   messages_after: null,
   purged_messages: 0,
+  completed_at: null,
   channels_total: null,
   channels_done: null,
   ...overrides,
@@ -89,16 +90,10 @@ describe("deleteImportConfirmation (#2944)", () => {
 });
 
 describe("purgeLine (#2944)", () => {
-  it("is null for an import that is not deleting or deleted", () => {
+  it("is null for an import that is not deleting", () => {
     expect(purgeLine(row({ status: "completed" }))).toBeNull();
     expect(purgeLine(row({ status: "running" }))).toBeNull();
-  });
-
-  it("says a deleted import is deleted, whatever its count says", () => {
-    // Deleted before the count existed, so it reads 0.
-    expect(purgeLine(row({ status: "purged", imported_messages: 50 }))).toBe(
-      "Deleted. The messages, attachments and archive files it brought in are gone.",
-    );
+    expect(purgeLine(row({ status: "purged" }))).toBeNull();
   });
 
   it("says what is left, then what it is doing once no message is", () => {

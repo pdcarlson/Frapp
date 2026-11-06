@@ -19,6 +19,7 @@ const row = (overrides: Partial<ImportRow>): ImportRow => ({
   source: "upload",
   messages_after: null,
   purged_messages: 0,
+  completed_at: null,
   channels_total: null,
   channels_done: null,
   ...overrides,

@@ -53,10 +53,18 @@ describe("categoryLabelFor", () => {
     );
   });
 
+  it("labels the Discord import notice, though its page is web-only", () => {
+    expect(categoryLabelFor({ target: { screen: "discord_import" } })).toBe(
+      "Discord import",
+    );
+  });
+
   // Better no label than a guessed one: nothing in the row says what category
   // the server used, so an unmapped screen is genuinely unknown.
   it("returns null rather than guessing for an unknown or absent target", () => {
-    expect(categoryLabelFor({ target: { screen: "something-new" } })).toBeNull();
+    expect(
+      categoryLabelFor({ target: { screen: "something-new" } }),
+    ).toBeNull();
     expect(categoryLabelFor({})).toBeNull();
     expect(categoryLabelFor(undefined)).toBeNull();
     expect(categoryLabelFor({ target: "chat" })).toBeNull();
@@ -162,9 +170,9 @@ describe("selectUnreadIds", () => {
   });
 
   it("returns nothing when everything is read", () => {
-    expect(selectUnreadIds([row({ read_at: iso(at(2026, 8, 17, 19)) })])).toEqual(
-      [],
-    );
+    expect(
+      selectUnreadIds([row({ read_at: iso(at(2026, 8, 17, 19)) })]),
+    ).toEqual([]);
     expect(selectUnreadIds(undefined)).toEqual([]);
   });
 });
