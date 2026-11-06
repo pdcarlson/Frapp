@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-06: A chapter can pick the channel Chat opens on
+
+### 20261106010000_chat_channels_is_default.sql
+
+- **Purpose**: Adds `chat_channels.is_default` (boolean, not null, default false) and the partial unique index `chat_channels_one_default_per_chapter` on `(chapter_id) where is_default`, so a chapter has at most one default channel. Officers who can manage channels set it from the web chat admin page. Chat opens on it when a member's device has no last channel, ahead of `#general`. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#where-chat-opens) § Where Chat opens. No row is rewritten: a constant default is stored in the catalog.
+- **Checks**: After `db push`, `select count(*) from public.chat_channels where is_default;` returns 0.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API ignores the column. The newer API against an unmigrated database fails every channel save that sends `is_default`, and nothing else, because the list reads `*`. Re-applying is idempotent (`if not exists`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-the-chapter-default-channel-20261106010000) § Rollback the chapter default channel.
+
 ## 2026-11-05: Backwork accepts files up to 50 MB (#3499)
 
 ### 20261105230000_backwork_bucket_50mb.sql

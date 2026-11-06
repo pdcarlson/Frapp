@@ -371,10 +371,25 @@ export class ChatService {
         | 'category_id'
         | 'is_read_only'
         | 'default_notification_level'
+        | 'is_default'
       >
     >,
   ): Promise<ChatChannel> {
     const existing = await this.requireChannelInChapter(id, chapterId);
+
+    // Chat opens on the chapter default for everyone who can see it; a DM is
+    // two members' conversation, not somewhere to send the whole chapter.
+    if (isDirectChannel(existing) && data.is_default === true) {
+      throw new BadRequestException(
+        "A DM or group DM can't be the chapter's default channel",
+      );
+    }
+    // One default per chapter (a partial unique index): the old one is unset
+    // first. If the update below then fails, the chapter is left with no
+    // default, which is the state every chapter starts in (`#general`).
+    if (data.is_default === true && !existing.is_default) {
+      await this.channelRepo.clearDefault(chapterId);
+    }
 
     // A DM has no officer, and the push worker defaults every DM to `all`
     // whatever this column holds (`defaultLevelFor`), so a stored value there

@@ -20,17 +20,23 @@ import { networkMock } from "@/tests/network";
  * `can-fallback.spec.tsx` pins.
  */
 
-const { mockOffline, reads, updateChannel, mockCreateChannel } = vi.hoisted(() => ({
-  mockCreateChannel: vi.fn(),
-  mockOffline: { value: false },
-  updateChannel: { mutateAsync: (() => Promise.resolve()) as (...args: unknown[]) => Promise<unknown> },
-  reads: {
-    channels: {} as Record<string, unknown>,
-    categories: {} as Record<string, unknown>,
-    pins: {} as Record<string, unknown>,
-    catalog: {} as Record<string, unknown>,
-  },
-}));
+const { mockOffline, reads, updateChannel, mockCreateChannel } = vi.hoisted(
+  () => ({
+    mockCreateChannel: vi.fn(),
+    mockOffline: { value: false },
+    updateChannel: {
+      mutateAsync: (() => Promise.resolve()) as (
+        ...args: unknown[]
+      ) => Promise<unknown>,
+    },
+    reads: {
+      channels: {} as Record<string, unknown>,
+      categories: {} as Record<string, unknown>,
+      pins: {} as Record<string, unknown>,
+      catalog: {} as Record<string, unknown>,
+    },
+  }),
+);
 
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/hooks")>();
@@ -496,6 +502,37 @@ describe("ChatAdminPage — saving a channel", () => {
       (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
         .body,
     ).not.toHaveProperty("description");
+  });
+
+  it("leaves the chapter default alone when another field is saved", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).not.toHaveProperty("is_default");
+  });
+
+  it("makes the channel the chapter default from its switch", async () => {
+    const spy = vi.fn(() => Promise.resolve());
+    updateChannel.mutateAsync = spy;
+    render(<ChatAdminPage initialChannelId="ch-1" />);
+
+    fireEvent.click(
+      screen.getByRole("switch", { name: "Chapter default channel" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save channel" }));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    expect(
+      (spy.mock.calls[0] as unknown as [{ body: Record<string, unknown> }])[0]
+        .body,
+    ).toMatchObject({ is_default: true });
   });
 
   it("sends the description once the officer has typed one", async () => {

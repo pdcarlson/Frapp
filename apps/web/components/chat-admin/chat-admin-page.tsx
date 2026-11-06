@@ -89,6 +89,8 @@ interface AdminChannel {
   is_read_only: boolean;
   /** Officer-set default push level (#2771); `null` = the built-in default. */
   default_notification_level: ChatNotificationLevel | null;
+  /** The chapter's default channel, where Chat opens with no last channel. */
+  is_default?: boolean;
 }
 
 interface AdminCategory {
@@ -332,6 +334,7 @@ function ChatAdminBody({
   const [descriptionSeed, setDescriptionSeed] = useState("");
   const [categoryDraft, setCategoryDraft] = useState(NO_CATEGORY);
   const [readOnlyDraft, setReadOnlyDraft] = useState(false);
+  const [isDefaultDraft, setIsDefaultDraft] = useState(false);
   const [defaultLevelDraft, setDefaultLevelDraft] = useState<string>(
     BUILT_IN_DEFAULT_LEVEL,
   );
@@ -366,6 +369,7 @@ function ChatAdminBody({
     setDescriptionSeed((channel.description ?? "").trim());
     setCategoryDraft(channel.category_id ?? NO_CATEGORY);
     setReadOnlyDraft(channel.is_read_only);
+    setIsDefaultDraft(channel.is_default === true);
     setDefaultLevelDraft(
       channel.default_notification_level ?? BUILT_IN_DEFAULT_LEVEL,
     );
@@ -408,6 +412,11 @@ function ChatAdminBody({
           // uncategorized," which is a real write, not "leave it alone."
           category_id: categoryDraft === NO_CATEGORY ? null : categoryDraft,
           is_read_only: readOnlyDraft,
+          // Sent only when it changed: setting it moves the chapter default
+          // off another channel, which a save of an unrelated field must not.
+          ...(isDefaultDraft !== (selectedChannel.is_default === true)
+            ? { is_default: isDefaultDraft }
+            : {}),
           // `null` clears an officer's choice; the built-in default applies.
           default_notification_level:
             defaultLevelDraft === BUILT_IN_DEFAULT_LEVEL
@@ -839,6 +848,11 @@ function ChatAdminBody({
                     <Badge variant="outline" className="shrink-0">
                       {CHANNEL_TYPE_LABEL[channel.type]}
                     </Badge>
+                    {channel.is_default ? (
+                      <Badge variant="secondary" className="shrink-0">
+                        Default
+                      </Badge>
+                    ) : null}
                     {channel.is_read_only ? (
                       <Badge variant="secondary" className="shrink-0">
                         Read-only
@@ -937,6 +951,20 @@ function ChatAdminBody({
                       Read-only (only officers with permission can post)
                     </span>
                   </label>
+                  <div className="grid gap-1">
+                    <label className="flex items-center gap-3">
+                      <Switch
+                        checked={isDefaultDraft}
+                        onCheckedChange={setIsDefaultDraft}
+                      />
+                      <span className="text-sm">Chapter default channel</span>
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      Chat opens here when a member&apos;s device has no last
+                      channel. Turning this on moves it off any other channel.
+                      Members who can&apos;t see this channel open #general.
+                    </p>
+                  </div>
                   <div className="grid gap-1">
                     <Label htmlFor="ca-default-level">
                       Default notifications

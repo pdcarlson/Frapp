@@ -210,6 +210,15 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
     return updated;
   }
 
+  async clearDefault(chapterId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('chat_channels')
+      .update({ is_default: false })
+      .eq('chapter_id', chapterId)
+      .eq('is_default', true);
+    if (error) throw new SupabaseQueryError(error);
+  }
+
   async delete(id: string, chapterId: string): Promise<void> {
     const { error } = await this.supabase
       .from('chat_channels')

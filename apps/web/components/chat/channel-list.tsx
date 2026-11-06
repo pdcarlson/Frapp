@@ -74,6 +74,11 @@ export interface ChatChannel {
    * channel open right now.
    */
   hidden?: boolean;
+  /**
+   * The chapter's default channel, where Chat opens when this browser has no
+   * last channel (`landingChannelId` in `@repo/hooks`).
+   */
+  is_default?: boolean;
 }
 
 /**

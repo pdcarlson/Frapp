@@ -127,6 +127,11 @@ export interface IChatChannelRepository {
     data: Partial<ChatChannel>,
   ): Promise<ChatChannel>;
   delete(id: string, chapterId: string): Promise<void>;
+  /**
+   * Unset the chapter's default channel, if it has one, so another can be
+   * set without tripping the one-per-chapter index.
+   */
+  clearDefault(chapterId: string): Promise<void>;
   /** Atomic Group DM leave (#348) — see the Supabase implementation's doc comment. */
   leaveGroupDm(
     channelId: string,

@@ -66,6 +66,7 @@ export const baseChannel: ChatChannel = {
   created_at: '2026-01-01T00:00:00.000Z',
   archived_at: null,
   default_notification_level: null,
+  is_default: false,
 };
 
 export const baseMessage: ChatMessage = {
@@ -101,6 +102,7 @@ export async function createChatServiceFixture() {
     removePrivateChannelMember: jest.fn(),
     findRoleGates: jest.fn(),
     removeUserFromPrivateChannels: jest.fn(),
+    clearDefault: jest.fn(),
   };
 
   const mockCategoryRepo: jest.Mocked<IChatCategoryRepository> = {

@@ -58,6 +58,7 @@ describe('PollService', () => {
     created_at: '2026-01-01T00:00:00.000Z',
     archived_at: null,
     default_notification_level: null,
+    is_default: false,
   };
 
   const basePollMessage: ChatMessage = {
@@ -126,6 +127,7 @@ describe('PollService', () => {
       addPrivateChannelMember: jest.fn(),
       removePrivateChannelMember: jest.fn(),
       removeUserFromPrivateChannels: jest.fn(),
+      clearDefault: jest.fn(),
     };
 
     mockVoteRepo = {
