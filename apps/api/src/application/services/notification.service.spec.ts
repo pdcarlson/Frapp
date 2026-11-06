@@ -139,7 +139,7 @@ describe('NotificationService', () => {
     id: 'np-1',
     user_id: 'u-1',
     chapter_id: 'ch-1',
-    category: 'chat',
+    category: 'events',
     is_enabled: true,
     updated_at: '2026-02-27T00:00:00.000Z',
   };
@@ -245,11 +245,39 @@ describe('NotificationService', () => {
       await service.notifyUser('u-1', 'ch-1', {
         title: 'Test',
         body: 'Body',
-        category: 'chat',
+        category: 'events',
       });
 
       expect(mockNotificationRepo.create).not.toHaveBeenCalled();
       expect(mockPushProvider.sendToUser).not.toHaveBeenCalled();
+    });
+
+    // 2026-11-06: the Chat switch was dropped from both surfaces in favour of
+    // per-channel and per-DM levels. A `chat` row an older build wrote must not
+    // keep a member muted with no control left to undo it, so a preference is
+    // only read for a category a member can still switch.
+    it('delivers chat even when an old chat preference row says off', async () => {
+      mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue({
+        ...basePreference,
+        category: 'chat',
+        is_enabled: false,
+      });
+      mockSettingsRepo.findByUser.mockResolvedValue(null);
+      mockNotificationRepo.create.mockResolvedValue(baseNotification);
+      mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+      mockPushProvider.sendToUser.mockResolvedValue({ invalidTokens: [] });
+
+      await service.notifyUser('u-1', 'ch-1', {
+        title: 'Alex in #general',
+        body: 'Hello',
+        category: 'chat',
+      });
+
+      expect(
+        mockPreferenceRepo.findByUserChapterCategory,
+      ).not.toHaveBeenCalled();
+      expect(mockNotificationRepo.create).toHaveBeenCalled();
+      expect(mockPushProvider.sendToUser).toHaveBeenCalledTimes(1);
     });
 
     // #1041: the category gate used to run *before* the priority check, so
@@ -323,7 +351,7 @@ describe('NotificationService', () => {
       await service.notifyUser('u-1', 'ch-1', {
         title: 'Test',
         body: 'Body',
-        category: 'chat',
+        category: 'events',
       });
 
       expect(mockNotificationRepo.create).toHaveBeenCalledWith({
@@ -403,7 +431,7 @@ describe('NotificationService', () => {
         await service.notifyUser('u-1', 'ch-1', {
           title: 'Test',
           body: 'Body',
-          category: 'chat',
+          category: 'events',
         });
 
         expect(mockPushTokenRepo.deleteByToken).toHaveBeenCalledWith(
@@ -420,7 +448,7 @@ describe('NotificationService', () => {
         await service.notifyUser('u-1', 'ch-1', {
           title: 'Test',
           body: 'Body',
-          category: 'chat',
+          category: 'events',
         });
 
         expect(mockPushTokenRepo.deleteByToken).not.toHaveBeenCalled();
@@ -444,7 +472,7 @@ describe('NotificationService', () => {
           service.notifyUser('u-1', 'ch-1', {
             title: 'Test',
             body: 'Body',
-            category: 'chat',
+            category: 'events',
           }),
         ).resolves.toBeUndefined();
 
@@ -698,13 +726,41 @@ describe('NotificationService', () => {
       await service.notifyChapter('ch-1', {
         title: 'Chapter Announcement',
         body: 'Hello everyone',
-        category: 'chat',
+        category: 'events',
       });
 
       expect(mockNotificationRepo.createMany).toHaveBeenCalledWith([
         expect.objectContaining({ user_id: 'u-2' }),
       ]);
       expect(mockPushProvider.sendToUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('reads no preference for a category without a member switch', async () => {
+      stubChapterNotify({
+        userIds: ['u-1', 'u-2'],
+        prefs: [
+          {
+            ...basePreference,
+            user_id: 'u-1',
+            category: 'chat',
+            is_enabled: false,
+          },
+        ],
+      });
+
+      await service.notifyChapter('ch-1', {
+        title: 'New message',
+        body: 'Hello',
+        category: 'chat',
+      });
+
+      expect(
+        mockPreferenceRepo.findByUsersChapterCategory,
+      ).not.toHaveBeenCalled();
+      expect(mockNotificationRepo.createMany).toHaveBeenCalledWith([
+        expect.objectContaining({ user_id: 'u-1' }),
+        expect.objectContaining({ user_id: 'u-2' }),
+      ]);
     });
 
     it('does not read category preferences for an URGENT chapter broadcast', async () => {
@@ -825,7 +881,7 @@ describe('NotificationService', () => {
       await service.notifyChapter('ch-1', {
         title: 'Test',
         body: 'Body',
-        category: 'chat',
+        category: 'events',
       });
 
       expect(mockNotificationRepo.createMany).toHaveBeenCalledWith(
@@ -869,7 +925,7 @@ describe('NotificationService', () => {
       await service.notifyChapter('ch-1', {
         title: 'Chapter Announcement',
         body: 'Hello everyone',
-        category: 'chat',
+        category: 'events',
       });
 
       expect(mockMemberRepo.findByChapter).toHaveBeenCalledTimes(1);
@@ -878,7 +934,7 @@ describe('NotificationService', () => {
       ).toHaveBeenCalledTimes(2);
       expect(
         mockPreferenceRepo.findByUsersChapterCategory,
-      ).toHaveBeenCalledWith(users.slice(0, 100), 'ch-1', 'chat');
+      ).toHaveBeenCalledWith(users.slice(0, 100), 'ch-1', 'events');
       expect(mockSettingsRepo.findByUserIds).toHaveBeenCalledTimes(2);
       expect(mockNotificationRepo.createMany).toHaveBeenCalledTimes(2);
       expect(mockPushTokenRepo.findByUserIds).toHaveBeenCalledTimes(2);

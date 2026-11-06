@@ -1,7 +1,11 @@
 import { REQUEST_ID_HEADER } from "@repo/api-sdk";
 import { render, act, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { NetworkProvider, useNetwork } from "./network-provider";
+import {
+  CONFIRM_RETRY_MS,
+  NetworkProvider,
+  useNetwork,
+} from "./network-provider";
 
 /**
  * The health poll is the one consumer of NEXT_PUBLIC_API_URL that needs the
@@ -142,6 +146,13 @@ describe("NetworkProvider connection state (#512)", () => {
     });
   }
 
+  /** Runs the one retry a first failure gets before it counts. */
+  async function confirmFirstFailure() {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CONFIRM_RETRY_MS);
+    });
+  }
+
   it("is ONLINE when the mount probe succeeds", async () => {
     fetchMock.mockResolvedValue({ ok: true, status: 200 });
     await renderProbe();
@@ -149,9 +160,36 @@ describe("NetworkProvider connection state (#512)", () => {
     expect(screen.getByTestId("offline")).toHaveTextContent("false");
   });
 
-  it("is DEGRADED after one failed probe with the link still up", async () => {
+  it("waits out one retry before a first failure counts", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("timeout"));
+    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+    await renderProbe();
+    expect(screen.getByTestId("state")).toHaveTextContent("ONLINE");
+    await confirmFirstFailure();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("state")).toHaveTextContent("ONLINE");
+  });
+
+  it("drops a pending retry once a probe gets through", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("timeout"));
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
     fetchMock.mockRejectedValue(new Error("timeout"));
     await renderProbe();
+    await act(async () => {
+      screen.getByRole("button", { name: "probe" }).click();
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await confirmFirstFailure();
+    // The retry had nothing left to confirm, so it never ran.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("state")).toHaveTextContent("ONLINE");
+  });
+
+  it("is DEGRADED after a confirmed failed probe with the link still up", async () => {
+    fetchMock.mockRejectedValue(new Error("timeout"));
+    await renderProbe();
+    await confirmFirstFailure();
     expect(screen.getByTestId("state")).toHaveTextContent("DEGRADED");
     expect(screen.getByTestId("offline")).toHaveTextContent("false");
     expect(screen.getByTestId("link")).toHaveTextContent("true");
@@ -160,6 +198,7 @@ describe("NetworkProvider connection state (#512)", () => {
   it("sets isOffline after three failed probes with navigator.onLine still true", async () => {
     fetchMock.mockRejectedValue(new Error("timeout"));
     await renderProbe();
+    await confirmFirstFailure();
     expect(screen.getByTestId("offline")).toHaveTextContent("false");
 
     await act(async () => {
@@ -194,6 +233,7 @@ describe("NetworkProvider connection state (#512)", () => {
   it("counts a 503 as a failure", async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 503 });
     await renderProbe();
+    await confirmFirstFailure();
     expect(screen.getByTestId("state")).toHaveTextContent("DEGRADED");
     expect(screen.getByTestId("offline")).toHaveTextContent("false");
   });
@@ -201,6 +241,7 @@ describe("NetworkProvider connection state (#512)", () => {
   it("restores ONLINE on the first successful probe after offline", async () => {
     fetchMock.mockRejectedValue(new Error("timeout"));
     await renderProbe();
+    await confirmFirstFailure();
     await act(async () => {
       screen.getByRole("button", { name: "probe" }).click();
       await Promise.resolve();
@@ -223,13 +264,14 @@ describe("NetworkProvider connection state (#512)", () => {
   it("probes again on the browser online event instead of blindly resetting", async () => {
     fetchMock.mockRejectedValue(new Error("timeout"));
     await renderProbe();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await confirmFirstFailure();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
 
     await act(async () => {
       window.dispatchEvent(new Event("online"));
       await Promise.resolve();
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(screen.getByTestId("state")).toHaveTextContent("DEGRADED");
   });
 
