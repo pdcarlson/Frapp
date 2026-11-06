@@ -54,6 +54,7 @@ import {
   CreateDmDto,
   CreateGroupDmDto,
   AddChannelMemberDto,
+  ChannelMemberDto,
   CreateCategoryDto,
   UpdateCategoryDto,
   SendMessageDto,
@@ -315,6 +316,24 @@ export class ChatController {
   ) {
     await this.chatService.leaveChannel(channelId, chapterId, userId);
     return { success: true };
+  }
+
+  /**
+   * Everyone who can read the channel, for the member list beside it (#3536).
+   * Any reader of the channel may ask; a non-reader gets 403, and a channel in
+   * another chapter 404, from the same check every channel read goes through.
+   */
+  @Get(':id/members')
+  @ApiOperation({
+    summary: 'Everyone who can read a channel, with their top role rank',
+  })
+  @ApiOkResponse({ type: ChannelMemberDto, isArray: true })
+  async listChannelMembers(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
+  ): Promise<ChannelMemberDto[]> {
+    return this.chatService.listChannelMembers(channelId, chapterId, userId);
   }
 
   /**

@@ -14,7 +14,11 @@ import { CHAT_CHANNEL_PARAM, CHAT_MESSAGE_PARAM } from "@/lib/chat/chat-links";
  * pre-selected. `useSearchParams` requires a Suspense boundary (matches
  * `directory-page.tsx`'s `?tab=` pattern).
  */
-function ChatPageContent() {
+function ChatPageContent({
+  defaultMembersHidden,
+}: {
+  defaultMembersHidden: boolean;
+}) {
   const searchParams = useSearchParams();
   const channelParam = searchParams.get(CHAT_CHANNEL_PARAM);
   const messageParam = searchParams.get(CHAT_MESSAGE_PARAM);
@@ -24,6 +28,7 @@ function ChatPageContent() {
       <ChatShell
         initialChannelId={channelParam}
         initialMessageId={messageParam}
+        defaultMembersHidden={defaultMembersHidden}
       />
     </ChatProvider>
   );
@@ -35,7 +40,12 @@ function ChatPageContent() {
  * shell. The provider lives inside the dashboard tree so it sees the existing
  * QueryClient, api-sdk client, and active chapter id.
  */
-export function ChatPage() {
+export function ChatPage({
+  defaultMembersHidden = false,
+}: {
+  /** The member list's remembered state, read by the route on the server. */
+  defaultMembersHidden?: boolean;
+} = {}) {
   /*
     This boundary's fallback must never be what the server sends.
 
@@ -56,7 +66,7 @@ export function ChatPage() {
   */
   return (
     <Suspense fallback={<ChatRouteSkeleton />}>
-      <ChatPageContent />
+      <ChatPageContent defaultMembersHidden={defaultMembersHidden} />
     </Suspense>
   );
 }

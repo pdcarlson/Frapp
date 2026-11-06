@@ -30,6 +30,7 @@ describe('ChannelAccessService', () => {
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockRbac: {
     getEffectivePermissions: jest.Mock;
+    getChapterMemberAccess: jest.Mock;
     hasAlumniRole: jest.Mock;
     isAlumni: jest.Mock;
   };
@@ -120,6 +121,7 @@ describe('ChannelAccessService', () => {
     };
     mockRbac = {
       getEffectivePermissions: jest.fn().mockResolvedValue([]),
+      getChapterMemberAccess: jest.fn().mockResolvedValue([]),
       // Default to an active (non-alumni) member.
       hasAlumniRole: jest.fn().mockResolvedValue(false),
       isAlumni: jest.fn().mockResolvedValue(false),
@@ -256,6 +258,104 @@ describe('ChannelAccessService', () => {
   // Alumni are read-mostly (spec/behavior/alumni.md): full read access, but
   // writes only in direct conversations and ROLE_GATED channels that require
   // `alumni:post`.
+  describe('listChannelMembers', () => {
+    const access = [
+      {
+        user_id: 'president',
+        permissions: new Set(['*']),
+        top_role_order: 0,
+      },
+      {
+        user_id: 'member-of-private',
+        permissions: new Set<string>(),
+        top_role_order: 4,
+      },
+      {
+        user_id: 'secret-holder',
+        permissions: new Set(['secret:view']),
+        top_role_order: 2,
+      },
+      {
+        user_id: 'no-role',
+        permissions: new Set<string>(),
+        top_role_order: null,
+      },
+    ];
+
+    beforeEach(() => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
+      mockRbac.getEffectivePermissions.mockResolvedValue(['*']);
+      mockRbac.getChapterMemberAccess.mockResolvedValue(access);
+    });
+
+    it('lists every chapter member for a PUBLIC channel, with their rank', async () => {
+      mockChannelRepo.findById.mockResolvedValue(publicChannel);
+
+      const result = await service.listChannelMembers(
+        'ch-public',
+        'chap-1',
+        'user-1',
+      );
+
+      expect(result).toEqual([
+        { user_id: 'president', role_rank: 0 },
+        { user_id: 'member-of-private', role_rank: 4 },
+        { user_id: 'secret-holder', role_rank: 2 },
+        { user_id: 'no-role', role_rank: null },
+      ]);
+      expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledWith('chap-1');
+    });
+
+    it('lists only holders of a required permission, and the wildcard, for ROLE_GATED', async () => {
+      mockChannelRepo.findById.mockResolvedValue(roleGatedChannel);
+
+      const result = await service.listChannelMembers(
+        'ch-role',
+        'chap-1',
+        'user-1',
+      );
+
+      expect(result.map((entry) => entry.user_id)).toEqual([
+        'president',
+        'secret-holder',
+      ]);
+      // One chapter-wide resolve, never a lookup per listed member.
+      expect(mockRbac.getEffectivePermissions).toHaveBeenCalledTimes(1);
+    });
+
+    it('lists only `member_ids` for a PRIVATE channel, wildcard or not', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...privateChannel,
+        member_ids: ['member-of-private', 'user-1'],
+      });
+
+      const result = await service.listChannelMembers(
+        'ch-private',
+        'chap-1',
+        'user-1',
+      );
+
+      expect(result).toEqual([{ user_id: 'member-of-private', role_rank: 4 }]);
+    });
+
+    it('refuses a caller who cannot read the channel, before any roster read', async () => {
+      mockChannelRepo.findById.mockResolvedValue(privateChannel);
+
+      await expect(
+        service.listChannelMembers('ch-private', 'chap-1', 'user-1'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockRbac.getChapterMemberAccess).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 for a channel outside the chapter', async () => {
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.listChannelMembers('ch-x', 'chap-1', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
   describe('assertChannelAccess — Alumni posting', () => {
     // The shape the seeder actually persists (FRA-321). It used to be
     // `required_permissions: null`, which is now denied outright.

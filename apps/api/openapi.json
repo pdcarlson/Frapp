@@ -3224,6 +3224,53 @@
       }
     },
     "/v1/channels/{id}/members": {
+      "get": {
+        "operationId": "ChatController_listChannelMembers_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChannelMemberDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Everyone who can read a channel, with their top role rank",
+        "tags": [
+          "Chat"
+        ]
+      },
       "post": {
         "operationId": "ChatController_addChannelMember_v1",
         "parameters": [
@@ -12375,6 +12422,25 @@
         },
         "required": [
           "member_ids"
+        ]
+      },
+      "ChannelMemberDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The member's `users.id`."
+          },
+          "role_rank": {
+            "type": "number",
+            "nullable": true,
+            "description": "The `display_order` of the member's highest role (lower ranks higher), or null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`."
+          }
+        },
+        "required": [
+          "user_id",
+          "role_rank"
         ]
       },
       "AddChannelMemberDto": {

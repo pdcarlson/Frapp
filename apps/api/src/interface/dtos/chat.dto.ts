@@ -157,6 +157,20 @@ export class AddChannelMemberDto {
   user_id: string;
 }
 
+/** `GET /v1/channels/{id}/members` (#3536): one person who can read the channel. */
+export class ChannelMemberDto {
+  @ApiProperty({ format: 'uuid', description: "The member's `users.id`." })
+  user_id: string;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      "The `display_order` of the member's highest role (lower ranks higher), or null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`.",
+  })
+  role_rank: number | null;
+}
+
 export class CreateGroupDmDto {
   @ApiProperty({ type: [String] })
   @IsArray()
