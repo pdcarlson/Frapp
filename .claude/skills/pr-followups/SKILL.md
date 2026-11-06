@@ -1,18 +1,18 @@
 ---
 name: pr-followups
 description: >
-  Run the PR Follow-ups routine (3 of 5): harvest human-action and deferred items from recent pull
+  Run the PR follow-ups phase of the weekly Board Sweep routine: harvest human-action and deferred items from recent pull
   requests (Flagged-for-review sections, agent-stated TODOs, unresolved review threads), research
   how each gets done, file them as tracked GitHub issues, refresh the "PR Follow-ups — Human Action
   List" tracking issue, and audit previously filed items for whether they've been done. Use when
-  the scheduled "PR Follow-ups" routine fires, or when asked to collect or audit PR follow-up items.
+  the Board Sweep reaches this phase, or when asked to collect or audit PR follow-up items.
 ---
 
-# PR Follow-ups harvester (routine 3 of 5)
+# PR Follow-ups harvester (phase 1 of the Board Sweep)
 
 Agent PRs often end with work no PR can finish (flagged decisions, credential rotations, dashboard
-clicks, unrun verification), and merging drops it. This routine turns that work into GitHub
-issues. Each run does three jobs in order: **audit** what earlier runs filed, **harvest** new
+clicks, unrun verification), and merging drops it. This phase of the weekly
+[`board-sweep`](../board-sweep/SKILL.md) turns that work into GitHub issues. Each run does three jobs in order: **audit** what earlier runs filed, **harvest** new
 items, **publish** the Human Action List. An item is done when its issue is closed; the list never
 lives in a scratch file.
 
@@ -168,14 +168,13 @@ Comment on an issue only when you have something it doesn't already say
 Work through all three jobs without stopping to summarize; put any status note in the same message
 as your next tool call. Stop early only if the GitHub MCP is unavailable or the marker-count guard
 fails, and report that as the finding. Otherwise the run ends when the tracking issue is
-republished, and your final message is the run report. Your last tracker write is the
-[run record](../../../docs/ci-cd/routines.md#run-record-all-routines), `routine=pr-followups`, with the outcome
-that section defines (a failed guard makes it `stopped`). With the MCP unavailable there is no
-record to post, and none is posted any other way.
+republished, and your final message is the run report. This phase posts no run record of its own: the
+[`board-sweep`](../board-sweep/SKILL.md) record covers it, and a failed guard makes that record `stopped`.
 
 ## Run report
 
-Paul gets this as the weekly digest, so lead with the **Needs you** count and the top 3 items.
+This is your section of the sweep's run report, and its **Needs you** items feed the sweep's post
+to Paul, so lead with the **Needs you** count and the top 3 items.
 Then: audit outcomes (closed, staled, left open), PRs scanned forward and backward, issues filed
 (numbers), the tracking-issue update, what you dropped, and anything the next run should know.
 

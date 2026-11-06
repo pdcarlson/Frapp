@@ -115,7 +115,7 @@ a fresh session ([`/handoff`](../handoff/SKILL.md)) instead of growing this one.
 ## Guardrails
 
 - One item per invocation. Finish it, then offer the next.
-- File nothing. Mention new work instead; the curator and triage routines own the inbox. The
+- File nothing. Mention new work instead; the Board Sweep's curator and triage phases own the inbox. The
   exception is a newly proven human-only blocker, which still gets its `[human]` issue.
 - Every shortlist line comes from a live read this run.
 - Secret names only, never values.
