@@ -33,12 +33,17 @@ import { shouldShowDonationCta } from "@/lib/more/donation";
 import { LEGAL_LINKS } from "@/lib/more/legal";
 import { acceptPrimer } from "@/lib/notifications/primer";
 import {
+  PUSH_PROMPT_ANSWERED_EVENT,
+  pushPromptAnsweredProperties,
+} from "@/lib/notifications/push-analytics";
+import {
   getPushPermission,
   isPushChannelBlocked,
   pushUnavailableReason,
 } from "@/lib/notifications/push";
 import type { PushPermissionStatus } from "@/lib/notifications/push-types";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useLatestTrack } from "@/lib/use-latest-track";
 import {
   deviceTimeZone,
   useNotificationPreferencesSync,
@@ -246,6 +251,8 @@ export default function PreferencesScreen() {
         : String(blockList.ids.size);
 
   const pushReason = pushUnavailableReason();
+  // Read after the OS prompt closes (`useLatestTrack`).
+  const track = useLatestTrack();
   // One tap at a time: a second tap while the OS prompt is up would queue a
   // second prompt, or open the settings app over it.
   const pushTapInFlight = useRef(false);
@@ -275,7 +282,14 @@ export default function PreferencesScreen() {
       if (current && pushTapAsks(current)) {
         // A prompt the OS failed to show reads as not granted; the re-read
         // below reports whatever is true either way.
-        await acceptPrimer();
+        const granted = await acceptPrimer();
+        track(
+          PUSH_PROMPT_ANSWERED_EVENT,
+          pushPromptAnsweredProperties(
+            granted ? "allowed" : "denied",
+            "settings",
+          ),
+        );
         setPushState(await readPushState().catch(() => null));
         return;
       }
