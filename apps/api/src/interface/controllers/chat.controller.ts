@@ -20,6 +20,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { ChatService } from '../../application/services/chat.service';
+import { ChatMentionService } from '../../application/services/chat-mention.service';
 import { ChatAttachmentService } from '../../application/services/chat-attachment.service';
 import { ChatNotificationPreferenceService } from '../../application/services/chat-notification-preference.service';
 import { ChatCategoryService } from '../../application/services/chat-category.service';
@@ -64,6 +65,7 @@ import {
   RequestChatUploadUrlDto,
   ChatUploadUrlResponseDto,
   ChannelUnreadCountDto,
+  MentionRoleDto,
   SetChannelNotificationLevelDto,
   ChannelNotificationPreferenceDto,
   SetKindNotificationLevelDto,
@@ -100,6 +102,7 @@ export class ChatController {
     private readonly categories: ChatCategoryService,
     private readonly reactions: ChatReactionService,
     private readonly rbacService: RbacService,
+    private readonly mentions: ChatMentionService,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -127,6 +130,28 @@ export class ChatController {
     @CurrentUser('id') userId: string,
   ): Promise<ChannelUnreadCountDto[]> {
     return this.chatService.getUnreadCounts(chapterId, userId);
+  }
+
+  // MUST stay above `@Get(':id')`, for the same reason as `unread` directly
+  // above: `:id` would resolve this as `getChannel('mention-roles')`.
+  // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
+  @Get('mention-roles')
+  @ApiOperation({
+    summary:
+      'The chapter roles the caller’s @-mention picker offers, with whether the caller may ping each',
+  })
+  @ApiOkResponse({ type: MentionRoleDto, isArray: true })
+  async getMentionRoles(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<MentionRoleDto[]> {
+    const roles = await this.mentions.listMentionRoles(chapterId, userId);
+    return roles.map(({ role_id, name, color, mentionable }) => ({
+      role_id,
+      name,
+      color,
+      mentionable,
+    }));
   }
 
   // MUST stay above `@Get(':id')`, for the same reason as `unread` directly

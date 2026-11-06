@@ -76,6 +76,15 @@ function fold(value: string): string {
  * accept a one-character token, so a member genuinely named a single character
  * stays reachable — this only stops the loosest tier from guessing.
  */
+/**
+ * A name or token as the resolver compares it (`fold`), for a caller that has
+ * to ask "does this token name that role" before it has a full candidate set:
+ * the API, deciding whether a send needs the sender's permissions at all.
+ */
+export function foldMentionName(value: string): string {
+  return fold(value);
+}
+
 const MIN_PREFIX_LENGTH = 2;
 
 /** Where one `@`-token sits in a message body. */
@@ -149,6 +158,21 @@ export function matchMentionCandidate<T extends MentionCandidate>(
   candidates: readonly T[],
   token: string,
 ): T | null {
+  return matchTiers(candidates, token, Number.POSITIVE_INFINITY);
+}
+
+/**
+ * How many of {@link matchMentionCandidate}'s tiers name a member *exactly*:
+ * their id, their display name, or their display name folded. The rest (first
+ * word, prefix) are shorthand, which a role named in full outranks.
+ */
+const EXACT_TIERS = 3;
+
+function matchTiers<T extends MentionCandidate>(
+  candidates: readonly T[],
+  token: string,
+  tierLimit: number,
+): T | null {
   const needle = token.trim().toLowerCase();
   if (needle.length === 0) return null;
   const folded = fold(token);
@@ -173,7 +197,7 @@ export function matchMentionCandidate<T extends MentionCandidate>(
       fold(m.display_name).startsWith(folded),
   ];
 
-  for (const pred of tiers) {
+  for (const pred of tiers.slice(0, tierLimit)) {
     const hits = candidates.filter(pred);
     if (hits.length === 1) return hits[0]!;
     if (hits.length > 1) return null;
@@ -196,18 +220,75 @@ export function matchMentionCandidate<T extends MentionCandidate>(
 export function resolveMentions(
   content: string,
   candidates: readonly MentionCandidate[],
+  roles: readonly MentionRole[] = [],
 ): string[] {
   if (candidates.length === 0) return [];
 
+  const inChapter = new Set(candidates.map((member) => member.user_id));
   const resolved: string[] = [];
   const seen = new Set<string>();
+  const add = (userId: string) => {
+    if (seen.has(userId) || !inChapter.has(userId)) return;
+    seen.add(userId);
+    resolved.push(userId);
+  };
+
   for (const token of extractMentionTokens(content)) {
+    const role = matchMentionRole(candidates, roles, token);
+    if (role !== undefined) {
+      // A role token is consumed even when it reaches nobody, so a role this
+      // sender may not ping never falls through to a member who happens to
+      // share a prefix with it.
+      if (role?.mentionable) role.member_ids.forEach(add);
+      continue;
+    }
     const member = matchMentionCandidate(candidates, token);
-    if (!member || seen.has(member.user_id)) continue;
-    seen.add(member.user_id);
-    resolved.push(member.user_id);
+    if (member) add(member.user_id);
   }
   return resolved;
+}
+
+/**
+ * A chapter role as `@`-resolution sees it (2026-11-06, owner direction:
+ * "roles should be attable"). `@Officers` reaches every member holding the
+ * role, so it overrides their mutes exactly as naming each of them would.
+ */
+export interface MentionRole {
+  role_id: string;
+  name: string;
+  /** `users.id` of every member holding the role. */
+  member_ids: readonly string[];
+  /**
+   * Whether this sender may ping it. The API decides (`spec/behavior/chat/
+   * README.md` § Role mentions): a role that covers most of the chapter is a
+   * whole-chapter ping, so only an officer may send one.
+   */
+  mentionable: boolean;
+}
+
+/**
+ * The role `token` names, `null` when it names a role but resolves to nobody,
+ * or `undefined` when it names no role and member matching should run.
+ *
+ * Only a role's whole name matches, folded as a member's is, so `@VicePresident`
+ * and `@vice-president` both reach "Vice President" and `@Off` reaches no role.
+ * A role named in full outranks a member's shorthand (first word, prefix), but
+ * not a member's own exact name: when "Rush" is both a role and a member, the
+ * token is ambiguous and, like every ambiguity here, reaches nobody.
+ */
+function matchMentionRole(
+  candidates: readonly MentionCandidate[],
+  roles: readonly MentionRole[],
+  token: string,
+): MentionRole | null | undefined {
+  if (roles.length === 0) return undefined;
+  const folded = fold(token);
+  if (folded.length === 0) return undefined;
+  const hits = roles.filter((role) => fold(role.name) === folded);
+  if (hits.length === 0) return undefined;
+  if (hits.length > 1) return null;
+  if (matchTiers(candidates, token, EXACT_TIERS)) return null;
+  return hits[0]!;
 }
 
 /**
@@ -281,6 +362,67 @@ export function mentionSuggestions<T extends MentionCandidate>(
     offered.push({ member, label });
   }
   return offered;
+}
+
+/** A role as a picker can offer it. */
+export interface MentionRoleOption {
+  name: string;
+  /** Whether the viewer may ping it; a role they may not is never offered. */
+  mentionable: boolean;
+}
+
+/** One row of a mention picker: a member, or a role. */
+export type MentionPickerEntry<
+  M extends MentionCandidate,
+  R extends MentionRoleOption,
+> =
+  | { kind: "member"; member: M; label: string }
+  | { kind: "role"; role: R; label: string };
+
+/** At most this many of a picker's rows are roles, so members are never crowded out. */
+const MAX_ROLE_SUGGESTIONS = 3;
+
+/**
+ * Every row a mention picker offers for `query`: matching members first, in
+ * roster order, then the matching roles the viewer may ping, in the order
+ * given (the chapter's role order). Both pickers draw this list, so web and
+ * mobile offer the same rows for the same text.
+ *
+ * Roles take at most three rows of the eight, and the members fill the rest.
+ * A role matches as a member does (its name contains the query) and is left
+ * out under the same rule: its label must open on a letter to be typeable.
+ */
+export function mentionPickerEntries<
+  M extends MentionCandidate,
+  R extends MentionRoleOption,
+>(
+  roster: readonly M[],
+  roles: readonly R[],
+  query: string,
+  limit: number = MAX_MENTION_SUGGESTIONS,
+): MentionPickerEntry<M, R>[] {
+  const needle = matchable(query.trim());
+  const roleRows: MentionPickerEntry<M, R>[] = [];
+  for (const role of roles) {
+    if (roleRows.length >= Math.min(MAX_ROLE_SUGGESTIONS, limit)) break;
+    if (!role.mentionable) continue;
+    const label = mentionLabelFor(role.name);
+    if (!/^\p{L}/u.test(label)) continue;
+    if (needle && !matchable(role.name).includes(needle)) continue;
+    roleRows.push({ kind: "role", role, label });
+  }
+  const memberRows = mentionSuggestions(
+    roster,
+    query,
+    limit - roleRows.length,
+  ).map(
+    ({ member, label }): MentionPickerEntry<M, R> => ({
+      kind: "member",
+      member,
+      label,
+    }),
+  );
+  return [...memberRows, ...roleRows];
 }
 
 /** The `@`-query a caret sits in: where its `@` is, and what follows it. */

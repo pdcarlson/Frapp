@@ -10,6 +10,7 @@ import { ChatCategoryService } from '../../application/services/chat-category.se
 import { ChatReactionService } from '../../application/services/chat-reaction.service';
 import type { MaskedChatMessage } from '../../application/services/chat-block-mask';
 import { RbacService } from '../../application/services/rbac.service';
+import { ChatMentionService } from '../../application/services/chat-mention.service';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 
@@ -39,6 +40,7 @@ describe('ChatController', () => {
   >;
   let reactions: jest.Mocked<Pick<ChatReactionService, 'recordMessageAction'>>;
   let rbacService: jest.Mocked<Pick<RbacService, 'memberHasAnyPermission'>>;
+  let mentions: jest.Mocked<Pick<ChatMentionService, 'listMentionRoles'>>;
 
   beforeEach(async () => {
     rbacService = { memberHasAnyPermission: jest.fn() };
@@ -59,6 +61,19 @@ describe('ChatController', () => {
       sendMessage: jest.fn(),
     };
 
+    mentions = {
+      listMentionRoles: jest.fn().mockResolvedValue([
+        {
+          role_id: 'r-1',
+          name: 'Officers',
+          color: null,
+          member_ids: ['u-1'],
+          chapter_wide: false,
+          mentionable: true,
+        },
+      ]),
+    };
+
     const module: TestingModule = await createUnguardedTestingModule({
       controllers: [ChatController],
       providers: [
@@ -68,10 +83,25 @@ describe('ChatController', () => {
         { provide: ChatCategoryService, useValue: categories },
         { provide: ChatReactionService, useValue: reactions },
         { provide: RbacService, useValue: rbacService },
+        { provide: ChatMentionService, useValue: mentions },
       ],
     }).compile();
 
     controller = module.get<ChatController>(ChatController);
+  });
+
+  describe('getMentionRoles', () => {
+    it('answers the picker without the role membership', async () => {
+      await expect(
+        controller.getMentionRoles('chapter-1', 'user-1'),
+      ).resolves.toEqual([
+        { role_id: 'r-1', name: 'Officers', color: null, mentionable: true },
+      ]);
+      expect(mentions.listMentionRoles).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+      );
+    });
   });
 
   // The delete route used to hardcode `hasManagePermission = false`, so the

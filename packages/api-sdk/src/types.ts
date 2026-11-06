@@ -890,6 +890,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/mention-roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The chapter roles the caller’s @-mention picker offers, with whether the caller may ping each */
+        get: operations["ChatController_getMentionRoles_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/notification-preferences": {
         parameters: {
             query?: never;
@@ -3834,6 +3851,16 @@ export interface components {
             unread_count: number;
             /** @description Subset of unread_count that mentions the caller. Mentions are resolved server-side at send time. */
             mention_count: number;
+        };
+        MentionRoleDto: {
+            /** Format: uuid */
+            role_id: string;
+            /** @description The role name; the picker inserts it folded. */
+            name: string;
+            /** @description The role’s palette color, or null. */
+            color: string | null;
+            /** @description Whether the caller may `@` this role. False for a role that covers most of the chapter (the Member role, or one more than half the members hold) unless the caller holds `channels:manage`: a mention gets past a mute, so that would be a chapter-wide ping no mute stops. A token naming a role the sender may not ping reaches nobody. */
+            mentionable: boolean;
         };
         ChannelNotificationPreferenceDto: {
             /** Format: uuid */
@@ -7147,6 +7174,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChannelUnreadCountDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_getMentionRoles_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MentionRoleDto"][];
                 };
             };
             /** @description Error */

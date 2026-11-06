@@ -405,6 +405,33 @@ export class ChatUploadUrlResponseDto {
   message_id: string;
 }
 
+/**
+ * A chapter role as the caller's `@`-mention picker offers it (2026-11-06).
+ * Membership is not sent: the picker needs the name to insert and whether the
+ * caller may ping it, and the server expands the role when the message lands.
+ */
+export class MentionRoleDto {
+  @ApiProperty({ format: 'uuid' })
+  role_id: string;
+
+  @ApiProperty({ description: 'The role name; the picker inserts it folded.' })
+  name: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'The role’s palette color, or null.',
+  })
+  color: string | null;
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'Whether the caller may `@` this role. False for a role that covers most of the chapter (the Member role, or one more than half the members hold) unless the caller holds `channels:manage`: a mention gets past a mute, so that would be a chapter-wide ping no mute stops. A token naming a role the sender may not ping reaches nobody.',
+  })
+  mentionable: boolean;
+}
+
 export class ChannelUnreadCountDto {
   @ApiProperty({ format: 'uuid' })
   channel_id: string;

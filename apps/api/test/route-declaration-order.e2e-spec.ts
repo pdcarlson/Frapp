@@ -4,6 +4,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { ChatService } from '../src/application/services/chat.service';
 import { ChatNotificationPreferenceService } from '../src/application/services/chat-notification-preference.service';
+import { ChatMentionService } from '../src/application/services/chat-mention.service';
 import { MemberService } from '../src/application/services/member.service';
 import { ServiceEntryService } from '../src/application/services/service-entry.service';
 import { ChapterDocumentService } from '../src/application/services/chapter-document.service';
@@ -64,6 +65,10 @@ describe('Route declaration order — a literal route must not be swallowed by :
     findProfileById: jest.fn().mockResolvedValue({ id: 'wrong-handler' }),
   };
 
+  const mentionServiceMock = {
+    listMentionRoles: jest.fn().mockResolvedValue([]),
+  };
+
   const serviceEntryServiceMock = {
     leaderboard: jest.fn().mockResolvedValue([]),
     findById: jest.fn().mockResolvedValue({ id: 'wrong-handler' }),
@@ -101,6 +106,8 @@ describe('Route declaration order — a literal route must not be swallowed by :
       .useValue(chatServiceMock)
       .overrideProvider(ChatNotificationPreferenceService)
       .useValue(notificationPreferencesMock)
+      .overrideProvider(ChatMentionService)
+      .useValue(mentionServiceMock)
       .overrideProvider(MemberService)
       .useValue(memberServiceMock)
       .overrideProvider(ServiceEntryService)
@@ -142,6 +149,20 @@ describe('Route declaration order — a literal route must not be swallowed by :
       .expect(200);
 
     expect(chatServiceMock.getUnreadCounts).toHaveBeenCalledWith(
+      CHAPTER_ID,
+      'member-1',
+    );
+    expect(chatServiceMock.getChannel).not.toHaveBeenCalled();
+  });
+
+  it('GET /v1/channels/mention-roles reaches getMentionRoles, not getChannel', async () => {
+    await request(app.getHttpServer())
+      .get(`${V1}/channels/mention-roles`)
+      .set('authorization', 'Bearer token')
+      .set('x-chapter-id', CHAPTER_ID)
+      .expect(200);
+
+    expect(mentionServiceMock.listMentionRoles).toHaveBeenCalledWith(
       CHAPTER_ID,
       'member-1',
     );

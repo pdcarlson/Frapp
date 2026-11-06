@@ -9,10 +9,8 @@ import {
 } from '@nestjs/common';
 import {
   CHAT_SINCE_NOT_FOUND_CODE,
-  extractMentionTokens,
   isDirectChannel,
   isModuleEnabled,
-  resolveMentions,
 } from '@repo/validation';
 import { allowsInThreadReplies } from '#domain/utils/channel-access';
 import {
@@ -56,6 +54,7 @@ import {
 import { maskBlockedMessages, type MaskedChatMessage } from './chat-block-mask';
 import { ActivationService } from './activation.service';
 import { ChannelCacheService } from './channel-cache.service';
+import { ChatMentionService } from './chat-mention.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 const MAX_PINNED_MESSAGES = 50;
@@ -188,6 +187,8 @@ export class ChatService {
     // Attachments, avatars and the purge (#1380): every read and write of the
     // chat buckets goes through it. `sendMessage` keeps the ordering.
     private readonly attachments: ChatAttachmentService,
+    // `@`-mention resolution, members and roles (2026-11-06).
+    private readonly mentions: ChatMentionService,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -859,8 +860,13 @@ export class ChatService {
       assertModuleEnabled(input.enabled_modules ?? null, gatedModule);
     }
 
-    const mentions = await this.resolveMentionsForChapter(
+    // Authoritative, and deliberately not a client responsibility: a mention
+    // overrides a per-channel mute in the push rules, so a client-supplied
+    // list would let any member force a push to any other member in a channel
+    // they had muted on purpose. `ChatMentionService` owns the rules.
+    const mentions = await this.mentions.resolveForSend(
       input.chapter_id,
+      input.sender_id,
       input.content,
     );
 
@@ -964,56 +970,6 @@ export class ChatService {
   }
 
   /**
-   * Resolve `@`-tokens in a message body to `users.id[]`, server-side.
-   *
-   * This is authoritative, and deliberately not a client responsibility: a
-   * mention overrides a per-channel mute in the push rules, so a
-   * client-supplied list would let any member force a push to any other member
-   * in a channel they had muted on purpose.
-   *
-   * Candidates are the chapter roster. Scoping to the *channel* would be
-   * tighter, but it is not needed for safety — the push worker builds its
-   * recipient list from channel membership and only then asks whether each
-   * recipient was mentioned, so a stored mention of a non-member is inert. The
-   * chapter roster also keeps `@name` meaning the same thing in every channel,
-   * which is what a member typing it expects.
-   *
-   * Failure is swallowed: a directory lookup that errors must not take the send
-   * down with it. The message lands with no mentions, which costs a highlight
-   * and a push tier, not the message.
-   */
-  private async resolveMentionsForChapter(
-    chapterId: string,
-    content: string,
-  ): Promise<string[]> {
-    // Parse before querying. `content.includes('@')` admits every email
-    // address, every `@here`, and every `user@host` in a pasted log — all of
-    // which used to buy a full roster fetch on the send hot path. The parser is
-    // the same one that resolves the tokens a moment later, so "has a token" and
-    // "resolves a token" cannot disagree about what an `@` means.
-    if (extractMentionTokens(content).length === 0) return [];
-
-    try {
-      // One query, `user_id, display_name` only — see
-      // `findChapterMemberIdentities`. The rows are structurally
-      // `MentionCandidate`, so they pass to the resolver unmapped.
-      const candidates =
-        await this.memberRepo.findChapterMemberIdentities(chapterId);
-      if (candidates.length === 0) return [];
-
-      return resolveMentions(content, candidates);
-    } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        `Failed to resolve mentions in chapter ${chapterId}; sending without them`,
-        error,
-      );
-      return [];
-    }
-  }
-
-  /**
    * Authorize a caller for a channel from a TRUSTED DB lookup
    * (channel → chapter → membership), never client-supplied chapter fields.
    *
@@ -1112,7 +1068,11 @@ export class ChatService {
     // No push fires on an edit, so adding a mention here highlights and counts
     // but does not notify — the alternative, re-running the push tier on every
     // edit, would make an edit a way to notify someone repeatedly.
-    const mentions = await this.resolveMentionsForChapter(chapterId, content);
+    const mentions = await this.mentions.resolveForSend(
+      chapterId,
+      senderId,
+      content,
+    );
 
     return this.messageRepo.update(messageId, {
       content,

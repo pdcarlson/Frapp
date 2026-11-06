@@ -48,6 +48,7 @@ vi.mock("@repo/hooks", () => {
     useViewerUserId: () => "viewer-1",
     useMemberDisplayNames: () => ({ byId: {} }),
     useChapterRoster: () => empty,
+    useMentionRoles: () => empty,
     useChapterSetupChecklist: () => ({
       checklist: null,
       hide: vi.fn(),

@@ -343,6 +343,7 @@ vi.mock("@repo/hooks", async () => ({
           refetch: vi.fn(),
         },
   useChapterRoster: () => ({ data: [] }),
+  useMentionRoles: () => ({ data: [] }),
   useMyPermissions: () => mockUseMyPermissions(),
   // Read by `OpsSetupNudge`, which the shell renders above the timeline
   // (#492). Left deliberately inert: `useOrgConfig` above returns no

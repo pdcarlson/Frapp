@@ -258,6 +258,7 @@ const ROSTER = {
 
 /** The chapter roster the composer's `@` offers. */
 const MENTION_ROSTER = [{ user_id: "u-paul", display_name: "Paul Carlson" }];
+const MENTION_ROLES = [{ role_id: "r-1", name: "Officers", color: null, mentionable: true }];
 
 const NOTIFICATION_PREFS = [
   { channel_id: CHANNEL, level: "all" as const },
@@ -294,6 +295,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCurrentUser: () => viewerQuery,
   useMemberDisplayNames: () => ROSTER,
   useChapterRoster: () => ({ data: MENTION_ROSTER }),
+  useMentionRoles: () => ({ data: MENTION_ROLES }),
   usePermissionList: () => [],
   useMarkChannelRead: () => markRead,
   useRequestChatUploadUrl: () => requestUploadUrl,
@@ -1595,6 +1597,9 @@ describe("chat thread @-mentions", () => {
     const tree = render();
     expect(tree.root.findByType(ChatComposer).props.mentionCandidates).toBe(
       MENTION_ROSTER,
+    );
+    expect(tree.root.findByType(ChatComposer).props.mentionRoles).toBe(
+      MENTION_ROLES,
     );
     act(() => tree.unmount());
   });

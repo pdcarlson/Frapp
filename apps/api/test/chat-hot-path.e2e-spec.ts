@@ -228,6 +228,8 @@ describe('Chat hot path (e2e)', () => {
   };
   const rbacServiceMock = {
     getEffectivePermissions: jest.fn(),
+    // The chapter's roles, for `@`-role resolution (`ChatMentionService`).
+    findByChapter: jest.fn(),
     hasAlumniRole: jest.fn(),
     isAlumni: jest.fn(),
   };
@@ -308,6 +310,7 @@ describe('Chat hot path (e2e)', () => {
     memberRepoMock.findByUserAndChapter.mockResolvedValue(baseMember);
     memberRepoMock.findChapterMemberIdentities.mockResolvedValue([]);
     rbacServiceMock.getEffectivePermissions.mockResolvedValue([]);
+    rbacServiceMock.findByChapter.mockResolvedValue([]);
     rbacServiceMock.hasAlumniRole.mockResolvedValue(false);
     rbacServiceMock.isAlumni.mockResolvedValue(false);
     attachmentRepoMock.createMany.mockResolvedValue([]);

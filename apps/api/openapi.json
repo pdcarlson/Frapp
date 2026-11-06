@@ -2801,6 +2801,46 @@
         ]
       }
     },
+    "/v1/channels/mention-roles": {
+      "get": {
+        "operationId": "ChatController_getMentionRoles_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MentionRoleDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The chapter roles the caller’s @-mention picker offers, with whether the caller may ping each",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/notification-preferences": {
       "get": {
         "operationId": "ChatController_getChannelNotificationPreferences_v1",
@@ -12266,6 +12306,34 @@
           "channel_id",
           "unread_count",
           "mention_count"
+        ]
+      },
+      "MentionRoleDto": {
+        "type": "object",
+        "properties": {
+          "role_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "The role name; the picker inserts it folded."
+          },
+          "color": {
+            "type": "string",
+            "nullable": true,
+            "description": "The role’s palette color, or null."
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether the caller may `@` this role. False for a role that covers most of the chapter (the Member role, or one more than half the members hold) unless the caller holds `channels:manage`: a mention gets past a mute, so that would be a chapter-wide ping no mute stops. A token naming a role the sender may not ping reaches nobody."
+          }
+        },
+        "required": [
+          "role_id",
+          "name",
+          "color",
+          "mentionable"
         ]
       },
       "ChannelNotificationPreferenceDto": {
