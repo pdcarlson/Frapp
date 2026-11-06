@@ -47,6 +47,20 @@ const state = vi.hoisted(() => ({
 
 // The suite's stub has no `Linking`; the push switch's fallback opens the OS
 // settings through it.
+// `@repo/validation`'s beta list, emptied so these specs draw every
+// notification switch as they do with dues on. The beta's own case, dues
+// off, sets `betaOff.keys`.
+const betaOff = vi.hoisted(() => ({ keys: [] as string[] }));
+vi.mock("@repo/validation/beta-off-modules", () => ({
+  get BETA_OFF_MODULES() {
+    return betaOff.keys;
+  },
+  isBetaOffModule: (key: string) => betaOff.keys.includes(key),
+}));
+afterEach(() => {
+  betaOff.keys = [];
+});
+
 vi.mock("react-native", async () => {
   const { reactNativeStub } = await import("@/test/react-native-stub");
   return {
@@ -246,6 +260,14 @@ describe("Settings copy", () => {
       expect(text).toContain(category.label);
       expect(text).not.toContain(category.description);
     }
+  });
+
+  it("draws no Billing switch while dues is beta-off", () => {
+    betaOff.keys = ["dues"];
+    const text = screenText(render());
+
+    expect(text).not.toContain("Billing");
+    expect(text).toContain("Tasks");
   });
 
   it("says nothing about sync once the preferences are synced", () => {
