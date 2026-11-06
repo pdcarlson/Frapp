@@ -26,7 +26,7 @@ export const DISCORD_IMPORT_ACTIVE_STATUSES: readonly DiscordImportStatus[] = [
 ];
 
 /**
- * How often the detail route is polled while an import is moving.
+ * How often an import is polled while it is moving.
  *
  * The worker checkpoints roughly once a minute, so a shorter interval does not
  * surface progress sooner — but an import runs for minutes to tens of minutes
@@ -43,8 +43,6 @@ export const discordImportKeys = {
   all: ["discord-imports"] as const,
   list: (chapterId: string | null) =>
     ["discord-imports", chapterId, "list"] as const,
-  detail: (chapterId: string | null, id: string) =>
-    ["discord-imports", chapterId, "detail", id] as const,
   channels: (chapterId: string | null, id: string) =>
     ["discord-imports", chapterId, "channels", id] as const,
   progress: (chapterId: string | null, id: string) =>
@@ -54,21 +52,24 @@ export const discordImportKeys = {
 };
 
 /**
- * How often the list is polled: only while an import on it is being deleted.
+ * How often the list is polled: while an import on it is moving (queued,
+ * running or being deleted), and not at all otherwise.
  *
- * A purge runs in the background, and Clear is offered only once a row reads
- * `purged`, so a list that never asked again would leave a deleted row at
- * `purging` with nothing to click. The detail poll can't carry it: it follows
- * the one import the admin is watching, often a running one. The same poll
- * carries a deleting row's `purged_messages` countdown (#2944): a purge is not
- * short on a large import (staging's 145,574-message one still had about
- * 139,700 left several minutes in), and the list goes back to not polling
- * once it lands.
+ * The page shows the chapter's one import from this list, so the list is what
+ * carries a running import's counts and a deleting one's `purged_messages`
+ * countdown (#2944). A purge is not short on a large import (staging's
+ * 145,574-message one still had about 139,700 left several minutes in), and an
+ * import runs for hours. Once nothing on it moves, an admin sitting on a
+ * finished import costs nothing.
  */
 export function discordImportListPollMs(
   rows: ReadonlyArray<{ status?: string }> | undefined,
 ): number | false {
-  return rows?.some((row) => row.status === "purging")
+  return rows?.some((row) =>
+    (DISCORD_IMPORT_ACTIVE_STATUSES as readonly string[]).includes(
+      row.status ?? "",
+    ),
+  )
     ? DISCORD_IMPORT_POLL_MS
     : false;
 }
@@ -87,36 +88,6 @@ export function useDiscordImports(options?: { enabled?: boolean }) {
     enabled: !!chapterId && (options?.enabled ?? true),
     staleTime: 30_000,
     refetchInterval: (query) => discordImportListPollMs(query.state.data),
-  });
-}
-
-export function useDiscordImport(
-  id: string | null,
-  options?: { enabled?: boolean },
-) {
-  const client = useFrappClient();
-  const chapterId = useActiveChapterId();
-
-  return useQuery({
-    queryKey: discordImportKeys.detail(chapterId, id ?? ""),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/discord-imports/{id}", {
-        params: { path: { id: id as string } },
-      });
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!chapterId && !!id && (options?.enabled ?? true),
-    staleTime: 0,
-    // A 403 (not an officer) or a 404 (purged elsewhere) will not fix itself by
-    // asking again on a timer.
-    retry: false,
-    refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status && DISCORD_IMPORT_ACTIVE_STATUSES.includes(status)
-        ? DISCORD_IMPORT_POLL_MS
-        : false;
-    },
   });
 }
 
@@ -250,10 +221,7 @@ export function useCancelDiscordImport() {
       if (error) throw error;
       return data;
     },
-    onSuccess: (_data, vars) => {
-      void queryClient.invalidateQueries({
-        queryKey: discordImportKeys.detail(chapterId, vars.id),
-      });
+    onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: discordImportKeys.list(chapterId),
       });
@@ -389,8 +357,6 @@ export function useSetDiscordChannelMapping() {
 
 export function useSetDiscordRoleMapping() {
   const client = useFrappClient();
-  const queryClient = useQueryClient();
-  const chapterId = useActiveChapterId();
 
   return useMutation({
     mutationFn: async (vars: {
@@ -410,11 +376,6 @@ export function useSetDiscordRoleMapping() {
       );
       if (error) throw error;
       return data;
-    },
-    onSuccess: (_data, vars) => {
-      void queryClient.invalidateQueries({
-        queryKey: discordImportKeys.detail(chapterId, vars.id),
-      });
     },
   });
 }
@@ -443,10 +404,7 @@ export function useStartDiscordImport() {
       if (error) throw error;
       return data;
     },
-    onSuccess: (_data, vars) => {
-      void queryClient.invalidateQueries({
-        queryKey: discordImportKeys.detail(chapterId, vars.id),
-      });
+    onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: discordImportKeys.list(chapterId),
       });
@@ -467,10 +425,7 @@ export function useDeleteDiscordImport() {
       if (error) throw error;
       return data;
     },
-    onSuccess: (_data, vars) => {
-      void queryClient.invalidateQueries({
-        queryKey: discordImportKeys.detail(chapterId, vars.id),
-      });
+    onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: discordImportKeys.list(chapterId),
       });

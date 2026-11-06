@@ -21,6 +21,7 @@ import { DiscordBotGatewayService } from '../../infrastructure/discord/discord-b
 import { DiscordOAuthClientService } from '../../infrastructure/discord/discord-oauth-client.service';
 import { RbacModule } from '../rbac/rbac.module';
 import { ChannelCacheModule } from '../chat-push-worker/channel-cache.module';
+import { NotificationModule } from '../notification/notification.module';
 import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.repository.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
 import { DISCORD_AUTHOR_LINK_REPOSITORY } from '#domain/repositories/discord-author-link.repository.interface';
@@ -67,7 +68,9 @@ import {
   // ChannelCacheModule → ChannelCacheService: the purge deletes the channels
   // an import created and left empty, and evicts them as `ChatService` does
   // when an officer deletes one (#2905).
-  imports: [RbacModule, ChannelCacheModule],
+  // NotificationModule → NotificationService: the worker tells whoever
+  // started an import that it finished.
+  imports: [RbacModule, ChannelCacheModule, NotificationModule],
   controllers: [
     DiscordImportController,
     DiscordConnectionController,

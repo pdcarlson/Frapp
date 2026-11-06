@@ -329,6 +329,40 @@ describe('DiscordImportService — upload URLs', () => {
   });
 });
 
+describe('DiscordImportService — one import per chapter', () => {
+  it('refuses a new import while another still holds what it brought in', async () => {
+    await build();
+    repo.findByChapter.mockResolvedValue([
+      job({ id: 'other', status: 'completed' }),
+    ]);
+    await expect(
+      service.create(CHAPTER, USER, { consent_acknowledged: true }),
+    ).rejects.toThrow(ConflictException);
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it('allows a new import once the other is deleted, or never started', async () => {
+    await build();
+    repo.findByChapter.mockResolvedValue([
+      job({ id: 'gone', status: 'purged' }),
+      job({ id: 'abandoned', status: 'draft' }),
+    ]);
+    await service.create(CHAPTER, USER, { consent_acknowledged: true });
+    expect(repo.create).toHaveBeenCalled();
+  });
+
+  it('refuses to start a draft once another import holds messages', async () => {
+    await build();
+    repo.findByChapter.mockResolvedValue([
+      job(),
+      job({ id: 'other', status: 'failed' }),
+    ]);
+    await expect(service.start(IMPORT_ID, CHAPTER, USER, true)).rejects.toThrow(
+      /already has a Discord import/,
+    );
+  });
+});
+
 describe('DiscordImportService — starting', () => {
   it('refuses to start with no uploaded export', async () => {
     await build();
@@ -548,7 +582,7 @@ describe('DiscordImportService — lifecycle guards', () => {
 });
 
 describe('DiscordImportService — progress and clearing (#2816, #2817)', () => {
-  it.each(['ready', 'running', 'failed', 'cancelled'] as const)(
+  it.each(['ready', 'running', 'completed', 'failed', 'cancelled'] as const)(
     'counts progress for a %s bot import, which the list shows part-way',
     async (status) => {
       await build(job({ source: 'bot', status }));
@@ -603,8 +637,8 @@ describe('DiscordImportService — progress and clearing (#2816, #2817)', () => 
     expect(repo.countChannels).not.toHaveBeenCalled();
   });
 
-  it.each(['draft', 'completed', 'purged'] as const)(
-    'skips the counts for a %s bot import, which has no progress to show',
+  it.each(['draft', 'purged'] as const)(
+    'skips the counts for a %s bot import, which has nothing to count',
     async (status) => {
       await build(job({ source: 'bot', status }));
       expect(await service.get(IMPORT_ID, CHAPTER)).toMatchObject({

@@ -854,14 +854,48 @@ describe("ImportWizard — the bot path", () => {
     }
     const since = () =>
       screen.getByLabelText("Import messages from") as HTMLInputElement;
+    const preset = (name: string) =>
+      fireEvent.click(screen.getByRole("radio", { name }));
+    const startButton = () =>
+      screen.getByRole("button", { name: "Start import" }) as HTMLButtonElement;
 
-    it("imports all history when the date is left empty", async () => {
+    it("imports all history by default, with no date box", async () => {
       await renderAtReview();
-      expect(since().value).toBe("");
-      fireEvent.click(screen.getByRole("button", { name: "Start import" }));
+      expect(screen.getByRole("radio", { name: "Everything" })).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+      expect(screen.queryByLabelText("Import messages from")).toBeNull();
+      expect(
+        screen.getByText("The server's whole history comes over."),
+      ).toBeInTheDocument();
+      fireEvent.click(startButton());
       await waitFor(() =>
         expect(startImport).toHaveBeenCalledWith({ id: "import-1" }),
       );
+    });
+
+    it("sends a preset as the viewer's own midnight that many years back", async () => {
+      vi.stubEnv("TZ", "America/Denver");
+      try {
+        await renderAtReview();
+        preset("Last year");
+        const start = new Date();
+        start.setFullYear(start.getFullYear() - 1);
+        start.setHours(0, 0, 0, 0);
+        expect(
+          screen.getByText(/Messages before .* are left out\./),
+        ).toBeInTheDocument();
+        fireEvent.click(startButton());
+        await waitFor(() =>
+          expect(startImport).toHaveBeenCalledWith({
+            id: "import-1",
+            messagesAfter: start.toISOString(),
+          }),
+        );
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
 
     it("sends the chosen day as the viewer's own midnight", async () => {
@@ -870,13 +904,12 @@ describe("ImportWizard — the bot path", () => {
       vi.stubEnv("TZ", "America/Denver");
       try {
         await renderAtReview();
+        preset("Pick a date");
         fireEvent.change(since(), { target: { value: "2024-06-01" } });
         expect(
-          screen.getByText(
-            /Older messages, and their attachments, are left out/,
-          ),
+          screen.getByText("Messages before Jun 1, 2024 are left out."),
         ).toBeInTheDocument();
-        fireEvent.click(screen.getByRole("button", { name: "Start import" }));
+        fireEvent.click(startButton());
         await waitFor(() =>
           expect(startImport).toHaveBeenCalledWith({
             id: "import-1",
@@ -889,18 +922,24 @@ describe("ImportWizard — the bot path", () => {
       }
     });
 
+    it("holds Start on Pick a date until a date is picked", async () => {
+      await renderAtReview();
+      preset("Pick a date");
+      expect(
+        screen.getByText("Pick a date, or choose Everything."),
+      ).toBeInTheDocument();
+      expect(startButton().disabled).toBe(true);
+    });
+
     it("holds Start on a date in the future", async () => {
       await renderAtReview();
+      preset("Pick a date");
       const nextYear = new Date().getFullYear() + 1;
       fireEvent.change(since(), { target: { value: `${nextYear}-01-01` } });
-      expect(screen.getByText(/Choose a date in the past/)).toBeInTheDocument();
       expect(
-        (
-          screen.getByRole("button", {
-            name: "Start import",
-          }) as HTMLButtonElement
-        ).disabled,
-      ).toBe(true);
+        screen.getByText("Pick a date in the past, or choose Everything."),
+      ).toBeInTheDocument();
+      expect(startButton().disabled).toBe(true);
     });
   });
 

@@ -9294,7 +9294,7 @@
     },
     "/v1/discord-imports": {
       "post": {
-        "description": "Requires the consent acknowledgement. Returns the import to upload an export against.",
+        "description": "Requires the consent acknowledgement. Returns the import to upload an export against. 409 while another of the chapter's imports still holds what it brought in (queued, running, completed, failed, cancelled or deleting): a chapter has one import at a time, so delete it first.",
         "operationId": "DiscordImportController_create_v1",
         "parameters": [],
         "requestBody": {
@@ -9909,7 +9909,7 @@
     },
     "/v1/discord-imports/{id}/start": {
       "post": {
-        "description": "The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818). A bot import may carry a date cutoff, `messages_after` (#2858); the body is optional.",
+        "description": "The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818). A bot import may carry a date cutoff, `messages_after` (#2858); the body is optional. 409 while another of the chapter's imports still holds what it brought in, as on create.",
         "operationId": "DiscordImportController_start_v1",
         "parameters": [
           {
@@ -15026,6 +15026,12 @@
             "type": "string",
             "format": "date-time"
           },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the import finished. Null until then, and for one that failed or was stopped."
+          },
           "messages_after": {
             "type": "string",
             "format": "date-time",
@@ -15049,6 +15055,7 @@
           "warnings",
           "error",
           "created_at",
+          "completed_at",
           "messages_after",
           "purged_messages"
         ]
@@ -15116,6 +15123,12 @@
             "type": "string",
             "format": "date-time"
           },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the import finished. Null until then, and for one that failed or was stopped."
+          },
           "messages_after": {
             "type": "string",
             "format": "date-time",
@@ -15129,7 +15142,7 @@
           "channels_total": {
             "type": "number",
             "nullable": true,
-            "description": "Channel and thread rows being imported. Null for an upload, and for a bot import that is not queued, running, failed or cancelled."
+            "description": "Channel and thread rows being imported. Null for an upload, and for a bot import that is not queued, running, completed, failed or cancelled."
           },
           "channels_done": {
             "type": "number",
@@ -15149,6 +15162,7 @@
           "warnings",
           "error",
           "created_at",
+          "completed_at",
           "messages_after",
           "purged_messages",
           "channels_total",

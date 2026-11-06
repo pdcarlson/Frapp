@@ -1282,9 +1282,11 @@ describe('DiscordExportWorkerService — attachments', () => {
     ]);
     const warnings: string[] =
       jest.mocked(args.checkpoint).mock.calls.at(-1)?.[0].warnings ?? [];
+    // In plain words: the storage service's own text goes to the log only.
     expect(warnings).toContain(
-      'Could not import attachment "p1.png": CDN answered 503.',
+      'Storage couldn\'t take "p1.png", so it was not imported. The message it belongs to was.',
     );
+    expect(warnings.join(' ')).not.toContain('CDN answered 503');
     // Explained by name and reason already, so the generic line is dropped.
     expect(warnings.join(' ')).not.toContain('No uploaded file');
   });
@@ -1508,6 +1510,61 @@ describe('DiscordExportWorkerService — attachments', () => {
     const warnings =
       jest.mocked(args.checkpoint).mock.calls.at(-1)?.[0].warnings ?? [];
     expect(warnings.join(' ')).toContain('setup.exe');
+  });
+
+  it('stores a .heic photo Discord sent with no useful type, by its extension', async () => {
+    const harness = await build({
+      pages: [
+        [
+          apiMessage('1', {
+            attachments: [
+              {
+                id: 'att-heic',
+                filename: 'IMG_0001.HEIC',
+                size: 10,
+                url: 'https://cdn.discordapp.com/a/IMG_0001.HEIC',
+                content_type: 'application/octet-stream',
+              },
+            ],
+          }),
+        ],
+      ],
+    });
+
+    await harness.worker.runSlice(runArgs(harness));
+
+    expect(harness.copier.copy).toHaveBeenCalledWith([
+      expect.objectContaining({ contentType: 'image/heic' }),
+    ]);
+  });
+
+  it('skips a file with no type and no extension, and says so in plain words', async () => {
+    const harness = await build({
+      pages: [
+        [
+          apiMessage('1', {
+            attachments: [
+              {
+                id: 'att-bare',
+                filename: 'scan',
+                size: 10,
+                url: 'https://cdn.discordapp.com/a/scan',
+              },
+            ],
+          }),
+        ],
+      ],
+    });
+
+    const args = runArgs(harness);
+    await harness.worker.runSlice(args);
+
+    expect(harness.copier.copy).not.toHaveBeenCalled();
+    const warnings =
+      jest.mocked(args.checkpoint).mock.calls.at(-1)?.[0].warnings ?? [];
+    expect(warnings).toContain(
+      '"scan" has no file type Frapp could tell, so it was not imported. The message it belongs to was.',
+    );
   });
 
   it('skips an oversized attachment rather than failing the whole import', async () => {

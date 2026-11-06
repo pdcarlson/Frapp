@@ -465,6 +465,15 @@ export class DiscordImportResponseDto {
     format: 'date-time',
     nullable: true,
     description:
+      'When the import finished. Null until then, and for one that failed or was stopped.',
+  })
+  completed_at: string | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
       "A bot import's date cutoff (#2858): only messages sent at or after it. Null imports all history.",
   })
   messages_after: string | null;
@@ -482,7 +491,7 @@ export class DiscordImportWithProgressResponseDto extends DiscordImportResponseD
     type: Number,
     nullable: true,
     description:
-      'Channel and thread rows being imported. Null for an upload, and for a bot import that is not queued, running, failed or cancelled.',
+      'Channel and thread rows being imported. Null for an upload, and for a bot import that is not queued, running, completed, failed or cancelled.',
   })
   channels_total: number | null;
 

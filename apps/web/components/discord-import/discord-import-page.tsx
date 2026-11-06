@@ -7,100 +7,57 @@ import {
   useCancelDiscordImport,
   useClearDiscordImport,
   useDeleteDiscordImport,
-  useDiscordImport,
   useDiscordImports,
 } from "@repo/hooks";
-import { formatDay, formatDayTime } from "@repo/formatting";
-import { isDiscordImportClearable } from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { SectionLabel } from "@/components/shared/section-label";
 import {
   anyReadUncached,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedOffline,
-} from "@/components/shared/nested-states";
-import { denseListClassName } from "@/components/shared/table-controls";
+import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import {
   useConfirmDialog,
   type ConfirmRequest,
   type ConfirmResult,
 } from "@/components/shared/confirm-dialog";
-import {
-  meterFillClassName,
-  meterTrackClassName,
-} from "@/components/shared/meter";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import { ImportWizard, type WizardStep } from "./import-wizard";
 import { ImportWatchPanel } from "./import-watch-panel";
-import {
-  importPercent,
-  purgeProgress,
-  type ImportRow,
-} from "./import-progress";
+import type { ImportRow } from "./import-progress";
 import {
   DELETE_IMPORT_STARTED,
   deleteImportConfirmation,
-  purgeLine,
 } from "./delete-import-copy";
 import type { ImportSource } from "./source-step";
-import { DiscordImportsSkeleton } from "@/components/discord-import/discord-import-skeleton";
+import { currentImport, importStage } from "./current-import";
+import {
+  ImportDeleting,
+  ImportFinished,
+  ImportLanding,
+  ImportRunning,
+} from "./import-states";
+import { useBotUsable } from "./use-bot-usable";
+import { DiscordImportSkeleton } from "./discord-import-skeleton";
 
-const STATUS_VARIANT: Record<
-  string,
-  "success" | "warning" | "destructive" | "outline"
-> = {
-  completed: "success",
-  running: "warning",
-  ready: "warning",
-  purging: "warning",
-  failed: "destructive",
-  cancelled: "outline",
-  purged: "outline",
-  draft: "outline",
+/** Where the wizard opens: the step after "Choose how" for a picked source. */
+type WizardStart = { source: ImportSource | null; step: WizardStep };
+
+const FIRST_STEP: Record<ImportSource, WizardStep> = {
+  bot: "connect",
+  upload: "consent",
 };
 
 /**
- * The import's state in words. The API's tokens are lowercase (`completed`)
- * and none has a writing.md §5 row, so they map to plain language once, here,
- * rather than printing the token.
- */
-const STATUS_LABEL: Record<string, string> = {
-  completed: "Completed",
-  running: "Importing",
-  ready: "Ready",
-  purging: "Deleting",
-  failed: "Failed",
-  cancelled: "Cancelled",
-  purged: "Deleted",
-  draft: "Draft",
-};
-
-/**
- * Statuses whose bot import has channel rows worth watching (#2857). Only a
- * bot import: an upload's rows record neither the order its parts ran in nor
- * a part it skipped, so its progress stays the message count.
- */
-const WATCHABLE = new Set([
-  "ready",
-  "running",
-  "completed",
-  "failed",
-  "cancelled",
-]);
-/** Of those, the ones still moving: watched live rather than read once. */
-const MOVING = new Set(["ready", "running"]);
-
-/**
- * Discord import, admin-only.
+ * Discord import, admin-only: the chapter's one import (#2882 redesign), in
+ * the state it is in. Nothing imported yet shows what comes over and the two
+ * ways in; a running import counts up; a finished one says what came over and
+ * what didn't; a deleting one counts down. A chapter moves off Discord once,
+ * and the API refuses a second import while the first still holds its
+ * messages, so there is no list of jobs.
  *
  * Gate ordering is permission → network → data: every async state renders
  * *inside* `<Can>`, so a member who URL-hits this route is told they cannot see
@@ -128,20 +85,18 @@ export function DiscordImportPage() {
   const [handshake, setHandshake] = useState(() =>
     searchParams.get("handshake"),
   );
-  const [wizardOpen, setWizardOpen] = useState(resumingBotWizard);
+  const [wizard, setWizard] = useState<WizardStart | null>(
+    resumingBotWizard ? { source: "bot", step: "connect" } : null,
+  );
   // A resume is spent when its wizard closes, whether cancelled or started.
-  // Kept past that, every later New import reopened on the bot's connect step
-  // instead of "Choose how", and its fresh connect step confirmed the one-time
-  // handshake a second time, which the server had already spent.
+  // Kept past that, a later start reopened on the bot's connect step, and its
+  // fresh connect step confirmed the one-time handshake a second time, which
+  // the server had already spent.
   function closeWizard() {
-    setWizardOpen(false);
+    setWizard(null);
     setResumingBotWizard(false);
     setHandshake(null);
   }
-  // The import whose detail is polled, which keeps its row live, and the one
-  // whose channel panel is open. Hiding the panel keeps the row live.
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
 
   /**
    * Report the outcome of a connect attempt, exactly once.
@@ -192,7 +147,7 @@ export function DiscordImportPage() {
       */}
       <Can
         permission="channels:manage"
-        fallback={<DiscordImportsSkeleton />}
+        fallback={<DiscordImportSkeleton />}
         deniedFallback={
           <p className="text-sm text-muted-foreground">
             Your role can&apos;t import Discord history. Ask your chapter
@@ -212,14 +167,9 @@ export function DiscordImportPage() {
         )}
       >
         <DiscordImportBody
-          wizardOpen={wizardOpen}
-          setWizardOpen={setWizardOpen}
+          wizard={wizard}
+          openWizard={setWizard}
           closeWizard={closeWizard}
-          activeId={activeId}
-          setActiveId={setActiveId}
-          openId={openId}
-          setOpenId={setOpenId}
-          resumingBotWizard={resumingBotWizard}
           handshake={handshake}
         />
       </Can>
@@ -228,46 +178,33 @@ export function DiscordImportPage() {
 }
 
 type BodyProps = {
-  wizardOpen: boolean;
-  setWizardOpen: (open: boolean) => void;
+  wizard: WizardStart | null;
+  openWizard: (start: WizardStart) => void;
   /** Closes the wizard and spends any `?wizard=bot` resume it opened with. */
   closeWizard: () => void;
-  activeId: string | null;
-  setActiveId: (id: string | null) => void;
-  openId: string | null;
-  setOpenId: (id: string | null) => void;
-  resumingBotWizard: boolean;
   handshake: string | null;
 };
 
 /**
- * The confirmation lives above the list's loading, offline and error branches
- * (#2944). The list polls every few seconds while a row is deleting, and a
+ * The confirmation lives above the page's loading, offline and error branches
+ * (#2944). The import is polled every few seconds while it is moving, and a
  * dialog rendered inside a branch that can swap out would unmount with it and
- * settle as a cancel, so the admin's click on Delete import would vanish. Same
- * shape as the Settings pages. A failed poll no longer swaps a loaded list
- * (the error branch below needs no data at all), but the hoist costs nothing
- * and keeps the dialog independent of what the list decides to render.
+ * settle as a cancel, so the admin's click on Delete import would vanish.
  */
 function DiscordImportBody(props: BodyProps) {
   const { confirm, confirmDialog } = useConfirmDialog();
   return (
     <>
       {confirmDialog}
-      <DiscordImportList {...props} confirm={confirm} />
+      <DiscordImportView {...props} confirm={confirm} />
     </>
   );
 }
 
-function DiscordImportList({
-  wizardOpen,
-  setWizardOpen,
+function DiscordImportView({
+  wizard,
+  openWizard,
   closeWizard,
-  activeId,
-  setActiveId,
-  openId,
-  setOpenId,
-  resumingBotWizard,
   handshake,
   confirm,
 }: BodyProps & {
@@ -275,33 +212,33 @@ function DiscordImportList({
 }) {
   const { isOffline } = useNetwork();
   const imports = useDiscordImports();
-  const active = useDiscordImport(activeId);
   const deleteImport = useDeleteDiscordImport();
   const cancelImport = useCancelDiscordImport();
   const clearImport = useClearDiscordImport();
+  const botAvailable = useBotUsable();
   const { toast } = useToast();
+  // The channel-by-channel panel (#2857), opened from the import's own page.
+  const [channelsOpen, setChannelsOpen] = useState(false);
 
   const paused = imports.isPending && imports.fetchStatus === "paused";
 
-  // Above every state branch, and so above anything the list's own read can
-  // do. The wizard reads nothing from the list, but it holds every choice the
-  // admin has made (source, consent, mappings, cutoff) in its own state, so a
-  // branch that unmounts it loses them: a list read that failed while another
-  // import's deletion was being polled used to send the admin back to the
-  // first step with nothing kept. On the page surface,
-  // not in a card: it already holds itself to a centred 672px column with its
-  // own step heading and footer rule.
-  if (wizardOpen) {
+  // Above every state branch, and so above anything the page's own read can
+  // do. The wizard holds every choice the admin has made (source, consent,
+  // mappings, cutoff) in its own state, so a branch that unmounts it loses
+  // them. On the page surface, not in a card: it already holds itself to a
+  // centred 672px column with its own step heading and footer rule.
+  if (wizard) {
     return (
       <ImportWizard
-        initialSource={resumingBotWizard ? ("bot" as ImportSource) : null}
-        initialStep={resumingBotWizard ? ("connect" as WizardStep) : undefined}
+        initialSource={wizard.source}
+        initialStep={wizard.step}
         handshake={handshake}
         onCancel={closeWizard}
-        onStarted={(id) => {
+        onStarted={() => {
           closeWizard();
-          setActiveId(id);
-          setOpenId(id);
+          // The new import is on the page once the list reads it; the start
+          // mutation refreshes the list.
+          setChannelsOpen(false);
         }}
       />
     );
@@ -309,34 +246,30 @@ function DiscordImportList({
 
   // The nested family with `sole`: the whole-screen states paint `--card`,
   // which on this flush route redraws the card the route deleted, and each of
-  // these is the page's only async state. The error used to take
-  // `ErrorState`'s defaults, "Unable to load data" and "Please retry in a
-  // moment.": a failure that names nothing ("data") and gives no reason, the
-  // context-free shape `writing.md` §1 bans and §3's pattern rules out.
+  // these is the page's only async state.
   if (isOffline && anyReadUncached(imports)) {
     return (
       <NestedOffline
         sole
-        title="Imports unavailable offline"
-        description="Reconnect to load your chapter's Discord imports."
+        title="Import unavailable offline"
+        description="Reconnect to load your chapter's Discord import."
         onRetry={() => void imports.refetch()}
       />
     );
   }
   if (imports.isLoading || paused) {
-    return <DiscordImportsSkeleton />;
+    return <DiscordImportSkeleton />;
   }
   // `data === undefined`, not `isError` alone: a failed background read keeps
-  // the rows TanStack already holds, and while a deletion is being polled an
-  // admin is watching those rows count down. Swapping them for an error that
-  // blames their chapter access, over a read that will likely succeed on the
-  // next poll, hid the meter and the Stop and Delete controls (the report
-  // queue in Chat Admin draws the same line).
+  // what TanStack already holds, and while a deletion is being polled an admin
+  // is watching it count down. Swapping that for an error that blames their
+  // chapter access, over a read that will likely succeed on the next poll,
+  // hid the meter and the controls.
   if (imports.isError && imports.data === undefined) {
     return (
       <NestedError
         sole
-        title="Couldn't load imports"
+        title="Couldn't load the import"
         description="Confirm your chapter access and retry."
         onRetry={() => void imports.refetch()}
       />
@@ -344,35 +277,11 @@ function DiscordImportList({
   }
 
   const rows: ImportRow[] = imports.data ?? [];
-  const activeRow: ImportRow | null = active.data ?? null;
-  // The polled import's row takes its detail copy, which polls faster than
-  // the list, unless the list loaded since: both poll during a purge, and a
-  // detail poll that keeps failing would otherwise hold the row on its last
-  // copy (still "purging", no Clear) while the list already says "purged".
-  const detailIsFreshest =
-    (active.dataUpdatedAt ?? 0) >= (imports.dataUpdatedAt ?? 0);
-  // The polled import's row reads its own detail query, not the list, and the
-  // list stops polling once nothing is deleting. So a detail poll that keeps
-  // failing (the API down, say) froze that row's meter with nothing on screen
-  // to say so, while the list read stayed clean. Keyed on the id, not the
-  // detail's data: a first fetch that fails leaves no data and arms no poll,
-  // and the row then shows the list's last copy, which is just as stale.
-  // So the failure leaves the row stale only while the row shows that copy,
-  // or has no detail copy at all; once the list's fresher copy took over,
-  // saying "the last update that loaded" over it would be false.
-  const activeStale =
-    active.isError &&
-    (detailIsFreshest || activeRow === null) &&
-    rows.some((row) => row.id === activeId);
+  const { current, lastDeleted } = currentImport(rows);
 
-  function retryReads() {
-    void imports.refetch();
-    if (active.isError) void active.refetch();
-  }
-
-  async function cancel(id: string) {
+  async function stop(row: ImportRow) {
     try {
-      await cancelImport.mutateAsync({ id });
+      await cancelImport.mutateAsync({ id: row.id });
       toast({ description: "Stopping the import." });
     } catch (error) {
       toast({
@@ -382,9 +291,9 @@ function DiscordImportList({
     }
   }
 
-  async function clear(id: string) {
+  async function dismiss(row: ImportRow) {
     try {
-      await clearImport.mutateAsync({ id });
+      await clearImport.mutateAsync({ id: row.id });
     } catch (error) {
       toast({
         variant: "destructive",
@@ -394,7 +303,7 @@ function DiscordImportList({
   }
 
   // One click used to start an irreversible purge (#2944); the dialog names
-  // what goes, from the row as it reads now.
+  // what goes, from the import as it reads now.
   async function purge(row: ImportRow) {
     if (!(await confirm(deleteImportConfirmation(row)))) return;
     try {
@@ -408,219 +317,66 @@ function DiscordImportList({
     }
   }
 
-  return (
-    // Flush, not carded (`1f` pin 2: "one toolbar row, no wrapper card, no
-    // description paragraph"). The card header held a narration paragraph,
-    // "Bring your chapter's Discord history into Frapp as read-only archive
-    // messages", which now explains the empty list instead, where an admin
-    // with nothing imported yet is the one reader who needs it.
-    <section aria-labelledby="discord-imports-label" className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <SectionLabel
-          id="discord-imports-label"
-          count={
-            rows.length > 0
-              ? `${rows.length} import${rows.length === 1 ? "" : "s"}`
-              : null
-          }
+  // A bot import's channel panel (#2857). An upload's channel rows record
+  // neither the order its parts ran in nor a part it skipped, so its progress
+  // stays the message count.
+  function channels(row: ImportRow, moving: boolean) {
+    if (row.source !== "bot") return null;
+    return (
+      <div className="space-y-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-expanded={channelsOpen}
+          onClick={() => setChannelsOpen((open) => !open)}
         >
-          Imports
-        </SectionLabel>
-        <Button onClick={() => setWizardOpen(true)}>New import</Button>
+          {channelsOpen ? "Hide channels" : "See every channel"}
+        </Button>
+        {channelsOpen ? (
+          <ImportWatchPanel importId={row.id} active={moving} />
+        ) : null}
       </div>
+    );
+  }
+
+  const stage = current ? importStage(current) : null;
+
+  return (
+    <div className="space-y-4">
       {/*
-        The rows a failed read leaves on screen are its last good ones, so say
-        so: a deletion's meter that stopped moving otherwise reads as stuck
-        rather than stale.
+        What a failed refresh leaves on screen is the last good read, so say
+        so: a meter that stopped moving otherwise reads as stuck rather than
+        stale.
       */}
       <StaleReadNotice
-        stale={imports.isError || activeStale}
-        message="Couldn't refresh the imports. This is the last update that loaded."
-        onRetry={retryReads}
+        stale={imports.isError}
+        message="Couldn't refresh the import. This is the last update that loaded."
+        onRetry={() => void imports.refetch()}
       />
-      {rows.length === 0 ? (
-        <NestedEmpty
-          sole
-          title="No imports yet"
-          description="Bring your chapter's Discord history in as read-only archive messages."
+      {current === null ? (
+        <ImportLanding
+          botAvailable={botAvailable}
+          onPick={(source) => openWizard({ source, step: FIRST_STEP[source] })}
+          lastDeleted={lastDeleted}
+          onDismissDeleted={() => lastDeleted && void dismiss(lastDeleted)}
         />
+      ) : stage === "importing" ? (
+        <ImportRunning
+          row={current}
+          onStop={() => void stop(current)}
+          stopping={cancelImport.isPending}
+          channels={channels(current, true)}
+        />
+      ) : stage === "deleting" ? (
+        <ImportDeleting row={current} />
       ) : (
-        // Rows are text plus trailing controls, so they take the 44px floor
-        // and the list's own dividers rather than a bordered box each.
-        <ul className={denseListClassName}>
-          {rows.map((row) => {
-            const live =
-              activeRow?.id === row.id && detailIsFreshest ? activeRow : row;
-            // A deleting row counts its messages down (#2944); the meter
-            // then shows how much is gone rather than how much came in.
-            const deletion = purgeLine(live);
-            const deleting = purgeProgress(live);
-            const percent =
-              importPercent(live) ??
-              (deleting && deleting.left > 0 ? deleting.percent : null);
-            const watchable =
-              live.source === "bot" && WATCHABLE.has(live.status);
-            // Open only while it is also the polled import: a panel on a
-            // row whose status no longer updates would poll for ever.
-            const watching =
-              openId === row.id && activeId === row.id && watchable;
-            return (
-              <li key={row.id} className="min-h-11 space-y-2 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold">
-                      {live.guild_name ?? "Discord server"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatDayTime(live.created_at)}
-                      {/* A partial import says so (#2858). */}
-                      {formatDay(live.messages_after)
-                        ? ` · Messages since ${formatDay(live.messages_after)}`
-                        : ""}
-                    </p>
-                  </div>
-                  <Badge variant={STATUS_VARIANT[live.status] ?? "outline"}>
-                    {STATUS_LABEL[live.status] ?? live.status}
-                  </Badge>
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    {deletion !== null ? (
-                      <span>{deletion}</span>
-                    ) : (
-                      <span>
-                        {live.imported_messages} messages
-                        {live.attachments_imported > 0
-                          ? ` · ${live.attachments_imported} attachments`
-                          : ""}
-                        {typeof live.channels_total === "number" &&
-                        live.channels_total > 0
-                          ? ` · ${live.channels_done ?? 0} of ${live.channels_total} channels and threads`
-                          : ""}
-                        {/* A deletion that failed part-way (#2944): the
-                                totals above include what it already removed. */}
-                        {(live.purged_messages ?? 0) > 0
-                          ? ` · ${live.purged_messages} already deleted`
-                          : ""}
-                      </span>
-                    )}
-                    {/* The bar is aria-hidden; this is the accessible signal. */}
-                    {percent !== null ? <span>{percent}%</span> : null}
-                  </div>
-                  {percent !== null ? (
-                    <div aria-hidden="true" className={meterTrackClassName}>
-                      <div
-                        className={meterFillClassName}
-                        style={{ width: `${percent}%` }}
-                      />
-                    </div>
-                  ) : null}
-                </div>
-
-                {live.error ? (
-                  <p className="text-xs text-destructive-text">{live.error}</p>
-                ) : null}
-
-                {live.warnings?.length > 0 ? (
-                  <details className="text-xs text-muted-foreground">
-                    <summary className="cursor-pointer">
-                      {live.warnings.length} warning(s)
-                    </summary>
-                    <ul className="mt-1 space-y-0.5">
-                      {live.warnings.slice(0, 20).map((warning, i) => (
-                        <li key={`${row.id}-w-${i}`}>{warning}</li>
-                      ))}
-                    </ul>
-                  </details>
-                ) : null}
-
-                {watching ? (
-                  <ImportWatchPanel
-                    importId={row.id}
-                    active={MOVING.has(live.status)}
-                  />
-                ) : null}
-
-                <div className="flex justify-end gap-2">
-                  {/* Watch opens the import channel by channel (#2857);
-                          on a finished import the same panel is its details. */}
-                  {watching ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-expanded="true"
-                      onClick={() => setOpenId(null)}
-                    >
-                      Hide
-                    </Button>
-                  ) : watchable ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-expanded="false"
-                      onClick={() => {
-                        setActiveId(row.id);
-                        setOpenId(row.id);
-                      }}
-                    >
-                      {MOVING.has(live.status) ? "Watch" : "Details"}
-                    </Button>
-                  ) : activeId !== row.id && MOVING.has(live.status) ? (
-                    // An upload: Watch keeps its message count live.
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setActiveId(row.id)}
-                    >
-                      Watch
-                    </Button>
-                  ) : null}
-                  {/* Delete refuses while an import is running and says to
-                          cancel first, so the cancel affordance has to exist —
-                          otherwise the recovery path the API describes is not
-                          reachable from the product. */}
-                  {live.status === "running" || live.status === "ready" ? (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => void cancel(row.id)}
-                      disabled={cancelImport.isPending}
-                    >
-                      Stop import
-                    </Button>
-                  ) : null}
-                  {/* Only a deleted import is cleared: this list is where
-                          Delete lives, so one still holding what it brought
-                          in must stay on it. */}
-                  {isDiscordImportClearable(live.status) ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => void clear(row.id)}
-                      disabled={clearImport.isPending}
-                    >
-                      Clear
-                    </Button>
-                  ) : null}
-                  {live.status !== "purged" &&
-                  live.status !== "purging" &&
-                  live.status !== "running" ? (
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => void purge(live)}
-                      disabled={deleteImport.isPending}
-                    >
-                      Delete import
-                    </Button>
-                  ) : null}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        <ImportFinished
+          row={current}
+          onDelete={() => void purge(current)}
+          deleting={deleteImport.isPending}
+          channels={channels(current, false)}
+        />
       )}
-    </section>
+    </div>
   );
 }

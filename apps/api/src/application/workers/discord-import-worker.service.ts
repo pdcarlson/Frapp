@@ -52,6 +52,10 @@ import {
   DiscordNotConfiguredError,
 } from '#domain/adapters/discord.interface';
 import { RbacService } from '../services/rbac.service';
+import {
+  NotificationService,
+  type NotifyPayload,
+} from '../services/notification.service';
 import type {
   DiscordImport,
   DiscordImportChannel,
@@ -95,6 +99,27 @@ export const IMPORT_BATCH_SIZE = 200;
  * costs extra round trips instead of stranding rows — see `runPurgeSlice`.
  */
 export const PURGE_BATCH_SIZE = 500;
+
+/**
+ * What the person who started an import is told when it finishes. `admin`,
+ * like a filed chat report: officer traffic with no member-facing switch.
+ * NORMAL, so quiet hours hold. The `discord_import` target opens the import
+ * page on web; mobile has no such page and falls through to the list.
+ */
+export function importFinishedNotification(
+  row: Pick<DiscordImport, 'imported_messages' | 'guild_name'>,
+): NotifyPayload {
+  const count = row.imported_messages.toLocaleString('en-US');
+  const one = row.imported_messages === 1;
+  const from = row.guild_name ? ` from ${row.guild_name}` : '';
+  return {
+    title: 'Discord import finished',
+    body: `${count} ${one ? 'message' : 'messages'}${from} ${one ? 'is' : 'are'} now in Frapp chat.`,
+    priority: 'NORMAL',
+    category: 'admin',
+    data: { target: { screen: 'discord_import' } },
+  };
+}
 
 /**
  * Statuses in which a slice may keep going.
@@ -203,6 +228,9 @@ export class DiscordImportWorkerService {
     // an imported message's attachments live under the import's prefix.
     @Inject(CHAT_MESSAGE_REPORT_REPOSITORY)
     private readonly reportRepo: IChatMessageReportRepository,
+    // Tells whoever started an import that it finished: a large server takes
+    // hours, and the page says it will.
+    private readonly notifications: NotificationService,
   ) {}
 
   /**
@@ -439,7 +467,7 @@ export class DiscordImportWorkerService {
     // channel and then completes — and `checkpoint` is the only writer inside
     // that loop. Without this the admin gets a green "Completed · 0 messages"
     // with an empty warning list and no statement of what went wrong.
-    await this.importRepo.updateIfStatus(
+    const closed = await this.importRepo.updateIfStatus(
       job.id,
       chapterId,
       WORKER_MAY_CONTINUE,
@@ -454,6 +482,7 @@ export class DiscordImportWorkerService {
         completed_at: result.finished ? new Date().toISOString() : null,
       },
     );
+    await this.announceFinished(closed);
 
     return {
       claimed: true,
@@ -461,6 +490,31 @@ export class DiscordImportWorkerService {
       messagesImported: result.messagesImported,
       finished: result.finished,
     };
+  }
+
+  /**
+   * Notify whoever started the import, once the closing write has made it
+   * `completed`. That write is status-guarded, so it moves a job to
+   * `completed` once and only one slice reaches this with a completed row.
+   * Best-effort: the import is finished whether or not the notice goes out,
+   * so a failure is logged and never fails the slice.
+   */
+  private async announceFinished(row: DiscordImport | null): Promise<void> {
+    if (row?.status !== 'completed' || !row.created_by) return;
+    try {
+      await this.notifications.notifyUser(
+        row.created_by,
+        row.chapter_id,
+        importFinishedNotification(row),
+      );
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not send the finished notice for import ${row.id}`,
+        error,
+      );
+    }
   }
 
   // ── import ────────────────────────────────────────────────────────────────
@@ -713,7 +767,7 @@ export class DiscordImportWorkerService {
     }
 
     const finished = partIndex >= parts.length;
-    await this.importRepo.updateIfStatus(
+    const closed = await this.importRepo.updateIfStatus(
       job.id,
       chapterId,
       WORKER_MAY_CONTINUE,
@@ -730,6 +784,7 @@ export class DiscordImportWorkerService {
         completed_at: finished ? new Date().toISOString() : null,
       },
     );
+    await this.announceFinished(closed);
 
     return {
       claimed: true,

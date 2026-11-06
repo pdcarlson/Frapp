@@ -610,15 +610,25 @@ Implementation: `apps/web/components/chat-admin/chat-report-copy.ts`.
 
 ### Discord Import (dashboard)
 
-The import list on `/discord-import`, and deleting an import from it ([#2944](https://github.com/pdcarlson/Frapp/issues/2944)). What a delete removes and what it keeps is owned by [`chat/README.md`](../../behavior/chat/README.md#imported-archive-messages) § Imported archive messages; the confirmation says it in that section's words rather than its own.
+`/discord-import`, the chapter's one import in the state it is in (2026-11-06; what each state shows is owned by [`chat/README.md`](../../behavior/chat/README.md#imported-archive-messages) § Imported archive messages), and deleting it ([#2944](https://github.com/pdcarlson/Frapp/issues/2944)). What a delete removes and what it keeps is owned by [`chat/README.md`](../../behavior/chat/README.md#imported-archive-messages) § Imported archive messages; the confirmation says it in that section's words rather than its own.
 
 | State | Title | Description |
 |---|---|---|
-| Loading | — | `Loading imports...` |
-| Empty | `No imports yet` | `Bring your chapter's Discord history in as read-only archive messages.` |
-| Error | `Couldn't load imports` | `Confirm your chapter access and retry.` |
-| Stale | — | `Couldn't refresh the imports. This is the last update that loaded.` · `Try again` (a background refresh of the list failed, or of the polled import's own row while that row still shows its copy; the loaded rows and their meters stay) |
-| Offline | `Imports unavailable offline` | `Reconnect to load your chapter's Discord imports.` |
+| Loading | — | `Loading the import` |
+| Nothing imported yet | `Bring your chapter's Discord history into Frapp` | `Every message, file and thread lands in Frapp chat, searchable, with the same people able to read it. Members can link their Discord later to claim what they wrote.` Then the two ways in (the wizard's `Connect Discord` / `Upload an export` cards), `Comes over`: `Messages, threads and forum posts` · `Files and images` · `Reaction counts` · `Categories, if you want them` · `Private channels stay private`, and `Stays behind`: `DMs, voice, and who holds which role` |
+| Last import deleted | — | `The import from <server> was deleted.` (`your Discord server` when it has no name) · `Dismiss` |
+| Importing | `<n> messages in so far` (eyebrow `Importing · <server>`, or `Waiting to start · <server>` while queued) | `<done> of <total> channels and threads done. You can close this tab. You'll get a notification when it finishes.` (the first sentence only once the counts are known), the percent under the meter · `Stop import` |
+| Stopping (toast) | — | `Stopping the import.`, or the API's message, or `Could not stop the import.` |
+| Finished | `Your Discord history is in Frapp` (completed) · `The import stopped on an error` (failed) · `The import was stopped` (cancelled) | `<server> · messages since <day> · finished <day, time>`, the parts it has, and the import's own error under it when it failed. Figures: `messages` · `files` · `channels and threads`. `Open chat` once it completed |
+| Didn't come over | `<n> things didn't come over` | One group per reason, each with its count: `File types Frapp doesn't store` · `Files with no type Frapp could tell` · `Files too large to store` · `Files Discord no longer has` · `Files storage couldn't take` · `Channels the bot could no longer read` · `Other`. At 50: `Only the last 50 are kept.` |
+| Import warnings (API) | — | `"<file>" is a file type Frapp doesn't store (<type>) and was not imported. The message it belongs to was.` · `"<file>" has no file type Frapp could tell, so it was not imported. The message it belongs to was.` · `Storage couldn't take "<file>", so it was not imported. The message it belongs to was.` |
+| Delete (finished) | — | `Deleting the import removes everything it brought in. Roles it made stay, and so does anything you made yourself.` · `Delete import` |
+| Finish notification | `Discord import finished` | `<n> messages from <server> are now in Frapp chat.` (`1 message … is`; without a server name, `from` and the name are left out) |
+| One import (API, 409) | — | `Your chapter already has a Discord import. Delete it before starting another.` |
+| Cutoff (wizard, review step) | `How far back should we go?` | `Older messages and their files are never read or stored. You can't change this once the import starts.` Choices: `Everything` · `Last 4 years` · `Last 2 years` · `Last year` · `Pick a date` (opens `Import messages from`). Under them: `Your server was made in <Mon YYYY>.` (bot path, read from the server's id), then `Messages before <Mon D, YYYY> are left out.` or `The server's whole history comes over.` Problems: `Pick a date, or choose Everything.` · `Enter a whole date, or choose Everything.` · `Pick a date in the past, or choose Everything.` |
+| Error | `Couldn't load the import` | `Confirm your chapter access and retry.` |
+| Stale | — | `Couldn't refresh the import. This is the last update that loaded.` · `Try again` (a background refresh failed; the import as it last loaded, and its meter, stay) |
+| Offline | `Import unavailable offline` | `Reconnect to load your chapter's Discord import.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can import Discord history.` |
 | Permission denied | — | `Your role can't import Discord history. Ask your chapter president for access.` |
 | Loading (channel panel) | — | `Loading the import’s channels…` |
@@ -633,17 +643,16 @@ The import list on `/discord-import`, and deleting an import from it ([#2944](ht
 | Stale (wizard, connect step) | — | `Couldn't recheck the Discord connection. This is the last answer that loaded.` · `Try again` (a recheck failed; the last answer, connected or not, stays) |
 | Refused (wizard, connect step) | `Could not confirm that server` | The API's own message, or `That Discord authorization could not be confirmed for this chapter.` (kept across Back and Continue, since a refused authorization is not sent again) |
 | Delete confirmation | `Delete the import from <server>?` (`Delete this Discord import?` when the server has no name) | `This deletes the <n> messages and <m> attachments it brought in, and its archive files. It then deletes the channels it created, and any it merged into that another deleted import created, once they hold nothing, and the categories it created once they are empty. The roles and read permissions it created stay. This cannot be undone.` A count that is zero is left out, and an import with neither reads `This deletes its archive files.` A delete offered again after one failed part-way opens instead with `An earlier deletion already removed <purged> of its <total> messages. This deletes the <left> left, their attachments, and its archive files.` (or, with none left, `An earlier deletion already removed its messages. This deletes its archive files.`) · confirm `Delete import` |
-| Deleting (toast) | — | `Deleting the import. Its row shows how far along it is.` |
-| Deleting (row) | — | `Deleting: <left> of <total> messages left`, with the percent deleted beside it and on the meter. Once no message is left: `Messages deleted. Finishing with its channels and archive files.` |
-| Deletion stopped (row) | — | The row's counts, then ` · <n> already deleted`, when a deletion failed part-way and Delete import is offered again |
-| Deleted (row) | — | `Deleted. The messages, attachments and archive files it brought in are gone.` |
+| Deleting (toast) | — | `Deleting the import. This page shows how far along it is.` |
+| Deleting | `Deleting the import` | `Deleting: <left> of <total> messages left`, with the percent deleted under the meter. Once no message is left: `Messages deleted. Finishing with its channels and archive files.` |
+| Deletion stopped | — | The finished state's line, then ` · <n> already deleted`, when a deletion failed part-way and Delete import is offered again |
 | Delete refused (toast) | — | The API's own message (`Cancel the running import before deleting it.`), or `Could not delete the import.` |
 
-The confirmation names the counts and the server because the button reads the same on every row: a delete of five thousand messages and one of a hundred and forty thousand look identical until the dialog says which. The row counts the messages down because a large purge runs for many minutes, and a bare `Deleting` badge (the `purging` state; the badge prints a plain-language label per §5, since no import state has a §5 row) could not tell an admin working from stuck; it stops at 99% and switches to what it is still doing, because the status, not the count, says the deletion is over (the count can finish short of the total).
+The confirmation names the counts and the server because the button alone does not say how much goes: a delete of five thousand messages and one of a hundred and forty thousand look identical until the dialog says which. The page counts the messages down because a large purge runs for many minutes, and a bare `Deleting` could not tell an admin working from stuck; it stops at 99% and switches to what it is still doing, because the status, not the count, says the deletion is over (the count can finish short of the total).
 
-The channel panel is what Watch and Details open on a bot import's row. Its strings keep the typographic apostrophe and ellipsis they were written with, unlike the list's, and the connect step's loading lines keep the ellipsis; match them exactly when editing any of them.
+The channel panel is what `See every channel` opens on a bot import (`Hide channels` closes it). Its strings keep the typographic apostrophe and ellipsis they were written with, unlike the page's, and the connect step's loading lines keep the ellipsis; match them exactly when editing any of them.
 
-Implementation: the list states inline in `apps/web/components/discord-import/discord-import-page.tsx`, the channel panel's in `apps/web/components/discord-import/import-watch-panel.tsx`, the connect step's in `apps/web/components/discord-import/connect-step.tsx`, the delete copy in `apps/web/components/discord-import/delete-import-copy.ts`.
+Implementation: the page's read states inline in `apps/web/components/discord-import/discord-import-page.tsx`, the import's states in `import-states.tsx`, the warning groups in `import-warnings.ts`, the cutoff in `review-step.tsx` and `import-wizard.tsx`, the API's warnings in `apps/api/src/application/workers/discord-export-worker.service.ts` and the finish notice in `discord-import-worker.service.ts`, the channel panel's in `apps/web/components/discord-import/import-watch-panel.tsx`, the connect step's in `apps/web/components/discord-import/connect-step.tsx`, the delete copy in `apps/web/components/discord-import/delete-import-copy.ts`.
 
 ### Billing (dashboard)
 

@@ -25,7 +25,11 @@ import {
   CHAT_ARCHIVE_BUCKET,
   archiveMediaObjectPath,
 } from '#domain/constants/storage';
-import { isAllowedUploadMime } from '@repo/validation';
+import {
+  contentTypeByExtension,
+  fileExtension,
+  isAllowedUploadMime,
+} from '@repo/validation';
 import {
   MAX_ARCHIVE_CHAPTER_BYTES,
   MAX_ARCHIVE_IMPORT_BYTES,
@@ -893,10 +897,18 @@ export class DiscordExportWorkerService {
         // `text/plain` is allowlisted; the parameterised spelling is not, so
         // without this every one of those is dropped with a warning that
         // contradicts itself.
-        const contentType = normaliseMimeType(attachment.content_type);
-        if (contentType && !isAllowedUploadMime('archive', contentType)) {
+        const contentType = attachmentContentType(attachment);
+        if (!contentType) {
           totals.warnings.push(
-            `"${attachment.filename ?? key}" is a file type the archive does not accept (${contentType}) and was not imported. The message it belongs to was.`,
+            `"${attachment.filename ?? key}" has no file type Frapp could tell, so it was not imported. The message it belongs to was.`,
+          );
+          reported.push(key);
+          skipped += 1;
+          continue;
+        }
+        if (!isAllowedUploadMime('archive', contentType)) {
+          totals.warnings.push(
+            `"${attachment.filename ?? key}" is a file type Frapp doesn't store (${contentType}) and was not imported. The message it belongs to was.`,
           );
           reported.push(key);
           skipped += 1;
@@ -919,9 +931,9 @@ export class DiscordExportWorkerService {
       bucket: CHAT_ARCHIVE_BUCKET,
       // Shared with the upload path, so the purge's prefix sweep finds both.
       storage_path: archiveMediaObjectPath(job.chapter_id, job.id, key),
+      // Never null here: an attachment with no type was refused above.
       content_type:
-        normaliseMimeType(attachment.content_type) ??
-        'application/octet-stream',
+        attachmentContentType(attachment) ?? 'application/octet-stream',
       byte_size: typeof attachment.size === 'number' ? attachment.size : null,
     }));
 
@@ -990,7 +1002,7 @@ export class DiscordExportWorkerService {
           url,
           bucket: file.bucket,
           path: file.storage_path,
-          contentType: normaliseMimeType(attachment.content_type),
+          contentType: attachmentContentType(attachment),
           declaredSize:
             typeof attachment.size === 'number' ? attachment.size : null,
         })),
@@ -1016,10 +1028,15 @@ export class DiscordExportWorkerService {
             );
             break;
           default:
-            totals.warnings.push(
-              `Could not import attachment "${name}": ${
+            // The storage service's own text (one was a chunk of an HTML
+            // error page) is for the log, not the admin's warning list.
+            this.logger.warn(
+              `Attachment copy failed for import ${job.id}: ${
                 result.reason ?? result.status
               }`,
+            );
+            totals.warnings.push(
+              `Storage couldn't take "${name}", so it was not imported. The message it belongs to was.`,
             );
         }
         reported.push(entry.key);
@@ -1076,6 +1093,23 @@ export class DiscordExportWorkerService {
 function normaliseMimeType(value: string | null | undefined): string | null {
   const bare = value?.split(';')[0]?.trim().toLowerCase();
   return bare && bare.length > 0 ? bare : null;
+}
+
+/**
+ * The type an attachment is stored as: Discord's own, unless it sent none or
+ * only the generic `application/octet-stream`, in which case the file's
+ * extension decides, the way the upload path decides every file. Discord
+ * reports no useful type for an iPhone `.heic` photo, and storing it as a
+ * generic binary got it refused by the bucket. Null when neither says.
+ */
+export function attachmentContentType(
+  attachment: Pick<DiscordApiAttachment, 'content_type' | 'filename'>,
+): string | null {
+  const reported = normaliseMimeType(attachment.content_type);
+  if (reported && reported !== 'application/octet-stream') return reported;
+  const byExtension =
+    contentTypeByExtension('archive')[fileExtension(attachment.filename ?? '')];
+  return byExtension ?? null;
 }
 
 /** An attachment with a manifest row, waiting for the copier. */

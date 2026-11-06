@@ -89,7 +89,7 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Start a Discord archive import',
     description:
-      'Requires the consent acknowledgement. Returns the import to upload an export against.',
+      "Requires the consent acknowledgement. Returns the import to upload an export against. 409 while another of the chapter's imports still holds what it brought in (queued, running, completed, failed, cancelled or deleting): a chapter has one import at a time, so delete it first.",
   })
   @ApiCreatedResponse({ type: DiscordImportResponseDto })
   // `source` as the server resolved it (`upload` when omitted); never the
@@ -309,7 +309,7 @@ export class DiscordImportController {
   @ApiOperation({
     summary: 'Queue the import',
     description:
-      'The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818). A bot import may carry a date cutoff, `messages_after` (#2858); the body is optional.',
+      "The background worker picks it up within a minute and reports progress on the detail route. When the role mapping creates roles or lets roles read the imported channels, starting also needs `roles:manage` (#2818). A bot import may carry a date cutoff, `messages_after` (#2858); the body is optional. 409 while another of the chapter's imports still holds what it brought in, as on create.",
   })
   // Optional: every client before #2858 starts with no body at all.
   @ApiBody({ type: StartDiscordImportDto, required: false })

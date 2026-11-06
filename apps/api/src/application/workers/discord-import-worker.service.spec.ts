@@ -13,6 +13,7 @@ import { ARCHIVE_MEDIA_COPY_BUDGET_MS } from '../../infrastructure/storage/supab
 import { ChannelCacheService } from '../services/channel-cache.service';
 import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
 import { RbacService } from '../services/rbac.service';
+import { NotificationService } from '../services/notification.service';
 import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.repository.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
@@ -314,6 +315,7 @@ async function buildWorker(
   options: {
     exportWorker?: { runSlice: jest.Mock };
     reportRepo?: { findHeldObjects: jest.Mock };
+    notifications?: { notifyUser: jest.Mock };
   } = {},
 ) {
   const channelRepo = {
@@ -376,9 +378,13 @@ async function buildWorker(
   const reportRepo = options.reportRepo ?? {
     findHeldObjects: jest.fn(async () => []),
   };
+  const notifications = options.notifications ?? {
+    notifyUser: jest.fn(async () => undefined),
+  };
   const moduleRef = await Test.createTestingModule({
     providers: [
       DiscordImportWorkerService,
+      { provide: NotificationService, useValue: notifications },
       { provide: DISCORD_IMPORT_REPOSITORY, useValue: repo },
       { provide: STORAGE_PROVIDER, useValue: storage },
       { provide: CHAT_CHANNEL_REPOSITORY, useValue: channelRepo },
@@ -402,6 +408,7 @@ async function buildWorker(
     categoryRepo,
     channelCache,
     connectionRepo,
+    notifications,
   };
 }
 
@@ -428,6 +435,59 @@ function makeStorage(partBytes: Uint8Array | null) {
 
 const part000 = () =>
   new Uint8Array(readFileSync(join(FIXTURES, 'part-000.json')));
+
+describe('DiscordImportWorkerService — telling the admin it finished', () => {
+  beforeEach(() => {
+    repoRef = makeRepo(job());
+  });
+
+  it('notifies whoever started the import once it completes', async () => {
+    const { worker, notifications } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.state().status).toBe('completed');
+    expect(notifications.notifyUser).toHaveBeenCalledTimes(1);
+    expect(notifications.notifyUser).toHaveBeenCalledWith('user-1', CHAPTER, {
+      title: 'Discord import finished',
+      body: '6 messages from Tau Nu are now in Frapp chat.',
+      priority: 'NORMAL',
+      category: 'admin',
+      data: { target: { screen: 'discord_import' } },
+    });
+  });
+
+  it('says nothing when the closing write finds the import stopped', async () => {
+    // An admin's cancel landed mid-slice: the guarded write matches no row.
+    repoRef.updateIfStatus.mockResolvedValue(null);
+    const { worker, notifications } = await buildWorker(
+      repoRef,
+      makeStorage(part000()),
+    );
+
+    await worker.sweepImports(NOW);
+
+    expect(notifications.notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('finishes the import even when the notice fails', async () => {
+    const { worker } = await buildWorker(repoRef, makeStorage(part000()), {
+      notifications: {
+        notifyUser: jest.fn(async () => {
+          throw new Error('push down');
+        }),
+      },
+    });
+
+    const result = await worker.sweepImports(NOW);
+
+    expect(result.finished).toBe(true);
+    expect(repoRef.state().status).toBe('completed');
+  });
+});
 
 describe('DiscordImportWorkerService — importing', () => {
   beforeEach(() => {
