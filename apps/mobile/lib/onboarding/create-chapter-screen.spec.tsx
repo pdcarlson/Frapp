@@ -58,6 +58,7 @@ vi.mock("@/lib/onboarding/chapter-wizard/chapter-logo", () => ({
 let directoryRows: ChapterDirectoryResult[] = [];
 const onboard = vi.fn();
 const createInvite = vi.fn();
+let inviteList: { token: string; used_at: string | null }[] = [];
 let currentChapter: { logo_url: string | null } | undefined;
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -70,6 +71,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useOnboardChapter: () => ({ isPending: false, mutateAsync: onboard }),
   useCreateInvite: () => ({ isPending: false, mutateAsync: createInvite }),
+  useInvites: (options?: { enabled?: boolean }) => ({
+    data: options?.enabled ? inviteList : undefined,
+  }),
   useCurrentChapter: () => ({ data: currentChapter }),
   useRequestChapterLogoUploadUrl: () => ({ mutateAsync: vi.fn() }),
   useConfirmChapterLogo: () => ({ mutateAsync: vi.fn() }),
@@ -267,6 +271,10 @@ beforeEach(() => {
   selectChapter.mockReset().mockResolvedValue(true);
   onboard.mockReset().mockResolvedValue({ id: "chapter-new" });
   createInvite.mockReset().mockResolvedValue({ token: "tok123" });
+  inviteList = [];
+  vi.mocked(Share.share)
+    .mockReset()
+    .mockResolvedValue({ action: "sharedAction" });
   pickAndSetChapterLogo.mockReset();
   successHaptic.mockReset();
   requestPushPermission.mockReset().mockResolvedValue(true);
@@ -308,8 +316,10 @@ describe("chapter setup — step order", () => {
     await press(root, "Continue");
     expect(title(root)).toBe(SETUP_TITLES.invite);
 
-    await press(root, "Create invite link");
-    expect(allText(root)).toContain("tok123");
+    await press(root, "Share invite");
+    expect(JSON.stringify(vi.mocked(Share.share).mock.calls[0])).toContain(
+      "tok123",
+    );
 
     await press(root, "Go to chat");
     expect(useRouter().replace).toHaveBeenCalledWith("/(tabs)");
@@ -523,8 +533,7 @@ describe("chapter setup — Greek letters", () => {
     });
     await settle();
     expect(allText(root)).not.toContain("ΦΓΔ");
-    return (onboard.mock.calls[0]?.[0] as { branding: SentBranding })
-      .branding;
+    return (onboard.mock.calls[0]?.[0] as { branding: SentBranding }).branding;
   }
 
   type SentBranding = { show_greek_letters?: boolean; short_name?: string };
@@ -741,7 +750,7 @@ describe("chapter setup — new chapter not active", () => {
     expect(allText(root)).not.toContain("general");
 
     await press(root, "Continue");
-    expect(control(root, "Create invite link")).toBeUndefined();
+    expect(control(root, "Share invite")).toBeUndefined();
     expect(useRouter().replace).toHaveBeenCalledWith("/(tabs)");
     expect(createInvite).not.toHaveBeenCalled();
   });
@@ -770,7 +779,7 @@ describe("chapter setup — push primer for the founder", () => {
     expect(title(root)).toBe(SETUP_TITLES.primer);
     await press(root, "Not now");
     expect(useRouter().replace).toHaveBeenCalledWith("/(tabs)");
-    expect(control(root, "Create invite link")).toBeUndefined();
+    expect(control(root, "Share invite")).toBeUndefined();
   });
 
   it("moves on to the invite even when the OS prompt fails", async () => {
@@ -816,9 +825,9 @@ const fillOf = (pressable: Node | undefined): unknown =>
   flatStyle(pressable?.props.style).backgroundColor;
 
 /**
- * The invite step's one gold button is the invite: `Create invite link`,
- * then `Share invite`. Leaving is the quiet line under it. The copy says what
- * a link is, one person within a day, not a link for the whole chapter.
+ * The invite step's one gold button is `Share invite` (owner pick 2026-11-06,
+ * "Share first"). Each press shares a fresh link, since a link lets one
+ * person in; the token is never drawn. Leaving is the quiet line under it.
  */
 describe("chapter setup — invite", () => {
   async function toInvite(): Promise<Node> {
@@ -826,49 +835,103 @@ describe("chapter setup — invite", () => {
     await createFromMatch(root);
     await press(root, "Continue");
     expect(title(root)).toBe(SETUP_TITLES.invite);
+    await settle();
     return root;
   }
 
-  it("leads with Create invite link in gold, with Skip for now quiet under it", async () => {
+  it("leads with Share invite in gold over a ready link, with Skip for now quiet under it", async () => {
     const root = await toInvite();
 
-    expect(fillOf(control(root, "Create invite link"))).toBe(
+    // Minted as the step opened, so the sheet opens at once.
+    expect(createInvite).toHaveBeenCalledTimes(1);
+    expect(fillOf(control(root, "Share invite"))).toBe(
       signetDarkTokens.color.gold.house,
     );
     expect(fillOf(control(root, "Skip for now"))).toBeUndefined();
-    expect(allText(root)).toContain(
-      "Each link lets one person join and expires after 24 hours.",
+    const text = allText(root);
+    expect(text).toContain("Invite link ready");
+    expect(text).toContain(
+      "Send each person their own link. A link lets one person in and lasts 24 hours.",
     );
-    expect(allText(root)).not.toContain("Anyone with this link");
-    expect(allText(root)).not.toContain("land in #general");
+    // The token is never on screen, and there's no second-link button.
+    expect(text).not.toContain("tok123");
+    expect(text).not.toContain("Create another link");
 
     await press(root, "Skip for now");
     expect(useRouter().replace).toHaveBeenCalledWith("/(tabs)");
   });
 
-  it("turns the gold button into Share invite once a link exists", async () => {
+  it("shares the ready link with the chapter's name, then readies a fresh one", async () => {
     const root = await toInvite();
-    await press(root, "Create invite link");
-
-    expect(allText(root)).toContain("tok123");
-    expect(fillOf(control(root, "Share invite"))).toBe(
-      signetDarkTokens.color.gold.house,
-    );
-    await press(root, "Share invite");
-    expect(Share.share).toHaveBeenCalledWith({
-      message: expect.stringContaining("tok123"),
-    });
-    expect(control(root, "Go to chat")).toBeDefined();
-  });
-
-  it("makes another link without leaving, since each one lets one person in", async () => {
-    const root = await toInvite();
-    await press(root, "Create invite link");
     createInvite.mockResolvedValueOnce({ token: "tok456" });
 
-    await press(root, "Create another link");
+    await press(root, "Share invite");
+    await settle();
+    expect(Share.share).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("Join FIJI on Frapp"),
+      }),
+    );
+    expect(JSON.stringify(vi.mocked(Share.share).mock.calls[0])).toContain(
+      "tok123",
+    );
     expect(createInvite).toHaveBeenCalledTimes(2);
-    expect(allText(root)).toContain("tok456");
+    expect(allText(root)).toContain("Link 1");
+    expect(allText(root)).toContain("Not used yet");
+    expect(control(root, "Go to chat")).toBeDefined();
+
+    await press(root, "Share invite");
+    await settle();
+    expect(JSON.stringify(vi.mocked(Share.share).mock.calls[1])).toContain(
+      "tok456",
+    );
+    expect(allText(root)).toContain("Link 2");
+  });
+
+  it("keeps the link when the sheet is closed without sending", async () => {
+    const root = await toInvite();
+    vi.mocked(Share.share).mockResolvedValueOnce({
+      action: "dismissedAction",
+    });
+
+    await press(root, "Share invite");
+    await settle();
+    expect(createInvite).toHaveBeenCalledTimes(1);
+    expect(allText(root)).not.toContain("Link 1");
+    expect(control(root, "Skip for now")).toBeDefined();
+
+    await press(root, "Share invite");
+    expect(JSON.stringify(vi.mocked(Share.share).mock.calls[1])).toContain(
+      "tok123",
+    );
+  });
+
+  it("marks a shared link Joined once it has been used", async () => {
+    const root = await toInvite();
+    await press(root, "Share invite");
+    await settle();
+    expect(allText(root)).toContain("Not used yet");
+
+    inviteList = [{ token: "tok123", used_at: "2026-11-06T20:00:00Z" }];
+    await press(root, "Share invite");
+    await settle();
+    expect(allText(root)).toContain("Joined");
+  });
+
+  it("mints on press when the first link failed, and says so", async () => {
+    createInvite.mockReset().mockRejectedValueOnce(new Error("Offline"));
+    const root = await toInvite();
+    expect(allText(root)).toContain("No link yet");
+    expect(allText(root)).toContain("Offline");
+
+    createInvite.mockResolvedValueOnce({ token: "tok789" });
+    createInvite.mockResolvedValue({ token: "tok999" });
+    await press(root, "Share invite");
+    await settle();
+    expect(JSON.stringify(vi.mocked(Share.share).mock.calls[0])).toContain(
+      "tok789",
+    );
+    expect(allText(root)).not.toContain("Offline");
   });
 });
 

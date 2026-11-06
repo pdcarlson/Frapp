@@ -1,4 +1,5 @@
-import { Path } from "react-native-svg";
+import { Platform } from "react-native";
+import { Circle, Path } from "react-native-svg";
 import { Frame, paint } from "@/components/more/more-glyphs";
 
 /**
@@ -57,6 +58,52 @@ export function CheckAllGlyph({
     <Frame size={size}>
       <Path d="M2.5 12.5l4.5 4.5L17 7" {...detail} />
       <Path d="M12.5 16l1 1L22 8.5" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * Share: each platform's own mark, because that is the mark its members
+ * already read as "send this somewhere": iOS's box with an arrow out of it,
+ * Android's three joined nodes. The image viewer draws it at 24, the setup
+ * invite step's gold button at 20.
+ */
+export function ShareGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  if (Platform.OS === "android") {
+    return (
+      <Frame size={size}>
+        <Circle cx={17.5} cy={5.5} r={2.5} {...detail} />
+        <Circle cx={6.5} cy={12} r={2.5} {...detail} />
+        <Circle cx={17.5} cy={18.5} r={2.5} {...detail} />
+        <Path d="M8.7 10.7l6.6-3.9M8.7 13.3l6.6 3.9" {...detail} />
+      </Frame>
+    );
+  }
+  return (
+    <Frame size={size}>
+      <Path d="M12 3.5v11M8 7.5l4-4 4 4" {...detail} />
+      <Path
+        d="M8.5 10.5H7a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-1.5"
+        {...detail}
+      />
+    </Frame>
+  );
+}
+
+/** An invite link: the setup invite step's link card and its shared rows. */
+export function LinkGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M10 14a4.5 4.5 0 006.4 0l3-3a4.5 4.5 0 00-6.4-6.4l-1 1"
+        {...detail}
+      />
+      <Path
+        d="M14 10a4.5 4.5 0 00-6.4 0l-3 3a4.5 4.5 0 006.4 6.4l1-1"
+        {...detail}
+      />
     </Frame>
   );
 }

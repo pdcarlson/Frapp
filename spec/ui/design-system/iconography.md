@@ -252,7 +252,7 @@ viewer draws the same intents in Lucide (`Download`, `X`, `ChevronLeft`,
 | Semantic intent | Glyph | Lives in |
 |---|---|---|
 | Close the viewer | `CloseGlyph` (an ×), at 24 | `components/control-glyphs.tsx` (§6.1.5) |
-| Share the image | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark | `components/chat/viewer-glyphs.tsx` |
+| Share the image | `ShareGlyph`, at 24 | `components/control-glyphs.tsx` (§6.1.5) |
 | Previous / next image | `ChevronGlyph` | `components/chat/viewer-glyphs.tsx` |
 
 ### 6.1.5 Mobile control glyphs (stroke recipe, shipped)
@@ -270,6 +270,8 @@ the chapter accent in a back-row slot (2026-11-05).
 | Dismiss, close, remove | `CloseGlyph` (an ×) | the network banner, the thread's error banner, the composer's reply and attachment chips (16px), the image viewer (24px), the service-hours proof row, Chat home's setup-checklist hide (16px) | Lucide `X` |
 | Edit | `PencilGlyph` | Profile's back row | Lucide `Pencil` |
 | Mark all read | `CheckAllGlyph` (two checks) | the Notifications screen header | Lucide `CheckCheck` |
+| Share | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark (moved here from the image viewer's own file, 2026-11-06) | the image viewer (24px), chapter setup's `Share invite` gold button, in the button's ink | Lucide `Share` |
+| Invite link | `LinkGlyph` (two joined links) | chapter setup's invite step: its link card, in `gold.askText` on the ask tile, and each shared row (16px) | Lucide `Link` |
 
 ### 6.2 Web Dashboard shell (Signet duotone)
 

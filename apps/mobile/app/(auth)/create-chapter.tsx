@@ -4,7 +4,6 @@ import {
   ActivityIndicator,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -19,7 +18,6 @@ import {
   DIRECTORY_MIN_QUERY_LENGTH,
   useChapterDirectorySearch,
   useConfirmChapterLogo,
-  useCreateInvite,
   useCurrentChapter,
   useOnboardChapter,
   useRequestChapterLogoUploadUrl,
@@ -56,6 +54,8 @@ import {
 import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
 import { JoinedChannelsCard } from "@/components/onboarding/joined-channels-card";
+import { InviteLinksCard } from "@/components/onboarding/invite-links-card";
+import { ShareGlyph } from "@/components/control-glyphs";
 import { Toggle } from "@/components/toggle";
 import {
   EMPTY_CHAPTER_IDENTITY,
@@ -67,11 +67,8 @@ import {
   withOrgName,
   type ChapterIdentityForm,
 } from "@repo/hooks/chapter-identity";
-import {
-  inviteTokenOf,
-  onboardedChapterId,
-  webJoinUrl,
-} from "@/lib/onboarding/chapter-wizard/invite-link";
+import { onboardedChapterId } from "@/lib/onboarding/chapter-wizard/invite-link";
+import { useInviteShares } from "@/lib/onboarding/chapter-wizard/use-invite-shares";
 import { pickAndSetChapterLogo } from "@/lib/onboarding/chapter-wizard/chapter-logo";
 import { useSelectChapter } from "@/lib/select-chapter";
 import { usePushPrimer } from "@/lib/notifications/use-push-primer";
@@ -79,7 +76,7 @@ import { useBackToClose } from "@/lib/overlay";
 import { successHaptic } from "@/lib/haptics";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { stepFadeIn } from "@/lib/onboarding/step-fade";
-import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * First-officer chapter setup (`spec/behavior/onboarding.md`, #3351).
@@ -110,7 +107,6 @@ import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
 type Step = "find" | "confirm" | "color" | "live" | "primer" | "invite";
 /** The steps before the chapter exists, which the progress ticks count. */
 const SETUP_STEPS: Step[] = ["find", "confirm", "color"];
-const INVITE_ROLE = "Member";
 
 /** Each step's screen title. The live one names the chapter. */
 export const SETUP_TITLES = {
@@ -151,10 +147,7 @@ function knownArchetype(value: string | null | undefined): ArchetypeKey | null {
  * stay stored, as web's wizard stores them (branding.md: the switch hides,
  * it doesn't delete); setup never draws them or sends them shown.
  */
-function setupBranding(
-  identity: ChapterIdentityForm,
-  hiddenBy: string | null,
-) {
+function setupBranding(identity: ChapterIdentityForm, hiddenBy: string | null) {
   const branding = chapterIdentityBranding(identity);
   return hiddenBy ? { ...branding, show_greek_letters: false } : branding;
 }
@@ -174,7 +167,6 @@ export default function CreateChapter() {
   const queryClient = useQueryClient();
   const selectChapter = useSelectChapter();
   const onboardChapter = useOnboardChapter();
-  const createInvite = useCreateInvite();
   const requestLogoUrl = useRequestChapterLogoUploadUrl();
   const confirmLogo = useConfirmChapterLogo();
   const primer = usePushPrimer();
@@ -204,7 +196,6 @@ export default function CreateChapter() {
   const [activated, setActivated] = useState(false);
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoNote, setLogoNote] = useState<string | null>(null);
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const searchQuery = useChapterDirectorySearch(debouncedQuery, {
@@ -222,6 +213,11 @@ export default function CreateChapter() {
   const canConfirm = chapterIdentityIsValid(identity) && archetype !== null;
   const canSubmit = canConfirm && acceptedLegal && accentValid;
   const lettersHidden = lettersHiddenBy(matchedOrgName, identity);
+  const invite = useInviteShares({
+    active: step === "invite",
+    chapterName: displayName,
+    onError: setError,
+  });
 
   function applyDirectoryMatch(row: ChapterDirectoryResult) {
     const known = knownArchetype(row.archetype);
@@ -338,6 +334,8 @@ export default function CreateChapter() {
   function afterPrimer() {
     if (activated) {
       setStep("invite");
+      // The first link is minted as the step opens, so Share opens at once.
+      invite.prepare();
     } else {
       finish();
     }
@@ -363,33 +361,6 @@ export default function CreateChapter() {
       // Either answer moves on, even when the OS prompt failed: the primer
       // step has no other way forward.
       afterPrimer();
-    }
-  }
-
-  async function generateInviteLink() {
-    setError(null);
-    try {
-      const invite = await createInvite.mutateAsync({ role: INVITE_ROLE });
-      const token = inviteTokenOf(invite);
-      if (!token) {
-        setError("The invite did not return a token. Try again in a moment.");
-        return;
-      }
-      setInviteLink(webJoinUrl(token));
-    } catch (caught) {
-      setError(
-        serverMessageOf(caught) ??
-          "Couldn't create an invite. You can invite members from the web dashboard.",
-      );
-    }
-  }
-
-  async function shareInviteLink() {
-    if (!inviteLink) return;
-    try {
-      await Share.share({ message: inviteLink });
-    } catch {
-      setError("Couldn't open the share sheet. Copy the link from the field.");
     }
   }
 
@@ -657,14 +628,18 @@ export default function CreateChapter() {
               ) : null}
 
               {step === "invite" ? (
-                <InviteStep
-                  inviteLink={inviteLink}
-                  isGenerating={createInvite.isPending}
-                  onGenerate={() => {
-                    void generateInviteLink();
-                  }}
-                  styles={styles}
-                />
+                <View style={styles.stack}>
+                  <Text style={styles.body}>
+                    Send each person their own link. A link lets one person in
+                    and lasts 24 hours.
+                  </Text>
+                  <InviteLinksCard
+                    hasReady={invite.hasReady}
+                    minting={invite.minting}
+                    shared={invite.shared}
+                    isJoined={invite.isJoined}
+                  />
+                </View>
               ) : null}
             </Animated.View>
 
@@ -682,8 +657,8 @@ export default function CreateChapter() {
             submitting={submitting}
             logoBusy={logoBusy}
             displayName={displayName}
-            inviteLink={inviteLink}
-            isGenerating={createInvite.isPending}
+            hasShared={invite.shared.length > 0}
+            shareBusy={invite.busy}
             onConfirm={() => {
               setError(null);
               setStep("color");
@@ -692,11 +667,8 @@ export default function CreateChapter() {
               void submitChapter();
             }}
             onLeaveLive={leaveLive}
-            onGenerate={() => {
-              void generateInviteLink();
-            }}
             onShare={() => {
-              void shareInviteLink();
+              void invite.share();
             }}
             onFinish={finish}
             styles={styles}
@@ -714,10 +686,11 @@ type Styles = ReturnType<typeof createStyles>;
  * (a result or "Not in our directory?" moves on) and the primer has its own
  * pair of answers.
  *
- * On the invite step the gold button is the thing the step is for: `Create
- * invite link`, then `Share invite` once a link exists. Leaving for chat is
- * the quiet line under it (`Skip for now`, then `Go to chat`), so the step's
- * one gold action points at inviting rather than away from it.
+ * On the invite step the gold button is the thing the step is for: `Share
+ * invite`, with the platform's share mark, which sends a fresh link each press
+ * (`useInviteShares`). Leaving for chat is the quiet line under it (`Skip for
+ * now`, then `Go to chat` once a link has gone out), so the step's one gold
+ * action points at inviting rather than away from it.
  */
 function Footer({
   step,
@@ -726,12 +699,11 @@ function Footer({
   submitting,
   logoBusy,
   displayName,
-  inviteLink,
-  isGenerating,
+  hasShared,
+  shareBusy,
   onConfirm,
   onSubmit,
   onLeaveLive,
-  onGenerate,
   onShare,
   onFinish,
   styles,
@@ -742,12 +714,11 @@ function Footer({
   submitting: boolean;
   logoBusy: boolean;
   displayName: string;
-  inviteLink: string | null;
-  isGenerating: boolean;
+  hasShared: boolean;
+  shareBusy: boolean;
   onConfirm: () => void;
   onSubmit: () => void;
   onLeaveLive: () => void;
-  onGenerate: () => void;
   onShare: () => void;
   onFinish: () => void;
   styles: Styles;
@@ -756,10 +727,11 @@ function Footer({
     return (
       <View style={styles.footer}>
         <OnboardingPrimaryButton
-          label={inviteLink ? "Share invite" : "Create invite link"}
-          onPress={inviteLink ? onShare : onGenerate}
-          disabled={isGenerating}
-          busy={isGenerating}
+          label="Share invite"
+          icon={(color) => <ShareGlyph color={color} />}
+          onPress={onShare}
+          disabled={shareBusy}
+          busy={shareBusy}
         />
         <OnboardingPressable
           accessibilityRole="button"
@@ -768,7 +740,7 @@ function Footer({
           style={styles.quietButton}
         >
           <Text style={styles.quietButtonText}>
-            {inviteLink ? "Go to chat" : "Skip for now"}
+            {hasShared ? "Go to chat" : "Skip for now"}
           </Text>
         </OnboardingPressable>
       </View>
@@ -1194,58 +1166,6 @@ function Field({
   );
 }
 
-/**
- * The invite step's body. `Create invite link` and `Share invite` are the
- * footer's gold button; this draws what the link is and the link itself.
- *
- * An invite lets one person in and lapses after a day (`used_at`, 24 hours:
- * `spec/behavior/onboarding.md`), so the copy says that rather than offering
- * a link for the whole chapter, which a founder would drop in a group chat
- * and see work once. `Create another link` makes the next one without
- * leaving, for a founder inviting several people.
- */
-function InviteStep({
-  inviteLink,
-  isGenerating,
-  onGenerate,
-  styles,
-}: {
-  inviteLink: string | null;
-  isGenerating: boolean;
-  onGenerate: () => void;
-  styles: Styles;
-}) {
-  return (
-    <View style={styles.stack}>
-      <Text style={styles.body}>
-        Each link lets one person join and expires after 24 hours.
-      </Text>
-      {inviteLink ? (
-        <View style={styles.card}>
-          <View style={styles.cardCopy}>
-            <Text selectable style={styles.monoBody}>
-              {inviteLink}
-            </Text>
-            <OnboardingPressable
-              accessibilityRole="button"
-              accessibilityState={{
-                disabled: isGenerating,
-                busy: isGenerating,
-              }}
-              disabled={isGenerating}
-              onPress={onGenerate}
-              quiet
-              style={styles.textButton}
-            >
-              <Text style={styles.textButtonText}>Create another link</Text>
-            </OnboardingPressable>
-          </View>
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     flex: { flex: 1 },
@@ -1303,11 +1223,6 @@ function createStyles(tokens: SignetTokens) {
     // A setting's name beside its switch, as a Settings row's label reads.
     switchLabel: {
       ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-    },
-    monoBody: {
-      ...typeRole(tokens.typography.role.caption),
-      fontFamily: MONO_FONT_FAMILY,
       color: tokens.color.text.foreground,
     },
     field: { gap: tokens.spacing.sm },
