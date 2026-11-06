@@ -118,7 +118,7 @@
         {
           "image": "./assets/images/splash-icon.png",
           "resizeMode": "contain",
-          "backgroundColor": "#131211",
+          "backgroundColor": "#0A0A0A",
           "imageWidth": 200
         }
       ]
