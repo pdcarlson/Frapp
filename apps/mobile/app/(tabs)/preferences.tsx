@@ -1,12 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  AppState,
-  Linking,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { AppState, Linking, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
@@ -23,8 +16,6 @@ import {
   canAll,
   CHAPTER_PROFILE_PERMISSIONS,
   isModuleEnabled,
-  isSupportedTimeZone,
-  MAX_TIME_ZONE_LENGTH,
   shownNotificationCategories,
 } from "@repo/validation";
 import { BLOCKED_MEMBERS_TITLE } from "@repo/chat-core/block-copy";
@@ -33,6 +24,7 @@ import { BACK_TO_MORE } from "@/components/back-row";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { AccentSheet } from "@/components/settings/accent-sheet";
 import { BlockedMembersSheet } from "@/components/settings/blocked-members-sheet";
+import { QuietHoursSection } from "@/components/settings/quiet-hours-section";
 import { Toggle } from "@/components/toggle";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
@@ -53,7 +45,7 @@ import type { PushPermissionStatus } from "@/lib/notifications/push-types";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useLatestTrack } from "@/lib/use-latest-track";
 import {
-  type QuietHoursWindow,
+  deviceTimeZone,
   useNotificationPreferencesSync,
 } from "@/lib/use-notification-preferences-sync";
 
@@ -70,6 +62,12 @@ import {
  *   server-enforced logic with a shipped, tested client. Deleting working
  *   functionality because a mock omitted it would be a regression, so it lives
  *   under the drawn NOTIFICATIONS heading rather than in a section of its own.
+ *   It is a grouped list like the rows around it: one switch while off, and
+ *   time rows with native pickers only while on (`QuietHoursSection` says why).
+ * - **No Chat switch.** Chat is tuned per channel and per DM, from the
+ *   conversation itself, so a switch that silenced every message at once was
+ *   dropped (owner's iOS testing, 2026-11-06). Why in full: the catalog's
+ *   docblock in `@repo/validation`.
  * - **No "Join code" row.** Canvas draws `Join code · TN7-4KQ` under CHAPTER ·
  *   ADMIN. There is no `join_code` anywhere on chapters; joining runs through
  *   invites, whose rows carry an opaque, single-use, role-scoped, expiring
@@ -110,29 +108,6 @@ import {
  *   a label and nothing under it, so the shared catalog's one-line hint per
  *   category is web's alone (why: the comment where they are mapped below).
  */
-
-const TIME_INPUT_PATTERN = /^\d{2}:\d{2}$/;
-
-/**
- * Must agree with the hook's normalizer, including the range check — otherwise a
- * value like `24:00` passes here, is rejected there, and the edit silently no-ops
- * while the field still shows the uncommitted text.
- */
-function isValidTimeInput(value: string): boolean {
-  if (!TIME_INPUT_PATTERN.test(value)) return false;
-  const [hours, minutes] = value.split(":").map(Number);
-  return hours <= 23 && minutes <= 59;
-}
-
-/** "22:00" -> "10:00 PM". Falls back to the raw value for anything unparseable. */
-function formatTimeOfDay(value: string): string {
-  if (!isValidTimeInput(value)) return value;
-  const [rawHours, rawMinutes] = value.split(":");
-  const hours = Number(rawHours);
-  const suffix = hours < 12 ? "AM" : "PM";
-  const displayHours = hours % 12 === 0 ? 12 : hours % 12;
-  return `${displayHours}:${rawMinutes} ${suffix}`;
-}
 
 /**
  * What the push switch reads: the OS permission, and whether the member has
@@ -215,166 +190,6 @@ function pushToggleLabel(push: PushState): string {
   return action
     ? `Push notifications, ${action.toLowerCase()} in your phone's settings`
     : "Push notifications";
-}
-
-type QuietHoursCardProps = {
-  enabled: boolean;
-  onEnabledChange: (value: boolean) => void;
-  quietHoursWindow: QuietHoursWindow;
-  onWindowChange: (next: QuietHoursWindow) => void;
-  /**
-   * False while the account's first read is in flight. An edit then would be
-   * kept only locally (quiet hours read as off until the server answers) and
-   * overwritten by the window the read returns, so it would be lost (#2938).
-   */
-  windowEditable: boolean;
-  tokens: SignetTokens;
-  styles: ReturnType<typeof createStyles>;
-};
-
-function QuietHoursCard({
-  enabled,
-  onEnabledChange,
-  quietHoursWindow,
-  onWindowChange,
-  windowEditable,
-  tokens,
-  styles,
-}: QuietHoursCardProps) {
-  const [draft, setDraft] = useState<QuietHoursWindow>(quietHoursWindow);
-
-  // Re-sync when the effective window changes underneath us: a server hydrate, an
-  // edit made on web, or the remembered window being restored on re-enable.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- re-sync the quiet-hours draft when the effective window changes underneath us
-    setDraft(quietHoursWindow);
-  }, [quietHoursWindow]);
-
-  // Validate only what the member typed. A stored zone arrives here already
-  // accepted by the server (a UTC offset, which it now rejects, arrives already
-  // repaired by the sync hook), and this device's tzdata can be older than the
-  // server's — so running our own resolvability check over it produces a
-  // confident false negative (`Europe/Kyiv` on a build that knows only
-  // `Europe/Kiev`). That would strand the member twice over: `commitDraft`
-  // reverts on every blur, so they could not edit their times at all, and the
-  // only way out — retyping a zone this device knows — would overwrite their
-  // correct zone on every other device. Structural checks still apply, because
-  // blank and over-length are wrong on any device.
-  const trimmedTz = draft.tz.trim();
-  const tzEdited = trimmedTz !== quietHoursWindow.tz.trim();
-  const tzIsValid =
-    trimmedTz.length > 0 &&
-    trimmedTz.length <= MAX_TIME_ZONE_LENGTH &&
-    (!tzEdited || isSupportedTimeZone(trimmedTz));
-  const timesAreValid =
-    isValidTimeInput(draft.start.trim()) && isValidTimeInput(draft.end.trim());
-  const draftIsValid = timesAreValid && tzIsValid;
-
-  const commitDraft = () => {
-    if (!draftIsValid) {
-      setDraft(quietHoursWindow);
-      return;
-    }
-    onWindowChange({
-      start: draft.start.trim(),
-      end: draft.end.trim(),
-      tz: draft.tz.trim(),
-    });
-  };
-
-  return (
-    <View style={styles.quietHoursCard}>
-      <View style={styles.quietHoursHeaderRow}>
-        <View style={styles.toggleTextStack}>
-          <Text style={styles.toggleTitle}>Quiet hours</Text>
-          {/* The window, and only while it is in force. The label and the
-              fields below say what quiet hours are, so a sentence explaining
-              them was more words than clarity needs (writing.md §1, "in the
-              fewest words that stay clear"). */}
-          {enabled ? (
-            <Text style={styles.toggleDescription}>
-              {`${formatTimeOfDay(quietHoursWindow.start)} – ${formatTimeOfDay(
-                quietHoursWindow.end,
-              )}`}
-            </Text>
-          ) : null}
-        </View>
-        <Toggle
-          value={enabled}
-          onValueChange={onEnabledChange}
-          accessibilityLabel="Quiet hours"
-        />
-      </View>
-
-      <View style={styles.quietHoursFieldRow}>
-        <View style={styles.quietHoursField}>
-          <Text style={styles.quietHoursFieldLabel}>Start</Text>
-          <TextInput
-            value={draft.start}
-            onChangeText={(value) =>
-              setDraft((current) => ({ ...current, start: value }))
-            }
-            onBlur={commitDraft}
-            editable={windowEditable}
-            placeholder="22:00"
-            placeholderTextColor={tokens.color.text.muted}
-            accessibilityLabel="Quiet hours start time"
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="numbers-and-punctuation"
-            style={styles.quietHoursInput}
-          />
-        </View>
-        <View style={styles.quietHoursField}>
-          <Text style={styles.quietHoursFieldLabel}>End</Text>
-          <TextInput
-            value={draft.end}
-            onChangeText={(value) =>
-              setDraft((current) => ({ ...current, end: value }))
-            }
-            onBlur={commitDraft}
-            editable={windowEditable}
-            placeholder="08:00"
-            placeholderTextColor={tokens.color.text.muted}
-            accessibilityLabel="Quiet hours end time"
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="numbers-and-punctuation"
-            style={styles.quietHoursInput}
-          />
-        </View>
-      </View>
-
-      <View style={styles.quietHoursField}>
-        <Text style={styles.quietHoursFieldLabel}>Timezone</Text>
-        <TextInput
-          value={draft.tz}
-          onChangeText={(value) =>
-            setDraft((current) => ({ ...current, tz: value }))
-          }
-          onBlur={commitDraft}
-          editable={windowEditable}
-          placeholder="America/New_York"
-          placeholderTextColor={tokens.color.text.muted}
-          accessibilityLabel="Quiet hours timezone"
-          autoCapitalize="none"
-          autoCorrect={false}
-          style={styles.quietHoursInput}
-        />
-      </View>
-
-      {/* Only a problem earns a line here. The steady-state sentences
-          ("Applies to this account on every device.", "Saved for when you
-          turn quiet hours back on.") narrated how the card works. */}
-      {draftIsValid ? null : (
-        <Text style={styles.quietHoursHintError}>
-          {!timesAreValid
-            ? "Use 24-hour HH:mm times (e.g. 21:00)."
-            : "Enter a timezone name like America/Chicago."}
-        </Text>
-      )}
-    </View>
-  );
 }
 
 export default function PreferencesScreen() {
@@ -499,6 +314,7 @@ export default function PreferencesScreen() {
     chapterId,
     quietHoursSync,
     categorySync,
+    storedZoneMissing,
   } = useNotificationPreferencesSync();
 
   // `can`, never a bare `includes` — an owner's grant is the wildcard `*`, so a
@@ -612,14 +428,14 @@ export default function PreferencesScreen() {
         )}
       </ListSection>
 
-      <QuietHoursCard
+      <QuietHoursSection
         enabled={quietHoursEnabled}
         onEnabledChange={setQuietHoursEnabled}
         quietHoursWindow={quietHoursWindow}
         onWindowChange={setQuietHoursWindow}
+        deviceTimeZone={deviceTimeZone()}
+        storedZoneMissing={storedZoneMissing}
         windowEditable={quietHoursSync !== "loading"}
-        tokens={tokens}
-        styles={styles}
       />
 
       <ListSection>
@@ -646,7 +462,8 @@ export default function PreferencesScreen() {
           push (`spec/behavior/chat/README.md`). Why there is no switch: the
           docblock's `announcements` bullet. */}
       <Text style={styles.footnote}>
-        Chapter announcements can&apos;t be switched off here.
+        Mute a channel or DM from the chat itself. Chapter announcements
+        can&apos;t be switched off here.
       </Text>
       {notificationsMeta ? (
         <Text style={styles.footnote}>{notificationsMeta}</Text>
@@ -764,63 +581,6 @@ export default function PreferencesScreen() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    toggleTextStack: {
-      flex: 1,
-      gap: tokens.spacing.xs,
-      paddingRight: tokens.spacing.md,
-    },
-    quietHoursCard: {
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
-      padding: tokens.spacing.lg,
-      gap: tokens.spacing.md,
-    },
-    quietHoursHeaderRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-    },
-    quietHoursFieldRow: {
-      flexDirection: "row",
-      gap: tokens.spacing.md,
-    },
-    quietHoursField: {
-      flex: 1,
-    },
-    quietHoursFieldLabel: {
-      ...typeRole(tokens.typography.role.label),
-      letterSpacing: 0.3,
-      textTransform: "uppercase",
-      color: tokens.color.text.mutedForeground,
-    },
-    quietHoursInput: {
-      marginTop: tokens.spacing.xs,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      // The input step, one below the `card` it sits on, with the input
-      // border marking the field.
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.sm,
-      minHeight: tokens.touch.minimum,
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
-    },
-    quietHoursHintError: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.semantic.destructive,
-    },
-    toggleTitle: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-    },
-    toggleDescription: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
     footnote: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
