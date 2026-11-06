@@ -9,6 +9,7 @@ import {
   type DiscordApplicationInfo,
   type DiscordChannelDiscovery,
   type DiscordChannelRef,
+  type DiscordGuildMemberProfile,
   type DiscordRoleRef,
   type IDiscordBotGateway,
 } from '#domain/adapters/discord.interface';
@@ -801,6 +802,45 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       }
     }
     return raw;
+  }
+
+  async fetchGuildMember(
+    guildId: string,
+    userId: string,
+  ): Promise<DiscordGuildMemberProfile | null> {
+    let raw: Record<string, unknown> | null;
+    try {
+      raw = asRecord(
+        await this.client().get(Routes.guildMember(guildId, userId)),
+      );
+    } catch (error) {
+      // Not a member: they left the server, or the account was deleted.
+      if (statusOf(error) === 404) return null;
+      throw error;
+    }
+    const user = asRecord(raw?.user);
+    // The member must be the one asked for; anything else is not used.
+    if (!raw || asString(user?.id) !== userId) return null;
+    return {
+      userId,
+      nick: asString(raw.nick),
+      guildAvatar: asString(raw.avatar),
+      globalName: asString(user?.global_name),
+      username: asString(user?.username),
+      avatar: asString(user?.avatar),
+    };
+  }
+
+  async fetchUserAvatar(userId: string): Promise<string | null> {
+    let raw: Record<string, unknown> | null;
+    try {
+      raw = asRecord(await this.client().get(Routes.user(userId)));
+    } catch (error) {
+      if (statusOf(error) === 404) return null;
+      throw error;
+    }
+    if (!raw || asString(raw.id) !== userId) return null;
+    return asString(raw.avatar);
   }
 
   private describe(error: unknown): string {

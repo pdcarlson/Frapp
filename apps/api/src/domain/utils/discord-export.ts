@@ -293,12 +293,10 @@ export interface ImportMentionContext {
  * The tokens in one message's `content`, named.
  *
  * A mentioned user reads as the name the message's own `mentions` entry
- * carries: DCE's `nickname` (what the server showed) on an upload, and
- * Discord's display name on the bot path, whose REST `mentions` carry no
- * server nickname. That is deterministic, so one person reads the same in
- * every mention of an import, though it can differ from the nickname their
- * own messages are labelled with. A user with no name at all is unknown, not
- * `resolveAuthorName`'s "Unknown Discord user".
+ * carries, the nickname first: DCE's `nickname` on an upload, and on the bot
+ * path the server nickname the worker read for that member, the same source
+ * their own messages are labelled from. A user with no name at all is unknown,
+ * not `resolveAuthorName`'s "Unknown Discord user".
  */
 export function resolveImportedContent(
   message: DiscordExportMessage,

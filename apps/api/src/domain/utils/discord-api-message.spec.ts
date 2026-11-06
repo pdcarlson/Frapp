@@ -2,11 +2,13 @@ import {
   EMPTY_CONTENT_TALLY,
   MIN_AUTHORED_MESSAGES_FOR_CONTENT_CHECK,
   discordAttachmentKey,
+  discordAvatarAsset,
   isLikelyMissingMessageContentIntent,
   messageContentIntentOffError,
   missingMessageContentIntentError,
   tallyMessageContent,
   toExportShapeMessage,
+  withServerProfiles,
   type DiscordApiMessage,
 } from './discord-api-message';
 import { toImportedMessage, type ImportMentionContext } from './discord-export';
@@ -405,5 +407,90 @@ describe('the Message Content Intent errors (#2317)', () => {
     ]) {
       expect(text).toMatch(/Bot → Privileged Gateway Intents/);
     }
+  });
+});
+
+describe('withServerProfiles', () => {
+  const profile = (
+    userId: string,
+    nick: string | null,
+    guildAvatar = null,
+  ) => ({
+    userId,
+    nick,
+    guildAvatar,
+    globalName: null,
+    username: null,
+    avatar: null,
+  });
+
+  it("lays each known member's nickname on the author and the mentions", () => {
+    const message: DiscordApiMessage = {
+      author: { id: '1', username: 'pinstripe_', global_name: 'Pinstripe' },
+      mentions: [
+        { id: '2', username: 'tristo123' },
+        { id: '3', username: 'x' },
+      ],
+    };
+    const profiled = withServerProfiles(message, (id) =>
+      id === '1'
+        ? profile('1', 'Moiz Steenhuis')
+        : id === '2'
+          ? profile('2', 'Tristan Hatton')
+          : undefined,
+    );
+    const shaped = toExportShapeMessage(profiled);
+    expect(shaped.author?.nickname).toBe('Moiz Steenhuis');
+    expect(shaped.author?.name).toBe('Pinstripe');
+    expect(shaped.mentions?.map((user) => user.nickname)).toEqual([
+      'Tristan Hatton',
+      null,
+    ]);
+  });
+
+  it('leaves a departed member named by their account', () => {
+    const message: DiscordApiMessage = {
+      author: { id: '1', username: 'pinstripe_', global_name: 'Pinstripe' },
+    };
+    const shaped = toExportShapeMessage(
+      withServerProfiles(message, () => null),
+    );
+    expect(shaped.author?.nickname).toBeNull();
+    expect(shaped.author?.name).toBe('Pinstripe');
+  });
+});
+
+describe('discordAvatarAsset', () => {
+  const HASH = '0123456789abcdef0123456789abcdef';
+
+  it("is the account's avatar, keyed by user and hash", () => {
+    expect(
+      discordAvatarAsset({ author: { id: '42', avatar: HASH } }, '7'),
+    ).toEqual({
+      key: `avatars/42/${HASH}.png`,
+      url: `https://cdn.discordapp.com/avatars/42/${HASH}.png?size=128`,
+    });
+  });
+
+  it("prefers the member's server avatar", () => {
+    const animated = `a_${HASH}`;
+    expect(
+      discordAvatarAsset(
+        { author: { id: '42', avatar: HASH }, member: { avatar: animated } },
+        '7',
+      )?.url,
+    ).toBe(
+      `https://cdn.discordapp.com/guilds/7/users/42/avatars/${animated}.png?size=128`,
+    );
+  });
+
+  it('is null for a default avatar, and for anything that is not a Discord id or hash', () => {
+    expect(discordAvatarAsset({ author: { id: '42' } }, '7')).toBeNull();
+    expect(
+      discordAvatarAsset({ author: { id: '42', avatar: '../../x' } }, '7'),
+    ).toBeNull();
+    expect(
+      discordAvatarAsset({ author: { id: '../42', avatar: HASH } }, '7'),
+    ).toBeNull();
   });
 });
