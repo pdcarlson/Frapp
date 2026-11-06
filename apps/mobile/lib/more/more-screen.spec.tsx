@@ -31,6 +31,10 @@ let events: unknown[] = [];
 let sessions: unknown[] | undefined;
 let invoices: unknown[] = [];
 let notifications: unknown[] = [];
+let hiddenFeatures = new Set<string>();
+/** True while `/v1/users/me/permissions` hasn't answered. */
+let permissionsLoading = false;
+const hiddenFeatureCalls: unknown[][] = [];
 let chapterModules: Record<string, boolean> = {};
 const invoiceReadOptions: ({ enabled?: boolean } | undefined)[] = [];
 
@@ -52,6 +56,14 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useListChapters: () => ({ isSuccess: true, data: [{ id: "chapter-1" }] }),
   usePermissionList: () => permissions,
+  useMyPermissions: () => ({
+    data: permissionsLoading ? undefined : { permissions },
+  }),
+  // The rule itself is pinned in `@repo/hooks` (`unset-features.spec.tsx`).
+  useHiddenUnsetFeatures: (...args: unknown[]) => {
+    hiddenFeatureCalls.push(args);
+    return hiddenFeatures;
+  },
   useNotifications: () => ({ data: notifications }),
   useEvents: () => ({ data: events }),
   useViewerUserId: () => "user-1",
@@ -331,6 +343,49 @@ describe("More hub anatomy (#1048)", () => {
     betaOff.keys = ["dues"];
     render();
     expect(invoiceReadOptions.at(-1)).toEqual({ enabled: false });
+  });
+
+  it("drops Study hours and Documents while nobody has set them up for this member", () => {
+    hiddenFeatures = new Set(["study", "documents"]);
+    try {
+      const labels = render()
+        .root.findAllByType(ListRow)
+        .map((row) => row.props.label);
+      expect(labels).not.toContain("Study hours");
+      expect(labels).not.toContain("Documents");
+      expect(labels).toContain("Service hours");
+      expect(labels).toContain("Directory");
+    } finally {
+      hiddenFeatures = new Set();
+    }
+  });
+
+  it("asks the setup gate with the real permissions and the chapter's modules", () => {
+    permissions = ["members:view"];
+    try {
+      render();
+      const [perms, gate] = hiddenFeatureCalls.at(-1) as [
+        string[],
+        ((key: string) => boolean) | undefined,
+      ];
+      expect(perms).toEqual(["members:view"]);
+      // A module `enabled_modules` leaves out is on.
+      expect(gate?.("geofences")).toBe(true);
+    } finally {
+      permissions = [];
+    }
+  });
+
+  // `usePermissionList` says `[]` while loading, which would read as a member
+  // who holds nothing and hide an officer's rows for a beat.
+  it("tells the setup gate permissions are still loading, not empty", () => {
+    permissionsLoading = true;
+    try {
+      render();
+      expect(hiddenFeatureCalls.at(-1)?.[0]).toBeUndefined();
+    } finally {
+      permissionsLoading = false;
+    }
   });
 
   // foundations.md §6 "Where the accent goes" (2026-11-05): an icon that

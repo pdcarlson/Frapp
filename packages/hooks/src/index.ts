@@ -7,6 +7,7 @@ export * from "./put-signed-upload";
 export * from "./chapter-query-keys";
 export * from "./use-members";
 export * from "./setup-checklist";
+export * from "./unset-features";
 export * from "./use-events";
 export * from "./use-activity-feed";
 export * from "./use-attendance";
