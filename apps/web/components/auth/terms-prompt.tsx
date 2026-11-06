@@ -17,6 +17,7 @@ import {
 } from "@/components/profile/use-delete-account-flow";
 import { Button } from "@/components/ui/button";
 import { signOutCurrentSession } from "@/lib/auth/session";
+import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
 import { asArray } from "@/lib/utils";
 
 /**
@@ -66,7 +67,10 @@ export function TermsPrompt() {
     }
   }
 
+  const { confirmDrop, confirmDropDialog } = useConfirmDropBulkUploads();
+
   async function handleSignOut() {
+    if (!(await confirmDrop("sign-out"))) return;
     setSigningOut(true);
     try {
       await signOutCurrentSession();
@@ -155,6 +159,7 @@ export function TermsPrompt() {
           {/* Inside Content, so Radix stacks the confirmation over this
               dialog as a nested layer rather than a sibling it traps out. */}
           {deleteFlow.confirmDialog}
+          {confirmDropDialog}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

@@ -4,7 +4,7 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
-import { MAX_UPLOAD_BYTES } from '@repo/validation';
+import { MAX_BACKWORK_UPLOAD_BYTES, MAX_UPLOAD_BYTES } from '@repo/validation';
 import { BackworkService } from './backwork.service';
 import {
   BACKWORK_RESOURCE_REPOSITORY,
@@ -216,7 +216,7 @@ describe('BackworkService', () => {
       );
     });
 
-    it('accepts a declared size at exactly the upload ceiling', async () => {
+    it('accepts a declared size at exactly the backwork ceiling (50 MB, #3487)', async () => {
       mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
         'https://storage.supabase.co/upload/signed',
       );
@@ -225,21 +225,36 @@ describe('BackworkService', () => {
         chapterId: 'ch-1',
         filename: 'midterm1.pdf',
         contentType: 'application/pdf',
-        sizeBytes: MAX_UPLOAD_BYTES,
+        sizeBytes: MAX_BACKWORK_UPLOAD_BYTES,
       });
 
       expect(result.signedUrl).toBeDefined();
     });
 
-    it('throws BadRequestException for a declared size one byte over the upload ceiling', async () => {
+    it('accepts a size above the shared 25 MB member cap', async () => {
+      mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
+        'https://storage.supabase.co/upload/signed',
+      );
+
+      const result = await service.requestUploadUrl({
+        chapterId: 'ch-1',
+        filename: 'scanned-final.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: MAX_UPLOAD_BYTES + 1,
+      });
+
+      expect(result.signedUrl).toBeDefined();
+    });
+
+    it('throws BadRequestException for a declared size one byte over the backwork ceiling', async () => {
       await expect(
         service.requestUploadUrl({
           chapterId: 'ch-1',
           filename: 'midterm1.pdf',
           contentType: 'application/pdf',
-          sizeBytes: MAX_UPLOAD_BYTES + 1,
+          sizeBytes: MAX_BACKWORK_UPLOAD_BYTES + 1,
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow('File exceeds the 50 MB upload limit');
     });
   });
 

@@ -73,6 +73,7 @@ import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { buildJoinUrl } from "@/lib/invite-link";
 import { inspectLogoFile } from "@/lib/chapter-logo";
 import { FERPA_URL } from "@/lib/legal-links";
+import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
 
 /**
  * Where a brand-new founder lands when the wizard finishes.
@@ -108,6 +109,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   const router = useRouter();
   const { toast } = useToast();
   const selectChapter = useSelectChapter();
+  const { confirmDrop, confirmDropDialog } = useConfirmDropBulkUploads();
 
   const onboardChapter = useOnboardChapter();
   const uploadLogo = useUploadChapterLogo();
@@ -212,6 +214,8 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
 
   async function submitChapter() {
     if (!canSubmit) return;
+    // The new chapter becomes the active one, which ends this tab's Bulk upload.
+    if (!(await confirmDrop("switch"))) return;
     try {
       const chapter = await onboardChapter.mutateAsync({
         name: identity.name.trim(),
@@ -504,6 +508,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
               ) : null}
             </footer>
           </div>
+          {confirmDropDialog}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
