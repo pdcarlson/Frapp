@@ -13,6 +13,7 @@ import {
   Check,
   ChevronDown,
   Download,
+  FileArchive,
   FolderUp,
   Filter,
   Loader2,
@@ -27,13 +28,15 @@ import {
   useBackworkResources,
   useDeleteBackworkResource,
   useDepartments,
+  useFetchBackworkDownloadUrls,
   useFetchBackworkResource,
   useMyPermissions,
   useProfessors,
 } from "@repo/hooks";
-import { can } from "@repo/validation";
+import { MAX_BACKWORK_ZIP_LABEL, can } from "@repo/validation";
 import { formatDay } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -81,6 +84,13 @@ import {
   type LibraryFilters,
   type LibraryRow,
 } from "@/components/backwork/backwork-library";
+import {
+  MAX_BACKWORK_ZIP_FILES,
+  ZipTooLargeError,
+  buildBackworkZip,
+  saveBlob,
+  zipEntryNames,
+} from "@/lib/backwork-zip";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -237,6 +247,14 @@ export function BackworkPage() {
   const departmentsQuery = useDepartments();
   const professorsQuery = useProfessors();
   const fetchResource = useFetchBackworkResource();
+  const fetchDownloadUrls = useFetchBackworkDownloadUrls();
+  // Files fetched so far while a zip builds; null when none is building.
+  const [zipping, setZipping] = useState<{ done: number; total: number } | null>(
+    null,
+  );
+  const zipAbort = useRef<AbortController | null>(null);
+  // Leaving the page stops a zip mid-way rather than saving it later.
+  useEffect(() => () => zipAbort.current?.abort(), []);
   const deleteResource = useDeleteBackworkResource();
   const { data: permissionsPayload } = useMyPermissions();
   const isAdmin = can("backwork:admin", permissionsPayload?.permissions);
@@ -321,6 +339,60 @@ export function BackworkPage() {
         next.delete(id);
         return next;
       });
+    }
+  }
+
+  /**
+   * Zips what the search and filters narrowed the list to (`backwork-zip.ts`
+   * has the caps and why the size one is checked here).
+   */
+  async function downloadZip(zipRows: readonly LibraryRow[]) {
+    const controller = new AbortController();
+    zipAbort.current = controller;
+    setZipping({ done: 0, total: zipRows.length });
+    try {
+      const names = zipEntryNames(
+        zipRows.map((row) => ({
+          title: row.title,
+          storagePath: row.resource.storage_path,
+        })),
+      );
+      const signed = await fetchDownloadUrls(
+        zipRows.map((row) => row.resource.id),
+      );
+      const urlById = new Map(signed.map((file) => [file.id, file.download_url]));
+      const result = await buildBackworkZip(
+        zipRows.map((row, index) => ({
+          name: names[index] ?? row.title,
+          url: urlById.get(row.resource.id) ?? null,
+        })),
+        {
+          signal: controller.signal,
+          onProgress: (done, total) => setZipping({ done, total }),
+        },
+      );
+      saveBlob(result.blob, `backwork-${new Date().toISOString().slice(0, 10)}.zip`);
+      if (result.missed > 0) {
+        toast({
+          title: `Zipped ${result.added} of ${zipRows.length} files`,
+          description: `${result.missed} couldn't be downloaded. Try them one at a time.`,
+        });
+      }
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      toast({
+        title: "Couldn't make the zip",
+        description:
+          error instanceof ZipTooLargeError
+            ? `These files add up to more than ${MAX_BACKWORK_ZIP_LABEL}. Narrow the search, or download them one at a time.`
+            : getErrorMessage(error, "Retry in a moment."),
+        variant: "destructive",
+      });
+    } finally {
+      if (zipAbort.current === controller) {
+        zipAbort.current = null;
+        setZipping(null);
+      }
     }
   }
 
@@ -573,6 +645,33 @@ export function BackworkPage() {
           >
             {countLabel}
           </span>
+          {/*
+            The zip shows only once a search or filter has narrowed the list,
+            so nobody pulls the whole archive (`backwork-zip.ts`).
+          */}
+          {narrowed && count > 0 ? (
+            <IconButton
+              type="button"
+              variant="secondary"
+              // The reason it's off goes in the label, not only the hover
+              // title, so a touch or screen-reader member hears it too.
+              label={
+                zipping
+                  ? `Zipping ${zipping.done} of ${zipping.total} files`
+                  : count > MAX_BACKWORK_ZIP_FILES
+                    ? `Narrow the list to ${MAX_BACKWORK_ZIP_FILES} files or fewer to download a zip`
+                    : `Download ${count} file${count === 1 ? "" : "s"} as a zip`
+              }
+              disabled={zipping !== null || count > MAX_BACKWORK_ZIP_FILES}
+              onClick={() => void downloadZip(results.map((result) => result.item))}
+            >
+              {zipping ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <FileArchive className="h-4 w-4" aria-hidden="true" />
+              )}
+            </IconButton>
+          ) : null}
           <Can permission="backwork:admin">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
