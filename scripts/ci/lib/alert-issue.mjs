@@ -160,6 +160,18 @@ export function withAgentNote(body, repo) {
   );
 }
 
+/**
+ * The first line of an alert body that starts with `prefix`, or null. A
+ * watchdog that records machine-readable state in a hidden marker line reads
+ * it back with this. A body edited in GitHub's web UI comes back with CRLF
+ * line endings, so the line's trailing `\r` is dropped.
+ */
+export function markerLine(body, prefix) {
+  if (typeof body !== "string") return null;
+  const line = body.split("\n").find((candidate) => candidate.startsWith(prefix));
+  return line === undefined ? null : line.trimEnd();
+}
+
 // The footer `withAgentNote` appends, whatever its link said when written.
 // A body edited in GitHub's web UI comes back with CRLF line endings.
 const AGENT_NOTE = /\r?\n\r?\n---\r?\n_Agents: triage and report on this alert\.[^\r\n]*_\s*$/;
@@ -422,7 +434,10 @@ export async function raiseAlert({
  *   lasting one means the job's token lost issues access, and then the next
  *   real failure could not raise its alert either. production-uptime passes
  *   with a warning, because at a 15-minute cadence a blip would be constant
- *   noise and the dailies catch a lasting break. deploy-alert and pr-base-sync warn. Whatever its policy, a caller
+ *   noise and the dailies catch a lasting break. scheduled-run-sweep, every
+ *   3 hours, goes red too: it is the only thing that sees a frozen watchdog,
+ *   so it must not read as clean when it could not look. deploy-alert and
+ *   pr-base-sync warn. Whatever its policy, a caller
  *   must never say an alert "is still open" when it could not look.
  *
  * `lookup` is the caller's own `findAlertIssuesDetailed` read, when it made one
