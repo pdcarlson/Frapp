@@ -132,9 +132,10 @@ constraints web habits most often break:
 - Expo Go is the local run path (`npm run start -w apps/mobile`, then scan from a device or
   emulator). It can't be verified headless. Native modules that crash Go at launch or break
   `expo export --platform web` (Stripe React Native, `expo-notifications`,
-  `react-native-keyboard-controller`, `expo-apple-authentication`) must be imported through their
-  isolation modules (`@/lib/payments/stripe`, `@/lib/notifications/push`, `@/lib/keyboard`,
-  `@/lib/apple-auth`), which check the runtime and degrade. ESLint `no-restricted-imports` rejects
+  `react-native-keyboard-controller`, `expo-apple-authentication`,
+  `@react-native-google-signin/google-signin`) must be imported through their isolation modules
+  (`@/lib/payments/stripe`, `@/lib/notifications/push`, `@/lib/keyboard`, `@/lib/apple-auth`,
+  `@/lib/google-auth`), which check the runtime and degrade. ESLint `no-restricted-imports` rejects
   a direct import.
 - Seven files are frozen: `app/_layout.tsx`, `app/(tabs)/_layout.tsx`, `lib/theme.tsx`,
   `components/screen-shell.tsx`, `lib/href.ts`, `package.json`, `app.json`. Every planned route
