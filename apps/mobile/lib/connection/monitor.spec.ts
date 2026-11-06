@@ -5,7 +5,7 @@ import {
   healthUrl,
   LINK_DOWN_GRACE_MS,
   type MonitorDeps,
-  WAKE_RETRY_MS,
+  CONFIRM_RETRY_MS,
 } from "./monitor";
 import type { ConnectionState } from "./state";
 
@@ -302,7 +302,7 @@ describe("connection monitor", () => {
   it("asks /health about unreachable readings at most once per poll interval", async () => {
     // If `/health` fails fast while a reconnected network validates, a probe
     // per event would reach three failures in under a second.
-    const { monitor, deps, fetchMock, link } = harness();
+    const { monitor, deps, fetchMock, link, elapse } = harness();
     fetchMock.mockResolvedValue(OK);
     monitor.start();
     await settle();
@@ -314,6 +314,10 @@ describe("connection monitor", () => {
       await settle();
     }
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    // The first strike is confirmed by one retry before it counts.
+    elapse(CONFIRM_RETRY_MS);
+    await settle();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(monitor.get()).toBe("DEGRADED");
 
     // The next poll tick spends the interval's probe and re-arms suspicion.
@@ -322,7 +326,7 @@ describe("connection monitor", () => {
     await settle();
     link()?.({ isConnected: true, isInternetReachable: false });
     await settle();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it("does nothing after stop(), even when a read started before it resolves late", async () => {
@@ -492,7 +496,7 @@ describe("connection monitor", () => {
       await settle();
       expect(monitor.get()).toBe("ONLINE");
 
-      elapse(WAKE_RETRY_MS);
+      elapse(CONFIRM_RETRY_MS);
       await settle();
       expect(monitor.get()).toBe("ONLINE");
       expect(seen).toEqual([]);
@@ -508,7 +512,7 @@ describe("connection monitor", () => {
       fetchMock.mockRejectedValue(new Error("timeout"));
       appState("active");
       await settle();
-      elapse(WAKE_RETRY_MS);
+      elapse(CONFIRM_RETRY_MS);
       await settle();
       expect(monitor.get()).toBe("DEGRADED");
     });
@@ -561,12 +565,16 @@ describe("connection monitor", () => {
     });
   });
 
-  it("degrades on the first failure and goes offline on the third", async () => {
-    const { monitor, fetchMock } = harness();
+  it("degrades on a confirmed first failure and goes offline on the third", async () => {
+    const { monitor, fetchMock, elapse } = harness();
     fetchMock.mockRejectedValue(new Error("timeout"));
     // `start()` fires the first probe itself, so it is the first of the three.
     monitor.start();
-    await Promise.resolve();
+    await settle();
+    // One failure is what a blip looks like: it is retried before it counts.
+    expect(monitor.get()).toBe("ONLINE");
+    elapse(CONFIRM_RETRY_MS);
+    await settle();
 
     expect(monitor.get()).toBe("DEGRADED");
     await monitor.probeOnce();
@@ -576,10 +584,12 @@ describe("connection monitor", () => {
   });
 
   it("counts a non-ok response as a failure", async () => {
-    const { monitor, fetchMock } = harness();
+    const { monitor, fetchMock, elapse } = harness();
     fetchMock.mockResolvedValue(SERVER_ERROR);
     monitor.start();
-    await monitor.probeOnce();
+    await settle();
+    elapse(CONFIRM_RETRY_MS);
+    await settle();
     expect(monitor.get()).toBe("DEGRADED");
   });
 
@@ -594,11 +604,56 @@ describe("connection monitor", () => {
     expect(monitor.get()).toBe("ONLINE");
   });
 
-  it("recovers to ONLINE on the first success", async () => {
-    const { monitor, fetchMock } = harness();
+  it("clears a single failure the retry answers, with no banner", async () => {
+    const { monitor, fetchMock, elapse, seen } = harness();
+    fetchMock.mockRejectedValueOnce(new Error("timeout"));
+    fetchMock.mockResolvedValue(OK);
+    monitor.start();
+    await settle();
+    elapse(CONFIRM_RETRY_MS);
+    await settle();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(seen).toEqual([]);
+  });
+
+  it("drops a pending retry once a probe gets through, and never counts a second first strike", async () => {
+    const { monitor, fetchMock, elapse, seen } = harness();
+    fetchMock.mockRejectedValueOnce(new Error("timeout"));
+    fetchMock.mockResolvedValueOnce(OK);
     fetchMock.mockRejectedValue(new Error("timeout"));
     monitor.start();
+    await settle();
+    // A probe gets through before the retry fires: the retry has nothing to
+    // confirm, so it must not run and count the next failure as a strike.
     await monitor.probeOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    elapse(CONFIRM_RETRY_MS);
+    await settle();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(seen).toEqual([]);
+  });
+
+  it("lets a pending retry decide when another first strike fails before it", async () => {
+    const { monitor, fetchMock, elapse, deps } = harness();
+    fetchMock.mockRejectedValue(new Error("timeout"));
+    monitor.start();
+    await settle();
+    await monitor.probeOnce();
+    // The second failure neither counts nor schedules a second retry.
+    expect(monitor.get()).toBe("ONLINE");
+    expect(deps.setTimeout).toHaveBeenCalledTimes(1);
+    elapse(CONFIRM_RETRY_MS);
+    await settle();
+    expect(monitor.get()).toBe("DEGRADED");
+  });
+
+  it("recovers to ONLINE on the first success", async () => {
+    const { monitor, fetchMock, elapse } = harness();
+    fetchMock.mockRejectedValue(new Error("timeout"));
+    monitor.start();
+    await settle();
+    elapse(CONFIRM_RETRY_MS);
+    await settle();
     expect(monitor.get()).toBe("DEGRADED");
 
     fetchMock.mockResolvedValue(OK);
@@ -610,7 +665,9 @@ describe("connection monitor", () => {
     const { monitor, fetchMock, link, elapse } = harness();
     fetchMock.mockRejectedValue(new Error("timeout"));
     monitor.start();
-    await monitor.probeOnce();
+    await settle();
+    elapse(CONFIRM_RETRY_MS);
+    await settle();
     expect(monitor.get()).toBe("DEGRADED");
 
     // `expo-network` fires on every path update — a cell handoff, a VPN toggle,
