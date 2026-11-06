@@ -15,6 +15,8 @@ import {
   SheetScrim,
   useSheetBackgroundStyle,
   useSheetVisit,
+  SheetBackToClose,
+  useSheetClose,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -84,6 +86,7 @@ export const EditProfileSheet = forwardRef<
   BottomSheetModal,
   { profile: ViewerProfile | null }
 >(function EditProfileSheet({ profile }, ref) {
+  const closeSheet = useSheetClose(ref);
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens, accent);
@@ -232,7 +235,9 @@ export const EditProfileSheet = forwardRef<
       onAnimate={onAnimate}
       onDismiss={closed}
     >
+      <SheetBackToClose onClose={closeSheet} />
       <BottomSheetScrollView
+        onAccessibilityEscape={closeSheet}
         contentContainerStyle={styles.body}
         keyboardShouldPersistTaps="handled"
       >

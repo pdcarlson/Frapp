@@ -720,6 +720,7 @@ export default function PreferencesScreen() {
         ))}
         <ListRow
           label="Sign out"
+          action
           destructive
           onPress={() => {
             void handleSignOut();
@@ -729,6 +730,7 @@ export default function PreferencesScreen() {
           label={
             deleteAccount.isPending ? "Deleting account…" : "Delete account"
           }
+          action
           destructive
           disabled={deleteAccount.isPending}
           accessibilityHint="Permanently deletes your account. You'll be asked to confirm."
