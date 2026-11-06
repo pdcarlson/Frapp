@@ -94,7 +94,7 @@ type Props = {
  * | ------- | --- |
  * | **Matrix** | Replaced by `RolesMatrix` (`4e`), which is live rather than read-only. The old one rendered `n/a` in every pack-role cell |
  * | **Live roles** | Still `RolesAndPermissionsPage`, but no longer a permissions editor — the matrix took that. It keeps role create, rename, recolour, reorder, delete and presidency transfer |
- * | **Pack** | Gone as a view. The pack name it existed to show is now the header's "Role pack" label, which is where `4e` draws it |
+ * | **Pack** | Gone as a view, and its header label went too (2026-11-06): which pack seeded the roles is a setup detail |
  * | **Custom** | Still here, as a section rather than a tab. See below |
  *
  * **Custom roles are a section, not matrix columns**, and the board does not
@@ -406,7 +406,7 @@ function CustomView({
   async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const label = draft.label.trim();
-    if (!label) return;
+    if (!label || !customRolesQuery.isSuccess) return;
     // The key and the order are the system's, not the officer's: the key is
     // derived from the name, and a new role goes after the existing ones.
     const rank = roles.reduce((max, role) => Math.max(max, role.rank), 0) + 1;
@@ -645,7 +645,11 @@ function CustomView({
               <Button
                 type="submit"
                 disabled={
-                  !canManage || createRole.isPending || !draft.label.trim()
+                  !canManage ||
+                  createRole.isPending ||
+                  !draft.label.trim() ||
+                  // The key and rank derive from the loaded list.
+                  !customRolesQuery.isSuccess
                 }
               >
                 {createRole.isPending ? (

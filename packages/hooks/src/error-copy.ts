@@ -27,9 +27,10 @@ import { SignedUploadError } from "./put-signed-upload";
  * 2. A refusal the API names with a code, or with one of the guard sentences
  *    the shared matchers already read (module off, subscription lapsed).
  * 3. A server sentence in `SERVER_MESSAGE_COPY` (`@repo/validation`): the refusals that carry
- *    a reason the member can act on, rewritten once here. This is the only
- *    way a server message reaches the screen; anything else the server says is
- *    dropped, because it was written for a developer.
+ *    a reason the member can act on, rewritten once here. Apart from a screen
+ *    that opts into `serverWritesForMembers`, this is the only way a server
+ *    message reaches the screen; anything else the server says is dropped,
+ *    because it was written for a developer.
  * 4. The status: no connection, signed out, not allowed, gone, too large, too
  *    many tries.
  * 5. The caller's fallback, for the statuses whose meaning depends on the
@@ -98,22 +99,23 @@ export class MemberFacingError extends Error {
 export interface ErrorCopyOptions {
   /**
    * The screen's routes write their refusals for the officer reading them
-   * (the Discord import's "Name the new role for Rush Chair."), so a 400, 403
-   * or 409 sentence the map doesn't know is shown when it reads as one: a
-   * capitalised sentence with no field names, permission keys or routes in it.
+   * (the Discord import's "Name the new role for Rush Chair."), so a 400, 403,
+   * 409 or 503 sentence the map doesn't know is shown when it reads as one: it
+   * opens like a sentence and names no permission key or route. Underscores and
+   * `--flags` stay, because Discord names (`#study_hall`) and the exporter's
+   * flags (`--partition 8mb`) are what the officer acts on.
    * Off by default; a screen opts in only when it has read its routes' throws.
    */
   serverWritesForMembers?: boolean;
 }
 
-const REFUSAL_STATUSES = new Set([400, 403, 409]);
+const REFUSAL_STATUSES = new Set([400, 403, 409, 503]);
 
 /** A sentence with nothing of the system's in it (principles.md P2.1, P2.2). */
 function isMemberSentence(message: string): boolean {
-  if (!/^[A-Z#"]/.test(message)) return false;
-  if (/\b[a-z]+_[a-z_]+\b/.test(message)) return false; // field names
+  if (!/^[A-Z0-9#"]/.test(message)) return false;
   if (/\b[a-z-]+:[a-z-]+\b/.test(message)) return false; // permission keys
-  if (/\(\*\)|--|\b(endpoint|route|header|uuid|idempotency)\b/i.test(message)) {
+  if (/\(\*\)|\b(endpoint|route|header|uuid|idempotency)\b/i.test(message)) {
     return false;
   }
   return true;

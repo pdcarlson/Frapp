@@ -50,7 +50,7 @@
  * Imports stay subpath-only for the same reason the runtime's do.
  */
 
-import { MemberFacingError } from "@repo/hooks/error-copy";
+import { errorCopy, MemberFacingError } from "@repo/hooks/error-copy";
 import {
   useCallback,
   useEffect,
@@ -630,9 +630,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
             setAttachments((current) => [...staged, ...current]);
           }
           setSendError(
-            error instanceof Error && error.message
-              ? error.message
-              : "Couldn't queue that message. Try again.",
+            errorCopy(error, "Couldn't queue that message. Try again."),
           );
         }
       } finally {

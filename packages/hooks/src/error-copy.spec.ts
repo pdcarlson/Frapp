@@ -95,6 +95,31 @@ describe("errorCopy", () => {
     );
   });
 
+  it("shows a route's own officer sentence only when the screen opts in", () => {
+    const quota = nest(
+      400,
+      "Re-export with a smaller --partition (for example --partition 8mb).",
+    );
+    const pending = nest(400, "3 file(s) have not finished uploading yet.");
+    const named = nest(400, "Pick a Frapp channel for #study_hall.");
+    const off = nest(
+      503,
+      "Connecting Discord is not configured in this environment.",
+    );
+    const opt = { serverWritesForMembers: true };
+    for (const e of [quota, pending, named, off]) {
+      expect(errorCopy(e, FALLBACK, opt)).toBe(e.message);
+      expect(errorCopy(e, FALLBACK)).toBe(FALLBACK);
+    }
+    expect(
+      errorCopy(
+        nest(403, "Missing required permissions: discord:import"),
+        FALLBACK,
+        opt,
+      ),
+    ).not.toMatch(/discord:import/);
+  });
+
   it("writes every mapped line as a sentence", () => {
     for (const line of Object.values(SERVER_MESSAGE_COPY)) {
       expect(line).toMatch(/^[A-Z].*\.$/);

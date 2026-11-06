@@ -82,6 +82,8 @@ export function copyForErrorCode(code: string | null): string | null {
 export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
   // Check-in and study
   "Already checked in for this event": "You're already checked in.",
+  "This event has an invalid check-in area; an officer needs to redraw it":
+    "This event's check-in zone needs fixing. Ask an officer to redraw it.",
   "You need to be at the event to check in":
     "You need to be at the event to check in.",
   "Location is outside the geofence":

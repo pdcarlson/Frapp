@@ -113,8 +113,7 @@ function refusesTheCode(error: unknown): boolean {
     message.length > 0 &&
     message.every(
       (line) =>
-        typeof line === "string" &&
-        line.startsWith(`${CHECK_IN_TOKEN_FIELD} `),
+        typeof line === "string" && line.startsWith(`${CHECK_IN_TOKEN_FIELD} `),
     )
   );
 }
@@ -123,8 +122,8 @@ function refusesTheCode(error: unknown): boolean {
  * Whether a failure was of this attempt alone (see the `error` variant's
  * `attemptOnly`). A request with no HTTP status either never reached the
  * server, which `fetch` reports as a `TypeError`, or failed on the device
- * before it was sent, which is the location step: its refused-permission copy
- * and the location service's own errors are plain `Error`s, and those are
+ * before it was sent, which is the location step: its refused-permission and
+ * no-fix copy are `MemberFacingError`s, and those are
  * about the member's phone, so they stay. That is the one place this departs
  * from the shared rule, which counts every status-less failure as no answer.
  */

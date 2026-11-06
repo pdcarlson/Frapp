@@ -30,9 +30,9 @@ import { formatDay, formatDayTime } from "@repo/formatting";
  * (`PollService.isPollExpired`, #379 — the API's `isPollClosed`
  * only covers the deadline half; the manual-close half is server-side only),
  * and `spec/behavior/polls.md` describes the state as a lock rather than a
- * field. So this is §5's other branch, "a
- * vocabulary with no row here maps to plain language *once*, in its mapper" —
- * which is why the label lives beside the kind instead of at the call site.
+ * field. So it is not a stored status and
+ * has no `STATUS_LABELS` row; its words live once, in this mapper, beside the
+ * kind instead of at the call site.
  * `geofence-status.ts` has the same boolean-derived shape.
  */
 export function pollStatusKind(isOpen: boolean): BadgeKind {

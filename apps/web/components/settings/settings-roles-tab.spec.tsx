@@ -80,6 +80,7 @@ describe("SettingsRolesTab", () => {
       data: [],
       isPending: false,
       isError: false,
+      isSuccess: true,
     });
     mockUseRoles.mockReturnValue({
       data: [
@@ -386,6 +387,12 @@ describe("SettingsRolesTab", () => {
   it("creates a custom role from its name alone: key and order are derived", async () => {
     const user = userEvent.setup();
     mockCreate.mockResolvedValue({});
+    mockUseCustomRoles.mockReturnValue({
+      data: [customRole({ key: "social_chair", label: "Social", rank: 9 })],
+      isPending: false,
+      isError: false,
+      isSuccess: true,
+    });
     render(
       <SettingsRolesTab
         canManage
@@ -402,8 +409,9 @@ describe("SettingsRolesTab", () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        key: "social_chair",
+        key: "social_chair_2",
         label: "Social Chair",
+        rank: 10,
         capabilities: ["events:create"],
       }),
     );
