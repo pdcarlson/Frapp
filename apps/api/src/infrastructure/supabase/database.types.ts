@@ -190,6 +190,15 @@ export interface Database {
           mention_count: number;
         }[];
       };
+      /**
+       * `20261106190000` (#585). Backwork search over title, course,
+       * department, professor and tags, with trigram typo tolerance, ranked
+       * word matches first. One chapter only; at most 50 rows.
+       */
+      search_backwork_resources: {
+        Args: { p_chapter_id: string; p_query: string; p_limit?: number };
+        Returns: BackworkResource[];
+      };
       get_poll_vote_option_totals: {
         Args: { p_message_ids: string[] };
         Returns: {

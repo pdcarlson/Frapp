@@ -31,13 +31,23 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ## 2026-11-06: `#chapter-audit` entries arrive silently
 
-### 20261106190000_chat_unread_skip_audit_mirror.sql
+### 20261106193000_chat_unread_skip_audit_mirror.sql
 
 - **Purpose**: Re-creates `get_channel_unread_counts` with one more predicate: a `system_audit` message whose `client_message_id` starts `audit:` (an entry the audit mirror posted into `#chapter-audit`) never counts as unread or as a mention. The server's other `system_audit` notices still count. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#read-receipts) § Read Receipts. Same signature, grants and settings as `20260927050000`. No data changes.
 - **Checks**: After `db push`, `select proname, prosecdef, proconfig from pg_proc where proname = 'get_channel_unread_counts';` returns one row, `true | {"search_path=public, pg_temp"}`, and `select pg_get_functiondef('public.get_channel_unread_counts(uuid, uuid)'::regprocedure) like '%audit:%%';` returns `true`. A member's `#chapter-audit` row in `GET /v1/channels/unread` reads 0 after the next settings change.
 - **Promoter notes**: No API change rides it; any API version reads the counts the same way. Re-applying is idempotent (`create or replace`). Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-silent-audit-entries-in-unread-counts-20261106190000) § Rollback silent audit entries in unread counts.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-silent-audit-entries-in-unread-counts-20261106193000) § Rollback silent audit entries in unread counts.
+
+## 2026-11-06: Backwork search covers department, professor and tags
+
+### 20261106190000_backwork_search_wider.sql
+
+- **Purpose**: Adds `search_backwork_resources(p_chapter_id, p_query, p_limit)`, a read-only SQL function (security invoker, EXECUTE for `service_role` only) that `GET /v1/search` now uses for its Backwork source. It matches title, course, department code and name, professor and tags, ranks word matches by `ts_rank_cd`, and falls back to `pg_trgm` word similarity so a typo still matches (#585). Creates the `extensions` schema if missing and `pg_trgm` in it. The rule is in [`spec/behavior/search.md`](../../../spec/behavior/search.md#global-search) § Global search. Nothing is rewritten; `backwork_resources.search_vector` stays.
+- **Checks**: After `db push`, `select extnamespace::regnamespace from pg_extension where extname = 'pg_trgm';` returns `extensions`, `select has_function_privilege('authenticated', 'public.search_backwork_resources(uuid, text, integer)', 'execute');` returns `false`, and `select id from public.search_backwork_resources('<a chapter id>', '<a professor name>', 20);` returns that professor's files.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API doesn't call the function. The newer API against an unmigrated database fails every global search with a 500, because a source that errors fails the whole request (spec/behavior/search.md, server-side timeout), so the migration must land first. `create ... if not exists` and `create or replace` make re-applying idempotent. If `pg_trgm` is already installed in another schema on a hosted project, `create extension if not exists` leaves it there and the function's `extensions.word_similarity` call fails: check the query above first. Checked 2026-11-06 with the Supabase connector: `pg_trgm` is not installed on frapp-staging or frapp-prod, and both already have the `extensions` schema (pgcrypto, uuid-ossp and pg_stat_statements live there). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-backwork-search-wider-20261106190000) § Rollback backwork search wider.
 
 ## 2026-11-06: A Discord import's progress per category
 
