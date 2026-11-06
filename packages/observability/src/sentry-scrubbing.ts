@@ -653,9 +653,14 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
    *
    * `code_file` gets the same sweep as a frame's path, so a redaction leaves
    * the two equal and the pairing intact. A `debug_id` must be a UUID, which
-   * is all sentry-cli, the Next plugin and Metro mint. Other image types
-   * (native `macho`/`elf` and the like) are not something these JS SDKs send
-   * through this hook, so they are dropped by omission.
+   * is all sentry-cli, the Next plugin and Metro mint.
+   *
+   * Native images are dropped on purpose. Mobile can send them:
+   * `@sentry/react-native`'s `nativeLinkedErrorsIntegration` adds `macho`
+   * images for an iOS error linked as a JS error's cause. They pair with a
+   * frame by its `instruction_addr`, which {@link scrubFrame} does not keep,
+   * so they could symbolicate nothing here. Keeping them means keeping that
+   * field too, as one decision.
    */
   function scrubDebugMeta(meta: unknown): Record<string, unknown> | undefined {
     if (!meta || typeof meta !== 'object') return undefined;
@@ -1404,8 +1409,6 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
       // allowlists precisely so that "the SDK does not do that today" is never
       // load-bearing.
       if (event.exception) scrubbed.exception = scrubException(event.exception);
-      const debugMeta = scrubDebugMeta(event.debug_meta);
-      if (debugMeta) scrubbed.debug_meta = debugMeta;
       scrubMessageInto(scrubbed, event.message);
 
       // HTTP-shaped names (`GET /path`, `POST https://host/path`) reduce

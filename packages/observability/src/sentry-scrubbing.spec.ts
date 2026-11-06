@@ -354,9 +354,16 @@ describe("shared rules hold regardless of which app binds them", () => {
    */
   describe("debug_meta", () => {
     const DEBUG_ID = "a3b6cd64-a72a-5413-98eb-0a4276527093";
-    const scrubbedDebugMeta = (event: Record<string, unknown>) =>
-      (browser.scrubSentryEvent(event) as Record<string, unknown> | null)
-        ?.debug_meta;
+    /**
+     * The event must survive: a guard that throws instead of skipping a bad
+     * image would drop the whole event through the fail-closed catch, and
+     * `?.debug_meta` alone would read that as a pass.
+     */
+    const scrubbedDebugMeta = (event: Record<string, unknown>) => {
+      const scrubbed = browser.scrubSentryEvent({ level: "error", ...event });
+      expect(scrubbed).not.toBeNull();
+      return (scrubbed as Record<string, unknown>).debug_meta;
+    };
 
     it("keeps each source-map image, and only its three fields", () => {
       expect(
@@ -420,6 +427,17 @@ describe("shared rules hold regardless of which app binds them", () => {
           },
         }),
       ).toBeUndefined();
+    });
+
+    it("leaves debug_meta off a transaction, which carries no frames to pair", () => {
+      const scrubbed = browser.scrubSentryTransaction({
+        type: "transaction",
+        debug_meta: {
+          images: [{ type: "sourcemap", code_file: "/x", debug_id: DEBUG_ID }],
+        },
+      }) as Record<string, unknown> | null;
+      expect(scrubbed).not.toBeNull();
+      expect(scrubbed).not.toHaveProperty("debug_meta");
     });
 
     it("drops a debug_meta that is not the expected shape", () => {
