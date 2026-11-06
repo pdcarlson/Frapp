@@ -56,9 +56,9 @@ describe("payIntentErrorCopy", () => {
     );
   });
 
-  it("tells a member to retry a provider outage rather than blaming them", () => {
+  it("tells a member to retry an outage, whichever service it was, rather than blaming them", () => {
     expect(payIntentErrorCopy({ statusCode: 503 })).toBe(
-      "The payment provider is unavailable right now. Please try again.",
+      "Payments are unavailable right now. Please try again.",
     );
   });
 

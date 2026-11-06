@@ -26,9 +26,11 @@ guards compose, in this order:
 | `ChapterGuard` | The caller **is a member of** the active chapter; sets `request.chapterId`, `request.member`, `request.appUser`. Also enforces subscription state and the module toggle | `guards/chapter.guard.ts` |
 | `PermissionsGuard` | The caller's resolved permission set satisfies `@RequirePermissions` / `@RequireAnyOfPermissions` | `guards/permissions.guard.ts` |
 
+Each refuses with a 4xx only on an answer; a lookup that failed is a `503`, still a refusal ([`multi-tenancy.md`](../../spec/behavior/multi-tenancy.md), #3143).
+
 **The header is never trusted on its own.** `ChapterGuard` re-reads the membership row for whatever
-chapter was requested (`chapter.guard.ts:68-76`), and a JWT/header disagreement is a hard
-`403 chapter.context.mismatch` (`:130-136`) — the header cannot override the claim. A user with no
+chapter was requested (`findMembership` in `chapter.guard.ts`), and a JWT/header disagreement is a hard
+`403 chapter.context.mismatch` (`resolveChapterContext`) — the header cannot override the claim. A user with no
 chapter context is auto-resolved only when they hold exactly one membership (`resolveChapterContext`).
 
 Below the guards, the API talks to Postgres with the **service-role key, which bypasses RLS**. So for

@@ -173,6 +173,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
           path: pathOnly(request.url),
           statusCode: status,
           error: toReportableError(exception).stack,
+          // A guard's 503 says only "could not verify" (#3143); what failed
+          // is its cause. Sentry follows the cause, so the log line does too.
+          // Through `toReportableError`, so a PostgREST record's `details`
+          // (row values) stays out here as well.
+          cause:
+            exception instanceof Error && exception.cause !== undefined
+              ? toReportableError(exception.cause).stack
+              : undefined,
         }),
       );
       this.reportToSentry(exception, request, status, requestId);
