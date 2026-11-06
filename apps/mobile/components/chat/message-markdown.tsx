@@ -285,12 +285,19 @@ const COMPONENTS: Components = {
 export function MessageMarkdown({
   parsed,
   style,
+  lead,
   trailing,
   onLongPress,
 }: {
   /** `parseMessageMarkdown(message.content)`, memoized by the caller. */
   parsed: ParsedMessageMarkdown;
   style: StyleProp<TextStyle>;
+  /**
+   * Compact density's time and name, nested ahead of the body so its first
+   * line starts with them and the rest wraps back under (`components.md` §11
+   * § Density).
+   */
+  lead?: ReactNode;
   /**
    * `(edited)` and Pinned, nested after the body so they sit on its last line,
    * or on a line of their own after a last block that isn't a paragraph
@@ -321,6 +328,7 @@ export function MessageMarkdown({
   return (
     <MarkdownContext.Provider value={context}>
       <Text style={style}>
+        {lead}
         {parsed.body}
         {trailing && parsed.trailingOnOwnLine ? "\n" : null}
         {trailing}

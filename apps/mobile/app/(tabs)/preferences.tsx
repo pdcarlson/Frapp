@@ -19,16 +19,19 @@ import {
   shownNotificationCategories,
 } from "@repo/validation";
 import { BLOCKED_MEMBERS_TITLE } from "@repo/chat-core/block-copy";
+import { chatDensityLabel } from "@repo/chat-core/density";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { AccentSheet } from "@/components/settings/accent-sheet";
 import { BlockedMembersSheet } from "@/components/settings/blocked-members-sheet";
+import { ChatDensitySheet } from "@/components/settings/chat-density-sheet";
 import { QuietHoursSection } from "@/components/settings/quiet-hours-section";
 import { Toggle } from "@/components/toggle";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { useChatDensity } from "@/lib/chat/chat-density";
 import { shouldShowDonationCta } from "@/lib/more/donation";
 import { LEGAL_LINKS } from "@/lib/more/legal";
 import { acceptPrimer } from "@/lib/notifications/primer";
@@ -242,6 +245,8 @@ export default function PreferencesScreen() {
   // nobody is blocked.
   const blockedMembersSheetRef = useRef<BottomSheetModal>(null);
   const accentSheetRef = useRef<BottomSheetModal>(null);
+  const chatDensitySheetRef = useRef<BottomSheetModal>(null);
+  const chatDensity = useChatDensity();
   const blockList = useBlockedUserIds();
   const blockedMembersValue =
     blockList.status !== "ready"
@@ -475,6 +480,18 @@ export default function PreferencesScreen() {
         </Text>
       ) : null}
 
+      <SectionHeader>Chat</SectionHeader>
+      <ListSection>
+        {/* One row, a tap from the picker: the sheet draws both densities so
+            the choice is made by looking (components.md §11 § Density). */}
+        <ListRow
+          label="Chat density"
+          value={chatDensityLabel(chatDensity)}
+          accessibilityHint="Choose how tightly messages are drawn in chat."
+          onPress={() => chatDensitySheetRef.current?.present()}
+        />
+      </ListSection>
+
       {canSeeChapterAdmin ? (
         <>
           <SectionHeader>Chapter · Admin</SectionHeader>
@@ -575,6 +592,7 @@ export default function PreferencesScreen() {
       ) : null}
       <BlockedMembersSheet ref={blockedMembersSheetRef} />
       <AccentSheet ref={accentSheetRef} />
+      <ChatDensitySheet ref={chatDensitySheetRef} />
     </ScreenShell>
   );
 }

@@ -387,7 +387,26 @@ Alternatives weighed and rejected:
 - **Bubbles, grouped.** This is what web shipped until this decision. It keeps every cost above except the repeated author line.
 - **Bubbles on mobile only.** Two layouts would have to be kept in step, and the Discord comparison happens on phones first.
 - **Own messages right-aligned without a fill.** A right-aligned run with no fill to anchor it reads as a layout bug. The owner chose the left.
-- **A density toggle.** Per-user density is [#2252](https://github.com/pdcarlson/Frapp/issues/2252), parked; the compact layout is the only one.
+- **A density toggle.** Per-user density was [#2252](https://github.com/pdcarlson/Frapp/issues/2252), parked; the compact layout was the only one. *(Corrected 2026-11-06: the owner asked for the toggle, so members now pick a density, see [§ Density](#density) below. The layout this section describes is the default, **cozy**. Its name here, "compact layout", predates the choice and means bubble-free, not the `compact` density.)*
+
+#### Density
+
+> **Owner decision, 2026-11-06 (Paul, [#2252](https://github.com/pdcarlson/Frapp/issues/2252)): "can we let users change their chat density in their settings?"** Two densities, named as Discord names them, on web and mobile alike. The vocabulary lives once, in `@repo/chat-core/density`.
+
+| | Cozy (default) | Compact |
+|---|---|---|
+| Run start | 16 below the row above | 4 below |
+| Avatar | 32px, first row of a run (§ Row anatomy) | None |
+| Author line | Name, then time, over the body | None. Web: the time in a 56px gutter, right-aligned caption, 8 from the text; the name leads the body's first line in the body size at 600, floated so the text wraps back under it. Mobile: no gutter; the time (caption) and the name (body size at 600) lead the body's first line inline |
+| Follow-on time | Web: revealed in the 32px gutter | Web: revealed in the 56px gutter. Mobile: none, as in cozy |
+| A row with no text (a card, a photo, the web editor) | Author line as usual | Time and name on a line of their own above it |
+| Reply elbow | From the avatar's centre | From the text column's edge onto the name |
+
+Everything else on the row (body type, reactions, trailing markers, delivery state, audit lines, day dividers, grouping) is the same in both. The name keeps its role color in both.
+
+**Where it is set.** Web: Profile, a **Chat density** section of two radio cards, each a drawing of the thread in shapes (no made-up names or text), saving on the click. Mobile: Settings, a **Chat** section with one **Chat density** row whose value names the current choice and opens a sheet of the same two cards; a tap saves and closes. The thread redraws at once on both.
+
+**Per device, not per account.** Web keeps it in `localStorage`, mobile in AsyncStorage, under one key, and both controls say so ("Applies on this browser", "Applies on this phone"). A phone and a laptop have different screens, and a member can want compact on one and cozy on the other. A synced preference would need a column, an endpoint and a migration for a choice that is better per screen; revisit if members ask for it to follow them.
 
 #### Row anatomy
 
