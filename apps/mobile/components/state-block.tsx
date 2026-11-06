@@ -12,9 +12,11 @@ import {
   AccessibilityInfo,
   type DimensionValue,
   Pressable,
+  type StyleProp,
   StyleSheet,
   Text,
   View,
+  type ViewStyle,
 } from "react-native";
 import Animated, {
   cancelAnimation,
@@ -27,7 +29,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { NavigationContext } from "expo-router/react-navigation";
-import { SignetTokens } from "@repo/theme/signet";
+import { SignetTokens, type SignetTypeRole } from "@repo/theme/signet";
 import { ChapterGlyph } from "@/components/more/more-glyphs";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
@@ -83,6 +85,12 @@ type StateBlockProps = {
  * neutral blocks at the specified shapes, pulsing together between full and
  * half opacity ({@link SkeletonPulse}), still under reduced motion, and paused
  * while their screen is out of view.
+ *
+ * This is the generic card of bars, and it fits only a state that is itself
+ * one card (Ask's answer, a sheet's panel). A screen draws its own layout with
+ * {@link SkeletonRegion} and {@link SkeletonText} instead, since one card of
+ * bars on every screen is exactly what §10 rules out;
+ * `screen-skeletons.spec.tsx` holds the few places still on it.
  *
  * The card takes the shape of what it turns into, so a screen doesn't change
  * when its content lands. Both tones sit on `card`, the fill of the empty and
@@ -151,8 +159,8 @@ const PULSE_HALF_MS = 600;
  * {@link SkeletonBlock} reads one opacity, so a skeleton of twenty blocks
  * makes one reduced-motion subscription, one pair of focus and blur
  * listeners and one animation, and its blocks are in step by construction.
- * {@link SkeletonLines} wraps its blocks in one, and a list whose loading
- * shape is its own rows (Chat home's `ChannelListSkeleton`) wraps them itself.
+ * {@link SkeletonLines} wraps its blocks in one, and {@link SkeletonRegion},
+ * which every screen's own skeleton draws in, brings one.
  *
  * The pulse runs on the UI thread. It holds still at full opacity, as the
  * blocks drew before there was a pulse:
@@ -204,6 +212,8 @@ type SkeletonBlockProps = {
   height: number;
   /** Defaults to a text line's radius; a control-sized block passes `radius.control`. */
   radius?: number;
+  /** Outer layout only (a margin, `alignSelf`), never the block's own look. */
+  style?: StyleProp<ViewStyle>;
 };
 
 /**
@@ -232,6 +242,7 @@ function PulsedBlock({
   width,
   height,
   radius,
+  style,
   opacity,
 }: SkeletonBlockProps & { opacity: SharedValue<number> }) {
   const { tokens } = useFrappTheme();
@@ -241,12 +252,96 @@ function PulsedBlock({
   return (
     <Animated.View
       style={[
+        style,
         styles.skeletonBlock,
         { width, height },
         radius === undefined ? null : { borderRadius: radius },
         pulse,
       ]}
     />
+  );
+}
+
+/**
+ * A screen's loading state drawn as its own layout: one node to assistive
+ * tech, and one {@link SkeletonPulse} for every block inside it.
+ *
+ * components.md §10: "the skeleton mirrors the layout it becomes — same
+ * blocks, same radii". So a screen doesn't reach for one generic card of bars;
+ * it draws its own frames (the row card, the list section, the summary card)
+ * from the same styles its loaded rows use, and fills them with
+ * {@link SkeletonText} and {@link SkeletonBlock}. The real content then lands
+ * in place instead of pushing in under a placeholder of another shape.
+ *
+ * `label` says what is loading ("Loading events"), so a screen reader hears
+ * more than "Loading". `style` is the region's own layout, usually
+ * `ScreenShell`'s content gap so the frames inside sit where their real
+ * counterparts land.
+ */
+export function SkeletonRegion({
+  label,
+  style,
+  children,
+}: {
+  label: string;
+  style?: StyleProp<ViewStyle>;
+  children: ReactNode;
+}) {
+  return (
+    // `accessible` makes the region one node, so VoiceOver reads the role and
+    // label; without it iOS skips a View that has no text and the screen
+    // sounds blank while it loads.
+    <View
+      accessible
+      accessibilityRole="progressbar"
+      accessibilityLabel={label}
+      style={style}
+    >
+      <SkeletonPulse>{children}</SkeletonPulse>
+    </View>
+  );
+}
+
+/**
+ * Figtree's vertical metrics, as the font file states them (units per em
+ * 1000): ascender 950 and descender 250, so a line with no `lineHeight` is
+ * 1.2em tall, and a cap height of 700. These are the font's geometry, not a
+ * type style, so deriving a skeleton's line box from a role's size is not the
+ * arithmetic on a role that foundations.md §7 bans for setting type.
+ */
+const FIGTREE_LINE_BOX_EM = 1.2;
+const FIGTREE_CAP_HEIGHT_EM = 0.7;
+
+/**
+ * One line of text that hasn't loaded: a bar at the role's cap height, centred
+ * in the line box the real text will take. A row built from these is as tall
+ * as the row it becomes, so nothing below it moves when the text lands.
+ *
+ * `lineHeight` is for a style that sets its own (Notifications' 20pt rows);
+ * otherwise the role's, or the font's natural line.
+ */
+export function SkeletonText({
+  role,
+  width,
+  lineHeight,
+  style,
+}: {
+  role: SignetTypeRole;
+  width: DimensionValue;
+  lineHeight?: number;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const box =
+    lineHeight ??
+    role.lineHeight ??
+    Math.round(role.size * FIGTREE_LINE_BOX_EM);
+  return (
+    <View style={[{ width, height: box, justifyContent: "center" }, style]}>
+      <SkeletonBlock
+        width="100%"
+        height={Math.round(role.size * FIGTREE_CAP_HEIGHT_EM)}
+      />
+    </View>
   );
 }
 

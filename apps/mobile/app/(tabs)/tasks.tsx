@@ -16,14 +16,17 @@ import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
-import { SectionHeader } from "@/components/list-section";
+import {
+  SectionHeader,
+  SectionHeaderSkeleton,
+} from "@/components/list-section";
 import {
   EmptyState,
   ErrorState,
   NoChapterState,
-  SkeletonLines,
+  SkeletonRegion,
 } from "@/components/state-block";
-import { TaskRow } from "@/components/tasks/task-row";
+import { TaskRow, TaskRowSkeleton } from "@/components/tasks/task-row";
 import { PointsSummaryCard } from "@/components/tasks/points-summary-card";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import { selectTaskRows, type TaskRowModel } from "@/lib/tasks/board";
@@ -255,7 +258,19 @@ export default function TasksScreen() {
     // "no tasks". Treating it as empty flashes "You're all clear" on every cold
     // start, a beat before the real rows land.
     if (tasksQuery.isPending || viewerUserId === null) {
-      return <SkeletonLines lines={3} />;
+      // A section caption over task-shaped rows, so the real board lands in
+      // place. The caption is a bar: which section comes first (DUE THIS WEEK
+      // or LATER) depends on the tasks.
+      return (
+        <SkeletonRegion label="Loading chapter tasks" style={styles.skeleton}>
+          <SectionHeaderSkeleton width="30%" />
+          <View>
+            {Array.from({ length: 3 }, (_, index) => (
+              <TaskRowSkeleton key={index} index={index} />
+            ))}
+          </View>
+        </SkeletonRegion>
+      );
     }
 
     if (tasksQuery.isError) {
@@ -347,6 +362,10 @@ export default function TasksScreen() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    // `ScreenShell`'s gap, between the caption and its rows.
+    skeleton: {
+      gap: tokens.spacing.md,
+    },
     notice: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,

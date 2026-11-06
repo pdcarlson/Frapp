@@ -12,14 +12,14 @@ import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { BACK_TO_MORE } from "@/components/back-row";
-import { HistoryRow } from "@/components/history-row";
+import { HistoryRow, HistoryRowsSkeleton } from "@/components/history-row";
 import { SectionHeader } from "@/components/list-section";
 import { LogHoursSheet } from "@/components/service-hours/log-hours-sheet";
 import { StatusChip } from "@/components/status-chip";
 import {
   EmptyState,
   ErrorState,
-  SkeletonLines,
+  SkeletonRegion,
 } from "@/components/state-block";
 import {
   selectServiceEntryRows,
@@ -107,7 +107,15 @@ export default function ServiceHoursScreen() {
     // error case is already handled above. The entries query is disabled until
     // the id lands, so `isPending` alone would not cover it.
     if (viewerUserId === null || entriesQuery.isPending)
-      return <SkeletonLines lines={3} tone="list" />;
+      return (
+        <SkeletonRegion label="Loading service entries">
+          {/* About an "Approved" chip's width, where each status lands. */}
+          <HistoryRowsSkeleton
+            rows={3}
+            trailingWidth={tokens.spacing["3xl"] + tokens.spacing.xl}
+          />
+        </SkeletonRegion>
+      );
     if (entriesQuery.isError) {
       return (
         <ErrorState
