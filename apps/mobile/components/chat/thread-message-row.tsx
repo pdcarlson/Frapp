@@ -32,7 +32,7 @@ import { PointsCard } from "./points-card";
 import { PollCard } from "./poll-card";
 import { ReplyQuote } from "./reply-quote";
 import { RushCard } from "./rush-card";
-import { SystemAuditCard } from "./system-audit-card";
+import { SystemAuditLine } from "./system-audit-card";
 import { TaskCard } from "./task-card";
 
 /**
@@ -96,15 +96,20 @@ export interface ThreadMessageRowProps {
 }
 
 export function ThreadMessageRow(props: ThreadMessageRowProps) {
-  // In an inverted list the item's own content still reads top to bottom, so
-  // the divider goes above the row inside the same item.
+  // One View, never a fragment. An inverted list lays each cell out
+  // `column-reverse` (React Native's `VirtualizedListCellRenderer`, so a
+  // separator lands on the right side of an upside-down list), which stacks a
+  // cell's direct children bottom to top. A fragment made the divider and the
+  // row two direct children, so the divider drew under its row, between the
+  // day's first and second messages. Wrapped, the cell has one child
+  // and the divider reads above the row.
   return (
-    <>
+    <View>
       {props.startsDay ? (
         <DayDivider createdAt={props.row.message.created_at} />
       ) : null}
       <ThreadMessageRowBody {...props} />
-    </>
+    </View>
   );
 }
 
@@ -165,6 +170,28 @@ function ThreadMessageRowBody({
     ? () => onJumpToMessage(quotedParent.id)
     : undefined;
 
+  // An audit entry is a line, not a post: no author line, no card frame
+  // (components.md §11 § Audit lines). Audit rows never reply.
+  const auditPayload = message.is_deleted
+    ? null
+    : message.kind === "system_audit"
+      ? readSystemAuditPayload(message)
+      : null;
+  if (auditPayload) {
+    return (
+      <SystemAuditLine
+        message={message}
+        payload={auditPayload}
+        viewerId={viewerId}
+        nameFor={nameFor}
+        startsRun={startsRun}
+        onReact={onReact}
+        onUnreact={onUnreact}
+        onOpenActions={openActions}
+      />
+    );
+  }
+
   // A card is not a message body, so it goes into the row frame directly:
   // the same quote, avatar and author line as any other row, with the card
   // where the text would be. Web draws every card kind this way; `cardFor`
@@ -186,7 +213,7 @@ function ThreadMessageRowBody({
           onOpenActions: openActions,
           onJumpToParent: message.reply_to_id ? onJumpToParent : undefined,
         },
-        { onVote, nameFor },
+        { onVote },
       );
   if (card) {
     const quote =
@@ -253,7 +280,6 @@ function cardFor(
   frame: ChatCardFrameProps,
   row: {
     onVote: ThreadMessageRowProps["onVote"];
-    nameFor: ThreadMessageRowProps["nameFor"];
   },
 ): ReactNode | null {
   const { message } = frame;
@@ -283,12 +309,6 @@ function cardFor(
     case "announcement": {
       const body = readAnnouncementBody(message);
       return body ? <AnnouncementCard {...frame} body={body} /> : null;
-    }
-    case "system_audit": {
-      const payload = readSystemAuditPayload(message);
-      return payload ? (
-        <SystemAuditCard {...frame} payload={payload} nameFor={row.nameFor} />
-      ) : null;
     }
     default:
       return null;

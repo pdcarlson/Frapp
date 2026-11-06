@@ -209,8 +209,8 @@ describe("NotificationLevelControl", () => {
     expect(trigger.props.disabled).toBe(false);
   });
 
-  // components.md § Icon-only actions: the muted speaker draws its own ×, so
-  // no "Muted" word sits beside it. The label above still says it.
+  // components.md § Chrome weight: the trigger is the ⋯ glyph alone, and a
+  // muted channel's header shows no "Muted" word. The label above says it.
   it("draws the muted glyph alone, with no word beside it", () => {
     const tree = renderControl({ level: "off" });
     const trigger = byLabel(

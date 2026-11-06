@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-06: `#chapter-audit` entries arrive silently
+
+### 20261106193000_chat_unread_skip_audit_mirror.sql
+
+- **Purpose**: Re-creates `get_channel_unread_counts` with one more predicate: a `system_audit` message whose `client_message_id` starts `audit:` (an entry the audit mirror posted into `#chapter-audit`) never counts as unread or as a mention. The server's other `system_audit` notices still count. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#read-receipts) § Read Receipts. Same signature, grants and settings as `20260927050000`. No data changes.
+- **Checks**: After `db push`, `select proname, prosecdef, proconfig from pg_proc where proname = 'get_channel_unread_counts';` returns one row, `true | {"search_path=public, pg_temp"}`, and `select pg_get_functiondef('public.get_channel_unread_counts(uuid, uuid)'::regprocedure) like '%audit:%%';` returns `true`. A member's `#chapter-audit` row in `GET /v1/channels/unread` reads 0 after the next settings change.
+- **Promoter notes**: No API change rides it; any API version reads the counts the same way. Re-applying is idempotent (`create or replace`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-silent-audit-entries-in-unread-counts-20261106193000) § Rollback silent audit entries in unread counts.
+
 ## 2026-11-06: Backwork search covers department, professor and tags
 
 ### 20261106190000_backwork_search_wider.sql

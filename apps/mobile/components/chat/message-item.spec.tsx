@@ -896,12 +896,24 @@ describe("delivery status (#1910)", () => {
     expect(flat).not.toContain("Sending");
   });
 
-  it("says Sending… under a pending message", () => {
-    const flat = JSON.stringify(
-      renderItem(message({ sender_id: VIEWER, _status: "pending" })).toJSON(),
+  it("grays a pending message and adds no line under it (owner decision 2026-11-06)", () => {
+    const tree = renderItem(
+      message({ sender_id: VIEWER, _status: "pending", content: "on its way" }),
     );
-    expect(flat).toContain("Sending…");
-    expect(flat).not.toContain("Discard this message");
+    // No caption, no spinner: the gray body is the whole pending state.
+    const drawn = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        typeof node.props.children === "string" &&
+        node.props.children.includes("Sending"),
+    );
+    expect(drawn).toHaveLength(0);
+    expect(JSON.stringify(tree.toJSON())).not.toContain("Discard this message");
+    expect(
+      tree.root.findAll(
+        (node) => node.props.accessibilityHint === "Sending",
+      ).length,
+    ).toBeGreaterThan(0);
   });
 });
 
