@@ -129,9 +129,9 @@ A slice is done when **intended** behavior above is true in code **and** the mat
 | Releases | Sentry event `release`/`dist` match the table above |
 | API TypeScript stacks | A `frapp-api` issue after a Render deploy that uploaded maps shows `*.ts` frames. Compiled `dist/*.js` with ContextLines is not that. |
 | Alerts | Live Sentry/PostHog/Render rules, dated, in [`alert-routing.md`](../../docs/ops/alert-routing.md) |
-| Forget | #709 verified in the production PostHog project before production ingest |
+| Forget | #709's workflow live in the production PostHog project ([`posthog-deleted-users.md`](../../docs/ops/posthog-deleted-users.md)) and one deletion verified end to end |
 
-Human-only until proven otherwise: #709 (PostHog deleted-users automation), #1173 (production PostHog project), #863 (channel proof to the owner's phone; Sentry alert rules can be created through the Sentry MCP since 2026-11-05), #970 (web DSN actually capturing), #938/#1361 (EAS + mobile DSN capture), source-map `SENTRY_AUTH_TOKEN` in Infisical `prod`, network allowlists, production replay approval.
+Human-only until proven otherwise: #709 (PostHog deleted-users automation: live 2026-11-06, end-to-end check pending), #1173 (production PostHog project: `569878` renamed and keyed 2026-11-06, first production event pending), #863 (channel proof to the owner's phone; Sentry alert rules can be created through the Sentry MCP since 2026-11-05), #970 (web DSN actually capturing), #938/#1361 (EAS + mobile DSN capture), source-map `SENTRY_AUTH_TOKEN` in Infisical `prod`, network allowlists, production replay approval.
 
 ## Structured Logging
 
