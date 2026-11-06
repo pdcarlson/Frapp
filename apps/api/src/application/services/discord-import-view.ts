@@ -44,6 +44,7 @@ export const DISCORD_IMPORT_VIEW_FIELDS = [
   'warnings',
   'error',
   'created_at',
+  'completed_at',
   'messages_after',
   'purged_messages',
 ] as const satisfies readonly (keyof DiscordImport)[];

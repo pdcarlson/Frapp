@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   useConfirmDiscordUploads,
   useCreateDiscordImport,
-  useDiscordAvailability,
   useChannels,
   useDiscordConnection,
   useDiscordImportFiles,
@@ -49,7 +48,13 @@ import {
   type MatchKind,
   type RoleChoice,
 } from "./role-matching";
-import { ReviewStep } from "./review-step";
+import {
+  ReviewStep,
+  discordCreatedAt,
+  presetCutoff,
+  type CutoffPreset,
+} from "./review-step";
+import { useBotUsable } from "./use-bot-usable";
 import {
   NO_SIDEBAR_GROUPS,
   keptSidebarGroups,
@@ -150,19 +155,14 @@ export function ImportWizard({
   // Only the roles the admin changed; the rest read their default, which
   // depends on the Frapp roles and on who could read what.
   const [roleEdits, setRoleEdits] = useState<Record<string, RoleChoice>>({});
-  // A bot import's date cutoff (#2858), as the date input holds it.
+  // A bot import's date cutoff (#2858), as the date input holds it, and the
+  // choice that set it.
   const [messagesSince, setMessagesSince] = useState("");
+  const [cutoffPreset, setCutoffPreset] = useState<CutoffPreset>("all");
 
-  const availability = useDiscordAvailability();
+  const botUsable = useBotUsable();
+  // The connected server's id, which dates the server for the cutoff's hint.
   const botConnection = useDiscordConnection();
-  // Availability is about STARTING a connect. A chapter that is already
-  // connected can import whatever it says: the import reads through the bot
-  // token and the stored guild, and fails loudly on its own if the token is
-  // dead. Gating it on availability would block an import the API accepts
-  // just because, say, the portal lost a redirect row nobody now needs.
-  const botUsable =
-    availability.data?.available === true ||
-    botConnection.data?.connected === true;
   const createImport = useCreateDiscordImport();
   const requestUrls = useRequestDiscordUploadUrls();
   const confirmUploads = useConfirmDiscordUploads();
@@ -329,7 +329,7 @@ export function ImportWizard({
       // the server, Discord is slow — and the admin is left on this step with
       // Continue still enabled. Without this, every retry mints another
       // `discord_imports` row (consent stamped, guild stamped) and orphans the
-      // last one in `draft` for them to delete by hand.
+      // last one in `draft`, which the page's start then offers to delete.
       const createdId =
         importId ??
         (
@@ -498,23 +498,28 @@ export function ImportWizard({
   // The chosen day starts at the viewer's own midnight, which is what "from
   // this date" means to them; sent as that instant. Only a bot import has one.
   const cutoff = useMemo((): { at: string | null; problem: string | null } => {
-    if (source !== "bot" || !messagesSince) return { at: null, problem: null };
+    if (source !== "bot") return { at: null, problem: null };
+    if (!messagesSince) {
+      // "Pick a date" with none picked would quietly import everything.
+      return cutoffPreset === "date"
+        ? { at: null, problem: "Pick a date, or choose Everything." }
+        : { at: null, problem: null };
+    }
     const at = parseBareDateLocalMidnight(messagesSince);
     if (!at) {
       return {
         at: null,
-        problem: "Enter a whole date, or clear it to import all history.",
+        problem: "Enter a whole date, or choose Everything.",
       };
     }
     if (at.getTime() > Date.now()) {
       return {
         at: null,
-        problem:
-          "Choose a date in the past, or clear it to import all history.",
+        problem: "Pick a date in the past, or choose Everything.",
       };
     }
     return { at: at.toISOString(), problem: null };
-  }, [source, messagesSince]);
+  }, [source, messagesSince, cutoffPreset]);
 
   async function submitMappings() {
     if (!importId || !staged || !source) return;
@@ -749,6 +754,12 @@ export function ImportWizard({
             messagesSince={messagesSince}
             onMessagesSinceChange={setMessagesSince}
             messagesSinceProblem={cutoff.problem}
+            cutoffPreset={cutoffPreset}
+            onCutoffPresetChange={(preset) => {
+              setCutoffPreset(preset);
+              setMessagesSince((current) => presetCutoff(preset, current));
+            }}
+            serverCreatedAt={discordCreatedAt(botConnection.data?.guild_id)}
             sidebarGroups={keptSidebarGroups(
               staged.channels,
               channelChoices,

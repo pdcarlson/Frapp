@@ -209,7 +209,9 @@ interface KindTable {
 function freezeKind(bindings: readonly MimeBinding[]): KindTable {
   const mimes = new Set<string>();
   const extensions = new Set<string>();
-  const byExtension: Record<string, string> = {};
+  // No prototype: callers index it with a file's own extension, and a file
+  // named `x.constructor` must read as unknown, not as `Object`.
+  const byExtension: Record<string, string> = Object.create(null);
   const mimeList: string[] = [];
 
   for (const binding of bindings) {
