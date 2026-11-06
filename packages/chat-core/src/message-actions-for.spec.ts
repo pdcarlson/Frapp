@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  mergeServerRow,
-  emptyCache,
-  selectMessages,
-} from "@repo/chat-core/cache";
-import type { ChatMessage, RawChatMessage } from "@repo/chat-core/types";
+import { mergeServerRow, emptyCache, selectMessages } from "./cache";
+import type { ChatMessage, RawChatMessage } from "./types";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
 import {
   canOpenMessageActions,
@@ -12,12 +8,11 @@ import {
   rosterMembership,
   type MemberLookup,
   type MessageActionsContext,
-} from "./blocks";
+} from "./message-actions";
 
-// The classifier these actions sit beside moved to `@repo/chat-core/blocks`
-// with its spec (#2313), and the Reply/Edit/Delete rules are chat-core's
-// `message-actions` (#2775). What is pinned here is how the mobile sheet
-// combines them with Report and Block, which web does not offer.
+// How the message actions combine Reply, Edit and Delete with Report and
+// Block. Both clients read `messageActionsFor` (mobile's sheet since #2257,
+// web's action cluster since #2687).
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
 const BLOCKED = "22222222-2222-4222-8222-222222222222";

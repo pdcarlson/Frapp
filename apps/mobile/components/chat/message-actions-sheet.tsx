@@ -53,7 +53,7 @@ import {
   REPORT_SENT_BODY,
   REPORT_SENT_TITLE,
   reportFailureBody,
-} from "@/lib/chat/report-reasons";
+} from "@repo/chat-core/report-copy";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -87,7 +87,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * `stackBehavior="replace"`), where s19 stacks its assignee picker on top.
  *
  * **Which rows show is decided by the caller**, from `messageActionsFor` in
- * `lib/chat/blocks.ts`: Report and Block never show on the viewer's own
+ * `@repo/chat-core/message-actions`: Report and Block never show on the viewer's own
  * message, and `canBlock` is false for the system actor, imported rows and a
  * sender a block attempt already proved has left the chapter — never merely
  * because the cached roster does not list them yet.

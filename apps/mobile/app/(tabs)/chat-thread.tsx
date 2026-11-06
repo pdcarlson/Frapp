@@ -70,7 +70,10 @@ import {
   confirmUnblockMember,
   useBlockActions,
 } from "@/lib/chat/block-actions";
-import { messageActionsFor, rosterMembership } from "@/lib/chat/blocks";
+import {
+  messageActionsFor,
+  rosterMembership,
+} from "@repo/chat-core/message-actions";
 import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import { writeLastChannel } from "@/lib/chat/last-channel";

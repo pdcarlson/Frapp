@@ -1,3 +1,4 @@
+import { serverMessageOf, statusOf } from "@repo/api-sdk";
 import type { BlockListStatus } from "@repo/validation";
 
 /**
@@ -84,6 +85,53 @@ export const UNBLOCK_CONFIRM_BODY =
 
 export function unblockFailedTitle(name: string): string {
   return `Couldn't unblock ${name}`;
+}
+
+export function blockConfirmTitle(name: string): string {
+  return `Block ${name}?`;
+}
+
+/**
+ * The block confirmation's body, on both clients (#2687).
+ *
+ * `inDirectory` is whether the roster lists them. Only then is "they stay in
+ * the directory" a true statement: a sender the roster has not loaded, or no
+ * longer lists, may not be in it at all. `unblockWhere` names the client's
+ * blocked-members list: mobile's is in Settings, web's on the profile page,
+ * because web's Settings is chapter administration.
+ */
+export function blockConfirmBody(
+  inDirectory: boolean,
+  unblockWhere: "in Settings" | "from your profile",
+): string {
+  return (
+    "Their messages in this chapter's chat will be hidden from you. " +
+    "They won't be told, and they can still post where you both are. " +
+    (inDirectory
+      ? "Poll votes still count, and they stay in the directory. "
+      : "Poll votes still count. ") +
+    `You can unblock them anytime ${unblockWhere}.`
+  );
+}
+
+/** `POST /v1/chat/blocks` answers 404 (`Member not found`) for a non-member. */
+export const BLOCK_NOT_A_MEMBER_BODY =
+  "This member is no longer in your chapter, so there's nothing to block.";
+
+export function blockFailedTitle(name: string): string {
+  return `Couldn't block ${name}`;
+}
+
+/**
+ * Whether a failed block is the API's "not a member of this chapter" answer:
+ * a 404 whose message is `Member not found` (`ChatBlockService.block`). Any
+ * other 404 — a route this build expects but the server does not serve, say —
+ * is an ordinary failure, not evidence the member left.
+ */
+export function isMemberNotFound(error: unknown): boolean {
+  return (
+    statusOf(error) === 404 && serverMessageOf(error) === "Member not found"
+  );
 }
 
 /** A failed block or unblock: the server confirmed nothing, so nothing changed. */

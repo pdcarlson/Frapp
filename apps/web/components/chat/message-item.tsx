@@ -1,10 +1,23 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Pencil, Trash2 } from "lucide-react";
+import {
+  Ban,
+  Flag,
+  Loader2,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   ACTION_BAR_BUTTON,
   ACTION_BAR_BUTTON_ON,
@@ -19,11 +32,14 @@ import { MessageAttachments } from "./message-attachments";
 import { QuotedMessage, replyPreviewText } from "./reply-quote";
 import {
   canActOnMessage,
+  canBlockSender,
   canDeleteMessage,
+  canReportMessage,
   canEditMessage,
   EDITED_MARKER,
   isCardMessage,
   showsEditedMarker,
+  type MemberLookup,
 } from "@repo/chat-core/message-actions";
 import { MessageRenderer } from "./renderers";
 import {
@@ -31,6 +47,7 @@ import {
   visibleReactions,
   type BlockState,
 } from "@repo/chat-core/blocks";
+import { UNNAMED_MEMBER } from "@repo/chat-core/block-copy";
 import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
 import {
   authorInitialsFallback,
@@ -192,6 +209,22 @@ export interface MessageItemProps {
   onToggleBookmark?: (messageId: string, next: boolean) => void;
   /** Gates the Delete affordance on messages that aren't the viewer's own. */
   canManageChannel?: boolean;
+  /**
+   * Opens the report form for this message (#2687). Offered on anyone else's
+   * confirmed message (`canReportMessage`), never the viewer's own.
+   */
+  onReport?: (message: ChatMessage) => void;
+  /**
+   * Asks to block this message's sender (#2687). Offered where
+   * `canBlockSender` allows, which needs `isMember` too.
+   */
+  onBlock?: (message: ChatMessage) => void;
+  /**
+   * Whether a sender is a chapter member (`rosterMembership`). Only a sender
+   * positively known to have left loses Block; one the roster does not list yet
+   * keeps it.
+   */
+  isMember?: MemberLookup;
   /** Card action invoker (Vote, RSVP, …). Required for kinds like `poll`. */
   onAct?: (
     messageId: string,
@@ -257,6 +290,9 @@ export function MessageItem({
   isBookmarked,
   onToggleBookmark,
   canManageChannel,
+  onReport,
+  onBlock,
+  isMember,
   isTapRevealed,
   onToggleTapReveal,
 }: MessageItemProps) {
@@ -297,6 +333,11 @@ export function MessageItem({
   const canEdit = canEditMessage(message, viewerId) && !!onEdit;
   const canDelete =
     canDeleteMessage(message, viewerId, !!canManageChannel) && !!onDelete;
+  // Report and Block share mobile's rules too (#2687), and sit behind one
+  // More button rather than two more icons on a bar that already wraps.
+  const canReport = canReportMessage(message, viewerId) && !!onReport;
+  const canBlock =
+    !!isMember && canBlockSender(message, viewerId, isMember) && !!onBlock;
 
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(message.content);
@@ -716,6 +757,37 @@ export function MessageItem({
           >
             <Trash2 className="h-4 w-4" aria-hidden="true" />
           </button>
+        ) : null}
+        {canReport || canBlock ? (
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className={ACTION_BAR_BUTTON}
+                aria-label="More actions"
+                title="More"
+              >
+                <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {canReport ? (
+                <DropdownMenuItem onSelect={() => onReport?.(message)}>
+                  <Flag aria-hidden="true" />
+                  Report message
+                </DropdownMenuItem>
+              ) : null}
+              {canBlock ? (
+                <DropdownMenuItem
+                  className="text-destructive-text focus:bg-destructive-tint focus:text-destructive-text"
+                  onSelect={() => onBlock?.(message)}
+                >
+                  <Ban aria-hidden="true" />
+                  {`Block ${authorName ?? UNNAMED_MEMBER}`}
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : null}
       </div>
     ) : null;

@@ -20,7 +20,7 @@ import {
 import { dayDividerLabel } from "@repo/chat-core/grouping";
 import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
-import { canOpenMessageActions } from "@/lib/chat/blocks";
+import { canOpenMessageActions } from "@repo/chat-core/message-actions";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { AnnouncementCard } from "./announcement-card";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";

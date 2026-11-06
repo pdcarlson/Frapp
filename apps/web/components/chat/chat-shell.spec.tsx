@@ -235,6 +235,17 @@ vi.mock("./use-unblock-flow", () => ({
   }),
 }));
 
+vi.mock("./use-block-flow", () => ({
+  useBlockFlow: () => ({
+    requestBlock: vi.fn(),
+    isPending: false,
+    confirmDialog: null,
+  }),
+}));
+vi.mock("./report-message-dialog", () => ({
+  ReportMessageDialog: () => null,
+}));
+
 vi.mock("@repo/hooks", async () => ({
   // The shared helpers run for real, so the shell's use of them is under test.
   ...(await vi

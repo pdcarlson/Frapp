@@ -85,12 +85,15 @@ import {
 } from "./message-timeline";
 import { Composer, ComposerShell, notifyDispatchOutcome } from "./composer";
 import {
+  canBlockSender,
   channelAllowsReplies,
   DELETE_MESSAGE_CONFIRM_BODY,
   DELETE_MESSAGE_CONFIRM_LABEL,
   DELETE_MESSAGE_CONFIRM_TITLE,
   replyTargetId,
+  rosterMembership,
 } from "@repo/chat-core/message-actions";
+import { UNNAMED_MEMBER } from "@repo/chat-core/block-copy";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
 import { SetupChecklistSection } from "./setup-checklist";
@@ -100,6 +103,11 @@ import type { BookmarkEntry } from "./bookmarks-popover";
 import { ReconnectPill } from "./reconnect-pill";
 import { BlockListNotice } from "./block-list-notice";
 import { useUnblockFlow } from "./use-unblock-flow";
+import { useBlockFlow } from "./use-block-flow";
+import {
+  ReportMessageDialog,
+  type ReportTarget,
+} from "./report-message-dialog";
 import { compactControlClassName } from "@/components/shared/table-controls";
 import {
   NavBackButton,
@@ -156,6 +164,9 @@ function matchMember(
  * pending, so scrolling up still opens it once it loads.
  */
 const JUMP_MAX_OLDER_PAGES = 20;
+
+/** No member proven departed yet: a stable empty set for `rosterMembership`. */
+const NO_DEPARTED: ReadonlySet<string> = new Set();
 
 type UnreachableReason = "far" | "missing" | "error" | "unloaded";
 
@@ -253,6 +264,8 @@ export function ChatShell({
     nameFor,
     avatarFor,
     roleColorFor,
+    isPending: rosterPending,
+    isError: rosterError,
   } = useMemberDisplayNames();
   // Per-channel notification levels, from their own endpoint rather than the
   // channel payload — the same split unread counts use, and for the same
@@ -754,6 +767,62 @@ export function ChatShell({
       void reloadMaskedCopies(senderId);
     },
     [reloadMaskedCopies],
+  );
+
+  // Report and Block from a row's More menu (#2687), the rules mobile's
+  // actions sheet uses. `departed` holds the members a block attempt proved
+  // are not in this chapter (404 `Member not found`), per chapter, because a
+  // roster that merely does not list someone may be stale, and the likeliest
+  // sender it misses is a brand-new member: exactly who Block is for.
+  const blockFlow = useBlockFlow();
+  const { requestBlock } = blockFlow;
+  const [departed, setDeparted] = useState<{
+    chapterId: string | null;
+    ids: ReadonlySet<string>;
+  }>(() => ({ chapterId: activeChapterId, ids: new Set() }));
+  const departedIds =
+    departed.chapterId === activeChapterId ? departed.ids : NO_DEPARTED;
+  const isMember = useMemo(
+    () =>
+      rosterMembership(
+        { byId: memberNames, isPending: rosterPending, isError: rosterError },
+        departedIds,
+      ),
+    [memberNames, rosterPending, rosterError, departedIds],
+  );
+  const handleBlock = useCallback(
+    (message: ChatMessage) => {
+      const senderId = message.sender_id;
+      if (!senderId) return;
+      void requestBlock({
+        userId: senderId,
+        name: nameFor(senderId),
+        inDirectory: isMember(senderId) === true,
+      }).then((result) => {
+        if (result !== "not-a-member") return;
+        setDeparted((previous) => {
+          const ids = new Set(
+            previous.chapterId === activeChapterId ? previous.ids : [],
+          );
+          ids.add(senderId);
+          return { chapterId: activeChapterId, ids };
+        });
+      });
+    },
+    [activeChapterId, isMember, nameFor, requestBlock],
+  );
+  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+  const handleReport = useCallback(
+    (message: ChatMessage) => {
+      const canBlock = !!userId && canBlockSender(message, userId, isMember);
+      const name = resolveAuthorName(message, nameFor);
+      setReportTarget({
+        messageId: message.id,
+        onBlock: canBlock ? () => handleBlock(message) : undefined,
+        blockLabel: canBlock ? `Block ${name ?? UNNAMED_MEMBER}` : null,
+      });
+    },
+    [handleBlock, isMember, nameFor, userId],
   );
 
   // A custom role can hold `channels:manage` without also being a chapter
@@ -2149,6 +2218,9 @@ export function ChatShell({
                 bookmarkedMessageIds={bookmarkedMessageIds}
                 onToggleBookmark={handleToggleBookmark}
                 canManageChannel={canManageChannel}
+                onReport={handleReport}
+                onBlock={handleBlock}
+                isMember={isMember}
               />
             </div>
             {/*
@@ -2251,6 +2323,12 @@ export function ChatShell({
 
       {confirmDialog}
       {unblockFlow.confirmDialog}
+      {blockFlow.confirmDialog}
+      <ReportMessageDialog
+        key={reportTarget?.messageId ?? "closed"}
+        target={reportTarget}
+        onClose={() => setReportTarget(null)}
+      />
     </div>
   );
 }
