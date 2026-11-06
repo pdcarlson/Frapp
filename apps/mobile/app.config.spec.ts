@@ -34,6 +34,7 @@ function loadConfig() {
       easBuildPlatform?: string;
       googleServicesFile?: string;
     }) => void;
+    googleIosUrlScheme: (iosClientId?: unknown) => string | undefined;
     applyMobileConfig: (
       config: Record<string, unknown>,
       opts?: {
@@ -487,6 +488,62 @@ describe("applyMobileConfig", () => {
         existsSync: (p) => p === "/eas/google-services.json",
       }),
     ).toThrow(PRODUCTION_SUPABASE_PUBLIC_ERROR);
+  });
+});
+
+describe("native Google Sign-In plugin", () => {
+  const iosClientId = "123-abc.apps.googleusercontent.com";
+
+  it("reverses the iOS client ID into the URL scheme the SDK returns through", () => {
+    const { googleIosUrlScheme } = loadConfig();
+    expect(googleIosUrlScheme(iosClientId)).toBe(
+      "com.googleusercontent.apps.123-abc",
+    );
+    expect(googleIosUrlScheme("")).toBeUndefined();
+    expect(googleIosUrlScheme(undefined)).toBeUndefined();
+    expect(() => googleIosUrlScheme("123-abc")).toThrow(
+      /must be a Google OAuth iOS client ID/,
+    );
+  });
+
+  it("adds the plugin only when the iOS client ID is set", () => {
+    const { applyMobileConfig } = loadConfig();
+    const withIds = (ids: Record<string, string>) => ({
+      plugins: ["expo-router"],
+      extra: { googleSignIn: { webClientId: "w", ...ids } },
+    });
+
+    expect(
+      applyMobileConfig(withIds({ iosClientId: "" }), {
+        env: {},
+        existsSync: missing,
+      }).plugins,
+    ).toEqual(["expo-router"]);
+
+    expect(
+      applyMobileConfig(withIds({ iosClientId }), {
+        env: {},
+        existsSync: missing,
+      }).plugins,
+    ).toEqual([
+      "expo-router",
+      [
+        "@react-native-google-signin/google-signin",
+        { iosUrlScheme: "com.googleusercontent.apps.123-abc" },
+      ],
+    ]);
+  });
+
+  it("app.json carries the Web client every hosted Google provider lists", () => {
+    const appJson = JSON.parse(
+      readFileSync(
+        path.join(path.dirname(fileURLToPath(import.meta.url)), "app.json"),
+        "utf8",
+      ),
+    ) as { expo: { extra: { googleSignIn: { webClientId: string } } } };
+    expect(appJson.expo.extra.googleSignIn.webClientId).toMatch(
+      /\.apps\.googleusercontent\.com$/,
+    );
   });
 });
 

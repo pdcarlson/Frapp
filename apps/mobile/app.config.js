@@ -409,6 +409,38 @@ function assertProductionAskDisabled({ easBuildProfile, askEnabled } = {}) {
   throw new Error(PRODUCTION_ASK_ENABLED_ERROR);
 }
 
+// Native Google Sign-In (#2126, `lib/google-auth.ts`). The iOS SDK returns
+// to the app through a URL scheme that is the iOS OAuth client's ID reversed
+// (`com.googleusercontent.apps.<id>`); the package's config plugin writes it
+// into Info.plist. The client IDs live in app.json → `extra.googleSignIn`
+// (they are not secrets). With no iOS client ID the plugin is left out, and
+// `lib/google-auth.ts` keeps iOS on the browser flow: the same field gates
+// both, so a binary never has the runtime path without the scheme. Setting the
+// ID therefore needs a native build, not an update. Android needs no plugin:
+// Google matches the app by package name and signing-key SHA-1.
+const GOOGLE_SIGN_IN_PLUGIN = "@react-native-google-signin/google-signin";
+const GOOGLE_CLIENT_ID_SUFFIX = ".apps.googleusercontent.com";
+
+function googleIosUrlScheme(iosClientId) {
+  const id = typeof iosClientId === "string" ? iosClientId.trim() : "";
+  if (!id) return undefined;
+  if (!id.endsWith(GOOGLE_CLIENT_ID_SUFFIX)) {
+    throw new Error(
+      `apps/mobile/app.json extra.googleSignIn.iosClientId must be a Google OAuth iOS client ID ending in ${GOOGLE_CLIENT_ID_SUFFIX}.`,
+    );
+  }
+  return `com.googleusercontent.apps.${id.slice(0, -GOOGLE_CLIENT_ID_SUFFIX.length)}`;
+}
+
+function withGoogleSignInPlugin(plugins, extra) {
+  const iosUrlScheme = googleIosUrlScheme(extra?.googleSignIn?.iosClientId);
+  if (!iosUrlScheme) return plugins;
+  return [
+    ...(Array.isArray(plugins) ? plugins : []),
+    [GOOGLE_SIGN_IN_PLUGIN, { iosUrlScheme }],
+  ];
+}
+
 function applyMobileConfig(
   config,
   { env = process.env, existsSync = fs.existsSync } = {},
@@ -451,6 +483,7 @@ function applyMobileConfig(
   const gitSha = env.EAS_BUILD_GIT_COMMIT_HASH;
   return {
     ...config,
+    plugins: withGoogleSignInPlugin(config.plugins, config.extra),
     extra: {
       ...(config.extra && typeof config.extra === "object" ? config.extra : {}),
       ...(typeof gitSha === "string" && gitSha.trim()
@@ -480,6 +513,7 @@ applyExpoConfig.assertEasSupabaseClientKey = assertEasSupabaseClientKey;
 applyExpoConfig.assertProductionAppUrl = assertProductionAppUrl;
 applyExpoConfig.assertProductionAskDisabled = assertProductionAskDisabled;
 applyExpoConfig.isAskEnabledValue = isAskEnabledValue;
+applyExpoConfig.googleIosUrlScheme = googleIosUrlScheme;
 applyExpoConfig.applyMobileConfig = applyMobileConfig;
 applyExpoConfig.PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR =
   PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR;

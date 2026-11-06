@@ -4,9 +4,10 @@
  * [`spec/ui/mobile/README.md` § Run paths: Expo Go vs EAS](../../../spec/ui/mobile/README.md#run-paths-expo-go-vs-eas)
  * requires a package that does not run in Go to sit behind a runtime check with
  * a graceful fallback, so importing a screen never crashes Go. Four modules
- * implement that rule — `lib/keyboard.tsx`, `lib/apple-auth.ts`,
+ * implemented that rule — `lib/keyboard.tsx`, `lib/apple-auth.ts`,
  * `lib/notifications/push.ts`, `lib/payments/stripe.ts` — and until this file
- * existed each carried its own copy of the machinery.
+ * existed each carried its own copy of the machinery. `lib/google-auth.ts`
+ * (2026-11-06, #2126) is the fifth, and was built on this factory.
  *
  * What was identical across all four, and is now only here: the tri-state
  * cache, the loader indirection with its `set…LoaderForTests` seam, and the

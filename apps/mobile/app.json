@@ -124,6 +124,11 @@
     },
     "extra": {
       "router": {},
+      "googleSignIn": {
+        "webClientId": "661618060468-nefnjm72f4at1hfrl48bf4fjb2l18uel.apps.googleusercontent.com",
+        "iosClientId": "",
+        "androidClientId": ""
+      },
       "eas": {
         "projectId": "4ba05e35-7d91-4bb4-9597-be754127de95"
       }
