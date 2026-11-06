@@ -14,8 +14,9 @@ import {
  * the list is narrowed and holds `MAX_BACKWORK_ZIP_FILES` or fewer, and the
  * API refuses more ids than that. The size cap can only be checked here, as
  * the files come in, because nothing records a file's size at upload: a
- * file's `Content-Length` is checked before its body is read, so the zip
- * stops before it goes past `MAX_BACKWORK_ZIP_BYTES`, not after.
+ * file's `Content-Length` is checked before its body is read, and the body is
+ * counted as it streams in, so the zip stops before it holds more than
+ * `MAX_BACKWORK_ZIP_BYTES`, not after.
  *
  * Entries are stored, not deflated: the files are PDFs and Office documents,
  * which are compressed already, and storing keeps a 250 MB zip quick.
@@ -46,21 +47,23 @@ export type ZipSource = {
 export function zipEntryNames(sources: readonly ZipSource[]): string[] {
   const taken = new Set<string>();
   return sources.map(({ title, storagePath }) => {
-    const ext = fileExtension(storagePath);
+    const ext = fileExtension(storagePath.slice(storagePath.lastIndexOf("/") + 1));
     const suffix = ext ? `.${ext}` : "";
     let base = title
       // Windows forbids these; `/` and `\` would make folders.
       // eslint-disable-next-line no-control-regex -- the control characters are the point
       .replace(/[<>:"/\\|?*\u0000-\u001f]/g, " ")
       .replace(/\s+/g, " ")
+      .slice(0, 120)
       .trim()
       // Windows also drops a trailing dot or space.
-      .replace(/[. ]+$/, "")
-      .slice(0, 120);
+      .replace(/[. ]+$/, "");
     if (suffix && base.toLowerCase().endsWith(suffix)) {
       base = base.slice(0, -suffix.length);
     }
     if (!base) base = "Untitled";
+    // Device names Windows won't create a file under, whatever the extension.
+    if (/^(con|prn|aux|nul|com\d|lpt\d)$/i.test(base)) base = `${base} file`;
     let name = `${base}${suffix}`;
     for (let n = 2; taken.has(name.toLowerCase()); n += 1) {
       name = `${base} (${n})${suffix}`;
@@ -152,12 +155,33 @@ export async function buildBackworkZip(
       void response.body?.cancel();
       throw new ZipTooLargeError();
     }
+    if (!response.body) return null;
+    // Counted as it streams, for a response that declares no length.
+    const reader = response.body.getReader();
+    const parts: Uint8Array[] = [];
+    let size = 0;
     try {
-      return new Uint8Array(await response.arrayBuffer());
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (total + size > maxBytes) {
+          void reader.cancel();
+          throw new ZipTooLargeError();
+        }
+        parts.push(value);
+      }
     } catch (error) {
-      if (signal?.aborted) throw error;
+      if (error instanceof ZipTooLargeError || signal?.aborted) throw error;
       return null;
     }
+    const data = new Uint8Array(size);
+    let offset = 0;
+    for (const part of parts) {
+      data.set(part, offset);
+      offset += part.byteLength;
+    }
+    return data;
   }
 }
 

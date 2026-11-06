@@ -178,15 +178,21 @@ export class MergeBackworkTaxonomyResponseDto {
 }
 
 /**
- * One comma-separated value, or the key repeated: both arrive as a list. A
- * part that isn't a string passes through for `@IsUUID` to refuse.
+ * One comma-separated value, or the key repeated: both arrive as a list.
+ * Lowercased, because Postgres answers with lowercase ids and the service
+ * matches them back by string, and de-duplicated, so 50 copies of one id
+ * don't mint 50 links. A part that isn't a string passes through for
+ * `@IsUUID` to refuse.
  */
 function splitIdList(value: unknown): unknown[] {
   const parts: unknown[] = Array.isArray(value) ? value : [value];
-  return parts
+  const ids = parts
     .flatMap((part) => (typeof part === 'string' ? part.split(',') : [part]))
-    .map((part) => (typeof part === 'string' ? part.trim() : part))
+    .map((part) =>
+      typeof part === 'string' ? part.trim().toLowerCase() : part,
+    )
     .filter((part) => part !== '');
+  return [...new Set(ids)];
 }
 
 export class BackworkDownloadUrlsQueryDto {

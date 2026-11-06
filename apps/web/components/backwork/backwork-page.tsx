@@ -653,15 +653,14 @@ export function BackworkPage() {
             <IconButton
               type="button"
               variant="secondary"
+              // The reason it's off goes in the label, not only the hover
+              // title, so a touch or screen-reader member hears it too.
               label={
                 zipping
                   ? `Zipping ${zipping.done} of ${zipping.total} files`
-                  : `Download ${count} file${count === 1 ? "" : "s"} as a zip`
-              }
-              title={
-                count > MAX_BACKWORK_ZIP_FILES
-                  ? `Narrow the list to ${MAX_BACKWORK_ZIP_FILES} files or fewer to zip it.`
-                  : undefined
+                  : count > MAX_BACKWORK_ZIP_FILES
+                    ? `Narrow the list to ${MAX_BACKWORK_ZIP_FILES} files or fewer to download a zip`
+                    : `Download ${count} file${count === 1 ? "" : "s"} as a zip`
               }
               disabled={zipping !== null || count > MAX_BACKWORK_ZIP_FILES}
               onClick={() => void downloadZip(results.map((result) => result.item))}

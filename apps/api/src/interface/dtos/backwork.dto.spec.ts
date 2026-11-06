@@ -28,6 +28,12 @@ describe('BackworkDownloadUrlsQueryDto', () => {
     ).resolves.toMatchObject({ ids: [id(1), id(2)] });
   });
 
+  it('lowercases and drops repeats', async () => {
+    await expect(
+      transform({ ids: `${id(1).toUpperCase()},${id(1)},${id(2)}` }),
+    ).resolves.toMatchObject({ ids: [id(1), id(2)] });
+  });
+
   it('takes the key repeated', async () => {
     await expect(transform({ ids: [id(1), id(2)] })).resolves.toMatchObject({
       ids: [id(1), id(2)],

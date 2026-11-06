@@ -32,8 +32,10 @@ describe("zipEntryNames", () => {
       zipEntryNames([
         { title: 'CS/1200: "Final"?.', storagePath: "c/a.pdf" },
         { title: "  ", storagePath: "c/b.pdf" },
+        { title: "CON", storagePath: "c/c.pdf" },
+        { title: "Scan", storagePath: "chapter.v1/no-extension" },
       ]),
-    ).toEqual(["CS 1200 Final.pdf", "Untitled.pdf"]);
+    ).toEqual(["CS 1200 Final.pdf", "Untitled.pdf", "CON file.pdf", "Scan"]);
   });
 });
 

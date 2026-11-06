@@ -1558,9 +1558,10 @@ describe("BackworkPage zip download", () => {
     render(<BackworkPage />);
     await user.type(screen.getByLabelText("Search backwork"), "homework");
 
-    const button = await screen.findByRole("button", { name: /as a zip/ });
+    const button = await screen.findByRole("button", {
+      name: "Narrow the list to 50 files or fewer to download a zip",
+    });
     expect(button).toBeDisabled();
-    expect(button).toHaveAttribute("title", expect.stringContaining("50 files or fewer"));
   });
 
   it("says when the files are too big to zip", async () => {
