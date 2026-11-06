@@ -23,7 +23,7 @@
     "@repo/typescript-config": "*",
     "@tailwindcss/postcss": "^4.3.4",
     "@types/node": "^26.6.6",
-    "postcss": "^8.5.6",
+    "postcss": "^8.5.32",
     "tailwindcss": "^4.3.3",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vitest": "^4.1.10"
