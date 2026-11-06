@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { can, canAny } from "@repo/validation";
+import type { UnsetFeatureKey } from "@repo/hooks";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "@/components/layout/nav-config";
 
@@ -32,6 +33,8 @@ type Props = {
    * initial load. Once that read has failed the gate says every module is off.
    */
   isModuleEnabled?: (moduleKey: string) => boolean;
+  /** The setup gate, from `useHiddenUnsetFeatures` (see `isNavItemVisible`). */
+  hiddenFeatures?: ReadonlySet<UnsetFeatureKey>;
   /**
    * Act in place instead of navigating. The Chat row on `/chat`'s module face
    * uses it to slide the channel list back (`nav-face.tsx`): its route is
@@ -65,23 +68,34 @@ function isGranted(
  * question before it draws a section's heading: a heading is a promise that
  * something the viewer can open sits under it.
  *
- * Both gates are deliberately fail-open while their source is unresolved:
+ * The permission and module gates are deliberately fail-open while their source is unresolved:
  * `permissions` is undefined until the query settles, and `isModuleEnabled` is
  * undefined until the current-chapter read settles. Showing a link one render early is
  * harmless — the route itself is guarded server-side — whereas hiding one is a
  * visible flash of nav items disappearing. (`<Can>` fails closed instead,
  * because it guards actions rather than signposts.)
+ *
+ * `hiddenFeatures` is the third gate, the setup gate, from
+ * `useHiddenUnsetFeatures`: the features nobody has set up that this viewer
+ * can't set up from the feature's own page. It hides nothing while
+ * permissions or the module gate are unresolved, or while a list's read has
+ * no answer; it hides on a list that answers "none", or on that list's module
+ * being off.
  */
 export function isNavItemVisible(
   item: NavItem,
   permissions: readonly string[] | null | undefined,
   isModuleEnabled?: (moduleKey: string) => boolean,
+  hiddenFeatures?: ReadonlySet<UnsetFeatureKey>,
 ): boolean {
   const resolved = permissions !== undefined && permissions !== null;
   if (resolved && !isGranted(item, permissions)) {
     return false;
   }
   if (item.module && isModuleEnabled && !isModuleEnabled(item.module)) {
+    return false;
+  }
+  if (item.hiddenUntilSetUp && hiddenFeatures?.has(item.hiddenUntilSetUp)) {
     return false;
   }
   if (
@@ -113,11 +127,12 @@ export function ProtectedNavItem({
   onNavigate,
   focusClassName,
   isModuleEnabled,
+  hiddenFeatures,
   collapsed = false,
   onSelect,
   trailing,
 }: Props) {
-  if (!isNavItemVisible(item, permissions, isModuleEnabled)) {
+  if (!isNavItemVisible(item, permissions, isModuleEnabled, hiddenFeatures)) {
     return null;
   }
   const isActive = current !== undefined;

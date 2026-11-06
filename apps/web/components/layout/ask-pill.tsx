@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useHiddenUnsetFeatures, useMyPermissions } from "@repo/hooks";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import { Button } from "@/components/ui/button";
 import {
@@ -61,7 +62,13 @@ export function AskPill({ className }: { className?: string }) {
   // like every other module gate on this surface, and read from the same
   // member-readable source the nav uses (#1982).
   const isModuleEnabled = useChapterModuleGate();
-  const documentsEnabled = !isModuleEnabled || isModuleEnabled("documents");
+  // Nor while nobody has uploaded anything, for a member who can't: the nav
+  // hides the row then too (`spec/product/modules.md` § Not-set-up features).
+  const permissions = useMyPermissions().data?.permissions;
+  const hiddenFeatures = useHiddenUnsetFeatures(permissions, isModuleEnabled);
+  const documentsEnabled =
+    (!isModuleEnabled || isModuleEnabled("documents")) &&
+    !hiddenFeatures.has("documents");
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

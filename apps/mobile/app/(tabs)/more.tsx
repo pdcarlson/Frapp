@@ -2,10 +2,13 @@ import { useMemo } from "react";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text } from "react-native";
 import {
+  useCurrentChapter,
   useCurrentUser,
   useEvents,
+  useHiddenUnsetFeatures,
   useInvoices,
   useListChapters,
+  useMyPermissions,
   useMyPoints,
   useNowDate,
   usePermissionList,
@@ -13,7 +16,7 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { can, isBetaOffModule } from "@repo/validation";
+import { can, isBetaOffModule, isModuleEnabled } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import {
@@ -81,6 +84,17 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * permissions only), so it reads "Admin", and the profile card shows no role
  * chip for the same reason.
  *
+ * ## Rows nobody has set up
+ *
+ * Study hours with no active study zone leaves the list for everyone, since
+ * zones are made in the web app and the screen could only say so. Documents
+ * with nothing in it leaves it for a viewer who can't upload; an officer who
+ * can keeps the row, because the upload is on that screen
+ * (`useHiddenUnsetFeatures` in `@repo/hooks`; `spec/product/modules.md`
+ * § Not-set-up features). Nothing hides until the viewer's permissions, the
+ * chapter's modules and the list have all answered, so a row never vanishes
+ * on a slow or failed read.
+ *
  * ## Trailing statuses
  *
  * Canvas draws "4.0 / 6.0" on Study, but no weekly requirement is modelled
@@ -118,6 +132,22 @@ export default function MoreScreen() {
   // grant is the wildcard `*`, so a membership test would hide the Admin
   // section from exactly the people who need it.
   const canHost = can("events:update", permissions);
+
+  // The setup gate needs to tell "still loading" from "holds nothing", which
+  // `usePermissionList` (`[]` while loading) can't, so it reads the query.
+  const permissionsQuery = useMyPermissions();
+  const chapter = useCurrentChapter().data;
+  const moduleGate = useMemo(
+    () =>
+      chapter
+        ? (key: string) => isModuleEnabled(chapter.enabled_modules, key)
+        : undefined,
+    [chapter],
+  );
+  const hiddenFeatures = useHiddenUnsetFeatures(
+    permissionsQuery.data?.permissions,
+    moduleGate,
+  );
 
   // s22 takes an `eventId`, so the row resolves one rather than leading
   // nowhere. `selectEventRows` already returns upcoming-plus-still-checkable-in,
@@ -181,13 +211,15 @@ export default function MoreScreen() {
       />
 
       <ListSection>
-        <ListRow
-          label="Study hours"
-          leading={<StudyGlyph color={glyphColor} />}
-          value={studyThisWeek}
-          accessibilityHint="Opens study hours and session tracking."
-          onPress={() => router.push("/study")}
-        />
+        {hiddenFeatures.has("study") ? null : (
+          <ListRow
+            label="Study hours"
+            leading={<StudyGlyph color={glyphColor} />}
+            value={studyThisWeek}
+            accessibilityHint="Opens study hours and session tracking."
+            onPress={() => router.push("/study")}
+          />
+        )}
         <ListRow
           label="Service hours"
           leading={<ServiceGlyph color={glyphColor} />}
@@ -218,12 +250,14 @@ export default function MoreScreen() {
             onPress={() => router.push("/dues")}
           />
         ) : null}
-        <ListRow
-          label="Documents"
-          leading={<DocumentsGlyph color={glyphColor} />}
-          accessibilityHint="Opens the chapter's documents."
-          onPress={() => router.push("/documents")}
-        />
+        {hiddenFeatures.has("documents") ? null : (
+          <ListRow
+            label="Documents"
+            leading={<DocumentsGlyph color={glyphColor} />}
+            accessibilityHint="Opens the chapter's documents."
+            onPress={() => router.push("/documents")}
+          />
+        )}
         <ListRow
           label="Directory"
           leading={<DirectoryGlyph color={glyphColor} />}
