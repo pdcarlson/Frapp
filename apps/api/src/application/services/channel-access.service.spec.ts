@@ -264,21 +264,25 @@ describe('ChannelAccessService', () => {
         user_id: 'president',
         permissions: new Set(['*']),
         top_role_order: 0,
+        top_role: { id: 'r-pres', name: 'President' },
       },
       {
         user_id: 'member-of-private',
         permissions: new Set<string>(),
         top_role_order: 4,
+        top_role: { id: 'r-mem', name: 'Member' },
       },
       {
         user_id: 'secret-holder',
         permissions: new Set(['secret:view']),
         top_role_order: 2,
+        top_role: { id: 'r-sec', name: 'Secret' },
       },
       {
         user_id: 'no-role',
         permissions: new Set<string>(),
         top_role_order: null,
+        top_role: null,
       },
     ];
 
@@ -298,10 +302,25 @@ describe('ChannelAccessService', () => {
       );
 
       expect(result).toEqual([
-        { user_id: 'president', role_rank: 0 },
-        { user_id: 'member-of-private', role_rank: 4 },
-        { user_id: 'secret-holder', role_rank: 2 },
-        { user_id: 'no-role', role_rank: null },
+        {
+          user_id: 'president',
+          role_rank: 0,
+          role_id: 'r-pres',
+          role_name: 'President',
+        },
+        {
+          user_id: 'member-of-private',
+          role_rank: 4,
+          role_id: 'r-mem',
+          role_name: 'Member',
+        },
+        {
+          user_id: 'secret-holder',
+          role_rank: 2,
+          role_id: 'r-sec',
+          role_name: 'Secret',
+        },
+        { user_id: 'no-role', role_rank: null, role_id: null, role_name: null },
       ]);
       expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledWith('chap-1');
     });
@@ -335,7 +354,14 @@ describe('ChannelAccessService', () => {
         'user-1',
       );
 
-      expect(result).toEqual([{ user_id: 'member-of-private', role_rank: 4 }]);
+      expect(result).toEqual([
+        {
+          user_id: 'member-of-private',
+          role_rank: 4,
+          role_id: 'r-mem',
+          role_name: 'Member',
+        },
+      ]);
     });
 
     it('refuses a caller who cannot read the channel, before any roster read', async () => {
