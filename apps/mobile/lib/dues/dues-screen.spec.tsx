@@ -741,7 +741,7 @@ describe("Dues after a captured payment", () => {
 
     invoices = [];
     rerender(tree);
-    expect(screenText(tree)).toContain("No dues yet");
+    expect(screenText(tree)).toContain("You have no invoices.");
     expect(screenText(tree)).toContain(droppedCopy("Fall dues"));
   });
 

@@ -17,11 +17,8 @@ import { HistoryRow, HistoryRowsSkeleton } from "@/components/history-row";
 import { SectionHeader } from "@/components/list-section";
 import { LogHoursSheet } from "@/components/service-hours/log-hours-sheet";
 import { StatusChip } from "@/components/status-chip";
-import {
-  EmptyState,
-  ErrorState,
-  SkeletonRegion,
-} from "@/components/state-block";
+import { InlineNote } from "@/components/inline-note";
+import { ErrorState, SkeletonRegion } from "@/components/state-block";
 import {
   selectServiceEntryRows,
   serviceStatusHue,
@@ -130,11 +127,13 @@ export default function ServiceHoursScreen() {
     }
     if (rows.length === 0) {
       return (
-        <EmptyState
-          glyph="+"
-          title="No service hours yet"
-          body="Log a shift and it goes to an officer for approval."
-        />
+        // Empty-states plan rule 7: one line, pointing a member who can log
+        // to the screen's + (writing.md § Service Hours).
+        <InlineNote>
+          {canLog
+            ? "No service logged yet. Tap + to log your first hours."
+            : "No service logged yet."}
+        </InlineNote>
       );
     }
     return (

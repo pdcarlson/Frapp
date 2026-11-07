@@ -13,7 +13,6 @@ import { useRouter } from "expo-router";
 import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import {
-  EmptyState,
   ErrorState,
   NoChapterState,
   SkeletonBlock,
@@ -31,8 +30,7 @@ import {
   FloatingCreateButton,
 } from "@/components/floating-create-button";
 import { gutterBleed, usePressFeedback } from "@/components/list-section";
-import { DirectoryGlyph } from "@/components/more/more-glyphs";
-import { SearchGlyph } from "@/components/search-glyph";
+import { InlineNote } from "@/components/inline-note";
 import { screenTitleStyle } from "@/components/screen-shell";
 import {
   ThemedRefreshControl,
@@ -277,32 +275,36 @@ export default function DirectoryScreen() {
         />
       );
     }
+    // Empty-states plan rule 7: one line where the rows would be, with the
+    // way back out of a search or a filter as its link (writing.md § Members).
     if (isSearching) {
       return (
-        <EmptyState
-          glyph={SearchGlyph}
-          title="No matches"
-          body={`Nobody in this chapter matches “${deferredQuery}”.`}
-        />
+        <InlineNote
+          action={{ label: "Clear search", onPress: () => setQuery("") }}
+        >
+          {`Nobody matches “${deferredQuery}”.`}
+        </InlineNote>
       );
     }
-    // writing.md § Alumni's no-results row, with "filter" for its "field":
-    // the fields are behind a chip named Filters here.
     if (tab === "alumni" && hasAlumniFilters) {
       return (
-        <EmptyState
-          glyph={SearchGlyph}
-          title="No alumni match the filters"
-          body="Clear a filter to see more."
-        />
+        <InlineNote
+          action={{
+            label: "Clear filters",
+            onPress: () =>
+              setAlumniFilterInputs({ gradYear: "", city: "", company: "" }),
+          }}
+        >
+          No alumni match these filters.
+        </InlineNote>
       );
     }
-    // A title alone: there is nothing to do about an empty roster from here.
     return (
-      <EmptyState
-        glyph={DirectoryGlyph}
-        title={tab === "actives" ? "No actives yet" : "No alumni yet"}
-      />
+      <InlineNote>
+        {tab === "actives"
+          ? "No actives yet."
+          : "No alumni yet. Graduated members appear here."}
+      </InlineNote>
     );
   }
 

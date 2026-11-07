@@ -457,7 +457,7 @@ states what a reviewer will actually be shown.
   > and against the `--reviewer` seed: each one has the reviewer's own rows, since
   > Service hours, Study hours and Dues show the viewer's history only. **Dues is left
   > out** because the seed gives the reviewer no invoices on purpose (§ Seed the
-  > reviewer's chapter), so it reads "No dues yet". The web-only list is § Description's
+  > reviewer's chapter), so it reads "You have no invoices.". The web-only list is § Description's
   > own sentence plus study zones. **Host check-in is deliberately left out too.** Its QR code needs `EVENT_CHECK_IN_TOKEN_SECRET` on the
   > production API; unset, the screen says the feature is not configured
   > ([`ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md)). Staging
@@ -500,7 +500,7 @@ states what a reviewer will actually be shown.
   > **Only an open invoice produces it.** `target` comes from `selectNextDueInvoice`,
   > which reads open rows only, so a reviewer with none — or with PAID ones only — gets
   > no Pay control at all and a card reading "You're all paid up". A reviewer with no
-  > invoices whatsoever gets the "No dues yet" empty state.
+  > invoices whatsoever gets the "You have no invoices." line.
   >
   > **Where the tab is not silent about Stripe.** Once the reviewer's *own* ledger has at
   > least one row and it has loaded, `dues.tsx` footers "Payments run through your

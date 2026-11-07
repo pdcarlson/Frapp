@@ -25,13 +25,8 @@ import {
   ListSection,
   SectionHeader,
 } from "@/components/list-section";
-import { DocumentsGlyph } from "@/components/more/more-glyphs";
-import { SearchGlyph } from "@/components/search-glyph";
-import {
-  EmptyState,
-  ErrorState,
-  SkeletonRegion,
-} from "@/components/state-block";
+import { InlineNote } from "@/components/inline-note";
+import { ErrorState, SkeletonRegion } from "@/components/state-block";
 import {
   selectDocumentFolders,
   selectDocumentRows,
@@ -245,22 +240,34 @@ export default function DocumentsScreen() {
       );
     }
     if (rows.length === 0 && !pendingRow) {
+      // Empty-states plan rule 7: one line where the rows would be. A search
+      // that matched nothing names the query and offers the way out: inside a
+      // folder chip, widening to every folder (the search stays); otherwise
+      // clearing it. Uploading lives on the screen's + (writing.md § Chapter
+      // Documents).
+      if (deferredSearch) {
+        return folder ? (
+          <InlineNote
+            action={{
+              label: "Search all files",
+              onPress: () => setFolder(null),
+            }}
+          >
+            {`Nothing in ${folder} matches “${deferredSearch}”.`}
+          </InlineNote>
+        ) : (
+          <InlineNote
+            action={{ label: "Clear search", onPress: () => setSearch("") }}
+          >
+            {`No documents match “${deferredSearch}”.`}
+          </InlineNote>
+        );
+      }
       return (
-        // A title alone when the library or folder is empty: the screen is
-        // the documents list, and a line saying so told the member nothing.
-        // A search that matched nothing names the query, and the folder it
-        // searched in when one is picked, since the search stays inside it.
-        <EmptyState
-          glyph={deferredSearch ? SearchGlyph : DocumentsGlyph}
-          title={deferredSearch ? "No matches" : "Nothing filed here yet"}
-          body={
-            !deferredSearch
-              ? undefined
-              : folder
-                ? `Nothing in ${folder} matches “${deferredSearch}”.`
-                : `No document title matches “${deferredSearch}”.`
-          }
-        />
+        <InlineNote>
+          {folder ? `Nothing in ${folder} yet.` : "No documents yet."}
+          {canUpload ? " Tap + to upload one." : null}
+        </InlineNote>
       );
     }
     return (

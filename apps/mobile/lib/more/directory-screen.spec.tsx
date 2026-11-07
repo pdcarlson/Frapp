@@ -124,9 +124,7 @@ import DirectoryScreen, {
   MemberRow,
 } from "@/app/(tabs)/directory";
 import { signetDarkTokens } from "@repo/theme/signet";
-import { DirectoryGlyph } from "@/components/more/more-glyphs";
-import { SearchGlyph } from "@/components/search-glyph";
-import { EmptyState } from "@/components/state-block";
+import { InlineNote } from "@/components/inline-note";
 import {
   FilterChips as FilterChipsStandIn,
   SearchField as SearchFieldStandIn,
@@ -295,26 +293,30 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
     expect(listed(tree)).toEqual(["Charles Whitmore III"]);
   });
 
-  it("draws the More hub's glyphs on its empty states, and doesn't narrate", () => {
+  it("says an empty list or a filter miss in one line, with Clear filters (rule 7)", () => {
     const tree = render();
     const body = () =>
       list(tree).props.ListEmptyComponent as React.ReactElement<{
-        children: React.ReactElement<Record<string, unknown>>;
+        children: React.ReactElement<{
+          children: React.ReactNode;
+          action?: { label: string; onPress: () => void };
+        }>;
       }>;
-    expect(body().props.children.type).toBe(EmptyState);
-    expect(body().props.children.props).toEqual({
-      glyph: DirectoryGlyph,
-      title: "No actives yet",
-    });
+    expect(body().props.children.type).toBe(InlineNote);
+    expect(body().props.children.props.children).toBe("No actives yet.");
 
     act(() => chips(tree).onSelect("alumni"));
     act(() => chips(tree).trailing!.props.onPress());
     act(() => alumniField(tree, "Filter alumni by city")!.onChangeText("Troy"));
-    expect(body().props.children.props).toEqual({
-      glyph: SearchGlyph,
-      title: "No alumni match the filters",
-      body: "Clear a filter to see more.",
-    });
+    expect(body().props.children.props.children).toBe(
+      "No alumni match these filters.",
+    );
+    expect(body().props.children.props.action!.label).toBe("Clear filters");
+
+    act(() => body().props.children.props.action!.onPress());
+    expect(body().props.children.props.children).toBe(
+      "No alumni yet. Graduated members appear here.",
+    );
   });
 
   async function pull(tree: ReturnType<typeof render>) {
