@@ -83,6 +83,11 @@ export interface ParsedMessageMarkdown {
    * says which blocks, for both clients).
    */
   trailingOnOwnLine: boolean;
+  /**
+   * The body opens with a code block, a list or a quote, so compact density's
+   * lead takes a line of its own above it (`MessageBodyLayout.startsOnOwnLine`).
+   */
+  leadOnOwnLine: boolean;
 }
 
 /**
@@ -136,6 +141,7 @@ function rehypeTextFlow({
       source,
     });
     result.trailingOnOwnLine = layout.endsOnOwnLine;
+    result.leadOnOwnLine = layout.startsOnOwnLine;
     root.children = layout.children;
     result.links = collectLinks(root);
     result.empty = textOf(root).trim() === "";
@@ -158,6 +164,7 @@ export function parseMessageMarkdown(content: string): ParsedMessageMarkdown {
     links: [],
     empty: false,
     trailingOnOwnLine: false,
+    leadOnOwnLine: false,
   };
   const body = Markdown({
     children: flatten ? "" : content,
@@ -309,12 +316,19 @@ const COMPONENTS: Components = {
 export function MessageMarkdown({
   parsed,
   style,
+  lead,
   trailing,
   onLongPress,
 }: {
   /** `parseMessageMarkdown(message.content)`, memoized by the caller. */
   parsed: ParsedMessageMarkdown;
   style: StyleProp<TextStyle>;
+  /**
+   * Compact density's time and name, nested ahead of the body so its first
+   * line starts with them and the rest wraps back under (`components.md` §11
+   * § Density).
+   */
+  lead?: ReactNode;
   /**
    * `(edited)` and Pinned, nested after the body so they sit on its last line,
    * or on a line of their own after a last block that isn't a paragraph
@@ -345,6 +359,8 @@ export function MessageMarkdown({
   return (
     <MarkdownContext.Provider value={context}>
       <Text style={style}>
+        {lead}
+        {lead && parsed.leadOnOwnLine ? "\n" : null}
         {parsed.body}
         {trailing && parsed.trailingOnOwnLine ? "\n" : null}
         {trailing}
