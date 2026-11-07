@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useIsFocused, useRouter } from "expo-router";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   arrangeChannelSidebar,
@@ -39,6 +45,16 @@ import {
   useSidebarPreferencesRefetch,
   useTasks,
   useViewerUserId,
+  channelRowActions,
+  deleteChannelConfirmTitle,
+  DELETE_CHANNEL_CONFIRM_BODY,
+  DELETE_CHANNEL_LABEL,
+  useDeleteChannel,
+  useMarkChannelRead,
+  usePermissionList,
+  useSetChannelNotificationLevel,
+  type ChannelRowActionKey,
+  type ChatNotificationLevel,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChapterMark } from "@/components/chapter-mark";
@@ -82,7 +98,12 @@ import {
   readLastChannel,
   settleChatLaunch,
 } from "@/lib/chat/last-channel";
-import { openChannelRowActions } from "@/lib/chat/channel-row-actions";
+import {
+  ChannelActionsMenu,
+  type ChannelActionsMenuTarget,
+} from "@/components/chat/channel-actions-menu";
+import { useConnection } from "@/lib/connection/use-connection";
+import { pressHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -109,6 +130,7 @@ export default function ChatHomeScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
+  const { height: windowHeight } = useWindowDimensions();
   // s17 is a sheet hosted by its parent screen, not a route
   // (`spec/ui/mobile/patterns.md` § Bottom sheets), so this screen owns the
   // modal and the ✦ pill only presents it — the arrangement `tasks.tsx` uses
@@ -174,6 +196,73 @@ export default function ChatHomeScreen() {
     useSetSidebarSectionCollapsed(sidebarWriteOptions);
   const { mutate: setSidebarFilter } = useSetSidebarFilter(sidebarWriteOptions);
   const notificationPrefsQuery = useChannelNotificationPreferences();
+
+  // A row's long-press menu (owner, 2026-11-06): web's right-click actions in
+  // our own glass menu. Which rows show is `channelRowActions`, scoped to the
+  // member's permissions, so Delete channel needs `channels:manage`.
+  const permissions = usePermissionList();
+  const markRead = useMarkChannelRead();
+  const setNotificationLevel = useSetChannelNotificationLevel();
+  const deleteChannel = useDeleteChannel();
+  // A level pick is a queueless write, so the menu locks it offline the way
+  // the thread header's level control does (connection-state.md).
+  const { writeBlockedReason } = useConnection();
+  const [menuTarget, setMenuTarget] = useState<
+    | (ChannelActionsMenuTarget & {
+        onTogglePin: () => void;
+        onHide?: () => void;
+      })
+    | null
+  >(null);
+  const closeMenu = useCallback(() => setMenuTarget(null), []);
+  const levelFor = useCallback(
+    (channelId: string): ChatNotificationLevel | undefined =>
+      notificationPrefsQuery.data?.find((row) => row.channel_id === channelId)
+        ?.level,
+    [notificationPrefsQuery.data],
+  );
+  function runMenuAction(key: ChannelRowActionKey) {
+    const target = menuTarget;
+    if (!target) return;
+    switch (key) {
+      case "mark-read":
+        markRead.mutate(target.channelId);
+        return;
+      case "toggle-pin":
+        target.onTogglePin();
+        return;
+      case "hide":
+        target.onHide?.();
+        return;
+      case "delete":
+        Alert.alert(
+          deleteChannelConfirmTitle(target.name),
+          DELETE_CHANNEL_CONFIRM_BODY,
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: DELETE_CHANNEL_LABEL,
+              style: "destructive",
+              onPress: () => {
+                deleteChannel
+                  .mutateAsync(target.channelId)
+                  .catch(() =>
+                    Alert.alert(
+                      "Couldn't delete the channel",
+                      "Nothing changed. Check your connection and try again.",
+                    ),
+                  );
+              },
+            },
+          ],
+        );
+        return;
+      default:
+        // Copy link and Edit channel are web's (the surface below leaves
+        // them out), and Notifications opens in the menu itself.
+        return;
+    }
+  }
   // Everything the screen draws: rows, categories, badges, the agenda, mute
   // state, the arrangement, the names a DM row is titled with, the viewer a
   // DM title subtracts, and the header bell's inbox.
@@ -324,14 +413,29 @@ export default function ChatHomeScreen() {
         onPress={() => openChannel(channel.id)}
         onHide={hide}
         onTogglePin={togglePin}
-        onLongPress={() =>
-          openChannelRowActions({
+        onLongPress={(event) => {
+          pressHaptic();
+          setMenuTarget({
+            channelId: channel.id,
             name,
+            // A screen reader's "Channel actions" has no press point, so the
+            // menu opens a third of the way down.
+            pageY: event?.nativeEvent.pageY ?? windowHeight / 3,
             pinned,
+            level: levelFor(channel.id),
+            actions: channelRowActions({
+              channel,
+              unread:
+                (counts?.unreadCount ?? 0) > 0 ||
+                (counts?.mentionCount ?? 0) > 0,
+              pinned,
+              permissions,
+              surface: { copyLink: false, edit: false },
+            }),
             onTogglePin: togglePin,
             onHide: hide,
-          })
-        }
+          });
+        }}
       />
     );
   }
@@ -544,6 +648,30 @@ export default function ChatHomeScreen() {
                       unreadCount={0}
                       mentionCount={0}
                       onPress={() => reopenHidden(channel)}
+                      // Hidden, a DM offers no pin and no hide, so its menu
+                      // holds Notifications, as web's right-click does.
+                      onLongPress={(event) => {
+                        pressHaptic();
+                        setMenuTarget({
+                          channelId: channel.id,
+                          name: displayChannelName(
+                            channel,
+                            viewerId,
+                            memberNames,
+                          ),
+                          pageY: event?.nativeEvent.pageY ?? windowHeight / 3,
+                          pinned: false,
+                          level: levelFor(channel.id),
+                          actions: channelRowActions({
+                            channel: { ...channel, hidden: true },
+                            unread: false,
+                            pinned: null,
+                            permissions,
+                            surface: { copyLink: false, edit: false },
+                          }),
+                          onTogglePin: () => {},
+                        });
+                      }}
                     />
                   ))
                 : null}
@@ -553,6 +681,25 @@ export default function ChatHomeScreen() {
       )}
 
       <AskSheet ref={askSheetRef} />
+      <ChannelActionsMenu
+        target={menuTarget}
+        onClose={closeMenu}
+        onAction={(key) => runMenuAction(key)}
+        writeBlockedReason={writeBlockedReason}
+        onSetLevel={(channelId, level) => {
+          // Per call, not `mutate`'s per-call `onError`: TanStack runs that
+          // only for the latest call, so a quick second change would swallow
+          // the first one's failure.
+          setNotificationLevel
+            .mutateAsync({ channelId, level })
+            .catch(() =>
+              Alert.alert(
+                "Couldn't change notifications",
+                "Nothing changed. Check your connection and try again.",
+              ),
+            );
+        }}
+      />
     </ScreenShell>
   );
 }

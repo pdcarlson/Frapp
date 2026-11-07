@@ -68,6 +68,28 @@ function sectionLabels(container: HTMLElement): string[] {
   );
 }
 
+/**
+ * Right-click a row and return its menu's items. The row's only controls live
+ * in this menu (owner, 2026-11-06), so this is how a test reaches them.
+ */
+async function openMenu(title: string): Promise<HTMLElement[]> {
+  // Close whatever menu an earlier call opened.
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  const row = screen
+    .getAllByRole("button")
+    .find((b) => b.querySelector("span.truncate")?.textContent === title);
+  if (!row) throw new Error(`no row titled ${title}`);
+  fireEvent.contextMenu(row);
+  return screen.queryAllByRole("menuitem").length > 0
+    ? screen.queryAllByRole("menuitem")
+    : (await screen.findAllByRole("menuitem").catch(() => [])) as HTMLElement[];
+}
+
+/** The labels a row's right-click menu offers; `[]` when it opens none. */
+async function menuFor(title: string): Promise<string[]> {
+  return (await openMenu(title)).map((i) => i.textContent ?? "");
+}
+
 /** Row titles under one section header, in DOM order. */
 function channelsUnder(container: HTMLElement, label: string): string[] {
   const header = Array.from(container.querySelectorAll("p.uppercase")).find(
@@ -438,7 +460,7 @@ describe("ChannelList hide and reopen (#2303)", () => {
     );
   }
 
-  it("offers Hide on a 1:1 DM row only, and hands the row to the caller", () => {
+  it("offers Hide in a 1:1 DM row's right-click menu only, and hands the row to the caller", async () => {
     const onHide = vi.fn();
     const group: ChatChannel = {
       id: "c-group",
@@ -448,23 +470,23 @@ describe("ChannelList hide and reopen (#2303)", () => {
     };
     renderWith([general, dm, group], { onHide });
 
-    const hide = screen.getAllByRole("button", { name: /^Hide conversation/ });
-    expect(hide).toHaveLength(1);
-    expect(hide[0]).toHaveAccessibleName("Hide conversation with Alice Chen");
-    // Invisible until hover or keyboard focus, and it must not take a tap
-    // meant for the row's badge while invisible (touch never hovers).
-    expect(hide[0]!.className).toMatch(/(^|\s)pointer-events-none(\s|$)/);
-    expect(hide[0]!.className).toMatch(/group-hover:pointer-events-auto/);
-    fireEvent.click(hide[0]!);
-    expect(onHide).toHaveBeenCalledWith(dm);
-  });
-
-  it("offers no Hide when the caller passes none", () => {
-    renderWith([general, dm]);
-
+    // No hover control on any row (owner, 2026-11-06).
     expect(
       screen.queryByRole("button", { name: /^Hide conversation/ }),
     ).not.toBeInTheDocument();
+
+    expect(await menuFor("Exec board")).toEqual([]);
+    expect(await menuFor("general")).toEqual([]);
+    const items = await openMenu("Alice Chen");
+    expect(items.map((i) => i.textContent)).toEqual(["Hide conversation"]);
+    fireEvent.click(items[0]!);
+    expect(onHide).toHaveBeenCalledWith(dm);
+  });
+
+  it("offers no Hide when the caller passes none", async () => {
+    renderWith([general, dm]);
+
+    expect(await menuFor("Alice Chen")).toEqual([]);
   });
 
   it("keeps hidden DMs in a collapsed group that picks them", () => {
@@ -631,7 +653,7 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
     );
   });
 
-  it("pins and unpins from the row", () => {
+  it("pins and unpins from the row's right-click menu, with no hover control", async () => {
     const onSetPinned = vi.fn();
     renderArranged(
       sidebarControls({
@@ -644,9 +666,17 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Pin to top: general" }));
+    expect(
+      screen.queryByRole("button", { name: /from top:/ }),
+    ).not.toBeInTheDocument();
+
     fireEvent.click(
-      screen.getByRole("button", { name: "Unpin from top: exec" }),
+      (await openMenu("general")).find((i) => i.textContent === "Pin to top")!,
+    );
+    fireEvent.click(
+      (await openMenu("exec")).find(
+        (i) => i.textContent === "Unpin from top",
+      )!,
     );
 
     expect(onSetPinned).toHaveBeenNthCalledWith(1, general, true);
@@ -684,16 +714,15 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
       ).toBeInTheDocument();
     });
 
-    it("draws the open one under Direct messages, with no pin control", () => {
+    it("draws the open one under Direct messages, with no pin control", async () => {
       renderHidden(hiddenDm.id);
 
       expect(headers()).toEqual(["Channels", "Direct messages"]);
       expect(
         screen.getByRole("list", { name: "Direct messages" }),
       ).toHaveTextContent("Alice Chen");
-      expect(
-        screen.queryByRole("button", { name: /from top: Alice Chen/ }),
-      ).not.toBeInTheDocument();
+      expect(await menuFor("Alice Chen")).not.toContain("Pin to top");
+      expect(await menuFor("Alice Chen")).not.toContain("Unpin from top");
     });
   });
 
