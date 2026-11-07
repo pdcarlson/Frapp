@@ -79,6 +79,20 @@
       "build": "8",
       "sha": "b61c20c3c89279621f7136f865e6f5c7f94f2ab2",
       "recorded": "2026-11-07"
+    },
+    {
+      "platform": "ios",
+      "version": "0.10.2",
+      "build": "14",
+      "sha": "c91ec8d8d8c32b4b9316d80f5f0d286587ba08b3",
+      "recorded": "2026-11-07"
+    },
+    {
+      "platform": "android",
+      "version": "0.10.2",
+      "build": "9",
+      "sha": "c91ec8d8d8c32b4b9316d80f5f0d286587ba08b3",
+      "recorded": "2026-11-07"
     }
   ]
 }
