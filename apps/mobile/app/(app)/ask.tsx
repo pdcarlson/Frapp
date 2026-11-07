@@ -1,5 +1,5 @@
-import { useCallback, useRef } from "react";
-import { Redirect, useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useRef } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { ScreenShell } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
@@ -18,13 +18,9 @@ import { isAskAvailable } from "@/lib/ask/flag";
  *
  * ## Why the file still exists
  *
- * `app/(tabs)/_layout.tsx` is frozen under #937's hotspot protocol and
- * registers `<Tabs.Screen name="ask" options={{ title: "Ask", href: null }} />`.
- * expo-router throws at runtime for a registration with no backing file — the
- * case `lib/routes.spec.ts` guards with "backs every registration with a real
- * route file" — so deleting this would need the frozen layout reopened. It
- * also keeps a stale `frapp://ask` deep link landing somewhere real rather than
- * on `+not-found`.
+ * It keeps a stale `frapp://ask` deep link landing somewhere real rather than
+ * on `+not-found`. `app/(app)/_layout.tsx` registers it on the stack, and
+ * `lib/routes.spec.ts` holds that every registration there has a file.
  *
  * ## A build without Ask redirects to Chat home
  *
@@ -39,12 +35,25 @@ import { isAskAvailable } from "@/lib/ask/flag";
  * tab layout still drew the navigator's header that frame was an empty screen
  * under an "Ask" title. The layout draws no header on any screen now (#2485),
  * so the frame is empty and untitled.
+ *
+ * It pops down to Chat home (`dismissTo`) rather than rendering `<Redirect>`,
+ * which replaces this route: on the stack in `app/(app)/_layout.tsx` that
+ * would put a second tab navigator on top of the first one under it
+ * (`spec/ui/mobile/navigation.md` § Going back).
  */
 export default function AskScreen() {
   if (isAskAvailable()) {
     return <AskRoute />;
   }
-  return <Redirect href="/" />;
+  return <ToChatHome />;
+}
+
+function ToChatHome() {
+  const router = useRouter();
+  useEffect(() => {
+    router.dismissTo("/");
+  }, [router]);
+  return null;
 }
 
 /**

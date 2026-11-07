@@ -141,7 +141,7 @@ export const IOS_PURPOSE_STRINGS = new Map([
     "NSCameraUsageDescription",
     {
       text: "Frapp uses the camera to scan the check-in code at chapter events.",
-      requestedBy: { file: "apps/mobile/app/(tabs)/check-in.tsx", call: "useCameraPermissions(" },
+      requestedBy: { file: "apps/mobile/app/(app)/check-in.tsx", call: "useCameraPermissions(" },
     },
   ],
   [
@@ -191,7 +191,7 @@ export const IOS_BACKGROUND_MODES = [];
 
 /** Android permissions a screen requests at runtime, which a config plugin adds. */
 export const ANDROID_RUNTIME_PERMISSIONS = new Map([
-  ["android.permission.CAMERA", { file: "apps/mobile/app/(tabs)/check-in.tsx", call: "useCameraPermissions(" }],
+  ["android.permission.CAMERA", { file: "apps/mobile/app/(app)/check-in.tsx", call: "useCameraPermissions(" }],
   ["android.permission.ACCESS_FINE_LOCATION", { file: "apps/mobile/lib/location.ts", call: "requestForegroundPermissionsAsync(" }],
   ["android.permission.ACCESS_COARSE_LOCATION", { file: "apps/mobile/lib/location.ts", call: "requestForegroundPermissionsAsync(" }],
 ]);

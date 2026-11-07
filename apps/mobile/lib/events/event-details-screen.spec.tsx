@@ -24,7 +24,7 @@ import { screenText } from "@/test/screen-text";
  * of the things it works out from "now": the check-in card and the header's
  * "Tonight / Tomorrow" line.
  *
- * It renders `app/(tabs)/event-details.tsx` but lives here: a spec under
+ * It renders `app/(app)/event-details.tsx` but lives here: a spec under
  * `app/` ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -90,7 +90,7 @@ vi.mocked(expoRouter.useLocalSearchParams).mockImplementation(
   (): Record<string, string> => (routeId === undefined ? {} : { id: routeId }),
 );
 
-import EventDetailsScreen from "@/app/(tabs)/event-details";
+import EventDetailsScreen from "@/app/(app)/event-details";
 
 /**
  * Unmounted in `afterEach`, not at the end of each test: the shared clock is

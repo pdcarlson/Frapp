@@ -48,13 +48,13 @@ import { StartCardSkeleton } from "./study/start-card";
 import { ThreadSkeleton } from "./chat/thread-skeleton";
 import { ChannelListSkeleton } from "./chat/channel-row";
 import { JoinedChannelsSkeleton } from "./onboarding/joined-channels-card";
-import { EventListSkeleton } from "@/app/(tabs)/events";
-import { EventDetailSkeleton } from "@/app/(tabs)/event-details";
+import { EventListSkeleton } from "@/app/(app)/(tabs)/events";
+import { EventDetailSkeleton } from "@/app/(app)/event-details";
 import {
   NotificationListRow,
   NotificationListSkeleton,
-} from "@/app/(tabs)/notifications";
-import { ProfileSkeleton } from "@/app/(tabs)/profile";
+} from "@/app/(app)/notifications";
+import { ProfileSkeleton } from "@/app/(app)/profile";
 
 /**
  * components.md §10: "the skeleton mirrors the layout it becomes — same

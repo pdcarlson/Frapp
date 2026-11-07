@@ -15,6 +15,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { isBetaOffModule } from "@repo/validation";
 import { useRefetchAll } from "@/components/pull-to-refresh";
+import { useDuesMemory } from "@/lib/dues/visit-memory";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { SectionHeader } from "@/components/list-section";
@@ -98,10 +99,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * (PAID, VOID, or dropped from the list), on a chapter switch, which remounts
  * the screen ({@link DuesScreen}), or when the app is closed. Nothing else
  * ends it. Leaving the screen and coming back, or leaving the app and coming
- * back, doesn't: Dues is a hidden tab route (`href: null` in
- * `app/(tabs)/_layout.tsx`), which the tab navigator keeps mounted, so the
- * hold is there on the return, and the return re-reads the list, which the
- * list's 30s staleTime would otherwise skip.
+ * back, doesn't: the captured payments outlive the screen ({@link
+ * useDuesMemory}), since Dues is pushed on the stack and unmounts when the
+ * member goes back, so the hold is there on the return, and the return
+ * re-reads the list, which the list's 30s staleTime would otherwise skip.
  *
  * PAID ends it with the "Paid …" line. VOID (a treasurer can void an OPEN
  * invoice, captured payment or not) or a dropped invoice ends it with a line
@@ -246,11 +247,6 @@ const voidedCopy = (title: string) =>
 const droppedCopy = (title: string) =>
   `Payment received for ${title}, but that invoice is no longer on your dues. Ask your treasurer about it.`;
 
-/** The invoice a completed sheet paid, as the hold and its lines need it. */
-interface CapturedPayment {
-  id: string;
-  title: string;
-}
 
 /** A Pay attempt's failure, on the invoice the attempt was for. */
 interface PayFailure {
@@ -259,8 +255,8 @@ interface PayFailure {
 }
 
 /**
- * One screen per chapter. The tab stays mounted through a chapter switch, so
- * keying it is what keeps chapter A's captured payment and failure line off
+ * One screen per chapter. The screen can stay mounted through a chapter
+ * switch, so keying it is what keeps chapter A's captured payment and failure line off
  * chapter B's dues, and an attempt still running for A writes into a screen
  * that is gone.
  */
@@ -315,7 +311,8 @@ function ChapterDues() {
    * payment for the next invoice doesn't erase the line about the last one
    * before the visit ends.
    */
-  const [payments, setPayments] = useState<readonly CapturedPayment[]>([]);
+  const { payments, setPayments, heldAtLeaveRef, remember } =
+    useDuesMemory(useActiveChapterId());
   const [failure, setFailure] = useState<PayFailure | null>(null);
   /**
    * The Pay attempt that has the CTA reading "Opening…", by its token. Only
@@ -394,16 +391,21 @@ function ChapterDues() {
     heldIdsRef.current = heldCaptures.map((capture) => capture.payment.id);
   });
   /**
-   * The ids that were held when the last visit ended. The screen stays
-   * mounted and keeps reading while the member is away (the poll's own
-   * re-read as it ends, say), so a hold can end off screen; such a payment
-   * keeps its line through the next visit, which is the first to draw it.
+   * `heldAtLeaveRef` (from {@link useDuesMemory}): the ids that were held
+   * when the last visit ended. A hold can end off screen (the poll's own
+   * re-read as it ends, say, or a list read on the next visit's mount); such
+   * a payment keeps its line through the next visit, which is the first to
+   * draw it.
    */
-  const heldAtLeaveRef = useRef<readonly string[]>([]);
+  const listLoadedRef = useRef(listLoaded);
+  useEffect(() => {
+    listLoadedRef.current = listLoaded;
+  });
 
-  // One clock per visit. A tab is never unmounted, so a mount-only value would
-  // still be yesterday's when the member reopens the app — and "Past due" is
-  // exactly the label that must not be a day stale.
+  // One clock per visit. The screen can stay up for days in the background,
+  // so a mount-only value would still be yesterday's when the member reopens
+  // the app — and "Past due" is exactly the label that must not be a day
+  // stale.
   const [now, setNow] = useState(() => new Date());
   // Re-reads ask for the viewer's own rows only. While the viewer's id is
   // unknown the query is disabled, and an explicit refetch would still send
@@ -440,11 +442,16 @@ function ChapterDues() {
     if (isHoldingRef.current && rereadsRef.current) {
       void refetchInvoicesRef.current({ cancelRefetch: false });
     }
-  }, []);
+  }, [heldAtLeaveRef, setPayments]);
   /** The member left: what was held then gets the next visit to show how it ended. */
   const endVisit = useCallback(() => {
-    heldAtLeaveRef.current = heldIdsRef.current;
-  }, []);
+    // A visit that left before the list loaded saw nothing held; what was
+    // held when the one before it left still is, as far as anyone knows.
+    heldAtLeaveRef.current = listLoadedRef.current
+      ? heldIdsRef.current
+      : [...new Set([...heldAtLeaveRef.current, ...heldIdsRef.current])];
+    remember();
+  }, [heldAtLeaveRef, remember]);
   useFocusEffect(
     useCallback(() => {
       startVisit();
@@ -601,7 +608,7 @@ function ChapterDues() {
     } finally {
       stopOpening();
     }
-  }, [awaitPaid, chapterName, payInvoice, target]);
+  }, [awaitPaid, chapterName, payInvoice, setPayments, target]);
 
   // The CTA is busy only for the attempt's confirming window. After that the
   // hold keeps the card, the chip and the pending line, and Pay is live

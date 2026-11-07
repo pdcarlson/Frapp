@@ -288,7 +288,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => branding.current,
 }));
 
-import ChatHomeScreen from "@/app/(tabs)/index";
+import ChatHomeScreen from "@/app/(app)/(tabs)/index";
 import * as Sentry from "@sentry/react-native";
 import { resetChannelsRefusedReport } from "@/lib/chat/channels-error";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -1447,6 +1447,27 @@ describe("Chat home opens the last channel on launch", () => {
     answered();
     vi.mocked(AsyncStorage.getItem).mockResolvedValue("c-general");
     render();
+    await settle();
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+
+  it("does not jump over a screen a link launched onto", async () => {
+    // A cold `frapp://dues` mounts chat home under Dues, never focused: the
+    // list answering there must not push a channel over the linked screen,
+    // nor later, when the member swipes back to chat home.
+    const { __blur, __refocus } = expoRouter as unknown as {
+      __blur: () => void;
+      __refocus: () => void;
+    };
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue("c-general");
+    act(() => __blur());
+    // Earlier tests' screens are still mounted, and blurring them settled the
+    // launch; start it afresh so only this screen's focus decides.
+    resetChatLaunchForTests();
+    answered();
+    render();
+    await settle();
+    act(() => __refocus());
     await settle();
     expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
   });

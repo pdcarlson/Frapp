@@ -13,7 +13,7 @@ import type { HouseRank, PointsSummary } from "@/lib/tasks/points-card";
  *
  * Either half renders an em dash when its query has not resolved or the viewer
  * has no standing to report. That is the `hasEntries` discipline
- * `app/(tabs)/service-hours.tsx` states: a "0" headlined at a member who has
+ * `app/(app)/service-hours.tsx` states: a "0" headlined at a member who has
  * 1,240 points is worse than saying nothing yet. A *real* zero still renders 0 —
  * `selectPointsSummary` keeps the two apart.
  *

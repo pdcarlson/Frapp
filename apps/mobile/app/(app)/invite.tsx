@@ -56,11 +56,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 export default function InviteScreen() {
   const chapterId = useActiveChapterId();
   const focused = useIsFocused();
-  // A tab screen stays mounted through a chapter switch and between visits,
-  // so the body is keyed on both: a link shared, or a sheet backed out of, in
-  // chapter A never goes out under chapter B's name, and each visit starts
-  // its Shared list fresh (dues.tsx keys its body on the chapter the same
-  // way). A visit ends when the screen loses focus.
+  // The screen stays mounted through a chapter switch, and under any screen
+  // pushed over it, so the body is keyed on both: a link shared, or a sheet
+  // backed out of, in chapter A never goes out under chapter B's name, and
+  // each visit starts its Shared list fresh. A visit ends when the screen
+  // loses focus; popping it unmounts it outright.
   const [visit, setVisit] = useState(0);
   const wasFocused = useRef(focused);
   useEffect(() => {

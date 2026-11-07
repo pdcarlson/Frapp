@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useIsFocused, useRouter } from "expo-router";
 import {
   Alert,
   Pressable,
@@ -386,12 +386,22 @@ export default function ChatHomeScreen() {
     anything the member does before the list answers: leaving chat home
     settles the launch, and so does the launch window running out
     (`lib/chat/last-channel.ts`). Back from the thread returns here.
+
+    A link that cold-launches the app onto a pushed screen mounts chat home
+    under it, unfocused, as the stack's anchor (`app/(app)/_layout.tsx`).
+    That launch went where the link points, so chat home settles it rather
+    than pushing a channel over the linked screen.
   */
   useFocusEffect(useCallback(() => () => settleChatLaunch(), []));
+  const isFocused = useIsFocused();
   const chapterId = useActiveChapterId();
   const listAnswered = channelsQuery.isSuccess;
   useEffect(() => {
     if (!listAnswered || !viewerId) return;
+    if (!isFocused) {
+      settleChatLaunch();
+      return;
+    }
     // No cancellation on cleanup: the claim is spent either way, and a
     // cancelled read would lose the jump for good (Strict Mode re-runs this).
     if (!claimChatLaunch()) return;

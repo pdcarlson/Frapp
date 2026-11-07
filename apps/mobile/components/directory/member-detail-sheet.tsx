@@ -48,8 +48,8 @@ import {
 
 /**
  * s13 member profile detail — a sheet, not a route, per the issue's own scope
- * note: `app/(tabs)/_layout.tsx` is frozen and a new `Tabs.Screen` needs a
- * backing file, so this reaches the fields `spec/behavior/members.md`'s
+ * note: the route layouts are frozen (`spec/ui/mobile/navigation.md`
+ * § Hotspot freeze), so this reaches the fields `spec/behavior/members.md`'s
  * detail view specifies (name, email, role, joined date) without one.
  *
  * **No point balance.** `GET /v1/points/members/{userId}` requires the

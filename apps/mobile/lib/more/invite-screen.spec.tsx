@@ -12,7 +12,7 @@ import { screenText } from "@/test/screen-text";
 
 /**
  * The Invite members screen (owner ask 2026-11-06: no way to invite from the
- * phone). It renders `app/(tabs)/invite.tsx` but lives here: a spec under
+ * phone). It renders `app/(app)/invite.tsx` but lives here: a spec under
  * `app/` ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -63,7 +63,7 @@ vi.mock("@/lib/chapter-branding", async (importOriginal) => {
   };
 });
 
-import InviteScreen, { backTargetFor } from "@/app/(tabs)/invite";
+import InviteScreen, { backTargetFor } from "@/app/(app)/invite";
 
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;

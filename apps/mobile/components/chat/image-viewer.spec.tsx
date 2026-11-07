@@ -5,6 +5,7 @@ import { act } from "react";
 import { AccessibilityInfo, BackHandler, Keyboard, Text } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { stackScreen } from "@/test/stack-screen";
 
 const share = vi.hoisted(() => ({ result: true }));
 const attachments = vi.hoisted(() => ({
@@ -189,6 +190,29 @@ describe("opening and closing", () => {
     });
 
     expect(tree.toJSON()).toBeNull();
+  });
+
+  it("holds the iOS edge swipe only while an image is open", () => {
+    // A pan on a zoomed photo that started near the edge must not pop the
+    // thread (`spec/ui/mobile/navigation.md` § Going back).
+    const { navigation } = stackScreen([{ name: "(tabs)" }], null);
+    const onStack = () =>
+      stackScreen([{ name: "(tabs)" }], screen(), "stack", navigation).element;
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(onStack());
+    });
+    expect(navigation.setOptions).not.toHaveBeenCalled();
+
+    openOn([image(1)], 0);
+    expect(navigation.setOptions).toHaveBeenLastCalledWith({
+      gestureEnabled: false,
+    });
+
+    act(() => button(tree, "Close image").props.onPress());
+    expect(navigation.setOptions).toHaveBeenLastCalledWith({
+      gestureEnabled: true,
+    });
   });
 
   it("holds the back button only while an image is open", () => {

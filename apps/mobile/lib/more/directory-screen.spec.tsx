@@ -19,7 +19,7 @@ import type { DirectoryRow } from "@/lib/more/directory";
  * filtered-alumni case below is what tells the Alumni tab reading `useAlumni`
  * apart from one splitting `useMembers` on the flag.
  *
- * It renders `app/(tabs)/directory.tsx` but lives here: a spec under `app/`
+ * It renders `app/(app)/directory.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -122,7 +122,7 @@ vi.mock("@/components/directory/member-detail-sheet", () => ({
 import DirectoryScreen, {
   MemberListSkeleton,
   MemberRow,
-} from "@/app/(tabs)/directory";
+} from "@/app/(app)/directory";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { DirectoryGlyph } from "@/components/more/more-glyphs";
 import { SearchGlyph } from "@/components/search-glyph";

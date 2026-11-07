@@ -45,6 +45,7 @@ import { jumpToLatestLabel } from "@/components/chat/jump-to-latest-button";
 import { reactionActionType } from "@repo/chat-core/types";
 import type { UseChatChannelResult } from "@/lib/chat/use-chat-channel";
 import { FrappThemeProvider } from "@/lib/theme";
+import { stackScreen } from "@/test/stack-screen";
 import { flatStyle } from "@/test/flat-style";
 import { screenText } from "@/test/screen-text";
 import { useOpenChatTransport } from "@repo/hooks/open-chat-transport";
@@ -69,7 +70,7 @@ import { useOpenChatTransport } from "@repo/hooks/open-chat-transport";
  * `RenderingFlatList`, so the rows render inside the screen's tree, under the
  * provider the screen wraps the list in.
  *
- * It renders `app/(tabs)/chat-thread.tsx` but lives here: a spec under `app/`
+ * It renders `app/(app)/chat-thread.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -320,7 +321,7 @@ vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
 let params: { channelId?: string } = { channelId: CHANNEL };
 vi.mocked(expoRouter.useLocalSearchParams).mockImplementation(() => params);
 
-import ChatThreadScreen from "@/app/(tabs)/chat-thread";
+import ChatThreadScreen from "@/app/(app)/chat-thread";
 
 const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
 
@@ -430,6 +431,34 @@ beforeEach(() => {
   channelRow = "found";
   channelType = "PUBLIC";
   queryClient = new QueryClient();
+});
+
+describe("chat thread way back", () => {
+  // `spec/ui/mobile/navigation.md` § Going back: ‹ pops the stack, exactly as
+  // the edge swipe does, and names what is under the thread.
+  it("pops to the screen it was opened from, and names it", () => {
+    const { element, navigation } = stackScreen(
+      [{ name: "(tabs)" }, { name: "directory" }],
+      <Screen />,
+    );
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(element);
+    });
+    act(() => byLabel(tree, "Back to directory").props.onPress());
+    expect(navigation.goBack).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(expoRouter.useRouter)().dismissTo).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("goes to Chat home with nothing under it", () => {
+    const tree = render();
+    act(() => byLabel(tree, "Back to chat").props.onPress());
+    expect(vi.mocked(expoRouter.useRouter)().dismissTo).toHaveBeenCalledWith(
+      "/",
+    );
+    act(() => tree.unmount());
+  });
 });
 
 describe("chat thread identity gate (#2250)", () => {

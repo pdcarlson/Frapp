@@ -32,7 +32,7 @@ import { readForegroundPermission } from "@/lib/location";
  * that Start was withdrawn. Deleting the `setWriteRefused(true)` on the
  * start path kept those green; it turns this suite red.
  *
- * It renders `app/(tabs)/study.tsx` but lives here: a spec under `app/` ships
+ * It renders `app/(app)/study.tsx` but lives here: a spec under `app/` ships
  * as a route module (`lib/routes.spec.ts`).
  */
 
@@ -161,7 +161,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
 
-import StudyScreen from "@/app/(tabs)/study";
+import StudyScreen from "@/app/(app)/study";
 
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
 const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;

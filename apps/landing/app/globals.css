@@ -241,7 +241,7 @@
    * "Check-in is open". That state is real rather than decorative: an event's
    * check-in is open only inside its window (`spec/behavior/events.md`), and the
    * shipped mobile detail draws the same card from the same fact
-   * (`apps/mobile/app/(tabs)/event-details.tsx`). What is drawn here is emphasis
+   * (`apps/mobile/app/(app)/event-details.tsx`). What is drawn here is emphasis
    * on that fact arriving, not a claim that the product animates a dot.
    *
    * **It is the micro-feedback class, played twice, and the whole gesture still
