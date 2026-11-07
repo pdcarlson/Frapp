@@ -33,6 +33,7 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   CHANNEL_LIST_KEY,
+  otherMemberId,
   resolveAuthorAvatar,
   resolveAuthorLabel,
   resolveAuthorName,
@@ -295,9 +296,13 @@ export default function ChatThreadScreen() {
           channelName={openChannel.channel.name}
           displayName={openChannel.name}
           description={openChannel.channel.description}
+          photoUrl={(() => {
+            const memberId = otherMemberId(openChannel.channel, viewerId);
+            return memberId ? memberAvatarFor(memberId) : null;
+          })()}
         />
       ) : undefined,
-    [openChannel],
+    [openChannel, viewerId, memberAvatarFor],
   );
   const headerDescription =
     openChannel && !isDirectChannel(openChannel.channel)
