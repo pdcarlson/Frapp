@@ -280,21 +280,33 @@ describe("formatEventTime", () => {
   it("shows a clock time for today", () => {
     const label = formatEventTime(at(2026, 7, 16, 18, 0), NOW);
 
+    expect(label).toMatch(/^Today /);
     expect(label).toMatch(/:00/);
-    expect(label).not.toMatch(/tmrw/);
   });
 
-  it("labels tomorrow and keeps the clock time", () => {
+  it("spells out tomorrow and keeps the clock time", () => {
     const label = formatEventTime(at(2026, 7, 17, 18, 0), NOW);
 
-    expect(label).toMatch(/^tmrw /);
+    expect(label).toMatch(/^Tomorrow /);
     expect(label).toMatch(/:00/);
   });
 
   it("uses a weekday inside the week and drops the clock beyond it", () => {
-    expect(formatEventTime(at(2026, 7, 19, 18, 0), NOW)).not.toMatch(/tmrw/);
+    // Never abbreviated (owner, 2026-11-07): the whole weekday, the whole month.
+    expect(formatEventTime(at(2026, 7, 19, 18, 0), NOW)).toMatch(
+      new RegExp(
+        `^${new Date(at(2026, 7, 19, 18, 0)).toLocaleDateString(undefined, { weekday: "long" })} `,
+      ),
+    );
     // Past a week the label is a bare date, so it carries no time separator.
-    expect(formatEventTime(at(2026, 8, 30, 18, 0), NOW)).not.toMatch(/:/);
+    const far = formatEventTime(at(2026, 8, 30, 18, 0), NOW);
+    expect(far).not.toMatch(/:/);
+    expect(far).toBe(
+      new Date(at(2026, 8, 30, 18, 0)).toLocaleDateString(undefined, {
+        month: "long",
+        day: "numeric",
+      }),
+    );
   });
 
   it("returns an empty string rather than 'Invalid Date'", () => {
@@ -304,15 +316,15 @@ describe("formatEventTime", () => {
 
 describe("formatDueDate", () => {
   it("names the near states explicitly", () => {
-    expect(formatDueDate(at(2026, 6, 1), NOW)).toBe("overdue");
-    expect(formatDueDate(at(2026, 7, 16, 23), NOW)).toBe("due today");
-    expect(formatDueDate(at(2026, 7, 17, 9), NOW)).toBe("due tmrw");
+    expect(formatDueDate(at(2026, 6, 1), NOW)).toBe("Overdue");
+    expect(formatDueDate(at(2026, 7, 16, 23), NOW)).toBe("Due today");
+    expect(formatDueDate(at(2026, 7, 17, 9), NOW)).toBe("Due tomorrow");
   });
 
   it("compares calendar days, not elapsed hours", () => {
     // Due at 09:00 tomorrow is 21 hours away — under one 24h period, but a
     // different day, and "due today" would be wrong.
-    expect(formatDueDate(at(2026, 7, 17, 9), NOW)).toBe("due tmrw");
+    expect(formatDueDate(at(2026, 7, 17, 9), NOW)).toBe("Due tomorrow");
   });
 
   it("returns an empty string on an unparseable date", () => {
