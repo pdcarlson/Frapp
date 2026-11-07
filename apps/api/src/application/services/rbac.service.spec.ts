@@ -1892,8 +1892,14 @@ describe('RbacService', () => {
           user_id: 'user-officer',
           permissions: new Set([SystemPermissions.CHANNELS_MANAGE]),
           top_role_order: 2,
+          top_role: { id: 'role-officer', name: 'role-role-officer' },
         },
-        { user_id: 'user-none', permissions: new Set(), top_role_order: null },
+        {
+          user_id: 'user-none',
+          permissions: new Set(),
+          top_role_order: null,
+          top_role: null,
+        },
       ]);
     });
 
@@ -1911,6 +1917,7 @@ describe('RbacService', () => {
         user_id: 'user-1',
         permissions: new Set(),
         top_role_order: null,
+        top_role: null,
       });
     });
 
@@ -1934,8 +1941,33 @@ describe('RbacService', () => {
             SystemPermissions.CHANNELS_MANAGE,
           ]),
           top_role_order: 1,
+          top_role: { id: 'role-b', name: 'role-role-b' },
         },
       ]);
+    });
+
+    it('breaks a tie in display_order by role name, so the pick is stable', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        roleFixture({
+          id: 'r-z',
+          chapter_id: 'ch-1',
+          name: 'Zeta',
+          display_order: 4,
+        }),
+        roleFixture({
+          id: 'r-a',
+          chapter_id: 'ch-1',
+          name: 'Alpha',
+          display_order: 4,
+        }),
+      ]);
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        memberFixture({ user_id: 'user-1', role_ids: ['r-z', 'r-a'] }),
+      ]);
+
+      const [entry] = await service.getChapterMemberAccess('ch-1');
+
+      expect(entry?.top_role).toEqual({ id: 'r-a', name: 'Alpha' });
     });
   });
 });
