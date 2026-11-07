@@ -9,6 +9,11 @@ import {
   PURGE_BATCH_SIZE,
 } from './discord-import-worker.service';
 import { DiscordExportWorkerService } from './discord-export-worker.service';
+import {
+  MAX_IMPORT_ATTEMPTS,
+  importRetryDelayMs,
+  isTransientImportFailure,
+} from './discord-import-retry';
 import { ARCHIVE_MEDIA_COPY_BUDGET_MS } from '../../infrastructure/storage/supabase-archive-media-copier.service';
 import { ChannelCacheService } from '../services/channel-cache.service';
 import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
@@ -1437,7 +1442,9 @@ describe('DiscordImportWorkerService — importing', () => {
     // still normalizes whatever reaches it.
     const storage = makeStorage(part000());
     storage.downloadFile.mockImplementation().mockRejectedValue({
-      code: 'PGRST000',
+      // A code that is not a temporary fault, so the job fails rather than
+      // waits to try again (#1692).
+      code: '22P02',
       message: 'request line too long',
     });
     const { worker } = await buildWorker(repoRef, storage);
@@ -1446,7 +1453,7 @@ describe('DiscordImportWorkerService — importing', () => {
 
     expect(repoRef.updates.at(-1)).toMatchObject({
       status: 'failed',
-      error: 'PGRST000: request line too long',
+      error: '22P02: request line too long',
     });
   });
 
@@ -1939,5 +1946,171 @@ describe('worker constants', () => {
     // outlast it. Asserted here rather than in the copier's spec, because
     // infrastructure/ must not import the application-layer worker.
     expect(ARCHIVE_MEDIA_COPY_BUDGET_MS).toBeLessThan(LEASE_MS);
+  });
+});
+
+// A PostgREST blip, a reset connection or a migration's schema-cache reload
+// used to fail an import for good, hours in. It now waits and tries again,
+// up to MAX_IMPORT_ATTEMPTS in one streak (#1692).
+describe('DiscordImportWorkerService — temporary failures (#1692)', () => {
+  /** A slice whose download throws `error`. */
+  async function failingWith(error: unknown, attempt: number) {
+    repoRef = makeRepo(job({ status: 'running', attempt_count: attempt }));
+    const storage = makeStorage(part000());
+    storage.downloadFile.mockImplementation(async () => {
+      throw error;
+    });
+    const notifications = { notifyUser: jest.fn(async () => undefined) };
+    const { worker } = await buildWorker(repoRef, storage, { notifications });
+    jest.mocked(Sentry.captureException).mockClear();
+    const result = await worker.sweepImports(NOW);
+    return { result, notifications };
+  }
+
+  const schemaCacheMiss = {
+    code: 'PGRST202',
+    message: 'Could not find the function in the schema cache',
+  };
+
+  it('keeps the job running, holds the lease for a pause, and says so', async () => {
+    const { result, notifications } = await failingWith(schemaCacheMiss, 1);
+
+    expect(result).toMatchObject({ claimed: true, finished: false });
+    expect(repoRef.state().status).toBe('running');
+    expect(repoRef.state().error).toBe(
+      'The import hit a temporary problem and paused. Try 2 of 5 starts in about a minute.',
+    );
+    // Held for the pause rather than released, so no tick claims it sooner.
+    expect(repoRef.renewLease).toHaveBeenCalledWith(
+      IMPORT_ID,
+      'token-1',
+      NOW,
+      importRetryDelayMs(1),
+    );
+    expect(repoRef.releaseLease).not.toHaveBeenCalled();
+    expect(reportedSites()).toEqual(['discord-import-job-retrying']);
+    // Nothing ended, so nobody is told it did.
+    expect(notifications.notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('waits longer after each try', async () => {
+    await failingWith(new TypeError('fetch failed'), 3);
+
+    expect(repoRef.renewLease).toHaveBeenCalledWith(
+      IMPORT_ID,
+      'token-1',
+      NOW,
+      4 * 60_000,
+    );
+    expect(repoRef.state().error).toContain('Try 4 of 5');
+  });
+
+  it('stops after the last try and says why', async () => {
+    const { result } = await failingWith(schemaCacheMiss, MAX_IMPORT_ATTEMPTS);
+
+    expect(result).toMatchObject({ finished: true });
+    expect(repoRef.state().status).toBe('failed');
+    expect(repoRef.state().error).toBe(
+      `Stopped after ${MAX_IMPORT_ATTEMPTS} tries that each hit a temporary error. The last one: PGRST202: Could not find the function in the schema cache`,
+    );
+    expect(repoRef.releaseLease).toHaveBeenCalled();
+    expect(reportedSites()).toEqual(['discord-import-job-failed']);
+  });
+
+  it('fails at once on an error that will not clear', async () => {
+    await failingWith(new Error('storage exploded'), 1);
+
+    expect(repoRef.state().status).toBe('failed');
+    expect(repoRef.state().error).toBe('storage exploded');
+    expect(repoRef.renewLease).not.toHaveBeenCalledWith(
+      IMPORT_ID,
+      'token-1',
+      NOW,
+      expect.any(Number),
+    );
+  });
+
+  it('fails at once on a refusal the admin must act on', async () => {
+    // Discord refusing the bot is the admin's to fix; trying again cannot.
+    await failingWith(new DiscordApiError('Missing Access', 403), 1);
+
+    expect(repoRef.state().status).toBe('failed');
+    expect(reportedSites()).toEqual([]);
+  });
+
+  it('ends the streak on the next clean slice', async () => {
+    repoRef = makeRepo(
+      job({
+        status: 'running',
+        attempt_count: 2,
+        error: 'The import hit a temporary problem and paused.',
+      }),
+    );
+    const { worker } = await buildWorker(repoRef, makeStorage(part000()));
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.releaseLease).toHaveBeenCalledWith(IMPORT_ID, 'token-1', {
+      endRetryStreak: true,
+    });
+  });
+
+  it('leaves the count alone after a clean first try', async () => {
+    repoRef = makeRepo(job({ status: 'running', attempt_count: 1 }));
+    const { worker } = await buildWorker(repoRef, makeStorage(part000()));
+
+    await worker.sweepImports(NOW);
+
+    expect(repoRef.releaseLease).toHaveBeenCalledWith(IMPORT_ID, 'token-1', {
+      endRetryStreak: false,
+    });
+  });
+});
+
+describe('isTransientImportFailure (#1692)', () => {
+  it.each([
+    ['a schema cache still loading', { code: 'PGRST202' }],
+    ['no database connection', { code: 'PGRST000' }],
+    ['a deadlock', { code: '40P01' }],
+    ['a connection exception class', { code: '08006' }],
+    [
+      'a request that never reached PostgREST',
+      Object.assign(new Error('TypeError: fetch failed'), {
+        name: 'SupabaseQueryError',
+      }),
+    ],
+    ['undici giving up', new TypeError('fetch failed')],
+    ['a reset socket', Object.assign(new Error('x'), { code: 'ECONNRESET' })],
+    [
+      'a reset socket under a wrapper',
+      new Error('wrapped', {
+        cause: Object.assign(new Error('x'), { code: 'ECONNRESET' }),
+      }),
+    ],
+    ['a Discord 502', { name: 'HTTPError', status: 502 }],
+    ['a rate limit', { status: 429 }],
+    ['Storage answering 503 as a string', { statusCode: '503' }],
+    ['a timeout', Object.assign(new Error('x'), { name: 'AbortError' })],
+  ])('retries %s', (_what, error) => {
+    expect(isTransientImportFailure(error)).toBe(true);
+  });
+
+  it.each([
+    ['a unique violation', { code: '23505' }],
+    ['a PostgREST no-row', { code: 'PGRST116' }],
+    ['a plain error', new Error('storage exploded')],
+    ['a Discord refusal', new DiscordApiError('Missing Access', 403)],
+    ['a Discord integrity refusal', new DiscordApiError('Refusing to import')],
+    ['a Storage 400', { statusCode: '400' }],
+    ['nothing', undefined],
+    ['a string', 'PGRST202'],
+  ])('does not retry %s', (_what, error) => {
+    expect(isTransientImportFailure(error)).toBe(false);
+  });
+
+  it('pauses 1, 2, 4, then 8 minutes, and never more than 15', () => {
+    expect([1, 2, 3, 4, 5, 9].map(importRetryDelayMs)).toEqual(
+      [1, 2, 4, 8, 15, 15].map((m) => m * 60_000),
+    );
   });
 });

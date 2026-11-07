@@ -585,7 +585,13 @@ deliberate race. The page shows that one import in the state it is in:
   its total, any that failed, turning green once all are done. The channels
   in no category come first, then the categories in Discord's order; past
   eight, the last tile sums the rest ("+ N more"). A thread counts under its
-  channel's category. The admin can leave: when
+  channel's category. A temporary error (the database, Storage or Discord
+  briefly unreachable, a timeout, a migration still loading) pauses the
+  import instead of failing it: the line under the count says it paused and
+  when the next try starts, and the worker tries again after 1, 2, 4 and 8
+  minutes, failing it only when the fifth try in a row hits one (#1692). A
+  deletion waits out the same errors the same way. An error the admin must
+  act on, or one that will not clear, fails it at once. The admin can leave: when
   the import completes or fails, the admin who set it up (`created_by`) is
   notified, if they still hold `channels:manage` in the chapter. One the
   admin stopped sends nothing. The notice itself is in

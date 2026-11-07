@@ -513,6 +513,8 @@ describe('DiscordImportService — starting', () => {
       status: 'ready',
       parts_total: 2,
       error: null,
+      // A restart gets its full set of tries again (#1692).
+      attempt_count: 0,
       role_mapping: [],
     });
   });
@@ -575,6 +577,22 @@ describe('DiscordImportService — lifecycle guards', () => {
     await service.requestPurge(IMPORT_ID, CHAPTER);
     expect(repo.update).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, {
       status: 'purging',
+      // The deletion's tries count from zero (#1692).
+      attempt_count: 0,
+    });
+  });
+
+  it('clears a "trying again" note when an import is cancelled (#1692)', async () => {
+    await build(
+      job({
+        status: 'running',
+        error: 'The import hit a temporary problem and paused.',
+      }),
+    );
+    await service.cancel(IMPORT_ID, CHAPTER);
+    expect(repo.update).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, {
+      status: 'cancelled',
+      error: null,
     });
   });
 
@@ -667,9 +685,11 @@ describe('DiscordImportService — progress and clearing (#2816, #2817)', () => 
           ? service.cancel(IMPORT_ID, CHAPTER)
           : service.requestPurge(IMPORT_ID, CHAPTER);
       await act;
-      expect(repo.update).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, {
-        status: next,
-      });
+      expect(repo.update).toHaveBeenCalledWith(
+        IMPORT_ID,
+        CHAPTER,
+        expect.objectContaining({ status: next }),
+      );
       expect(repo.countChannels).not.toHaveBeenCalled();
     },
   );

@@ -269,8 +269,11 @@ export function ImportRunning({
           {hasChannelCounts
             ? `${count(row.channels_done ?? 0)} of ${count(row.channels_total as number)} channels and threads done. `
             : ""}
-          You can close this tab. You&apos;ll get a notification when it
-          finishes.
+          {/* While the worker waits out a temporary error, its note takes
+              this line's place, so the page says "paused" rather than
+              looking stalled, and nothing moves (#1692). */}
+          {row.error ??
+            "You can close this tab. You'll get a notification when it finishes."}
         </p>
       </div>
       {percent !== null ? (

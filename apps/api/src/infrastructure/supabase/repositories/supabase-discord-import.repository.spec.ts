@@ -466,6 +466,60 @@ describe('SupabaseDiscordImportRepository — purging a large import', () => {
   });
 });
 
+describe('SupabaseDiscordImportRepository — releasing the lease (#1692)', () => {
+  function capture() {
+    const patches: Record<string, unknown>[] = [];
+    const filters: [string, unknown][] = [];
+    const builder: Record<string, unknown> = {};
+    builder.update = jest.fn((patch: Record<string, unknown>) => {
+      patches.push(patch);
+      return builder;
+    });
+    builder.eq = jest.fn((column: string, value: unknown) => {
+      filters.push([column, value]);
+      return builder;
+    });
+    builder.then = (resolve: (value: unknown) => unknown) =>
+      resolve({ error: null });
+    const repo = new SupabaseDiscordImportRepository({
+      from: jest.fn(() => builder),
+    } as unknown as ConstructorParameters<
+      typeof SupabaseDiscordImportRepository
+    >[0]);
+    return { repo, patches, filters };
+  }
+
+  it('ends a retry streak in the same lock-token-bound write', async () => {
+    const { repo, patches, filters } = capture();
+
+    await repo.releaseLease(IMPORT_A, 'token-1', { endRetryStreak: true });
+
+    expect(patches).toEqual([
+      {
+        lock_token: null,
+        locked_by: null,
+        lease_expires_at: null,
+        attempt_count: 0,
+        error: null,
+      },
+    ]);
+    expect(filters).toEqual([
+      ['id', IMPORT_A],
+      ['lock_token', 'token-1'],
+    ]);
+  });
+
+  it('leaves the count and the note alone on a plain release', async () => {
+    const { repo, patches } = capture();
+
+    await repo.releaseLease(IMPORT_A, 'token-1');
+
+    expect(patches).toEqual([
+      { lock_token: null, locked_by: null, lease_expires_at: null },
+    ]);
+  });
+});
+
 /**
  * What the counts and the clear actually write and answer, against rows with
  * the statuses the workers leave. The tenant block above pins the scoping; this

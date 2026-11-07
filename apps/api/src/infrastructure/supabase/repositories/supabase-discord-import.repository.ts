@@ -596,10 +596,19 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     return (data ?? []).length > 0;
   }
 
-  async releaseLease(id: string, lockToken: string): Promise<void> {
+  async releaseLease(
+    id: string,
+    lockToken: string,
+    options: { endRetryStreak?: boolean } = {},
+  ): Promise<void> {
     const { error } = await this.supabase
       .from('discord_imports')
-      .update({ lock_token: null, locked_by: null, lease_expires_at: null })
+      .update({
+        lock_token: null,
+        locked_by: null,
+        lease_expires_at: null,
+        ...(options.endRetryStreak ? { attempt_count: 0, error: null } : {}),
+      })
       .eq('id', id)
       .eq('lock_token', lockToken);
     if (error) throw new SupabaseQueryError(error);

@@ -416,6 +416,17 @@ describe("DiscordImportPage — importing", () => {
     );
   });
 
+  it("says when it paused on a temporary problem, in place of the leave-it line (#1692)", () => {
+    const note =
+      "The import hit a temporary problem and paused. Try 2 of 5 starts in about a minute.";
+    hooks.rows = [
+      { ...row("moving", "running", "Tau Nu Discord"), error: note },
+    ];
+    render(<DiscordImportPage />);
+    expect(screen.getByText(note)).toBeInTheDocument();
+    expect(screen.queryByText(/You can close this tab/)).toBeNull();
+  });
+
   it("calls a queued import waiting to start", () => {
     hooks.rows = [row("queued", "ready", "Tau Nu Discord")];
     render(<DiscordImportPage />);

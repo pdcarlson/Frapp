@@ -540,6 +540,9 @@ export class DiscordImportService {
       status: 'ready',
       parts_total: partsTotal,
       error: null,
+      // A restart after the worker gave up on temporary errors gets its full
+      // set of tries again (#1692).
+      attempt_count: 0,
       role_mapping: roleMapping,
       // Written only when it changes, so a start that leaves it alone works
       // against a database that does not have the column yet.
@@ -604,7 +607,12 @@ export class DiscordImportService {
     if (job.status === 'purged' || job.status === 'purging') {
       throw new ConflictException('This import is being deleted.');
     }
-    return this.importRepo.update(id, chapterId, { status: 'cancelled' });
+    // `error` may hold the worker's "trying again" note (#1692), which a
+    // cancelled import must not keep showing.
+    return this.importRepo.update(id, chapterId, {
+      status: 'cancelled',
+      error: null,
+    });
   }
 
   /**
@@ -623,7 +631,12 @@ export class DiscordImportService {
       );
     }
     if (job.status === 'purged') return job;
-    return this.importRepo.update(id, chapterId, { status: 'purging' });
+    // The deletion's own tries at a temporary error count from zero, not on
+    // from the import's (#1692).
+    return this.importRepo.update(id, chapterId, {
+      status: 'purging',
+      attempt_count: 0,
+    });
   }
 
   private toManifestRow(

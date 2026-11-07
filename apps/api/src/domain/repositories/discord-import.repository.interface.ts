@@ -59,6 +59,11 @@ export interface DiscordImportProgressPatch {
   purged_at?: string | null;
   guild_id?: string | null;
   guild_name?: string | null;
+  /**
+   * Claims in the current streak of failed slices. A start or a delete
+   * request puts it back to 0 so an earlier streak does not count (#1692).
+   */
+  attempt_count?: number;
 }
 
 /**
@@ -238,8 +243,21 @@ export interface IDiscordImportRepository {
     progress?: Pick<DiscordImport, 'purged_messages'>,
   ): Promise<boolean>;
 
-  /** Hand the job back for the next tick, keeping its status. */
-  releaseLease(id: string, lockToken: string): Promise<void>;
+  /**
+   * Hand the job back for the next tick, keeping its status.
+   *
+   * `endRetryStreak` is for a slice that ended cleanly after one or more that
+   * failed on a temporary error (#1692): it zeroes `attempt_count`, so the next
+   * streak starts counting afresh, and clears the "trying again" note from
+   * `error`. Folded into the release, so ending a streak costs no extra write,
+   * and bound to the lease like the release, so a worker that lost the job
+   * cannot clear a note the new holder just wrote.
+   */
+  releaseLease(
+    id: string,
+    lockToken: string,
+    options?: { endRetryStreak?: boolean },
+  ): Promise<void>;
 
   // ── the import write path ─────────────────────────────────────────────────
   /**
