@@ -80,6 +80,9 @@ vi.mock("./push-registration", async (importOriginal) => {
 });
 
 const { usePushRuntime } = await import("./use-push-runtime");
+const { notifyPushPermissionGranted } = await import(
+  "./push-token-lifecycle"
+);
 const { claimChatLaunch, resetChatLaunchForTests } = await import(
   "@/lib/chat/last-channel"
 );
@@ -124,6 +127,9 @@ describe("usePushRuntime token lifecycle", () => {
     renderHook(() => usePushRuntime());
 
     await waitFor(() => expect(mockState.tokenListeners).toHaveLength(1));
+    // The sign-in register POSTs too (#2617); let it settle first.
+    await waitFor(() => expect(mockState.register).toHaveBeenCalled());
+    await act(async () => {});
     mockState.register.mockClear();
 
     mockState.token = "ExponentPushToken[rotated]";
@@ -154,6 +160,34 @@ describe("usePushRuntime token lifecycle", () => {
       mockState.tokenListeners[0]?.();
     });
 
+    expect(mockState.register).not.toHaveBeenCalled();
+  });
+
+  it("registers again when the member grants permission mid-session (#2617)", async () => {
+    mockState.isAuthenticated = true;
+    mockState.status = "authenticated";
+    renderHook(() => usePushRuntime());
+
+    await waitFor(() => expect(mockState.register).toHaveBeenCalled());
+    await act(async () => {});
+    mockState.register.mockClear();
+
+    await act(async () => {
+      notifyPushPermissionGranted();
+    });
+
+    await waitFor(() => {
+      expect(mockState.register).toHaveBeenCalledWith({
+        token: "ExponentPushToken[abc]",
+      });
+    });
+  });
+
+  it("does not POST on a grant while signed out", async () => {
+    renderHook(() => usePushRuntime());
+    await act(async () => {
+      notifyPushPermissionGranted();
+    });
     expect(mockState.register).not.toHaveBeenCalled();
   });
 
