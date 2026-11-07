@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-07: Members keep the Member role beside custom roles
+
+### 20261107020000_members_keep_base_role.sql
+
+- **Purpose**: A data repair, no DDL. Appends the chapter's Member role (`system_key = 'MEMBER'`) to `members.role_ids` for a member who holds at least one role that exists in their own chapter, none of them seeded (`is_system`), and none granting `members:view` or `*`. Such members were refused on every screen. The redeem change in the same PR stops new invites from creating them ([`spec/behavior/onboarding.md`](../../../spec/behavior/onboarding.md)); an officer removing Member by hand still can. Members with no roles, members whose role ids all point at deleted roles, and chapters with no Member role are untouched. When written (2026-11-07) the two production members it targeted had already been repaired by hand with Paul's approval, so a production run matched 0 rows (checked with the Supabase connector against `frapp-prod` and `frapp-staging`). Its predicate is exercised by the pglite tier `scripts/pglite/tiers/members-keep-base-role.mjs`.
+- **Checks**: After `db push`, re-run the migration's `locked_out` CTE as a `select count(*)`: it returns `0`, or only members of chapters with no Member role.
+- **Promoter notes**: Order-independent with the API. Idempotent: a repaired member holds a seeded role and no longer matches. It writes no audit row. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-members-keep-the-member-role-20261107020000) § Rollback members keep the Member role.
+
 ## 2026-11-06: Each member's time zone, for push text
 
 ### 20261106230000_user_settings_time_zone.sql
