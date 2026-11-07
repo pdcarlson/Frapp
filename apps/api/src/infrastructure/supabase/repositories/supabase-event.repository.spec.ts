@@ -84,4 +84,33 @@ describe('SupabaseEventRepository — tenant scope', () => {
         .sort(),
     ).toEqual([EVENT_A, EVENT_B].sort());
   });
+
+  // A series' occurrences must land together or not at all (#3235): one
+  // array insert, which PostgREST runs as a single INSERT statement.
+  it('createMany sends every occurrence in one insert', async () => {
+    const occurrence = (n: number) =>
+      inB({
+        id: `0b000000-0000-4000-8000-00000000007${n}`,
+        name: 'Chapter meeting',
+        start_time: `2026-09-0${n + 1}T18:00:00.000Z`,
+        end_time: `2026-09-0${n + 1}T19:00:00.000Z`,
+        parent_event_id: EVENT_B,
+      });
+
+    const created = await repo.createMany([occurrence(1), occurrence(2)]);
+
+    const inserts = harness.ops.filter((op) => op.mode === 'insert');
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0].payload).toHaveLength(2);
+    expect(created.map((e) => e.id)).toEqual([
+      '0b000000-0000-4000-8000-000000000071',
+      '0b000000-0000-4000-8000-000000000072',
+    ]);
+  });
+
+  it('createMany writes nothing for an empty list', async () => {
+    await expect(repo.createMany([])).resolves.toEqual([]);
+
+    expect(harness.ops).toEqual([]);
+  });
 });
