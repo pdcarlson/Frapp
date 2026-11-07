@@ -118,7 +118,9 @@ constraints web habits most often break:
 - The theme is dark-only. The context is `{ tokens: SignetTokens }`, with no light/dark preference,
   no `resolvedTheme`, and no `useColorScheme`.
 - Don't put raw hex or hand-set type in screen code. Set type only through
-  `typeRole(tokens.typography.role.X)`, which carries the per-weight Figtree family.
+  `typeRole(tokens.typography.role.X)`, which carries the per-weight Figtree family, and on a
+  single-line `TextInput` through `fieldTypeRole(...)`, which leaves out the line height that
+  draws iOS field text below center ([`components.md` § Text input](../../../spec/ui/design-system/components.md#text-input)).
   `fontSize`/`fontWeight` literals, or arithmetic on a role token, are defects. Use `tint(hue)` for
   semantic fills (0.13 default, 0.3 for borders), `MONO_FONT_FAMILY` for mono, and
   `avatarRadius(size)` for avatars. All of these live in `lib/theme.tsx`.
