@@ -253,4 +253,51 @@ describe('AuthService', () => {
       display_name: 'Ada Lovelace',
     });
   });
+
+  // Sign in with Apple writes the name to the auth metadata just after the
+  // session exists, so the first request can store the stand-in first.
+  it('replaces the Member stand-in once the sign-in metadata has a name', async () => {
+    mockRepo.findBySupabaseAuthId.mockResolvedValue(
+      userFixture({
+        id: 'user-11',
+        supabase_auth_id: 'auth-apple',
+        email: 'abc123@privaterelay.appleid.com',
+        display_name: 'Member',
+      }),
+    );
+
+    await service.syncUser('auth-apple', 'abc123@privaterelay.appleid.com', {
+      full_name: 'Grace Hopper',
+    });
+
+    expect(mockRepo.update).toHaveBeenCalledWith('user-11', {
+      display_name: 'Grace Hopper',
+    });
+  });
+
+  it('keeps Member while there is still no name, and never replaces a real one', async () => {
+    mockRepo.findBySupabaseAuthId.mockResolvedValueOnce(
+      userFixture({
+        id: 'user-12',
+        supabase_auth_id: 'auth-apple-2',
+        email: 'abc123@privaterelay.appleid.com',
+        display_name: 'Member',
+      }),
+    );
+    await service.syncUser('auth-apple-2', 'abc123@privaterelay.appleid.com');
+    expect(mockRepo.update).not.toHaveBeenCalled();
+
+    mockRepo.findBySupabaseAuthId.mockResolvedValueOnce(
+      userFixture({
+        id: 'user-13',
+        supabase_auth_id: 'auth-typed',
+        email: 'ada@example.com',
+        display_name: 'Ada L.',
+      }),
+    );
+    await service.syncUser('auth-typed', 'ada@example.com', {
+      full_name: 'Ada Lovelace',
+    });
+    expect(mockRepo.update).not.toHaveBeenCalled();
+  });
 });

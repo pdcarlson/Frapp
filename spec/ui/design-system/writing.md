@@ -778,9 +778,22 @@ client cannot read (`GET /v1/invoices/overdue` is `billing:view`-only). §Status
 labels reserves the backend's own labels for states the client can actually
 confirm.
 
+### Profile step (mobile s03)
+
+s03's middle beat, shown when the member has no photo or no real name yet
+(`apps/mobile/lib/onboarding/profile-step.ts`). The name field never pre-fills
+the API's `Member` stand-in. The name is checked when the member presses the
+button, not while typing.
+
+| State | Title | Copy |
+|---|---|---|
+| Step | `How the chapter sees you` | `Your photo and name go on every message you send.` The profile photo control (tap to choose, as on Profile), then the field labelled `Your name`, placeholder `First and last name`. Gold `Continue` when the notifications beat follows, else `Go to chat`. |
+| No name | as above | Under the field: `Add your name so the chapter knows who's talking.` |
+| Save failed | as above | Under the field: `Couldn't save your name. Check your connection and try again.` The member stays on the beat with what they typed. |
+
 ### Push opt-in (mobile)
 
-Onboarding's notifications step (s03's second beat, and chapter setup's step) and the
+Onboarding's notifications step (s03's last beat, and chapter setup's step) and the
 chat home's one reminder (`components/notifications/push-ask.tsx`,
 `push-reminder.tsx`). The rows name what pushes by default, in the app's nouns: every message in a DM,
 #general and #announcements, and a mention anywhere. The footnote names where each is

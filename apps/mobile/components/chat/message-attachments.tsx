@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type ViewStyle,
+} from "react-native";
 import { Image, type ImageStyle } from "expo-image";
 import * as WebBrowser from "expo-web-browser";
 import { useMessageAttachments } from "@repo/hooks";
@@ -325,44 +331,12 @@ function PhotoLayout({
   styles: ReturnType<typeof createStyles>;
 }) {
   if (photos.length === 1) {
-    const photo = photos[0]!;
-    const aspect =
-      photo.width && photo.height ? photo.width / photo.height : null;
-    // A sized photo's row is the photo's own box: full column width at its
-    // aspect ratio, narrowed to the width at which it reaches the height cap.
-    // The row hugs the picture at every shape, so `contain` never leaves
-    // empty sides and the rounded corners land on the photo.
     return (
-      <Pressable
-        accessibilityRole={photo.onPress ? "button" : "image"}
-        accessibilityLabel={
-          photo.onPress ? `${photo.verb ?? "View"} ${photo.label}` : photo.label
-        }
-        disabled={!photo.onPress}
-        onPress={photo.onPress}
+      <SinglePhoto
+        photo={photos[0]!}
         onLongPress={onLongPress}
-        style={
-          aspect !== null
-            ? [
-                styles.imageRow,
-                styles.imageRowSized,
-                { maxWidth: PREVIEW_MAX_HEIGHT * aspect, aspectRatio: aspect },
-              ]
-            : styles.imageRow
-        }
-      >
-        <PhotoImage
-          photo={photo}
-          // Sized from the stored dimensions when they exist so the row does
-          // not jump when the image lands; otherwise a fixed height.
-          style={
-            aspect !== null
-              ? [styles.preview, styles.previewFill]
-              : [styles.preview, styles.previewFull, styles.previewUnsized]
-          }
-          contentFit="contain"
-        />
-      </Pressable>
+        styles={styles}
+      />
     );
   }
 
@@ -410,6 +384,76 @@ function PhotoLayout({
 }
 
 /**
+ * A message's only photo, drawn at its own shape against the start of the
+ * column, under the text it belongs to, as Discord and iMessage draw one.
+ *
+ * A sized photo's row is the photo's own box: full column width at its
+ * aspect ratio, narrowed to the width at which it reaches the height cap.
+ * The row hugs the picture at every shape, so `contain` never leaves empty
+ * sides and the rounded corners land on the photo.
+ *
+ * A photo with no stored size (one sent before sizes were recorded, or one
+ * the sender's phone could not measure) takes its size from the image itself
+ * once it loads. Until then it holds a fixed-height box; after, it gets the
+ * same hugging box, so it never sits letterboxed in the middle of a
+ * full-width row (Paul, 2026-11-07).
+ */
+function SinglePhoto({
+  photo,
+  onLongPress,
+  styles,
+}: {
+  photo: GridPhoto;
+  onLongPress?: () => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  const [measured, setMeasured] = useState<number | null>(null);
+  const stored =
+    photo.width && photo.height ? photo.width / photo.height : null;
+  const aspect = stored ?? measured;
+  return (
+    <Pressable
+      accessibilityRole={photo.onPress ? "button" : "image"}
+      accessibilityLabel={
+        photo.onPress ? `${photo.verb ?? "View"} ${photo.label}` : photo.label
+      }
+      disabled={!photo.onPress}
+      onPress={photo.onPress}
+      onLongPress={onLongPress}
+      style={
+        aspect !== null
+          ? [
+              styles.imageRow,
+              styles.imageRowSized,
+              { maxWidth: PREVIEW_MAX_HEIGHT * aspect, aspectRatio: aspect },
+            ]
+          : styles.imageRow
+      }
+    >
+      <PhotoImage
+        photo={photo}
+        // Sized from the stored dimensions when they exist so the row does
+        // not jump when the image lands; otherwise a fixed height until the
+        // image says how big it is.
+        style={
+          aspect !== null
+            ? [styles.preview, styles.previewFill]
+            : [styles.preview, styles.previewFull, styles.previewUnsized]
+        }
+        contentFit="contain"
+        onNaturalSize={
+          stored === null
+            ? (width, height) => {
+                if (width > 0 && height > 0) setMeasured(width / height);
+              }
+            : undefined
+        }
+      />
+    </Pressable>
+  );
+}
+
+/**
  * One photo: its blur until it loads, then the photo, falling back to the
  * original on the server when its first source fails.
  *
@@ -423,10 +467,13 @@ function PhotoImage({
   photo,
   style,
   contentFit,
+  onNaturalSize,
 }: {
   photo: GridPhoto;
   style: ImageStyle | ViewStyle | (ImageStyle | ViewStyle | false | null)[];
   contentFit: "contain" | "cover";
+  /** Told the image's own pixel size once it loads. */
+  onNaturalSize?: (width: number, height: number) => void;
 }) {
   const [failedFirst, setFailedFirst] = useState(false);
   const source = failedFirst && photo.fallback ? photo.fallback : photo.source;
@@ -440,6 +487,10 @@ function PhotoImage({
       cachePolicy="disk"
       recyclingKey={photo.key}
       accessibilityIgnoresInvertColors
+      onLoad={(event) => {
+        const size = event?.source;
+        if (onNaturalSize && size) onNaturalSize(size.width, size.height);
+      }}
       onError={() => {
         if (photo.fallback) setFailedFirst(true);
       }}

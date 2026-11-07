@@ -64,6 +64,9 @@ export function displayNameFromMetadata(
   return combined.length > 0 ? combined : null;
 }
 
+/** The name stored when sign-in carried none and the email gives none away. */
+export const PLACEHOLDER_DISPLAY_NAME = 'Member';
+
 export function displayNameForSync(
   email: string,
   metadata?: Record<string, unknown> | null,
@@ -71,10 +74,33 @@ export function displayNameForSync(
   const fromMeta = displayNameFromMetadata(metadata);
   if (fromMeta) return fromMeta;
   if (isPlaceholderAuthEmail(email) || isApplePrivateRelayEmail(email)) {
-    return 'Member';
+    return PLACEHOLDER_DISPLAY_NAME;
   }
   const local = email.split('@')[0] ?? '';
-  return local.length > 0 ? local : 'Member';
+  return local.length > 0 ? local : PLACEHOLDER_DISPLAY_NAME;
+}
+
+/**
+ * Whether a sync fills in the stored name. An empty one always takes the
+ * fallback; the `Member` stand-in gives way only to a real name from the
+ * sign-in metadata. That second case is Sign in with Apple: the app signs in
+ * first and writes the name Apple handed over to the auth metadata a moment
+ * later (`apps/mobile/lib/apple-auth.ts`), so the first request can create
+ * the row as `Member` before the name exists. Without this the name Apple
+ * gives only once was never adopted. A name the member typed is never
+ * replaced.
+ */
+export function shouldFillDisplayName(
+  stored: unknown,
+  metadata: Record<string, unknown> | null | undefined,
+): boolean {
+  if (typeof stored !== 'string') return false;
+  const current = stored.trim();
+  if (!current) return true;
+  return (
+    current === PLACEHOLDER_DISPLAY_NAME &&
+    displayNameFromMetadata(metadata) !== null
+  );
 }
 
 @Injectable()
@@ -107,10 +133,7 @@ export class AuthService {
       }
       // Schema is NOT NULL DEFAULT ''. An omitted column is not an empty
       // name — skip the fill rather than 500 on `.trim()`.
-      if (
-        typeof existing.display_name === 'string' &&
-        !existing.display_name.trim()
-      ) {
+      if (shouldFillDisplayName(existing.display_name, metadata)) {
         patch.display_name = displayName;
       }
       if (Object.keys(patch).length > 0) {
