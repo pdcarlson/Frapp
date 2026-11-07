@@ -212,6 +212,29 @@ export function useMember(id: string) {
   });
 }
 
+/**
+ * One member's full profile, by their `users.id` — the id chat carries on a
+ * message's sender and its mentions. Same response as {@link useMember}, so it
+ * also hands back the membership `id` a role edit needs. Keyed under
+ * `["members", chapterId, …]` so a role edit's invalidation reaches it.
+ */
+export function useMemberByUserId(userId: string) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["members", chapterId, "by-user", userId],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/members/by-user/{userId}", {
+        params: { path: { userId } },
+      });
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 60_000,
+    enabled: !!chapterId && !!userId,
+  });
+}
+
 export function useMemberSearch(query: string) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();

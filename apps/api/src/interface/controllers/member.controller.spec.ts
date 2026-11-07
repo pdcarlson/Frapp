@@ -18,6 +18,7 @@ describe('MemberController', () => {
       findRosterByChapter: jest.fn(),
       findByUserAndChapter: jest.fn(),
       findProfileById: jest.fn(),
+      findProfileByUserId: jest.fn(),
       searchByChapterAndName: jest.fn(),
       findAlumniByChapter: jest.fn(),
       updateRoles: jest.fn(),
@@ -128,6 +129,26 @@ describe('MemberController', () => {
 
       expect(memberService.findProfileById).toHaveBeenCalledWith(
         'member-1',
+        'chapter-1',
+        'viewer-1',
+      );
+      expect(result).toEqual(profile);
+    });
+  });
+
+  describe('getByUser', () => {
+    it("loads the profile by the member's user id", async () => {
+      const profile = { id: 'member-1', user_id: 'user-1' } as any;
+      memberService.findProfileByUserId.mockResolvedValue(profile);
+
+      const result = await controller.getByUser(
+        'chapter-1',
+        'viewer-1',
+        'user-1',
+      );
+
+      expect(memberService.findProfileByUserId).toHaveBeenCalledWith(
+        'user-1',
         'chapter-1',
         'viewer-1',
       );

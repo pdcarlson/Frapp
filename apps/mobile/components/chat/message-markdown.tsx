@@ -197,6 +197,8 @@ export function parseMessageMarkdown(
 interface MarkdownContextValue {
   styles: ReturnType<typeof createStyles>;
   onLongPress?: () => void;
+  /** Opens the profile of whoever an `@handle` names; see `MessageMarkdown`. */
+  onMentionPress?: (handle: string) => void;
   bold: boolean;
   italic: boolean;
 }
@@ -274,9 +276,21 @@ function Code({ children }: { children?: ReactNode }) {
  * where web pads it by a few pixels and rounds it by 5.
  */
 function Mention({ children }: { children?: ReactNode }) {
-  const { styles, bold, italic } = useMarkdownContext();
+  const { styles, bold, italic, onMentionPress, onLongPress } =
+    useMarkdownContext();
+  const handle = typeof children === "string" ? children : null;
   return (
-    <Text style={[styles.mention, { fontFamily: faceFor(bold, italic) }]}>
+    <Text
+      style={[styles.mention, { fontFamily: faceFor(bold, italic) }]}
+      // Tapping a mention opens that member's profile, as on Discord. A nested
+      // `Text` with `onPress` claims the touch, so it forwards the row's
+      // long-press as a link does.
+      onPress={
+        onMentionPress && handle ? () => onMentionPress(handle) : undefined
+      }
+      onLongPress={onMentionPress && handle ? onLongPress : undefined}
+      suppressHighlighting
+    >
       {children}
     </Text>
   );
@@ -329,6 +343,7 @@ export function MessageMarkdown({
   lead,
   trailing,
   onLongPress,
+  onMentionPress,
 }: {
   /** `parseMessageMarkdown(message.content)`, memoized by the caller. */
   parsed: ParsedMessageMarkdown;
@@ -346,6 +361,11 @@ export function MessageMarkdown({
    */
   trailing?: ReactNode;
   onLongPress?: () => void;
+  /**
+   * Called with a chip's text (`@Handle`) when it is tapped. The row resolves
+   * the handle against the message's own server-resolved `mentions`.
+   */
+  onMentionPress?: (handle: string) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
@@ -357,14 +377,22 @@ export function MessageMarkdown({
     longPress.current = onLongPress;
   });
   const hasLongPress = onLongPress !== undefined;
+  const mentionPress = useRef(onMentionPress);
+  useLayoutEffect(() => {
+    mentionPress.current = onMentionPress;
+  });
+  const hasMentionPress = onMentionPress !== undefined;
   const context = useMemo<MarkdownContextValue>(
     () => ({
       styles,
       onLongPress: hasLongPress ? () => longPress.current?.() : undefined,
+      onMentionPress: hasMentionPress
+        ? (handle: string) => mentionPress.current?.(handle)
+        : undefined,
       bold: false,
       italic: false,
     }),
-    [styles, hasLongPress],
+    [styles, hasLongPress, hasMentionPress],
   );
   return (
     <MarkdownContext.Provider value={context}>

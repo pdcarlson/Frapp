@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Query,
   UseGuards,
@@ -89,6 +90,25 @@ export class MemberController {
   @ApiOkResponse({ type: MemberRosterEntryDto, isArray: true })
   async roster(@CurrentChapterId() chapterId: string) {
     return this.memberService.findRosterByChapter(chapterId);
+  }
+
+  // Two segments, so `:id` never swallows it. Chat knows a person by their
+  // `users.id` (a message's `sender_id`, a mention), not by the membership row,
+  // and the roster deliberately carries no membership id; this lets a chat tap
+  // open the same profile the directory does without a whole-roster read.
+  @Get('by-user/:userId')
+  @ApiOperation({ summary: 'Get member profile by user ID' })
+  @ApiOkResponse({ type: MemberProfileDto })
+  async getByUser(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') viewerUserId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
+  ) {
+    return this.memberService.findProfileByUserId(
+      userId,
+      chapterId,
+      viewerUserId,
+    );
   }
 
   @Get(':id')

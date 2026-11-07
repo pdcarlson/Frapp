@@ -88,6 +88,8 @@ export interface ThreadMessageRowProps {
   onOpenActions: (message: ChatMessage) => void;
   /** Scrolls the thread to a loaded message: a reply quote's tap. */
   onJumpToMessage: (messageId: string) => void;
+  /** Opens a member's profile: a tap on a name, a photo or an `@` chip. */
+  onOpenProfile?: (userId: string) => void;
   onUnblock: (userId: string) => void;
   /** Each member's post-unblock re-read (`useMaskedRefresh`), for stale tombstones. */
   maskedRefresh: ReadonlyMap<string, MaskedRefreshState>;
@@ -128,6 +130,7 @@ function ThreadMessageRowBody({
   onUnreact,
   onOpenActions,
   onJumpToMessage,
+  onOpenProfile,
   onUnblock,
   maskedRefresh,
   onReload,
@@ -236,6 +239,7 @@ function ThreadMessageRowBody({
         startsRun={startsRun}
         quote={quote}
         onOpenActions={openActions}
+        onOpenProfile={onOpenProfile}
       >
         {card}
         <OwnLineMarkers message={message} />
@@ -258,6 +262,7 @@ function ThreadMessageRowBody({
       onUnreact={onUnreact}
       onOpenActions={openActions}
       onJumpToParent={onJumpToParent}
+      onOpenProfile={onOpenProfile}
     />
   );
 }
