@@ -266,6 +266,9 @@ describe('ChatPushWorkerService', () => {
           target: { screen: 'chat', channelId: CHANNEL.id },
           senderId: 'sender',
         });
+      } // Bundled or not, every push stacks with its channel's others on iOS.
+      for (const call of notifyUser.mock.calls) {
+        expect(call[2]).toMatchObject({ threadId: `chat:${CHANNEL.id}` });
       }
     });
 
