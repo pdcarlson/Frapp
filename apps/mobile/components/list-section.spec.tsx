@@ -101,7 +101,8 @@ describe("ListRow — chevron", () => {
       );
     });
     return tree.root.findAll(
-      (node) => (node.type as unknown) === "Text" && node.props.children === "›",
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "›",
     ).length;
   }
 
@@ -111,7 +112,12 @@ describe("ListRow — chevron", () => {
 
   it("draws none on a row that acts in place (components.md § Chrome weight)", () => {
     expect(
-      chevrons({ label: "Sign out", destructive: true, action: true, onPress: vi.fn() }),
+      chevrons({
+        label: "Sign out",
+        destructive: true,
+        action: true,
+        onPress: vi.fn(),
+      }),
     ).toBe(0);
   });
 });
@@ -288,7 +294,9 @@ describe("usePressFeedback", () => {
 // `overflow: "hidden"`, and the row's margins move onto that View so the row
 // is laid out where it was.
 describe("PressableRow", () => {
-  function renderRow(props: Partial<React.ComponentProps<typeof PressableRow>>) {
+  function renderRow(
+    props: Partial<React.ComponentProps<typeof PressableRow>>,
+  ) {
     let tree!: ReactTestRenderer;
     act(() => {
       tree = create(
@@ -331,6 +339,17 @@ describe("PressableRow", () => {
       borderTopLeftRadius: 6,
     });
     expect(row.props.accessibilityLabel).toBe("Row");
+  });
+
+  // A flexing row (the chat home's section heading, beside its filter button)
+  // must size the clip, the parent's real child; on the inner row alone the
+  // clip shrank to its content and the heading's name drew at zero width.
+  it("sizes the clip by the row's flex, and lets the row fill the clip", () => {
+    const row = renderRow({ style: { flex: 1, flexDirection: "row" } });
+    const clip = row.parent?.props.style;
+    expect(clip).toEqual({ overflow: "hidden", flex: 1 });
+    const resting = row.props.style({ pressed: false })[0];
+    expect(resting).toEqual({ flexGrow: 1, flexDirection: "row" });
   });
 
   it("lifts on iOS while held, and to the popover step for a card", () => {
