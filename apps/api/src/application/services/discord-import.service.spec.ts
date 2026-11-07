@@ -513,8 +513,12 @@ describe('DiscordImportService — starting', () => {
       status: 'ready',
       parts_total: 2,
       error: null,
+      // A restart gets its full set of tries again (#1692).
+      attempt_count: 0,
       role_mapping: [],
     });
+    // And does not wait out a pause a temporary error left on the row.
+    expect(repo.clearPause).toHaveBeenCalledWith(IMPORT_ID, CHAPTER);
   });
 });
 
@@ -575,6 +579,34 @@ describe('DiscordImportService — lifecycle guards', () => {
     await service.requestPurge(IMPORT_ID, CHAPTER);
     expect(repo.update).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, {
       status: 'purging',
+      // The deletion's tries count from zero, and the page shows `error`
+      // while deleting, so the import's last one goes (#1692).
+      attempt_count: 0,
+      error: null,
+    });
+    // Nor does it wait out a pause the import was left in.
+    expect(repo.clearPause).toHaveBeenCalledWith(IMPORT_ID, CHAPTER);
+  });
+
+  it("keeps a failed import's reason when it is cancelled (#1692)", async () => {
+    await build(job({ status: 'failed', error: 'Discord refused the bot.' }));
+    await service.cancel(IMPORT_ID, CHAPTER);
+    expect(repo.update).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, {
+      status: 'cancelled',
+    });
+  });
+
+  it('clears a "trying again" note when an import is cancelled (#1692)', async () => {
+    await build(
+      job({
+        status: 'running',
+        error: 'The import hit a temporary problem and paused.',
+      }),
+    );
+    await service.cancel(IMPORT_ID, CHAPTER);
+    expect(repo.update).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, {
+      status: 'cancelled',
+      error: null,
     });
   });
 
@@ -667,9 +699,11 @@ describe('DiscordImportService — progress and clearing (#2816, #2817)', () => 
           ? service.cancel(IMPORT_ID, CHAPTER)
           : service.requestPurge(IMPORT_ID, CHAPTER);
       await act;
-      expect(repo.update).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, {
-        status: next,
-      });
+      expect(repo.update).toHaveBeenCalledWith(
+        IMPORT_ID,
+        CHAPTER,
+        expect.objectContaining({ status: next }),
+      );
       expect(repo.countChannels).not.toHaveBeenCalled();
     },
   );
