@@ -2807,6 +2807,15 @@ A function body. It re-creates `get_channel_unread_counts` with one more join pr
 
 Afterwards every settings change lights the `#chapter-audit` badge again, for every member.
 
+## Rollback function grants and search_path (20261107160000)
+
+* **Migration**: `20261107160000_function_grants_and_search_path.sql`
+
+Revoked EXECUTE on every `public` trigger function for PUBLIC, `anon` and `authenticated`; revoked PUBLIC and `anon` on the other definer functions; and pinned `search_path = public, pg_temp` on every `public` function that pinned none. No data changed.
+
+**Don't roll this back to fix a symptom elsewhere; find what broke first.** Nothing calls the trigger functions as an RPC, and a revoked grant cannot stop a trigger firing. A function that fails after this with `relation "<name>" does not exist` resolved a name outside `public` through the old path. Fix that one function forward in a new migration ([§ 3) Undo one migration](#3-undo-one-migration)) by qualifying the name (`extensions.<fn>`) or with `alter function public.<fn>(<args>) set search_path = public, extensions, pg_temp`. Don't reset its path. The PGlite gate fails on an unpinned function, so `reset search_path` cannot ship.
+
+There is no grant to restore. The only `authenticated` grants this revoked were on trigger functions, which no client calls and the PGlite gate refuses to see granted, and the `anon` grants it revoked must stay revoked. If a client turns out to need a non-trigger definer function, that is a new decision, not a rollback: follow [`authorization-model.md` § Who may call a `SECURITY DEFINER` function](../security/authorization-model.md#who-may-call-a-security-definer-function).
 ## Rollback roles mentionable (20261107061000)
 
 * **Migration**: `20261107061000_roles_mentionable.sql`

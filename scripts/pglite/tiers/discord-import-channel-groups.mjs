@@ -196,9 +196,8 @@ console.log("\n=== Functional: a deleted import takes the channel groups it made
       { unpinned },
     );
 
-    // As in the channel tier: a forgotten revoke from anon or authenticated is
-    // out of reach here, since hosted grants come through ALTER DEFAULT
-    // PRIVILEGES, which is not replayed.
+    // As in the channel tier: with hosted's default privileges installed by
+    // `run.mjs`, a forgotten revoke from anon or authenticated fails here.
     const guard = await q(`
       select has_function_privilege('authenticated', 'public.delete_empty_discord_import_categories(uuid, uuid)', 'execute') as authed,
              has_function_privilege('authenticated', 'public.discord_import_category_holds_anything(uuid)', 'execute') as authed_check,
