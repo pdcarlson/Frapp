@@ -99,17 +99,3 @@ export async function clearStoredPushTokenRow(
     // Sign-out must never appear to fail.
   }
 }
-
-/**
- * Whether a freshly read device token still matches what is registered.
- *
- * Re-registering an identical token is an idempotent no-op server-side, so this
- * is an optimization rather than a correctness gate — but it also avoids
- * discarding a known-good row id for a response we might not be able to narrow.
- */
-export function isAlreadyRegistered(
-  stored: PushTokenRow | null,
-  token: string,
-): boolean {
-  return !!stored && stored.token === token && stored.id !== null;
-}
