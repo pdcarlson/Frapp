@@ -1,6 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
+import { CHAT_DENSITY_STORAGE_KEY } from "@repo/chat-core/density";
+import {
+  resetChatDensityForTests,
+  setChatDensity,
+} from "@/lib/chat/chat-density";
 import { MessageItem, type MessageItemProps } from "./message-item";
 import { reactionActionType, type ChatMessage } from "@repo/chat-core/types";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
@@ -1979,5 +1984,90 @@ describe("MessageItem Report and Block (#2687)", () => {
     expect(
       screen.queryByRole("menuitem", { name: /^Block/ }),
     ).not.toBeInTheDocument();
+  });
+});
+
+// Chat density (`components.md` §11 § Density, #2252). Cozy is the layout
+// above; compact drops the avatar and author line for a time gutter and a name
+// that leads the body.
+describe("MessageItem compact density", () => {
+  afterEach(() => {
+    act(() => setChatDensity("cozy"));
+    window.localStorage.clear();
+    resetChatDensityForTests();
+  });
+
+  it("draws cozy until the member picks compact", () => {
+    const { container } = renderItem(message());
+    expect(container.querySelector('[data-slot="compact-time"]')).toBeNull();
+    expect(screen.getByText("AC")).toBeInTheDocument();
+  });
+
+  it("reads a density stored by an earlier visit", () => {
+    window.localStorage.setItem(CHAT_DENSITY_STORAGE_KEY, "compact");
+    resetChatDensityForTests();
+    const { container } = renderItem(message());
+    expect(
+      container.querySelector('[data-slot="compact-time"]'),
+    ).not.toBeNull();
+  });
+
+  it("leads the body with the name and holds the time in the gutter", () => {
+    act(() => setChatDensity("compact"));
+    const { container } = renderItem(message());
+    expect(screen.queryByText("AC")).toBeNull();
+    const name = container.querySelector<HTMLElement>(
+      '[data-slot="author-line"]',
+    );
+    expect(name?.textContent).toBe("Alice Chen");
+    // The name floats ahead of the body inside one flow, so the text wraps
+    // back under it.
+    expect(name?.className).toContain("float-left");
+    expect(name?.nextElementSibling?.getAttribute("data-slot")).toBe(
+      "message-body",
+    );
+    expect(
+      container.querySelector('[data-slot="compact-time"]')?.textContent,
+    ).toBe("5:09 PM");
+    expect(window.localStorage.getItem(CHAT_DENSITY_STORAGE_KEY)).toBe(
+      "compact",
+    );
+  });
+
+  it("gives a follow-on no name, and reveals its time as cozy does", () => {
+    act(() => setChatDensity("compact"));
+    const { container } = renderItemWithProps({ showHeader: false });
+    expect(container.querySelector('[data-slot="author-line"]')).toBeNull();
+    expect(
+      container.querySelector('[data-slot="gutter-time"]')?.className,
+    ).toContain("opacity-0");
+  });
+
+  it("starts a run 4 below the row above and widens the gutter for the time", () => {
+    const cozy = renderItem(message());
+    const cozyRow =
+      cozy.container.querySelector<HTMLElement>('[data-run="start"]');
+    expect(cozyRow?.className).toContain("pt-4");
+    expect(cozyRow?.querySelector(".w-8")).not.toBeNull();
+    cozy.unmount();
+
+    act(() => setChatDensity("compact"));
+    const { container } = renderItem(message());
+    const row = container.querySelector<HTMLElement>('[data-run="start"]');
+    expect(row?.className).toContain("pt-1");
+    expect(row?.className).not.toContain("pt-4");
+    expect(row?.querySelector(".w-14")).not.toBeNull();
+  });
+
+  it("puts the name on its own line above a message with no text", () => {
+    act(() => setChatDensity("compact"));
+    const { container } = renderItem(
+      message({ content: "", attachment_count: 1 }),
+    );
+    const name = container.querySelector<HTMLElement>(
+      '[data-slot="author-line"]',
+    );
+    expect(name?.textContent).toBe("Alice Chen");
+    expect(name?.className).not.toContain("float-left");
   });
 });
