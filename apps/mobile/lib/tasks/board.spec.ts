@@ -195,6 +195,40 @@ describe("selectTaskRows — completed rows", () => {
     expect(board.total).toBe(0);
   });
 
+  it("keeps an old completion an officer hasn't confirmed, however old", () => {
+    const board = selectTaskRows(
+      [
+        done({
+          id: "a",
+          title: "Still waiting",
+          due_date: "2026-08-01",
+          completed_at: at(2026, 8, 2).toISOString(),
+          points_awarded: false,
+        }),
+      ],
+      ME,
+      NOW,
+    );
+    expect(board.total).toBe(1);
+  });
+
+  it("counts a confirmed task's week from its confirmation", () => {
+    const board = selectTaskRows(
+      [
+        done({
+          id: "a",
+          title: "Confirmed late",
+          due_date: "2026-08-01",
+          completed_at: at(2026, 8, 2).toISOString(),
+          confirmed_at: at(2026, 8, 15).toISOString(),
+        }),
+      ],
+      ME,
+      NOW,
+    );
+    expect(board.total).toBe(1);
+  });
+
   it("keeps a long-overdue task that was only just completed", () => {
     // Retention is measured from completion, not the deadline. Keying it on the
     // due date drops the row in the same render as the tap that closed it — the
