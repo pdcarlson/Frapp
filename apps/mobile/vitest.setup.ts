@@ -32,6 +32,10 @@ vi.mock("expo-file-system/legacy", () => ({
     BINARY_CONTENT: 0,
     MULTIPART: 1,
   },
+  FileSystemSessionType: {
+    BACKGROUND: 0,
+    FOREGROUND: 1,
+  },
   EncodingType: {
     UTF8: "utf8",
   },
@@ -83,11 +87,15 @@ vi.mock("expo-haptics", () => ({
 
 vi.mock("expo-image-manipulator", () => ({
   ImageManipulator: {
-    manipulate: vi.fn(() => ({
-      renderAsync: vi.fn().mockResolvedValue({
-        saveAsync: vi.fn().mockResolvedValue({ uri: "file:///out.jpg" }),
-      }),
-    })),
+    manipulate: vi.fn(() => {
+      const context = {
+        resize: vi.fn(() => context),
+        renderAsync: vi.fn().mockResolvedValue({
+          saveAsync: vi.fn().mockResolvedValue({ uri: "file:///out.jpg" }),
+        }),
+      };
+      return context;
+    }),
   },
   SaveFormat: { JPEG: "jpeg", PNG: "png", WEBP: "webp" },
 }));
