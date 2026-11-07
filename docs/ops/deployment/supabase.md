@@ -169,9 +169,14 @@ personal token that can write; no stored CI token can.
 | Email confirmations | required (`mailer_autoconfirm: false`) | required |
 | Custom SMTP | **on** — Resend `smtp.resend.com:465`, user `resend`, From `Signet <no-reply@mail.frapp.live>` (owner send proof 2026-09-09 ~23:07Z from `https://app.frapp.live`). Target sender name `Frapp`: [ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp) | **on** — Resend `smtp.resend.com:465`, From `Signet <no-reply@mail.staging.frapp.live>` (owner send proof 2026-09-09 from `https://app.staging.frapp.live`). Target sender name `Frapp`: [ADR-25 step 3](#adr-25-step-3-the-sender-becomes-frapp) |
 | Auth email rate limit | **300 per hour** (owner dashboard toast 2026-09-09) | **300 per hour** (owner dashboard 2026-09-09; asserted daily as `auth-smtp`) |
+| Sign-ups and sign-ins (`rate_limit_otp`, per 5 min per IP) | **150** (owner dashboard 2026-11-06, raised from the default 30 for migration day, [#925](https://github.com/pdcarlson/Frapp/issues/925)) | unread |
+| Token verifications (`rate_limit_verify`, per 5 min per IP) | **150** (owner dashboard 2026-11-06, raised from the default 30, #925) | unread |
+| Token refreshes (`rate_limit_token_refresh`, per 5 min per IP) | **300** (owner dashboard 2026-11-06, raised from the default 150, #925) | unread |
 | Password minimum length | 6 | 6 |
 | Leaked password protection ("Prevent use of leaked passwords", Authentication → Sign In / Providers → Email; Pro plan and up) | **on** (owner 2026-09-29; security advisor clear at 21:14Z; asserted daily as `auth-leaked-password`) | **on** (owner 2026-09-29; security advisor clear at 21:31Z; asserted daily as `auth-leaked-password`) |
 | Custom access-token hook | `public.custom_access_token_hook` (enabled) | same |
+
+**The per-IP Auth limits were raised on `frapp-prod` on 2026-11-06 ([#925](https://github.com/pdcarlson/Frapp/issues/925)).** About 100 members sign in at once on migration day ([#2776](https://github.com/pdcarlson/Frapp/issues/2776)), many from one campus IP, and at the default 30 per 5 minutes the sign-in and verification buckets would refuse part of the chapter. The web magic-link `verifyOtp` and the PKCE `exchangeCodeForSession` run server-side in `apps/web/app/auth/callback/route.ts`, so GoTrue counts those against the web host's egress IPs, shared by every web member, not the member's own IP. The values were set in the dashboard, not read through the Management API (agent sandboxes can't reach `api.supabase.com`), and nothing asserts them daily yet. Staging still has whatever it had; match it before the migration-day rehearsal.
 
 **`frapp://**` was added to both allow lists on 2026-09-06.** The mobile app's magic-link
 `emailRedirectTo` is `Linking.createURL("/")` with a trailing `?` (`frapp:///?` in a build that
