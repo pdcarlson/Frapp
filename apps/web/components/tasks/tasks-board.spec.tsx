@@ -183,7 +183,7 @@ const trigger = () => screen.getByRole("button", { name: /^add a task$/i });
 const addForm = () => screen.getByRole("form", { name: /add a task/i });
 const startButton = () => screen.getByRole("button", { name: /^start$/i });
 const completeButton = () =>
-  screen.getByRole("button", { name: /mark complete/i });
+  screen.getByRole("button", { name: /mark done/i });
 const confirmButton = () => screen.getByRole("button", { name: /^confirm$/i });
 const rejectButton = () => screen.getByRole("button", { name: /^reject$/i });
 // An icon on each tile, named for its task ("Delete Draft rush schedule").
@@ -236,10 +236,11 @@ describe("TasksBoard subscription gating", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps the disabled Confirmed indicator on your own awarded task", () => {
-    // Hiding the awarded button too would leave an assignee-admin no sign that
-    // another admin confirmed their task. It is disabled and reads "Confirmed",
-    // so it reports state rather than offering the refused action.
+  it("moves a confirmed task out of the waiting column into Confirmed, with no controls", () => {
+    // "Waiting on an officer" is the officer's queue: a confirmed task there
+    // would read as still owed. It sits in the Confirmed list instead, which
+    // says what the old disabled "Confirmed" button said, and the API refuses
+    // a reject once points are awarded, so it offers neither.
     chapter.active();
     tasksRef.current = [
       {
@@ -247,13 +248,27 @@ describe("TasksBoard subscription gating", () => {
         id: "task-mine-awarded",
         assignee_id: ME,
         points_awarded: true,
+        confirmed_at: new Date().toISOString(),
       },
     ];
     render(<TasksBoard />);
 
-    const confirmed = screen.getByRole("button", { name: /confirmed/i });
-    expect(confirmed).toBeInTheDocument();
-    expect(confirmed).toBeDisabled();
+    const waiting = screen.getByRole("region", { name: "Waiting on an officer" });
+    expect(within(waiting).getByText("Nothing to confirm")).toBeInTheDocument();
+    const confirmed = screen.getByRole("region", { name: "Confirmed" });
+    expect(within(confirmed).getByText(TASKS[2]!.title)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /confirm/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /reject/i })).toBeNull();
+  });
+
+  it("lets the assignee take back their own unconfirmed completion", () => {
+    chapter.active();
+    tasksRef.current = [{ ...TASKS[2], id: "task-mine", assignee_id: ME }];
+    render(<TasksBoard />);
+
+    expect(
+      screen.getByRole("button", { name: /mark not done/i }),
+    ).toBeInTheDocument();
   });
 
   it("hides Confirm while the viewer is unknown, rather than failing open", () => {
@@ -398,7 +413,7 @@ describe("TasksBoard subscription gating", () => {
     render(<TasksBoard />);
 
     expect(screen.getByText(/draft the rush calendar/i)).toBeInTheDocument();
-    expect(screen.getByText(/awaiting confirmation/i)).toBeInTheDocument();
+    expect(screen.getByText(/waiting on an officer/i)).toBeInTheDocument();
   });
 
   it("fails open when the chapter record cannot be read", () => {
@@ -460,11 +475,11 @@ describe("TasksBoard overdue affordances", () => {
 
     expect(startButton()).toBeEnabled();
     expect(
-      screen.queryByRole("button", { name: /mark complete/i }),
+      screen.queryByRole("button", { name: /mark done/i }),
     ).not.toBeInTheDocument();
   });
 
-  it("offers Mark complete when the stored status is IN_PROGRESS", () => {
+  it("offers Mark done when the stored status is IN_PROGRESS", () => {
     tasksRef.current = [overdueTask({ stored_status: "IN_PROGRESS" })];
     render(<TasksBoard />);
 
@@ -490,7 +505,7 @@ describe("TasksBoard overdue affordances", () => {
       screen.queryByRole("button", { name: /^start$/i }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /mark complete/i }),
+      screen.queryByRole("button", { name: /mark done/i }),
     ).not.toBeInTheDocument();
     // Still readable, and Delete still offered — only the ambiguous
     // lifecycle transition is withheld.
@@ -588,7 +603,7 @@ describe("TasksBoard flush layout", () => {
     for (const [name, count] of [
       ["To do", "1"],
       ["In progress", "1"],
-      ["Awaiting confirmation", "1"],
+      ["Waiting on an officer", "1"],
       ["Overdue", "0"],
     ] as const) {
       const section = screen.getByRole("region", { name });
@@ -628,7 +643,7 @@ describe("TasksBoard flush layout", () => {
     for (const name of [
       "To do",
       "In progress",
-      "Awaiting confirmation",
+      "Waiting on an officer",
       "Overdue",
     ]) {
       expect(screen.getByRole("region", { name })).toBeInTheDocument();

@@ -12,6 +12,8 @@ type ToasterToast = ToastProps & {
   id: string
   title?: React.ReactNode
   description?: React.ReactNode
+  /** A `ToastAction`, such as Undo. */
+  action?: React.ReactElement
 }
 
 let count = 0
