@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { MembersGlyph } from "./chat-glyphs";
 import { ChannelMemberList } from "./channel-member-list";
 import { channelDescription } from "@repo/hooks/channel-start";
+import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { ChannelHeaderTitle } from "./channel-header-title";
 import { ChannelStart } from "./channel-start";
 import { EmptyState, ErrorState } from "@/components/shared/async-states";
@@ -117,7 +118,6 @@ import { ChannelMenu } from "./channel-menu";
 import type { ChannelRowActions } from "./channel-row-menu";
 import type { ChatSearchHit } from "./chat-search-popover";
 import type { BookmarkEntry } from "./bookmarks-popover";
-import { ReconnectPill } from "./reconnect-pill";
 import { BlockListNotice } from "./block-list-notice";
 import { useUnblockFlow } from "./use-unblock-flow";
 import { useBlockFlow } from "./use-block-flow";
@@ -705,6 +705,11 @@ export function ChatShell({
   }, [membersQuery.data]);
 
   const channel = useChatChannel(activeChannelId);
+  // The top bar's connection pill says what this channel's realtime transport
+  // is doing, folded with the app's own connection state, so the header no
+  // longer draws a pill of its own (`spec/ui/resilience/connection-state.md`
+  // § One indicator).
+  useReportOpenChatTransport(activeChannelId ? channel.connection : null);
   const { toast } = useToast();
 
   // The member's own arrangement of the rail (#2877): pins, folds, filters.
@@ -1905,7 +1910,6 @@ export function ChatShell({
             description={activeChannelDescription}
           />
           <div className="flex shrink-0 items-center gap-2">
-            <ReconnectPill status={channel.connection} />
             {showMemberList ? (
               <Button
                 variant="ghost"
@@ -2381,7 +2385,9 @@ export function ChatShell({
             // Never `disabled` while offline: the send path enqueues to the
             // Dexie outbox before it touches the network, so gating the
             // composer would defeat the queue built to make composing-while-
-            // offline work (`spec/ui/resilience/connection-state.md`). It is labelled instead.
+            // offline work (`spec/ui/resilience/connection-state.md`). The
+            // top bar's connection pill says so; this flag only refuses the
+            // queueless slash commands.
             isOffline={channel.connection === "offline"}
             replyTo={replyTo}
             onCancelReply={cancelReply}

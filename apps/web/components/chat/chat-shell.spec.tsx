@@ -803,9 +803,6 @@ vi.mock("./channel-menu", () => ({
     </div>
   ),
 }));
-vi.mock("./reconnect-pill", () => ({
-  ReconnectPill: () => null,
-}));
 vi.mock("./message-timeline", async () => {
   const React = await import("react");
   const MessageTimeline = React.forwardRef<
@@ -881,6 +878,7 @@ vi.mock("./message-timeline", async () => {
 });
 
 import { blockClearance } from "@repo/chat-core/blocks";
+import { useOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { ChatShell } from "./chat-shell";
 import {
   NavFaceContext,
@@ -3965,5 +3963,30 @@ describe("ChatShell rail row menu (owner, 2026-11-06)", () => {
         expect.objectContaining({ title: "Copy failed" }),
       );
     });
+  });
+});
+
+/*
+ * The header no longer draws its own transport pill: the shell hands the
+ * channel's transport to the top bar's connection pill
+ * (`connection-state.md` § One indicator), and takes it back on unmount.
+ */
+describe("ChatShell reports its transport to the connection pill", () => {
+  it("reports the open channel's transport and clears it on unmount", () => {
+    let reported: string | null = "unset";
+    function Reader() {
+      reported = useOpenChatTransport();
+      return null;
+    }
+    mockUseChatChannel.mockReturnValue({
+      ...chatChannelResult(),
+      connection: "polling",
+    });
+    const reader = render(<Reader />);
+    const shell = render(<ChatShell />);
+    expect(reported).toBe("polling");
+    shell.unmount();
+    expect(reported).toBeNull();
+    reader.unmount();
   });
 });
