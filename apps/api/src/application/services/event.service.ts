@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
 import type { IEventRepository } from '#domain/repositories/event.repository.interface';
@@ -16,6 +17,7 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import { toRRuleLine } from '@repo/validation';
 import { hasRequiredRole } from './event-role-targeting';
 import { normalizeCheckInZone } from './event-input';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import type {
   CreateEventInput,
   CreateEventResult,
@@ -30,6 +32,8 @@ import type {
  */
 @Injectable()
 export class EventService {
+  private readonly logger = new Logger(EventService.name);
+
   constructor(
     @Inject(EVENT_REPOSITORY) private readonly eventRepo: IEventRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
@@ -200,7 +204,40 @@ export class EventService {
     });
 
     if (parent.recurrence_rule) {
-      await this.series.generateRecurringInstances(parent);
+      // The occurrences go in as one insert. If it fails, take the whole
+      // series back out: otherwise the request fails while a series head with
+      // no occurrences stays behind, and a client retrying the 5xx creates a
+      // second one (#3235). The rollback reads the parent's occurrences rather
+      // than trusting the error, because an insert can commit and still report
+      // a failure (a reset or timeout on the response), and deleting only the
+      // parent would then leave every landed row as a standalone event
+      // (`parent_event_id` is `on delete set null`). Occurrences go first, so a
+      // failure partway leaves the series whole rather than orphaned.
+      try {
+        await this.series.generateRecurringInstances(parent);
+      } catch (error) {
+        try {
+          const landed = await this.eventRepo.findChildren(
+            parent.id,
+            parent.chapter_id,
+          );
+          if (landed.length > 0) {
+            await this.eventRepo.deleteMany(
+              landed.map((row) => row.id),
+              parent.chapter_id,
+            );
+          }
+          await this.eventRepo.delete(parent.id, parent.chapter_id);
+        } catch (cleanupError) {
+          reportCaughtFailure(this.logger, {
+            level: 'error',
+            site: 'event-create-series-rollback',
+            message: `Creating the occurrences of recurring event ${parent.id} failed, and so did taking the series back out. Check that event and its occurrences, and delete them by hand.`,
+            error: cleanupError,
+          });
+        }
+        throw error;
+      }
     }
 
     await this.announcements.notifyEventCreated(input.chapter_id, parent);
