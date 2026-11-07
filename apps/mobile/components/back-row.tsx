@@ -50,6 +50,11 @@ export const BACK_TO_EVENTS: BackTarget = { label: "Events", href: "/events" };
  * home since #3362, so its way back is Chat.
  */
 export const BACK_TO_CHAT: BackTarget = { label: "Chat", href: "/" };
+/** Invite members, opened from the Directory's + rather than a More row. */
+export const BACK_TO_DIRECTORY: BackTarget = {
+  label: "Directory",
+  href: "/directory",
+};
 
 type BackRowProps = {
   label: string;

@@ -68,7 +68,10 @@ import {
   type ChapterIdentityForm,
 } from "@repo/hooks/chapter-identity";
 import { onboardedChapterId } from "@/lib/onboarding/chapter-wizard/invite-link";
-import { useInviteShares } from "@/lib/onboarding/chapter-wizard/use-invite-shares";
+import {
+  INVITE_ROLE,
+  useInviteShares,
+} from "@/lib/onboarding/chapter-wizard/use-invite-shares";
 import { pickAndSetChapterLogo } from "@/lib/onboarding/chapter-wizard/chapter-logo";
 import { useSelectChapter } from "@/lib/select-chapter";
 import { usePushPrimer } from "@/lib/notifications/use-push-primer";
@@ -221,6 +224,7 @@ export default function CreateChapter() {
   const invite = useInviteShares({
     active: step === "invite",
     chapterName: displayName,
+    role: INVITE_ROLE,
     onError: setError,
   });
 

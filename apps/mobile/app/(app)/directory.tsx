@@ -7,7 +7,10 @@ import {
   useAlumni,
   useMemberSearch,
   useMembers,
+  usePermissionList,
 } from "@repo/hooks";
+import { useRouter } from "expo-router";
+import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   EmptyState,
@@ -23,6 +26,10 @@ import {
   pinnedBackClearance,
 } from "@/components/back-row";
 import { Chip, FilterChips, SearchField } from "@/components/filter-chips";
+import {
+  CREATE_BUTTON_SIZE,
+  FloatingCreateButton,
+} from "@/components/floating-create-button";
 import { gutterBleed, usePressFeedback } from "@/components/list-section";
 import { DirectoryGlyph } from "@/components/more/more-glyphs";
 import { SearchGlyph } from "@/components/search-glyph";
@@ -38,7 +45,7 @@ import {
   selectDirectoryRows,
 } from "@/lib/more/directory";
 import { records, str } from "@/lib/more/narrow";
-import { useTabBarClearance } from "@/lib/floating-chrome";
+import { FLOATING_TAB_BAR, useTabBarClearance } from "@/lib/floating-chrome";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -70,6 +77,15 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  * draw a name — `GET /v1/members/roster` exists for that. The directory is the
  * surface `/v1/members` was built for, and the roster projection carries no
  * graduation year or company, so it cannot draw the meta line at all.
+ *
+ * ## Invite, for whoever may
+ *
+ * A member who holds `members:invite` (by default the President alone) gets
+ * the screen's floating + (`spec/ui/mobile/patterns.md` § Create actions),
+ * "Invite members", which opens the Invite members screen with `‹ Directory`
+ * under it. The roster is where Discord and web put Invite, so it is where a
+ * President looks first (owner ask 2026-11-06). While the permission read
+ * loads the button is absent, which fails closed.
  */
 type Tab = "actives" | "alumni";
 
@@ -78,6 +94,8 @@ export default function DirectoryScreen() {
   const styles = createStyles(tokens);
   const tabBarClearance = useTabBarClearance();
   const chapterId = useActiveChapterId();
+  const router = useRouter();
+  const canInvite = can("members:invite", usePermissionList());
   const detailSheetRef = useRef<BottomSheetModal>(null);
   const [selected, setSelected] = useState<DirectoryRow | null>(null);
 
@@ -289,63 +307,82 @@ export default function DirectoryScreen() {
   }
 
   return (
-    // Every edge: the tab layout draws no navigator header (#2485), so the
-    // list's own title is the top of the screen.
-    <SafeAreaView
-      style={styles.safeArea}
-      edges={["top", "left", "right", "bottom"]}
-    >
-      {/* Pinned, as every screen's back capsule is (`ScreenShell`), inside an
-          unpadded View so it sits where the content starts. */}
-      <View style={styles.listFrame}>
-        <PinnedBackRow back={BACK_TO_MORE} />
-        <FlatList
-          data={rows}
-          keyExtractor={(row) => row.userId}
-          ListHeaderComponent={header}
-          ListEmptyComponent={
-            // The skeleton stands in for the rows themselves, so it takes no
-            // inset: the empty and error cards do.
-            !!chapterId && activeQuery.isPending ? (
-              <MemberListSkeleton
-                label={
-                  // A search looks across both lists and hides the tabs, so it
-                  // names neither tab's list.
-                  isSearching
-                    ? "Searching chapter members"
-                    : tab === "alumni"
-                      ? "Loading alumni directory"
-                      : "Loading chapter members"
-                }
-              />
-            ) : (
-              <View style={styles.emptyWrap}>{renderBody()}</View>
-            )
+    <View style={styles.safeArea}>
+      {/* First in the tree, as `ScreenShell` places it, so a screen reader
+          reaches it without swiping past every row. */}
+      {canInvite && chapterId ? (
+        <FloatingCreateButton
+          label="Invite members"
+          hint="Opens invite links to share with new members."
+          onPress={() =>
+            router.push({ pathname: "/invite", params: { from: "directory" } })
           }
-          renderItem={({ item }) => (
-            <MemberRow
-              row={item}
-              onPress={() => {
-                setSelected(item);
-                detailSheetRef.current?.present();
-              }}
-            />
-          )}
-          contentContainerStyle={[
-            styles.content,
-            // Clear of the floating tab bar (`lib/floating-chrome.tsx`).
-            { paddingBottom: tokens.spacing.xl + tabBarClearance },
-          ]}
-          keyboardShouldPersistTaps="handled"
-          refreshControl={<ThemedRefreshControl refresh={refresh} />}
         />
-      </View>
-      <MemberDetailSheet
-        ref={detailSheetRef}
-        member={selected}
-        onDismiss={() => setSelected(null)}
-      />
-    </SafeAreaView>
+      ) : null}
+      {/* Every edge: the tab layout draws no navigator header (#2485), so the
+        list's own title is the top of the screen. */}
+      <SafeAreaView
+        style={styles.safeArea}
+        edges={["top", "left", "right", "bottom"]}
+      >
+        {/* Pinned, as every screen's back capsule is (`ScreenShell`), inside an
+          unpadded View so it sits where the content starts. */}
+        <View style={styles.listFrame}>
+          <PinnedBackRow back={BACK_TO_MORE} />
+          <FlatList
+            data={rows}
+            keyExtractor={(row) => row.userId}
+            ListHeaderComponent={header}
+            ListEmptyComponent={
+              // The skeleton stands in for the rows themselves, so it takes no
+              // inset: the empty and error cards do.
+              !!chapterId && activeQuery.isPending ? (
+                <MemberListSkeleton
+                  label={
+                    // A search looks across both lists and hides the tabs, so it
+                    // names neither tab's list.
+                    isSearching
+                      ? "Searching chapter members"
+                      : tab === "alumni"
+                        ? "Loading alumni directory"
+                        : "Loading chapter members"
+                  }
+                />
+              ) : (
+                <View style={styles.emptyWrap}>{renderBody()}</View>
+              )
+            }
+            renderItem={({ item }) => (
+              <MemberRow
+                row={item}
+                onPress={() => {
+                  setSelected(item);
+                  detailSheetRef.current?.present();
+                }}
+              />
+            )}
+            contentContainerStyle={[
+              styles.content,
+              // Clear of the floating tab bar (`lib/floating-chrome.tsx`).
+              {
+                paddingBottom:
+                  tokens.spacing.xl +
+                  tabBarClearance +
+                  // The last row clears the + too, as `ScreenShell` pads for it.
+                  (canInvite ? CREATE_BUTTON_SIZE + FLOATING_TAB_BAR.gap : 0),
+              },
+            ]}
+            keyboardShouldPersistTaps="handled"
+            refreshControl={<ThemedRefreshControl refresh={refresh} />}
+          />
+        </View>
+        <MemberDetailSheet
+          ref={detailSheetRef}
+          member={selected}
+          onDismiss={() => setSelected(null)}
+        />
+      </SafeAreaView>
+    </View>
   );
 }
 

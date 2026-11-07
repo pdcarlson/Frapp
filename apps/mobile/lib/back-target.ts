@@ -38,6 +38,7 @@ export const SCREEN_TITLES = {
   dues: "Dues",
   documents: "Documents",
   directory: "Directory",
+  invite: "Invite members",
   "check-in": "Check in",
   "host-check-in": "Host check-in",
 } as const satisfies Record<string, string>;

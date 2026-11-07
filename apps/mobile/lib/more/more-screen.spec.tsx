@@ -504,6 +504,41 @@ describe("More hub anatomy (#1048)", () => {
     expect(text).toContain("No upcoming event");
   });
 
+  it("gives a member who can invite an Invite members row, first in Admin", () => {
+    permissions = ["members:invite"];
+    const sections = render()
+      .root.findAllByType(ListSection)
+      .map((section) =>
+        section.findAllByType(ListRow).map((row) => row.props.label),
+      );
+    expect(sections.at(-1)).toEqual(["Invite members"]);
+
+    permissions = ["*"];
+    const tree = render();
+    const labels = tree.root
+      .findAllByType(ListSection)
+      .at(-1)
+      ?.findAllByType(ListRow)
+      .map((row) => row.props.label);
+    expect(labels).toEqual(["Invite members", "Host check-in"]);
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Invite members",
+    );
+    const push = vi.mocked(useRouter().push);
+    push.mockClear();
+    act(() => {
+      row.props.onPress();
+    });
+    expect(push).toHaveBeenCalledWith("/invite");
+  });
+
+  it("draws no Invite members row for a role that can't invite", () => {
+    permissions = ["members:view", "events:update"];
+    expect(screenText(render())).not.toContain("Invite members");
+  });
+
   it("tells the chapter picker that More opened it, so it draws ‹ More", () => {
     const row = render().root.find(
       (node) =>
