@@ -363,6 +363,9 @@ function pressableLabelled(tree: ReactTestRenderer, label: string) {
 }
 
 beforeEach(() => {
+  // No launch jump unless a test asks for one: chat home holds its list
+  // behind the skeleton while one may still happen.
+  settleChatLaunch();
   vi.clearAllMocks();
   latestData.value = [];
   latestData.answered = true;
@@ -1489,9 +1492,10 @@ describe("Chat home opens the last channel on launch", () => {
     expect(AsyncStorage.getItem).toHaveBeenCalledWith(
       `frapp.chat.last-channel.${VIEWER}.chapter-1`,
     );
+    // `landing` opens it with no slide, over a list held behind the skeleton.
     expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith({
       pathname: "/chat-thread",
-      params: { channelId: "c-general" },
+      params: { channelId: "c-general", landing: "1" },
     });
 
     // Back from the thread lands here again; nothing re-opens.

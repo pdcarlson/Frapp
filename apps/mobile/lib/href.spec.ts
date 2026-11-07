@@ -26,6 +26,22 @@ describe("openHref", () => {
     expect(r.dismissTo).not.toHaveBeenCalled();
   });
 
+  it("keeps one channel on the stack, and one copy of any other screen", () => {
+    const r = router();
+    openHref(r, "/chat-thread?channelId=c1" as never);
+    const key = r.push.mock.calls[0]![1].dangerouslySingular as (
+      name: string,
+      params: Record<string, unknown>,
+    ) => string;
+    // Any two channels share a key: the push replaces the open one.
+    expect(key("chat-thread", { channelId: "c1" })).toBe(
+      key("chat-thread", { channelId: "c2" }),
+    );
+    expect(key("event-details", { id: "e1" })).not.toBe(
+      key("event-details", { id: "e2" }),
+    );
+  });
+
   it("reads the object form's pathname", () => {
     expect(isTabHref({ pathname: "/tasks" } as never)).toBe(true);
     expect(isTabHref({ pathname: "/chat-thread" } as never)).toBe(false);
