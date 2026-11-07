@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -8,8 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import type { OutboxAttachment } from "@repo/chat-core/adapters";
-import { formatBytes } from "@repo/formatting";
+import type { StagedPhoto } from "@/lib/chat/use-chat-channel";
 import {
   activeMentionQuery,
   mentionPickerEntries,
@@ -19,7 +19,7 @@ import {
 import { initialsFor } from "@/lib/more/narrow";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
-import { CloseGlyph } from "@/components/control-glyphs";
+import { CloseGlyph, RetryGlyph } from "@/components/control-glyphs";
 import { NavGlyph } from "@/components/nav-glyph";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
@@ -45,9 +45,17 @@ import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding
  * progress and failure states were their own surface, and a disabled button
  * that never becomes enabled reads as a bug. That surface is now built
  * (`lib/chat/attachment-upload.ts`), so the button is real, and the three
- * states it needed are the ones handled below: in-flight (spinner in place of
- * the glyph), refused (the hint line, in the error tone), and staged (chips
- * above the input).
+ * states it needed are the ones handled below: picking (spinner in place of
+ * the glyph while the system sheet is up), refused (the hint line, in the
+ * error tone), and staged.
+ *
+ * **Staged photos are pictures, not filenames.** The tray above the input
+ * draws each photo the member picked as a square thumbnail from the file on
+ * the phone, the moment the picker closes. Its upload runs in the background:
+ * an uploading photo draws faded (the pending rule, components.md §10: gray
+ * until sent, no spinner, nothing moves), a ready one at full strength, and a
+ * failed one dimmed under a try-again glyph the member taps. Send never waits
+ * on the tray (`send` in `use-chat-channel.ts`).
  *
  * **Reply and Edit stage above the input** (#2775) as one strip, `context`:
  * "Replying to <name>" with the parent's preview, or "Editing message". The
@@ -97,17 +105,16 @@ export interface ChatComposerProps {
   disabledHint?: string | null;
   /** `error` paints the hint in `semantic.destructive`. Defaults to muted. */
   hintTone?: "muted" | "error";
-  /**
-   * Uploaded and waiting to be claimed by the next send. The bytes are already
-   * in the bucket by the time a chip appears, so removing one drops the claim,
-   * not the object.
-   */
-  attachments?: OutboxAttachment[];
+  /** Photos staged for the next send, each uploading, ready or failed. */
+  photos?: StagedPhoto[];
   /** Omit to render no attach affordance at all, rather than an inert one. */
   onAttach?: () => void;
-  onRemoveAttachment?: (storagePath: string) => void;
-  /** An upload is in flight; the attach control shows a spinner and locks. */
-  isUploading?: boolean;
+  onRemovePhoto?: (key: string) => void;
+  onRetryPhoto?: (key: string) => void;
+  /** The system photo sheet is up; the attach control shows a spinner and locks. */
+  isPicking?: boolean;
+  /** No room for another photo; the attach control stays, disabled. */
+  attachFull?: boolean;
   /**
    * Set when attaching is unavailable right now — offline, or no post
    * permission. It **gates the control and nothing else**: the member-facing
@@ -151,10 +158,12 @@ export function ChatComposer({
   placeholder,
   disabledHint,
   hintTone = "muted",
-  attachments = [],
+  photos = [],
   onAttach,
-  onRemoveAttachment,
-  isUploading = false,
+  onRemovePhoto,
+  onRetryPhoto,
+  isPicking = false,
+  attachFull = false,
   attachDisabledReason,
   context = null,
   mentionCandidates,
@@ -172,15 +181,15 @@ export function ChatComposer({
     mentionRoles,
   );
 
-  // An empty or whitespace-only body is not a send — unless something is
-  // attached. An attachment-only message is a real message, and gating it on
-  // the text alone would strand a photo that is already in the bucket with the
-  // send button greyed out and no way to explain why.
+  // An empty or whitespace-only body is not a send — unless a photo is
+  // staged. A photo-only message is a real message, uploaded or still
+  // uploading, and gating it on the text alone would strand it with the send
+  // button greyed out and no way to explain why.
   const isSendable =
-    canSend && (value.trim().length > 0 || attachments.length > 0);
+    canSend && (value.trim().length > 0 || photos.length > 0);
 
   const canAttach =
-    !!onAttach && !isUploading && !attachDisabledReason && canSend;
+    !!onAttach && !isPicking && !attachFull && !attachDisabledReason && canSend;
 
   return (
     <View style={styles.wrapper}>
@@ -223,33 +232,65 @@ export function ChatComposer({
         </View>
       ) : null}
 
-      {attachments.length > 0 ? (
-        <View style={styles.chips}>
-          {attachments.map((attachment) => (
-            <View key={attachment.storagePath} style={styles.chip}>
-              <Text numberOfLines={1} style={styles.chipName}>
-                {attachment.filename}
-              </Text>
-              {typeof attachment.byteSize === "number" ? (
-                <Text style={styles.chipSize}>
-                  {formatBytes(attachment.byteSize)}
-                </Text>
-              ) : null}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Remove ${attachment.filename}`}
-                hitSlop={14}
-                onPress={() => onRemoveAttachment?.(attachment.storagePath)}
-                style={({ pressed }) => [
-                  styles.chipRemove,
-                  pressed ? styles.pressed : null,
-                ]}
-              >
-                <CloseGlyph color={tokens.color.text.muted} size={16} />
-              </Pressable>
-            </View>
-          ))}
-        </View>
+      {photos.length > 0 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.tray}
+        >
+          {photos.map((photo, index) => {
+            const label = `Photo ${index + 1} of ${photos.length}`;
+            return (
+              <View key={photo.key} style={styles.thumb}>
+                <Pressable
+                  accessibilityRole={photo.status === "failed" ? "button" : "image"}
+                  accessibilityLabel={
+                    photo.status === "failed"
+                      ? `${label}, didn't upload. Try again`
+                      : photo.status === "uploading"
+                        ? `${label}, uploading`
+                        : label
+                  }
+                  disabled={photo.status !== "failed"}
+                  onPress={() => onRetryPhoto?.(photo.key)}
+                  style={styles.thumbFill}
+                >
+                  <Image
+                    source={{ uri: photo.previewUri }}
+                    resizeMode="cover"
+                    style={[
+                      styles.thumbFill,
+                      photo.status !== "ready" ? styles.thumbPending : null,
+                    ]}
+                  />
+                  {photo.status === "failed" ? (
+                    <View style={styles.thumbFailed}>
+                      <RetryGlyph
+                        color={tokens.color.semantic.destructive}
+                        size={22}
+                      />
+                    </View>
+                  ) : null}
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${label.toLowerCase()}`}
+                  // 24 + 10 each side reaches the 44pt floor (§2), all of it
+                  // inside the thumb, where Android delivers touches.
+                  hitSlop={10}
+                  onPress={() => onRemovePhoto?.(photo.key)}
+                  style={({ pressed }) => [
+                    styles.thumbRemove,
+                    pressed ? styles.pressed : null,
+                  ]}
+                >
+                  <CloseGlyph color={THUMB_REMOVE_INK} size={14} />
+                </Pressable>
+              </View>
+            );
+          })}
+        </ScrollView>
       ) : null}
 
       {mention.open ? (
@@ -265,7 +306,7 @@ export function ChatComposer({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Attach photo"
-            accessibilityState={{ disabled: !canAttach, busy: isUploading }}
+            accessibilityState={{ disabled: !canAttach, busy: isPicking }}
             disabled={!canAttach}
             onPress={onAttach}
             style={({ pressed }) => [
@@ -274,9 +315,9 @@ export function ChatComposer({
               pressed ? styles.pressed : null,
             ]}
           >
-            {isUploading ? (
+            {isPicking ? (
               <ActivityIndicator
-                accessibilityLabel="Uploading photo"
+                accessibilityLabel="Choosing photos"
                 color={tokens.color.text.muted}
                 size="small"
               />
@@ -491,6 +532,14 @@ const MENTION_ROWS_SHOWN = 4;
 const INPUT_LINE_HEIGHT = 20;
 const INPUT_BORDER = 1;
 
+/** A staged photo's square: two lines of text tall, like iMessage's tray. */
+const THUMB_SIZE = 64;
+/** How far a thumb's remove badge sits in from its corner. */
+const THUMB_BADGE_INSET = 4;
+/** Photo-overlay ink, fixed in both themes: it sits on the picture, not the surface. */
+const THUMB_REMOVE_DISC = "rgba(0,0,0,0.72)";
+const THUMB_REMOVE_INK = "#FFFFFF";
+
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   // What is left of the 44pt floor once one line and the border are drawn,
   // split above and below, so a one-line input is exactly button height.
@@ -514,8 +563,44 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
     },
-    chips: {
+    tray: {
       gap: tokens.spacing.xs,
+    },
+    thumb: {
+      width: THUMB_SIZE,
+      height: THUMB_SIZE,
+    },
+    thumbFill: {
+      width: THUMB_SIZE,
+      height: THUMB_SIZE,
+      borderRadius: tokens.radius.control,
+      overflow: "hidden",
+      backgroundColor: tokens.color.surface.popover,
+    },
+    // Gray until sent (components.md §10): faded in place, nothing added.
+    thumbPending: {
+      opacity: 0.45,
+    },
+    thumbFailed: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    // A dark disc so the × reads over any photo, light or dark.
+    thumbRemove: {
+      position: "absolute",
+      top: THUMB_BADGE_INSET,
+      right: THUMB_BADGE_INSET,
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      backgroundColor: THUMB_REMOVE_DISC,
+      alignItems: "center",
+      justifyContent: "center",
     },
     // The quote rule a sent reply carries (`reply-quote.tsx`), so the staged
     // strip reads as the quote the message is about to show.
@@ -542,31 +627,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
     },
-    // Same surface recipe as a rendered file attachment
-    // (`message-attachments.tsx`), so a staged photo and a sent one read as
-    // the same object rather than two different chrome languages.
-    chip: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.xs,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingLeft: tokens.spacing.sm,
-      paddingRight: tokens.spacing.xs,
-      paddingVertical: tokens.spacing.xs,
-    },
-    chipName: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.foreground,
-      flexShrink: 1,
-    },
-    chipSize: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      flexShrink: 0,
-    },
     // A 16pt × with 14pt of slop on each side reaches the 44pt floor (§2)
     // without making the chip taller.
     chipRemove: {
@@ -580,7 +640,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       alignItems: "flex-end",
       gap: tokens.spacing.sm,
     },
-    // The staged-chip surface, so the list reads as part of the composer
+    // The composer's surface recipe, so the list reads as part of the composer
     // rather than a floating card over the thread.
     mentionList: {
       borderRadius: tokens.radius.control,
