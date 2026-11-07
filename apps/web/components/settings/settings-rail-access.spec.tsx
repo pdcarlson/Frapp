@@ -170,7 +170,7 @@ describe("Settings shows each viewer what they can use", () => {
     permissions.current = ["members:view"];
     render(<SettingsPage />);
     expect(
-      screen.getByRole("heading", { name: /nothing in settings for your role/i }),
+      screen.getByText(/nothing in settings for your role/i),
     ).toBeInTheDocument();
     expect(tools()).toEqual([]);
   });

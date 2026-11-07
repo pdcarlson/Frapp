@@ -25,9 +25,7 @@ import {
   SectionHeaderSkeleton,
   usePressFeedback,
 } from "@/components/list-section";
-import { NotificationsGlyph } from "@/components/more/more-glyphs";
 import {
-  EmptyState,
   ErrorState,
   NoChapterState,
   SkeletonRegion,
@@ -45,6 +43,7 @@ import {
   type ChapterBranding,
   useChapterBranding,
 } from "@/lib/chapter-branding";
+import { InlineNote } from "@/components/inline-note";
 
 /**
  * s14 — Notifications (`canvas-screens.dc.html:474`).
@@ -153,7 +152,7 @@ export default function NotificationsScreen() {
     }
     if (groups.length === 0) {
       return (
-        <EmptyState glyph={NotificationsGlyph} title="You're all caught up" />
+        <InlineNote>{"You're all caught up."}</InlineNote>
       );
     }
     return groups.map((group) => (

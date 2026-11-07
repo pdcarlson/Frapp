@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { EmptyState } from "@/components/shared/async-states";
 import { cn } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { type SettingsTool } from "@/components/settings/settings-access";
+import { InlineNote } from "@/components/shared/inline-note";
 
 // Board `4d`: rail rows are `height:34px;border-radius:10px;padding:0 10px`,
 // inactive `#A9A399`, active a filled gold chip (`background:#2A2410;
@@ -163,10 +163,10 @@ export function SettingsToolsOnly({
 }) {
   if (tools.length === 0) {
     return (
-      <EmptyState
-        title="Nothing in Settings for your role"
-        description="Chapter setup and officer tools come with an officer role. Ask your chapter president if you need one."
-      />
+      <InlineNote>
+        Nothing in Settings for your role. Officer tools come with an officer
+        role; ask your chapter president if you need one.
+      </InlineNote>
     );
   }
   return (

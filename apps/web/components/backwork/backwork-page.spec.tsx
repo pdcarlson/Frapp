@@ -287,9 +287,8 @@ describe("BackworkPage disabled-query handling", () => {
     render(<BackworkPage />);
 
     expect(screen.queryByText("Loading backwork")).not.toBeInTheDocument();
-    expect(screen.getByText("No chapter selected")).toBeInTheDocument();
     expect(
-      screen.getByText(/pick a chapter from the switcher/i),
+      screen.getByText("Pick a chapter to browse its backwork."),
     ).toBeInTheDocument();
   });
 
@@ -1002,7 +1001,7 @@ describe("BackworkPage library (2026-11-05 redesign)", () => {
     render(<BackworkPage />);
 
     await user.type(screen.getByLabelText(/^search backwork$/i), "organic chemistry");
-    expect(await screen.findByText("No files match")).toBeInTheDocument();
+    expect(await screen.findByText("No files match.")).toBeInTheDocument();
 
     await user.click(
       screen.getByRole("button", { name: /clear search and filters/i }),

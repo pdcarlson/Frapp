@@ -30,11 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedLoading,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedLoading } from "@/components/shared/nested-states";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import {
   DocumentsGlyph,
@@ -58,6 +54,7 @@ import {
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, downloadCsv, getErrorMessage } from "@/lib/utils";
 import { ReportsFormSkeleton } from "@/components/reports/reports-skeleton";
+import { InlineNote } from "@/components/shared/inline-note";
 
 type ReportKind = "attendance" | "points" | "roster" | "service";
 
@@ -871,17 +868,11 @@ export function ReportsPage() {
                   )}
                 />
               ) : preview === null ? (
-                <NestedEmpty
-                  sole
-                  title="No report generated yet"
-                  description="Generate a report to see a preview here."
-                />
+                <InlineNote>Generate a report to preview it here.</InlineNote>
               ) : preview.length === 0 ? (
-                <NestedEmpty
-                  sole
-                  title="Report returned no rows"
-                  description="The filters matched nothing in the active chapter."
-                />
+                <InlineNote>
+                  Nothing in this chapter matches these filters.
+                </InlineNote>
               ) : (
                 /*
                   The shared primitive rather than a hand-rolled `<table>`. It

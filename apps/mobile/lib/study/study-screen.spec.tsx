@@ -238,7 +238,11 @@ const endButton = (tree: ReactTestRenderer) =>
 const occurrences = (tree: ReactTestRenderer, text: string) =>
   screenText(tree).split(text).length - 1;
 
-const MODULE_OFF_TITLE = "Study hours are turned off";
+/** Whether the module-off line, in either form, stands where the screen was. */
+const showsModuleOff = (tree: ReactTestRenderer) =>
+  [MODULE_OFF_COPY.start, MODULE_OFF_COPY.runningSession].some((copy) =>
+    screenText(tree).includes(copy),
+  );
 
 describe("Study Start on a subscription refusal (#2297)", () => {
   it("explains the refusal and withdraws Start", async () => {
@@ -527,7 +531,7 @@ describe("Study when hours is switched off under a cached payload that says on (
     rerender(tree);
 
     expect(endButton(tree)).toHaveLength(1);
-    expect(screenText(tree)).not.toContain(MODULE_OFF_TITLE);
+    expect(showsModuleOff(tree)).toBe(false);
     act(() => tree.unmount());
   });
 
@@ -549,7 +553,7 @@ describe("Study with hours switched off (#2718)", () => {
     chapter = HOURS_OFF;
     const tree = render();
 
-    expect(screenText(tree)).toContain(MODULE_OFF_TITLE);
+    expect(showsModuleOff(tree)).toBe(true);
     expect(occurrences(tree, MODULE_OFF_COPY.start)).toBe(1);
     act(() => tree.unmount());
   });
@@ -572,7 +576,7 @@ describe("Study with hours switched off (#2718)", () => {
       ),
     );
 
-    expect(screenText(tree)).toContain(MODULE_OFF_TITLE);
+    expect(showsModuleOff(tree)).toBe(true);
     expect(occurrences(tree, MODULE_OFF_COPY.start)).toBe(1);
     act(() => tree.unmount());
   });
@@ -596,7 +600,7 @@ describe("Study with hours switched off (#2718)", () => {
       const tree = render();
 
       expect(endButton(tree)).toHaveLength(0);
-      expect(screenText(tree)).toContain(MODULE_OFF_TITLE);
+      expect(showsModuleOff(tree)).toBe(true);
       expect(screenText(tree)).toContain(MODULE_OFF_COPY.runningSession);
       expect(screenText(tree)).not.toContain(MODULE_OFF_COPY.start);
       act(() => tree.unmount());
@@ -635,7 +639,7 @@ describe("Study with hours switched off (#2718)", () => {
       // card it describes is back.
       expect(endButton(tree)).toHaveLength(1);
       expect(screenText(tree)).toContain(MODULE_OFF_COPY.session);
-      expect(screenText(tree)).not.toContain(MODULE_OFF_TITLE);
+      expect(showsModuleOff(tree)).toBe(false);
       act(() => tree.unmount());
     });
 
@@ -673,7 +677,7 @@ describe("Study with hours switched off (#2718)", () => {
       rerender(tree);
 
       expect(endButton(tree)).toHaveLength(1);
-      expect(screenText(tree)).not.toContain(MODULE_OFF_TITLE);
+      expect(showsModuleOff(tree)).toBe(false);
       act(() => tree.unmount());
     });
 
@@ -725,7 +729,7 @@ describe("Study with hours switched off (#2718)", () => {
           ),
       );
       expect(notice.props.accessibilityLiveRegion).toBe("polite");
-      expect(screenText(tree)).toContain(MODULE_OFF_TITLE);
+      expect(showsModuleOff(tree)).toBe(true);
       act(() => tree.unmount());
     });
   });

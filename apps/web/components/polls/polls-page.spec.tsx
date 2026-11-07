@@ -144,7 +144,7 @@ describe("PollsPage disabled-query handling", () => {
     // Inside the granted `<Can>` the permission half of `enabled` is already
     // true, so an idle query settles on the empty state rather than repeating
     // the denied copy, which lives in `deniedFallback` alone.
-    expect(screen.getByText("No polls match this view")).toBeInTheDocument();
+    expect(screen.getByText("No polls here. Start one in a chat channel.")).toBeInTheDocument();
     expect(screen.queryByText(/can.t see every poll/)).not.toBeInTheDocument();
   });
 
@@ -320,7 +320,7 @@ describe("PollsPage layout", () => {
 
     const { container } = render(<PollsPage />);
 
-    expect(screen.getByText("No polls match this view")).toBeInTheDocument();
+    expect(screen.getByText("No polls here. Start one in a chat channel.")).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });
 });

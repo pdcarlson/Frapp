@@ -21,11 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedLoading,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedLoading } from "@/components/shared/nested-states";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -40,6 +36,7 @@ import {
 } from "@/components/events/attendance-status";
 import type { AttendanceStatus } from "@/components/events/attendance-status";
 import { checkInLabel } from "@/components/events/event-labels";
+import { InlineNote } from "@/components/shared/inline-note";
 
 type AttendanceRow = {
   id?: string;
@@ -267,10 +264,7 @@ export function AttendancePanel({
   if (rows.length === 0) {
     return (
       <div role="status" aria-live="polite">
-        <NestedEmpty
-          title="No attendance records yet"
-          description="Once members check in, or you record attendance manually, they'll show up here."
-        />
+        <InlineNote>No attendance recorded yet.</InlineNote>
       </div>
     );
   }

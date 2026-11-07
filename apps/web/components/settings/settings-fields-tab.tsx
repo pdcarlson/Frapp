@@ -30,7 +30,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  EmptyState,
   ErrorState,
   anyReadUncached,
   OfflineState,
@@ -47,6 +46,7 @@ import {
   useDeleteCustomField,
 } from "@repo/hooks";
 import { SettingsListCardSkeleton } from "@/components/settings/settings-skeleton";
+import { InlineNote } from "@/components/shared/inline-note";
 
 type Props = {
   /** Whether the caller holds `chapter-config:manage`. */
@@ -145,10 +145,7 @@ export function SettingsFieldsTab({ canManage }: Props) {
           </CardHeader>
           <CardContent>
             {fields.length === 0 ? (
-              <EmptyState
-                title="No custom fields yet"
-                description="Add one below to start collecting it from members."
-              />
+              <InlineNote>No custom fields yet.</InlineNote>
             ) : (
               <ul className="space-y-3">
                 {fields.map((field) => (

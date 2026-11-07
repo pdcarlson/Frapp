@@ -1167,7 +1167,7 @@ describe("ProfilePanel — notification categories (#564)", () => {
     mocks.chapterId = null;
     render(<ProfilePanel />);
 
-    expect(screen.getByText(/select a chapter/i)).toBeTruthy();
+    expect(screen.getByText(/pick a chapter to set its notifications/i)).toBeTruthy();
     expect(screen.queryByText(/no active chapter/i)).toBeNull();
     expect(screen.queryByText(/you have no chapter/i)).toBeNull();
     expect(categorySwitches()).toHaveLength(0);

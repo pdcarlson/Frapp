@@ -27,11 +27,7 @@ import {
   pointCategoryLabel,
   type PointCategory,
 } from "@/components/points/point-category";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedLoading,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedLoading } from "@/components/shared/nested-states";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import { SectionLabel } from "@/components/shared/section-label";
@@ -40,6 +36,7 @@ import {
   denseListClassName,
 } from "@/components/shared/table-controls";
 import { asArray, cn } from "@/lib/utils";
+import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 
 type Category = PointCategory;
 
@@ -301,20 +298,25 @@ export function PointsAuditCard() {
                 onRetry={() => void transactionsQuery.refetch()}
               />
             ) : rows.length === 0 ? (
-              <NestedEmpty
-                title={
-                  flaggedOnly
-                    ? "No flagged transactions in this window"
-                    : "No transactions match this filter"
-                }
-                description={
-                  flaggedOnly
-                    ? policyKnown
-                      ? `Single adjustments of |amount| ≥ ${pointsPolicy.anomaly_threshold} are flagged here automatically.`
-                      : "Large single adjustments are flagged here automatically."
-                    : "Try relaxing the category or member filter."
-                }
-              />
+              flaggedOnly ? (
+                <InlineNote>
+                  {policyKnown
+                    ? `Nothing flagged in this window. Single adjustments of |amount| ≥ ${pointsPolicy.anomaly_threshold} land here.`
+                    : "Nothing flagged in this window."}
+                </InlineNote>
+              ) : (
+                <InlineNote>
+                  No transactions match these filters.{" "}
+                  <InlineNoteAction
+                    onClick={() => {
+                      setCategoryFilter("ALL");
+                      setUserFilter("ALL");
+                    }}
+                  >
+                    Clear filters
+                  </InlineNoteAction>
+                </InlineNote>
+              )
             ) : (
               // `role="list"` restated: a flex `<li>` loses its `list-item`
               // box, and WebKit then stops exposing the list semantics.
