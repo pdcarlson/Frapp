@@ -3003,9 +3003,9 @@ One `COMMENT ON COLUMN public.discord_imports.role_mapping` (#2887). No column, 
 comment on column public.discord_imports.role_mapping is null;
 ```
 
-## Rollback attendance by role (20261107000000)
+## Rollback attendance by role (20261107030000)
 
-* **Migration**: `20261107000000_event_attendance_by_role.sql`
+* **Migration**: `20261107030000_event_attendance_by_role.sql`
 
 Three nullable columns on `events`: `optional_role_ids`, `excluded_role_ids`, `others_invited`. Nothing was backfilled.
 
