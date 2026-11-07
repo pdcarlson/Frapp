@@ -68,7 +68,7 @@ describe('InviteService', () => {
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
   let mockNotificationService: jest.Mocked<
-    Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
+    Pick<NotificationService, 'notifyUser' | 'notifyChapter' | 'notifyMembers'>
   >;
   let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
   let mockEmailProvider: jest.Mocked<IEmailProvider>;
@@ -125,6 +125,7 @@ describe('InviteService', () => {
     mockNotificationService = {
       notifyUser: jest.fn().mockResolvedValue(undefined),
       notifyChapter: jest.fn().mockResolvedValue(undefined),
+      notifyMembers: jest.fn().mockResolvedValue(undefined),
     };
 
     mockActivation = { record: jest.fn().mockResolvedValue(true) };
@@ -134,7 +135,7 @@ describe('InviteService', () => {
 
     mockUserRepo = {
       findById: jest.fn().mockResolvedValue(null),
-      findByIds: jest.fn(),
+      findByIds: jest.fn().mockResolvedValue([]),
       findDisplayIdentitiesByIds: jest.fn(),
       findContactsByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
@@ -1461,19 +1462,28 @@ describe('InviteService', () => {
     mockRoleRepo.findByChapter.mockResolvedValue([memberRole]);
     mockMemberRepo.create.mockResolvedValue(member);
 
+    mockMemberRepo.findByChapter.mockResolvedValue([
+      memberFixture({ user_id: 'user-1' }),
+      member,
+    ]);
+    mockUserRepo.findByIds.mockResolvedValue([
+      userFixture({ id: 'user-2', display_name: 'Alex Smith' }),
+    ]);
+
     await service.redeem('test-uuid', 'user-2');
 
-    expect(mockNotificationService.notifyChapter).toHaveBeenCalledWith(
+    expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
       'ch-1',
+      ['user-1'],
       expect.objectContaining({
-        title: 'New Member Joined',
+        title: 'Alex Smith joined',
         priority: 'NORMAL',
         category: 'admin',
       }),
     );
   });
 
-  it('still redeems, and reports once, when the New Member Joined notification fails', async () => {
+  it('still redeems, and reports once, when the member-joined notification fails', async () => {
     const invite: Invite = {
       id: 'inv-1',
       token: 'test-uuid',
@@ -1504,7 +1514,7 @@ describe('InviteService', () => {
     );
     mockRoleRepo.findByChapter.mockResolvedValue([memberRole]);
     mockMemberRepo.create.mockResolvedValue(member);
-    mockNotificationService.notifyChapter.mockRejectedValue(
+    mockMemberRepo.findByChapter.mockRejectedValue(
       new Error('roster read failed'),
     );
     const error = jest
