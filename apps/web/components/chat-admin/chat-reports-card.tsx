@@ -30,11 +30,7 @@ import {
   readIsOffline,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedOffline,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -54,6 +50,7 @@ import {
 } from "./chat-report-copy";
 import type { ChatReportTab } from "./chat-report-copy";
 import { ReportRowsSkeleton } from "@/components/chat-admin/chat-admin-skeleton";
+import { InlineNote } from "@/components/shared/inline-note";
 
 /**
  * The officer report queue (#2257) and its one destructive action (#2311).
@@ -367,19 +364,12 @@ function ReportListBody({
   }
   if (query.isPending) {
     // Disabled, not loading (design-system README §4): no chapter to read.
-    return (
-      <NestedEmpty
-        title={copy.noChapterTitle}
-        description={copy.noChapterDescription}
-      />
-    );
+    return <InlineNote>{copy.noChapter}</InlineNote>;
   }
 
   const reports = query.data ?? [];
   if (reports.length === 0) {
-    return (
-      <NestedEmpty title={tab.emptyTitle} description={tab.emptyDescription} />
-    );
+    return <InlineNote>{tab.empty}</InlineNote>;
   }
 
   // Named here rather than per row, because a control's name has to be unique

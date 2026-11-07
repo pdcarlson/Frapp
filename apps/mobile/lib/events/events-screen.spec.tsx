@@ -8,7 +8,6 @@ import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { formatEventDateBlock } from "@/lib/events/format";
 import { expectRoundedRipple } from "@/test/pressable-row";
-import { EmptyState } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
 import { screenText } from "@/test/screen-text";
 
@@ -209,7 +208,7 @@ describe("Events list states", () => {
     query = { isPending: true, isError: false, isFetching: false };
     const tree = render();
 
-    expect(screenText(tree)).toContain("No chapter selected");
+    expect(screenText(tree)).toContain("Choose a chapter from More");
     expect(skeletons(tree)).toHaveLength(0);
   });
 
@@ -317,7 +316,6 @@ describe("Events list states", () => {
     events = [];
     const tree = render();
 
-    expect(tree.root.findAllByType(EmptyState)).toHaveLength(0);
     expect(tree.root.findAllByType(InlineNote)).toHaveLength(1);
   });
 });

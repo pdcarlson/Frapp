@@ -11,15 +11,12 @@ import {
   useDiscordAuthorLink,
   useUnlinkDiscordAuthor,
 } from "@repo/hooks";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedLoading,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedLoading } from "@/components/shared/nested-states";
 import { ProfileSection } from "@/components/profile/profile-section";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
+import { InlineNote } from "@/components/shared/inline-note";
 
 export const DISCORD_HISTORY_TITLE = "Discord history";
 export const DISCORD_HISTORY_DESCRIPTION =
@@ -187,10 +184,7 @@ export function DiscordHistoryCard() {
   let body: React.ReactNode;
   if (!chapterId) {
     body = (
-      <NestedEmpty
-        title="Select a chapter"
-        description="A Discord account is linked per chapter, so this appears once a chapter is active."
-      />
+      <InlineNote>Pick a chapter to link your Discord account.</InlineNote>
     );
   } else if (confirm.isPending) {
     body = <NestedLoading message="Linking your Discord account" lines={1} />;

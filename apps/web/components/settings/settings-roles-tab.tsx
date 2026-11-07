@@ -17,7 +17,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  EmptyState,
   ErrorState,
   anyReadUncached,
   OfflineState,
@@ -50,6 +49,7 @@ import {
   useRoles,
 } from "@repo/hooks";
 import { SettingsListCardSkeleton } from "@/components/settings/settings-skeleton";
+import { InlineNote } from "@/components/shared/inline-note";
 
 type PermissionCatalogEntry = { key: string; permission: string };
 
@@ -525,10 +525,7 @@ function CustomView({
           </CardHeader>
           <CardContent>
             {roles.length === 0 ? (
-              <EmptyState
-                title="No custom roles yet"
-                description="Create one below to extend the permission matrix."
-              />
+              <InlineNote>No custom roles yet.</InlineNote>
             ) : (
               <ul className="space-y-3">
                 {roles.map((role) => (

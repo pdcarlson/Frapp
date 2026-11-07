@@ -15,12 +15,10 @@ import {
   type BackTarget,
 } from "@/components/back-row";
 import { ShareGlyph } from "@/components/control-glyphs";
-import { DirectoryGlyph } from "@/components/more/more-glyphs";
 import { InviteLinksCard } from "@/components/onboarding/invite-links-card";
 import { ScreenShell } from "@/components/screen-shell";
 import { SheetPrimaryButton } from "@/components/sheet-scaffold";
 import {
-  EmptyState,
   ErrorState,
   NoChapterState,
   SkeletonBlock,
@@ -29,6 +27,7 @@ import {
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useInviteShares } from "@/lib/onboarding/chapter-wizard/use-invite-shares";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { InlineNote } from "@/components/inline-note";
 
 /**
  * Invite members, inside a chapter (owner ask 2026-11-06: "I couldn't find a
@@ -137,11 +136,9 @@ function InviteBody({ focused }: { focused: boolean }) {
   if (!canInvite) {
     return (
       <ScreenShell back={back} title="Invite members">
-        <EmptyState
-          glyph={DirectoryGlyph}
-          title="Ask an officer for a link"
-          body="Your role can't send invites. An officer who can will send each person their own link."
-        />
+        <InlineNote>
+          {"Your role can't send invites. Ask an officer to send each person their own link."}
+        </InlineNote>
       </ScreenShell>
     );
   }

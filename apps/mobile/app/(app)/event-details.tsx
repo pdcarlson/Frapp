@@ -19,7 +19,6 @@ import { goBackTo } from "@/lib/href";
 import { PressableRow } from "@/components/list-section";
 import { SheetPrimaryButton } from "@/components/sheet-scaffold";
 import {
-  EmptyState,
   ErrorState,
   SkeletonBlock,
   SkeletonRegion,
@@ -36,6 +35,7 @@ import {
 } from "@/lib/events/format";
 import { selectEventDetail, type EventDetail } from "@/lib/events/select";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { InlineNote } from "@/components/inline-note";
 
 /**
  * s07 — Event detail (`canvas-screens.dc.html:246`).
@@ -166,11 +166,7 @@ export default function EventDetailsScreen() {
   if (!eventId) {
     return (
       <ScreenShell back={BACK_TO_EVENTS} title="Event">
-        <EmptyState
-          glyph="◷"
-          title="Nothing to show"
-          body="Open an event from the Events tab."
-        />
+        <InlineNote>Open an event from the Events tab.</InlineNote>
       </ScreenShell>
     );
   }

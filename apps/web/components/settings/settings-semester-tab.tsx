@@ -16,10 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import {
-  EmptyState,
-  PermissionsOfflineSurface,
-} from "@/components/shared/async-states";
+import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import { type useConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
@@ -32,6 +29,7 @@ import {
   SectionSkeleton,
   SkeletonRows,
 } from "@/components/shared/page-skeletons";
+import { InlineNote } from "@/components/shared/inline-note";
 
 export type RolloverForm = ReturnType<typeof useRolloverForm>;
 
@@ -290,10 +288,9 @@ export function SettingsSemesterTab({
               />
             </SectionSkeleton>
           ) : semesters.length === 0 ? (
-            <EmptyState
-              title="No archived semesters yet"
-              description="After you run your first rollover, the history appears here."
-            />
+            <InlineNote>
+              No archived semesters yet. Each rollover adds one.
+            </InlineNote>
           ) : (
             <ul className="divide-y divide-border/70">
               {semesters.map((archive) => (

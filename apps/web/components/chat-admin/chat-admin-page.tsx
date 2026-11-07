@@ -51,11 +51,7 @@ import {
   readIsOffline,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedOffline,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import {
   denseListClassName,
   compactControlClassName,
@@ -77,6 +73,7 @@ import {
   ChannelsSkeleton,
   ChatAdminBodySkeleton,
 } from "@/components/chat-admin/chat-admin-skeleton";
+import { InlineNote } from "@/components/shared/inline-note";
 
 type ChannelType = "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
 
@@ -811,10 +808,7 @@ function ChatAdminBody({
         </div>
 
         {channels.length === 0 ? (
-          <NestedEmpty
-            title="No channels yet"
-            description="Create the first channel to get chapter chat structured."
-          />
+          <InlineNote>No channels yet. Create the first one above.</InlineNote>
         ) : (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
             {/*
@@ -1062,10 +1056,9 @@ function ChatAdminBody({
                         onRetry={() => void pinsQuery.refetch()}
                       />
                     ) : pins.length === 0 ? (
-                      <NestedEmpty
-                        title="Nothing pinned"
-                        description="Officers can pin key messages from the channel timeline."
-                      />
+                      <InlineNote>
+                        Nothing pinned. Pin a message from the channel.
+                      </InlineNote>
                     ) : (
                       <ul
                         className={cn(
@@ -1132,10 +1125,7 @@ function ChatAdminBody({
                   </div>
                 </section>
               ) : (
-                <NestedEmpty
-                  title="No channel selected"
-                  description="Pick a channel to edit its details, notifications and pins."
-                />
+                <InlineNote>Pick a channel to edit it.</InlineNote>
               )}
             </div>
           </div>
@@ -1154,10 +1144,9 @@ function ChatAdminBody({
           Categories
         </SectionLabel>
         {categories.length === 0 ? (
-          <NestedEmpty
-            title="No categories yet"
-            description="Channels without a category show up as uncategorized."
-          />
+          <InlineNote>
+            No categories yet. Channels without one show as uncategorized.
+          </InlineNote>
         ) : (
           <ul className={denseListClassName}>
             {[...categories]

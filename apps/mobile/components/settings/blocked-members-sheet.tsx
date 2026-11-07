@@ -24,7 +24,6 @@ import {
 } from "@repo/chat-core/block-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import { ListSection } from "@/components/list-section";
-import { DirectoryGlyph } from "@/components/more/more-glyphs";
 import {
   SheetGrabber,
   SheetHeader,
@@ -34,7 +33,6 @@ import {
   useSheetClose,
 } from "@/components/sheet-scaffold";
 import {
-  EmptyState,
   ErrorState,
   SkeletonLines,
 } from "@/components/state-block";
@@ -44,6 +42,7 @@ import {
 } from "@/lib/chat/block-actions";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
+import { InlineNote } from "@/components/inline-note";
 
 /**
  * Settings → Blocked members: the one place a block can always be undone
@@ -111,11 +110,9 @@ export const BlockedMembersSheet = forwardRef<BottomSheetModal>(
           isRetrying={blockList.isRetrying}
         />
       ) : rows.length === 0 ? (
-        <EmptyState
-          glyph={DirectoryGlyph}
-          title={BLOCKED_MEMBERS_EMPTY_TITLE}
-          body={BLOCKED_MEMBERS_EMPTY_BODY}
-        />
+        <InlineNote>
+          {`${BLOCKED_MEMBERS_EMPTY_TITLE}. ${BLOCKED_MEMBERS_EMPTY_BODY}`}
+        </InlineNote>
       ) : (
         <>
           <Text style={styles.stale}>{BLOCKED_MEMBERS_SCOPE}</Text>

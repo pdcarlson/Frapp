@@ -417,10 +417,10 @@ describe("ChatReportsCard — status tabs", () => {
   });
 
   it.each([
-    ["Open", "open", "No open reports"],
-    ["Reviewed", "reviewed", "No reviewed reports"],
-    ["Actioned", "actioned", "No actioned reports"],
-    ["Dismissed", "dismissed", "No dismissed reports"],
+    ["Open", "open", "No open reports."],
+    ["Reviewed", "reviewed", "No reviewed reports."],
+    ["Actioned", "actioned", "No actioned reports."],
+    ["Dismissed", "dismissed", "No dismissed reports."],
   ] as const)(
     "renders the %s tab's own empty state",
     async (label, status, title) => {
@@ -486,7 +486,7 @@ describe("ChatReportsCard — async states", () => {
       open: { ...settled([]), isError: true, error: { statusCode: 500 } },
     };
     render(<ChatReportsCard />);
-    expect(screen.getByText("No open reports")).toBeInTheDocument();
+    expect(screen.getByText("No open reports.")).toBeInTheDocument();
     expect(screen.getByText(STALE)).toBeInTheDocument();
   });
 
@@ -514,7 +514,7 @@ describe("ChatReportsCard — async states", () => {
       open: { data: undefined, isPending: true, fetchStatus: "idle" },
     };
     const { container } = render(<ChatReportsCard />);
-    expect(screen.getByText("No chapter selected")).toBeInTheDocument();
+    expect(screen.getByText("Pick an active chapter to review its reports.")).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });
 
