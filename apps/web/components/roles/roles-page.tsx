@@ -36,7 +36,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  EmptyState,
   ErrorState,
   anyReadUncached,
   OfflineState,
@@ -61,6 +60,7 @@ import { RoleColorSwatches } from "@/components/roles/role-color-swatches";
 import { Switch } from "@/components/ui/switch";
 import { SectionSkeleton } from "@/components/shared/page-skeletons";
 import { SettingsListCard } from "@/components/settings/settings-skeleton";
+import { InlineNote } from "@/components/shared/inline-note";
 
 type Role = {
   id: string;
@@ -449,10 +449,7 @@ export function RolesAndPermissionsPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               {roles.length === 0 ? (
-                <EmptyState
-                  title="No roles yet"
-                  description="Chapters always start with default system roles. Refresh to reload or create a new custom role."
-                />
+                <InlineNote>No roles yet. Refresh to reload them.</InlineNote>
               ) : (
                 <ul className="divide-y divide-border/70">
                   {[...roles]
@@ -581,8 +578,8 @@ export function RolesAndPermissionsPage() {
                         id="role-mentionable-description"
                         className="text-sm text-muted-foreground"
                       >
-                        When off, only officers who manage channels or roles
-                        can ping everyone in it.
+                        When off, only officers who manage channels or roles can
+                        ping everyone in it.
                       </p>
                     </div>
                     <Switch

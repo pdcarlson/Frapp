@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, FolderOpen, WifiOff } from "lucide-react";
+import { AlertTriangle, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useNetwork } from "@/lib/providers/network-provider";
@@ -154,50 +154,6 @@ export function StateTile({
       )}
     >
       {children}
-    </div>
-  );
-}
-
-export function EmptyState({
-  title,
-  description,
-  actionLabel,
-  onAction,
-  actionProps,
-}: {
-  title: string;
-  description: string;
-  actionLabel?: string;
-  onAction?: () => void;
-  /**
-   * Extra props for the action button — shaped to take `controlProps()` from
-   * `useSubscriptionGate` directly, so an empty-state CTA that starts a gated
-   * write can be disabled and described rather than hidden (§5 rule 4). An
-   * empty state is exactly where hiding reads worst: the screen already has
-   * nothing on it, so a vanished CTA looks like a broken page.
-   */
-  actionProps?: {
-    disabled?: boolean;
-    title?: string;
-    "aria-describedby"?: string;
-  };
-}) {
-  return (
-    <div className="flex min-h-52 flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card p-4 text-center">
-      <StateTile tone="accent">
-        <FolderOpen className="h-6 w-6" />
-      </StateTile>
-      <h2 className="text-base font-bold">{title}</h2>
-      <p className="max-w-[220px] text-sm text-muted-foreground">
-        {description}
-      </p>
-      {actionLabel && onAction ? (
-        // §10: the empty-state CTA is the Tinted button — accent-soft, inviting,
-        // never alarming and never semantic.
-        <Button variant="tinted" size="sm" onClick={onAction} {...actionProps}>
-          {actionLabel}
-        </Button>
-      ) : null}
     </div>
   );
 }

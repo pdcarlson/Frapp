@@ -199,7 +199,7 @@ describe("Invite members", () => {
   it("tells a role that can't invite who can, and draws no button", () => {
     state.permissions = ["members:view"];
     const tree = render();
-    expect(screenText(tree)).toContain("Ask an officer for a link");
+    expect(screenText(tree)).toContain("Ask an officer to send each person their own link.");
     expect(shareButton(tree)).toHaveLength(0);
     expect(invitesOptions?.enabled).toBe(false);
     tree.unmount();

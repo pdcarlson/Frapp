@@ -5,6 +5,7 @@ import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useCurrentChapter,
   useGeofences,
+  usePermissionList,
   usePauseStudySession,
   useResumeStudySession,
   useStartStudySession,
@@ -12,13 +13,14 @@ import {
   useStudyHeartbeat,
   useStudySessions,
 } from "@repo/hooks";
-import { isModuleEnabled } from "@repo/validation";
+import { can, isModuleEnabled } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { SectionHeader } from "@/components/list-section";
-import { EmptyState, ErrorState } from "@/components/state-block";
+import { ErrorState } from "@/components/state-block";
+import { InlineNote } from "@/components/inline-note";
 import { CardListSkeleton } from "@/components/card-list-skeleton";
 import { CardMessages } from "@/components/card-messages";
 import { SessionCard } from "@/components/study/session-card";
@@ -137,6 +139,7 @@ export default function StudyScreen() {
   const primerSheetRef = useRef<BottomSheetModal>(null);
 
   const chapterQuery = useCurrentChapter();
+  const canManageZones = can("geofences:manage", usePermissionList());
   // Fails open, and deliberately: `useCurrentChapter` is `enabled: !!chapterId`
   // and a missing claim (no membership yet, or a hook-off incident) would hide
   // the screen from everyone if we required it. The writes are gated
@@ -864,13 +867,9 @@ export default function StudyScreen() {
             align="left"
             placement="screen"
           />
-          <EmptyState
-            glyph="◷"
-            title="Study hours are turned off"
-            body={
-              session ? MODULE_OFF_COPY.runningSession : MODULE_OFF_COPY.start
-            }
-          />
+          <InlineNote>
+            {session ? MODULE_OFF_COPY.runningSession : MODULE_OFF_COPY.start}
+          </InlineNote>
         </>
       );
     }
@@ -918,11 +917,13 @@ export default function StudyScreen() {
       return (
         <>
           {standaloneMessages}
-          <EmptyState
-            glyph="◷"
-            title="No study zones yet"
-            body="Ask an officer who manages study zones to add one."
-          />
+          {/* Empty-states plan rule 7: one line (writing.md § Study session).
+              Zones are drawn on a map, which only web has. */}
+          <InlineNote>
+            {canManageZones
+              ? "No study zones yet. Add one from Frapp on the web."
+              : "No study zones yet. An officer adds them."}
+          </InlineNote>
         </>
       );
     }
@@ -974,7 +975,13 @@ export default function StudyScreen() {
               ))}
             </View>
           </>
-        ) : null}
+        ) : (
+          // Rules 1 and 7: the section keeps its place and says it's empty.
+          <>
+            <SectionHeader>RECENT SESSIONS</SectionHeader>
+            <InlineNote>No sessions yet.</InlineNote>
+          </>
+        )}
       </>
     );
   }

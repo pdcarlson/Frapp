@@ -280,8 +280,8 @@ describe("ChatAdminPage — the channel structure's states", () => {
     reads.categories = settled([]);
     const { container } = render(<ChatAdminPage />);
 
-    expect(screen.getByText("No channels yet")).toBeInTheDocument();
-    expect(screen.getByText("No categories yet")).toBeInTheDocument();
+    expect(screen.getByText("No channels yet. Create the first one above.")).toBeInTheDocument();
+    expect(screen.getByText(/^No categories yet\./)).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });
 
@@ -482,7 +482,7 @@ describe("ChatAdminPage — a channel's pins", () => {
     selectExec();
     expect(cardFilledContainers(container)).toEqual([]);
 
-    expect(screen.getByText("Nothing pinned")).toBeInTheDocument();
+    expect(screen.getByText("Nothing pinned. Pin a message from the channel.")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { level: 4, name: "Pinned messages (0)" }),
     ).toBeInTheDocument();

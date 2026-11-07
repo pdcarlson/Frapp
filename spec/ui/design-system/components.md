@@ -324,7 +324,7 @@ Web implementation: [`apps/web/components/shared/confirm-dialog.tsx`](../../../a
 
 ## 10. State family — skeleton / empty / error
 
-This section specs the **anatomy** of the three visual variants — one family, clearly distinct at a glance. *Which* states a surface MUST ship is owned by [README.md](README.md) §4 and is not restated here. Connection banners and retry/backoff behavior are owned by [resilience](../resilience/README.md); state copy voice by [writing.md](writing.md).
+This section specs the **anatomy** of the three visual variants. Since 2026-11-07 only error and offline draw a card; empty is one line (§ Empty). *Which* states a surface MUST ship is owned by [README.md](README.md) §4 and is not restated here. Connection banners and retry/backoff behavior are owned by [resilience](../resilience/README.md); state copy voice by [writing.md](writing.md).
 
 ### Skeleton (loading)
 
@@ -341,22 +341,16 @@ Owner rule, 2026-11-06, on web and mobile alike: **something in flight is a quie
 
 ### Empty
 
-**One line, not a card, where a list keeps its layout** (2026-11-06, the [empty-states plan](https://github.com/pdcarlson/Frapp/issues/3429)): a search or filter that matched nothing, a period with no activity, and a board where everyone is at 0 render as a single muted line where the rows would be, with the way back (Clear search, Clear filters) as a `link`-variant run of text in it. Web: `InlineNote` and `InlineNoteAction` (`apps/web/components/shared/inline-note.tsx`); `/points` is the first surface on it. Mobile: `InlineNote` (`apps/mobile/components/inline-note.tsx`, body role, muted foreground), first on the Events and Tasks tabs (2026-11-07); it takes no action yet, because neither line needs one. The card below stays for the screens not yet moved, and for errors and offline.
+**One line, never a card** (2026-11-07, the [empty-states plan](https://github.com/pdcarlson/Frapp/issues/3429); [writing.md](writing.md) §4 owns the seven rules and the words). An empty list, a search or filter that matched nothing, a done queue, and a blocked state (no chapter picked, a role without access, a module switched off, a link to something gone) render as one muted line where the rows would be. The surrounding layout stays. The way out, when there is one (Clear search, Clear filters, Search all files, Browse channels), is a `link`-variant run of text at the end of the sentence.
 
-Standard card chrome (card fill, neutral hairline), centered stack:
+- **Web:** `InlineNote` and `InlineNoteAction` ([`apps/web/components/shared/inline-note.tsx`](../../../apps/web/components/shared/inline-note.tsx)). A line whose action goes to another page uses `inlineNoteActionClassName` on a `Link` (Study's Add a study zone).
+- **Mobile:** `InlineNote` ([`apps/mobile/components/inline-note.tsx`](../../../apps/mobile/components/inline-note.tsx), body role, muted foreground). Its `action` (`{ label, onPress }`) draws the way out as an underlined run in the chapter accent. It never creates anything; creating lives on the tab bar's + and a screen's floating +, which the sentence names instead (`Tap + to upload one.`). `NoChapterState` in `state-block.tsx` is an `InlineNote` with the picker's path.
 
-| Slot | Spec |
-| ---- | ---- |
-| Icon tile | 44px, radius 14, fill `accent-3`, feature glyph in `accent-11` ([iconography.md](iconography.md)) |
-| Title | 16.5px / 700 `#EDEAE3`, 12px below tile; a state inside a list or panel under its own heading may leave it out ([writing.md](writing.md) §4) |
-| Body (optional) | one line, 14.5px `#A9A399`, max-width ~220px; only when it says something the title doesn't ([writing.md](writing.md) §4, amended 2026-11-05) |
-| CTA (optional) | Tinted button, 44px, radius 12, 14px below |
-
-Empty is inviting, never alarming: accent + neutral only, no semantic color, no blame in copy ([writing.md](writing.md)).
+The empty card (icon tile, title, body, CTA) is gone on both clients, with its components (web `EmptyState` and `NestedEmpty`, mobile `EmptyState` and `EmptyStateAction`). Empty is never alarming: muted text and the accent link only, no semantic colour, no blame in copy.
 
 ### Error
 
-Same anatomy as empty, recolored semantic:
+A centered card on the card fill, recolored semantic (the anatomy the empty card used to share):
 
 | Slot | Spec |
 | ---- | ---- |
@@ -370,7 +364,7 @@ Error surfaces MUST NOT use the chapter accent. Field-level validation errors us
 
 ### Nested inside a card
 
-A state that replaces a whole screen paints `--card`, as the tables above spec. A state rendered **inside a container it cannot rise above** MUST drop that fill. The obvious case is a `<CardContent>`, where `--card` on `--card` is 1.00:1 and the region disappears outright. The Chapter Ops slice found the other one: a panel inside a `SheetContent` (`--popover`, the **top** of the ladder) painting `--card` is 1.085:1 in the *wrong direction*, so it reads as a hole rather than as elevation, and there is no higher step to raise the sheet to instead. Dropping the fill is not a compromise in either case — measured on `--popover`, the hairline over the container separates at 1.275:1 where the card's own hairline managed 1.155:1, so removing the fill **improves** the boundary while removing the inversion. It keeps everything else — the hairline (which is the load-bearing edge once the fill is gone, §2), the icon tile, the title, the body, the CTA, and the error's sanctioned semantic border — because this family is required to differ **in colour rather than in shape**, and bordering some variants and not others would break exactly that. Web implementation: [`apps/web/components/shared/nested-states.tsx`](../../../apps/web/components/shared/nested-states.tsx), which carries **four** members — the three above plus the offline state, whose glyph is `WifiOff` rather than the danger triangle exactly as the top-level `OfflineState`'s is. It stopped at three until `/documents` and `/backwork` needed one, and the first two screens to render an offline state inside a card had reached for the error variant, telling a member with a dropped connection that something had failed.
+A state that replaces a whole screen paints `--card`, as the tables above spec. A state rendered **inside a container it cannot rise above** MUST drop that fill. The obvious case is a `<CardContent>`, where `--card` on `--card` is 1.00:1 and the region disappears outright. The Chapter Ops slice found the other one: a panel inside a `SheetContent` (`--popover`, the **top** of the ladder) painting `--card` is 1.085:1 in the *wrong direction*, so it reads as a hole rather than as elevation, and there is no higher step to raise the sheet to instead. Dropping the fill is not a compromise in either case — measured on `--popover`, the hairline over the container separates at 1.275:1 where the card's own hairline managed 1.155:1, so removing the fill **improves** the boundary while removing the inversion. It keeps everything else — the hairline (which is the load-bearing edge once the fill is gone, §2), the icon tile, the title, the body, the CTA, and the error's sanctioned semantic border — because this family is required to differ **in colour rather than in shape**, and bordering some variants and not others would break exactly that. Web implementation: [`apps/web/components/shared/nested-states.tsx`](../../../apps/web/components/shared/nested-states.tsx), which carries **three** members since the nested empty went on 2026-11-07 — loading, error and the offline state, whose glyph is `WifiOff` rather than the danger triangle exactly as the top-level `OfflineState`'s is. It stopped at three until `/documents` and `/backwork` needed one, and the first two screens to render an offline state inside a card had reached for the error variant, telling a member with a dropped connection that something had failed.
 
 Two of the nested family's compromises assume a nested state is *one of several*: the live region is left to the top-level `LoadingState` that owns the screen, and the title is a `<p>` rather than an `<h2>` because `/billing` renders two from one query and produced two identical headings. Neither holds where the nested state is a page's **only** async state — there the page is silent to a screen reader mid-load, and its error and empty states have no heading at all, since `CardTitle` is a `<div>`. The `sole` prop says which case a call site is; it defaults off, so it changes nothing for the consumers the module was written for.
 

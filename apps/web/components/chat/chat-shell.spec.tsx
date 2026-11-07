@@ -1173,7 +1173,7 @@ describe("ChatShell deep-link targets", () => {
   it("shows an explicit empty state for a channel id that matches nothing, instead of silently falling back", () => {
     render(<ChatShell initialChannelId="does-not-exist" />);
 
-    expect(screen.getByText("Channel not found")).toBeTruthy();
+    expect(screen.getByText(/channel you can.t reach/)).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Browse channels" }),
     ).toBeTruthy();
@@ -2917,7 +2917,7 @@ describe("ChatShell with no chapter and no channels (#2145)", () => {
 
     // Phrased as an instruction, not a claim about the account —
     // `profile-panel.tsx` owns that reasoning for the same window.
-    expect(screen.getByText("No chapter selected")).toBeInTheDocument();
+    expect(screen.getByText("Pick an active chapter to load its channels.")).toBeInTheDocument();
     expect(
       screen.getByRole("region", { name: "Channels" }),
     ).toBeInTheDocument();

@@ -73,8 +73,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 }));
 
 import { signetDarkTokens } from "@repo/theme/signet";
-import { NotificationsGlyph } from "@/components/more/more-glyphs";
-import { EmptyState } from "@/components/state-block";
+import { InlineNote } from "@/components/inline-note";
 import NotificationsScreen, {
   NotificationListRow,
 } from "@/app/(app)/notifications";
@@ -232,20 +231,13 @@ describe("Notifications empty inbox", () => {
     inbox.data = null;
   });
 
-  it("draws the bell and a title, with no line under it", () => {
+  it("says it in one line, with nothing under it", () => {
     inbox.data = [];
     const tree = render();
-    const empty = tree.root.findByType(EmptyState);
+    const empty = tree.root.findByType(InlineNote);
 
-    expect(empty.props.glyph).toBe(NotificationsGlyph);
-    expect(empty.props.title).toBe("You're all caught up");
-    expect(empty.props.body).toBeUndefined();
-    expect(empty.findAllByType(NotificationsGlyph)).toHaveLength(1);
-    expect(
-      empty
-        .findAll((node) => (node.type as unknown as string) === "Text")
-        .map((node) => node.props.children),
-    ).toEqual(["You're all caught up"]);
+    expect(empty.props.children).toBe("You're all caught up.");
+    expect(empty.props.action).toBeUndefined();
   });
 });
 

@@ -18,14 +18,11 @@ import {
   useMemberDisplayNames,
 } from "@repo/hooks";
 import { useUnblockFlow } from "@/components/chat/use-unblock-flow";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedLoading,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedLoading } from "@/components/shared/nested-states";
 import { ProfileSection } from "@/components/profile/profile-section";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { Button } from "@/components/ui/button";
+import { InlineNote } from "@/components/shared/inline-note";
 
 /**
  * The empty state's body, web's own because it names where web's Block is (a
@@ -70,10 +67,7 @@ export function BlockedMembersCard() {
   let body: React.ReactNode;
   if (!chapterId) {
     body = (
-      <NestedEmpty
-        title="Select a chapter"
-        description="Blocks apply per chapter, so this list appears once a chapter is active."
-      />
+      <InlineNote>Pick a chapter to see who you blocked there.</InlineNote>
     );
   } else if (blockList.status === "loading") {
     body = <NestedLoading message="Loading your blocked members" />;

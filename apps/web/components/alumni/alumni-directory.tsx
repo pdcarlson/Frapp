@@ -12,16 +12,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { EYEBROW } from "@/components/ui/typography";
 import { SectionLabel } from "@/components/shared/section-label";
-import { EmptyState, anyReadUncached } from "@/components/shared/async-states";
+import { anyReadUncached } from "@/components/shared/async-states";
 // The nested family for everything that replaces the *list*, on the reasoning
 // `members-directory.tsx` spells out: the whole-screen variants paint `--card`,
 // and this lane just deleted every card on the route. The no-chapter branch
 // below is the one exception and says why in place.
-import {
-  NestedEmpty,
-  NestedError,
-  NestedOffline,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedOffline } from "@/components/shared/nested-states";
+import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import {
   dashboardToolbarHeightClassName,
   denseListClassName,
@@ -113,23 +110,9 @@ export function AlumniDirectory() {
   }
 
   if (!activeChapterId) {
-    /*
-      The state family, not a bare `<Card>` with a title and a sentence: this
-      was the one state on the route drawn by hand, and on a page with no cards
-      left it would have been the only card on the screen.
-
-      **The whole-screen variant, unlike every other state on this half**, and
-      lane 4 sets the precedent (`backwork-page.tsx` keeps `EmptyState` for
-      exactly this early return). The others replace a *list* inside a page
-      that still has a toolbar above it; this one replaces the page. There is
-      no chapter, so there is nothing for a toolbar to filter.
-    */
-    return (
-      <EmptyState
-        title="No chapter selected"
-        description="Pick a chapter to browse alumni."
-      />
-    );
+    // With no chapter there is nothing to list, and not an error: one line
+    // (empty-states plan, 2026-11-07), like every other zero on the page.
+    return <InlineNote>Pick a chapter to browse alumni.</InlineNote>;
   }
 
   /*
@@ -275,18 +258,16 @@ export function AlumniDirectory() {
           onRetry={() => void query.refetch()}
         />
       ) : alumni.length === 0 ? (
+        // One line where the rows go (empty-states plan rule 7).
         filtered ? (
-          <NestedEmpty
-            sole
-            title="No alumni match the filters"
-            description="Clear a field to see more."
-          />
+          <InlineNote>
+            No alumni match these filters.{" "}
+            <InlineNoteAction onClick={clearFilters}>
+              Clear filters
+            </InlineNoteAction>
+          </InlineNote>
         ) : (
-          <NestedEmpty
-            sole
-            title="No alumni yet"
-            description="Graduated members appear here."
-          />
+          <InlineNote>No alumni yet. Graduated members appear here.</InlineNote>
         )
       ) : (
         /*
