@@ -1,5 +1,6 @@
 "use client";
 
+import { DISCORD_ROUTES_WRITE_FOR_MEMBERS } from "@/lib/discord-error-copy";
 import { useCallback, useState } from "react";
 import { putSignedUpload } from "@repo/hooks";
 import {
@@ -270,6 +271,7 @@ export function UploadStep({
             mintFailureReason = getErrorMessage(
               error,
               "Some files could not be registered for upload.",
+              DISCORD_ROUTES_WRITE_FOR_MEMBERS,
             );
             setMintFailure(mintFailureReason);
             failed.push(...batch.map((entry) => entry.relativePath));
@@ -390,6 +392,7 @@ export function UploadStep({
           description: getErrorMessage(
             error,
             "The upload could not be completed. Pick the folder again to resume.",
+            DISCORD_ROUTES_WRITE_FOR_MEMBERS,
           ),
         });
       }

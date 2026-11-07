@@ -270,19 +270,15 @@ describe("the meta line carries only facts that exist", () => {
     }
   });
 
-  it("shows the Stripe ids only when the caller can read them", () => {
+  it("never shows the Stripe customer or subscription id (P2.2)", () => {
     setChapter("active");
-    const withoutIds = renderPanel();
-    expect(screen.queryByText(/customer/i)).not.toBeInTheDocument();
-    withoutIds.unmount();
-
     mockBillingStatus.mockReturnValue({
       data: { stripe_customer_id: "cus_123", subscription_id: "sub_456" },
       isError: false,
     });
     renderPanel();
-    expect(screen.getByText("cus_123")).toBeInTheDocument();
-    expect(screen.getByText("sub_456")).toBeInTheDocument();
+    expect(screen.queryByText("cus_123")).not.toBeInTheDocument();
+    expect(screen.queryByText("sub_456")).not.toBeInTheDocument();
   });
 
   it("dates the lapse from past_due_since, the only money fact it holds", () => {
@@ -702,34 +698,6 @@ describe("the Portal button on an active chapter cannot fake a payment", () => {
     renderPanel();
 
     expect(screen.getByText(/payment cleared/i)).toBeInTheDocument();
-  });
-});
-
-describe("PlanMeta identity", () => {
-  it("keys entries by name, so the focusable anchor survives ids arriving", () => {
-    // Entries are inserted at the front as they resolve, and the poll
-    // invalidates ["billing"] every 3s. An index key would replace the DOM
-    // node holding focus rather than move it.
-    setChapter("active");
-    const { rerender } = renderPanel({ invoicesHref: "#invoices" });
-    const before = screen.getByRole("link", { name: "Invoices" });
-    before.focus();
-    expect(document.activeElement).toBe(before);
-
-    mockBillingStatus.mockReturnValue({
-      data: { stripe_customer_id: "cus_1", subscription_id: "sub_1" },
-      isError: false,
-    });
-    rerender(
-      <QueryClientProvider client={new QueryClient()}>
-        <PlanPanel invoicesHref="#invoices" />
-      </QueryClientProvider>,
-    );
-
-    expect(screen.getByText("cus_1")).toBeInTheDocument();
-    expect(document.activeElement).toBe(
-      screen.getByRole("link", { name: "Invoices" }),
-    );
   });
 });
 

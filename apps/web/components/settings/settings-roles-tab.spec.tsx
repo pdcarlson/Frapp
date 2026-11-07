@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ChapterCustomRole } from "@repo/validation";
@@ -51,10 +51,6 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
-import {
-  expectClearingEntriesEmpty,
-  expectRefusedEntriesKeep,
-} from "@/tests/numeric-input";
 import { SettingsRolesTab } from "./settings-roles-tab";
 
 const CATALOG = [
@@ -84,6 +80,7 @@ describe("SettingsRolesTab", () => {
       data: [],
       isPending: false,
       isError: false,
+      isSuccess: true,
     });
     mockUseRoles.mockReturnValue({
       data: [
@@ -123,13 +120,12 @@ describe("SettingsRolesTab", () => {
     mockPermissions.mockReturnValue(["roles:manage", "chapter-config:manage"]);
   });
 
-  it("names the role pack in the header rather than as a view of its own", () => {
-    // `4e` draws the pack as a label beside the count. It used to be the
-    // default sub-tab, so `?tab=roles` landed on a read-only list of archetype
-    // names and the editor was two clicks further in.
+  it("never shows the role pack, a setup detail, under the Roles title", () => {
+    // `4e` drew the pack as a label beside the count ("IFC Fraternity role
+    // pack"): a seed's name, not the chapter's (principles.md P2.2). It used
+    // to be the default sub-tab before that.
     render(
       <SettingsRolesTab
-        archetypeKey="ifc"
         canManage
         catalog={CATALOG}
         defaultInviteRoleId={null}
@@ -137,7 +133,7 @@ describe("SettingsRolesTab", () => {
       />,
     );
     expect(screen.getByRole("heading", { name: "Roles" })).toBeInTheDocument();
-    expect(screen.getByText(/role pack/i)).toBeInTheDocument();
+    expect(screen.queryByText(/role pack/i)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("tab", { name: /pack/i }),
     ).not.toBeInTheDocument();
@@ -146,7 +142,6 @@ describe("SettingsRolesTab", () => {
   it("draws one row per permission and one column per live role", () => {
     render(
       <SettingsRolesTab
-        archetypeKey="ifc"
         canManage
         catalog={CATALOG}
         defaultInviteRoleId={null}
@@ -192,7 +187,6 @@ describe("SettingsRolesTab", () => {
     });
     render(
       <SettingsRolesTab
-        archetypeKey="ifc"
         canManage
         catalog={CATALOG}
         defaultInviteRoleId={null}
@@ -220,7 +214,6 @@ describe("SettingsRolesTab", () => {
     });
     render(
       <SettingsRolesTab
-        archetypeKey="ifc"
         canManage
         catalog={CATALOG}
         defaultInviteRoleId={null}
@@ -242,7 +235,6 @@ describe("SettingsRolesTab", () => {
     const user = userEvent.setup();
     render(
       <SettingsRolesTab
-        archetypeKey="ifc"
         canManage
         catalog={CATALOG}
         defaultInviteRoleId={null}
@@ -271,7 +263,6 @@ describe("SettingsRolesTab", () => {
     const user = userEvent.setup();
     render(
       <SettingsRolesTab
-        archetypeKey="ifc"
         canManage
         catalog={CATALOG}
         defaultInviteRoleId={null}
@@ -318,7 +309,6 @@ describe("SettingsRolesTab", () => {
     });
     render(
       <SettingsRolesTab
-        archetypeKey="ifc"
         canManage
         catalog={CATALOG}
         defaultInviteRoleId={null}
@@ -338,7 +328,6 @@ describe("SettingsRolesTab", () => {
   it("never renders the wildcard as a permission row", () => {
     render(
       <SettingsRolesTab
-        archetypeKey="ifc"
         canManage
         catalog={[{ key: "WILDCARD", permission: "*" }, ...CATALOG]}
         defaultInviteRoleId={null}
@@ -356,7 +345,6 @@ describe("SettingsRolesTab", () => {
     mockPermissions.mockReturnValue(["chapter-config:manage"]);
     render(
       <SettingsRolesTab
-        archetypeKey="ifc"
         canManage={false}
         catalog={CATALOG}
         defaultInviteRoleId={null}
@@ -382,7 +370,6 @@ describe("SettingsRolesTab", () => {
     });
     render(
       <SettingsRolesTab
-        archetypeKey="ifc"
         canManage
         catalog={CATALOG}
         defaultInviteRoleId={null}
@@ -397,97 +384,49 @@ describe("SettingsRolesTab", () => {
     ).toBeInTheDocument();
   });
 
-  it("creates a custom role with the drafted key, label, and capabilities", async () => {
+  it("creates a custom role from its name alone: key and order are derived", async () => {
     const user = userEvent.setup();
     mockCreate.mockResolvedValue({});
+    mockUseCustomRoles.mockReturnValue({
+      data: [customRole({ key: "social_chair", label: "Social", rank: 9 })],
+      isPending: false,
+      isError: false,
+      isSuccess: true,
+    });
     render(
       <SettingsRolesTab
-        archetypeKey="ifc"
         canManage
         catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
     );
-    await user.type(screen.getByLabelText("Key"), "social_chair");
-    await user.type(screen.getByLabelText("Label"), "Social Chair");
+    expect(screen.queryByLabelText("Key")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Rank")).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("Name"), "Social Chair");
     await user.click(screen.getByLabelText("New role: Create events"));
     await user.click(screen.getByRole("button", { name: /create role/i }));
 
-    expect(mockCreate).toHaveBeenCalledWith({
-      key: "social_chair",
-      label: "Social Chair",
-      rank: 99,
-      capabilities: ["events:create"],
-    });
-  });
-
-  describe("the new role's rank (#3050)", () => {
-    const renderTab = () =>
-      render(
-        <SettingsRolesTab
-          archetypeKey="ifc"
-          canManage
-          catalog={CATALOG}
-          defaultInviteRoleId={null}
-          onSaveDefaultInviteRole={mockSaveDefaultRole}
-        />,
-      );
-    const rank = () => screen.getByLabelText("Rank");
-
-    async function draftRole() {
-      const user = userEvent.setup();
-      renderTab();
-      await user.type(screen.getByLabelText("Key"), "social_chair");
-      await user.type(screen.getByLabelText("Label"), "Social Chair");
-      return user;
-    }
-
-    it("keeps the last whole number through a negative or a decimal", () => {
-      renderTab();
-      expectRefusedEntriesKeep(rank(), "40");
-    });
-
-    it("lets the field be emptied mid-edit instead of snapping back", () => {
-      renderTab();
-      expectClearingEntriesEmpty(rank(), "40");
-    });
-
-    it("refuses an emptied rank at create by name, and sends nothing", async () => {
-      const user = await draftRole();
-      fireEvent.change(rank(), { target: { value: "" } });
-      await user.click(screen.getByRole("button", { name: /create role/i }));
-      expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: "Rank needs a number",
-          variant: "destructive",
-        }),
-      );
-      expect(mockCreate).not.toHaveBeenCalled();
-    });
-
-    it("creates with rank 0, its floor", async () => {
-      mockCreate.mockResolvedValue({});
-      const user = await draftRole();
-      fireEvent.change(rank(), { target: { value: "0" } });
-      await user.click(screen.getByRole("button", { name: /create role/i }));
-      expect(mockCreate).toHaveBeenCalledWith(
-        expect.objectContaining({ rank: 0 }),
-      );
-    });
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: "social_chair_2",
+        label: "Social Chair",
+        rank: 10,
+        capabilities: ["events:create"],
+      }),
+    );
   });
 
   it("disables custom-role editing controls when the caller cannot manage", async () => {
     render(
       <SettingsRolesTab
-        archetypeKey="ifc"
         canManage={false}
         catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
     );
-    expect(screen.getByLabelText("Key")).toBeDisabled();
+    expect(screen.getByLabelText("Name")).toBeDisabled();
     expect(screen.getByRole("button", { name: /create role/i })).toBeDisabled();
   });
 
@@ -503,7 +442,6 @@ describe("SettingsRolesTab", () => {
     });
     render(
       <SettingsRolesTab
-        archetypeKey="ifc"
         canManage
         catalog={catalogWithWildcard}
         defaultInviteRoleId={null}
@@ -537,7 +475,6 @@ describe("SettingsRolesTab", () => {
     });
     render(
       <SettingsRolesTab
-        archetypeKey="ifc"
         canManage
         catalog={CATALOG}
         defaultInviteRoleId={null}
@@ -567,7 +504,6 @@ describe("the capability matrix's marks, at the call site", () => {
   it("uses the token pair the measurements clear, not the one that reads right", () => {
     render(
       <SettingsRolesTab
-        archetypeKey="ifc"
         canManage
         catalog={CATALOG}
         defaultInviteRoleId={null}
@@ -614,7 +550,6 @@ describe("the capability matrix's marks, at the call site", () => {
     it("selects the configured role and offers an explicit no-default option", () => {
       render(
         <SettingsRolesTab
-          archetypeKey="ifc"
           canManage
           catalog={CATALOG}
           defaultInviteRoleId="role-pledge"
@@ -632,7 +567,6 @@ describe("the capability matrix's marks, at the call site", () => {
       const user = userEvent.setup();
       render(
         <SettingsRolesTab
-          archetypeKey="ifc"
           canManage
           catalog={CATALOG}
           defaultInviteRoleId={null}
@@ -654,7 +588,6 @@ describe("the capability matrix's marks, at the call site", () => {
       const user = userEvent.setup();
       render(
         <SettingsRolesTab
-          archetypeKey="ifc"
           canManage
           catalog={CATALOG}
           defaultInviteRoleId="role-member"
@@ -668,7 +601,6 @@ describe("the capability matrix's marks, at the call site", () => {
     it("disables the picker for a caller who cannot manage config", () => {
       render(
         <SettingsRolesTab
-          archetypeKey="ifc"
           canManage={false}
           catalog={CATALOG}
           defaultInviteRoleId={null}
@@ -681,7 +613,6 @@ describe("the capability matrix's marks, at the call site", () => {
     it("flags a configured role that is no longer in the catalog", () => {
       render(
         <SettingsRolesTab
-          archetypeKey="ifc"
           canManage
           catalog={CATALOG}
           defaultInviteRoleId="role-deleted"

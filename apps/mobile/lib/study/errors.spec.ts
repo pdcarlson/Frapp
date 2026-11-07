@@ -39,18 +39,20 @@ describe("isActiveSessionConflict", () => {
 });
 
 describe("startErrorCopy", () => {
-  it("relays the server's specific 400, which already names the fix", () => {
+  it("words the server's specific 400 through the shared map", () => {
     expect(
       startErrorCopy({
         statusCode: 400,
         message: "Location is outside the geofence",
       }),
-    ).toBe("Location is outside the geofence");
+    ).toBe("You're outside the zone. Move inside it and try again.");
   });
 
-  it("relays the alumni refusal verbatim", () => {
+  it("words the alumni refusal through the shared map", () => {
     const message = "Alumni members cannot record study hours in this chapter";
-    expect(startErrorCopy({ statusCode: 403, message })).toBe(message);
+    expect(startErrorCopy({ statusCode: 403, message })).toBe(
+      "Alumni can't record study hours.",
+    );
   });
 
   it("tells a member whose zone vanished to pick another", () => {
@@ -109,15 +111,15 @@ describe("the subscription gate, on both study paths", () => {
 
   it("leaves an ordinary permission denial exactly as it was", () => {
     // The other direction, and the one a previous attempt broke: a plain 403
-    // still relays the server's own sentence and keeps its retry.
+    // is still the alumni or permission refusal, not the gate.
     const denial = {
       statusCode: 403,
       error: "Forbidden",
-      message: "Alumni cannot record study hours.",
+      message: "Alumni members cannot record study hours in this chapter",
       requestId: "req_test",
     };
-    expect(startErrorCopy(denial)).toBe("Alumni cannot record study hours.");
-    expect(sessionErrorCopy(denial)).toBe("Alumni cannot record study hours.");
+    expect(startErrorCopy(denial)).toBe("Alumni can't record study hours.");
+    expect(sessionErrorCopy(denial)).toBe("Alumni can't record study hours.");
   });
 
   it("leaves the 404 and 409 cases untouched", () => {
@@ -155,7 +157,7 @@ describe("the module gate, on both study paths (#2393)", () => {
 
   it("needs the 403: the same sentence on another status is not the gate", () => {
     expect(startErrorCopy({ ...moduleOff, statusCode: 400 })).toBe(
-      moduleOff.message,
+      "You need to be inside the study zone to start.",
     );
   });
 
@@ -163,10 +165,10 @@ describe("the module gate, on both study paths (#2393)", () => {
     const denial = {
       statusCode: 403,
       error: "Forbidden",
-      message: "Alumni cannot record study hours.",
+      message: "Alumni members cannot record study hours in this chapter",
       requestId: "req_test",
     };
-    expect(startErrorCopy(denial)).toBe(denial.message);
-    expect(sessionErrorCopy(denial)).toBe(denial.message);
+    expect(startErrorCopy(denial)).toBe("Alumni can't record study hours.");
+    expect(sessionErrorCopy(denial)).toBe("Alumni can't record study hours.");
   });
 });

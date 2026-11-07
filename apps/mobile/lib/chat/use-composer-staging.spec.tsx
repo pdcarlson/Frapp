@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { MemberFacingError } from "@repo/hooks/error-copy";
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -377,7 +378,9 @@ describe("useComposerStaging — edit", () => {
   });
 
   it("keeps the edit open with the member's text when the save fails", async () => {
-    const edit = vi.fn().mockRejectedValue(new Error("Network error"));
+    const edit = vi
+      .fn()
+      .mockRejectedValue(new MemberFacingError("Couldn't edit message. Try again."));
     const { result } = setup({ edit });
     act(() => result.current.startEdit("m2"));
     act(() => result.current.onChangeText("fixed text"));
@@ -388,7 +391,7 @@ describe("useComposerStaging — edit", () => {
     });
     expect(result.current.isEditing).toBe(true);
     expect(result.current.value).toBe("fixed text");
-    expect(result.current.editError).toBe("Network error");
+    expect(result.current.editError).toBe("Couldn't edit message. Try again.");
   });
 
   it("closes without a request when nothing changed", () => {

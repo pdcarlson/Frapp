@@ -1,3 +1,4 @@
+import { MemberFacingError } from "@repo/hooks/error-copy";
 import { Zip, ZipPassThrough } from "fflate";
 import {
   MAX_BACKWORK_ZIP_BYTES,
@@ -128,7 +129,7 @@ export async function buildBackworkZip(
     }
     onProgress?.(index + 1, entries.length);
   }
-  if (added === 0) throw new Error("None of the files could be downloaded.");
+  if (added === 0) throw new MemberFacingError("None of the files could be downloaded.");
   zip.end();
   if (zipError) throw zipError;
   return {
