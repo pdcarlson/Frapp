@@ -28,13 +28,18 @@ import {
  *   NOT be replaced by the chapter accent under any seed", so "you were
  *   addressed" reads identically in every chapter.
  * - **Channel unread is neutral — never red, never accent.** A plain unread
- *   channel takes the `border.input` fill with `text.foreground` text, plus an
- *   emphasized row: bold title over a muted preview. A read row drops to a
- *   lighter title, a dimmer preview, and no badge at all.
+ *   channel takes the `border.input` fill with `text.foreground` text, plus a
+ *   bold title. A read row keeps a bright regular-weight title and no badge.
  *
- * The emphasis is type alone, as the board draws it: a 700 title in
- * `text.foreground` against a read row's 600 in `text.mutedForeground`. The row
- * itself never takes a fill at rest. It used to lift every unread row onto
+ * **A read name stays bright** (owner, 2026-11-07). The emphasis is weight,
+ * the sigil and the badge: a 700 title against a read row's 400, both in
+ * `text.foreground`, as Slack, iMessage and Telegram draw it. Read titles used
+ * to drop to `text.mutedForeground`, so a chapter with nothing unread was a
+ * screen of grey with nothing white on it. Only a muted row dims its title.
+ * Chat home's rows are one line (no preview, no time, owner 2026-11-07); the
+ * preview line is for the Messages list, where a DM's last line is the point.
+ *
+ * The row itself never takes a fill at rest. It used to lift every unread row onto
  * `surface1`, which on a busy chapter striped the list in card-coloured bars
  * that said nothing the badge didn't; the lift is now only the iOS press
  * state (`usePressFeedback`, through `PressableRow`).
@@ -60,15 +65,14 @@ export interface ChannelRowProps {
    */
   isPinned?: boolean;
   /**
-   * The latest message's one-line preview and its time (2026-11-06), from
-   * `GET /v1/channels/latest` through `channelPreviewLine` and
-   * `formatListStamp`. Chat home passes `""` while the previews load, which
-   * holds the line blank, so the rows don't grow when they arrive (pending
-   * states never shift layout). Leave it out for a row that never has one,
-   * such as a hidden DM, which then draws as one line.
+   * The latest message's one-line preview, from `GET /v1/channels/latest`
+   * through `channelPreviewLine`: the Messages list's rows carry one
+   * (2026-11-07). It passes `""` while the previews load, which holds the
+   * line blank, so the rows don't grow when they arrive (pending states never
+   * shift layout). Leave it out for a one-line row: Chat home's channels and a
+   * hidden DM.
    */
   preview?: string | null;
-  timestamp?: string | null;
   /**
    * The member muted this channel. The row stays where it is, drawn quiet: a
    * read row's title whatever its count, and a crossed-out bell after the
@@ -124,7 +128,6 @@ export function ChannelRow({
   isDirect = false,
   isPinned = false,
   preview,
-  timestamp,
   isMuted = false,
   unreadCount,
   mentionCount,
@@ -161,7 +164,6 @@ export function ChannelRow({
         mentionCount,
         isMuted,
         preview,
-        timestamp,
       })}
       onPress={onPress}
       onLongPress={onLongPress ?? onHide}
@@ -195,14 +197,25 @@ export function ChannelRow({
             }
           : undefined
       }
-      style={styles.row}
+      style={[styles.row, preview == null ? styles.rowOneLine : null]}
     >
       {isDirect ? (
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>{initialsFor(name)}</Text>
         </View>
       ) : (
-        <Text style={styles.sigil}>#</Text>
+        <Text
+          style={[
+            styles.sigil,
+            looksUnread
+              ? styles.sigilUnread
+              : isMuted
+                ? styles.sigilMuted
+                : null,
+          ]}
+        >
+          #
+        </Text>
       )}
 
       <View style={styles.body}>
@@ -210,7 +223,11 @@ export function ChannelRow({
           <Text
             numberOfLines={1}
             style={[
-              looksUnread ? styles.titleUnread : styles.titleRead,
+              looksUnread
+                ? styles.titleUnread
+                : isMuted
+                  ? styles.titleMuted
+                  : styles.titleRead,
               styles.titleText,
             ]}
           >
@@ -230,7 +247,6 @@ export function ChannelRow({
       </View>
 
       <View style={styles.trailing}>
-        {timestamp ? <Text style={styles.timestamp}>{timestamp}</Text> : null}
         {isUnread ? (
           <UnreadBadge
             unreadCount={unreadCount}
@@ -298,7 +314,6 @@ export function UnreadBadge({
 
 /** Title-bar widths, cycled, so the placeholder list doesn't read as a grid. */
 const SKELETON_TITLE_WIDTHS = ["42%", "28%", "55%", "36%", "48%"] as const;
-const SKELETON_PREVIEW_WIDTHS = ["70%", "58%", "76%", "64%", "52%"] as const;
 
 /**
  * Chat home's loading state: a section caption and channel-shaped rows on the
@@ -320,7 +335,7 @@ export function ChannelListSkeleton({ rows = 5 }: { rows?: number }) {
         />
       </View>
       {Array.from({ length: rows }, (_, index) => (
-        <View key={index} style={styles.row}>
+        <View key={index} style={[styles.row, styles.rowOneLine]}>
           <SkeletonBlock width={tokens.spacing.md} height={tokens.spacing.lg} />
           <View style={styles.skeletonBody}>
             <View style={styles.skeletonTitle}>
@@ -329,17 +344,6 @@ export function ChannelListSkeleton({ rows = 5 }: { rows?: number }) {
                   SKELETON_TITLE_WIDTHS[index % SKELETON_TITLE_WIDTHS.length]
                 }
                 height={tokens.spacing.md}
-              />
-            </View>
-            {/* The preview line every listed row carries (2026-11-06). */}
-            <View style={styles.skeletonPreview}>
-              <SkeletonBlock
-                width={
-                  SKELETON_PREVIEW_WIDTHS[
-                    index % SKELETON_PREVIEW_WIDTHS.length
-                  ]
-                }
-                height={tokens.spacing.sm}
               />
             </View>
           </View>
@@ -357,7 +361,6 @@ export function accessibilityLabelFor({
   mentionCount,
   isMuted = false,
   preview,
-  timestamp,
 }: {
   name: string;
   isDirect: boolean;
@@ -365,7 +368,6 @@ export function accessibilityLabelFor({
   mentionCount: number;
   isMuted?: boolean;
   preview?: string | null;
-  timestamp?: string | null;
 }): string {
   const subject = isDirect ? name : `#${name}`;
   const parts: string[] = [subject];
@@ -379,7 +381,7 @@ export function accessibilityLabelFor({
     parts.push(`${unreadCount} unread`);
   }
   // The preview last, after the counts a member listens for first.
-  if (preview) parts.push(timestamp ? `${preview}, ${timestamp}` : preview);
+  if (preview) parts.push(preview);
   return parts.join(", ");
 }
 
@@ -395,6 +397,11 @@ function createStyles(tokens: SignetTokens) {
       paddingVertical: tokens.spacing.md,
       // As the board draws it: the sigil sits on the gutter line.
       ...gutterBleed(tokens),
+    },
+    // A row without a preview (Chat home's channels): the touch minimum and
+    // no more, so a 38-channel chapter fits twice as many on a screen.
+    rowOneLine: {
+      paddingVertical: 0,
     },
     skeletonList: {
       gap: tokens.spacing.xs,
@@ -413,12 +420,14 @@ function createStyles(tokens: SignetTokens) {
       height: tokens.typography.role.body.lineHeight,
       justifyContent: "center",
     },
-    skeletonPreview: {
-      height: tokens.typography.role.caption.lineHeight,
-      justifyContent: "center",
-    },
     sigil: {
       ...typeRole(tokens.typography.role.title),
+      color: tokens.color.text.mutedForeground,
+    },
+    sigilUnread: {
+      color: tokens.color.text.foreground,
+    },
+    sigilMuted: {
       color: tokens.color.text.muted,
     },
     titleLine: {
@@ -445,8 +454,8 @@ function createStyles(tokens: SignetTokens) {
       flex: 1,
       gap: 2,
     },
-    // Weight and brightness together carry unread: 700 over a read row's 600
-    // (the board's two title weights), foreground over muted-foreground.
+    // Weight carries unread: 700 over a read row's 400, both bright
+    // (2026-11-07). A muted row is the one that dims.
     titleUnread: {
       ...typeRole({
         ...tokens.typography.role.body,
@@ -455,11 +464,12 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
     },
     titleRead: {
-      ...typeRole({
-        ...tokens.typography.role.body,
-        weight: tokens.typography.weight.semibold,
-      }),
-      color: tokens.color.text.mutedForeground,
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
+    },
+    titleMuted: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.muted,
     },
     previewUnread: {
       ...typeRole(tokens.typography.role.caption),
@@ -472,10 +482,6 @@ function createStyles(tokens: SignetTokens) {
     trailing: {
       alignItems: "flex-end",
       gap: tokens.spacing.xs + 1,
-    },
-    timestamp: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
     },
     // One geometry recipe; only fill and text colour differ between the two
     // states (foundations.md:68).
