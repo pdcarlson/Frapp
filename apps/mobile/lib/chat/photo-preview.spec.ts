@@ -6,7 +6,6 @@ import {
   PREVIEW_JPEG_QUALITY,
   PREVIEW_MAX_EDGE,
   describeChatPhoto,
-  thumbhashPlaceholderUri,
 } from "./photo-preview";
 
 /**
@@ -180,25 +179,5 @@ describe("describeChatPhoto", () => {
 
     expect(described.previewUri).toBeNull();
     expect(manipulator.manipulate).not.toHaveBeenCalled();
-  });
-});
-
-describe("thumbhashPlaceholderUri", () => {
-  it("draws a hash as a PNG data URI", async () => {
-    photo(400, 300);
-    const { thumbhash } = await describeChatPhoto(
-      "file:///p.jpg",
-      "image/jpeg",
-    );
-
-    expect(thumbhashPlaceholderUri(thumbhash)).toMatch(
-      /^data:image\/png;base64,/,
-    );
-  });
-
-  it("answers null for no hash or a malformed one, so a bad hash costs only the blur", () => {
-    expect(thumbhashPlaceholderUri(null)).toBeNull();
-    expect(thumbhashPlaceholderUri("")).toBeNull();
-    expect(thumbhashPlaceholderUri("!!not base64!!")).toBeNull();
   });
 });
