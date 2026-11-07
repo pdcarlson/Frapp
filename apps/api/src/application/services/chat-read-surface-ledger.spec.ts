@@ -159,6 +159,16 @@ const HTTP_LEDGER: Record<string, Entry> = {
         "a blocker's unread and mention counts skip the blocked member's messages in that chapter (#2521)",
     },
   },
+  // Chat home's previews: other members' latest message text.
+  // `get_channel_latest_messages` skips a sender the caller blocked, falling
+  // back to the message before, as the timeline mask does.
+  ChatController_getLatestMessages_v1: {
+    status: 'masked',
+    proof: {
+      pglite:
+        "a blocker's previews skip the blocked member's messages in that chapter",
+    },
+  },
   ChatController_markRead_v1: {
     status: 'no-foreign-content',
     why: "Stamps the caller's own read cursor.",
