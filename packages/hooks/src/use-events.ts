@@ -109,7 +109,8 @@ export function useUpdateEvent() {
         end_time?: string;
         point_value?: number;
         is_mandatory?: boolean;
-        recurrence_rule?: string;
+        // `null` ends a series (`UpdateEventDto` lets `@IsOptional` pass it).
+        recurrence_rule?: string | null;
         required_role_ids?: string[];
         optional_role_ids?: string[];
         excluded_role_ids?: string[];
@@ -119,11 +120,15 @@ export function useUpdateEvent() {
         // empty array clears a stored zone.
         check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
         check_in_zone_name?: string;
+        // Which rows of a repeating series the edit reaches
+        // (`spec/behavior/events.md` § Recurrence edit and cancellation scope).
+        scope?: "instance" | "series";
       };
     }) => {
       const { data, error } = await client.PATCH("/v1/events/{id}", {
         params: { path: { id } },
-        body,
+        // The generated type has no `null` for the rule; the DTO accepts it.
+        body: body as components["schemas"]["UpdateEventDto"],
       });
       if (error) throw error;
       return data;
@@ -139,9 +144,15 @@ export function useDeleteEvent() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
-    mutationFn: async (id: string) => {
+    // A bare id deletes one event; `scope: "series"` cancels a repeating
+    // series from now forward.
+    mutationFn: async (
+      target: string | { id: string; scope?: "instance" | "series" },
+    ) => {
+      const { id, scope } =
+        typeof target === "string" ? { id: target, scope: undefined } : target;
       const { data, error } = await client.DELETE("/v1/events/{id}", {
-        params: { path: { id } },
+        params: { path: { id }, ...(scope ? { query: { scope } } : {}) },
       });
       if (error) throw error;
       return data;
