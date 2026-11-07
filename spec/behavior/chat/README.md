@@ -59,6 +59,13 @@ Added 2026-11-05, owner direction ("Mobile opens up to the last channel you were
 - **Fallback:** a remembered channel that is deleted, no longer visible to the member, or a DM they hid is skipped. Web then opens the chapter default, else `#general`, else the first channel. The same applies in the middle of a visit: hiding the open DM, or the open channel disappearing, lands there.
 - One rule for both clients: `landingChannelId` / `lastChannelLandingId` in [`packages/hooks/src/landing-channel.ts`](../../../packages/hooks/src/landing-channel.ts). Web's first-chunk cache pins the same channel's tail against eviction.
 
+### Chat density
+
+Added 2026-11-06, owner request ([#2252](https://github.com/pdcarlson/Frapp/issues/2252)): "can we let users change their chat density in their settings?"
+
+- **A member picks cozy (the default) or compact**, on web in Profile and on mobile in Settings. What each draws is [`components.md` §11 § Density](../../ui/design-system/components.md#density).
+- **It is device state, not a server preference**, like the last channel above: kept per browser or phone (`localStorage`, AsyncStorage, key in `@repo/chat-core/density`), so a phone can stay cozy while a laptop is compact. It is not keyed by member, so a shared device keeps one density across sign-ins, and sign-out leaves it. Syncing it to the account would need a stored setting and an endpoint; revisit if members ask for it to follow them.
+
 ## Direct Messages
 
 - **1-on-1:** Initiated by selecting a member. Creates (or reuses) a DM-type channel between exactly two users. Chapter-scoped.
