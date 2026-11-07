@@ -9,8 +9,14 @@ import {
 
 const requestPushPermission = vi.hoisted(() => vi.fn<() => Promise<boolean>>());
 
+const notifyPushPermissionGranted = vi.hoisted(() => vi.fn());
+
 vi.mock("@/lib/notifications/push", () => ({
   requestPushPermission: () => requestPushPermission(),
+}));
+
+vi.mock("./push-token-lifecycle", () => ({
+  notifyPushPermissionGranted: () => notifyPushPermissionGranted(),
 }));
 
 describe("parsePrimerDecision", () => {
@@ -97,7 +103,18 @@ describe("shouldOfferPrimer", () => {
 describe("acceptPrimer", () => {
   beforeEach(() => {
     requestPushPermission.mockReset().mockResolvedValue(true);
+    notifyPushPermissionGranted.mockClear();
     vi.mocked(AsyncStorage.setItem).mockClear();
+  });
+
+  it("asks the push runtime to register again on a grant, and only then (#2617)", async () => {
+    await acceptPrimer();
+    expect(notifyPushPermissionGranted).toHaveBeenCalledTimes(1);
+
+    notifyPushPermissionGranted.mockClear();
+    requestPushPermission.mockResolvedValue(false);
+    await acceptPrimer();
+    expect(notifyPushPermissionGranted).not.toHaveBeenCalled();
   });
 
   it("stores the decision, then runs onRecorded, then asks the OS", async () => {
