@@ -39,6 +39,7 @@ vi.mock("@repo/hooks", () => {
     useChannels: () => empty,
     useCategories: () => empty,
     useChannelUnreadCounts: () => empty,
+    useChannelLatestMessages: () => empty,
     useEvents: () => empty,
     // s06 draws its New event button for an officer; a member here.
     usePermissionList: () => [],
@@ -47,7 +48,7 @@ vi.mock("@repo/hooks", () => {
     useCurrentUser: () => empty,
     useTasks: () => empty,
     useViewerUserId: () => "viewer-1",
-    useMemberDisplayNames: () => ({ byId: {} }),
+    useMemberDisplayNames: () => ({ byId: {}, nameFor: () => null }),
     useChapterRoster: () => empty,
     useChapterSetupChecklist: () => ({
       checklist: null,

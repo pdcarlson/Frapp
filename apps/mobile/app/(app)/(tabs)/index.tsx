@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useIsFocused, useRouter } from "expo-router";
 import {
   Alert,
+  Pressable,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -14,7 +15,6 @@ import {
   foldedSectionAnnouncement,
   groupChannelsByCategory,
   HIDDEN_CONVERSATIONS_LABEL,
-  HIDE_MUTED_LABEL,
   NO_MATCHING_CHANNELS,
   otherMemberId,
   SHOW_ALL_CHANNELS_LABEL,
@@ -23,8 +23,10 @@ import {
   sidebarMutedChannelIds,
   sidebarSections,
   sidebarUnreadCounts,
-  UNREAD_ONLY_LABEL,
+  resolveAuthorLabel,
+  resolveAuthorName,
   useCategories,
+  useChannelLatestMessages,
   useChannelNotificationPreferences,
   useChannelUnreadCounts,
   lastChannelLandingId,
@@ -57,13 +59,22 @@ import {
   type ChatNotificationLevel,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import {
+  channelPreviewLine,
+  NO_MESSAGES_PREVIEW,
+} from "@repo/chat-core/channel-preview";
+import { formatListStamp } from "@repo/formatting";
 import { ChapterMark } from "@/components/chapter-mark";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
 import { NotificationsBell } from "@/components/chat/notifications-bell";
-import { ToggleChips } from "@/components/filter-chips";
+import {
+  ChannelFilterButton,
+  ChannelFilterMenu,
+  useChannelFilterMenu,
+} from "@/components/chat/channel-filter-menu";
 import {
   ChannelListSkeleton,
   ChannelRow,
@@ -126,6 +137,14 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * definition would disagree on exactly those cases.
  */
 
+/** The line under the first heading while a filter is on, so a short list says why. */
+function filterLineText(filters: { unreadOnly: boolean; hideMuted: boolean }) {
+  if (filters.unreadOnly && filters.hideMuted) {
+    return "Showing unread only, muted hidden.";
+  }
+  return filters.unreadOnly ? "Showing unread only." : "Muted channels hidden.";
+}
+
 export default function ChatHomeScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -149,7 +168,9 @@ export default function ChatHomeScreen() {
   // `users.id` to subtract. Deliberately not `useChatRuntime()`, which would
   // reconfigure the realtime manager and boot the outbox flush from this screen.
   const viewerId = useViewerUserId();
-  const { byId: memberNames } = useMemberDisplayNames();
+  const { byId: memberNames, nameFor } = useMemberDisplayNames();
+  // Each row's latest message and time (2026-11-06 redesign).
+  const latestQuery = useChannelLatestMessages();
 
   const leaveChannel = useLeaveChannel();
   const reopenDm = useGetOrCreateDm();
@@ -287,6 +308,7 @@ export default function ChatHomeScreen() {
     notificationPrefsQuery,
     sidebarRefetch,
     rosterQuery,
+    latestQuery,
   ]);
 
   // Categories are grouping only. While they load, or if the read fails,
@@ -297,14 +319,28 @@ export default function ChatHomeScreen() {
     () => selectCategories(categoriesQuery.data),
     [categoriesQuery.data],
   );
+  // Both filters apply only while their data is known. The shared helpers
+  // give `undefined` while a read is pending or its last attempt failed, so a
+  // filter never hides a row on missing or stale data.
+  const mutedChannelIds = useMemo(
+    () =>
+      sidebarMutedChannelIds({
+        data: notificationPrefsQuery.data,
+        isError: notificationPrefsQuery.isError,
+      }),
+    [notificationPrefsQuery.data, notificationPrefsQuery.isError],
+  );
+  const filterMenu = useChannelFilterMenu();
+  const latestById = useMemo(
+    () => new Map((latestQuery.data ?? []).map((row) => [row.channel_id, row])),
+    [latestQuery.data],
+  );
+  const titleOf = useCallback(
+    (channel: ChannelSummary) =>
+      displayChannelName(channel, viewerId, memberNames),
+    [viewerId, memberNames],
+  );
   const arranged = useMemo(() => {
-    // Both filters apply only while their data is known. The shared helpers
-    // give `undefined` while a read is pending or its last attempt failed, so
-    // a filter never hides a row on missing or stale data.
-    const mutedChannelIds = sidebarMutedChannelIds({
-      data: notificationPrefsQuery.data,
-      isError: notificationPrefsQuery.isError,
-    });
     return arrangeChannelSidebar({
       // Labels per `spec/behavior/chat/README.md` § Channels (the "Channel
       // categories" rule): the default group is "Channels", and it stays first
@@ -317,7 +353,7 @@ export default function ChatHomeScreen() {
       collapsed: preferences.collapsed,
       filters: preferences.filters,
       activeChannelId: null,
-      titleOf: (channel) => displayChannelName(channel, viewerId, memberNames),
+      titleOf,
       unreadByChannelId,
       mutedChannelIds,
     });
@@ -326,11 +362,11 @@ export default function ChatHomeScreen() {
     categories,
     preferences,
     unreadByChannelId,
-    notificationPrefsQuery.data,
-    notificationPrefsQuery.isError,
-    viewerId,
-    memberNames,
+    mutedChannelIds,
+    titleOf,
   ]);
+  const filtersOn =
+    preferences.filters.unreadOnly || preferences.filters.hideMuted;
 
   /*
     Launch opens the last channel the member was in, the way Discord does
@@ -402,12 +438,31 @@ export default function ChatHomeScreen() {
             run: () => leaveChannel.mutateAsync(channel.id),
           })
       : undefined;
+    const isDirect = isDirectChannel(channel);
+    const latest = latestById.get(channel.id);
     return (
       <ChannelRow
         key={channel.id}
         name={name}
-        isDirect={isDirectChannel(channel)}
+        isDirect={isDirect}
         isPinned={pinned}
+        preview={
+          // Held blank until the previews answer (or if they fail), so no
+          // row grows when they arrive.
+          !latestQuery.isSuccess
+            ? ""
+            : latest
+              ? channelPreviewLine(latest, {
+                  isOneToOne: channel.type === "DM",
+                  viewerId,
+                  nameOf: (author) => resolveAuthorName(author, nameFor),
+                  fallbackLabel: (author) =>
+                    resolveAuthorLabel(author, nameFor, null),
+                })
+              : NO_MESSAGES_PREVIEW
+        }
+        timestamp={latest ? formatListStamp(latest.created_at) : null}
+        isMuted={mutedChannelIds?.has(channel.id) ?? false}
         unreadCount={counts?.unreadCount ?? 0}
         mentionCount={counts?.mentionCount ?? 0}
         onPress={() => openChannel(channel.id)}
@@ -440,11 +495,61 @@ export default function ChatHomeScreen() {
     );
   }
 
+  const filterButton = (
+    <ChannelFilterButton menu={filterMenu} active={filtersOn} />
+  );
+  // While a filter is on, the first heading says so in a line, so a short
+  // list never reads as a chapter with fewer channels.
+  const filterLine = filtersOn ? (
+    <View style={styles.filterLine}>
+      <Text style={styles.filterLineText}>
+        {filterLineText(preferences.filters)}{" "}
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        hitSlop={8}
+        onPress={() =>
+          setSidebarFilter({ unread_only: false, hide_muted: false })
+        }
+      >
+        <Text style={styles.filterLineAction}>Show all</Text>
+      </Pressable>
+    </View>
+  ) : null;
+  // The sections' stand-in while a filter has emptied them all, so the
+  // button that undoes it stays on screen. It doesn't fold.
+  const emptiedHeading = (
+    <View style={styles.section}>
+      <View style={styles.headingRow}>
+        <Text
+          accessibilityRole="header"
+          numberOfLines={1}
+          style={[styles.sectionLabel, styles.plainHeading]}
+        >
+          CHANNELS
+        </Text>
+        {filterButton}
+      </View>
+      {filterLine}
+    </View>
+  );
+
   return (
     <ScreenShell
       title={chapterName ?? "Frapp"}
       titleMark={<ChapterMark />}
       refresh={refresh}
+      overlay={{
+        open: filterMenu.visible,
+        content: (
+          <ChannelFilterMenu
+            menu={filterMenu}
+            unreadOnly={preferences.filters.unreadOnly}
+            hideMuted={preferences.filters.hideMuted}
+            onChange={setSidebarFilter}
+          />
+        ),
+      }}
       headerAction={
         <View style={styles.headerActions}>
           {/* No pill at all in a build without Ask (#2259): `AskSheet`
@@ -520,93 +625,77 @@ export default function ChatHomeScreen() {
       ) : (
         <>
           {/*
-            The two filters (#2877). Chips rather than a menu: the header's one
-            action slot is the Ask pill, and the state of each filter should be
-            visible without opening anything, since a shortened list would
-            otherwise read as a chapter with fewer channels.
+            The list (2026-11-06 redesign): the member's sections, each row
+            with its latest message and time. The filters sit behind the
+            button at the end of the first heading, as web's rail keeps them
+            behind its Channels header; they used to be two chips above the
+            list.
           */}
-          <ToggleChips
-            chips={[
-              {
-                key: "unread_only",
-                label: UNREAD_ONLY_LABEL,
-                on: preferences.filters.unreadOnly,
-              },
-              {
-                key: "hide_muted",
-                label: HIDE_MUTED_LABEL,
-                on: preferences.filters.hideMuted,
-              },
-            ]}
-            onToggle={(key, next) =>
-              setSidebarFilter(
-                key === "unread_only"
-                  ? { unread_only: next }
-                  : { hide_muted: next },
-              )
-            }
-          />
-
-          {/*
-            Each header folds its section (#2877). Folded, it keeps the
-            section's unread total, red when anything inside addresses the
-            member, so folding never hides a mention. PINNED is the Canvas's
-            section above CHANNELS (canvas-screens.dc.html:135).
-          */}
-          {arranged.sections.map((section) => (
-            <View key={section.key} style={styles.section}>
-              {/*
-                A header that folds. The header role keeps each section on the
-                screen reader's headings rotor, as before #2877. A header has
-                no button trait, and iOS never announces "collapsed", so the
-                label says whether the section is folded and the hint says what
-                a double-tap does. A folded label also carries the section's
-                total, since the badge inside is not read on its own.
-              */}
-              <PressableRow
-                accessibilityRole="header"
-                accessibilityState={{ expanded: !section.collapsed }}
-                accessibilityLabel={
-                  section.collapsed
-                    ? section.unreadCount > 0 || section.addressed
-                      ? `${section.label}, folded, ${foldedSectionAnnouncement(section)}`
-                      : `${section.label}, folded`
-                    : section.label
-                }
-                accessibilityHint={
-                  section.collapsed
-                    ? "Double-tap to show its channels."
-                    : "Double-tap to fold this section."
-                }
-                onPress={() =>
-                  setSectionCollapsed({
-                    sectionKey: section.key,
-                    collapsed: !section.collapsed,
-                  })
-                }
-                style={styles.sectionHeader}
-              >
-                <Text style={styles.sectionChevron}>
-                  {section.collapsed ? "▸" : "▾"}
-                </Text>
-                <Text
-                  numberOfLines={1}
-                  style={[styles.sectionLabel, styles.sectionLabelInHeader]}
-                >
-                  {section.label}
-                </Text>
-                {section.collapsed &&
-                (section.unreadCount > 0 || section.addressed) ? (
-                  <UnreadBadge
-                    unreadCount={section.unreadCount}
-                    mentionCount={section.mentionCount}
-                    addressed={section.addressed}
-                  />
-                ) : null}
-              </PressableRow>
-              {section.rows.map(renderChannel)}
-            </View>
-          ))}
+          {arranged.sections.length === 0
+            ? emptiedHeading
+            : arranged.sections.map((section, index) => (
+                <View key={section.key} style={styles.section}>
+                  <View style={styles.headingRow}>
+                    {/*
+                      A header that folds (#2877). Folded, it keeps the
+                      section's unread total, red when anything inside
+                      addresses the member, so folding never hides a mention.
+                      The header role keeps each section on the screen
+                      reader's headings rotor. A header has no button trait,
+                      and iOS never announces "collapsed", so the label says
+                      whether the section is folded and the hint says what a
+                      double-tap does.
+                    */}
+                    <PressableRow
+                      accessibilityRole="header"
+                      accessibilityState={{ expanded: !section.collapsed }}
+                      accessibilityLabel={
+                        section.collapsed
+                          ? section.unreadCount > 0 || section.addressed
+                            ? `${section.label}, folded, ${foldedSectionAnnouncement(section)}`
+                            : `${section.label}, folded`
+                          : section.label
+                      }
+                      accessibilityHint={
+                        section.collapsed
+                          ? "Double-tap to show its channels."
+                          : "Double-tap to fold this section."
+                      }
+                      onPress={() =>
+                        setSectionCollapsed({
+                          sectionKey: section.key,
+                          collapsed: !section.collapsed,
+                        })
+                      }
+                      style={[styles.sectionHeader, styles.headingGrow]}
+                    >
+                      <Text style={styles.sectionChevron}>
+                        {section.collapsed ? "▸" : "▾"}
+                      </Text>
+                      <Text
+                        numberOfLines={1}
+                        style={[
+                          styles.sectionLabel,
+                          styles.sectionLabelInHeader,
+                        ]}
+                      >
+                        {section.label}
+                      </Text>
+                      {section.collapsed &&
+                      (section.unreadCount > 0 || section.addressed) ? (
+                        <UnreadBadge
+                          unreadCount={section.unreadCount}
+                          mentionCount={section.mentionCount}
+                          addressed={section.addressed}
+                        />
+                      ) : null}
+                    </PressableRow>
+                    {index === 0 ? filterButton : null}
+                  </View>
+                  {index === 0 ? filterLine : null}
+                  {section.rows.map(renderChannel)}
+                </View>
+              ))}
 
           {arranged.emptiedByFilters ? (
             <EmptyState
@@ -739,6 +828,41 @@ function createStyles(tokens: SignetTokens) {
     sectionChevron: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
+    },
+    headingRow: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    headingGrow: {
+      flex: 1,
+    },
+    // The same caption as a folding header, on the same row height, without
+    // the chevron: nothing here folds.
+    plainHeading: {
+      flex: 1,
+      marginBottom: 0,
+      minHeight: tokens.touch.minimum,
+      textAlignVertical: "center",
+      lineHeight: tokens.touch.minimum,
+    },
+    filterLine: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      alignItems: "center",
+      marginTop: -tokens.spacing.xs,
+      marginBottom: tokens.spacing.xs,
+    },
+    filterLineText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+    },
+    filterLineAction: {
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.semibold,
+      }),
+      color: tokens.color.text.foreground,
+      textDecorationLine: "underline",
     },
     hiddenToggle: {
       minHeight: tokens.touch.minimum,

@@ -350,6 +350,29 @@ describe("ChannelRow unread emphasis and press feedback", () => {
     expect(read.color).toBe(signetDarkTokens.color.text.mutedForeground);
   });
 
+  it("draws a muted unread row's title read, with the crossed-out bell", () => {
+    const tree = renderRow({ unreadCount: 7, isMuted: true });
+    const title = titleStyle(tree);
+    expect(title.fontFamily).toBe("Figtree_600SemiBold");
+    expect(title.color).toBe(signetDarkTokens.color.text.mutedForeground);
+    expect(
+      tree.root.findAll((node) => (node.type as unknown) === "Svg"),
+    ).toHaveLength(1);
+    expect(
+      renderRow({ unreadCount: 7 }).root.findAll(
+        (node) => (node.type as unknown) === "Svg",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("lets a mention past a mute, as push does", () => {
+    const title = titleStyle(
+      renderRow({ unreadCount: 2, mentionCount: 1, isMuted: true }),
+    );
+    expect(title.fontFamily).toBe("Figtree_700Bold");
+    expect(title.color).toBe(signetDarkTokens.color.text.foreground);
+  });
+
   it("gives an unread row no fill at rest", () => {
     const row = pressable(renderRow({ unreadCount: 7, mentionCount: 1 }));
 
@@ -434,12 +457,41 @@ describe("ChannelListSkeleton", () => {
         </FrappThemeProvider>,
       );
     });
-    expect(tree.root.findAllByType(SkeletonBlock)).toHaveLength(11);
+    // The caption, then a sigil, a title and a preview line per row.
+    expect(tree.root.findAllByType(SkeletonBlock)).toHaveLength(16);
     expect(
       listeners.mock.calls.filter(
         ([event]) => (event as string) === "reduceMotionChanged",
       ),
     ).toHaveLength(1);
     expect(vi.mocked(withRepeat)).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("accessibilityLabelFor, muted and previewed rows", () => {
+  it("says muted after the name and reads the preview and time last", () => {
+    expect(
+      accessibilityLabelFor({
+        name: "social",
+        isDirect: false,
+        unreadCount: 3,
+        mentionCount: 0,
+        isMuted: true,
+        preview: "Jake: see you at 6",
+        timestamp: "9:41 PM",
+      }),
+    ).toBe("#social, muted, 3 unread, Jake: see you at 6, 9:41 PM");
+  });
+
+  it("reads nothing for a held, blank preview line", () => {
+    expect(
+      accessibilityLabelFor({
+        name: "social",
+        isDirect: false,
+        unreadCount: 0,
+        mentionCount: 0,
+        preview: "",
+      }),
+    ).toBe("#social");
   });
 });
