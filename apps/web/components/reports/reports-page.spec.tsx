@@ -222,22 +222,22 @@ describe("ReportsPage preview states", () => {
     expect(
       await screen.findByText(/couldn't generate attendance report/i),
     ).toBeInTheDocument();
-    expect(screen.getByText("Chapter has no terms")).toBeInTheDocument();
+    // A plain Error was written for the console, not the officer.
+    expect(screen.queryByText("Chapter has no terms")).not.toBeInTheDocument();
     expect(
       screen.queryByText("Generate a report to see a preview here."),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
   });
 
-  it("shows the server's message from the body the report hooks throw", async () => {
+  it("explains a refusal from the body the report hooks throw, in the officer's words", async () => {
     // openapi-fetch throws the parsed error body, a plain object, not an
-    // `Error`; an `instanceof Error` check showed the fallback for every
-    // refusal the API explained.
+    // `Error`; the shared error map rewrites the API's field-named sentence.
     const user = userEvent.setup();
     mockAttendanceReport.mockReturnValue({
       mutateAsync: vi.fn().mockRejectedValue({
         statusCode: 400,
-        message: "The start date must come before the end date.",
+        message: "start_date must not be after end_date",
       }),
       isPending: false,
     });
@@ -246,7 +246,9 @@ describe("ReportsPage preview states", () => {
     await user.click(generateButton());
 
     expect(
-      await screen.findByText("The start date must come before the end date."),
+      await screen.findByText(
+        "The end date has to be on or after the start date.",
+      ),
     ).toBeInTheDocument();
     expect(
       screen.queryByText("Confirm your chapter access and retry."),
@@ -530,39 +532,11 @@ describe("ReportsPage event and member pickers", () => {
     expect(mockUseMembers).toHaveBeenCalledWith({ enabled: true });
   });
 
-  it("lets an officer target an event the picker doesn't list, via the manual-id fallback", async () => {
-    const user = userEvent.setup();
-    const mutateAsync = vi.fn().mockResolvedValue({
-      payload: [],
-      truncation: { truncated: false, rowLimit: null, note: null },
-    });
-    mockAttendanceReport.mockReturnValue({ mutateAsync, isPending: false });
-    // Simulates a role-targeted event `EventService.findByChapter` filters
-    // out of the list for this caller, or a chapter with `members:view`
-    // withheld from a `reports:export`-only custom role — either way the
-    // picker's list can be empty or incomplete while a known id still works.
+  it("never asks the officer to type an id (P2.2)", () => {
     mockUseEvents.mockReturnValue(emptyList());
-
     render(<ReportsPage />);
-    await user.click(screen.getByText(/can't find the event/i));
-    await user.type(screen.getByPlaceholderText(/event id/i), "evt-not-listed");
-    await user.click(generateButton());
 
-    expect(mutateAsync).toHaveBeenCalledWith(
-      expect.objectContaining({
-        body: expect.objectContaining({ event_id: "evt-not-listed" }),
-      }),
-    );
-  });
-
-  it("tells the officer a manually-entered id isn't in the picker's list, rather than looking ignored", async () => {
-    const user = userEvent.setup();
-    mockUseEvents.mockReturnValue(emptyList());
-
-    render(<ReportsPage />);
-    await user.click(screen.getByText(/can't find the event/i));
-    await user.type(screen.getByPlaceholderText(/event id/i), "evt-not-listed");
-
-    expect(screen.getByText(/not in the list above/i)).toBeInTheDocument();
+    expect(screen.queryByText(/can't find the event/i)).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/id$/i)).not.toBeInTheDocument();
   });
 });

@@ -698,7 +698,7 @@ describe("BackworkPage upload allowlist", () => {
     );
   });
 
-  it("shows the storage status when the bucket refuses the file", async () => {
+  it("never names the storage status when the bucket refuses the file", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: false, status: 400 } as Response),
@@ -720,7 +720,7 @@ describe("BackworkPage upload allowlist", () => {
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Couldn't upload backwork",
-          description: "Storage rejected upload (400).",
+          description: "The file didn't upload.",
         }),
       ),
     );
@@ -752,7 +752,7 @@ describe("BackworkPage upload allowlist", () => {
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Couldn't upload backwork",
-          description: "Upload URL response missing signed URL or storage path.",
+          description: "Try the upload again.",
         }),
       ),
     );

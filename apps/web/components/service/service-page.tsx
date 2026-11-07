@@ -63,6 +63,7 @@ import {
   acceptAttribute,
   inspectUploadFile,
   readSignedUpload,
+  statusLabel,
 } from "@repo/validation";
 import {
   formatDay,
@@ -265,8 +266,8 @@ export function ServiceHoursPage() {
           body: proofFile,
           contentType,
           upsert: true,
-          describeRejection: (status) =>
-            `Storage rejected upload (${status}). Proof accepts images/PDF up to ${MAX_UPLOAD_LABEL}.`,
+          describeRejection: () =>
+            `The proof didn't upload. Use a photo or PDF up to ${MAX_UPLOAD_LABEL}.`,
         });
         proofPath = storagePath;
       }
@@ -397,7 +398,7 @@ export function ServiceHoursPage() {
         title: "Couldn't withdraw entry",
         description: getErrorMessage(
           error,
-          "Only PENDING entries can be withdrawn.",
+          "Only hours that haven't been reviewed can be withdrawn.",
         ),
         variant: "destructive",
       });
@@ -774,7 +775,7 @@ export function ServiceHoursPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant={serviceStatusKind(entry.status)}>
-                      {entry.status}
+                      {statusLabel("serviceEntry", entry.status)}
                     </Badge>
                     {entry.points_awarded ? (
                       <Badge variant="outline">Points awarded</Badge>

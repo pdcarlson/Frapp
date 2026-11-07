@@ -400,7 +400,6 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
         <PlanMeta
           status={status}
           pastDueSince={pastDueSince}
-          billingStatus={billingStatus}
           invoicesHref={invoicesHref}
         />
 
@@ -528,18 +527,14 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
 function PlanMeta({
   status,
   pastDueSince,
-  billingStatus,
   invoicesHref,
 }: {
   status: string | null;
   pastDueSince: string | null;
-  billingStatus: BillingStatusPreview | undefined;
   invoicesHref?: string;
 }) {
   const lapsedOn =
     status === "past_due" && pastDueSince ? formatDay(pastDueSince) : null;
-  const customerId = billingStatus?.stripe_customer_id ?? null;
-  const subscriptionId = billingStatus?.subscription_id ?? null;
 
   /*
    * Keyed by name, not by array index, and the difference is reachable rather
@@ -549,33 +544,13 @@ function PlanMeta({
    * replaces the DOM node that held focus instead of moving it.
    *
    * The trigger is this panel's own poll: it invalidates `["billing"]` every
-   * 3s, so an officer waiting out a checkout can tab onto Invoices at index 0
-   * and have the Stripe ids arrive on the next tick, pushing it to index 2 and
-   * dropping focus to `<body>`.
+   * 3s, so an entry that arrives on a later tick would shift Invoices and drop
+   * focus to `<body>`. (The Stripe customer and subscription ids used to be
+   * two such entries; they are system ids and no longer render, P2.2.)
    */
   const items: { key: string; node: React.ReactNode }[] = [];
   if (lapsedOn) {
     items.push({ key: "lapsed", node: <>Past due since {lapsedOn}</> });
-  }
-  if (customerId) {
-    items.push({
-      key: "customer",
-      node: (
-        <>
-          Customer <span className="font-mono">{customerId}</span>
-        </>
-      ),
-    });
-  }
-  if (subscriptionId) {
-    items.push({
-      key: "subscription",
-      node: (
-        <>
-          Subscription <span className="font-mono">{subscriptionId}</span>
-        </>
-      ),
-    });
   }
   if (invoicesHref) {
     items.push({

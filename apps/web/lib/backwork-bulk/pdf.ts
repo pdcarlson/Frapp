@@ -1,3 +1,4 @@
+import { MemberFacingError } from "@repo/hooks/error-copy";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { assembleFlatPdf, type FlatPage } from "./assemble";
 import type { BoxesByPage } from "./geometry";
@@ -162,7 +163,7 @@ export async function flattenPdf(
 
     const pageBoxes = boxes[number] ?? [];
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx) throw new Error("This browser can't draw the redacted page.");
+    if (!ctx) throw new MemberFacingError("This browser can't draw the redacted page.");
 
     const text = await redactRenderedPage(
       page,

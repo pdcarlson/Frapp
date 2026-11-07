@@ -76,6 +76,8 @@ Example:
 
 `Unable to load members. This view requires an authenticated chapter context. Sign in and retry.`
 
+**One map for failures (2026-11-06).** A failed call reaches the member through one shared map, never as the server's own text: `errorCopy` in `@repo/hooks` (web's `getErrorMessage` and mobile both call it), over the strings in [`packages/validation/src/error-copy.ts`](../../../packages/validation/src/error-copy.ts), which `@repo/chat-core` uses for chat refusals too. The screen's toast title says what failed; the map says why and what next. A server sentence shows only when the map rewrites it (`Role name already exists in this chapter` becomes `A role with that name already exists. Pick another name.`); anything else falls back to what the status means (`403`: `Your role can't do this. Ask an officer if you need it.`) or the screen's own sentence. A message client code wrote for members is thrown as `MemberFacingError`; a plain `Error`'s message is never shown. The one exception is a screen whose routes already write for the officer (the Discord import): it opts in with `serverWritesForMembers`, and an unmapped 400, 403, 409 or 503 sentence then shows when it names no permission key or route. A new API refusal a member can act on gets a line in the map in the same change.
+
 Copy never shows a permission key such as `roles:manage`. A permission-denied line names what the role can't do (`Your role can't manage roles.`) and who can change that; an error that may be an access problem says `Confirm your chapter access and retry.`; a toast with no server message says `Try again in a moment.` Where a screen has to name a permission, it uses the words in [`permission-labels.ts`](../../../apps/web/lib/permission-labels.ts) (2026-11-05).
 
 ## 3a. Form copy
@@ -112,20 +114,22 @@ The skeleton/empty/error state variants themselves — layout, structure, when e
 
 ## 5. Status labels
 
-Status terms MUST match backend domain language:
+Status terms MUST match backend domain language, and render as words, not tokens:
 
-- `ACTIVE`
-- `PAID`
-- `OPEN`
-- `OVERDUE`
-- `PENDING`
-- `FAILED` (for transient action states)
+- `ACTIVE` → Active
+- `PAID` → Paid
+- `OPEN` → Open
+- `OVERDUE` → Overdue
+- `PENDING` → Pending
+- `FAILED` → Failed (for transient action states)
 
 Do not invent alternate terms for the same state on different platforms. Status labels render with the semantic status colors defined in [foundations.md](foundations.md) — status color is never decorative.
 
-**Render the server's own token, not a re-cased version of it.** `OVERDUE` put through `.toLowerCase()` and a `capitalize` class comes out as "Overdue", which is an alternate term for the same state by another route — and `/billing` was doing exactly that in its member-facing table while the admin card one file over rendered the token. The web mapping from state to badge kind lives in one place, [`apps/web/components/billing/invoice-status.ts`](../../../apps/web/components/billing/invoice-status.ts), for both invoice and subscription state; `DRAFT` is the one state that takes the Hairline kind rather than a semantic one, because it is the absence of a status rather than a status.
+**One label map (amended 2026-11-06).** Every stored status's word lives once, in `STATUS_LABELS` ([`packages/validation/src/status-labels.ts`](../../../packages/validation/src/status-labels.ts)): tasks, service entries, attendance, study sessions and invoices. Web and mobile both read it, and `statusLabel(vocabulary, token)` words a token the map doesn't know yet (`NEW_STATE` → "New state") instead of printing it. A surface that needs its own phrasing builds it from the map (the chat hours card's "Pending review").
 
-**One mapper per domain vocabulary, not one mapper.** Billing's two states share a file because both are billing's; Chapter Ops added four more vocabularies — attendance, service review, study-session close and study-zone enablement — with no overlapping members, so each has its own module rather than one widened to `string`. Where a vocabulary needs a *label* as well as a kind is decided by this section: states §5 names above render their token (`PENDING` stays `PENDING`), and a vocabulary with no row here maps to plain language **once**, in its mapper, which is why `attendance-status.ts` carries `attendanceStatusLabel` and `service-status.ts` deliberately does not.
+This replaces the rule that §5's tokens render as the server sends them (`PENDING`, `OVERDUE` in capitals). That rule was how the web Service hours history came to print `APPROVED` while mobile said "Approved" for the same entry, and a list that reads `PENDING` beside "Approved" looks broken (principles.md P2.1). The words above are still the only terms; only the casing changed.
+
+**Badge colour stays per app.** The mapping from state to badge kind is the design system's, so it stays in each app: on web, [`apps/web/components/billing/invoice-status.ts`](../../../apps/web/components/billing/invoice-status.ts) for billing, and one module per domain vocabulary for the rest (attendance, service review, study-session close, study-zone enablement). `DRAFT` is the one state that takes the Hairline kind rather than a semantic one, because it is the absence of a status rather than a status.
 
 ## 6. Trust copy rules
 
@@ -317,7 +321,7 @@ The confirmation rows below and under Roles & Permissions are the five `window.c
 | Rollover confirmation | `Start a new semester labelled "<label>"?` | `The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.` · confirm `Start new semester` |
 | Delete field confirmation | `Delete the field "<label>"?` | `Members lose the values they have entered for it, and the column disappears from the directory. This cannot be undone.` · confirm `Delete field` |
 | Delete custom role confirmation | `Delete the custom role "<label>"?` | `Members holding it lose its capabilities on their next request. This cannot be undone.` · confirm `Delete custom role` |
-| Number field refused at save | `<Field> needs a number` (empty) · `<Field> starts at <min>` (under its floor) | `Enter a whole number of <min> or more.` Dues grace days and installment count, a workflow threshold, a custom role's rank (#3050). `<Field>` is the input's own label, or `The threshold for “<workflow>”` for a workflow threshold. |
+| Number field refused at save | `<Field> needs a number` (empty) · `<Field> starts at <min>` (under its floor) | `Enter a whole number of <min> or more.` Dues grace days and installment count, a workflow threshold. `<Field>` is the input's own label, or `The threshold for “<workflow>”` for a workflow threshold. |
 | Dues amount refused at save | `<Field> needs an amount` | `Enter an amount in dollars, like 425 or 42.50.` Amounts are typed in dollars and stored in cents (2026-11-05; they were typed in cents). |
 
 The **Accent label illegible** row answers a different question from the **Accent preview fallback** row above it, and the pair is easy to collapse by mistake. The fallback fires when the accent is unreadable *as text on the card*, which is what `resolveChapterAccentColor` checks. This one fires when text is unreadable *on the accent* — which is what a primary button is, and what that card's own description promises the colour will be used for. They diverge: `#0086FE` passes the first and fails the second (both figures pinned in [`settings-contrast.spec.ts`](../../../apps/web/components/settings/settings-contrast.spec.ts)). Both are about the draft preview only, and each ends by saying what a save does instead, because saving differs from the preview in both cases: the entered color is stored rather than the substitute, and the saved palette's label (`on-primary`) always clears 4.5:1 ([`accent-engine.md`](accent-engine.md) §8; [#2543](https://github.com/pdcarlson/Frapp/issues/2543)). Neither says what the saved accent paints, which the engine derives (the row's "the palette is derived from it"). The **Accent hex needed** example, `#5AA9E6`, clears both checks, so following it raises neither.

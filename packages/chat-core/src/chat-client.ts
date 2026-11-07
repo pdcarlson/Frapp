@@ -70,7 +70,13 @@ import {
 } from "./heavy-command-notices";
 import { memberFacingRefusal } from "./polls";
 import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
-import type { AnalyticsProperties } from "@repo/validation";
+import {
+  OFFLINE_COPY,
+  refusalCopy,
+  STATUS_ERROR_COPY,
+  TRY_AGAIN,
+  type AnalyticsProperties,
+} from "@repo/validation";
 
 export interface ToastFn {
   (input: {
@@ -192,6 +198,27 @@ function serverReasonOf(error: unknown): string | null {
 }
 
 /**
+ * What a member reads for a chat call that failed (principles.md P2.3): the
+ * polls-off row, then the shared refusal map in `@repo/validation`, then what
+ * the status means. The server's own sentence never reaches the screen unless
+ * the map rewrote it, so "Forbidden resource" or a class-validator line can't
+ * land in a toast or a failed row's inline error.
+ */
+function chatRefusalCopy(
+  reason: string | null,
+  status: number | undefined,
+): string {
+  if (reason) {
+    const pollsOff = memberFacingRefusal(reason);
+    if (pollsOff !== reason) return pollsOff;
+  }
+  const mapped = refusalCopy({ status, message: reason });
+  if (mapped) return mapped;
+  if (status === undefined) return OFFLINE_COPY;
+  return STATUS_ERROR_COPY[status] ?? TRY_AGAIN;
+}
+
+/**
  * Distinguishes terminal client errors (4xx — bad request / forbidden) from
  * transient ones (network, 5xx). 4xx → `failed` + toast; transient → keep the
  * message pending in the outbox for the reconnect flush.
@@ -242,9 +269,7 @@ export function classifyChatError(error: unknown): {
       status = (resp as { status?: number }).status;
     }
   }
-  const message = memberFacingRefusal(
-    serverReasonOf(error) ?? "Couldn't reach chat server",
-  );
+  const message = chatRefusalCopy(serverReasonOf(error), status);
   const terminal =
     typeof status === "number" && isDefinitiveClientError(status);
   return { terminal, status, message };
@@ -282,7 +307,7 @@ export function definitiveRefusalMessage(error: unknown): string | null {
   if (status === 429) return RATE_LIMITED_COPY;
   if (!terminal) return null;
   const reason = serverReasonOf(error);
-  return reason === null ? null : memberFacingRefusal(reason);
+  return reason === null ? null : chatRefusalCopy(reason, status);
 }
 
 /**

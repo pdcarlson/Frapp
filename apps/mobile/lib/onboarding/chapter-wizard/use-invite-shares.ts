@@ -1,7 +1,7 @@
+import { errorCopy } from "@repo/hooks/error-copy";
 import { useRef, useState } from "react";
 import { Share } from "react-native";
 import { useCreateInvite, useInvites } from "@repo/hooks";
-import { serverMessageOf } from "@repo/api-sdk";
 import { inviteTokenOf, webJoinUrl } from "./invite-link";
 
 /**
@@ -131,8 +131,10 @@ export function useInviteShares({
         return token;
       } catch (caught) {
         onError(
-          serverMessageOf(caught) ??
-            "Couldn't create an invite. You can invite members from the web dashboard.",
+          errorCopy(
+            caught,
+            "Couldn't create an invite. You can invite members later from Members.",
+          ),
         );
         return null;
       } finally {
