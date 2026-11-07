@@ -148,6 +148,13 @@ export function ImportWizard({
   const [importId, setImportId] = useState<string | null>(null);
   const [staged, setStaged] = useState<StagedExport | null>(null);
   const [scanWarnings, setScanWarnings] = useState<string[]>([]);
+  // The scan's one "Frapp cannot read N channel(s)" line says what the
+  // channel step's own "Frapp can't read these" card already shows, with the
+  // channels listed and the fix spelled out, so it is not said twice. The
+  // text is the API's (`discord-bot-gateway.service.ts`).
+  const visibleScanWarnings = scanWarnings.filter(
+    (warning) => !warning.startsWith("Frapp cannot read "),
+  );
   const [sidebarGroups, setSidebarGroups] =
     useState<SidebarGroups>(NO_SIDEBAR_GROUPS);
   const [channelChoices, setChannelChoices] = useState<
@@ -371,7 +378,7 @@ export function ImportWizard({
   }, [acknowledged, source, importId, createImport, scan, toast]);
 
   // The role step's answers: what the admin changed, over each role's
-  // default. A viewer who cannot manage roles keeps every role on Ignore,
+  // default. A viewer who cannot manage roles keeps every role on Skip,
   // the only mapping the API takes from them.
   const frappRoles = useMemo<FrappRole[]>(
     () =>
@@ -392,8 +399,8 @@ export function ImportWizard({
     [frappRolesQuery.data],
   );
   // Mapping a role needs both the permission and the chapter's roles to map
-  // it to. Without either, every role stays on Ignore and the step says why:
-  // an all-Ignore mapping is still a valid one, so a viewer who cannot read
+  // it to. Without either, every role stays on Skip and the step says why:
+  // an all-Skip mapping is still a valid one, so a viewer who cannot read
   // the roles list (it needs members:view) can still finish the import.
   const holdsRolesManage = can("roles:manage", myPermissions.data?.permissions);
   // Each "could not load" lock applies only when there is no answer at all:
@@ -411,7 +418,7 @@ export function ImportWizard({
             }
           : null;
   // One predicate for what the step shows and what it saves: whenever the
-  // step says every role stays on Ignore, every role does.
+  // step says every role stays on Skip, every role does.
   const canManageRoles =
     rolesLock === null &&
     holdsRolesManage &&
@@ -436,6 +443,21 @@ export function ImportWizard({
     }
     return { roleChoices: choices, roleMatches: matches };
   }, [staged, roleEdits, frappRoles, canManageRoles]);
+  // What each role matched before any edit, which sorts it into its pile on
+  // the role step and keeps it there while it is being changed.
+  // The same default the choices start from, so a viewer held on Skip sees
+  // no "Match your roles" pile of matches that are not being applied.
+  const startingRoleMatches = useMemo(() => {
+    const matches: Record<string, MatchKind> = {};
+    for (const role of staged?.roles ?? []) {
+      matches[role.roleId] = defaultRoleChoice(
+        role,
+        frappRoles,
+        canManageRoles,
+      ).kind;
+    }
+    return matches;
+  }, [staged, frappRoles, canManageRoles]);
   const roleProblems = useMemo(
     () =>
       roleIssues(
@@ -711,7 +733,7 @@ export function ImportWizard({
 
         {step === "channels" && staged ? (
           <>
-            {scanWarnings.length > 0 ? (
+            {visibleScanWarnings.length > 0 ? (
               /**
                * Shown, never swallowed. The commonest entry here is that
                * private archived threads could not be read — the bot is
@@ -724,7 +746,7 @@ export function ImportWizard({
                   Some things could not be read
                 </p>
                 <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
-                  {scanWarnings.map((warning) => (
+                  {visibleScanWarnings.map((warning) => (
                     <li key={warning}>{warning}</li>
                   ))}
                 </ul>
@@ -751,6 +773,7 @@ export function ImportWizard({
               roles={staged.roles}
               choices={roleChoices}
               matches={roleMatches}
+              startingMatches={startingRoleMatches}
               privateReads={readsPrivate}
               frappRoles={frappRoles}
               issues={roleProblems}
@@ -769,6 +792,11 @@ export function ImportWizard({
         {step === "review" && staged ? (
           <ReviewStep
             staged={staged}
+            serverName={
+              staged.guildName ??
+              (source === "bot" ? botConnection.data?.guild_name : null) ??
+              null
+            }
             source={source ?? "upload"}
             channelChoices={channelChoices}
             roles={staged.roles}
