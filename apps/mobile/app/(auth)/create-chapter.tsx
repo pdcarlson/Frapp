@@ -594,7 +594,7 @@ export default function CreateChapter() {
                       <Text style={styles.body}>
                         Your channels are ready. Invite your members next.
                       </Text>
-                      <JoinedChannelsCard trailing="ready" />
+                      <JoinedChannelsCard />
                     </>
                   ) : (
                     <Text style={styles.body}>

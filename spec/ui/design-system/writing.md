@@ -780,7 +780,7 @@ confirm.
 
 ### Profile step (mobile s03)
 
-s03's middle beat, shown when the member has no photo or no real name yet
+s03's first beat, shown when the member has no photo or no real name yet
 (`apps/mobile/lib/onboarding/profile-step.ts`). The name field never pre-fills
 the API's `Member` stand-in. The name is checked when the member presses the
 button, not while typing.
@@ -790,6 +790,22 @@ button, not while typing.
 | Step | `How the chapter sees you` | `Your photo and name go on every message you send.` The profile photo control (tap to choose, as on Profile), then the field labelled `Your name`, placeholder `First and last name`. Gold `Continue` when the notifications beat follows, else `Go to chat`. |
 | No name | as above | Under the field: `Add your name so the chapter knows who's talking.` |
 | Save failed | as above | Under the field: `Couldn't save your name. Check your connection and try again.` The member stays on the beat with what they typed. |
+
+### First-run tour (mobile)
+
+The three stops over chat after s03 (`apps/mobile/lib/onboarding/tour.ts`).
+One line each, in a popover card beside the lit spot, with the count and the
+action under it. No title: the lit control is the subject.
+
+| Stop | Line |
+|---|---|
+| Top channel section | `You're in <chapter>. Tap a channel to start talking.` (`your chapter` when the name isn't loaded) |
+| The tab bar's + | `Shortcuts live under the +. Hold it to pick your own.` |
+| The More tab | `The directory, your hours and settings are in More.` |
+
+Under each line: the count, `1 of 3`, muted, and `Next` in the chapter accent
+(`Done` on the last stop). `Skip` in the top corner, white on the dim, read
+out as `Skip the tour`.
 
 ### Push opt-in (mobile)
 
@@ -1078,7 +1094,7 @@ The Quiet hours section (the Preferences card until 2026-11-05) is a **second qu
 | Checking the session | — | `Verifying your session…` (announced, not drawn) |
 | Session check failed, offline | `Can't check your session` | `Reconnect to confirm you're signed in, then redeem the invite.` |
 | Session check failed, error | `Couldn't check your session` | `Frapp couldn't be reached to confirm you're signed in. Try again in a moment.` |
-| Redeemed | `Chapter joined` | `You're in. Opening chat.` Mobile goes to s03, `You're in.` over `<chapter> · <school>`, with one pinned `Go to chat`, which spins under the same label while it runs. |
+| Redeemed | `Chapter joined` | `You're in. Opening chat.` Mobile goes to s03, which asks only for what is missing (photo and name, then notifications) and otherwise goes straight to chat, where the first-run tour's first stop says `You're in <chapter>.` ([§ First-run tour (mobile)](#first-run-tour-mobile)). |
 | Mobile s02, the question (#3350) | `How are you getting in?` | No line under the title: the two answers say it. The rows above are web `/join`'s, except Unparseable paste, which mobile shares word for word; mobile s02 asks this first and offers two answers instead of a field. |
 | Mobile s02 answers | — | `I have an invite` + `Use the link your officer sent.`, then `I'm starting our chapter` + `Set it up, then invite everyone.` |
 | Mobile s02 invite step | `Join with an invite` | `Paste the invite link or code your officer sent. Invites work once and expire after 24 hours.` The membership hint ([§ Sign in (pre-auth)](#sign-in-pre-auth)) sits under the field, and the pinned button is `Continue`, which opens the confirm step. |

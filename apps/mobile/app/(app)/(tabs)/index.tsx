@@ -54,6 +54,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { ChapterMark } from "@/components/chapter-mark";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { PushReminder } from "@/components/notifications/push-reminder";
+import { useTourAnchor, useTourReady } from "@/components/onboarding/tour";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
@@ -157,6 +158,10 @@ export default function ChatHomeScreen() {
   useEffect(() => {
     if (channelsQuery.isError) reportChannelsRefused(channelsQuery.error);
   }, [channelsQuery.isError, channelsQuery.error]);
+  // The first-run tour waits for the list, so its first spot lands on rows
+  // (`components/onboarding/tour.tsx`).
+  useTourReady(!channelsQuery.isPending, chapterName);
+  const channelsAnchor = useTourAnchor("channels");
   const categoriesQuery = useCategories();
   const unreadQuery = useChannelUnreadCounts();
   const eventsQuery = useEvents();
@@ -682,6 +687,9 @@ export default function ChatHomeScreen() {
                   line || section.rows.length > 0 ? (
                     <View
                       key={`${section.key}:rows`}
+                      // The first-run tour's first stop: the top section.
+                      ref={index === 0 ? channelsAnchor : undefined}
+                      collapsable={false}
                       style={[styles.section, styles.sectionRows]}
                     >
                       {line}
