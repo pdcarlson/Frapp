@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { putSignedUpload, SignedUploadError } from "./put-signed-upload";
+import {
+  putSignedUpload,
+  SignedUploadError,
+  UPLOAD_REJECTED_COPY,
+} from "./put-signed-upload";
 
 const SIGNED_URL = "https://storage.example/object/upload/sign/doc.pdf?token=t";
 
@@ -64,7 +68,7 @@ describe("putSignedUpload", () => {
     await expect(attempt).rejects.toBeInstanceOf(SignedUploadError);
     await expect(attempt).rejects.toMatchObject({
       status: 413,
-      message: "Upload failed (413)",
+      message: UPLOAD_REJECTED_COPY,
     });
   });
 

@@ -10,6 +10,7 @@ import {
   type ChangeEvent,
 } from "react";
 import dynamic from "next/dynamic";
+import { errorCopy } from "@repo/hooks/error-copy";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -867,11 +868,11 @@ function StagedFileChip({
  * retry could fix (a 5xx, no status) gets retry advice.
  *
  * A thrown `Error` is not an API body (`readSignedUpload`'s contract error, the
- * storage PUT's `SignedUploadError`, a network failure) and keeps the message
- * it has always shown.
+ * storage PUT's `SignedUploadError`, a network failure) and goes through the
+ * shared `errorCopy`, which never shows a storage status or `Failed to fetch`.
  */
 export function uploadFailureDescription(err: unknown): string {
-  if (err instanceof Error) return err.message;
+  if (err instanceof Error) return errorCopy(err, "Retry in a moment.");
   return definitiveRefusalMessage(err) ?? "Retry in a moment.";
 }
 

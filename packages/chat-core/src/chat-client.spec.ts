@@ -114,12 +114,12 @@ describe("react", () => {
     expect(toast).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Couldn't react",
-        description: "Channel is read-only",
+        description: "Your role can't do this. Ask an officer if you need it.",
       }),
     );
     expect(onError).toHaveBeenCalledWith({
       title: "Couldn't react",
-      description: "Channel is read-only",
+      description: "Your role can't do this. Ask an officer if you need it.",
     });
   });
 
@@ -202,12 +202,12 @@ describe("unreact", () => {
     expect(toast).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Couldn't remove reaction",
-        description: "Row not found",
+        description: "Couldn't reach Frapp. Check your connection and try again.",
       }),
     );
     expect(onError).toHaveBeenCalledWith({
       title: "Couldn't remove reaction",
-      description: "Row not found",
+      description: "Couldn't reach Frapp. Check your connection and try again.",
     });
   });
 
@@ -398,18 +398,19 @@ describe("editMessage", () => {
     expect(toast).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Couldn't edit message",
-        description: "You can only edit your own messages",
+        description: "You can only edit your own messages.",
       }),
     );
     expect(onError).toHaveBeenCalledWith({
       title: "Couldn't edit message",
-      description: "You can only edit your own messages",
+      description: "You can only edit your own messages.",
     });
   });
 
-  // A ValidationPipe 400 carries `message` as an array. `throwApiError` used to
-  // read strings only, so the member saw the fallback instead of the reason.
-  it("shows a validation refusal's reasons, not the fallback", async () => {
+  // A ValidationPipe 400 carries `message` as an array of field-named lines,
+  // written for a developer: the member reads the shared map's words instead
+  // (principles.md P2.3).
+  it("never shows a validation refusal's field-named reasons", async () => {
     const apiClient = {
       PATCH: vi.fn().mockResolvedValue({
         data: null,
@@ -438,7 +439,7 @@ describe("editMessage", () => {
     expect(toast).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Couldn't edit message",
-        description: "content must be shorter than or equal to 4000 characters",
+        description: "Try again in a moment.",
       }),
     );
   });
@@ -685,12 +686,12 @@ describe("actOnCard", () => {
     expect(toast).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Couldn't record action",
-        description: "Poll is closed",
+        description: "Try again in a moment.",
       }),
     );
     expect(onError).toHaveBeenCalledWith({
       title: "Couldn't record action",
-      description: "Poll is closed",
+      description: "Try again in a moment.",
     });
   });
 
@@ -1802,11 +1803,11 @@ describe("classifyChatError", () => {
     ).toEqual({
       terminal: true,
       status: 403,
-      message: "You do not have access to this channel",
+      message: "You don't have access to this channel.",
     });
   });
 
-  it("joins a validation body's message array instead of dropping it", () => {
+  it("never relays a validation body's field-named lines", () => {
     expect(
       classifyChatError({
         statusCode: 400,
@@ -1816,7 +1817,7 @@ describe("classifyChatError", () => {
     ).toEqual({
       terminal: true,
       status: 400,
-      message: "filename must be a string, content_type is not allowed",
+      message: "Try again in a moment.",
     });
   });
 
@@ -1838,7 +1839,7 @@ describe("classifyChatError", () => {
     expect(classifyChatError(wrapped)).toEqual({
       terminal: true,
       status: 404,
-      message: "Channel not found",
+      message: "It may have been deleted. Refresh and try again.",
     });
   });
 
@@ -1846,7 +1847,7 @@ describe("classifyChatError", () => {
     expect(classifyChatError(new TypeError("Failed to fetch"))).toEqual({
       terminal: false,
       status: undefined,
-      message: "Failed to fetch",
+      message: "Couldn't reach Frapp. Check your connection and try again.",
     });
   });
 });
@@ -1858,7 +1859,7 @@ describe("definitiveRefusalMessage", () => {
         statusCode: 403,
         message: "You do not have access to this channel",
       }),
-    ).toBe("You do not have access to this channel");
+    ).toBe("You don't have access to this channel.");
   });
 
   it.each([
@@ -1885,10 +1886,10 @@ describe("definitiveRefusalMessage", () => {
   it("reads the reason off the openapi-fetch envelope too, as classifyChatError does", () => {
     expect(
       definitiveRefusalMessage({
-        error: { statusCode: 400, message: "File type not allowed" },
+        error: { statusCode: 400, message: "File extension is not allowed" },
         response: { status: 400 },
       }),
-    ).toBe("File type not allowed");
+    ).toBe("That file type isn't supported.");
   });
 
   it("gives the member the Polls-off sentence, as the send path does", () => {

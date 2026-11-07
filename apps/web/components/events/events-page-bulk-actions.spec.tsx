@@ -174,9 +174,10 @@ describe("EventsPage bulk actions", () => {
   });
 
   it("reports a partial failure without clearing the selection", async () => {
-    autoAbsentMutateAsync.mockRejectedValue(
-      new Error("Cannot mark auto-absent before the grace period ends"),
-    );
+    autoAbsentMutateAsync.mockRejectedValue({
+      statusCode: 400,
+      message: "Cannot mark auto-absent before the grace period ends",
+    });
     const user = userEvent.setup();
     render(<EventsPage />);
     await user.click(
@@ -201,7 +202,7 @@ describe("EventsPage bulk actions", () => {
           // generic "probably the grace period" guess that would be wrong
           // here — the mutation actually rejected with a different message.
           description: expect.stringContaining(
-            "Chapter Meeting: Cannot mark auto-absent before the grace period ends",
+            "Chapter Meeting: Wait until the grace period ends to mark absences.",
           ),
         }),
       ),

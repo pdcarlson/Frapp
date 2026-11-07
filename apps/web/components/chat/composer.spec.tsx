@@ -1345,8 +1345,7 @@ describe("Composer attachment ticket contract", () => {
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Couldn't upload file",
-          description:
-            "Upload URL response missing signed URL or storage path.",
+          description: "Retry in a moment.",
         }),
       ),
     );
@@ -1366,8 +1365,7 @@ describe("Composer attachment ticket contract", () => {
     await waitFor(() =>
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
-          description:
-            "Upload URL response missing signed URL or storage path.",
+          description: "Retry in a moment.",
         }),
       ),
     );
@@ -1377,7 +1375,7 @@ describe("Composer attachment ticket contract", () => {
   // #2199: the mint rethrows the API's parsed body, a plain object. Read as
   // "not an Error", every refusal used to say "Retry in a moment.", including
   // a member who had lost posting rights and could never succeed.
-  it("shows a mint refusal's own reason, not retry advice", async () => {
+  it("shows a mint refusal's reason in member words, not retry advice", async () => {
     mockRequestUploadUrl.mockRejectedValueOnce({
       statusCode: 403,
       error: "Forbidden",
@@ -1391,7 +1389,7 @@ describe("Composer attachment ticket contract", () => {
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Couldn't upload file",
-          description: "You do not have access to this channel",
+          description: "You don't have access to this channel.",
         }),
       ),
     );
@@ -1417,14 +1415,14 @@ describe("Composer attachment ticket contract", () => {
 });
 
 describe("uploadFailureDescription (#2199)", () => {
-  it("gives a definitive 4xx body's message", () => {
+  it("gives a definitive 4xx refusal in the member's words", () => {
     expect(
       uploadFailureDescription({
         statusCode: 400,
         error: "Bad Request",
         message: "File exceeds the 25 MB upload limit",
       }),
-    ).toBe("File exceeds the 25 MB upload limit");
+    ).toBe("That file is over the 25 MB limit.");
   });
 
   it("tells a member to wait a minute after a 429, not a moment", () => {
@@ -1447,9 +1445,12 @@ describe("uploadFailureDescription (#2199)", () => {
     expect(uploadFailureDescription(undefined)).toBe("Retry in a moment.");
   });
 
-  it("keeps a thrown Error's message, as before", () => {
+  it("words a thrown Error through the shared map, never its raw text", () => {
     expect(uploadFailureDescription(new Error("Upload failed (413)"))).toBe(
-      "Upload failed (413)",
+      "Retry in a moment.",
+    );
+    expect(uploadFailureDescription(new TypeError("Failed to fetch"))).toMatch(
+      /Check your connection/,
     );
   });
 });

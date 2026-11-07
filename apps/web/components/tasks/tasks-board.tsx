@@ -276,7 +276,7 @@ export function TasksBoard() {
         title: "Couldn't update task",
         description: getErrorMessage(
           error,
-          "The API rejected the transition. Only the assignee or admins can move tasks.",
+          "Only the person it's assigned to, or an officer, can move this task.",
         ),
         variant: "destructive",
       });

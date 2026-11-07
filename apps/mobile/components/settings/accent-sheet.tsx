@@ -1,3 +1,4 @@
+import { errorCopy } from "@repo/hooks/error-copy";
 import { forwardRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text } from "react-native";
 import {
@@ -8,7 +9,6 @@ import {
 import { useCurrentChapter, useUpdateChapter } from "@repo/hooks";
 import { normalizeAccentInput } from "@repo/hooks/chapter-identity";
 import { orgColorsFor } from "@repo/org-archetypes";
-import { serverMessageOf } from "@repo/api-sdk";
 import { SignetTokens } from "@repo/theme/signet";
 import { AccentPicker } from "@/components/chapter/accent-picker";
 import {
@@ -140,8 +140,7 @@ function AccentSheetForm({
       onDone();
     } catch (caught) {
       setError(
-        serverMessageOf(caught) ??
-          "Couldn't save the accent. Check your connection and try again.",
+        errorCopy(caught, "Couldn't save the accent. Try again in a moment."),
       );
     }
   }

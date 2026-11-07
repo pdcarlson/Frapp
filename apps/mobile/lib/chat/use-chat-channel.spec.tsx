@@ -323,7 +323,9 @@ describe("send() failure", () => {
     });
 
     expect(result.current.draft).toBe("unsent text");
-    expect(result.current.sendError).toBe("storage full");
+    expect(result.current.sendError).toBe(
+      "Couldn't queue that message. Try again.",
+    );
   });
 
   it("does not clear the persisted draft when the send never landed", async () => {
@@ -359,7 +361,9 @@ describe("send() failure", () => {
     await act(async () => {
       await result.current.send("delivered");
     });
-    expect(result.current.sendError).toBe("first attempt failed");
+    expect(result.current.sendError).toBe(
+      "Couldn't queue that message. Try again.",
+    );
     expect(result.current.draft).toBe("delivered");
 
     await act(async () => {
@@ -391,7 +395,9 @@ describe("send() failure", () => {
     await act(async () => {
       await result.current.send("unsent text");
     });
-    expect(result.current.sendError).toBe("offline");
+    expect(result.current.sendError).toBe(
+      "Couldn't queue that message. Try again.",
+    );
 
     rerender({ channelId: "channel-2" });
 

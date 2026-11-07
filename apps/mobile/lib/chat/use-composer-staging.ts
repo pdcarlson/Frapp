@@ -36,6 +36,7 @@
  * refusal in the hint.
  */
 
+import { errorCopy } from "@repo/hooks/error-copy";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { hiddenQuoteText, type BlockState } from "@repo/chat-core/blocks";
 import {
@@ -351,10 +352,7 @@ export function useComposerStaging({
         .catch((error: unknown) => {
           // The edit stays open with the member's text, so nothing is lost;
           // its hint says why it didn't save. Dropped if they moved on.
-          const reason =
-            error instanceof Error && error.message
-              ? error.message
-              : "Couldn't edit message. Try again.";
+          const reason = errorCopy(error, "Couldn't edit message. Try again.");
           setEdits((current) =>
             updateEdit(current, channel, messageId, (open) => ({
               ...open,
