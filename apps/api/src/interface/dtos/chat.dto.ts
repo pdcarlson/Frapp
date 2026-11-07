@@ -169,6 +169,23 @@ export class ChannelMemberDto {
       "The `display_order` of the member's highest role (lower ranks higher), or null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`.",
   })
   role_rank: number | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The id of that highest role, which the list groups readers under, or null when they hold no role.',
+  })
+  role_id: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "That role's name, the group's heading, or null when they hold no role.",
+  })
+  role_name: string | null;
 }
 
 export class CreateGroupDmDto {

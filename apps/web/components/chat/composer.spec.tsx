@@ -435,7 +435,7 @@ function fakeEditor(initial: string) {
  * the same gate, through the same `slashRefusal` the palette path uses.
  */
 describe("Composer typed slash dispatch respects the module gate (#2993)", () => {
-  const sendButton = () => screen.getByRole("button", { name: "Send" });
+  const sendButton = () => screen.getByRole("button", { name: "Send message" });
   const POLL = '/poll "Formal venue?" Lodge Riverside';
 
   let editor: ReturnType<typeof fakeEditor>;
@@ -573,7 +573,7 @@ describe("Composer typed slash dispatch respects the module gate (#2993)", () =>
  * pins that the composer asks for it.
  */
 describe("Composer send failure (#1728)", () => {
-  const sendButton = () => screen.getByRole("button", { name: "Send" });
+  const sendButton = () => screen.getByRole("button", { name: "Send message" });
   const refused = () => new Error("QuotaExceededError");
   const REPLY = { id: "msg-1", author: "Alice Chen", preview: "the original" };
 
@@ -1125,13 +1125,14 @@ describe("Composer help and controls (#2142)", () => {
     expect(help).toHaveTextContent("/ for commands. @ to mention.");
   });
 
-  it("sends from a text button, not a 48px icon button", () => {
+  it("sends from a round 32px arrow, mobile's send (principles.md P6.5)", () => {
     render(<Composer {...baseProps()} />);
 
-    const send = screen.getByRole("button", { name: "Send" });
-    // `1t`: "Composer 48px Send with icon → 32px text button shrunk".
+    const send = screen.getByRole("button", { name: "Send message" });
     expect(send.className).toContain("h-8");
-    expect(send.querySelector("svg")).toBeNull();
+    expect(send.className).toContain("rounded-full");
+    expect(send.querySelector("svg")).not.toBeNull();
+    expect(send).not.toHaveTextContent("Send");
   });
 });
 
