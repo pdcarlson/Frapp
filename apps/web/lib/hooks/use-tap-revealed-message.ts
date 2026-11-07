@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
 
 type RevealableMessage = Pick<ChatMessage, "id" | "client_message_id">;
@@ -27,6 +27,18 @@ export function messageRevealKey(message: RevealableMessage): string {
  */
 export function useTapRevealedMessage() {
   const [revealedId, setRevealedId] = useState<string | null>(null);
+
+  // A mouse never sets the reveal (`MessageItem`'s `handleRowTap`), so on a
+  // touchscreen laptop a mouse press anywhere is the way back out of a row a
+  // finger pinned open; otherwise only another finger tap could clear it.
+  useEffect(() => {
+    if (revealedId === null) return;
+    function dismissOnMouse(event: PointerEvent) {
+      if (event.pointerType === "mouse") setRevealedId(null);
+    }
+    document.addEventListener("pointerdown", dismissOnMouse);
+    return () => document.removeEventListener("pointerdown", dismissOnMouse);
+  }, [revealedId]);
 
   const isRevealed = useCallback(
     (message: RevealableMessage) => revealedId === messageRevealKey(message),
