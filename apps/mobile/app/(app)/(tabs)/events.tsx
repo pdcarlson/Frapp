@@ -1,3 +1,4 @@
+import { useRequiredOfViewer } from "@/lib/events/viewer-roles";
 import { useMemo, useRef } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
@@ -196,6 +197,7 @@ function EventRowCard({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const required = useRequiredOfViewer()(event.attendance);
   const window = resolveCheckInWindow(event.start_time, event.end_time, now);
   const date = formatEventDateBlock(event.start_time, now);
   const meta = [date?.clock, event.location].filter(Boolean).join(" · ");
@@ -229,7 +231,7 @@ function EventRowCard({
       <View style={styles.body}>
         <View style={styles.titleRow}>
           <Text style={styles.title}>{event.name}</Text>
-          {event.is_mandatory ? (
+          {required ? (
             <StatusChip
               label="Mandatory"
               hue={tokens.color.semantic.destructive}
@@ -299,6 +301,7 @@ function EventRowFlat({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const required = useRequiredOfViewer()(event.attendance);
   const date = formatEventDateBlock(event.start_time, now);
   const meta = [
     date?.clock,
@@ -336,7 +339,7 @@ function EventRowFlat({
         ) : null}
         {isOpen ? <Text style={styles.openNow}>Check-in is open</Text> : null}
       </View>
-      {event.is_mandatory ? (
+      {required ? (
         <StatusChip label="Mandatory" hue={tokens.color.semantic.destructive} />
       ) : null}
     </PressableRow>

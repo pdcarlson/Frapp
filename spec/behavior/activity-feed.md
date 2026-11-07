@@ -35,7 +35,7 @@ Feed items are pulled from existing data (events, point_transactions, backwork_r
   (`parent_event_id` set) never count as "created," since editing a series' time regenerates them
   with a fresh `created_at` that has nothing to do with a member's sense of "something new happened."
 - Event rows are resolved **through the caller's own visibility**, not a chapter-wide read: a
-  role-targeted event (`required_role_ids`) contributes no row to a member whose roles don't
+  role-targeted event (one that leaves the member out under attendance by role) contributes no row to a member whose roles don't
   intersect it, matching what `GET /v1/events` returns them. This is load-bearing, not incidental —
   a feed row carries the event's name and location, so a chapter-wide read here would republish
   exactly what the role gate hides. See [`events.md`](events.md#event-creation).

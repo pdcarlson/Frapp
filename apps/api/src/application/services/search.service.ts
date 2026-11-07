@@ -3,7 +3,8 @@ import { canAccessChannel } from '#domain/utils/channel-access';
 import { RbacService } from './rbac.service';
 import { ChatBlockService } from './chat-block.service';
 import { maskBlockedMessages, type MaskedChatMessage } from './chat-block-mask';
-import { hasRequiredRole } from './event-role-targeting';
+import { isInvited } from './event-role-targeting';
+import { eventLimitsAudience } from '@repo/validation';
 import { SystemPermissions } from '#domain/constants/permissions';
 import type { BackworkResource } from '#domain/entities/backwork.entity';
 import type { Event } from '#domain/entities/event.entity';
@@ -292,7 +293,7 @@ export class SearchService {
    * visibility (#1463): a role-targeted event is invisible via `GET
    * /v1/events` to a member without an intersecting role, so it must be
    * invisible here too. Mirrors `EventService.isVisibleToViewer`/
-   * `findByChapter` exactly — same `hasRequiredRole` predicate, same
+   * `findByChapter` exactly — same `isInvited` predicate, same
    * `events:update` (wildcard-inclusive) management exemption.
    */
   private async filterVisibleEvents(
@@ -300,9 +301,7 @@ export class SearchService {
     userId: string,
     events: Event[],
   ): Promise<Event[]> {
-    const hasTargetedEvents = events.some(
-      (event) => event.required_role_ids && event.required_role_ids.length > 0,
-    );
+    const hasTargetedEvents = events.some(eventLimitsAudience);
     if (!hasTargetedEvents) return events;
 
     if (
@@ -316,9 +315,7 @@ export class SearchService {
     const member = await this.members.findByUserAndChapter(userId, chapterId);
     const memberRoleIds = member?.role_ids ?? [];
 
-    return events.filter((event) =>
-      hasRequiredRole(event.required_role_ids, memberRoleIds),
-    );
+    return events.filter((event) => isInvited(event, memberRoleIds));
   }
 
   /**

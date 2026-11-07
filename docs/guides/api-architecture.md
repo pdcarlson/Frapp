@@ -219,7 +219,7 @@ When you add new modules:
 
 When a service does repeated membership checks in hot loops, prefer a `Set` lookup over nested `Array.includes` calls.
 
-Example: attendance auto-absent filtering now precomputes `required_role_ids` into a `Set` before iterating members, reducing per-check lookup cost from O(K) to O(1) while keeping behavior unchanged.
+Example: attendance auto-absent filtering resolves each member through the shared `eventAttendanceFor` rule in `@repo/validation`, so the API and both apps decide who is required the same way.
 
 ### Independent reads in loops
 
