@@ -177,7 +177,11 @@ version prefixes. It also checks that every migration has an entry, in the docum
 both [`promotion-log.md`](../../../docs/ops/database/promotion-log.md) and
 [`db-rollback-playbook.md`](../../../docs/ops/db-rollback-playbook.md), across the whole
 tree on every run. With `--base`/`--head` it also requires a migration change to touch one of
-those docs. Without a range it skips that half and says so, which is why the checklist passes one.
+those docs, and refuses a change to the executable SQL of a migration already on the base, or its
+removal: `supabase db push` skips an applied version, so the change would reach no hosted database
+(#2751). Put the change in a new migration; a comment-only edit passes, and a reviewed exception
+goes in `EDITED_MIGRATION_EXCEPTIONS`. Without a range it skips both and says so, which is why the
+checklist passes one.
 Migrations older than the gate are grandfathered in `UNLEDGERED` in
 [`scripts/check-migration-safety.mjs`](../../../scripts/check-migration-safety.mjs). That list is
 shrink-only, and `RATCHET_VERSION_CEILING` rejects newer entries, so a new migration needs real
