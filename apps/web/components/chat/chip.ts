@@ -49,8 +49,10 @@ export const CHIP = {
  *
  * `components.md` §11 carried this as a TODO-DESIGN ("an in-bubble mention
  * highlight is not drawn"). It is settled here as a soft amber chip on the
- * handle alone: the surrounding message is never retinted, because a message
- * that mentions you is still the sender's message.
+ * handle alone. The chip is the same whoever it names; tinting the whole row
+ * when the message mentions the viewer is `message-item.tsx`'s job
+ * (`components.md` §11 "A row that mentions you"), so on such a row the chip
+ * sits on `--accent-subtle`, checked per seed in `chat-contrast.spec.ts`.
  *
  * **Not the mention red.** `--mention` is a badge fill carrying white text, and
  * foundations §5 is explicit that rendering that hue *as text* needs a lifted
