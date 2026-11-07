@@ -290,6 +290,34 @@ and fails the `pglite-migrations` job if any `SECURITY DEFINER` function in `pub
 [the branch protection runbook § Required Status Checks](../ops/github-branch-protection-runbook.md#required-status-checks)
 (#2538). Fixed repo-wide in #985 (#983 fixed the first instance).
 
+#### Who may call a `SECURITY DEFINER` function
+
+A function in `public` is an RPC at `/rest/v1/rpc/<name>` for every role that holds EXECUTE on it.
+Supabase's default privileges grant EXECUTE on a new function straight to `anon`, `authenticated`
+and `service_role`, so `revoke ... from public` alone leaves the direct `anon` grant in place. A
+definer function has to revoke both.
+
+- **`anon` may call none of them.** The Supabase advisor's lint 0028
+  (`anon_security_definer_function_executable`) stays at zero.
+- **`authenticated` may call exactly these six**, and the advisor's lint 0029 lists them as
+  accepted. Each one backs a check that runs as the signed-in caller, so revoking it breaks that
+  check: `can_read_chat_message` and `chat_viewer_has_blocked` (the `chat_message_actions` and
+  `chat_messages` policies above), `can_read_chat_channel` (`realtime_messages_scoped_*` on the
+  `chat:channel:` topic), and `realtime_can_read_user_scope`, `realtime_can_read_chapter_scope` and
+  `realtime_can_read_event_scope` (the other Realtime topics). Each resolves the caller from
+  `auth.uid()`, so over RPC it only answers about what the caller may already read.
+- **Trigger functions are callable by no client role.** A trigger fires without an EXECUTE check
+  on its function, so the `realtime_notify_*` change-ping functions hold no grant for `anon` or
+  `authenticated` (#830, `20261107160000`).
+
+The `pglite-migrations` job checks this against the applied catalog, with Supabase's default
+privileges installed before the migrations run (`scripts/pglite/tiers/security-definer-search-path.mjs`).
+It fails a definer function `anon` can call, a trigger function a client can call, and a seventh
+function granted to `authenticated` (or one of the six losing its grant). A new definer function
+that a policy really does need to call as the caller is added to that tier's
+`ACCEPTED_AUTHENTICATED_DEFINERS` and to this list in the same PR. The same tier fails any `public`
+function that pins no `search_path` at all (the advisor's lint 0011), invoker functions included.
+
 ### The `chat_messages` read surface — accepted, with the bound named
 
 `chat_messages` is the largest table in the schema, and since

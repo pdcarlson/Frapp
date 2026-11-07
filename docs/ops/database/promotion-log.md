@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-07: Database functions callable only by who needs them
+
+### 20261107160000_function_grants_and_search_path.sql
+
+- **Purpose**: Clears the Supabase security advisor's function WARNs ([#830](https://github.com/pdcarlson/Frapp/issues/830)), which read the same on staging and prod on 2026-11-07. It revokes EXECUTE from PUBLIC, `anon` and `authenticated` on every SECURITY DEFINER trigger function in `public`. Today that is `realtime_notify_notifications`, `realtime_notify_events` and `realtime_notify_event_attendance`, which were callable through `/rest/v1/rpc/` with the publishable key; a trigger needs no grant to fire. It revokes PUBLIC and `anon` from every other definer function in `public`, which they already had revoked. It pins `search_path = public, pg_temp` on every `public` function that pinned none: the 20 invoker functions the advisor lists (lint 0011). All three are catalog sweeps, so they reach whatever the target holds. No data changes.
+- **Checks**: After `db push`, `get_advisors(type: security)` shows no `function_search_path_mutable` or `anon_security_definer_function_executable` finding, and exactly six `authenticated_security_definer_function_executable` findings: `can_read_chat_channel`, `can_read_chat_message`, `chat_viewer_has_blocked` and the three `realtime_can_read_*_scope`. Also, `select has_function_privilege('anon', 'public.realtime_notify_notifications()'::regprocedure, 'execute');` returns `false`. The pings still fire: a notification inserted as `service_role` writes a `notif:<user>` row to `realtime.messages` (checked on the local stack).
+- **Promoter notes**: No API change rides it. The grants touch no RLS policy and no RPC the API calls (the API runs as `service_role`, which keeps its grants), and the custom access token hook keeps its `supabase_auth_admin` grant. Re-applying is idempotent: a revoke that already happened is a no-op, and the search_path sweep skips functions that pin one. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-function-grants-and-search_path-20261107160000) § Rollback function grants and search_path.
+
 ## 2026-11-06: A member's major
 
 ### 20261106200000_users_major.sql

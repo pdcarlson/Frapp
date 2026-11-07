@@ -109,6 +109,18 @@ await db.exec(`
   create role supabase_auth_admin nologin noinherit createrole;
 `);
 
+// Supabase's default privileges, as the local image's `pg_default_acl` has
+// them for functions the migration role creates in `public` (#830). Without
+// them a function here is callable by `anon` only through PUBLIC, so a
+// migration that revoked PUBLIC alone passed this job while the hosted
+// project kept a direct `anon` grant, which is how three definer functions
+// stayed callable with the publishable key. The grants tier in
+// `security-definer-search-path.mjs` reads the result.
+await db.exec(`
+  alter default privileges in schema public
+    grant execute on functions to anon, authenticated, service_role;
+`);
+
 const migrationResults = [];
 const tApplyStart = performance.now();
 
