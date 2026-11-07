@@ -9,8 +9,11 @@ import { stateMicrocopy } from "@/lib/state-microcopy";
 
 /**
  * `/events` while it loads: the one toolbar row (search, three filters, the
- * List/Calendar toggle, New event), then the list view's select-all header and
- * its checkbox rows.
+ * List/Calendar toggle), then the list view's select-all header and its
+ * checkbox rows. No New event placeholder: the button is `events:create`
+ * only, and a placeholder for a gated control draws a row that then vanishes
+ * (`components.md` §10 Skeleton). A chapter with no events opens on the
+ * calendar instead of these rows; nothing knows that until the read lands.
  */
 export function EventsPageSkeleton() {
   return (
@@ -24,7 +27,6 @@ export function EventsPageSkeleton() {
           <SkeletonControl className="w-[148px]" />
           <SkeletonControl className="w-[124px]" />
           <Skeleton className="h-[13px] w-[96px]" />
-          <SkeletonControl className="w-[112px]" />
         </>
       }
     >
