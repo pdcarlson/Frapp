@@ -165,6 +165,16 @@ const HTTP_LEDGER: Record<string, Entry> = {
     status: 'no-foreign-content',
     why: "The chapter's role names and the caller's own permission to ping each, with no message content and no role membership.",
   },
+  // Chat home's previews: other members' latest message text.
+  // `get_channel_latest_messages` skips a sender the caller blocked, falling
+  // back to the message before, as the timeline mask does.
+  ChatController_getLatestMessages_v1: {
+    status: 'masked',
+    proof: {
+      pglite:
+        "a blocker's previews skip the blocked member's messages in that chapter",
+    },
+  },
   ChatController_markRead_v1: {
     status: 'no-foreign-content',
     why: "Stamps the caller's own read cursor.",

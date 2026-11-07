@@ -39,6 +39,7 @@ import type {
   ChatMessageKind,
   ChannelType,
   ChannelUnreadCount,
+  ChannelLatestMessage,
 } from '#domain/entities/chat.entity';
 import {
   ChannelAccessService,
@@ -1350,6 +1351,33 @@ export class ChatService {
     // can still post into it (a block withholds, it never refuses), and that
     // count is exactly the one that must not surface here. A missing row
     // reads as fully read on both clients.
+    return rows.filter(
+      (row) => accessible.has(row.channel_id) && !hidden.has(row.channel_id),
+    );
+  }
+
+  /**
+   * Each readable channel's latest message, for Chat home's row previews.
+   *
+   * Filtered exactly as `getUnreadCounts` is, and for the same reason: the RPC
+   * answers for every channel in the chapter, and a preview would reveal far
+   * more than a count does about a DM between two other members. A DM the
+   * caller hid has no row to preview, so it is left out too.
+   */
+  async getLatestMessages(
+    chapterId: string,
+    userId: string,
+  ): Promise<ChannelLatestMessage[]> {
+    const rows = await this.messageRepo.findLatestPerChannel(chapterId, userId);
+    if (rows.length === 0) return [];
+    const [accessible, hidden] = await Promise.all([
+      this.channelAccess.filterAccessibleChannelIds(
+        chapterId,
+        userId,
+        rows.map((row) => row.channel_id),
+      ),
+      this.findHiddenChannelIds(chapterId, userId),
+    ]);
     return rows.filter(
       (row) => accessible.has(row.channel_id) && !hidden.has(row.channel_id),
     );

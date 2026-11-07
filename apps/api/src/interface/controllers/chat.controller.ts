@@ -65,6 +65,7 @@ import {
   RequestChatUploadUrlDto,
   ChatUploadUrlResponseDto,
   ChannelUnreadCountDto,
+  ChannelLatestMessageDto,
   MentionRoleDto,
   SetChannelNotificationLevelDto,
   ChannelNotificationPreferenceDto,
@@ -130,6 +131,21 @@ export class ChatController {
     @CurrentUser('id') userId: string,
   ): Promise<ChannelUnreadCountDto[]> {
     return this.chatService.getUnreadCounts(chapterId, userId);
+  }
+
+  // MUST stay above `@Get(':id')`, for the same reason as `unread` above.
+  // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
+  @Get('latest')
+  @ApiOperation({
+    summary:
+      'The latest message in every channel the caller can read, for the channel list previews',
+  })
+  @ApiOkResponse({ type: ChannelLatestMessageDto, isArray: true })
+  async getLatestMessages(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<ChannelLatestMessageDto[]> {
+    return this.chatService.getLatestMessages(chapterId, userId);
   }
 
   // MUST stay above `@Get(':id')`, for the same reason as `unread` directly

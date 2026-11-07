@@ -56,6 +56,7 @@ describe('Route declaration order — a literal route must not be swallowed by :
 
   const chatServiceMock = {
     getUnreadCounts: jest.fn().mockResolvedValue([]),
+    getLatestMessages: jest.fn().mockResolvedValue([]),
     getChannel: jest.fn().mockResolvedValue({ id: 'wrong-handler' }),
   };
 
@@ -149,6 +150,20 @@ describe('Route declaration order — a literal route must not be swallowed by :
       .expect(200);
 
     expect(chatServiceMock.getUnreadCounts).toHaveBeenCalledWith(
+      CHAPTER_ID,
+      'member-1',
+    );
+    expect(chatServiceMock.getChannel).not.toHaveBeenCalled();
+  });
+
+  it('GET /v1/channels/latest reaches getLatestMessages, not getChannel', async () => {
+    await request(app.getHttpServer())
+      .get(`${V1}/channels/latest`)
+      .set('authorization', 'Bearer token')
+      .set('x-chapter-id', CHAPTER_ID)
+      .expect(200);
+
+    expect(chatServiceMock.getLatestMessages).toHaveBeenCalledWith(
       CHAPTER_ID,
       'member-1',
     );
