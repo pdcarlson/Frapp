@@ -23,13 +23,13 @@ vi.mock("@/lib/analytics-provider", () => {
 
 type Outcome = "allowed" | "denied" | "settings";
 const primer = vi.hoisted(() => ({
-  answerPushAsk:
-    vi.fn<(push: unknown, onRecorded?: () => void) => Promise<Outcome>>(),
+  answerPushAsk: vi.fn<(onRecorded?: () => void) => Promise<Outcome>>(),
   declinePrimer: vi.fn(async () => {}),
   readDeclinedAt: vi.fn(async () => null),
   readPrimerDecision: vi.fn(async () => "unasked" as const),
   readReminderDone: vi.fn(async () => false),
   recordReminderDone: vi.fn(async () => {}),
+  onStoredAnswerChange: vi.fn(() => () => {}),
   shouldOfferPrimer: vi.fn(() => true),
   shouldOfferReminder: vi.fn(() => true),
 }));
@@ -44,6 +44,7 @@ vi.mock("@/lib/notifications/push-state", () => ({
     status: "undetermined",
     channelBlocked: false,
   })),
+  pushIsOn: () => false,
   pushTapAsks: () => true,
 }));
 
@@ -66,6 +67,7 @@ async function renderWithTrack(track: TrackFn) {
 describe("usePushPrimer analytics", () => {
   beforeEach(() => {
     primer.answerPushAsk.mockReset();
+    primer.declinePrimer.mockClear();
   });
 
   it.each([
@@ -98,7 +100,7 @@ describe("usePushPrimer analytics", () => {
     const after = vi.fn();
     const { result, rerender, provided } = await renderWithTrack(before);
 
-    let turnedOn!: Promise<Outcome>;
+    let turnedOn!: Promise<Outcome | null>;
     act(() => {
       turnedOn = result.current.turnOn();
     });
@@ -114,6 +116,54 @@ describe("usePushPrimer analytics", () => {
       answer: "allowed",
       surface: "primer",
     });
+  });
+
+  // A second tap while the first answer is stored would send a second event,
+  // or show the OS dialog after the member said Not now.
+  it("takes one answer per step", async () => {
+    let answer!: (outcome: Outcome) => void;
+    primer.answerPushAsk.mockImplementation(
+      () => new Promise<Outcome>((resolve) => (answer = resolve)),
+    );
+    const track = vi.fn();
+    const { result } = await renderWithTrack(track);
+
+    let first!: Promise<Outcome | null>;
+    act(() => {
+      first = result.current.turnOn();
+    });
+    let second: Outcome | null = "allowed";
+    let notNow = true;
+    await act(async () => {
+      second = await result.current.turnOn();
+      notNow = await result.current.notNow();
+    });
+    await act(async () => {
+      answer("allowed");
+      await first;
+    });
+
+    expect(second).toBeNull();
+    expect(notNow).toBe(false);
+    expect(primer.answerPushAsk).toHaveBeenCalledTimes(1);
+    expect(primer.declinePrimer).not.toHaveBeenCalled();
+    expect(track).toHaveBeenCalledTimes(1);
+  });
+
+  // A storage failure must not strand the member on the step: every later
+  // tap would be taken as a second answer and do nothing.
+  it("moves on, untracked, when storing the answer fails", async () => {
+    primer.answerPushAsk.mockRejectedValue(new Error("storage"));
+    const track = vi.fn();
+    const { result } = await renderWithTrack(track);
+
+    let outcome: Outcome | null = null;
+    await act(async () => {
+      outcome = await result.current.turnOn();
+    });
+
+    expect(outcome).toBe("denied");
+    expect(track).not.toHaveBeenCalled();
   });
 
   it("records Not now without an OS prompt", async () => {
@@ -164,7 +214,7 @@ describe("usePushReminder", () => {
   });
 
   it("records Turn on from the reminder surface, and answers it for good", async () => {
-    primer.answerPushAsk.mockImplementation(async (_push, onRecorded) => {
+    primer.answerPushAsk.mockImplementation(async (onRecorded) => {
       onRecorded?.();
       return "allowed";
     });

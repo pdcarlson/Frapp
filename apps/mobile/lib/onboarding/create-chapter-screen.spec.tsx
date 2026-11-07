@@ -835,7 +835,9 @@ describe("chapter setup — push primer for the founder", () => {
     await createFromMatch(root);
     await press(root, "Continue");
     expect(title(root)).toBe("Turn on notifications");
-    expect(allText(root)).toContain("Announcements, mentions, and DMs");
+    expect(allText(root)).toContain(
+      "DMs, mentions, #general, and #announcements",
+    );
     expect(control(root, "Turn on notifications")).toBeDefined();
     expect(control(root, "Not now")).toBeDefined();
   });

@@ -30,6 +30,13 @@ vi.mock("@/lib/notifications/push", () => ({
   requestPushPermission: () => requestPushPermission(),
 }));
 
+/** The live read `answerPushAsk` makes; the pure checks stay real. */
+const readPushState = vi.hoisted(() => vi.fn());
+vi.mock("./push-state", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./push-state")>()),
+  readPushState: () => readPushState(),
+}));
+
 vi.mock("./push-token-lifecycle", () => ({
   notifyPushPermissionGranted: () => notifyPushPermissionGranted(),
 }));
@@ -208,31 +215,33 @@ describe("declinePrimer", () => {
 describe("answerPushAsk", () => {
   beforeEach(() => {
     requestPushPermission.mockReset().mockResolvedValue(true);
+    readPushState.mockReset().mockResolvedValue(pushState());
     openSettings.mockClear();
+    vi.mocked(AsyncStorage.setItem).mockClear();
   });
 
   it("shows the OS prompt while one can still appear", async () => {
-    await expect(answerPushAsk(pushState())).resolves.toBe("allowed");
+    await expect(answerPushAsk()).resolves.toBe("allowed");
     expect(requestPushPermission).toHaveBeenCalledTimes(1);
     expect(openSettings).not.toHaveBeenCalled();
 
     requestPushPermission.mockResolvedValue(false);
-    await expect(answerPushAsk(pushState())).resolves.toBe("denied");
+    await expect(answerPushAsk()).resolves.toBe("denied");
   });
 
-  // iOS after an earlier Don't Allow, Android after a second one: the OS
-  // answers a request at once with no dialog, so a tap that only asked would
-  // do nothing visible.
-  it("opens the phone's settings when no prompt can appear", async () => {
+  it("still asks the OS when the push read fails", async () => {
+    readPushState.mockRejectedValue(new Error("read failed"));
+    await expect(answerPushAsk()).resolves.toBe("allowed");
+    expect(requestPushPermission).toHaveBeenCalledTimes(1);
+  });
+
+  // The member turned push on in the phone's settings after the step drew.
+  it("records accepted without a prompt when push is already on", async () => {
+    readPushState.mockResolvedValue(ON);
     const onRecorded = vi.fn();
-    await expect(
-      answerPushAsk(
-        pushState({ canAskAgain: false, status: "denied" }),
-        onRecorded,
-      ),
-    ).resolves.toBe("settings");
+    await expect(answerPushAsk(onRecorded)).resolves.toBe("allowed");
     expect(requestPushPermission).not.toHaveBeenCalled();
-    expect(openSettings).toHaveBeenCalledTimes(1);
+    expect(openSettings).not.toHaveBeenCalled();
     expect(onRecorded).toHaveBeenCalledTimes(1);
     expect(AsyncStorage.setItem).toHaveBeenCalledWith(
       PUSH_PRIMER_STORAGE_KEY,
@@ -240,12 +249,34 @@ describe("answerPushAsk", () => {
     );
   });
 
+  // iOS after an earlier Don't Allow, Android after a second one: the OS
+  // answers a request at once with no dialog, so a tap that only asked would
+  // do nothing visible. Whether they turn it on there is unknown, so it
+  // counts as a Not now: the chat home's reminder can still ask later.
+  it("opens the phone's settings when no prompt can appear", async () => {
+    readPushState.mockResolvedValue(
+      pushState({ canAskAgain: false, status: "denied" }),
+    );
+    const onRecorded = vi.fn();
+    await expect(answerPushAsk(onRecorded)).resolves.toBe("settings");
+    expect(requestPushPermission).not.toHaveBeenCalled();
+    expect(openSettings).toHaveBeenCalledTimes(1);
+    expect(onRecorded).toHaveBeenCalledTimes(1);
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      PUSH_PRIMER_STORAGE_KEY,
+      "declined",
+    );
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      PUSH_PRIMER_DECLINED_AT_KEY,
+      expect.any(String),
+    );
+  });
+
   it("opens settings for the Android 13+ granted-but-blocked case", async () => {
-    await expect(
-      answerPushAsk(
-        pushState({ granted: true, status: "denied", canAskAgain: false }),
-      ),
-    ).resolves.toBe("settings");
+    readPushState.mockResolvedValue(
+      pushState({ granted: true, status: "denied", canAskAgain: false }),
+    );
+    await expect(answerPushAsk()).resolves.toBe("settings");
     expect(requestPushPermission).not.toHaveBeenCalled();
   });
 });

@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { isPushAvailable } from "@/lib/notifications/push";
 import {
   answerPushAsk,
   declinePrimer,
   readDeclinedAt,
+  onStoredAnswerChange,
   readPrimerDecision,
   readReminderDone,
   recordReminderDone,
@@ -19,6 +20,7 @@ import {
   type PushPromptSurface,
 } from "@/lib/notifications/push-analytics";
 import {
+  pushIsOn,
   pushTapAsks,
   readPushState,
   type PushState,
@@ -32,33 +34,31 @@ interface StoredAsk {
 }
 
 /**
- * The stored answers and the phone's push state, read together. `stored` and
- * `push` stay `null` until read, so a host never flashes an ask that is about
- * to resolve to "already on". The push state is read again each time the app
- * returns to the foreground, because "Open Settings" leaves the app and the
- * member turns push on out there.
+ * The stored answers, the phone's push state and the time, read together.
+ * `stored` and `push` stay `null` until read, so a host never flashes an ask
+ * that is about to resolve to "already on". All three are read again each
+ * time the app returns to the foreground (the member may have turned push on
+ * in the phone's settings, or been away for days), and the stored answers
+ * again whenever any surface records one (`onStoredAnswerChange`), since a
+ * tab screen stays mounted while the member answers in Settings.
  */
 function usePushAskState() {
   const [stored, setStored] = useState<StoredAsk | null>(null);
   const [push, setPush] = useState<PushState | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     let live = true;
-    void Promise.all([
-      readPrimerDecision(),
-      readDeclinedAt(),
-      readReminderDone(),
-    ]).then(([decision, declinedAt, reminderDone]) => {
-      if (live) setStored({ decision, declinedAt, reminderDone });
-    });
-    return () => {
-      live = false;
+    const readStored = () => {
+      void Promise.all([
+        readPrimerDecision(),
+        readDeclinedAt(),
+        readReminderDone(),
+      ]).then(([decision, declinedAt, reminderDone]) => {
+        if (live) setStored({ decision, declinedAt, reminderDone });
+      });
     };
-  }, []);
-
-  useEffect(() => {
-    let live = true;
-    const read = () => {
+    const readPush = () => {
       // A failed read offers nothing, as an unknown permission does.
       void readPushState()
         .catch(() => null)
@@ -66,24 +66,30 @@ function usePushAskState() {
           if (live) setPush(next);
         });
     };
-    read();
+    readStored();
+    readPush();
+    const offStored = onStoredAnswerChange(readStored);
     const subscription = AppState.addEventListener("change", (next) => {
-      if (next === "active") read();
+      if (next !== "active") return;
+      setNow(Date.now());
+      readStored();
+      readPush();
     });
     return () => {
       live = false;
+      offStored();
       subscription.remove();
     };
   }, []);
 
-  return { stored, setStored, push, setPush };
+  return { stored, setStored, push, setPush, now };
 }
 
 /** What a tap on the ask's main button will do, so its label can say so. */
 export type PushAskAction = "ask" | "settings";
 
 function actionFor(push: PushState | null): PushAskAction {
-  return push && !pushTapAsks(push) ? "settings" : "ask";
+  return push && !pushIsOn(push) && !pushTapAsks(push) ? "settings" : "ask";
 }
 
 function trackedAnswer(outcome: PushAskOutcome) {
@@ -105,8 +111,12 @@ function trackedAnswer(outcome: PushAskOutcome) {
  * it asks, so a crash mid-prompt still counts as asked.
  */
 export function usePushPrimer() {
-  const { stored, setStored, push, setPush } = usePushAskState();
+  const { stored, push, setPush } = usePushAskState();
   const [isRequesting, setIsRequesting] = useState(false);
+  // One answer per step: a second tap (or Not now, then Turn on) while the
+  // first is still being stored would send a second event and could show the
+  // OS dialog after the member said Not now.
+  const answering = useRef(false);
   // Read after the OS prompt closes, by which time the chapter's opt-out
   // answer may have replaced the `track` this tap started with.
   const track = useLatestTrack();
@@ -123,15 +133,18 @@ export function usePushPrimer() {
   /**
    * Resolves with what the answer did, and never rejects: a prompt the OS
    * failed to show counts as denied, and the decision stays recorded, so the
-   * step isn't offered again.
+   * step isn't offered again. `null` for a tap while another answer runs.
    */
-  const turnOn = useCallback(async (): Promise<PushAskOutcome> => {
-    if (!push) return "denied";
+  const turnOn = useCallback(async (): Promise<PushAskOutcome | null> => {
+    if (answering.current) return null;
+    answering.current = true;
     setIsRequesting(true);
     try {
-      const outcome = await answerPushAsk(push, () =>
-        setStored((s) => (s ? { ...s, decision: "accepted" } : s)),
-      );
+      // A failed store still moves the step on (`answerPushAsk` itself never
+      // fails on the OS side): the member is held by nothing they can fix.
+      // It isn't tracked, since nothing is known about what was answered.
+      const outcome = await answerPushAsk().catch(() => null);
+      if (outcome === null) return "denied";
       const answer = trackedAnswer(outcome);
       if (answer) {
         track(
@@ -144,16 +157,25 @@ export function usePushPrimer() {
     } finally {
       setIsRequesting(false);
     }
-  }, [push, setPush, setStored, track]);
+  }, [setPush, track]);
 
-  const notNow = useCallback(async (): Promise<void> => {
-    await declinePrimer();
-    setStored((s) => (s ? { ...s, decision: "declined" } : s));
-    track(
-      PUSH_PROMPT_ANSWERED_EVENT,
-      pushPromptAnsweredProperties("not_now", "primer"),
-    );
-  }, [setStored, track]);
+  /** `false` for a tap while another answer runs. */
+  const notNow = useCallback(async (): Promise<boolean> => {
+    if (answering.current) return false;
+    answering.current = true;
+    setIsRequesting(true);
+    try {
+      // A failed store still moves the step on; the reminder may ask again.
+      await declinePrimer().catch(() => undefined);
+      track(
+        PUSH_PROMPT_ANSWERED_EVENT,
+        pushPromptAnsweredProperties("not_now", "primer"),
+      );
+      return true;
+    } finally {
+      setIsRequesting(false);
+    }
+  }, [track]);
 
   return {
     showPrimer,
@@ -170,10 +192,7 @@ export function usePushPrimer() {
  * or closing it answers it for good; Settings (s16) is the place after that.
  */
 export function usePushReminder() {
-  const { stored, setStored, push, setPush } = usePushAskState();
-  // Read once, when the chat home mounts: whether three days have passed
-  // doesn't need to change under a member who is looking at it.
-  const [now] = useState(() => Date.now());
+  const { stored, setStored, push, setPush, now } = usePushAskState();
   const [isRequesting, setIsRequesting] = useState(false);
   const track = useLatestTrack();
 
@@ -203,12 +222,12 @@ export function usePushReminder() {
   );
 
   const turnOn = useCallback(async (): Promise<void> => {
-    if (!push) return;
+    if (isRequesting) return;
     setIsRequesting(true);
     try {
       // Hidden the moment it is answered, before the OS dialog opens over it.
-      const outcome = await answerPushAsk(push, () => close(null));
-      const answer = trackedAnswer(outcome);
+      const outcome = await answerPushAsk(() => close(null)).catch(() => null);
+      const answer = outcome && trackedAnswer(outcome);
       if (answer) {
         track(
           PUSH_PROMPT_ANSWERED_EVENT,
@@ -219,7 +238,7 @@ export function usePushReminder() {
     } finally {
       setIsRequesting(false);
     }
-  }, [close, push, setPush, track]);
+  }, [close, isRequesting, setPush, track]);
 
   return {
     show,

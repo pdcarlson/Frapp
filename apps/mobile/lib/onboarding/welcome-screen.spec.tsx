@@ -265,6 +265,56 @@ describe("s03 welcome, notifications step", () => {
     await press(button(root, "Continue"));
     expect(button(root, "Open Settings")).toBeDefined();
   });
+  // The decision is stored before the OS prompt and before the PATCH that
+  // ends onboarding. Neither may drop the member back on "You're in." with a
+  // live Continue while the answer finishes.
+  it("keeps the step, with its buttons off, while an answer finishes", async () => {
+    pushAvailable = true;
+    permission = OFF;
+    let finishPatch!: () => void;
+    completeOnboarding.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finishPatch = resolve)),
+    );
+    const { root } = await render();
+    await press(button(root, "Continue"));
+
+    await press(button(root, "Not now"));
+
+    expect(completeOnboarding).toHaveBeenCalledTimes(1);
+    expect(button(root, "Continue")).toBeUndefined();
+    expect(button(root, "Not now")?.props.disabled).toBe(true);
+    await press(button(root, "Not now"));
+    expect(completeOnboarding).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      finishPatch();
+    });
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/(tabs)");
+  });
+
+  it("goes back to You're in on Android back", async () => {
+    const { BackHandler } = await import("react-native");
+    const listen = vi.mocked(BackHandler.addEventListener);
+    listen.mockClear();
+    pushAvailable = true;
+    permission = OFF;
+    const { root } = await render();
+    await press(button(root, "Continue"));
+
+    const back = () => {
+      const calls = listen.mock.calls as unknown as [string, () => boolean][];
+      const handler = calls.filter(([e]) => e === "hardwareBackPress").at(-1);
+      let handled = false;
+      act(() => {
+        handled = handler![1]();
+      });
+      return handled;
+    };
+
+    expect(back()).toBe(true);
+    expect(button(root, "Continue")).toBeDefined();
+    expect(button(root, "Not now")).toBeUndefined();
+  });
 });
 
 /**

@@ -17,10 +17,13 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * The step says what a push is *for* in this app, in the app's own nouns,
  * before the OS asks in its generic words. Three rows, each a tab's glyph so a
- * new member meets the shapes they will tap next: chat (announcements,
- * mentions and DMs, the pushes `chat-push-worker` sends at a channel's
- * default level), events and tasks (`NOTIFICATION_CATEGORIES`). Nothing here
- * claims a quiet chat: a channel set to every message pushes every message.
+ * new member meets the shapes they will tap next: chat, events and tasks.
+ * The chat row names what pushes by default: every message in a DM,
+ * #announcements and #general (`builtInChannelDefault` in
+ * `@repo/validation`), and a mention anywhere (`chat-push-worker`). Events and
+ * tasks are `NOTIFICATION_CATEGORIES`. The footnote names where each is
+ * changed: chat per conversation from its menu (there is no chat switch in
+ * Settings since 2026-11-06), the rest in Settings.
  *
  * Signet gold, not the chapter accent: this is Frapp asking for a device
  * permission on its own behalf, not chapter chrome.
@@ -35,7 +38,7 @@ const ROWS: {
 }[] = [
   {
     key: "chat",
-    label: "Announcements, mentions, and DMs",
+    label: "DMs, mentions, #general, and #announcements",
     glyph: (color) => <ChatGlyph focused accent={color} muted={color} />,
   },
   {
@@ -72,7 +75,8 @@ export function PushAskBody() {
         ))}
       </View>
       <Text style={styles.footnote}>
-        Pick which ones, and set quiet hours, in Settings.
+        Mute any chat from its menu. Event and task alerts, and quiet hours, are
+        in Settings.
       </Text>
     </View>
   );

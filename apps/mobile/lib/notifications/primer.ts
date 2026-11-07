@@ -28,7 +28,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Linking } from "react-native";
 import { requestPushPermission } from "@/lib/notifications/push";
-import { pushIsOn, pushTapAsks, type PushState } from "./push-state";
+import {
+  pushIsOn,
+  pushTapAsks,
+  readPushState,
+  type PushState,
+} from "./push-state";
 import { notifyPushPermissionGranted } from "./push-token-lifecycle";
 
 export const PUSH_PRIMER_STORAGE_KEY = "frapp.mobile.push-primer";
@@ -67,6 +72,25 @@ export async function readPrimerDecision(
   }
 }
 
+/**
+ * Every surface that shows an ask keeps its own read of the stored answers,
+ * and a tab screen stays mounted while the member answers somewhere else
+ * (s16 Settings' push switch, say). So each write tells the others, and a
+ * reminder still on screen after an answer elsewhere is taken down.
+ */
+const storedAnswerListeners = new Set<() => void>();
+
+export function onStoredAnswerChange(listener: () => void): () => void {
+  storedAnswerListeners.add(listener);
+  return () => {
+    storedAnswerListeners.delete(listener);
+  };
+}
+
+function storedAnswerChanged() {
+  for (const listener of storedAnswerListeners) listener();
+}
+
 export async function recordPrimerDecision(
   decision: Exclude<PrimerDecision, "unasked">,
   storage: Storage = AsyncStorage,
@@ -76,6 +100,7 @@ export async function recordPrimerDecision(
   } catch {
     // Cosmetic. The worst case is the primer offering itself again.
   }
+  storedAnswerChanged();
 }
 
 /**
@@ -83,13 +108,12 @@ export async function recordPrimerDecision(
  * prompt. Resolves with whether the OS granted permission, and never rejects:
  * a prompt the OS failed to show counts as not granted.
  *
- * The one place the two steps are paired, so the card's "Turn on"
- * (`use-push-primer.ts`) and s16 Settings' push switch accept the same way.
- * The record comes first so that a crash mid-prompt still counts as asked;
- * otherwise the card could come back offering a "Turn on" the OS would now
- * ignore (`shouldOfferPrimer` reads the decision, not whether the OS will
- * still ask). `onRecorded` runs between the two, which is where the card's
- * host hides it.
+ * The one place the two steps are paired, so onboarding's step, the chat
+ * home's reminder (both through `answerPushAsk()`) and s16 Settings' push
+ * switch accept the same way. The record comes first so that a crash
+ * mid-prompt still counts as asked; otherwise the ask could come back
+ * offering a "Turn on" the OS would now ignore. `onRecorded` runs between the
+ * two, which is where the reminder hides itself.
  *
  * A grant also asks the push runtime to register the token again
  * (`onPushPermissionGranted`, #2617), because the sign-in register ran before
@@ -111,12 +135,13 @@ export async function declinePrimer(
   storage: Storage = AsyncStorage,
   now: number = Date.now(),
 ): Promise<void> {
-  await recordPrimerDecision("declined", storage);
   try {
     await storage.setItem(PUSH_PRIMER_DECLINED_AT_KEY, String(now));
   } catch {
     // The reminder then reads the decline as old and may ask a little early.
   }
+  // The decision last, so a listener re-reading both sees the time too.
+  await recordPrimerDecision("declined", storage);
 }
 
 export async function readDeclinedAt(
@@ -151,6 +176,7 @@ export async function recordReminderDone(
   } catch {
     // Cosmetic. The worst case is the reminder offering itself again.
   }
+  storedAnswerChanged();
 }
 
 /** What answering the ask did: the OS prompt's answer, or the phone's settings opened. */
@@ -158,22 +184,35 @@ export type PushAskOutcome = "allowed" | "denied" | "settings";
 
 /**
  * "Turn on notifications", from any surface that asks (onboarding, the chat
- * home's reminder). Shows the OS prompt while one can still help; otherwise
- * (iOS after an earlier "Don't Allow", Android after a second one, Android 13+
- * with the app's notifications blocked, or its channel switched off) no
- * prompt would appear, so it opens the phone's settings for this app, the
- * only place left to turn push on. Either way the decision is recorded as
- * accepted first, so the ask isn't offered again. Never rejects.
+ * home's reminder). It reads the phone's answer again first, as Settings'
+ * switch does, because the member may have changed it since the button drew.
+ *
+ * - Already on: nothing to ask; recorded as accepted.
+ * - The OS can still show its dialog: shows it (`acceptPrimer()`).
+ * - No dialog can appear (iOS after an earlier "Don't Allow", Android after a
+ *   second one, Android 13+ with the app's notifications blocked, or its
+ *   channel switched off): opens the phone's settings for this app, the only
+ *   place left. No system dialog answered anything there, and the member may
+ *   back out with push still off, so it counts as a deferral, like "Not now":
+ *   the chat home's reminder can still ask once, later.
+ *
+ * `onRecorded` runs once the answer is stored, before the OS dialog or the
+ * settings app opens. Never rejects.
  */
 export async function answerPushAsk(
-  push: PushState,
   onRecorded?: () => void,
 ): Promise<PushAskOutcome> {
-  if (pushTapAsks(push)) {
+  const push: PushState | null = await readPushState().catch(() => null);
+  if (push && pushIsOn(push)) {
+    await recordPrimerDecision("accepted");
+    onRecorded?.();
+    return "allowed";
+  }
+  if (!push || pushTapAsks(push)) {
     const granted = await acceptPrimer(onRecorded).catch(() => false);
     return granted ? "allowed" : "denied";
   }
-  await recordPrimerDecision("accepted");
+  await declinePrimer();
   onRecorded?.();
   await Linking.openSettings().catch(() => undefined);
   return "settings";
@@ -196,8 +235,8 @@ export interface PrimerVisibilityInput {
  *
  * Also **hidden when push is unavailable** (#2299): `isPushAvailable()` is
  * false, for any of the causes `spec/ui/mobile/patterns.md` § Push
- * notifications lists. The card's only function is "Turn on", and nothing on
- * s03 can make the build able to push, so a card there could only disable
+ * notifications lists. The step's only function is "Turn on", and nothing on
+ * s03 can make the build able to push, so a step there could only disable
  * itself and apologise, which is the placeholder App Review Guideline 2.1
  * rejects. `spec/ui/design-system/README.md` §5 rule 4 hides it, like the
  * ✦ Ask pill in a build without Ask. Settings (s16) still states the reason on
@@ -239,6 +278,7 @@ export interface ReminderVisibilityInput extends PrimerVisibilityInput {
  *
  * Not after "Turn on" whatever the OS said: a "Don't Allow" in the system
  * dialog is the member's answer, and Settings (s16) is where it is undone.
+ * ("Open Settings", where no dialog appeared, is stored as a deferral.)
  * And only once: answering it either way (or closing it) is final.
  */
 export function shouldOfferReminder({

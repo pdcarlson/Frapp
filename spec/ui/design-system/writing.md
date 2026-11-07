@@ -739,15 +739,16 @@ confirm.
 
 Onboarding's notifications step (s03's second beat, and chapter setup's step) and the
 chat home's one reminder (`components/notifications/push-ask.tsx`,
-`push-reminder.tsx`). The rows name what actually pushes, in the app's nouns, and
-promise nothing about a quiet chat, since a channel set to every message pushes every
-message ([`../mobile/patterns.md`](../mobile/patterns.md#push-notifications) § Push
+`push-reminder.tsx`). The rows name what pushes by default, in the app's nouns: every message in a DM,
+#general and #announcements, and a mention anywhere. The footnote names where each is
+changed: chat per conversation from its menu (Settings has no chat switch), events and
+tasks in Settings ([`../mobile/patterns.md`](../mobile/patterns.md#push-notifications) § Push
 notifications).
 
 | State | Title | Copy |
 |---|---|---|
-| Step | `Turn on notifications` | `Chapter plans move fast. Get a ping when something is for you.` Rows: `Announcements, mentions, and DMs` (chat glyph), `New events, reminders, and changes` (events glyph), `Tasks assigned to you or coming due` (tasks glyph). Footnote: `Pick which ones, and set quiet hours, in Settings.` Gold `Turn on notifications`, quiet `Not now`. |
-| Step, no prompt left | `Turn on notifications` | As above, with the gold button reading `Open Settings`. |
+| Step | `Turn on notifications` | `Chapter plans move fast. Get a ping when something is for you.` Rows: `DMs, mentions, #general, and #announcements` (chat glyph), `New events, reminders, and changes` (events glyph), `Tasks assigned to you or coming due` (tasks glyph). Footnote: `Mute any chat from its menu. Event and task alerts, and quiet hours, are in Settings.` Gold `Turn on notifications`, quiet `Not now`. |
+| Step, no prompt left | `Turn on notifications` | As above, with the gold button reading `Open Settings`. Stored as a deferral, so the chat home's reminder can still ask once. |
 | Chat home reminder | `Notifications are off` | `You won't hear about mentions or new events until you open the app.` Action `Turn on` (`Open Settings` when no prompt is left), and a close. |
 
 ### Push availability (mobile, s16)

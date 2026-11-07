@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Redirect, useRouter } from "expo-router";
 import { BackHandler, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -49,6 +49,8 @@ export default function Welcome() {
   const updateOnboarding = useUpdateOnboarding();
   const primer = usePushPrimer();
   const [leaving, setLeaving] = useState(false);
+  // The guard itself, since two taps in one frame both read `leaving` false.
+  const leavingRef = useRef(false);
   const [step, setStep] = useState<"welcome" | "notifications">("welcome");
 
   const membership = useMemo(() => {
@@ -60,7 +62,8 @@ export default function Welcome() {
   const university = membership?.chapter.university ?? null;
 
   async function finish() {
-    if (leaving) return;
+    if (leavingRef.current) return;
+    leavingRef.current = true;
     setLeaving(true);
     try {
       await updateOnboarding.mutateAsync({ has_completed_onboarding: true });
@@ -71,20 +74,23 @@ export default function Welcome() {
     router.replace("/(tabs)");
   }
 
-  // Read once the step opens, so a step that resolved to "already on" while
-  // the member read the first beat still leads straight to chat.
-  const asking = step === "notifications" && primer.showPrimer;
+  // Latched when Continue opens it, not re-derived from `showPrimer`: an
+  // answer is stored before the OS dialog opens and before the PATCH, and
+  // the step must stay on screen (busy) until the member has left for chat.
+  const asking = step === "notifications";
+  const answering = primer.isRequesting || leaving;
 
   // Android's back on the second beat returns to the first, as a back gesture
-  // between two screens would; it never leaves onboarding half done.
+  // between two screens would; it never leaves onboarding half done. Held
+  // while an answer is on its way out.
   useEffect(() => {
     if (!asking) return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      setStep("welcome");
+      if (!answering) setStep("welcome");
       return true;
     });
     return () => sub.remove();
-  }, [asking]);
+  }, [asking, answering]);
 
   if (status === "unauthenticated") {
     return <Redirect href="/(auth)/sign-in" />;
@@ -138,12 +144,16 @@ export default function Welcome() {
         {asking ? (
           <PushAskActions
             action={primer.action}
-            busy={primer.isRequesting || leaving}
+            busy={answering}
             onTurnOn={() => {
-              void primer.turnOn().finally(() => void finish());
+              void primer.turnOn().then((outcome) => {
+                if (outcome !== null) void finish();
+              });
             }}
             onNotNow={() => {
-              void primer.notNow().finally(() => void finish());
+              void primer.notNow().then((answered) => {
+                if (answered) void finish();
+              });
             }}
           />
         ) : (

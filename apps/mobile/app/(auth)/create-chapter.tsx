@@ -94,7 +94,8 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * Three steps make the chapter: **Find** it in the directory, **Confirm** the
  * match (or describe it by hand), and pick its **Color**. Creating it opens
  * three more: the **live** moment with its channels and an optional logo, the
- * push primer when this build can push, and the **invite** link. Then chat.
+ * notifications step when this build can push and push is off, and the
+ * **invite** link. Then chat.
  *
  * One route, with the steps as state: `POST /v1/chapters/onboard` flips the
  * membership count to 1 mid-flow, and every gate exempts `/create-chapter` by
@@ -367,17 +368,14 @@ export default function CreateChapter() {
   }
 
   async function answerPrimer(answer: "on" | "not-now") {
-    try {
-      if (answer === "on") {
-        await primer.turnOn();
-      } else {
-        await primer.notNow();
-      }
-    } finally {
-      // Either answer moves on, even when the OS prompt failed: the primer
-      // step has no other way forward.
-      afterPrimer();
-    }
+    // `null` / `false`: another answer is already on its way, and it moves on.
+    const moved =
+      answer === "on"
+        ? (await primer.turnOn()) !== null
+        : await primer.notNow();
+    // Either answer moves on, even when the OS prompt failed: the step has no
+    // other way forward.
+    if (moved) afterPrimer();
   }
 
   if (status === "unauthenticated") {

@@ -213,7 +213,8 @@ export default function PreferencesScreen() {
    *   member tapping this row is them accepting, which is the step
    *   `patterns.md` § Push notifications puts before the OS prompt, so it goes
    *   through the primer's own accept (`acceptPrimer()`): the decision is
-   *   recorded first, so the s03 card isn't offered afterwards with a
+   *   recorded first, so onboarding's step and the chat home's reminder
+   *   aren't offered afterwards with a
    *   "Turn on" the OS would now ignore.
    * - On: the OS settings, since an app cannot revoke its own permission.
    * - Off, and no prompt can help: the OS settings, the only place left. That
