@@ -445,7 +445,7 @@ export function PollsPage() {
           It applies only when nothing is loaded. README §4 scopes the offline
           treatment to "offline, **no cached data**" and §10 keeps stale
           content in place on a refetch, so a list already rendered is not
-          thrown away on a WiFi blip — the shell's `OfflineBanner` states the
+          thrown away on a WiFi blip — the shell's `ConnectionPill` states the
           connection, and the vote controls fail with their own message.
 
           The `paused` branch carries the same qualifier, and it is the one

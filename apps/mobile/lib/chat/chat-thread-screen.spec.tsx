@@ -47,6 +47,7 @@ import type { UseChatChannelResult } from "@/lib/chat/use-chat-channel";
 import { FrappThemeProvider } from "@/lib/theme";
 import { flatStyle } from "@/test/flat-style";
 import { screenText } from "@/test/screen-text";
+import { useOpenChatTransport } from "@repo/hooks/open-chat-transport";
 
 /**
  * s05, the chat thread, rendered: the wiring its rows, overlays and list rely
@@ -1721,5 +1722,46 @@ describe("chat thread member list (#3536)", () => {
     const tree = render();
     expect(membersButtons(tree)).toHaveLength(0);
     act(() => tree.unmount());
+  });
+});
+
+/*
+ * The thread hands its realtime transport to the app-wide connection pill
+ * (`connection-state.md` § One indicator), but only while it is focused: this
+ * tab screen stays mounted after the member leaves, and a hidden thread's
+ * "messages you send go out when you reconnect" must not reach Events or More.
+ */
+describe("chat thread reports its transport to the connection pill", () => {
+  const blur = (expoRouter as unknown as { __blur: () => void }).__blur;
+  const seen = vi.fn<(status: string | null) => void>();
+  function Reader() {
+    seen(useOpenChatTransport());
+    return null;
+  }
+  const reported = () => seen.mock.lastCall?.[0];
+
+  beforeEach(() => {
+    channel = channelState({ connection: "polling" });
+    params = { channelId: CHANNEL };
+  });
+
+  it("reports while focused and clears on blur", () => {
+    const tree = render();
+    let reader!: ReactTestRenderer;
+    act(() => {
+      reader = create(<Reader />);
+    });
+    expect(reported()).toBe("polling");
+
+    act(() => blur());
+    expect(reported()).toBeNull();
+
+    act(() => refocus());
+    expect(reported()).toBe("polling");
+
+    act(() => {
+      tree.unmount();
+      reader.unmount();
+    });
   });
 });

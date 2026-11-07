@@ -2,7 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { AppProviders } from "./providers";
-import { OfflineBanner } from "@/components/shared/offline-banner";
+import { ConnectionPill } from "@/components/shared/connection-pill";
 import { Toaster } from "@/components/ui/toaster";
 
 /*
@@ -56,7 +56,8 @@ export default function RootLayout({
     <html lang="en" className={figtree.variable}>
       <body className="font-sans antialiased">
         <AppProviders>
-          <OfflineBanner />
+          {/* Only for routes with no top bar; the bar carries its own. */}
+          <ConnectionPill />
           {children}
           <Toaster />
         </AppProviders>
