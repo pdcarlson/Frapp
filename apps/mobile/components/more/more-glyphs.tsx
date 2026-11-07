@@ -166,3 +166,8 @@ export function ChapterGlyph(props: HubGlyphProps) {
 export function HostCheckInGlyph(props: HubGlyphProps) {
   return <HubGlyph name="hostCheckIn" {...props} />;
 }
+
+/** Invite members: the nav set's user-plus, web's Invite beside Directory. */
+export function InviteGlyph(props: HubGlyphProps) {
+  return <HubGlyph name="invite" {...props} />;
+}

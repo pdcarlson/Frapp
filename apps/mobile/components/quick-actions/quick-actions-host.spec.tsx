@@ -244,12 +244,14 @@ describe("a sheet that fails to render", () => {
 });
 
 describe("where the rest go", () => {
-  it("sends Message to the directory and Study to study", () => {
+  it("sends Message to the directory, Invite to invites and Study to study", () => {
     render();
     run("message");
+    run("invite");
     run("study");
     expect(vi.mocked(router.push).mock.calls).toEqual([
       ["/directory"],
+      ["/invite"],
       ["/study"],
     ]);
   });
