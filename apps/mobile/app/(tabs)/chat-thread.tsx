@@ -1,3 +1,4 @@
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   useFocusEffect,
@@ -1013,7 +1014,7 @@ export default function ChatThreadScreen() {
             <View style={styles.stateBlock}>
               <ErrorState
                 title="Couldn't load messages"
-                body="Confirm your chapter access and retry."
+                body={describeLoadFailure(loadError)}
                 onRetry={reload}
                 isRetrying={isReloading}
               />

@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useRef, useState } from "react";
 import { Download, Loader2 } from "lucide-react";
 import {
@@ -469,10 +470,7 @@ export function ReportsPage() {
       if (token !== runToken.current) return;
       // The report hooks throw openapi-fetch's error body, a plain object,
       // so an `instanceof Error` check never reached the server's message.
-      const description = getErrorMessage(
-        error,
-        "Confirm your chapter access and retry.",
-      );
+      const description = getErrorMessage(error, describeLoadFailure(error));
       // Both, deliberately: the toast reports the moment, and the panel keeps
       // saying so after the toast dismisses. A failed run that leaves the idle
       // copy on screen is a failure reported as "nothing has happened yet".
@@ -552,10 +550,7 @@ export function ReportsPage() {
     } catch (error) {
       toast({
         title: `Couldn't export ${reportLabel[kind].toLowerCase()} PDF`,
-        description: getErrorMessage(
-          error,
-          "Confirm your chapter access and retry.",
-        ),
+        description: getErrorMessage(error, describeLoadFailure(error)),
         variant: "destructive",
       });
     } finally {

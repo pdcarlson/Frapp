@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { SERVER_MESSAGE_COPY } from "@repo/validation";
-import { errorCopy, MemberFacingError, TRY_AGAIN } from "./error-copy";
+import {
+  OFFLINE_COPY,
+  SERVER_MESSAGE_COPY,
+  STATUS_ERROR_COPY,
+} from "@repo/validation";
+import {
+  describeLoadFailure,
+  errorCopy,
+  LOAD_FAILURE_SERVER_COPY,
+  MemberFacingError,
+  TRY_AGAIN,
+} from "./error-copy";
 import { SignedUploadError } from "./put-signed-upload";
 
 const FALLBACK = "The event wasn't saved. Try again in a moment.";
@@ -125,5 +135,31 @@ describe("errorCopy", () => {
       expect(line).toMatch(/^[A-Z].*\.$/);
       expect(line).not.toMatch(/[A-Z]{3,}|_/);
     }
+  });
+});
+
+describe("describeLoadFailure", () => {
+  it("says offline when no response came back", () => {
+    expect(describeLoadFailure(new TypeError("Failed to fetch"))).toBe(
+      OFFLINE_COPY,
+    );
+  });
+
+  it("uses the shared status line, so loads and actions match", () => {
+    expect(describeLoadFailure(nest(403, "Forbidden resource"))).toBe(
+      STATUS_ERROR_COPY[403],
+    );
+  });
+
+  it("names a turned-off module rather than the role", () => {
+    expect(
+      describeLoadFailure(nest(403, "whatever", "chapter.module.disabled")),
+    ).not.toBe(STATUS_ERROR_COPY[403]);
+  });
+
+  it("falls back to the server-side line for other statuses", () => {
+    expect(describeLoadFailure(nest(500, "Internal server error"))).toBe(
+      LOAD_FAILURE_SERVER_COPY,
+    );
   });
 });
