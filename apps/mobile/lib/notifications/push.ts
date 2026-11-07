@@ -104,8 +104,9 @@ export function isPushAvailable(): boolean {
  * `spec/ui/design-system/writing.md` § Push availability.
  *
  * Its one reader is Settings (s16), which keeps a push row in every build and
- * states this in place of the switch. The s03 primer card is not drawn at all when
- * push is unavailable (`primer.ts`, #2299), so it never needs a reason.
+ * states this in place of the switch. Onboarding's notifications step and the
+ * chat home's reminder are skipped when push is unavailable (`primer.ts`,
+ * #2299), so they never need a reason.
  */
 export function pushUnavailableReason(): string | null {
   if (loadNotifications() === null) {
