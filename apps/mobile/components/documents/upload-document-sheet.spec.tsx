@@ -75,6 +75,7 @@ const SENT = {
 
 const dismiss = vi.fn();
 const onUploaded = vi.fn();
+const onPending = vi.fn();
 const mounted: ReactTestRenderer[] = [];
 const ref = React.createRef<never>();
 
@@ -91,6 +92,7 @@ function render(
           folders={FOLDERS}
           initialFolder={initialFolder}
           onUploaded={onUploaded}
+          onPending={onPending}
         />
       </FrappThemeProvider>,
       {
@@ -183,6 +185,7 @@ beforeEach(() => {
   uploadDocumentPhoto.mockReset();
   dismiss.mockReset();
   onUploaded.mockReset();
+  onPending.mockReset();
 });
 
 afterEach(() => {
@@ -299,21 +302,52 @@ describe("UploadDocumentSheet (#3399)", () => {
     );
   });
 
+  it("closes at once on Upload and reports the upload as pending", async () => {
+    // A phone photo takes seconds to send: the sheet doesn't sit on
+    // "Uploading…" for them, the screen behind it draws the pending row.
+    const tree = render();
+    await choose(tree);
+    const settle = heldUpload();
+
+    await pressUpload(tree);
+
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(onPending).toHaveBeenLastCalledWith({
+      title: "IMG_2041.jpg",
+      failed: null,
+    });
+    closed(tree);
+    await settle({ status: "uploaded", title: "IMG_2041.jpg" });
+    expect(onUploaded).toHaveBeenCalledWith("IMG_2041.jpg");
+    expect(onPending).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the photo and offers a retry when an upload fails", async () => {
     const tree = render();
     await choose(tree);
-    uploadDocumentPhoto.mockResolvedValue({
+    act(() => {
+      titleInput(tree).props.onChangeText("Minutes — Aug 14");
+    });
+    const settle = heldUpload();
+    await pressUpload(tree);
+    // The sheet closed on Upload, as a real one reports.
+    closed(tree);
+
+    await settle({
       status: "refused",
       reason: "Couldn't upload that photo. Try again in a moment.",
       final: false,
     });
+    expect(onPending).toHaveBeenLastCalledWith({
+      title: "Minutes — Aug 14",
+      failed: "Couldn't upload that photo. Try again in a moment.",
+    });
 
-    await pressUpload(tree);
-
+    // The pending row reopens it, on the failure and the kept draft.
+    open(tree);
     expect(screenText(tree)).toContain("Try again in a moment.");
     expect(screenText(tree)).toContain("IMG_2041.jpg");
     expect(uploadButton(tree).props.disabled).toBe(false);
-    expect(dismiss).not.toHaveBeenCalled();
   });
 
   it("withdraws Upload for a gate only an officer can lift", async () => {
@@ -545,12 +579,13 @@ describe("UploadDocumentSheet (#3399)", () => {
     expect(folderChips(tree).props.selected).toBe("Bylaws");
   });
 
-  it("drops an officer-only refusal that lands after the sheet closed", async () => {
+  it("keeps an officer-only refusal that lands after the sheet closed", async () => {
+    // The sheet closes on Upload, so the visit the pending row reopens is
+    // where the member reads why. A close after that drops it, as above.
     const tree = render();
     await choose(tree);
     const settle = heldUpload();
     await pressUpload(tree);
-    // Swiped away while the confirm is out.
     closed(tree);
 
     await settle({
@@ -560,8 +595,12 @@ describe("UploadDocumentSheet (#3399)", () => {
       sent: SENT,
     });
     open(tree);
+    expect(screenText(tree)).toContain("subscription is renewed");
+    expect(uploadButton(tree).props.disabled).toBe(true);
+
+    closed(tree);
+    open(tree);
     expect(screenText(tree)).not.toContain("subscription is renewed");
-    expect(uploadButton(tree).props.disabled).toBe(false);
     // The bytes it sent are still held, so the next try is the confirm alone.
     await pressUpload(tree);
     expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
@@ -650,8 +689,9 @@ describe("UploadDocumentSheet (#3399)", () => {
 
     await settle({ status: "uploaded", title: "IMG_2041.jpg" });
 
-    // `dismiss()` on a dismissed gorhom modal wedges the next `present()`.
-    expect(dismiss).not.toHaveBeenCalled();
+    // Upload's own close, and none after: `dismiss()` on a dismissed gorhom
+    // modal wedges the next `present()`.
+    expect(dismiss).toHaveBeenCalledTimes(1);
     expect(onUploaded).toHaveBeenCalledWith("IMG_2041.jpg");
     open(tree);
     expect(screenText(tree)).toContain("Choose a photo");
@@ -668,7 +708,8 @@ describe("UploadDocumentSheet (#3399)", () => {
 
     await settle({ status: "uploaded", title: "IMG_2041.jpg" });
 
-    expect(dismiss).not.toHaveBeenCalled();
+    // Only Upload's own close: the visit opened since stays up.
+    expect(dismiss).toHaveBeenCalledTimes(1);
     expect(onUploaded).toHaveBeenCalledWith("IMG_2041.jpg");
     expect(screenText(tree)).toContain("Choose a photo");
   });
@@ -684,7 +725,8 @@ describe("UploadDocumentSheet (#3399)", () => {
       uploadButton(tree).props.onPress();
       pressable(tree, "Cancel").props.onPress();
     });
-    expect(dismiss).not.toHaveBeenCalled();
+    // Upload's close, not Cancel's: the draft is still there to file.
+    expect(dismiss).toHaveBeenCalledTimes(1);
     expect(pressable(tree, "Cancel").props.disabled).toBe(true);
 
     // Swiped away and opened again while the upload runs: still held.
@@ -717,7 +759,9 @@ describe("UploadDocumentSheet (#3399)", () => {
     act(() => {
       pressable(tree, "Cancel").props.onPress();
     });
-    expect(dismiss).toHaveBeenCalledTimes(1);
+    // Upload's close, then Cancel's, which drops the pending report too.
+    expect(dismiss).toHaveBeenCalledTimes(2);
+    expect(onPending).toHaveBeenLastCalledWith(null);
     closed(tree);
     open(tree);
     expect(screenText(tree)).toContain("Choose a photo");
@@ -760,7 +804,8 @@ describe("UploadDocumentSheet (#3399)", () => {
     act(() => {
       pressable(tree, "Cancel").props.onPress();
     });
-    expect(dismiss).toHaveBeenCalledTimes(1);
+    // Two Upload closes, then Cancel's.
+    expect(dismiss).toHaveBeenCalledTimes(3);
     closed(tree);
     open(tree);
     expect(screenText(tree)).toContain("Choose a photo");

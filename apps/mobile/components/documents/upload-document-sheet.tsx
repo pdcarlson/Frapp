@@ -28,12 +28,23 @@ import {
 import type { PickedImage } from "@/lib/chat/attachment-upload";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
+  documentTitle,
   pickDocumentPhoto,
   uploadDocumentPhoto,
   type SentUpload,
 } from "@/lib/more/document-upload";
 import type { DocumentFolder } from "@/lib/more/documents";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+
+/**
+ * An upload the sheet has closed on and is still sending, or one that failed:
+ * what the screen behind it draws in the sheet's place (s12's pending row,
+ * the quick-action bar's notice). `failed` is the reason, a sentence.
+ */
+export interface PendingDocumentUpload {
+  title: string;
+  failed: string | null;
+}
 
 /** Why the title and folder stopped taking edits after a failed confirm. */
 export const RETRY_KEEPS_DRAFT =
@@ -88,12 +99,20 @@ export const RETRY_KEEPS_DRAFT =
  *   files into a folder no chip shows as selected; the API would otherwise
  *   create it again (`ensureFolder`).
  *
- * ## Closing mid-upload
+ * ## Upload closes the sheet at once
+ *
+ * A phone photo takes seconds to send, and a sheet that sits on "Uploading…"
+ * for all of them reads as stuck. So Upload closes the sheet the moment it is
+ * tapped and reports the upload through `onPending`, for the screen behind it
+ * to draw in its place: s12 a quiet row at the top of the list where the
+ * document will land, the quick-action bar a notice. A success then reports
+ * through `onUploaded`; a failure reports the reason through `onPending`, and
+ * the draft (with any bytes already sent) stays here for the member to reopen
+ * and try again, or Cancel, which drops the pending report too.
  *
  * Through the same `useSheetVisit` as s15's edit sheet
- * (`components/profile/edit-profile-sheet.tsx`): a swipe mid-upload keeps the
- * draft until the upload settles, a success closes only the visit it was sent
- * from, and `dismiss()` runs only on a presented sheet.
+ * (`components/profile/edit-profile-sheet.tsx`): a sheet reopened mid-upload
+ * shows the draft held, and `dismiss()` runs only on a presented sheet.
  */
 export const UploadDocumentSheet = forwardRef<
   BottomSheetModal,
@@ -103,8 +122,18 @@ export const UploadDocumentSheet = forwardRef<
     initialFolder: string | null;
     /** Called once a document is filed, with the title it was filed under. */
     onUploaded?: (title: string) => void;
+    /**
+     * The upload this sheet closed on: set when Upload sends, again with the
+     * reason if it fails, and `null` once Cancel gives the draft up. A
+     * success reports through `onUploaded` instead, and the caller clears
+     * its pending state when the filed document is on screen.
+     */
+    onPending?: (pending: PendingDocumentUpload | null) => void;
   }
->(function UploadDocumentSheet({ folders, initialFolder, onUploaded }, ref) {
+>(function UploadDocumentSheet(
+  { folders, initialFolder, onUploaded, onPending },
+  ref,
+) {
   const closeSheet = useSheetClose(ref);
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -171,8 +200,7 @@ export const UploadDocumentSheet = forwardRef<
     setStored(null);
   }, []);
 
-  const { onAnimate, markClosed, dismiss, isOpen, visit, isSameVisit } =
-    useSheetVisit(ref);
+  const { onAnimate, markClosed, dismiss } = useSheetVisit(ref);
   // Set the moment Upload sends, before `uploading` reaches a render, so two
   // taps in one batch send one upload.
   const sending = useRef(false);
@@ -203,6 +231,7 @@ export const UploadDocumentSheet = forwardRef<
   // batch as Upload, before `uploading` reaches a render.
   const cancel = () => {
     if (sending.current) return;
+    if (stored !== null || failure !== null) onPending?.(null);
     reset();
     dismiss();
   };
@@ -232,7 +261,13 @@ export const UploadDocumentSheet = forwardRef<
     sending.current = true;
     setUploading(true);
     setFailure(null);
-    const sentFrom = visit();
+    setRefusal(null);
+    // The title it will be filed under, for the pending row: a retry files
+    // the one it was first sent with.
+    const filedAs = stored ? stored.title : documentTitle(title, picked);
+    onPending?.({ title: filedAs, failed: null });
+    setTitleFocused(false);
+    dismiss();
     const result = await uploadDocumentPhoto(
       picked,
       { title, folder },
@@ -246,17 +281,15 @@ export const UploadDocumentSheet = forwardRef<
     setUploading(false);
     if (result.status === "uploaded") {
       reset();
-      if (isSameVisit(sentFrom)) dismiss();
       onUploaded?.(result.title);
       return;
     }
     if (result.sent) setStored(result.sent);
-    // An officer-only refusal that lands while the sheet is closed is
-    // dropped, as a close drops one already shown: the officer may have
-    // lifted it by the next visit. A sheet reopened mid-upload still shows it.
-    if (result.final) {
-      if (isOpen()) setRefusal(result.reason);
-    } else setFailure(result.reason);
+    // Kept for the visit the pending row reopens, which is how the member
+    // hears of it: the sheet closed when Upload was tapped.
+    if (result.final) setRefusal(result.reason);
+    else setFailure(result.reason);
+    onPending?.({ title: filedAs, failed: result.reason });
   };
 
   const sourceLine = picked

@@ -203,6 +203,20 @@ describe("a confirmation after a create", () => {
     expect(latest.notice).toBe("“Bylaws” is in the library.");
   });
 
+  it("carries an upload the sheet closed on in the notice, and its failure", () => {
+    const tree = render();
+    run("upload");
+    const onPending = sheetProps(tree, "UploadDocumentSheet").onPending as (
+      pending: { title: string; failed: string | null } | null,
+    ) => void;
+    act(() => onPending({ title: "Bylaws", failed: null }));
+    expect(latest.notice).toBe("Uploading “Bylaws”…");
+    act(() => onPending({ title: "Bylaws", failed: "Couldn't upload." }));
+    expect(latest.notice).toBe(
+      "“Bylaws” didn't upload. Open Upload document to try again.",
+    );
+  });
+
   it("goes away after a few seconds, counted from the latest", () => {
     vi.useFakeTimers();
     try {
