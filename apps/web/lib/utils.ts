@@ -1,3 +1,4 @@
+import { type ErrorCopyOptions, errorCopy } from "@repo/hooks/error-copy";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { type ClassValue, clsx } from "clsx";
 import { extendTailwindMerge } from "tailwind-merge";
@@ -102,13 +103,18 @@ export function guardDecimalDraft(raw: string): string | undefined {
   return guardDraft(raw, (text) => parseGuardedDecimal(text));
 }
 
-/** Human-readable message for caught errors (e.g. toast descriptions). */
-export function getErrorMessage(error: unknown, fallback: string): string {
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: string }).message;
-    if (typeof message === "string" && message.length > 0) return message;
-  }
-  return fallback;
+/**
+ * The member's words for a caught error (a toast description, an inline
+ * error): what to do next, from the shared map in `@repo/hooks`
+ * (`errorCopy`), with `fallback` for a failure whose meaning depends on the
+ * screen. It never shows a raw server message (principles.md P2.3).
+ */
+export function getErrorMessage(
+  error: unknown,
+  fallback: string,
+  options?: ErrorCopyOptions,
+): string {
+  return errorCopy(error, fallback, options);
 }
 
 /**

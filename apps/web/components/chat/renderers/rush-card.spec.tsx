@@ -305,7 +305,9 @@ describe("RushCard", () => {
     refuse(voteMutate, { statusCode: 404, message: "Candidate not found" });
 
     expect(lastToast().title).toBe("Couldn't record that vote");
-    expect(lastToast().description).toBe("Candidate not found");
+    expect(lastToast().description).toBe(
+      "It may have been deleted. Refresh and try again.",
+    );
   });
 });
 

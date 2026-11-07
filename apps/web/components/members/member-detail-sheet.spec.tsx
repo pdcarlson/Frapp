@@ -319,7 +319,7 @@ describe("MemberDetailSheet Message action", () => {
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Could not start conversation",
-          description: "network down",
+          description: "Something went wrong. Please retry.",
           variant: "destructive",
         }),
       ),

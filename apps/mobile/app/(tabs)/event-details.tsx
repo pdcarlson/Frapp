@@ -1,3 +1,4 @@
+import { checkInZoneLine } from "@repo/validation";
 import { useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -255,9 +256,7 @@ function CheckInCard({
       : null;
   const zone =
     event.hasCheckInZone && (isOpen || window.state === "upcoming")
-      ? event.check_in_zone_name
-        ? `Check in from inside the ${event.check_in_zone_name} zone.`
-        : "Check in from the event location."
+      ? checkInZoneLine(event.check_in_zone_name)
       : null;
 
   return (

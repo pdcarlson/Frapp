@@ -14,7 +14,7 @@ import {
   useMyPermissions,
   useServiceEntry,
 } from "@repo/hooks";
-import { can } from "@repo/validation";
+import { can, statusLabel } from "@repo/validation";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { readHoursPayload } from "@repo/chat-core/cards";
 
@@ -86,7 +86,8 @@ export function HoursCard({ message, viewerId }: HoursCardProps) {
         </div>
         {live ? (
           <Badge variant={serviceStatusKind(live.status)}>
-            {SERVICE_ENTRY_CARD_LABELS[live.status]}
+            {SERVICE_ENTRY_CARD_LABELS[live.status] ??
+              statusLabel("serviceEntry", live.status)}
           </Badge>
         ) : null}
       </div>

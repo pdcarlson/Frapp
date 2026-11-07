@@ -264,7 +264,7 @@ describe("EventDetailSheet header actions", () => {
 });
 
 describe("EventDetailSheet check-in zone", () => {
-  it("names the zone and counts its points when one is set", () => {
+  it("names the zone, never its corner count, when one is set", () => {
     render(
       <EventDetailSheet
         open
@@ -285,8 +285,10 @@ describe("EventDetailSheet check-in zone", () => {
       />,
     );
 
-    expect(screen.getByText("Great Hall")).toBeInTheDocument();
-    expect(screen.getByText(/4 points/)).toBeInTheDocument();
+    expect(
+      screen.getByText("Check in from inside the Great Hall zone."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/4 points/)).not.toBeInTheDocument();
   });
 
   it("says check-in is unrestricted when no zone is set", () => {
@@ -420,7 +422,7 @@ describe("EventDetailSheet Add to calendar", () => {
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Could not export calendar file",
-          description: "network down",
+          description: "Something went wrong. Please retry.",
           variant: "destructive",
         }),
       );

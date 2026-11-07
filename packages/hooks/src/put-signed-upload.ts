@@ -18,6 +18,10 @@
  * fails the bucket's allowlist.
  */
 
+/** What a refused upload says when its surface has nothing more specific. */
+export const UPLOAD_REJECTED_COPY =
+  "The upload didn't go through. Check the file's size and type, then try again.";
+
 /** A PUT the storage bucket answered with a non-2xx status. */
 export class SignedUploadError extends Error {
   constructor(
@@ -38,7 +42,9 @@ export interface PutSignedUploadInput {
   upsert?: boolean;
   /**
    * The message the thrown `SignedUploadError` carries, which each surface
-   * shows its member verbatim. Defaults to `Upload failed (<status>)`.
+   * shows its member verbatim (through `errorCopy`), so it is written for
+   * members and never names the storage status. Defaults to a plain "didn't
+   * go through".
    */
   describeRejection?: (status: number) => string;
 }
@@ -52,7 +58,7 @@ export async function putSignedUpload({
   body,
   contentType,
   upsert = false,
-  describeRejection = (status) => `Upload failed (${status})`,
+  describeRejection = () => UPLOAD_REJECTED_COPY,
 }: PutSignedUploadInput): Promise<void> {
   const headers: Record<string, string> = { "content-type": contentType };
   if (upsert) headers["x-upsert"] = "true";

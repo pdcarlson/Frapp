@@ -1,5 +1,6 @@
 "use client";
 
+import { DISCORD_ROUTES_WRITE_FOR_MEMBERS } from "@/lib/discord-error-copy";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   useConfirmDiscordUploads,
@@ -318,7 +319,11 @@ export function ImportWizard({
     } catch (error) {
       toast({
         variant: "destructive",
-        description: getErrorMessage(error, "Could not scan the server again."),
+        description: getErrorMessage(
+          error,
+          "Could not scan the server again.",
+          DISCORD_ROUTES_WRITE_FOR_MEMBERS,
+        ),
       });
     }
   }
@@ -363,7 +368,11 @@ export function ImportWizard({
     } catch (error) {
       toast({
         variant: "destructive",
-        description: getErrorMessage(error, "Could not start the import."),
+        description: getErrorMessage(
+          error,
+          "Could not start the import.",
+          DISCORD_ROUTES_WRITE_FOR_MEMBERS,
+        ),
       });
     }
   }, [acknowledged, source, importId, createImport, scan, toast]);
@@ -597,6 +606,7 @@ export function ImportWizard({
         description: getErrorMessage(
           error,
           "Could not save the channel mapping.",
+          DISCORD_ROUTES_WRITE_FOR_MEMBERS,
         ),
       });
     }
@@ -634,7 +644,11 @@ export function ImportWizard({
     } catch (error) {
       toast({
         variant: "destructive",
-        description: getErrorMessage(error, "Could not save the role mapping."),
+        description: getErrorMessage(
+          error,
+          "Could not save the role mapping.",
+          DISCORD_ROUTES_WRITE_FOR_MEMBERS,
+        ),
       });
     }
   }
@@ -650,7 +664,11 @@ export function ImportWizard({
     } catch (error) {
       toast({
         variant: "destructive",
-        description: getErrorMessage(error, "Could not start the import."),
+        description: getErrorMessage(
+          error,
+          "Could not start the import.",
+          DISCORD_ROUTES_WRITE_FOR_MEMBERS,
+        ),
       });
     }
   }

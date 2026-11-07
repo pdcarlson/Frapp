@@ -1,3 +1,4 @@
+import { MemberFacingError } from "@repo/hooks/error-copy";
 import * as Location from "expo-location";
 
 /**
@@ -50,7 +51,11 @@ export function latLngOf(fix: LocationFix): { lat: number; lng: number } {
 export function accuracyMetersOf(
   accuracy: number | null | undefined,
 ): number | undefined {
-  if (typeof accuracy !== "number" || !Number.isFinite(accuracy) || accuracy <= 0) {
+  if (
+    typeof accuracy !== "number" ||
+    !Number.isFinite(accuracy) ||
+    accuracy <= 0
+  ) {
     return undefined;
   }
   return accuracy;
@@ -108,10 +113,19 @@ export async function readForegroundFix(): Promise<LocationFix> {
  * why, and what to do next, and "why" is check-in for one and the zone check for
  * the other.
  */
+export const LOCATION_UNAVAILABLE =
+  "Couldn't find your location. Turn on location services and try again.";
+
 export async function requireForegroundFix(
   deniedMessage: string,
 ): Promise<LocationFix> {
   const permission = await requestForegroundPermission();
-  if (!permission.granted) throw new Error(deniedMessage);
-  return readForegroundFix();
+  if (!permission.granted) throw new MemberFacingError(deniedMessage);
+  try {
+    return await readForegroundFix();
+  } catch {
+    // Location services off, or no fix in time: the platform's own error
+    // names neither, and the member's fix is the same for both.
+    throw new MemberFacingError(LOCATION_UNAVAILABLE);
+  }
 }
