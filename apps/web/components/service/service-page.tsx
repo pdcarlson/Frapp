@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Loader2, Plus, XCircle } from "lucide-react";
 import {
@@ -443,7 +444,7 @@ export function ServiceHoursPage() {
       <>
         <ErrorState
           title="Couldn't load service entries"
-          description="Confirm your chapter access and retry."
+          description={describeLoadFailure(entriesQuery.error)}
           onRetry={() => void entriesQuery.refetch()}
         />
       </>

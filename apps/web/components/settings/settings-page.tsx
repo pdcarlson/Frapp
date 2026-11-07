@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -244,7 +245,7 @@ function SettingsPageContent() {
     stateBanner = (
       <ErrorState
         title="Couldn't load chapter settings"
-        description="Confirm your chapter access and retry. Changes here update every surface in the dashboard."
+        description={`${describeLoadFailure(chapterQuery.error)} Changes here update every surface in the dashboard.`}
         onRetry={() => void chapterQuery.refetch()}
       />
     );

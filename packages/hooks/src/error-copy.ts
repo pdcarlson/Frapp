@@ -151,3 +151,26 @@ function isNetworkFailure(error: unknown): boolean {
 }
 
 export { TRY_AGAIN };
+
+/** writing.md § copy rules: the server failed, and nothing more is known. */
+export const LOAD_FAILURE_SERVER_COPY =
+  "Something went wrong on our side. Retry in a moment.";
+
+/**
+ * The second line of a screen's "Couldn't load …" state, by what actually
+ * failed (`spec/ui/design-system/writing.md` § copy rules). It reads the same
+ * map as {@link errorCopy}, so a load and an action refused for the same
+ * reason say the same thing: no response is {@link OFFLINE_COPY}, a refusal
+ * the map knows (module off, subscription lapsed) says so, a status says what
+ * it means, and anything else is the server's fault.
+ *
+ * One fixed line used to cover every load failure, and whichever cause it
+ * named was wrong for the others ("Confirm your chapter access" sent a member
+ * on a dropped connection to their officers). A 401 normally never reaches a
+ * screen, because the client signs a refused session out (`onUnauthorized`).
+ */
+export function describeLoadFailure(error: unknown): string {
+  const status = statusOf(error) ?? wrappedStatusOf(error);
+  if (status === undefined) return OFFLINE_COPY;
+  return errorCopy(error, LOAD_FAILURE_SERVER_COPY);
+}
