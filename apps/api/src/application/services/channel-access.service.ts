@@ -49,6 +49,10 @@ export interface ChannelMemberEntry {
   user_id: string;
   /** The member's highest role's `display_order` (lower ranks higher); `null` when they hold none. */
   role_rank: number | null;
+  /** That role's id, the key the list groups readers under; `null` with `role_rank`. */
+  role_id: string | null;
+  /** That role's name, the group's heading; `null` with `role_rank`. */
+  role_name: string | null;
 }
 
 /**
@@ -281,6 +285,8 @@ export class ChannelAccessService {
       .map((member) => ({
         user_id: member.user_id,
         role_rank: member.top_role_order,
+        role_id: member.top_role?.id ?? null,
+        role_name: member.top_role?.name ?? null,
       }));
   }
 

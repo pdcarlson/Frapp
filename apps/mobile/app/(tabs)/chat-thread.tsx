@@ -73,6 +73,7 @@ import {
   useBlockActions,
 } from "@/lib/chat/block-actions";
 import {
+  copyableText,
   messageActionsFor,
   departedIn,
   noDepartedMembers,
@@ -684,6 +685,7 @@ export default function ChatThreadScreen() {
       }
       setActionTarget({
         messageId: message.id,
+        copyText: copyableText(message),
         canReply: actions.canReply,
         canEdit: actions.canEdit,
         canDelete: actions.canDelete,
