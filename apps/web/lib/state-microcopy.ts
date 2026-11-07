@@ -13,17 +13,13 @@ export const stateMicrocopy = {
   // removed, and nothing read either key.
   members: {
     loading: "Loading chapter members...",
-    // "Actives", not "members", on both of these: it is the word the tab and
+    // "Actives", not "members", on both of these lines: it is the word the tab and
     // the section label above the list already use, and it is the string the
     // shipped mobile Directory renders for the same state
     // (`apps/mobile/app/(tabs)/directory.tsx`). The two surfaces are meant to
     // read as one product, and this is the cheapest place to stop them drifting.
-    emptyTitle: "No actives yet",
-    emptyDescription: "Actives appear here once they join.",
-    filteredTitle: "No actives match the filters",
-    filteredDescription: "Clear a filter to see more.",
-    // The title is built at the call site because it quotes the live query.
-    noMatchDescription: "Check the spelling, or widen the filters.",
+    empty: "No actives yet.",
+    noFilterMatches: "No actives match these filters.",
     offlineTitle: "Members unavailable offline",
     offlineDescription: "Reconnect to load the roster.",
     errorTitle: "Couldn't load members",
@@ -75,8 +71,8 @@ export const stateMicrocopy = {
   },
   billing: {
     loading: "Loading billing overview...",
-    emptyTitle: "No invoices yet",
-    emptyDescription:
-      "Create your first invoice to start chapter dues collection.",
+    empty: "No invoices yet.",
+    emptyMember: "You have no invoices.",
+    noMatches: "No invoices match these filters.",
   },
 } as const;

@@ -204,12 +204,14 @@ The API's throttler sets this sentence (`THROTTLED_MESSAGE`, `custom-throttler.g
 |---|---|---|
 | Loading | — | `Loading chapter members...` |
 | Loading (supporting queries) | — | `Loading chapter members...` — the roles-and-points load uses the *same* string. A second, differently-worded loading state for one screen is what this table exists to prevent. |
-| Empty | `No actives yet` | `Actives appear here once they join.` |
-| No results (filters) | `No actives match the filters` | `Clear a filter to see more.` |
-| No results (search) | `No match for “<query>”` | `Check the spelling, or widen the filters.` |
+| Empty | — | `No actives yet.` (one line) |
+| No results (filters) | — | `No actives match these filters.` then a **Clear filters** link (one line) |
+| No results (search) | — | `No actives match “<query>”.` then a **Clear search** link (one line) |
 | Error | `Couldn't load members` | `Confirm your chapter access and retry.` |
 | Error (roles and points) | `Couldn't load roles and points` | `Filtering, sorting and assignment need both.` |
 | Offline | `Members unavailable offline` | `Reconnect to load the roster.` |
+
+The empty and no-results rows are one line, an `InlineNote`, where the rows go, with the way back as a link in the line (empty-states plan rule 7, 2026-11-07). The split the paragraphs below argue for still holds; only the card went.
 
 **Rewritten by the greenfield Directory lane ([#2146](https://github.com/pdcarlson/Frapp/issues/2146)), and the row count is the change.** Five rows became seven for two reasons, both from the framework board's state rule (`3b`): *"Empty = accent tile + tinted CTA. No results = neutral tile, names the query"*, under a section eyebrow that budgets a status line at **six words**.
 
@@ -333,8 +335,8 @@ Mobile's Tasks tab (s08) is a personal board for everyone, so with nothing assig
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading service entries...` |
-| Empty queue | `No pending entries` | `Approved or rejected entries appear under History.` |
-| Empty history | `No service activity yet` | `Log your first service entry to build up chapter service hours.` |
+| Empty queue | — | `Nothing waiting for review.` (one line) |
+| Empty history | — | `No service logged yet.` then, for a viewer with `service:log`, a **Log the first hours** link that opens Log service (one line) |
 | Error | `Couldn't load service entries` | `Confirm your chapter access and retry.` |
 | Offline | `Service hours unavailable offline` | `Reconnect to log hours and review the approval queue.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can review submitted hours.` |
@@ -344,9 +346,9 @@ Mobile's Tasks tab (s08) is a personal board for everyone, so with nothing assig
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading chapter documents...` |
-| Empty | `No documents here yet` | `Upload chapter files like bylaws, agendas, and meeting minutes so everyone can find them.` |
-| Empty (search, all files) | `No documents match that search` | `Nothing in the chapter library has "{query}" in its title.` |
-| Empty (search, inside a folder) | `No documents match that search` | `No match in this folder. Try "All files" to search the whole library.` |
+| Empty | — | `No documents yet.`, `Nothing in {folder} yet.`, or on No folder `Every document is in a folder.`; for a viewer with `chapter_docs:upload` then **Upload a file** `or drop one anywhere on this page.` (one line) |
+| Empty (search, all files) | — | `No documents match “{query}”.` then a **Clear search** link (one line) |
+| Empty (search, inside a folder) | — | `Nothing in {folder} matches “{query}”.` (on No folder, `No documents outside a folder match “{query}”.`) then a **Search all files** link, which keeps the search (one line) |
 | Empty (search, all files), mobile s12 | `No matches` | `No document title matches “{query}”.` |
 | Empty (search, inside a folder), mobile s12 | `No matches` | `Nothing in {folder} matches “{query}”.` Mobile's search stays inside the picked folder chip, so the line names the folder it searched |
 | Error | `Couldn't load documents` | `Confirm your chapter access and retry.` |
@@ -408,8 +410,8 @@ Three of these exist to keep one state from impersonating another:
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading study zones...` |
-| Empty zones | `No active study zones` | `Ask an officer who manages study zones to add one.` |
-| Empty history | `No sessions logged yet` | `Start a tracked session inside a study zone to start earning study points.` |
+| Empty zones | — | `No study zones yet.` then, for a viewer with `geofences:manage`, an **Add a study zone** link to `/geofences`, and for everyone else `An officer adds them.` (one line; the nav hides Study until a zone is active, so a saved link is the way here) |
+| Empty history | — | `No sessions yet. Start one inside a study zone to earn study points.` (one line) |
 | Error | `Couldn't load study data` | `Confirm your chapter access and retry.` |
 | Offline | `Study hours unavailable offline` | `Reconnect to start a session. Tracking needs a live location check.` |
 | Paused (tab hidden) | `Paused (tab hidden)` (badge) | Surfaced live while the timer is paused by the Page Visibility API. |
@@ -702,9 +704,10 @@ Implementation: the page's read states inline in `apps/web/components/discord-im
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading billing overview...` |
-| Empty | `No invoices yet` | `Create your first invoice to start chapter dues collection.` |
+| Empty, `billing:manage` | — | `No invoices yet.` then a **Create the first invoice** link that opens Create invoice (one line) |
+| Empty, member | — | `You have no invoices.` (one line) |
 | Error | `Couldn't load invoices` | `Confirm your chapter access and retry.` |
-| Empty (filtered) | `No invoices match this filter` | `Try a different status, or clear the filter to see every invoice.` |
+| Empty (filtered) | — | `No invoices match these filters.` then a **Clear filters** link (one line) |
 | Loading (plan panel) | — | `Loading plan...` |
 | Offline | `Billing unavailable offline` | `Reconnect to sync subscription status and invoice balances.` |
 | Billing-status read failed | — | `Couldn't load this chapter's Stripe details.` (with a Retry; shown only to a `billing:view` holder, for whom the error is a failure rather than the ordinary 403) |
@@ -954,8 +957,8 @@ no reason and no way back.
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading alumni directory...` |
-| Empty | `No alumni yet` | `Graduated members appear here.` |
-| No results (filters) | `No alumni match the filters` | `Clear a field to see more.` |
+| Empty | — | `No alumni yet. Graduated members appear here.` (one line) |
+| No results (filters) | — | `No alumni match these filters.` then a **Clear filters** link (one line) |
 | No results (filters), mobile s13 | `No alumni match the filters` | `Clear a filter to see more.` The fields sit behind a chip named Filters there, so the line names that |
 | Error | `Couldn't load alumni` | `Check your chapter access.` |
 | Offline | `Alumni unavailable offline` | `Reconnect to load alumni records.` |

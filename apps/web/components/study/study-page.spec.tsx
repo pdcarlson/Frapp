@@ -66,6 +66,7 @@ const sessionsQuery = {
 
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
+  useMyPermissions: () => ({ data: { permissions: [] } }),
   useGeofences: () => ({ data: [ZONE], isPending: false, isError: false }),
   useStudySessions: () => sessionsQuery,
   useStartStudySession: () => ({ mutateAsync: mockStart, isPending: false }),

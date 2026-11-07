@@ -76,6 +76,7 @@ const { mockCurrentChapter } = vi.hoisted(() => ({
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
   useGeofences: () => geofencesQuery,
+  useMyPermissions: () => ({ data: { permissions: [] } }),
   useStudySessions: () => sessionsQuery,
   useStartStudySession: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useStudyHeartbeat: () => ({ mutateAsync: vi.fn(), isPending: false }),

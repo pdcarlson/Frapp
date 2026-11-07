@@ -17,10 +17,10 @@ import { EmptyState, anyReadUncached } from "@/components/shared/async-states";
 // and this lane just deleted every card on the route. The no-chapter branch
 // below is the one exception and says why in place.
 import {
-  NestedEmpty,
   NestedError,
   NestedOffline,
 } from "@/components/shared/nested-states";
+import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import {
   dashboardToolbarHeightClassName,
   denseListClassName,
@@ -274,18 +274,16 @@ export function AlumniDirectory() {
           onRetry={() => void query.refetch()}
         />
       ) : alumni.length === 0 ? (
+        // One line where the rows go (empty-states plan rule 7).
         filtered ? (
-          <NestedEmpty
-            sole
-            title="No alumni match the filters"
-            description="Clear a field to see more."
-          />
+          <InlineNote>
+            No alumni match these filters.{" "}
+            <InlineNoteAction onClick={clearFilters}>
+              Clear filters
+            </InlineNoteAction>
+          </InlineNote>
         ) : (
-          <NestedEmpty
-            sole
-            title="No alumni yet"
-            description="Graduated members appear here."
-          />
+          <InlineNote>No alumni yet. Graduated members appear here.</InlineNote>
         )
       ) : (
         /*

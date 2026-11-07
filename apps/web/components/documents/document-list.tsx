@@ -3,10 +3,10 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  NestedEmpty,
   NestedError,
   NestedOffline,
 } from "@/components/shared/nested-states";
+import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import { SearchGlyph } from "@/components/documents/resources-glyphs";
 import { DocumentRow } from "@/components/documents/document-row";
 import type { ChapterDocument } from "@/components/documents/document-types";
@@ -33,6 +33,8 @@ export function DocumentList({
   gate,
   deletingIds,
   onDelete,
+  onShowAllFiles,
+  onUpload,
 }: {
   listState: DocumentListState;
   visible: ChapterDocument[];
@@ -44,6 +46,10 @@ export function DocumentList({
   gate: SubscriptionGate;
   deletingIds: ReadonlySet<string>;
   onDelete: (doc: ChapterDocument) => void;
+  /** Leaves the folder for "All files". */
+  onShowAllFiles: () => void;
+  /** Opens the upload panel; absent for a viewer who can't upload. */
+  onUpload?: () => void;
 }) {
   return (
     <section aria-labelledby="doc-list-label">
@@ -135,26 +141,54 @@ export function DocumentList({
           />
         ) : listState === "empty" ? (
           /*
-            A search that matched nothing is not an empty library, and
+            One line where the rows go, not a card (empty-states plan rule
+            7). A search that matched nothing is not an empty library, and
             offering "upload some files" to a member who mistyped a title
-            answers a question they did not ask.
+            answers a question they did not ask, so a miss offers only the
+            way back. An empty library or folder offers its first upload to
+            someone who can, here where the first row will land; the whole
+            page is a drop target too.
           */
           deferredSearch ? (
-            <NestedEmpty
-              sole
-              title="No documents match that search"
-              description={
-                activeFolder === null
-                  ? `Nothing in the chapter library has "${deferredSearch}" in its title.`
-                  : `No match in this folder. Try "All files" to search the whole library.`
-              }
-            />
+            <InlineNote>
+              {activeFolder === null ? (
+                <>
+                  No documents match “{deferredSearch}”.{" "}
+                  <InlineNoteAction onClick={() => setSearch("")}>
+                    Clear search
+                  </InlineNoteAction>
+                </>
+              ) : (
+                <>
+                  {activeFolder === ""
+                    ? `No documents outside a folder match “${deferredSearch}”.`
+                    : `Nothing in ${activeFolder} matches “${deferredSearch}”.`}{" "}
+                  <InlineNoteAction onClick={onShowAllFiles}>
+                    Search all files
+                  </InlineNoteAction>
+                </>
+              )}
+            </InlineNote>
           ) : (
-            <NestedEmpty
-              sole
-              title="No documents here yet"
-              description="Upload chapter files like bylaws, agendas, and meeting minutes so everyone can find them."
-            />
+            <InlineNote>
+              {activeFolder === null
+                ? "No documents yet."
+                : activeFolder === ""
+                  ? "Every document is in a folder."
+                  : `Nothing in ${activeFolder} yet.`}
+              {onUpload ? (
+                <>
+                  {" "}
+                  <InlineNoteAction
+                    onClick={onUpload}
+                    {...gate.controlProps()}
+                  >
+                    Upload a file
+                  </InlineNoteAction>{" "}
+                  or drop one anywhere on this page.
+                </>
+              ) : null}
+            </InlineNote>
           )
         ) : (
           /*

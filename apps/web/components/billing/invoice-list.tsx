@@ -43,7 +43,8 @@ import {
 } from "@/components/ui/select";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
-import { NestedEmpty, NestedError } from "@/components/shared/nested-states";
+import { NestedError } from "@/components/shared/nested-states";
+import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import {
   dashboardCheckboxHitAreaClassName,
   dashboardFilterSelectClassName,
@@ -709,18 +710,38 @@ export function InvoiceList({ id }: { id?: string }) {
           onRetry={() => void invoicesQuery.refetch()}
         />
       ) : filtered.length === 0 ? (
+        /*
+          One line where the rows go (empty-states plan rule 7, `writing.md`
+          §4). A miss offers the way back; an officer with nothing billed yet
+          gets the first invoice from the line itself, the same gated dialog
+          the toolbar's Create invoice opens.
+        */
         statusFilter === "all" && !search.trim() ? (
-          <NestedEmpty
-            sole
-            title={stateMicrocopy.billing.emptyTitle}
-            description={stateMicrocopy.billing.emptyDescription}
-          />
+          canManage ? (
+            <InlineNote>
+              {stateMicrocopy.billing.empty}{" "}
+              <InlineNoteAction
+                onClick={() => createDialog.setOpen(true)}
+                {...gate.controlProps()}
+              >
+                Create the first invoice
+              </InlineNoteAction>
+            </InlineNote>
+          ) : (
+            <InlineNote>{stateMicrocopy.billing.emptyMember}</InlineNote>
+          )
         ) : (
-          <NestedEmpty
-            sole
-            title="No invoices match this filter"
-            description="Try a different status, or clear the filter to see every invoice."
-          />
+          <InlineNote>
+            {stateMicrocopy.billing.noMatches}{" "}
+            <InlineNoteAction
+              onClick={() => {
+                setSearch("");
+                setStatusFilter("all");
+              }}
+            >
+              Clear filters
+            </InlineNoteAction>
+          </InlineNote>
         )
       ) : (
         <>
