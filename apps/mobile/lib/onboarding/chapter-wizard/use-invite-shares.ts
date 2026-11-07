@@ -5,8 +5,9 @@ import { serverMessageOf } from "@repo/api-sdk";
 import { inviteTokenOf, webJoinUrl } from "./invite-link";
 
 /**
- * The setup invite step's links (`spec/behavior/onboarding.md`, owner pick
- * 2026-11-06 "Share first").
+ * Share-first invite links: setup's invite step (`spec/behavior/onboarding.md`,
+ * owner pick 2026-11-06 "Share first") and, inside a chapter, the Invite
+ * members screen (`app/(tabs)/invite.tsx`) draw the same flow from here.
  *
  * An invite lets one person in and lapses after a day, so every press of
  * Share invite mints a fresh link and opens the share sheet with it. The
@@ -22,7 +23,11 @@ import { inviteTokenOf, webJoinUrl } from "./invite-link";
  * so a link that someone redeems reads Joined.
  */
 
-/** The role a setup invite grants: the chapter's default, by name. */
+/**
+ * The role a setup invite grants, by name: the seeded Member role
+ * (`spec/behavior/onboarding.md`). Not the chapter's configured default,
+ * which the Invite members screen gets by naming no role.
+ */
 export const INVITE_ROLE = "Member";
 
 /** How often the step re-reads the chapter's invites to mark a link Joined. */
@@ -50,14 +55,27 @@ export function inviteShareContent(
   return { message: `Join ${chapterName} on Frapp\n${url}` };
 }
 
-/** The tokens in a `GET /v1/invites` answer that have been redeemed. */
+/**
+ * The tokens in a `GET /v1/invites` answer that someone joined with.
+ *
+ * A row's `status` decides (#3607): revoking a link also stamps `used_at`, so
+ * `used_at` alone would show a revoked link as Joined. `used_at` is read only
+ * from a row with no `status`, which an API older than #3652 sends; a store
+ * build can meet one during a deploy.
+ */
 export function usedInviteTokens(list: unknown): Set<string> {
   const used = new Set<string>();
   if (!Array.isArray(list)) return used;
   for (const row of list) {
     if (!row || typeof row !== "object") continue;
-    const { token, used_at } = row as { token?: unknown; used_at?: unknown };
-    if (typeof token === "string" && used_at) used.add(token);
+    const { token, status, used_at } = row as {
+      token?: unknown;
+      status?: unknown;
+      used_at?: unknown;
+    };
+    if (typeof token !== "string") continue;
+    const joined = typeof status === "string" ? status === "joined" : !!used_at;
+    if (joined) used.add(token);
   }
   return used;
 }
@@ -65,11 +83,19 @@ export function usedInviteTokens(list: unknown): Set<string> {
 export function useInviteShares({
   active,
   chapterName,
+  role,
   onError,
 }: {
   /** True while the invite step is on screen. */
   active: boolean;
   chapterName: string;
+  /**
+   * The role joining grants, by name. Setup names {@link INVITE_ROLE}; the
+   * Invite members screen leaves it out, so the server grants the chapter's
+   * configured default invite role (`default_invite_role_id`, #422), as web's
+   * invite dialog does.
+   */
+  role?: string;
   onError: (message: string | null) => void;
 }) {
   const createInvite = useCreateInvite();
@@ -97,7 +123,7 @@ export function useInviteShares({
     const run = (async () => {
       try {
         const token = inviteTokenOf(
-          await createInvite.mutateAsync({ role: INVITE_ROLE }),
+          await createInvite.mutateAsync(role ? { role } : {}),
         );
         if (!token) {
           onError("The invite did not return a token. Try again in a moment.");
