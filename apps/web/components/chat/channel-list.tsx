@@ -1,22 +1,19 @@
 "use client";
 
 import { useCallback, useId, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, EyeOff, ListFilter } from "lucide-react";
+import { ChevronDown, ChevronRight, ListFilter } from "lucide-react";
 import {
   arrangeChannelSidebar,
   canHideConversation,
   directChannelDisplayName,
   groupChannelsByCategory,
   HIDDEN_CONVERSATIONS_LABEL,
-  HIDE_CONVERSATION_LABEL,
   foldedSectionAnnouncement,
   HIDE_MUTED_LABEL,
   isAddressed,
   NO_MATCHING_CHANNELS,
-  PIN_TO_TOP_LABEL,
   SHOW_ALL_CHANNELS_LABEL,
   sidebarSections,
-  UNPIN_FROM_TOP_LABEL,
   UNREAD_ONLY_LABEL,
   type DisplayNameMap,
   type SidebarFilterChange,
@@ -36,7 +33,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { compactControlClassName } from "@/components/shared/table-controls";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { AuditGlyph, LockGlyph, MuteGlyph, PinGlyph } from "./chat-glyphs";
+import { AuditGlyph, LockGlyph, MuteGlyph } from "./chat-glyphs";
+import { ChannelRowMenu, type ChannelRowActions } from "./channel-row-menu";
 import { isSystemChannel } from "./channel-start";
 import { cn, initials } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
@@ -226,10 +224,16 @@ export interface ChannelListProps {
    */
   onPick: (channel: ChatChannel) => void;
   /**
-   * Offer Hide on each 1:1 DM row (#2303). The caller confirms; the rail only
-   * asks. Absent, no row offers it.
+   * Offer Hide on each 1:1 DM row's right-click menu (#2303). The caller
+   * confirms; the rail only asks. Absent, no row offers it.
    */
   onHide?: (channel: ChatChannel) => void;
+  /**
+   * The rest of a row's right-click menu: mark read, notifications, copy
+   * link, and for `channels:manage` edit and delete (owner, 2026-11-06).
+   * Absent, the menu offers only pin and hide.
+   */
+  rowActions?: ChannelRowActions;
   /**
    * Pins, folds and filters (#2877). Absent, the rail draws the default
    * arrangement and offers no pin or fold control.
@@ -263,6 +267,7 @@ export function ChannelList({
   categories = NO_CATEGORIES,
   onPick,
   onHide,
+  rowActions,
   sidebar,
 }: ChannelListProps) {
   const preferences = sidebar?.preferences ?? DEFAULT_PREFERENCES;
@@ -386,43 +391,63 @@ export function ChannelList({
     const pinned = preferences.pinnedIds.has(channel.id);
     const offersHide =
       !!onHide && canHideConversation(channel) && !channel.hidden;
+    // Every row action lives in the right-click menu (owner, 2026-11-06:
+    // "take away the pin option on hover"). The row draws no hover controls,
+    // so its end is free for the mute mark and the badge alone.
     return (
-      <li key={channel.id} className="group relative">
-        <button
-          type="button"
-          onClick={() => onPick(channel)}
-          aria-current={isActive ? "page" : undefined}
-          // `1b` pin 6 and the `3a` geometry table: a channel row
-          // is 32px at radius 8, tighter than the 34px/r10 nav row
-          // above it, because a rail of channels is a longer list
-          // than a rail of sections. 14/600 type, and the accent
-          // tint still marks the active row the way the nav's does.
-          className={cn(
-            "flex h-8 w-full items-center gap-2 rounded-xs px-2 text-left text-sm transition-colors",
+      <ChannelRowMenu
+        key={channel.id}
+        channel={channel}
+        unread={isUnread}
+        pinned={sidebar ? pinned : null}
+        onTogglePin={() => sidebar?.onSetPinned(channel, !pinned)}
+        onHide={offersHide ? () => onHide?.(channel) : undefined}
+        actions={rowActions}
+      >
+        <li
+          // The row stays lit while its menu is open, so the member can see
+          // which channel the menu is for.
+          className={
             isActive
-              ? "bg-accent-subtle font-semibold text-accent-text"
-              : isUnread
-                ? "font-semibold text-foreground hover:bg-card"
-                : "text-muted-foreground hover:bg-card hover:text-foreground",
-          )}
+              ? undefined
+              : "[&[data-state=open]>button]:bg-card [&[data-state=open]>button]:text-foreground"
+          }
         >
-          <ChannelMark channel={channel} title={titleFor(channel)} />
-          <span className="truncate">{titleFor(channel)}</span>
-          <span className="ml-auto flex shrink-0 items-center gap-1.5">
-            {/*
+          <button
+            type="button"
+            onClick={() => onPick(channel)}
+            aria-current={isActive ? "page" : undefined}
+            // `1b` pin 6 and the `3a` geometry table: a channel row
+            // is 32px at radius 8, tighter than the 34px/r10 nav row
+            // above it, because a rail of channels is a longer list
+            // than a rail of sections. 14/600 type, and the accent
+            // tint still marks the active row the way the nav's does.
+            className={cn(
+              "flex h-8 w-full items-center gap-2 rounded-xs px-2 text-left text-sm transition-colors",
+              isActive
+                ? "bg-accent-subtle font-semibold text-accent-text"
+                : isUnread
+                  ? "font-semibold text-foreground hover:bg-card"
+                  : "text-muted-foreground hover:bg-card hover:text-foreground",
+            )}
+          >
+            <ChannelMark channel={channel} title={titleFor(channel)} />
+            <span className="truncate">{titleFor(channel)}</span>
+            <span className="ml-auto flex shrink-0 items-center gap-1.5">
+              {/*
               The glyphs below are `aria-hidden` (every duotone
               glyph is), so each carries its own `sr-only` word.
               The muted state used to be the literal text "muted",
               which a screen reader read for free; swapping it for a
               mark without this would have silently dropped it.
             */}
-            {channel.muted ? (
-              <>
-                <MuteGlyph className="h-4 w-4 text-muted-foreground" active />
-                <span className="sr-only">Muted</span>
-              </>
-            ) : null}
-            {/*
+              {channel.muted ? (
+                <>
+                  <MuteGlyph className="h-4 w-4 text-muted-foreground" active />
+                  <span className="sr-only">Muted</span>
+                </>
+              ) : null}
+              {/*
               No read-only mark here any more (#2877). The lock that used to
               sit at this end meant "read-only" while the same glyph at the
               start of a row means "private", and the Discord import makes
@@ -430,55 +455,19 @@ export function ChannelList({
               row. The channel says it is read-only where that matters, in
               its composer.
             */}
-            {isUnread ? (
-              <Badge
-                variant={hasMention ? "mention" : "secondary"}
-                className="h-6 justify-center px-2"
-                aria-label={unreadAnnouncement(counts, isDm(channel))}
-              >
-                {badgeLabel(counts.unreadCount, counts.mentionCount)}
-              </Badge>
-            ) : null}
-          </span>
-        </button>
-        {offersHide ? (
-          // A sibling of the row, not inside it: a button cannot hold a
-          // button. Revealed on hover and on keyboard focus, and it sits over
-          // the badge while shown, the way a row action does in a chat rail.
-          // It takes no pointer events until then: Tailwind's `group-hover`
-          // applies only where the device can hover, so on touch it would
-          // otherwise be an invisible target over the badge that opens the
-          // hide dialog instead of the thread. Touch hides from the open DM's
-          // `⋯` menu instead.
-          <button
-            type="button"
-            onClick={() => onHide?.(channel)}
-            aria-label={`${HIDE_CONVERSATION_LABEL} with ${titleFor(channel)}`}
-            title={HIDE_CONVERSATION_LABEL}
-            className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-xs bg-card text-muted-foreground pointer-events-none opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
-          >
-            <EyeOff className="h-4 w-4" aria-hidden="true" />
+              {isUnread ? (
+                <Badge
+                  variant={hasMention ? "mention" : "secondary"}
+                  className="h-6 justify-center px-2"
+                  aria-label={unreadAnnouncement(counts, isDm(channel))}
+                >
+                  {badgeLabel(counts.unreadCount, counts.mentionCount)}
+                </Badge>
+              ) : null}
+            </span>
           </button>
-        ) : null}
-        {sidebar && !channel.hidden ? (
-          // Beside Hide, on the same terms: revealed on hover and keyboard
-          // focus, inert to touch, where the channel menu's Pin to top row is
-          // the way in.
-          <button
-            type="button"
-            onClick={() => sidebar.onSetPinned(channel, !pinned)}
-            aria-label={`${pinned ? UNPIN_FROM_TOP_LABEL : PIN_TO_TOP_LABEL}: ${titleFor(channel)}`}
-            title={pinned ? UNPIN_FROM_TOP_LABEL : PIN_TO_TOP_LABEL}
-            className={cn(
-              "absolute top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-xs bg-card text-muted-foreground pointer-events-none opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100",
-              offersHide ? "right-8" : "right-1",
-            )}
-          >
-            {/* The channel menu's Pin to top row draws the same glyph. */}
-            <PinGlyph className="h-4 w-4" active={pinned} />
-          </button>
-        ) : null}
-      </li>
+        </li>
+      </ChannelRowMenu>
     );
   };
 
