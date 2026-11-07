@@ -517,6 +517,8 @@ describe('DiscordImportService — starting', () => {
       attempt_count: 0,
       role_mapping: [],
     });
+    // And does not wait out a pause a temporary error left on the row.
+    expect(repo.clearPause).toHaveBeenCalledWith(IMPORT_ID, CHAPTER);
   });
 });
 
@@ -577,8 +579,20 @@ describe('DiscordImportService — lifecycle guards', () => {
     await service.requestPurge(IMPORT_ID, CHAPTER);
     expect(repo.update).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, {
       status: 'purging',
-      // The deletion's tries count from zero (#1692).
+      // The deletion's tries count from zero, and the page shows `error`
+      // while deleting, so the import's last one goes (#1692).
       attempt_count: 0,
+      error: null,
+    });
+    // Nor does it wait out a pause the import was left in.
+    expect(repo.clearPause).toHaveBeenCalledWith(IMPORT_ID, CHAPTER);
+  });
+
+  it("keeps a failed import's reason when it is cancelled (#1692)", async () => {
+    await build(job({ status: 'failed', error: 'Discord refused the bot.' }));
+    await service.cancel(IMPORT_ID, CHAPTER);
+    expect(repo.update).toHaveBeenCalledWith(IMPORT_ID, CHAPTER, {
+      status: 'cancelled',
     });
   });
 

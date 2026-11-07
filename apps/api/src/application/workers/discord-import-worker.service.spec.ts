@@ -13,7 +13,9 @@ import {
   MAX_IMPORT_ATTEMPTS,
   importRetryDelayMs,
   isTransientImportFailure,
+  willRetryImport,
 } from './discord-import-retry';
+import { ArchiveMediaCopyError } from '#domain/adapters/archive-media-copier.interface';
 import { ARCHIVE_MEDIA_COPY_BUDGET_MS } from '../../infrastructure/storage/supabase-archive-media-copier.service';
 import { ChannelCacheService } from '../services/channel-cache.service';
 import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
@@ -1953,11 +1955,16 @@ describe('worker constants', () => {
 // used to fail an import for good, hours in. It now waits and tries again,
 // up to MAX_IMPORT_ATTEMPTS in one streak (#1692).
 describe('DiscordImportWorkerService — temporary failures (#1692)', () => {
-  /** A slice whose download throws `error`. */
-  async function failingWith(error: unknown, attempt: number) {
-    repoRef = makeRepo(job({ status: 'running', attempt_count: attempt }));
+  /** A slice whose download throws `error`, on a job `failures` into a streak. */
+  async function failingWith(
+    error: unknown,
+    failures: number,
+    onFail: () => void = () => undefined,
+  ) {
+    repoRef = makeRepo(job({ status: 'running', attempt_count: failures }));
     const storage = makeStorage(part000());
     storage.downloadFile.mockImplementation(async () => {
+      onFail();
       throw error;
     });
     const notifications = { notifyUser: jest.fn(async () => undefined) };
@@ -1967,72 +1974,105 @@ describe('DiscordImportWorkerService — temporary failures (#1692)', () => {
     return { result, notifications };
   }
 
+  /** The `pauseUntil` the release carried, if any. */
+  function releasedPause(): Date | undefined {
+    const calls = repoRef.releaseLease.mock.calls as unknown as [
+      string,
+      string,
+      { pauseUntil?: Date }?,
+    ][];
+    return calls.at(-1)?.[2]?.pauseUntil;
+  }
+
+  /** Within a few seconds of `delayMs` past NOW: the slice's own run time. */
+  function expectPauseOf(delayMs: number) {
+    const pause = releasedPause();
+    expect(pause).toBeInstanceOf(Date);
+    const past = pause!.getTime() - NOW.getTime();
+    expect(past).toBeGreaterThanOrEqual(delayMs);
+    expect(past).toBeLessThan(delayMs + 5_000);
+  }
+
   const schemaCacheMiss = {
     code: 'PGRST202',
     message: 'Could not find the function in the schema cache',
   };
 
-  it('keeps the job running, holds the lease for a pause, and says so', async () => {
-    const { result, notifications } = await failingWith(schemaCacheMiss, 1);
+  it('keeps the job running, pauses it, and says so', async () => {
+    const { result, notifications } = await failingWith(schemaCacheMiss, 0);
 
     expect(result).toMatchObject({ claimed: true, finished: false });
     expect(repoRef.state().status).toBe('running');
     expect(repoRef.state().error).toBe(
       'The import hit a temporary problem and paused. Try 2 of 5 starts in about a minute.',
     );
-    // Held for the pause rather than released, so no tick claims it sooner.
-    expect(repoRef.renewLease).toHaveBeenCalledWith(
-      IMPORT_ID,
-      'token-1',
-      NOW,
-      importRetryDelayMs(1),
-    );
-    expect(repoRef.releaseLease).not.toHaveBeenCalled();
+    expect(repoRef.state().attempt_count).toBe(1);
+    // Released with its lease running to the end of the pause, so no tick
+    // claims it sooner and it holds no worker meanwhile.
+    expectPauseOf(importRetryDelayMs(1));
     expect(reportedSites()).toEqual(['discord-import-job-retrying']);
     // Nothing ended, so nobody is told it did.
     expect(notifications.notifyUser).not.toHaveBeenCalled();
   });
 
   it('waits longer after each try', async () => {
-    await failingWith(new TypeError('fetch failed'), 3);
+    await failingWith(new TypeError('fetch failed'), 2);
 
-    expect(repoRef.renewLease).toHaveBeenCalledWith(
-      IMPORT_ID,
-      'token-1',
-      NOW,
-      4 * 60_000,
-    );
+    expectPauseOf(4 * 60_000);
     expect(repoRef.state().error).toContain('Try 4 of 5');
+    expect(repoRef.state().attempt_count).toBe(3);
+  });
+
+  it('counts the pause from when the slice failed, not when the tick began', async () => {
+    let clock = 1_000_000;
+    const now = jest.spyOn(Date, 'now').mockImplementation(() => clock);
+    try {
+      // The slice ran 40 s before it failed.
+      await failingWith(schemaCacheMiss, 0, () => {
+        clock += 40_000;
+      });
+    } finally {
+      now.mockRestore();
+    }
+
+    expect(releasedPause()?.getTime()).toBe(NOW.getTime() + 40_000 + 60_000);
   });
 
   it('stops after the last try and says why', async () => {
-    const { result } = await failingWith(schemaCacheMiss, MAX_IMPORT_ATTEMPTS);
+    const { result } = await failingWith(
+      schemaCacheMiss,
+      MAX_IMPORT_ATTEMPTS - 1,
+    );
 
     expect(result).toMatchObject({ finished: true });
     expect(repoRef.state().status).toBe('failed');
     expect(repoRef.state().error).toBe(
       `Stopped after ${MAX_IMPORT_ATTEMPTS} tries that each hit a temporary error. The last one: PGRST202: Could not find the function in the schema cache`,
     );
-    expect(repoRef.releaseLease).toHaveBeenCalled();
+    expect(releasedPause()).toBeUndefined();
     expect(reportedSites()).toEqual(['discord-import-job-failed']);
   });
 
+  it('reads a count left from before the streak was kept as no streak', async () => {
+    // The claim used to bump `attempt_count` on every slice.
+    await failingWith(schemaCacheMiss, 37);
+
+    expect(repoRef.state().status).toBe('running');
+    expect(repoRef.state().error).toContain('Try 2 of 5');
+    expect(repoRef.state().attempt_count).toBe(1);
+  });
+
   it('fails at once on an error that will not clear', async () => {
-    await failingWith(new Error('storage exploded'), 1);
+    await failingWith(new Error('storage exploded'), 0);
 
     expect(repoRef.state().status).toBe('failed');
     expect(repoRef.state().error).toBe('storage exploded');
-    expect(repoRef.renewLease).not.toHaveBeenCalledWith(
-      IMPORT_ID,
-      'token-1',
-      NOW,
-      expect.any(Number),
-    );
+    expect(releasedPause()).toBeUndefined();
   });
 
   it('fails at once on a refusal the admin must act on', async () => {
     // Discord refusing the bot is the admin's to fix; trying again cannot.
-    await failingWith(new DiscordApiError('Missing Access', 403), 1);
+    await failingWith(new DiscordApiError('Missing Access', 403), 0);
 
     expect(repoRef.state().status).toBe('failed');
     expect(reportedSites()).toEqual([]);
@@ -2052,17 +2092,19 @@ describe('DiscordImportWorkerService — temporary failures (#1692)', () => {
 
     expect(repoRef.releaseLease).toHaveBeenCalledWith(IMPORT_ID, 'token-1', {
       endRetryStreak: true,
+      pauseUntil: undefined,
     });
   });
 
-  it('leaves the count alone after a clean first try', async () => {
-    repoRef = makeRepo(job({ status: 'running', attempt_count: 1 }));
+  it('writes nothing extra after a clean slice with no streak', async () => {
+    repoRef = makeRepo(job({ status: 'running', attempt_count: 0 }));
     const { worker } = await buildWorker(repoRef, makeStorage(part000()));
 
     await worker.sweepImports(NOW);
 
     expect(repoRef.releaseLease).toHaveBeenCalledWith(IMPORT_ID, 'token-1', {
       endRetryStreak: false,
+      pauseUntil: undefined,
     });
   });
 });
@@ -2077,6 +2119,28 @@ describe('isTransientImportFailure (#1692)', () => {
       'a request that never reached PostgREST',
       Object.assign(new Error('TypeError: fetch failed'), {
         name: 'SupabaseQueryError',
+      }),
+    ],
+    [
+      'a PostgREST request that timed out',
+      Object.assign(
+        new Error(
+          'AbortError: This operation was aborted: Request was aborted (timeout or manual cancellation)',
+        ),
+        { name: 'SupabaseQueryError' },
+      ),
+    ],
+    [
+      'Storage unreachable',
+      Object.assign(new Error('fetch failed'), {
+        name: 'StorageUnknownError',
+        originalError: new TypeError('fetch failed'),
+      }),
+    ],
+    [
+      'the copy service having a bad moment',
+      new ArchiveMediaCopyError('the copy service answered 503', {
+        retryable: true,
       }),
     ],
     ['undici giving up', new TypeError('fetch failed')],
@@ -2102,10 +2166,46 @@ describe('isTransientImportFailure (#1692)', () => {
     ['a Discord refusal', new DiscordApiError('Missing Access', 403)],
     ['a Discord integrity refusal', new DiscordApiError('Refusing to import')],
     ['a Storage 400', { statusCode: '400' }],
+    [
+      'a codeless PostgREST error that is not a dropped request',
+      Object.assign(new Error('<html>Bad Request</html>'), {
+        name: 'SupabaseQueryError',
+      }),
+    ],
+    [
+      'a request whose own headers were too big',
+      Object.assign(
+        new Error(
+          'TypeError: fetch failed: HTTP headers exceeded server limits (typically 16KB)',
+        ),
+        { name: 'SupabaseQueryError' },
+      ),
+    ],
+    [
+      'Storage failing for a reason that will not clear',
+      Object.assign(new Error('Unexpected token'), {
+        name: 'StorageUnknownError',
+        originalError: new SyntaxError('Unexpected token'),
+      }),
+    ],
+    [
+      'the copy service refusing the request',
+      new ArchiveMediaCopyError('the copy service answered 401'),
+    ],
     ['nothing', undefined],
     ['a string', 'PGRST202'],
   ])('does not retry %s', (_what, error) => {
     expect(isTransientImportFailure(error)).toBe(false);
+  });
+
+  it('tries again only while the streak has tries left', () => {
+    const blip = { code: 'PGRST000' };
+    expect(willRetryImport(blip, 0)).toBe(true);
+    expect(willRetryImport(blip, MAX_IMPORT_ATTEMPTS - 2)).toBe(true);
+    expect(willRetryImport(blip, MAX_IMPORT_ATTEMPTS - 1)).toBe(false);
+    // A pre-#1692 claim count is no streak at all.
+    expect(willRetryImport(blip, 40)).toBe(true);
+    expect(willRetryImport(new Error('nope'), 0)).toBe(false);
   });
 
   it('pauses 1, 2, 4, then 8 minutes, and never more than 15', () => {

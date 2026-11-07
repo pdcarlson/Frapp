@@ -518,6 +518,115 @@ describe('SupabaseDiscordImportRepository — releasing the lease (#1692)', () =
       { lock_token: null, locked_by: null, lease_expires_at: null },
     ]);
   });
+
+  it('pauses by releasing with the lease running to the end of the pause', async () => {
+    const { repo, patches } = capture();
+    const until = new Date('2026-11-07T00:05:00.000Z');
+
+    await repo.releaseLease(IMPORT_A, 'token-1', { pauseUntil: until });
+
+    expect(patches).toEqual([
+      {
+        lock_token: null,
+        locked_by: null,
+        lease_expires_at: until.toISOString(),
+      },
+    ]);
+  });
+});
+
+describe('SupabaseDiscordImportRepository — paused jobs (#1692)', () => {
+  /**
+   * A client whose every query records its calls and answers with the next
+   * of `answers`, in the order the queries were started.
+   */
+  function recording(answers: unknown[]) {
+    const queries: [string, unknown[]][][] = [];
+    const from = jest.fn(() => {
+      const calls: [string, unknown[]][] = [];
+      queries.push(calls);
+      const answer = answers[queries.length - 1];
+      const builder: Record<string, unknown> = new Proxy(
+        {},
+        {
+          get(_target, prop: string) {
+            if (prop === 'then') {
+              return (resolve: (value: unknown) => unknown) => resolve(answer);
+            }
+            return (...args: unknown[]) => {
+              calls.push([prop, args]);
+              return builder;
+            };
+          },
+        },
+      );
+      return builder;
+    });
+    const repo = new SupabaseDiscordImportRepository({
+      from,
+    } as unknown as ConstructorParameters<
+      typeof SupabaseDiscordImportRepository
+    >[0]);
+    return { repo, queries };
+  }
+
+  const NOW = new Date('2026-11-07T00:00:00.000Z');
+  const row = (fields: Record<string, unknown>) => ({
+    id: IMPORT_A,
+    chapter_id: CHAPTER_A,
+    status: 'running',
+    lock_token: null,
+    lease_expires_at: null,
+    attempt_count: 2,
+    ...fields,
+  });
+
+  it('leaves held and paused rows out of the query, before the limit', async () => {
+    const { repo, queries } = recording([{ data: [], error: null }]);
+
+    await repo.claimNextRunnable(NOW, 300_000, 'worker-1');
+
+    expect(queries[0]).toContainEqual([
+      'or',
+      [`lease_expires_at.is.null,lease_expires_at.lte."${NOW.toISOString()}"`],
+    ]);
+    const names = queries[0].map(([name]) => name);
+    expect(names.indexOf('or')).toBeLessThan(names.indexOf('limit'));
+  });
+
+  it('passes over a paused row that slipped into the read, and does not count claims', async () => {
+    const paused = row({
+      id: 'paused',
+      lease_expires_at: '2026-11-07T00:04:00.000Z',
+    });
+    const free = row({ id: 'free' });
+    const { repo, queries } = recording([
+      { data: [paused, free], error: null },
+      { data: free, error: null },
+    ]);
+
+    const claim = await repo.claimNextRunnable(NOW, 300_000, 'worker-1');
+
+    expect(claim?.job.id).toBe('free');
+    const [update] = queries[1];
+    expect(update[0]).toBe('update');
+    // `attempt_count` counts failures now, which the worker writes.
+    expect(update[1][0]).not.toHaveProperty('attempt_count');
+    expect(queries[1]).toContainEqual(['eq', ['id', 'free']]);
+  });
+
+  it('clears a pause only on a released row of the chapter', async () => {
+    const { repo, queries } = recording([{ error: null }]);
+
+    await repo.clearPause(IMPORT_A, CHAPTER_A);
+
+    expect(queries[0]).toEqual([
+      ['update', [{ lease_expires_at: null }]],
+      ['eq', ['id', IMPORT_A]],
+      ['eq', ['chapter_id', CHAPTER_A]],
+      ['is', ['lock_token', null]],
+    ]);
+  });
 });
 
 /**

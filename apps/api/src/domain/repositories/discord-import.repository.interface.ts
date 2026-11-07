@@ -220,6 +220,12 @@ export interface IDiscordImportRepository {
    * Claim one runnable job, or null when there is nothing to do or the race was
    * lost. Compare-and-swap on `lock_token`: `@Cron` fires on every replica, so
    * the claim has to be the thing that decides, not the read that preceded it.
+   *
+   * A row whose `lease_expires_at` is still ahead is passed over whether or not
+   * it holds a token: held, a worker is on it; released, it is sitting out a
+   * pause after a temporary error (#1692). The filter is in the query, so a
+   * handful of paused jobs at the head of the queue cannot hide the ones behind
+   * them.
    */
   claimNextRunnable(
     now: Date,
@@ -252,12 +258,24 @@ export interface IDiscordImportRepository {
    * `error`. Folded into the release, so ending a streak costs no extra write,
    * and bound to the lease like the release, so a worker that lost the job
    * cannot clear a note the new holder just wrote.
+   *
+   * `pauseUntil` is for a slice that failed on one: the job is released with
+   * `lease_expires_at` set to then, which the claim reads as "not yet". The
+   * token is cleared all the same, so a paused job holds no worker and
+   * {@link clearPause} can tell a pause from a lease.
    */
   releaseLease(
     id: string,
     lockToken: string,
-    options?: { endRetryStreak?: boolean },
+    options?: { endRetryStreak?: boolean; pauseUntil?: Date },
   ): Promise<void>;
+
+  /**
+   * Let the next tick claim a paused job at once (#1692): an admin who
+   * restarts or deletes an import should not wait out the pause a temporary
+   * error left on it. Touches only a released row, never a held lease.
+   */
+  clearPause(id: string, chapterId: string): Promise<void>;
 
   // ── the import write path ─────────────────────────────────────────────────
   /**

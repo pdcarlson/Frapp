@@ -317,7 +317,11 @@ export function ImportDeleting({ row }: { row: ImportRow }) {
       <h2 id="discord-import-deleting" className="text-headline">
         Deleting the import
       </h2>
-      <p className="text-sm text-muted-foreground">{purgeLine(row)}</p>
+      {/* The worker's "paused" note stands in for the count, as it does
+          while importing (#1692). */}
+      <p className="text-sm text-muted-foreground">
+        {row.error ?? purgeLine(row)}
+      </p>
       {progress && progress.left > 0 ? (
         <div className="space-y-1">
           <Meter percent={progress.percent} />

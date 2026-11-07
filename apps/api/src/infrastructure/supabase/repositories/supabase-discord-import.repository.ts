@@ -530,21 +530,26 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     leaseMs: number,
     workerId: string,
   ): Promise<ClaimedDiscordImport | null> {
+    const nowIso = now.toISOString();
     const { data: candidates, error } = await this.supabase
       .from('discord_imports')
       .select('*')
       .in('status', ['ready', 'running', 'purging'])
+      // Held or paused rows are left out here, not after the limit, so they
+      // cannot fill the five and starve the jobs queued behind them.
+      .or(`lease_expires_at.is.null,lease_expires_at.lte."${nowIso}"`)
       .order('created_at', { ascending: true })
       .limit(5);
     if (error) throw new SupabaseQueryError(error);
 
-    const nowIso = now.toISOString();
     for (const candidate of candidates ?? []) {
-      const leaseHeld =
-        candidate.lock_token !== null &&
+      // Checked again, against the same clock, in case the row moved between
+      // the query and here: a held lease, or a pause (#1692), which leaves the
+      // token null and the expiry ahead.
+      const notYet =
         candidate.lease_expires_at !== null &&
         candidate.lease_expires_at > nowIso;
-      if (leaseHeld) continue;
+      if (notYet) continue;
 
       const lockToken = randomUUID();
       // Compare-and-swap: the claim is what decides, not the read above. A
@@ -557,7 +562,8 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
           lock_token: lockToken,
           locked_by: workerId,
           lease_expires_at: new Date(now.getTime() + leaseMs).toISOString(),
-          attempt_count: candidate.attempt_count + 1,
+          // `attempt_count` is not touched: it counts failures in a streak,
+          // which the worker writes when a slice fails (#1692).
           updated_at: nowIso,
         })
         .eq('id', candidate.id);
@@ -599,18 +605,28 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
   async releaseLease(
     id: string,
     lockToken: string,
-    options: { endRetryStreak?: boolean } = {},
+    options: { endRetryStreak?: boolean; pauseUntil?: Date } = {},
   ): Promise<void> {
     const { error } = await this.supabase
       .from('discord_imports')
       .update({
         lock_token: null,
         locked_by: null,
-        lease_expires_at: null,
+        lease_expires_at: options.pauseUntil?.toISOString() ?? null,
         ...(options.endRetryStreak ? { attempt_count: 0, error: null } : {}),
       })
       .eq('id', id)
       .eq('lock_token', lockToken);
+    if (error) throw new SupabaseQueryError(error);
+  }
+
+  async clearPause(id: string, chapterId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('discord_imports')
+      .update({ lease_expires_at: null })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .is('lock_token', null);
     if (error) throw new SupabaseQueryError(error);
   }
 

@@ -536,6 +536,9 @@ export class DiscordImportService {
     );
     await this.channelMapping.provisionChannelGroups(id, chapterId, channels);
 
+    // A restart, or a start after a cancel, does not wait out a pause a
+    // temporary error left on the row (#1692).
+    await this.importRepo.clearPause(id, chapterId);
     return this.importRepo.update(id, chapterId, {
       status: 'ready',
       parts_total: partsTotal,
@@ -607,11 +610,13 @@ export class DiscordImportService {
     if (job.status === 'purged' || job.status === 'purging') {
       throw new ConflictException('This import is being deleted.');
     }
-    // `error` may hold the worker's "trying again" note (#1692), which a
-    // cancelled import must not keep showing.
+    // A live import's `error` can only be the worker's "trying again" note
+    // (#1692), which a cancelled import must not keep showing. A failed
+    // one's says why it failed, and stays.
+    const live = job.status === 'ready' || job.status === 'running';
     return this.importRepo.update(id, chapterId, {
       status: 'cancelled',
-      error: null,
+      ...(live ? { error: null } : {}),
     });
   }
 
@@ -632,10 +637,14 @@ export class DiscordImportService {
     }
     if (job.status === 'purged') return job;
     // The deletion's own tries at a temporary error count from zero, not on
-    // from the import's (#1692).
+    // from the import's, and start at once rather than after a pause the
+    // import was left in (#1692). The page shows `error` while deleting, so
+    // the import's last failure is cleared too.
+    await this.importRepo.clearPause(id, chapterId);
     return this.importRepo.update(id, chapterId, {
       status: 'purging',
       attempt_count: 0,
+      error: null,
     });
   }
 
