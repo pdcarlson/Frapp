@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { Can } from "@/components/shared/can";
-import { focusOfflineBanner } from "@/components/shared/offline-banner-focus";
+import { focusConnectionPill } from "@/components/shared/connection-pill-focus";
 import { useSubscriptionWriteState } from "@/lib/hooks/use-subscription-write-state";
 import { useNetwork } from "@/lib/providers/network-provider";
 import type {
@@ -176,7 +176,7 @@ export type GatedDialog = {
  * both enabled and where the user was — **except** when the trigger is
  * disabled because the connection dropped while the dialog was open. Offline
  * must not set `revokedRef` (must not slam the dialog), so that close needs
- * its own preempt: focus goes to `OfflineBanner`, already on screen.
+ * its own preempt: focus goes to `ConnectionPill`, already on screen.
  */
 export function useGatedDialog(gate: SubscriptionGate): GatedDialog {
   const [open, setOpenState] = useState(false);
@@ -228,17 +228,17 @@ export function useGatedDialog(gate: SubscriptionGate): GatedDialog {
         revokedRef.current = false;
         event.preventDefault();
         // Notice is unmounted on an offline-only block; fall through to the
-        // banner so focus still does not land on `<body>`.
+        // connection pill so focus still does not land on `<body>`.
         if (noticeRef.current) {
           noticeRef.current.focus();
         } else {
-          focusOfflineBanner();
+          focusConnectionPill();
         }
         return;
       }
       if (!isOffline) return;
       event.preventDefault();
-      focusOfflineBanner();
+      focusConnectionPill();
     },
     [isOffline, noticeRef],
   );
@@ -273,7 +273,7 @@ export type SubscriptionNoticeProps = {
  *
  * Renders nothing when the write is permitted, **and** when the only block
  * is OFFLINE — that reason lives on the control's `title` and on the global
- * `OfflineBanner`, not in a second live region.
+ * `ConnectionPill`, not in a second live region.
  * Callers can mount it unconditionally.
  *
  * The recovery link is wrapped in `<Can permission="billing:manage">` — the
@@ -291,7 +291,7 @@ export function SubscriptionNotice({
 }: SubscriptionNoticeProps) {
   const { allowed, isPending, isOffline, state, noticeId, noticeRef } = gate;
 
-  // Offline is already announced by `OfflineBanner` and by `title` on the
+  // Offline is already announced by `ConnectionPill` and by `title` on the
   // control. Rendering a notice here would (a) spin "Checking this chapter's
   // subscription…" forever, because the chapter fetch cannot resolve offline,
   // (b) offer "Complete checkout on the billing screen" which is itself

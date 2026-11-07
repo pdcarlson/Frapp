@@ -109,11 +109,11 @@ host for the DEGRADED/OFFLINE-from-health path (three consecutive failed
 
 | Screen | Control | Expected outcome |
 |---|---|---|
-| Any tab | Enter airplane mode | The banner appears at the top over ~200ms (an opacity transition, not a slide — see [`spec/ui/resilience/connection-state.md`](../../spec/ui/resilience/connection-state.md)), below the status bar and never under it, reading "You're offline. Showing cached data." Cached content stays on screen |
-| Any tab | Dismiss the banner | It fades out and returns after 30s if the connection has not recovered; a change of state clears the dismissal on its own. Expect the bar's **space** to remain while dismissed — known drift, recorded in connection-state.md |
-| Any tab | Leave airplane mode | The banner leaves without a tap, and stale queries refetch on their own — `onlineManager` is wired, so no force-quit is needed |
-| Chat thread | Compose and send while offline | The composer stays **enabled** and labels itself "You're offline — messages send when you reconnect."; the message queues and sends on reconnect. A disabled composer here is a regression — the outbox is the point |
-| Chat thread | Offline with the global banner up | The in-thread pill does **not** repeat "Offline"; it stays silent unless it has something the banner cannot say ("Real-time updates paused. Polling for new messages." or "Reconnecting…") |
+| Any tab | Enter airplane mode | A small pill fades in over ~200ms (an opacity transition, not a slide — see [`spec/ui/resilience/connection-state.md`](../../spec/ui/resilience/connection-state.md)) just below the status bar, with a red dot and "Offline". Nothing on screen moves. Tapping the label opens "You're offline. Showing cached data."; tapping again closes it. Cached content stays on screen |
+| Any tab | Dismiss the pill | It fades out and returns after 30s if the connection has not recovered; a change of state clears the dismissal on its own |
+| Any tab | Leave airplane mode | The pill leaves without a tap, and stale queries refetch on their own — `onlineManager` is wired, so no force-quit is needed |
+| Chat thread | Compose and send while offline | The composer stays **enabled**, with no offline line of its own; the pill's sentence (tap "Offline") reads "You're offline. Messages you send go out when you reconnect. Photos and files need a connection." The message queues and sends on reconnect. A disabled composer here is a regression — the outbox is the point |
+| Chat thread | Offline, or a slow connection | Exactly one connection indicator on screen: the pill. No band under the thread header and no hint line in the composer. A slow connection reads "Slow connection", never "Slow connection" plus "Reconnecting…" |
 | Service hours (s20 sheet) | Submit while offline | Submit is disabled, "Reconnect to make changes." is shown **and** read out as the button's hint. There is no queue here — a lost submit would be silent |
 | Check-in (s18) | Manual code submit while offline | Same: disabled with the reason stated. The camera keeps scanning — reading a QR code is local, and a latched read the member can retry beats a dead viewfinder |
 
