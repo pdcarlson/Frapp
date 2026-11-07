@@ -194,6 +194,9 @@ export function TourHost({ children }: { children: ReactNode }) {
     })();
     return () => {
       live = false;
+      // A dependency that changed mid-check (the chapter name arriving, an
+      // inset settling) must re-run the check, not leave it marked done.
+      checked.current = false;
     };
   }, [
     chat.ready,

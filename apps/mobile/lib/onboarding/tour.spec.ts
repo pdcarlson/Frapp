@@ -67,6 +67,12 @@ describe("first-run tour, once per member", () => {
     expect(await isTourDue("u-1", storage)).toBe(false);
   });
 
+  it("is due for anyone when s03 left before the member's id was known", async () => {
+    const storage = memoryStorage();
+    await markTourDue("*", storage);
+    expect(await isTourDue("u-1", storage)).toBe(true);
+  });
+
   it("treats a storage failure as not due, and never throws", async () => {
     const broken = {
       getItem: vi.fn().mockRejectedValue(new Error("disk")),

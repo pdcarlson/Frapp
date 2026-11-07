@@ -38,7 +38,7 @@ import {
   onboardingProfileAnsweredProperties,
   shouldOfferProfileStep,
 } from "@/lib/onboarding/profile-step";
-import { markTourDue } from "@/lib/onboarding/tour";
+import { TOUR_DUE_ANYONE, markTourDue } from "@/lib/onboarding/tour";
 import { usePushPrimer } from "@/lib/notifications/use-push-primer";
 import { useLatestTrack } from "@/lib/use-latest-track";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -123,7 +123,7 @@ export default function Welcome() {
     }
     // The tour over chat runs once, for the member who just came through here.
     const userId = (userQuery.data as { id?: string } | undefined)?.id;
-    if (userId) await markTourDue(userId);
+    await markTourDue(userId ?? TOUR_DUE_ANYONE);
     await queryClient.invalidateQueries({ queryKey: ["chapters"] });
     router.replace("/");
   }

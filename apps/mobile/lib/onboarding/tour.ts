@@ -62,6 +62,11 @@ export function tourProgressLabel(index: number, count: number) {
 
 /** The id of the member the tour is due for, set by s03 on the way out. */
 export const TOUR_DUE_STORAGE_KEY = "frapp.mobile.tour-due";
+/**
+ * Stored when s03 left before the member's profile read came back (it gives
+ * up after a few seconds): due for whoever opens chat next on this phone.
+ */
+export const TOUR_DUE_ANYONE = "*";
 
 type Storage = Pick<typeof AsyncStorage, "getItem" | "setItem" | "removeItem">;
 
@@ -85,7 +90,8 @@ export async function isTourDue(
   storage: Storage = AsyncStorage,
 ): Promise<boolean> {
   try {
-    return (await storage.getItem(TOUR_DUE_STORAGE_KEY)) === userId;
+    const due = await storage.getItem(TOUR_DUE_STORAGE_KEY);
+    return due === userId || due === TOUR_DUE_ANYONE;
   } catch {
     return false;
   }

@@ -40,7 +40,14 @@ function Anchor({ stop }: { stop: TourStopKey }) {
 }
 
 function ChatHome({ withChannels }: { withChannels: boolean }) {
-  useTourReady(true, "Phi Gamma Delta");
+  // The chapter's name arrives a moment after the list, as it can on device:
+  // the tour must still start, with the name.
+  const [name, setName] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    const timer = setTimeout(() => setName("Phi Gamma Delta"), 50);
+    return () => clearTimeout(timer);
+  }, []);
+  useTourReady(true, name);
   return (
     <>
       {withChannels ? <Anchor stop="channels" /> : null}
@@ -73,9 +80,11 @@ async function render(withChannels = true): Promise<ReactTestRenderer> {
     );
   });
   // The due read, then the host's settle delay before it measures.
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 520));
-  });
+  for (let i = 0; i < 12; i += 1) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+  }
   return tree;
 }
 
