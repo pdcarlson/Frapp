@@ -24,7 +24,7 @@ export interface Event {
    * Whether a member holding none of the listed roles is invited. When it is,
    * `is_mandatory` says whether they must attend.
    */
-  others_invited: boolean;
+  others_invited: boolean | null;
   notes: string | null;
   /**
    * Optional check-in geofence: the polygon a member must be standing inside for

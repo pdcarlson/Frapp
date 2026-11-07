@@ -106,7 +106,7 @@
 - Admins create events with name, description, location, start/end time, point value, mandatory flag, and optional recurrence rule.
 - **Recurring events:** Weekly, biweekly, or monthly. Auto-generates individual event instances.
 - **Attendance by role:** an event is required, optional or not invited for everyone, and per role where a role differs (e.g. required for officers, optional for everyone else; or required for everyone but new members). Behavior: [`events.md` § Event Creation](../behavior/events.md#event-creation).
-- Members check in via the mobile app (self-service, during event time window + grace period). For role-targeted events, only members with required roles can check in.
+- Members check in via the mobile app (self-service, during event time window + grace period). Only members the event invites can check in.
 - Check-in atomically creates an attendance record AND awards the event's point value.
 - **Excuse workflow (admin-only):** Admins mark members as EXCUSED with an optional reason. Members cannot self-submit excuses. Excused members are not penalized.
 - Admins can view full attendance for any event and mark EXCUSED/ABSENT/LATE after the fact.

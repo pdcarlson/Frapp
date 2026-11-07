@@ -1,6 +1,8 @@
 import {
   RECURRENCE_REPEAT_LABELS,
+  attendanceInvitesNobody,
   attendanceToWire,
+  othersInvitedForCreate,
   describeAttendance,
   emptyAttendanceDraft,
   describeSeriesLength,
@@ -141,7 +143,7 @@ export interface ValidatedNewEvent {
   description?: string;
   point_value: number;
   is_mandatory: boolean;
-  others_invited: boolean;
+  others_invited?: boolean;
   required_role_ids?: string[];
   optional_role_ids?: string[];
   excluded_role_ids?: string[];
@@ -186,11 +188,7 @@ export function validateNewEvent(
   }
 
   const wire = attendanceToWire(draft.attendance);
-  if (
-    !wire.others_invited &&
-    wire.required_role_ids.length === 0 &&
-    wire.optional_role_ids.length === 0
-  ) {
+  if (attendanceInvitesNobody(wire)) {
     errors.attendance = "Nobody is invited. Add a role, or invite everyone.";
   }
 
@@ -204,10 +202,11 @@ export function validateNewEvent(
     end_time: end.toISOString(),
     point_value: points.kind === "value" ? points.points : 0,
     is_mandatory: wire.is_mandatory,
-    // Always sent: omitted beside `required_role_ids`, the API would read the
-    // older "only these roles" meaning (`othersInvitedOf`).
-    others_invited: wire.others_invited,
   };
+  // Sent only when a row without it would read differently, so a plain event
+  // still creates against an API that predates the field.
+  const othersInvited = othersInvitedForCreate(wire);
+  if (othersInvited !== undefined) body.others_invited = othersInvited;
   if (location.length > 0) body.location = location;
   if (description.length > 0) body.description = description;
   if (wire.required_role_ids.length > 0) {

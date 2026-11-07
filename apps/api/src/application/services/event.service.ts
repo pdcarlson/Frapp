@@ -130,7 +130,7 @@ export class EventService {
       throw new BadRequestException('end_time must be after start_time');
     }
 
-    // A role-targeted event must not be broadcast as a chat card. #1463 made
+    // An event that leaves anyone out must not be broadcast as a chat card. #1463 made
     // `required_role_ids` gate read access — list, detail, ICS, search and the
     // event notifications all restrict a targeted event to members holding one
     // of its roles — but the `kind:"event"` card bypassed all of it: it embeds
@@ -157,25 +157,28 @@ export class EventService {
     // (`dispatchEvent` in `packages/chat-core/src/dispatch.ts` sends no such
     // key and the parser has no syntax for one), so only a direct
     // `POST /v1/events` reaches this branch. Thrown before the repo write, so
-    // a refused create leaves no event row behind. An empty array is
-    // untargeted per `spec/behavior/events.md` § `required_role_ids` wire
-    // semantics and is deliberately allowed through.
+    // a refused create leaves no event row behind. An event that invites
+    // everyone, whatever it asks of some roles, posts its card as before.
     //
     // Either chat key alone is refused, not just the pair. Neither half posts
     // a card on its own today (the mismatch is warned about in
     // `EventAnnouncementService.tryPostEventCard`), but
     // accepting one piecemeal would make the guard depend on which key a
     // caller happened to omit.
-    const others_invited = othersInvitedOf(input) ?? true;
+    //
+    // `others_invited` is stored as sent; omitted, it stays null and reads
+    // with the older meaning of `required_role_ids` (`eventOthersInvited`).
+    const others_invited = input.others_invited ?? null;
     const limitsAudience = eventLimitsAudience({
       others_invited,
+      required_role_ids: input.required_role_ids,
       excluded_role_ids: input.excluded_role_ids,
     });
     if (limitsAudience && (input.channel_id || input.client_message_id)) {
       throw new BadRequestException(
-        'A role-targeted event cannot post a chat card: the card would show the ' +
-          'event to everyone in the channel, including members its ' +
-          'its attendance by role leaves out. Create it without channel_id/client_message_id.',
+        'An event that leaves anyone out cannot post a chat card: the card ' +
+          'would show the event to everyone in the channel. Create it without ' +
+          'channel_id/client_message_id.',
       );
     }
 
@@ -245,13 +248,7 @@ export class EventService {
       }
     }
 
-    // A caller that sends `required_role_ids` without `others_invited` means
-    // the older "only these roles" targeting (`othersInvitedOf`).
-    const othersInvited = othersInvitedOf(input);
-    const patch: UpdateEventInput =
-      othersInvited === undefined
-        ? input
-        : { ...input, others_invited: othersInvited };
+    const patch: UpdateEventInput = input;
 
     if (scope === 'series') {
       // Hand on the row already read rather than reading it twice.
@@ -351,21 +348,4 @@ export class EventService {
 
     return lines.join('\r\n');
   }
-}
-
-/**
- * `others_invited` as a write means it: sent, it is taken as is. Omitted
- * beside `required_role_ids`, it keeps the older meaning of that field, where
- * a non-empty list was the whole audience (`spec/behavior/events.md`
- * § Attendance by role, "Older callers"): false for a non-empty list, true for
- * an empty one. Omitted with neither, `undefined`: a create defaults it to
- * true, an update leaves it as stored.
- */
-export function othersInvitedOf(input: {
-  others_invited?: boolean;
-  required_role_ids?: string[] | null;
-}): boolean | undefined {
-  if (input.others_invited !== undefined) return input.others_invited;
-  if (input.required_role_ids === undefined) return undefined;
-  return (input.required_role_ids?.length ?? 0) === 0;
 }

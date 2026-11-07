@@ -18,6 +18,7 @@ import { RbacService } from './rbac.service';
 import { attendanceFor } from './event-role-targeting';
 import {
   eventRequiresAnyone,
+  eventSetsRolesApart,
   type EventAttendanceFields,
 } from '@repo/validation';
 import { isValidZone, pointInPolygon } from '#domain/utils/geofence';
@@ -207,13 +208,8 @@ export class AttendanceService {
     // Attendance by role (`spec/behavior/events.md`): a member the event
     // doesn't invite can't check in. Read only when some role is listed or
     // the default leaves anyone out; an untargeted event invites everyone.
-    const listsRoles =
-      (event.required_role_ids?.length ?? 0) > 0 ||
-      (event.optional_role_ids?.length ?? 0) > 0 ||
-      (event.excluded_role_ids?.length ?? 0) > 0 ||
-      event.others_invited === false;
     let invitedByRole = false;
-    if (listsRoles) {
+    if (eventSetsRolesApart(event)) {
       const member = await this.memberRepo.findByUserAndChapter(
         userId,
         chapterId,

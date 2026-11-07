@@ -340,9 +340,8 @@ Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge l
 
 **Who gets one.** The event's _required_ members, resolved by `AttendanceService.resolveRequiredMembers` — the same call the auto-absent sweep makes, deliberately shared rather than reimplemented:
 
-- **Role-targeted** (`required_role_ids` non-empty) → members holding an intersecting role, alumni included. This is what keeps the reminder inside the event's own visibility rule: a role-targeted event is invisible through `GET /v1/events` to a member without an intersecting role, and a reminder that resolved targeting differently would announce that event's name to them.
-- **Mandatory, untargeted** → every member except alumni, who can neither check in to a non-targeted event nor self-excuse.
-- **Optional and untargeted** → nobody. Such an event requires nothing of anyone, and knowing who _wants_ a reminder needs RSVP intent, which is not modelled yet (#1035).
+- Every member whose answer under [attendance by role](events.md#event-creation) is **required**: by a role of theirs (alumni included, since listing their role is a deliberate choice), or by the default (alumni left out, since they can neither check in nor self-excuse unless a role of theirs is listed). A required member is always invited, so the reminder stays inside the event's own visibility rule.
+- Optional and not-invited members get none. An optional member's reminder needs RSVP intent, which is not modelled yet (#1035).
 
 **Lead time.** One fixed 30-minute window, `EVENT_REMINDER_LEAD_MINUTES` (#1548 tracks the per-member 1hr / 15min choice this table used to promise, which needs a preference column that does not exist). The constant is the window's _width_, not the delivery offset — an event created inside its own window, or one first seen by a catch-up tick, is already closer than 30 minutes. **The push therefore reports the real remaining time**, computed per send, never the constant; a member told "30 minutes" who actually has five would miss a mandatory event's check-in window and be auto-marked ABSENT.
 

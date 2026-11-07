@@ -603,7 +603,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     pointsInput: {
       flex: 1,
-      // No lineHeight on a single-line input, or iOS draws the text high.
+      // No lineHeight on a single-line input, or iOS draws the text low.
       ...fieldTypeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },

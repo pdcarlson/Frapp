@@ -109,7 +109,7 @@ export class CreateEventDto {
 
   @ApiPropertyOptional({
     description:
-      'Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is true unless `required_role_ids` is non-empty, which keeps the older "only these roles" meaning for a caller that sends no other attendance field.',
+      'Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted on create, it is stored as null, which reads as true unless `required_role_ids` is non-empty: the older "only these roles" meaning, for a caller that predates this field. Omitted on update, it is left as stored.',
   })
   @IsOptional()
   @IsStrictBoolean()
@@ -215,8 +215,13 @@ export class CreateEventResponseDto implements Event {
   @ApiProperty({ type: [String], nullable: true })
   excluded_role_ids: string[] | null;
 
-  @ApiProperty()
-  others_invited: boolean;
+  @ApiProperty({
+    type: Boolean,
+    nullable: true,
+    description:
+      'Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`).',
+  })
+  others_invited: boolean | null;
 
   @ApiProperty({ type: String, nullable: true })
   notes: string | null;
@@ -337,7 +342,7 @@ export class UpdateEventDto {
 
   @ApiPropertyOptional({
     description:
-      'Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored, unless `required_role_ids` is sent: then it becomes true for an empty list and false otherwise, the older "only these roles" meaning.',
+      'Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored. A stored null reads as true unless `required_role_ids` is non-empty, the older "only these roles" meaning.',
   })
   @IsOptional()
   @IsStrictBoolean()

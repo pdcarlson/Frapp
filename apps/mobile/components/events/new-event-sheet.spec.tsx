@@ -209,7 +209,6 @@ describe("New event", () => {
       end_time: local(8, 1, 30).toISOString(),
       point_value: 25,
       is_mandatory: true,
-      others_invited: true,
       optional_role_ids: ["role-alumni"],
       recurrence_rule: "WEEKLY",
     });

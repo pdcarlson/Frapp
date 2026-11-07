@@ -272,7 +272,8 @@ describe('EventService', () => {
       required_role_ids: null,
       optional_role_ids: null,
       excluded_role_ids: null,
-      others_invited: true,
+      // Omitted, stored null: read with the older meaning on every read.
+      others_invited: null,
       notes: null,
       check_in_zone: null,
       check_in_zone_name: null,

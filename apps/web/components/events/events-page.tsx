@@ -17,7 +17,6 @@ import {
   attendanceFieldsOf,
   can,
   eventDefaultAttendance,
-  eventRequiresAnyone,
   eventSetsRolesApart,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -163,9 +162,10 @@ export function EventsPage() {
       const recurrenceRule =
         typeof event.recurrence_rule === "string" ? event.recurrence_rule : "";
       const isRecurring = recurrenceRule.length > 0;
-      // Required of anyone at all, by default or by role
-      // (`spec/behavior/events.md` § Attendance by role).
-      const isMandatory = eventRequiresAnyone(attendanceFieldsOf(event));
+      // Required of everyone by default, as the row's Mandatory badge and the
+      // calendar say; an event that sets roles apart also carries "By role".
+      const isMandatory =
+        eventDefaultAttendance(attendanceFieldsOf(event)) === "required";
 
       if (
         queryLower &&

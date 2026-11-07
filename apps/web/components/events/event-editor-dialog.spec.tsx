@@ -173,7 +173,10 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
     const body = createMutate.mock.calls[0]![0];
     expect(body).not.toHaveProperty("required_role_ids");
-    expect(body).toMatchObject({ is_mandatory: false, others_invited: true });
+    expect(body).toMatchObject({ is_mandatory: false });
+    // A plain event leaves `others_invited` out: stored null reads the same,
+    // and an API that predates the field still accepts the create.
+    expect(body).not.toHaveProperty("others_invited");
   });
 
   it("refuses an event that invites nobody", async () => {

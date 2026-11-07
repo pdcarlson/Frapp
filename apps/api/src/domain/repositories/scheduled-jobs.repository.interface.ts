@@ -26,7 +26,7 @@ export interface SweepUpcomingEventRow {
   required_role_ids: string[] | null;
   optional_role_ids: string[] | null;
   excluded_role_ids: string[] | null;
-  others_invited: boolean;
+  others_invited: boolean | null;
 }
 
 export interface SweepInvoiceRow {

@@ -58,7 +58,7 @@ interface EventCandidateRow {
   end_time: string;
   is_mandatory: boolean;
   required_role_ids: string[] | null;
-  others_invited: boolean;
+  others_invited: boolean | null;
 }
 
 interface PollCandidateRow {

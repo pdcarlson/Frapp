@@ -23,7 +23,9 @@ import {
   RECURRENCE_RULES,
   attendanceFieldsOf,
   attendanceFromEvent,
+  attendanceInvitesNobody,
   attendanceToWire,
+  othersInvitedForCreate,
   describeAttendance,
   emptyAttendanceDraft,
   isRecurrenceRule,
@@ -411,11 +413,7 @@ export function EventEditorDialog({
     }
 
     const wire = attendanceToWire(attendance);
-    if (
-      !wire.others_invited &&
-      wire.required_role_ids.length === 0 &&
-      wire.optional_role_ids.length === 0
-    ) {
+    if (attendanceInvitesNobody(wire)) {
       setShowMore(true);
       toast({
         title: "Nobody is invited",
@@ -432,10 +430,7 @@ export function EventEditorDialog({
       start_time: startIso,
       end_time: endIso,
       point_value: pointValueNumber,
-      // Always sent with the role lists: omitted beside `required_role_ids`,
-      // the API would read the older "only these roles" meaning.
       is_mandatory: wire.is_mandatory,
-      others_invited: wire.others_invited,
       recurrence_rule: recurrenceRule === "NONE" ? undefined : recurrenceRule,
       notes: notes.trim() || undefined,
     };
@@ -453,6 +448,9 @@ export function EventEditorDialog({
           ...payload,
           ...(wire.required_role_ids.length > 0
             ? { required_role_ids: wire.required_role_ids }
+            : {}),
+          ...(othersInvitedForCreate(wire) !== undefined
+            ? { others_invited: othersInvitedForCreate(wire) }
             : {}),
           ...(wire.optional_role_ids.length > 0
             ? { optional_role_ids: wire.optional_role_ids }
@@ -480,6 +478,9 @@ export function EventEditorDialog({
             required_role_ids: wire.required_role_ids,
             optional_role_ids: wire.optional_role_ids,
             excluded_role_ids: wire.excluded_role_ids,
+            // Always sent on an update: the stored row may hold an explicit
+            // value that a derived one wouldn't replace.
+            others_invited: wire.others_invited,
             // Always sent, so emptying the editor clears the stored zone:
             // UpdateEventDto omits @ArrayMinSize and normalizeCheckInZone maps
             // [] to null. The name is cleared alongside it — a leftover name on

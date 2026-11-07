@@ -148,7 +148,7 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 | Error | surface `#1A1A1A` | 1px `#f85149` + 3px ring danger @ ~25% | caption 12.5 `#f85149` below |
 | Disabled | surface `#1A1A1A` | 1px `rgba(255,255,255,.08)` | `#57534C` |
 
-The Field step: 40px to a fine pointer and 44px on touch, padding-x 12 at both, radius 12 (corrected 2026-11-05 from 48px and padding-x 14 everywhere, with §3's button heights, for the same reason). A multi-line field (`Textarea`) takes the same padding and grows. A web sheet's fields sit one step down, at Small. The value stays 16px at either height, the body floor ([foundations.md](foundations.md) §7). The fill SHOULD sit one layer below the input's container (surface inside cards/sheets; bg `#131211` inside the surface-level app bar). The web top bar's Find field is the named exception: it shares the bar's surface (§7). *(Exception added 2026-11-05.)*
+The Field step: 40px to a fine pointer and 44px on touch, padding-x 12 at both, radius 12 (corrected 2026-11-05 from 48px and padding-x 14 everywhere, with §3's button heights, for the same reason). A multi-line field (`Textarea`) takes the same padding and grows. On mobile a single-line field's text sets no line height, because iOS sits a single line at the bottom of its line box and the text then reads low; a multi-line field keeps the body's leading (`fieldTypeRole` and `fieldMultilineText`, `apps/mobile/lib/theme.tsx` and `components/sheet-scaffold.tsx`; 2026-11-06). A web sheet's fields sit one step down, at Small. The value stays 16px at either height, the body floor ([foundations.md](foundations.md) §7). The fill SHOULD sit one layer below the input's container (surface inside cards/sheets; bg `#131211` inside the surface-level app bar). The web top bar's Find field is the named exception: it shares the bar's surface (§7). *(Exception added 2026-11-05.)*
 
 **Floating label (web sign-in and sign-up).** The pre-auth forms put the label inside the field, where it reads at body size and moves up to caption size on focus, input or autofill, and they draw no placeholder (`apps/web/components/auth/floating-field.tsx`). The field is 52px rather than 48 so the floated 12px label and the 16px value both clear the edge on the grid. It exists so those two forms fit a laptop window without scrolling (`spec/ui/web-dashboard/README.md` § Responsive contract); every other form keeps the label above a 48px field. *(Exception added 2026-11-05.)*
 
@@ -201,7 +201,7 @@ The Chip step ([foundations.md](foundations.md) §9): height 24px on every point
 
 ## 6. Tabs
 
-Underline style only — no segmented pill controls.
+Underline style only — no segmented pill controls for tabs. Choosing one answer from a short set is a different control: § Segmented control.
 
 - Row: 1px bottom hairline `rgba(255,255,255,.08)`; items gap 22px. An item is the Small step: 36px to a fine pointer, 44 on touch, set by a min-height so a caller's padding cannot push it past its row.
 - Active: 15px / 600 `#EDEAE3` (web: 14), 2px bottom underline `accent-9`.

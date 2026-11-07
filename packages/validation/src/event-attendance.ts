@@ -65,11 +65,24 @@ function holdsAny(
   return listed.some((roleId) => memberRoleIds.includes(roleId));
 }
 
+/**
+ * Whether a member holding none of the listed roles is invited. A row with
+ * no `others_invited` (`null`: written before the column, or by a client
+ * that predates it) reads with the older meaning, where a non-empty
+ * `required_role_ids` was the whole audience. Deriving it on read, rather
+ * than backfilling once, keeps an older API or client correct for as long
+ * as it keeps writing during a deploy.
+ */
+export function eventOthersInvited(event: EventAttendanceFields): boolean {
+  if (typeof event.others_invited === "boolean") return event.others_invited;
+  return (event.required_role_ids?.length ?? 0) === 0;
+}
+
 /** The default status for a member who holds none of the listed roles. */
 export function eventDefaultAttendance(
   event: EventAttendanceFields,
 ): EventAttendanceStatus {
-  if (event.others_invited === false) return "not_invited";
+  if (!eventOthersInvited(event)) return "not_invited";
   return event.is_mandatory ? "required" : "optional";
 }
 
@@ -96,14 +109,14 @@ export function eventAttendanceFor(
  */
 export function eventLimitsAudience(event: EventAttendanceFields): boolean {
   return (
-    event.others_invited === false || (event.excluded_role_ids?.length ?? 0) > 0
+    !eventOthersInvited(event) || (event.excluded_role_ids?.length ?? 0) > 0
   );
 }
 
 /** Whether any role is set apart from the default: a list's "By role" badge. */
 export function eventSetsRolesApart(event: EventAttendanceFields): boolean {
   return (
-    event.others_invited === false ||
+    !eventOthersInvited(event) ||
     (event.required_role_ids?.length ?? 0) > 0 ||
     (event.optional_role_ids?.length ?? 0) > 0 ||
     (event.excluded_role_ids?.length ?? 0) > 0
@@ -113,7 +126,7 @@ export function eventSetsRolesApart(event: EventAttendanceFields): boolean {
 /**
  * The rule's fields off a loosely typed event record (a list row, a Realtime
  * payload), dropping anything malformed. A row from before the columns reads
- * as it did then: everyone invited.
+ * as it did then ({@link eventOthersInvited}).
  */
 export function attendanceFieldsOf(
   event: Record<string, unknown>,
@@ -127,7 +140,8 @@ export function attendanceFieldsOf(
     required_role_ids: ids(event.required_role_ids),
     optional_role_ids: ids(event.optional_role_ids),
     excluded_role_ids: ids(event.excluded_role_ids),
-    others_invited: event.others_invited !== false,
+    others_invited:
+      typeof event.others_invited === "boolean" ? event.others_invited : null,
   };
 }
 
@@ -135,7 +149,7 @@ export function attendanceFieldsOf(
 export function eventRequiresAnyone(event: EventAttendanceFields): boolean {
   return (
     (event.required_role_ids?.length ?? 0) > 0 ||
-    (event.others_invited !== false && Boolean(event.is_mandatory))
+    (eventOthersInvited(event) && Boolean(event.is_mandatory))
   );
 }
 
@@ -306,4 +320,27 @@ export function withRole(
   if (status === null || status === draft.everyone) delete roles[roleId];
   else roles[roleId] = status;
   return { ...draft, roles };
+}
+
+/** Whether a draft's rule invites nobody at all: both editors refuse it. */
+export function attendanceInvitesNobody(wire: EventAttendanceWire): boolean {
+  return (
+    !wire.others_invited &&
+    wire.required_role_ids.length === 0 &&
+    wire.optional_role_ids.length === 0
+  );
+}
+
+/**
+ * `others_invited` for a create body, or `undefined` when a row stored
+ * without it would read the same ({@link eventOthersInvited}). Leaving it
+ * out keeps a plain event creatable against an API that predates the field
+ * (a mobile update can reach phones before the API deploys). An update
+ * always sends it, since the stored row may hold an explicit value.
+ */
+export function othersInvitedForCreate(
+  wire: EventAttendanceWire,
+): boolean | undefined {
+  const derived = wire.required_role_ids.length === 0;
+  return wire.others_invited === derived ? undefined : wire.others_invited;
 }

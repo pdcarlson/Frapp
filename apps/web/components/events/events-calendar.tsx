@@ -8,6 +8,7 @@ import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
 import { compactControlClassName } from "@/components/shared/table-controls";
 import { formatTimeOfDay, localIsoDate, parseInstant } from "@repo/formatting";
+import { attendanceFieldsOf, eventDefaultAttendance } from "@repo/validation";
 
 type EventRow = Record<string, unknown>;
 
@@ -234,10 +235,10 @@ export function EventsCalendar({
                       event.id ?? event.name ?? "unknown-event",
                     );
                     const eventName = String(event.name ?? "Untitled event");
+                    // Required of everyone by default, as the list's badge.
                     const isMandatory =
-                      typeof event.is_mandatory === "boolean"
-                        ? event.is_mandatory
-                        : false;
+                      eventDefaultAttendance(attendanceFieldsOf(event)) ===
+                      "required";
                     // The series head carries `recurrence_rule`; every
                     // generated occurrence carries `parent_event_id` instead
                     // (and a null `recurrence_rule`) — see

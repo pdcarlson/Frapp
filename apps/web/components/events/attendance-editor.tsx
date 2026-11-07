@@ -56,8 +56,9 @@ export function AttendanceEditor({
   const [search, setSearch] = useState("");
   const nameOf = useMemo(() => {
     const byId = new Map(roles.map((role) => [role.id, role.name]));
-    return (id: string) => byId.get(id) ?? "Removed role";
-  }, [roles]);
+    return (id: string) =>
+      byId.get(id) ?? (rolesState === "ready" ? "Removed role" : "Role");
+  }, [roles, rolesState]);
   const addable = rolesToAdd(roles, value, search);
   const differing = Object.entries(value.roles);
   const added = statusForAddedRole(value.everyone);

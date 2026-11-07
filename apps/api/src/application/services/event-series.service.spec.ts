@@ -169,6 +169,36 @@ describe('EventSeriesService', () => {
       }
     });
 
+    it('generated occurrences inherit the parent attendance by role', async () => {
+      // Without this every date after the first would read the column
+      // defaults: an officers-only series open to the whole chapter.
+      const attendance = {
+        required_role_ids: ['officer'],
+        optional_role_ids: ['alumni'],
+        excluded_role_ids: ['pledge'],
+        others_invited: false,
+      };
+      mockEventRepo.create.mockResolvedValue({
+        ...baseEvent,
+        recurrence_rule: 'WEEKLY',
+        ...attendance,
+      });
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Exec Meeting',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+        recurrence_rule: 'WEEKLY',
+        ...attendance,
+      });
+
+      expect(mockEventRepo.create).toHaveBeenCalledTimes(13);
+      for (let i = 1; i <= 12; i++) {
+        expect(mockEventRepo.create.mock.calls[i][0]).toMatchObject(attendance);
+      }
+    });
+
     it('fails the request when one occurrence insert fails', async () => {
       const weeklyEvent: Event = {
         ...baseEvent,

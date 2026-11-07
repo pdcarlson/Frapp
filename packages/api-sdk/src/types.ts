@@ -4214,7 +4214,7 @@ export interface components {
             optional_role_ids?: string[];
             /** @description Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional. */
             excluded_role_ids?: string[];
-            /** @description Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is true unless `required_role_ids` is non-empty, which keeps the older "only these roles" meaning for a caller that sends no other attendance field. */
+            /** @description Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted on create, it is stored as null, which reads as true unless `required_role_ids` is non-empty: the older "only these roles" meaning, for a caller that predates this field. Omitted on update, it is left as stored. */
             others_invited?: boolean;
             notes?: string;
             /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. */
@@ -4246,7 +4246,8 @@ export interface components {
             required_role_ids: string[] | null;
             optional_role_ids: string[] | null;
             excluded_role_ids: string[] | null;
-            others_invited: boolean;
+            /** @description Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`). */
+            others_invited: boolean | null;
             notes: string | null;
             /** @description Optional check-in geofence. `null` means the event has no zone. */
             check_in_zone: components["schemas"]["GeofenceCoordinateDto"][] | null;
@@ -4272,7 +4273,7 @@ export interface components {
             optional_role_ids?: string[];
             /** @description Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional. */
             excluded_role_ids?: string[];
-            /** @description Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored, unless `required_role_ids` is sent: then it becomes true for an empty list and false otherwise, the older "only these roles" meaning. */
+            /** @description Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored. A stored null reads as true unless `required_role_ids` is non-empty, the older "only these roles" meaning. */
             others_invited?: boolean;
             notes?: string;
             /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone. */

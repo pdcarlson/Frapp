@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   attendanceFromEvent,
+  attendanceInvitesNobody,
   attendanceToWire,
   describeAttendance,
   eventAttendanceFor,
   eventLimitsAudience,
+  eventOthersInvited,
+  othersInvitedForCreate,
   eventRequiresAnyone,
 } from "./event-attendance";
 
@@ -62,7 +65,13 @@ describe("eventAttendanceFor", () => {
 
 describe("eventLimitsAudience / eventRequiresAnyone", () => {
   it("only limits the audience when someone is left out", () => {
-    expect(eventLimitsAudience({ required_role_ids: ["x"] })).toBe(false);
+    // A row without `others_invited` reads with the older meaning: a
+    // non-empty required list was the whole audience.
+    expect(eventLimitsAudience({ required_role_ids: ["x"] })).toBe(true);
+    expect(
+      eventLimitsAudience({ required_role_ids: ["x"], others_invited: true }),
+    ).toBe(false);
+    expect(eventLimitsAudience({ required_role_ids: [] })).toBe(false);
     expect(eventLimitsAudience({ others_invited: false })).toBe(true);
     expect(eventLimitsAudience({ excluded_role_ids: ["x"] })).toBe(true);
   });
@@ -150,5 +159,48 @@ describe("describeAttendance", () => {
         name,
       ),
     ).toBe("Executive Board only, required");
+  });
+});
+
+describe("others_invited on a row written without it", () => {
+  it("derives it from required_role_ids, the older meaning", () => {
+    expect(eventOthersInvited({})).toBe(true);
+    expect(eventOthersInvited({ others_invited: null })).toBe(true);
+    expect(eventOthersInvited({ required_role_ids: ["o"] })).toBe(false);
+    expect(
+      eventOthersInvited({ required_role_ids: ["o"], others_invited: true }),
+    ).toBe(true);
+    expect(
+      eventAttendanceFor({ is_mandatory: true, required_role_ids: ["o"] }, [
+        "m",
+      ]).status,
+    ).toBe("not_invited");
+  });
+
+  it("is sent on create only when a null would read differently", () => {
+    const wire = (others: boolean, required: string[] = []) => ({
+      is_mandatory: false,
+      others_invited: others,
+      required_role_ids: required,
+      optional_role_ids: [],
+      excluded_role_ids: [],
+    });
+    expect(othersInvitedForCreate(wire(true))).toBeUndefined();
+    expect(othersInvitedForCreate(wire(false, ["o"]))).toBeUndefined();
+    expect(othersInvitedForCreate(wire(true, ["o"]))).toBe(true);
+    expect(othersInvitedForCreate(wire(false))).toBe(false);
+  });
+
+  it("refuses a rule that invites nobody", () => {
+    expect(
+      attendanceInvitesNobody(
+        attendanceToWire({ everyone: "not_invited", roles: {} }),
+      ),
+    ).toBe(true);
+    expect(
+      attendanceInvitesNobody(
+        attendanceToWire({ everyone: "not_invited", roles: { o: "optional" } }),
+      ),
+    ).toBe(false);
   });
 });

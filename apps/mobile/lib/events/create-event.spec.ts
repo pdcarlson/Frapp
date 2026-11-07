@@ -72,7 +72,6 @@ describe("validateNewEvent", () => {
         description: "Bring dues forms.",
         point_value: 25,
         is_mandatory: true,
-        others_invited: true,
         recurrence_rule: "WEEKLY",
       },
     });

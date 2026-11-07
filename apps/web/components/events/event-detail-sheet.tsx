@@ -339,7 +339,8 @@ export function EventDetailSheet({
                       className="flex items-center justify-between gap-3 text-sm"
                     >
                       <span className="truncate">
-                        {roleNameById.get(id) ?? "Removed role"}
+                        {roleNameById.get(id) ??
+                          (rolesQuery.isSuccess ? "Removed role" : "Role")}
                       </span>
                       <span className="shrink-0 text-muted-foreground">
                         {EVENT_ATTENDANCE_LABELS[status]}
