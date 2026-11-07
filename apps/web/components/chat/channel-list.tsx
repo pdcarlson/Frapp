@@ -458,9 +458,12 @@ export function ChannelList({
               row. The channel says it is read-only where that matters, in
               its composer.
             */}
-              {isUnread ? (
+              {/* A number only when it addresses the member, as Discord does:
+                  a merely unread channel says so with its bold name
+                  (2026-11-07). */}
+              {countsKnown && hasMention ? (
                 <Badge
-                  variant={hasMention ? "mention" : "secondary"}
+                  variant="mention"
                   className="h-6 justify-center px-2"
                   aria-label={unreadAnnouncement(counts, isDm(channel))}
                 >
@@ -516,6 +519,11 @@ export function ChannelList({
                   // resting layout and gives the pinned label room.
                   "sticky top-0 z-10 -mt-1 bg-surface-1 pt-1",
                   EYEBROW,
+                  // Folded with something unread inside, it reads as an
+                  // unread row does, since only a mention carries a number.
+                  section.collapsed &&
+                    section.unreadCount > 0 &&
+                    "text-foreground",
                 )}
               >
                 {section.collapsed ? (
@@ -530,10 +538,9 @@ export function ChannelList({
                   />
                 )}
                 <span className="truncate">{section.label}</span>
-                {section.collapsed &&
-                (section.unreadCount > 0 || section.addressed) ? (
+                {section.collapsed && section.addressed ? (
                   <Badge
-                    variant={section.addressed ? "mention" : "secondary"}
+                    variant="mention"
                     className="ml-auto h-5 justify-center px-1.5 normal-case tracking-normal"
                     aria-label={foldedSectionAnnouncement(section)}
                   >

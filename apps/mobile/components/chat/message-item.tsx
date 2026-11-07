@@ -39,6 +39,7 @@ import {
   resolveAuthorLabel,
   resolveAuthorName,
 } from "@repo/hooks";
+import { useMentionChips } from "@repo/hooks/mention-chips";
 import { initialsFor } from "@/lib/chat/display-name";
 import { useChatDensity } from "@/lib/chat/chat-density";
 import { MessageAttachments } from "./message-attachments";
@@ -622,9 +623,10 @@ export function MessageItem({
   // Parsed once per content, for the body and for its links' accessibility
   // actions, so the actions name exactly the links drawn.
   const hasContent = !message.is_deleted && message.content.trim().length > 0;
+  const chips = useMentionChips(message.mentions);
   const parsed = useMemo(
-    () => (hasContent ? parseMessageMarkdown(message.content) : null),
-    [hasContent, message.content],
+    () => (hasContent ? parseMessageMarkdown(message.content, chips) : null),
+    [hasContent, message.content, chips],
   );
   // A message that draws no text draws no text row at all: an attachment-only
   // one (the bubble it replaced painted an empty box above the photo), and one

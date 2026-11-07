@@ -4,6 +4,7 @@ import {
   extractMentionTokens,
   findMentionSpans,
   matchMentionCandidate,
+  mentionChipFilter,
   mentionLabelFor,
   mentionPickerEntries,
   mentionSuggestions,
@@ -623,5 +624,37 @@ describe("activeMentionQuery", () => {
   it("closes on a query longer than any token the resolver reads", () => {
     const long = "a".repeat(65);
     expect(activeMentionQuery(`@${long}`, long.length + 1)).toBeNull();
+  });
+});
+
+describe("mentionChipFilter", () => {
+  const members = [
+    { user_id: "u-paul", display_name: "Paul Carlson" },
+    { user_id: "u-shawn", display_name: "Shawn Klein" },
+  ];
+  const targets = { members, roleNames: ["President", "Vice President"] };
+
+  it("chips nothing on a message that reached nobody", () => {
+    const chips = mentionChipFilter([], targets);
+    expect(chips("bigsigma")).toBe(false);
+    expect(chips("President")).toBe(false);
+  });
+
+  it("chips a role token and leaves a name nobody holds plain", () => {
+    const chips = mentionChipFilter(["u-paul"], targets);
+    expect(chips("President")).toBe(true);
+    expect(chips("vicepresident")).toBe(true);
+    expect(chips("bigsigma")).toBe(false);
+  });
+
+  it("chips a member only when the send reached them", () => {
+    const chips = mentionChipFilter(["u-paul"], targets);
+    expect(chips("PaulCarlson")).toBe(true);
+    expect(chips("Shawn")).toBe(false);
+  });
+
+  it("chips every token before the roster loads, if someone was reached", () => {
+    expect(mentionChipFilter(["u-paul"], null)("anything")).toBe(true);
+    expect(mentionChipFilter(["u-paul"], {})("anything")).toBe(true);
   });
 });

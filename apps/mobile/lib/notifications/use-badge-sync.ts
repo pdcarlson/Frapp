@@ -1,6 +1,6 @@
 /**
- * Syncs the app icon badge to unread in-app notifications + unread chat
- * messages, per `spec/behavior/notifications.md` § Badge Count.
+ * Syncs the app icon badge to unread in-app notifications + chat mentions and
+ * unread direct messages, per `spec/behavior/notifications.md` § Badge Count.
  *
  * Mounted once, app-wide, from `components/app-runtime.tsx` — alongside the
  * other runtimes that have no screen to live on (see that file's comment for
@@ -51,10 +51,13 @@
  */
 import { useEffect } from "react";
 import {
+  addressedUnreadTotal,
   useActiveChapterId,
+  useChannels,
   useChannelUnreadCounts,
   useNotifications,
 } from "@repo/hooks";
+import { isDirectChannel, selectChannels } from "../chat/channel-list";
 import { selectUnreadNonChatCount } from "../more/notifications";
 import { setBadgeCount } from "./push";
 
@@ -64,6 +67,8 @@ export function useBadgeSyncRuntime(): void {
   // (`app/(app)/notifications.tsx`), so both read the same default page.
   const notifications = useNotifications();
   const channelUnread = useChannelUnreadCounts({ enabled: !!chapterId });
+  // Which channels are direct messages: their every unread message counts.
+  const channels = useChannels({ enabled: !!chapterId });
 
   useEffect(() => {
     // No active chapter (signed out, or between chapters): nothing to badge.
@@ -72,10 +77,17 @@ export function useBadgeSyncRuntime(): void {
       return;
     }
     const unreadNotifications = selectUnreadNonChatCount(notifications.data);
-    const unreadChat = (channelUnread.data ?? []).reduce(
-      (sum, row) => sum + row.unread_count,
-      0,
+    // Mentions and direct messages only, as the channel rows count them: a
+    // busy channel nobody addressed you in no longer runs the icon up
+    // (2026-11-07). Until the channel list loads, no row counts as a DM.
+    const directIds = new Set(
+      selectChannels(channels.data)
+        .filter(isDirectChannel)
+        .map((channel) => channel.id),
+    );
+    const unreadChat = addressedUnreadTotal(channelUnread.data ?? [], (id) =>
+      directIds.has(id),
     );
     void setBadgeCount(unreadNotifications + unreadChat);
-  }, [chapterId, notifications.data, channelUnread.data]);
+  }, [chapterId, notifications.data, channelUnread.data, channels.data]);
 }

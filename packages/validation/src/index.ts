@@ -585,6 +585,7 @@ export {
   findMentionSpans,
   foldMentionName,
   matchMentionCandidate,
+  mentionChipFilter,
   mentionLabelFor,
   mentionPickerEntries,
   mentionSuggestions,
@@ -593,6 +594,7 @@ export {
 export type {
   ActiveMentionQuery,
   MentionCandidate,
+  MentionChipTargets,
   MentionPickerEntry,
   MentionRole,
   MentionRoleOption,

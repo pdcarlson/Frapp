@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { cn } from "@/lib/utils";
 import { DELETED_MESSAGE_PLACEHOLDER } from "@repo/chat-core/reply-preview";
+import { useMentionChips } from "@repo/hooks/mention-chips";
 import { MessageMarkdown } from "./message-markdown";
 
 interface TextRendererProps {
@@ -40,6 +41,8 @@ interface TextRendererProps {
  * stale content.
  */
 export function TextRenderer({ message, trailing, muted }: TextRendererProps) {
+  // A token that pinged nobody draws as plain text (`mentionChipFilter`).
+  const chips = useMentionChips(message.mentions);
   if (message.is_deleted) {
     return (
       <div
@@ -66,7 +69,7 @@ export function TextRenderer({ message, trailing, muted }: TextRendererProps) {
         muted ? "text-muted-foreground" : "text-foreground",
       )}
     >
-      <MessageMarkdown content={message.content} />
+      <MessageMarkdown content={message.content} chips={chips} />
       {trailing}
     </div>
   );

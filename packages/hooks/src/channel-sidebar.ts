@@ -200,6 +200,28 @@ export function isAddressed(
   return countsAddressMember(isDirectChannel(channel), counts);
 }
 
+/**
+ * The chat half of the app icon badge: mentions everywhere, plus every unread
+ * message in a direct message (owner decision 2026-11-07, after a tester:
+ * "do I care how many messages got sent"). The same rule as a channel row's
+ * badge (`countsAddressMember`), so the icon never counts what no row shows a
+ * number for: a channel that is merely unread shows a bold name, not a count.
+ */
+export function addressedUnreadTotal(
+  rows: readonly {
+    channel_id: string;
+    unread_count: number;
+    mention_count: number;
+  }[],
+  isDirect: (channelId: string) => boolean,
+): number {
+  let total = 0;
+  for (const row of rows) {
+    total += isDirect(row.channel_id) ? row.unread_count : row.mention_count;
+  }
+  return total;
+}
+
 /** `isAddressed` for a caller that knows only whether the row is a DM. */
 export function countsAddressMember(
   isDirect: boolean,

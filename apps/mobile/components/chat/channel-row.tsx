@@ -247,12 +247,10 @@ export function ChannelRow({
       </View>
 
       <View style={styles.trailing}>
-        {isUnread ? (
-          <UnreadBadge
-            unreadCount={unreadCount}
-            mentionCount={mentionCount}
-            addressed={hasMention}
-          />
+        {/* A number only when it addresses the member, as Discord does: a
+            merely unread channel says so with its bold name (2026-11-07). */}
+        {hasMention ? (
+          <UnreadBadge unreadCount={unreadCount} mentionCount={mentionCount} />
         ) : null}
       </View>
     </PressableRow>
@@ -278,34 +276,24 @@ function MutedGlyph({ color }: { color: string }) {
 }
 
 /**
- * The count badge: neutral for plain unread, the fixed mention red when the
- * member was addressed. Exported for the folded section headers on s04
- * (#2877), so a header's total draws with the row's recipe.
+ * The count badge, drawn only when the member was addressed (a mention or an
+ * unread DM), in the fixed mention red. A merely unread channel carries no
+ * number since 2026-11-07, so the neutral fill it used is gone. Exported for
+ * the folded section headers on s04 (#2877), so a header's total draws with
+ * the row's recipe.
  */
 export function UnreadBadge({
   unreadCount,
   mentionCount,
-  addressed,
 }: {
   unreadCount: number;
   mentionCount: number;
-  addressed: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   return (
-    <View
-      style={[
-        styles.badge,
-        addressed ? styles.badgeMention : styles.badgeNeutral,
-      ]}
-    >
-      <Text
-        style={[
-          styles.badgeText,
-          addressed ? styles.badgeTextMention : styles.badgeTextNeutral,
-        ]}
-      >
+    <View style={[styles.badge, styles.badgeMention]}>
+      <Text style={[styles.badgeText, styles.badgeTextMention]}>
         {badgeLabel(unreadCount, mentionCount)}
       </Text>
     </View>
@@ -493,17 +481,11 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       justifyContent: "center",
     },
-    badgeNeutral: {
-      backgroundColor: tokens.color.border.input,
-    },
     badgeMention: {
       backgroundColor: tokens.color.semantic.mention,
     },
     badgeText: {
       ...typeRole(tokens.typography.role.caption),
-    },
-    badgeTextNeutral: {
-      color: tokens.color.text.foreground,
     },
     badgeTextMention: {
       color: tokens.color.semantic.mentionForeground,

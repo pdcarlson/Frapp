@@ -659,16 +659,23 @@ export default function ChatHomeScreen() {
                       >
                         <Text
                           numberOfLines={1}
-                          style={[styles.heading, styles.headingInHeader]}
+                          style={[
+                            styles.heading,
+                            styles.headingInHeader,
+                            // Folded over something unread: reads as an
+                            // unread row does, since only a mention or DM
+                            // carries a number (2026-11-07).
+                            section.collapsed && section.unreadCount > 0
+                              ? styles.headingUnread
+                              : null,
+                          ]}
                         >
                           {section.label}
                         </Text>
-                        {section.collapsed &&
-                        (section.unreadCount > 0 || section.addressed) ? (
+                        {section.collapsed && section.addressed ? (
                           <UnreadBadge
                             unreadCount={section.unreadCount}
                             mentionCount={section.mentionCount}
-                            addressed={section.addressed}
                           />
                         ) : null}
                         {/* Drawn, at the right edge where a thumb expects
@@ -759,6 +766,13 @@ function createStyles(tokens: SignetTokens) {
     heading: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.mutedForeground,
+    },
+    headingUnread: {
+      ...typeRole({
+        ...tokens.typography.role.label,
+        weight: tokens.typography.weight.bold,
+      }),
+      color: tokens.color.text.foreground,
     },
     // The fold header takes the rows' `gutterBleed`, so its name lines up
     // with the rows' sigils.

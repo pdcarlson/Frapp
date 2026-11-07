@@ -1,19 +1,29 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { CHAT_MESSAGE_CONTENT_MAX_LENGTH, extractMentionTokens } from "@repo/validation";
+import {
+  CHAT_MESSAGE_CONTENT_MAX_LENGTH,
+  extractMentionTokens,
+} from "@repo/validation";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { MAX_MESSAGE_MARKDOWN_DEPTH, skipsMarkdownParse } from "@repo/chat-core/markdown";
+import {
+  MAX_MESSAGE_MARKDOWN_DEPTH,
+  skipsMarkdownParse,
+} from "@repo/chat-core/markdown";
 import {
   COSTLY_MARKDOWN_BODIES,
   NEAR_BUDGET_MARKDOWN_BODY,
 } from "@repo/chat-core/test/markdown-parse-budget.fixtures";
+import { MentionChipTargetsContext } from "@repo/hooks/mention-chips";
 import { TextRenderer } from "./text-renderer";
 
 // #369: the timeline used to render `message.content` as plain text, so a
 // sender who typed `**bold**` (per `spec/behavior/chat/README.md`'s "Text
 // formatting") saw it echoed back to every reader as literal asterisks.
 
-function message(content: string, overrides: Partial<ChatMessage> = {}): ChatMessage {
+function message(
+  content: string,
+  overrides: Partial<ChatMessage> = {},
+): ChatMessage {
   return {
     id: "msg-1",
     channel_id: "chan-1",
@@ -34,6 +44,9 @@ function message(content: string, overrides: Partial<ChatMessage> = {}): ChatMes
     attachment_count: 0,
     reactions: {},
     actions: [],
+    // Reached someone, so its handles may chip; the tests that say otherwise
+    // set their own (`mentionChipFilter`).
+    mentions: ["22222222-2222-4222-8222-222222222222"],
     _status: "confirmed",
     ...overrides,
   } as ChatMessage;
@@ -66,7 +79,6 @@ describe("TextRenderer formatting", () => {
     render(
       <TextRenderer
         message={message("see [the docs](https://example.com/docs)")}
-       
       />,
     );
     const link = screen.getByRole("link", { name: "the docs" });
@@ -77,10 +89,7 @@ describe("TextRenderer formatting", () => {
 
   it("neuters a javascript: link instead of producing an executable href", () => {
     const { container } = render(
-      <TextRenderer
-        message={message("[click me](javascript:alert(1))")}
-       
-      />,
+      <TextRenderer message={message("[click me](javascript:alert(1))")} />,
     );
     expect(container.querySelector("a")).toBeNull();
     expect(container.textContent).toContain("click me");
@@ -88,10 +97,7 @@ describe("TextRenderer formatting", () => {
 
   it("neuters a tab-obfuscated javascript: link", () => {
     const { container } = render(
-      <TextRenderer
-        message={message("[click me](jav\tascript:alert(1))")}
-       
-      />,
+      <TextRenderer message={message("[click me](jav\tascript:alert(1))")} />,
     );
     expect(container.querySelector("a")).toBeNull();
   });
@@ -100,7 +106,6 @@ describe("TextRenderer formatting", () => {
     const { container } = render(
       <TextRenderer
         message={message("[click me](//attacker.example/login)")}
-       
       />,
     );
     expect(container.querySelector("a")).toBeNull();
@@ -108,9 +113,7 @@ describe("TextRenderer formatting", () => {
   });
 
   it("still links a normal relative path on this site", () => {
-    render(
-      <TextRenderer message={message("see [settings](/settings)")} />,
-    );
+    render(<TextRenderer message={message("see [settings](/settings)")} />);
     const link = screen.getByRole("link", { name: "settings" });
     expect(link).toHaveAttribute("href", "/settings");
   });
@@ -118,8 +121,9 @@ describe("TextRenderer formatting", () => {
   it("never injects raw HTML from message content", () => {
     const { container } = render(
       <TextRenderer
-        message={message('<img src=x onerror="alert(1)"> and <script>alert(2)</script>')}
-       
+        message={message(
+          '<img src=x onerror="alert(1)"> and <script>alert(2)</script>',
+        )}
       />,
     );
     expect(container.querySelector("img")).toBeNull();
@@ -139,7 +143,9 @@ describe("TextRenderer formatting", () => {
   });
 
   it("still shows the deleted-message tombstone unchanged", () => {
-    render(<TextRenderer message={message("**bold**", { is_deleted: true })} />);
+    render(
+      <TextRenderer message={message("**bold**", { is_deleted: true })} />,
+    );
     expect(screen.getByText("[message deleted]")).toBeInTheDocument();
   });
 });
@@ -174,10 +180,41 @@ describe("TextRenderer mention chips", () => {
     expect(chip?.getAttribute("data-mention")).toBe("Alice");
   });
 
+  it("chips nothing on a message that pinged nobody", () => {
+    // Tester report 2026-11-07: `@bigsigma`, a name nobody holds, drew as a
+    // mention though the server resolved and notified no one.
+    const { container } = render(
+      <TextRenderer
+        message={message("why did @bigsigma highlight", { mentions: [] })}
+      />,
+    );
+    expect(chips(container)).toHaveLength(0);
+  });
+
+  it("chips the role that pinged someone and not the name nobody holds", () => {
+    const { container } = render(
+      <MentionChipTargetsContext.Provider
+        value={{
+          members: [{ user_id: "u-paul", display_name: "Paul Carlson" }],
+          roleNames: ["President"],
+        }}
+      >
+        <TextRenderer
+          message={message("@President @bigsigma", { mentions: ["u-paul"] })}
+        />
+      </MentionChipTargetsContext.Provider>,
+    );
+    expect(chips(container).map((chip) => chip.textContent)).toEqual([
+      "@President",
+    ]);
+  });
+
   it("leaves the body around the chip untinted", () => {
     // "Don't retint the message." A mention is an address inside someone's
     // message; the body keeps the plain foreground.
-    const { container } = render(<TextRenderer message={message("ping @Alice")} />);
+    const { container } = render(
+      <TextRenderer message={message("ping @Alice")} />,
+    );
     const body = container.querySelector('[data-slot="message-body"]');
     expect(body?.className).toContain("text-foreground");
     expect(body?.className).not.toContain("mention");
@@ -200,7 +237,10 @@ describe("TextRenderer mention chips", () => {
       <TextRenderer message={message("**ping @Alice** and *cc @Bob*")} />,
     );
 
-    expect(chips(container).map((c) => c.textContent)).toEqual(["@Alice", "@Bob"]);
+    expect(chips(container).map((c) => c.textContent)).toEqual([
+      "@Alice",
+      "@Bob",
+    ]);
     expect(container.querySelector("strong")?.textContent).toContain("@Alice");
   });
 
@@ -222,11 +262,12 @@ describe("TextRenderer mention chips", () => {
     const { container } = render(
       <TextRenderer
         message={message("&#64;PresidentJane please approve the budget")}
-       
       />,
     );
 
-    expect(extractMentionTokens("&#64;PresidentJane please approve the budget")).toEqual([]);
+    expect(
+      extractMentionTokens("&#64;PresidentJane please approve the budget"),
+    ).toEqual([]);
     expect(chips(container)).toHaveLength(0);
     // The text still reads as the author typed it; only the chip is withheld.
     expect(container.textContent).toContain("@PresidentJane");
@@ -270,8 +311,9 @@ describe("TextRenderer mention chips", () => {
     // XSS-safe guarantee is re-asserted with a mention in the same message.
     const { container } = render(
       <TextRenderer
-        message={message('@Alice <img src=x onerror="alert(1)"> <mark>hi</mark>')}
-       
+        message={message(
+          '@Alice <img src=x onerror="alert(1)"> <mark>hi</mark>',
+        )}
       />,
     );
 
@@ -294,21 +336,30 @@ describe("TextRenderer mention chips", () => {
  */
 describe("TextRenderer over-nested bodies", () => {
   function fillToCap(prefix: string, tail: string): string {
-    return prefix.repeat(Math.floor((CHAT_MESSAGE_CONTENT_MAX_LENGTH - tail.length) / prefix.length)) + tail;
+    return (
+      prefix.repeat(
+        Math.floor(
+          (CHAT_MESSAGE_CONTENT_MAX_LENGTH - tail.length) / prefix.length,
+        ),
+      ) + tail
+    );
   }
 
   it.each([
     ["nested blockquotes", fillToCap("> ", "hi")],
     ["nested list items", fillToCap("- ", "hi")],
-  ])("renders a cap-length body of %s as its raw text instead of throwing", (_label, body) => {
-    expect(body.length).toBeLessThanOrEqual(CHAT_MESSAGE_CONTENT_MAX_LENGTH);
-    expect(body.length).toBeGreaterThan(CHAT_MESSAGE_CONTENT_MAX_LENGTH - 2);
+  ])(
+    "renders a cap-length body of %s as its raw text instead of throwing",
+    (_label, body) => {
+      expect(body.length).toBeLessThanOrEqual(CHAT_MESSAGE_CONTENT_MAX_LENGTH);
+      expect(body.length).toBeGreaterThan(CHAT_MESSAGE_CONTENT_MAX_LENGTH - 2);
 
-    const { container } = render(<TextRenderer message={message(body)} />);
+      const { container } = render(<TextRenderer message={message(body)} />);
 
-    const body_ = container.querySelector('[data-slot="message-body"]');
-    expect(body_?.textContent).toBe(body);
-  });
+      const body_ = container.querySelector('[data-slot="message-body"]');
+      expect(body_?.textContent).toBe(body);
+    },
+  );
 
   it("renders a deep emphasis run as its raw text instead of throwing", () => {
     const run = "*".repeat(4999);
@@ -317,7 +368,9 @@ describe("TextRenderer over-nested bodies", () => {
     const { container } = render(<TextRenderer message={message(body)} />);
 
     expect(container.querySelector("strong, em")).toBeNull();
-    expect(drawn(container.querySelector('[data-slot="message-body"]')!)).toBe(body);
+    expect(drawn(container.querySelector('[data-slot="message-body"]')!)).toBe(
+      body,
+    );
   });
 
   it("formats a body nested exactly to the cap, and flattens one level past it", () => {
@@ -326,7 +379,9 @@ describe("TextRenderer over-nested bodies", () => {
     const pastCap = "> " + atCap;
 
     const formatted = render(<TextRenderer message={message(atCap)} />);
-    expect(formatted.container.querySelector("strong")).toHaveTextContent("bold");
+    expect(formatted.container.querySelector("strong")).toHaveTextContent(
+      "bold",
+    );
     expect(formatted.container.textContent).not.toContain("**");
     formatted.unmount();
 
@@ -341,9 +396,9 @@ describe("TextRenderer over-nested bodies", () => {
     const { container } = render(<TextRenderer message={message(body)} />);
 
     expect(container.querySelector("img")).toBeNull();
-    expect(Array.from(container.querySelectorAll("mark")).map((m) => m.textContent)).toEqual([
-      "@Alice",
-    ]);
+    expect(
+      Array.from(container.querySelectorAll("mark")).map((m) => m.textContent),
+    ).toEqual(["@Alice"]);
     expect(container.textContent).toBe(body);
   });
 });
@@ -381,9 +436,9 @@ describe("TextRenderer bodies too costly to parse", () => {
       expect(container.querySelector("strong, em, a")).toBeNull();
       // The raw-text path keeps every character but a line's leading
       // indentation, which `remark-breaks` drops at each break.
-      expect(drawn(container.querySelector('[data-slot="message-body"]')!)).toBe(
-        body.replace(/\n[ \t]+/g, "\n"),
-      );
+      expect(
+        drawn(container.querySelector('[data-slot="message-body"]')!),
+      ).toBe(body.replace(/\n[ \t]+/g, "\n"));
     },
   );
 
@@ -397,7 +452,9 @@ describe("TextRenderer bodies too costly to parse", () => {
     const { container } = render(<TextRenderer message={message(body)} />);
     expect(performance.now() - started).toBeLessThan(1_000);
     // Deeper than the cap, so it renders as its raw text after the parse.
-    expect(drawn(container.querySelector('[data-slot="message-body"]')!)).toBe(body);
+    expect(drawn(container.querySelector('[data-slot="message-body"]')!)).toBe(
+      body,
+    );
   });
 });
 
@@ -445,7 +502,10 @@ describe("TextRenderer compact body", () => {
     ["a code block", "```\nx = 1\n```"],
   ])("drops the trailing marker to its own line under %s", (_, content) => {
     const { container } = render(
-      <TextRenderer message={message(content)} trailing={<span>(edited)</span>} />,
+      <TextRenderer
+        message={message(content)}
+        trailing={<span>(edited)</span>}
+      />,
     );
     const body = container.querySelector('[data-slot="message-body"]')!;
     expect(drawn(body)).toMatch(/\n\(edited\)$/);
@@ -455,7 +515,9 @@ describe("TextRenderer compact body", () => {
   });
 
   it("mutes a body still sending", () => {
-    const { container } = render(<TextRenderer message={message("hi")} muted />);
+    const { container } = render(
+      <TextRenderer message={message("hi")} muted />,
+    );
     const body = container.querySelector('[data-slot="message-body"]');
     expect(body?.className).toContain("text-muted-foreground");
     expect(body?.className.split(" ")).not.toContain("text-foreground");
@@ -474,7 +536,10 @@ function drawn(node: Node): string {
   const text = Array.from(node.childNodes).map(drawn).join("");
   // A code block is its own box: the newline hast ends its text with breaks
   // no line in the body around it.
-  if (node.nodeName === "CODE" && (node as Element).classList.contains("inline-block")) {
+  if (
+    node.nodeName === "CODE" &&
+    (node as Element).classList.contains("inline-block")
+  ) {
     return text.replace(/\n$/, "");
   }
   return text;
@@ -500,23 +565,63 @@ describe("TextRenderer line breaks", () => {
   }
 
   it.each([
-    ["a single newline as one break", "line one\nline two", "line one\nline two"],
+    [
+      "a single newline as one break",
+      "line one\nline two",
+      "line one\nline two",
+    ],
     ["a blank line as one blank line", "Hey\n\nSee you", "Hey\n\nSee you"],
-    ["two trailing spaces as one break", "line one  \nline two", "line one\nline two"],
-    ["a trailing backslash as one break", "line one\\\nline two", "line one\nline two"],
+    [
+      "two trailing spaces as one break",
+      "line one  \nline two",
+      "line one\nline two",
+    ],
+    [
+      "a trailing backslash as one break",
+      "line one\\\nline two",
+      "line one\nline two",
+    ],
     ["an opening list without an empty first line", "- a\n- b", "a\nb"],
-    ["an opening quote without an empty first line", "> quoted\nafter", "quoted\nafter"],
-    ["a paragraph then a list with one blank line", "Items:\n\n- a\n- b", "Items:\n\na\nb"],
-    ["a list then a paragraph with one blank line", "- a\n- b\n\nAfter", "a\nb\n\nAfter"],
+    [
+      "an opening quote without an empty first line",
+      "> quoted\nafter",
+      "quoted\nafter",
+    ],
+    [
+      "a paragraph then a list with one blank line",
+      "Items:\n\n- a\n- b",
+      "Items:\n\na\nb",
+    ],
+    [
+      "a list then a paragraph with one blank line",
+      "- a\n- b\n\nAfter",
+      "a\nb\n\nAfter",
+    ],
     // The breaks come from what was typed, not from hast's separators, which
     // put a blank line before a list typed on the next line and between a
     // nested list's items.
-    ["a list typed on the next line with no blank line", "Items:\n- a\n- b", "Items:\na\nb"],
-    ["a quote typed on the next line with no blank line", "text\n> quoted", "text\nquoted"],
+    [
+      "a list typed on the next line with no blank line",
+      "Items:\n- a\n- b",
+      "Items:\na\nb",
+    ],
+    [
+      "a quote typed on the next line with no blank line",
+      "text\n> quoted",
+      "text\nquoted",
+    ],
     ["a nested list one item a line", "- a\n  - b\n- c", "a\nb\nc"],
     ["a quote inside a list item one line", "- > q\n- x", "q\nx"],
-    ["a blank line after a heading as one blank line", "# Title\n\nbody", "Title\n\nbody"],
-    ["a mention in a tight list one item a line", "- hi @jane\n- b", "hi @jane\nb"],
+    [
+      "a blank line after a heading as one blank line",
+      "# Title\n\nbody",
+      "Title\n\nbody",
+    ],
+    [
+      "a mention in a tight list one item a line",
+      "- hi @jane\n- b",
+      "hi @jane\nb",
+    ],
     // micromark's offsets skip a leading byte-order mark.
     ["a blank line behind a byte-order mark", "\uFEFFa\n\nb", "a\n\nb"],
     ["CRLF line endings as typed", "x\r\n\r\n- a\r\n- b", "x\n\na\nb"],
