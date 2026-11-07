@@ -9,11 +9,20 @@
 //            row whose bytes are missing;
 //   { bytes, download } -- listed as `bytes` (so its etag is unchanged), and
 //            its download behaves as `download`: "vanish" (null above), 500
-//            (false above) or "missing" (true above).
+//            (false above) or "missing" (true above);
+//   { bytes, flaky } -- its first `flaky` downloads answer 503, then it serves
+//            `bytes`: a transient Storage error the backup retries (#3099);
+//   { bytes, slow } -- its download takes `slow` milliseconds (a real wait),
+//            so a short budget runs out with transfers in flight.
+// The backup waits between retries (TRANSFER_RETRY_DELAYS_MS); this preload
+// cuts every timer to zero so a test of a 500 doesn't spend 12 seconds waiting.
 // "Not found" is HTTP 400 with "404" only in the body, as storage-api answers
 // it. Uploads (POST) and deletes (DELETE), which the rehearsal and restore make,
 // are written back to FAKE_STORAGE so a test can see what the run left.
 import fs from "node:fs";
+
+const realSetTimeout = globalThis.setTimeout;
+globalThis.setTimeout = (fn, _ms, ...args) => realSetTimeout(fn, 0, ...args);
 
 const file = process.env.FAKE_STORAGE;
 const state = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -65,6 +74,16 @@ globalThis.fetch = async (url, init = {}) => {
       return { ok: true, status: 200 };
     }
     const stored = state[bucket]?.[objectPath];
+    if (stored?.flaky > 0) {
+      stored.flaky -= 1;
+      save();
+      return { ok: false, status: 503, arrayBuffer: async () => Buffer.from("") };
+    }
+    if (stored?.slow) {
+      await new Promise((resolve) => realSetTimeout(resolve, stored.slow));
+      return { ok: true, status: 200, arrayBuffer: async () => Buffer.from(stored.bytes) };
+    }
+    if (stored?.flaky === 0) return { ok: true, status: 200, arrayBuffer: async () => Buffer.from(stored.bytes) };
     const content =
       stored?.download === "vanish" ? null : stored?.download === 500 ? false : stored?.download === "missing" ? true : stored;
     if (content === null) {

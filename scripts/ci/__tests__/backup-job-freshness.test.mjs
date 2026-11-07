@@ -1,7 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
+import { readFileSync } from "node:fs";
+
 import {
+  CATCHING_UP_STEP,
   RUNS_PER_PAGE,
   candidateOlderRuns,
   evaluateJobFreshness,
@@ -100,6 +103,31 @@ describe("the newest run decides alone", () => {
   it("a success within 36h is fresh", () => {
     const verdict = evaluate({ runs: [run(1, { hours: 16.2 })], jobs: { 1: [job()] } });
     assert.deepEqual(verdict, { ok: true, fresh: true, reason: `${JOB} succeeded within 36h` });
+  });
+
+  it("a success whose Storage mirror is catching up passes, but never fresh (#3099)", () => {
+    const step = (conclusion) => ({ name: CATCHING_UP_STEP, status: "completed", conclusion });
+    const catching = evaluate({ runs: [run(1, { hours: 16.2 })], jobs: { 1: [job({ steps: [{ name: "Checkout", conclusion: "success" }, step("success")] })] } });
+    assert.equal(catching.ok, true);
+    assert.equal(catching.fresh, false, "it must not close an open alert");
+    assert.match(catching.reason, /still catching up/);
+    assert.match(verdictLogLine(catching), /^::warning::/);
+    const skipped = evaluate({ runs: [run(1, { hours: 16.2 })], jobs: { 1: [job({ steps: [step("skipped")] })] } });
+    assert.equal(skipped.fresh, true, "the step skipped means the mirror finished");
+  });
+
+  it("db-backup.yml runs the catching-up step after both Storage jobs' mirror step, on its output (#3099)", () => {
+    const workflow = readFileSync(".github/workflows/db-backup.yml", "utf8");
+    for (const jobName of ["backup-staging-storage", "backup-production-storage"]) {
+      const start = workflow.indexOf(`\n  ${jobName}:\n`);
+      const next = workflow.indexOf("\n  backup-", start + 1);
+      const block = workflow.slice(start, next === -1 ? undefined : next);
+      assert.match(block, /uses: \.\/\.github\/actions\/storage-offsite-backup\n\s+id: storage\n/, jobName);
+      assert.match(block, new RegExp(`- name: ${CATCHING_UP_STEP}\\n\\s+if: steps\\.storage\\.outputs\\.behind == 'true'\\n`), jobName);
+    }
+    const action = readFileSync(".github/actions/storage-offsite-backup/action.yml", "utf8");
+    assert.match(action, /outputs:\n  behind:\n[\s\S]*value: \$\{\{ steps\.backup\.outputs\.behind \}\}/);
+    assert.match(action, /- name: Back up Storage objects\n\s+id: backup\n/);
   });
 
   it("a success older than 36h fails", () => {
