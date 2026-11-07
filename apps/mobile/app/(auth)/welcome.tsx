@@ -1,17 +1,20 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Redirect, useRouter } from "expo-router";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { BackHandler, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { useListChapters, useUpdateOnboarding } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { PushPrimerCard } from "@/components/notifications/push-primer-card";
+import {
+  PUSH_ASK_TITLE,
+  PushAskActions,
+  PushAskBody,
+} from "@/components/notifications/push-ask";
 import { JoinedChannelsCard } from "@/components/onboarding/joined-channels-card";
 import {
   ONBOARDING_COLUMN_WIDTH,
   OnboardingPrimaryButton,
 } from "@/components/onboarding/onboarding-primary-button";
-import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { useAuthSession } from "@/lib/auth-session";
 import { selectOnboardingMembership } from "@/lib/onboarding/membership";
 import { usePushPrimer } from "@/lib/notifications/use-push-primer";
@@ -20,19 +23,21 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * s03, "You're in." (`spec/ui/mobile/screens.md`).
  *
- * The first screen after a member joins: the chapter and its school under the
- * title, read from the membership this time, not from the invite preview the
- * confirm step on `/join` showed (#3352). It shows the auto-joined public
- * channels and, when this
- * build can push, the C7 push primer card inline (`shouldOfferPrimer`,
- * #2299). Go to chat PATCHes `has_completed_onboarding`, so the gate will not
- * send the member here again.
+ * The first screen after a member joins, in two beats on one route:
  *
- * It follows the #3348 screen rules: one surface, with a card only for the
- * channel list and the primer, and one button pinned above the inset. It used
- * to carry a Skip under Go to chat that did the same thing. That button is
- * outlined while the primer shows, so the primer's "Turn on" is the one gold
- * action on screen.
+ * 1. **You're in.** The chapter and its school under the title, read from the
+ *    membership this time, not from the invite preview the confirm step on
+ *    `/join` showed (#3352), and the auto-joined public channels.
+ * 2. **Turn on notifications**, when this build can push and push isn't on
+ *    yet (`shouldOfferPrimer`, #2299). Its own step, not a card under the
+ *    channels: the card was easy to scroll past on the way to Go to chat, and
+ *    a member who joins and never turns push on misses the very pings the
+ *    chapter invited them for. Either answer goes to chat; a "Not now" comes
+ *    back once, days later, on the chat home (`usePushReminder`).
+ *
+ * Leaving PATCHes `has_completed_onboarding`, so the gate will not send the
+ * member here again. One surface and one gold button pinned above the inset
+ * on each beat (the #3348 screen rules).
  */
 export default function Welcome() {
   const { tokens } = useFrappTheme();
@@ -44,6 +49,9 @@ export default function Welcome() {
   const updateOnboarding = useUpdateOnboarding();
   const primer = usePushPrimer();
   const [leaving, setLeaving] = useState(false);
+  // The guard itself, since two taps in one frame both read `leaving` false.
+  const leavingRef = useRef(false);
+  const [step, setStep] = useState<"welcome" | "notifications">("welcome");
 
   const membership = useMemo(() => {
     const rows = Array.isArray(chapters.data) ? chapters.data : [];
@@ -54,7 +62,8 @@ export default function Welcome() {
   const university = membership?.chapter.university ?? null;
 
   async function finish() {
-    if (leaving) return;
+    if (leavingRef.current) return;
+    leavingRef.current = true;
     setLeaving(true);
     try {
       await updateOnboarding.mutateAsync({ has_completed_onboarding: true });
@@ -64,6 +73,24 @@ export default function Welcome() {
     await queryClient.invalidateQueries({ queryKey: ["chapters"] });
     router.replace("/(tabs)");
   }
+
+  // Latched when Continue opens it, not re-derived from `showPrimer`: an
+  // answer is stored before the OS dialog opens and before the PATCH, and
+  // the step must stay on screen (busy) until the member has left for chat.
+  const asking = step === "notifications";
+  const answering = primer.isRequesting || leaving;
+
+  // Android's back on the second beat returns to the first, as a back gesture
+  // between two screens would; it never leaves onboarding half done. Held
+  // while an answer is on its way out.
+  useEffect(() => {
+    if (!asking) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (!answering) setStep("welcome");
+      return true;
+    });
+    return () => sub.remove();
+  }, [asking, answering]);
 
   if (status === "unauthenticated") {
     return <Redirect href="/(auth)/sign-in" />;
@@ -82,56 +109,64 @@ export default function Welcome() {
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
       >
-        <Text accessibilityRole="header" style={styles.title}>
-          You&apos;re in.
-        </Text>
-        <Text style={styles.subtitle}>
-          {university ? `${chapterName} · ${university}` : chapterName}
-        </Text>
+        {asking ? (
+          <>
+            <Text accessibilityRole="header" style={styles.title}>
+              {PUSH_ASK_TITLE}
+            </Text>
+            <View style={styles.channels}>
+              <PushAskBody />
+            </View>
+          </>
+        ) : (
+          <>
+            <Text accessibilityRole="header" style={styles.title}>
+              You&apos;re in.
+            </Text>
+            <Text style={styles.subtitle}>
+              {university ? `${chapterName} · ${university}` : chapterName}
+            </Text>
 
-        <View style={styles.channels}>
-          <JoinedChannelsCard />
-        </View>
-
-        {primer.showPrimer ? (
-          <View style={styles.primerWrap}>
-            <PushPrimerCard
-              isRequesting={primer.isRequesting}
-              onTurnOn={() => {
-                void primer.turnOn();
-              }}
-              onNotNow={() => {
-                void primer.notNow();
-              }}
-            />
-          </View>
-        ) : null}
+            <View style={styles.channels}>
+              <JoinedChannelsCard />
+            </View>
+          </>
+        )}
       </ScrollView>
 
       {/*
-        One gold button on the screen. While the primer asks, its "Turn on" is
-        that button, so "Go to chat" is the outlined one under it, as the
-        board draws s03; once the primer is answered (or never shown), "Go to
-        chat" is the step forward and takes the gold. Leaving shows the
-        spinner every onboarding button uses, under the same label.
+        One gold button per beat. On the first it moves on: to the
+        notifications step when there is one to show, else to chat. On the
+        second it asks, and Not now is the quiet line under it; either answer
+        leaves for chat, after the OS dialog closes.
       */}
       <View style={styles.footer}>
-        {primer.showPrimer ? (
-          <OnboardingSecondaryButton
-            label="Go to chat"
-            disabled={leaving}
-            busy={leaving}
-            onPress={() => {
-              void finish();
+        {asking ? (
+          <PushAskActions
+            action={primer.action}
+            busy={answering}
+            onTurnOn={() => {
+              void primer.turnOn().then((outcome) => {
+                if (outcome !== null) void finish();
+              });
+            }}
+            onNotNow={() => {
+              void primer.notNow().then((answered) => {
+                if (answered) void finish();
+              });
             }}
           />
         ) : (
           <OnboardingPrimaryButton
-            label="Go to chat"
+            label={primer.showPrimer ? "Continue" : "Go to chat"}
             disabled={leaving}
             busy={leaving}
             onPress={() => {
-              void finish();
+              if (primer.showPrimer) {
+                setStep("notifications");
+              } else {
+                void finish();
+              }
             }}
           />
         )}
@@ -169,9 +204,6 @@ function createStyles(tokens: SignetTokens) {
     },
     channels: {
       marginTop: tokens.spacing.lg,
-    },
-    primerWrap: {
-      marginTop: tokens.spacing.md,
     },
     footer: {
       paddingHorizontal: tokens.spacing.xl,
