@@ -25,11 +25,9 @@ import { Input } from "@/components/ui/input";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { anyReadUncached } from "@/components/shared/async-states";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedOffline,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedOffline } from "@/components/shared/nested-states";
+import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
+import { Can } from "@/components/shared/can";
 import { SectionLabel } from "@/components/shared/section-label";
 import { PageActions } from "@/components/layout/page-actions";
 import {
@@ -73,6 +71,8 @@ const CALENDAR_DEFAULT_START_HOUR = 18;
 
 type TimeFilter = "upcoming" | "past" | "all";
 
+type EventsView = "list" | "calendar";
+
 /*
  * The list's section label follows the Time filter. The card title it replaces
  * read "Upcoming & Recent Events" whatever the filter said, so under Past it
@@ -90,7 +90,11 @@ export function EventsPage() {
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const [query, setQuery] = useState("");
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("upcoming");
-  const [view, setView] = useState<"list" | "calendar">("list");
+  // `null` until the events read first resolves: a chapter with no events
+  // opens on the calendar, where the first one gets made, and every other
+  // chapter opens on the list. Set once, so creating that first event doesn't
+  // jump the officer from the calendar to the list under their cursor.
+  const [view, setView] = useState<EventsView | null>(null);
   const [attendanceFilter, setAttendanceFilter] = useState<
     "all" | "mandatory" | "optional"
   >("all");
@@ -102,14 +106,14 @@ export function EventsPage() {
   // `POST /v1/events` and `PATCH /v1/events/:id` are paid-ops, so the editor's
   // entry points mirror the gate (#841). Routing the dialog through
   // `useGatedDialog` covers all three of them at once — the New event button,
-  // the empty-state CTA, and the detail sheet's Edit — and closes the dialog if
-  // the subscription lapses while it is open.
+  // a calendar day, and the detail sheet's Edit — and closes the dialog if the
+  // subscription lapses while it is open.
   const eventWriteGate = useSubscriptionGate();
   const editorDialog = useGatedDialog(eventWriteGate);
   const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
   const [activeEvent, setActiveEvent] = useState<EventRow | null>(null);
-  // Set only by a calendar day click, so the "New event" button and the
-  // empty-state CTA keep opening a blank form exactly as they do today.
+  // Set only by a calendar day click, so the "New event" button keeps opening
+  // a blank form.
   const [calendarCreateDay, setCalendarCreateDay] = useState<Date | null>(null);
   // Lifted here (not local to EventsCalendar) because the Calendar tab's
   // content unmounts on tab switch — see EventsCalendar's own comment.
@@ -128,6 +132,9 @@ export function EventsPage() {
     "events:update",
     permissionsPayload?.permissions,
   );
+  // `POST /v1/events` is `events:create`. Without it a calendar day is just a
+  // date, not a button that opens a form the server will refuse.
+  const canCreateEvents = can("events:create", permissionsPayload?.permissions);
   const { confirm, confirmDialog } = useConfirmDialog();
 
   // Live updates: any admin creating or editing an event in another tab
@@ -148,6 +155,10 @@ export function EventsPage() {
   }, [eventsQuery.data]);
 
   const nowTick = useNow();
+
+  if (view === null && eventsQuery.data !== undefined) {
+    setView(events.length === 0 ? "calendar" : "list");
+  }
 
   // Shared by both views: search text, attendance policy, cadence. Time
   // (upcoming/past/all) is deliberately NOT here — it's a list-view concept
@@ -351,10 +362,18 @@ export function EventsPage() {
 
   const eventWriteControls = eventWriteGate.controlProps();
   const searchText = query.trim();
-  const narrowed =
-    timeFilter !== "all" ||
-    attendanceFilter !== "all" ||
-    recurrenceFilter !== "all";
+  // The attendance and cadence filters narrow by kind. Time alone narrows by
+  // when, and its miss gets its own line, since the default (Upcoming) hides
+  // every past event without the officer having touched a filter.
+  const narrowedByKind =
+    attendanceFilter !== "all" || recurrenceFilter !== "all";
+  const hasEvents = events.length > 0;
+
+  function clearFilters() {
+    setTimeFilter("all");
+    setAttendanceFilter("all");
+    setRecurrenceFilter("all");
+  }
 
   function openCreate(day: Date | null) {
     setEditorMode("create");
@@ -370,8 +389,8 @@ export function EventsPage() {
 
   return (
     <Tabs
-      value={view}
-      onValueChange={(next) => setView(next as "list" | "calendar")}
+      value={view ?? "list"}
+      onValueChange={(next) => setView(next as EventsView)}
       className="space-y-4"
     >
       {/*
@@ -464,15 +483,17 @@ export function EventsPage() {
             Calendar
           </TabsTrigger>
         </TabsList>
-        <Button
-          size="toolbar"
-          className="gap-2"
-          {...eventWriteControls}
-          onClick={() => openCreate(null)}
-        >
-          <Plus className="h-4 w-4" />
-          New event
-        </Button>
+        <Can permission="events:create">
+          <Button
+            size="toolbar"
+            className="gap-2"
+            {...eventWriteControls}
+            onClick={() => openCreate(null)}
+          >
+            <Plus className="h-4 w-4" />
+            New event
+          </Button>
+        </Can>
       </PageActions>
 
       {/*
@@ -513,68 +534,78 @@ export function EventsPage() {
           </div>
         ) : null}
 
-        {filteredEvents.length === 0 ? (
-          searchText ? (
-            <NestedEmpty
-              sole
-              title={`No match for “${searchText}”`}
-              description={stateMicrocopy.events.noMatchDescription}
-            />
-          ) : narrowed && events.length > 0 ? (
-            // "No events yet" over a chapter whose events are all past (the
-            // default filter is Upcoming) would tell the officer something
-            // false (`writing.md` §7).
-            <NestedEmpty
-              sole
-              title={stateMicrocopy.events.filteredTitle}
-              description={stateMicrocopy.events.filteredDescription}
-            />
-          ) : (
-            <NestedEmpty
-              sole
-              title={stateMicrocopy.events.emptyTitle}
-              description={stateMicrocopy.events.emptyDescription}
-              actionLabel="Create first event"
-              actionProps={eventWriteControls}
-              onAction={() => openCreate(null)}
-            />
-          )
-        ) : (
-          <section aria-labelledby="events-list-label">
-            {/*
+        {/*
+          The section stays at zero: its label and count, then one line where
+          the rows would be (`components.md` §10). A miss says which kind of
+          miss it is and offers the way back out; "No events yet" over a
+          chapter whose events are all past would say something false
+          (`writing.md` §7).
+        */}
+        <section aria-labelledby="events-list-label">
+          {/*
               The list header: all that survives of the deleted `<thead>`. The
               select-all leads, in line with every row's checkbox, beside the
               section label and its count.
             */}
-            <div className="flex min-h-9 items-center gap-1 pointer-coarse:min-h-11">
-              {canMarkAttendance ? (
-                <label
-                  className={`${dashboardCheckboxHitAreaClassName} shrink-0`}
-                >
-                  <input
-                    type="checkbox"
-                    aria-label="Select all visible events"
-                    className={dashboardTableCheckboxClassName}
-                    checked={allVisibleSelected}
-                    onChange={(event) =>
-                      toggleAllVisibleEvents(event.target.checked)
-                    }
-                  />
-                </label>
-              ) : null}
-              <div className="min-w-0 px-2">
-                <SectionLabel
-                  id="events-list-label"
-                  count={`${filteredEvents.length} event${filteredEvents.length === 1 ? "" : "s"}`}
-                >
-                  {TIME_FILTER_LABELS[timeFilter]}
-                </SectionLabel>
-              </div>
+          <div className="flex min-h-9 items-center gap-1 pointer-coarse:min-h-11">
+            {canMarkAttendance && filteredEvents.length > 0 ? (
+              <label
+                className={`${dashboardCheckboxHitAreaClassName} shrink-0`}
+              >
+                <input
+                  type="checkbox"
+                  aria-label="Select all visible events"
+                  className={dashboardTableCheckboxClassName}
+                  checked={allVisibleSelected}
+                  onChange={(event) =>
+                    toggleAllVisibleEvents(event.target.checked)
+                  }
+                />
+              </label>
+            ) : null}
+            <div className="min-w-0 px-2">
+              <SectionLabel
+                id="events-list-label"
+                count={`${filteredEvents.length} event${filteredEvents.length === 1 ? "" : "s"}`}
+              >
+                {TIME_FILTER_LABELS[timeFilter]}
+              </SectionLabel>
             </div>
-            {/*
+          </div>
+          {filteredEvents.length === 0 ? (
+            searchText ? (
+              <InlineNote className="px-2">
+                {stateMicrocopy.events.noSearchMatches}{" "}
+                <InlineNoteAction onClick={() => setQuery("")}>
+                  Clear search
+                </InlineNoteAction>
+              </InlineNote>
+            ) : hasEvents && narrowedByKind ? (
+              <InlineNote className="px-2">
+                {stateMicrocopy.events.noFilterMatches}{" "}
+                <InlineNoteAction onClick={clearFilters}>
+                  Clear filters
+                </InlineNoteAction>
+              </InlineNote>
+            ) : hasEvents ? (
+              <InlineNote className="px-2">
+                {timeFilter === "past"
+                  ? stateMicrocopy.events.noPast
+                  : stateMicrocopy.events.noUpcoming}{" "}
+                <InlineNoteAction onClick={() => setTimeFilter("all")}>
+                  Show all events
+                </InlineNoteAction>
+              </InlineNote>
+            ) : (
+              <InlineNote className="px-2">
+                {stateMicrocopy.events.empty}
+              </InlineNote>
+            )
+          ) : (
+            /*
               `role="list"` restored explicitly: `display:flex` on an `<li>`
               drops its list-item box, and WebKit then stops exposing the list.
-            */}
+            */
             <ul role="list" className={denseListClassName}>
               {filteredEvents.map((event) => {
                 const eventId = String(
@@ -683,8 +714,8 @@ export function EventsPage() {
                 );
               })}
             </ul>
-          </section>
-        )}
+          )}
+        </section>
       </TabsContent>
 
       {/*
@@ -696,6 +727,8 @@ export function EventsPage() {
           events={calendarEvents}
           monthAnchor={calendarMonthAnchor}
           onMonthAnchorChange={setCalendarMonthAnchor}
+          canCreate={canCreateEvents}
+          chapterHasEvents={hasEvents}
           createDisabled={eventWriteControls.disabled}
           createDescribedBy={eventWriteControls["aria-describedby"]}
           createTitle={eventWriteControls.title}
