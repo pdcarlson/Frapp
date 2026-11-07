@@ -56,6 +56,20 @@ vi.mock("@/lib/auth-session", () => ({
 }));
 
 const completeOnboarding = vi.fn().mockResolvedValue(undefined);
+const updateUser = vi.fn().mockResolvedValue({});
+/** `/v1/users/me`. A full profile by default, so the profile beat is skipped. */
+const COMPLETE_USER = {
+  id: "u-1",
+  display_name: "Ada Lovelace",
+  avatar_url: "https://example.test/ada.jpg",
+};
+let currentUser: Record<string, unknown> | undefined = COMPLETE_USER;
+
+/** The photo control has its own spec; here it only has to be there. */
+vi.mock("@/components/profile/profile-photo", () => ({
+  ProfilePhoto: (props: { initials: string }) =>
+    React.createElement("ProfilePhoto", props),
+}));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -72,6 +86,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useChannels: () => ({ isPending: false, isError: false, data: [] }),
   useUpdateOnboarding: () => ({ mutateAsync: completeOnboarding }),
+  useCurrentUser: () => ({ data: currentUser, dataUpdatedAt: 1 }),
+  useUpdateUser: () => ({ mutateAsync: updateUser }),
 }));
 
 import { useRouter } from "expo-router";
@@ -419,5 +435,118 @@ describe("s03 welcome, one gold button", () => {
       busy: true,
     });
     expect(texts(root).some((t) => t.includes("Opening chat"))).toBe(false);
+  });
+});
+
+/**
+ * The profile beat: shown when the member has no photo or no real name, between
+ * You're in and the notifications beat. The name is checked on Continue and
+ * saved only when it changed; the photo is optional.
+ */
+describe("s03 welcome, profile beat", () => {
+  const field = (root: Node) =>
+    root
+      .findAllByType("TextInput" as never, { deep: true })
+      .find((input) => input.props.accessibilityLabel === "Your name");
+
+  beforeEach(() => {
+    pushAvailable = false;
+    permission = null;
+    currentUser = COMPLETE_USER;
+    completeOnboarding.mockClear();
+    updateUser.mockClear().mockResolvedValue({});
+    vi.mocked(vi.mocked(useRouter)().replace).mockClear();
+  });
+
+  it("is skipped for a member with a name and a photo", async () => {
+    const { root } = await render();
+    await press(button(root, "Go to chat"));
+
+    expect(
+      texts(root).some((t) => t.includes("How the chapter sees you")),
+    ).toBe(false);
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
+
+  it("asks for a photo with the name filled in, and doesn't resend the name", async () => {
+    currentUser = { ...COMPLETE_USER, avatar_url: null };
+    const { root } = await render();
+    await press(button(root, "Continue"));
+
+    expect(
+      texts(root).some((t) => t.includes("How the chapter sees you")),
+    ).toBe(true);
+    expect(root.findAllByType("ProfilePhoto" as never)).toHaveLength(1);
+    expect(field(root)?.props.value).toBe("Ada Lovelace");
+
+    await press(button(root, "Go to chat"));
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
+
+  it("never pre-fills the Member stand-in, and needs a name before moving on", async () => {
+    currentUser = { ...COMPLETE_USER, display_name: "Member" };
+    const { root } = await render();
+    await press(button(root, "Continue"));
+
+    expect(field(root)?.props.value).toBe("");
+    await press(button(root, "Go to chat"));
+    expect(
+      texts(root).some((t) => t.includes("so the chapter knows who")),
+    ).toBe(true);
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(completeOnboarding).not.toHaveBeenCalled();
+
+    act(() => field(root)?.props.onChangeText("  Grace Hopper "));
+    expect(
+      texts(root).some((t) => t.includes("so the chapter knows who")),
+    ).toBe(false);
+    await press(button(root, "Go to chat"));
+
+    expect(updateUser).toHaveBeenCalledWith({ display_name: "Grace Hopper" });
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
+
+  it("stays, with the reason, when the name can't be saved", async () => {
+    currentUser = { ...COMPLETE_USER, display_name: "" };
+    updateUser.mockRejectedValueOnce(new Error("offline"));
+    const { root } = await render();
+    await press(button(root, "Continue"));
+    act(() => field(root)?.props.onChangeText("Grace Hopper"));
+
+    await press(button(root, "Go to chat"));
+
+    expect(texts(root).some((t) => t.includes("Couldn't save your name"))).toBe(
+      true,
+    );
+    expect(completeOnboarding).not.toHaveBeenCalled();
+    expect(field(root)?.props.value).toBe("Grace Hopper");
+  });
+
+  it("comes before the notifications beat, and Android back walks back through it", async () => {
+    const { BackHandler } = await import("react-native");
+    const listen = vi.mocked(BackHandler.addEventListener);
+    listen.mockClear();
+    pushAvailable = true;
+    permission = OFF;
+    currentUser = { ...COMPLETE_USER, avatar_url: null };
+    const { root } = await render();
+
+    await press(button(root, "Continue"));
+    expect(field(root)).toBeDefined();
+    await press(button(root, "Continue"));
+    expect(button(root, "Not now")).toBeDefined();
+
+    const back = () => {
+      const calls = listen.mock.calls as unknown as [string, () => boolean][];
+      const handler = calls.filter(([e]) => e === "hardwareBackPress").at(-1);
+      act(() => {
+        handler![1]();
+      });
+    };
+    back();
+    expect(field(root)).toBeDefined();
+    back();
+    expect(texts(root).some((t) => t.includes("in."))).toBe(true);
   });
 });
