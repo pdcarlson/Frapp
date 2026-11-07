@@ -281,9 +281,9 @@ describe('ScheduledJobsService', () => {
 
       expect(notifyUser).toHaveBeenCalledTimes(2);
       expect(notifyUser).toHaveBeenCalledWith('user-1', 'chap-1', {
-        title: 'Event starting soon',
+        title: 'Chapter Meeting',
         // 12:00 → 12:20 is 20 minutes, not the 30-minute window width.
-        body: '"Chapter Meeting" starts in 20 minutes.',
+        body: 'Starts in 20 minutes · Required',
         category: 'events',
         data: { target: { screen: 'events', eventId: 'evt-1' } },
       });
@@ -298,11 +298,11 @@ describe('ScheduledJobsService', () => {
     // who actually has 4 misses a mandatory event's check-in and is auto-marked
     // ABSENT, so this is the case worth pinning hardest.
     it.each([
-      ['2026-08-05T12:29:30Z', 'starts in 30 minutes'],
-      ['2026-08-05T12:15:00Z', 'starts in 15 minutes'],
-      ['2026-08-05T12:04:00Z', 'starts in 4 minutes'],
-      ['2026-08-05T12:01:00Z', 'starts in 1 minute'],
-      ['2026-08-05T12:00:20Z', 'is starting now'],
+      ['2026-08-05T12:29:30Z', 'Starts in 30 minutes'],
+      ['2026-08-05T12:15:00Z', 'Starts in 15 minutes'],
+      ['2026-08-05T12:04:00Z', 'Starts in 4 minutes'],
+      ['2026-08-05T12:01:00Z', 'Starts in 1 minute'],
+      ['2026-08-05T12:00:20Z', 'Starting now'],
     ])('reports the real lead time for %s', async (startTime, phrase) => {
       findEventsStartingBetween.mockResolvedValue([
         { ...UPCOMING, start_time: startTime },
@@ -310,9 +310,7 @@ describe('ScheduledJobsService', () => {
 
       await service.sweepEventReminders(NOW);
 
-      expect(notifyUser.mock.calls[0][2].body).toBe(
-        `"Chapter Meeting" ${phrase}.`,
-      );
+      expect(notifyUser.mock.calls[0][2].body).toBe(`${phrase} · Required`);
     });
 
     it('queries the window (now, now + lead] so a started event is never notified about', async () => {
@@ -736,12 +734,15 @@ describe('ScheduledJobsService', () => {
       expect(notifyUser).toHaveBeenCalledWith(
         'user-1',
         'chap-1',
-        expect.objectContaining({ title: 'Task overdue' }),
+        expect.objectContaining({
+          title: 'Book the venue',
+          body: 'Overdue · was due Tue, Aug 4',
+        }),
       );
       expect(notifyUser).toHaveBeenCalledWith(
         'admin-1',
         'chap-1',
-        expect.objectContaining({ title: 'Task overdue' }),
+        expect.objectContaining({ title: 'Book the venue' }),
       );
     });
 
@@ -760,7 +761,7 @@ describe('ScheduledJobsService', () => {
       expect(notifyUser).toHaveBeenCalledWith(
         'user-1',
         'chap-1',
-        expect.objectContaining({ title: 'Task overdue' }),
+        expect.objectContaining({ title: 'Book the venue' }),
       );
     });
 
@@ -791,7 +792,7 @@ describe('ScheduledJobsService', () => {
       expect(notifyUser).toHaveBeenLastCalledWith(
         'admin-1',
         'chap-1',
-        expect.objectContaining({ title: 'Task overdue' }),
+        expect.objectContaining({ title: 'Book the venue' }),
       );
       // Partial delivery keeps the claim: retrying would re-spam the
       // recipient who did receive it.

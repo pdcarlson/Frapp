@@ -17,6 +17,7 @@ import { TaskStatus } from '#domain/entities/task.entity';
 import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
 import { ChatService } from './chat.service';
+import { formatDueDate, joinFacts } from './push-copy';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 const VALID_ASSIGNEE_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -102,6 +103,17 @@ export class TaskService {
     return toDisplayStatus(task);
   }
 
+  /** A member's display name for a push, or null when it cannot be read. */
+  private async displayNameOf(userId: string): Promise<string | null> {
+    try {
+      const [user] = await this.userRepo.findByIds([userId]);
+      const name = user?.display_name?.trim();
+      return name ? name : null;
+    } catch {
+      return null;
+    }
+  }
+
   async list(
     chapterId: string,
     userId: string,
@@ -141,19 +153,30 @@ export class TaskService {
       confirmed_at: null,
     });
 
-    await this.safeNotifyUser(
-      input.assignee_id,
-      input.chapter_id,
-      {
-        title: 'Task Assigned',
-        body: `You have been assigned: ${task.title}`,
-        priority: 'NORMAL',
-        category: 'tasks',
-        data: { target: { screen: 'tasks', taskId: task.id } },
-      },
-      task.id,
-      'assignment',
-    );
+    // Assigning yourself a task is a note to self; the push would only echo
+    // the tap that made it.
+    if (input.assignee_id !== input.created_by) {
+      const assigner = await this.displayNameOf(input.created_by);
+      await this.safeNotifyUser(
+        input.assignee_id,
+        input.chapter_id,
+        {
+          // Named for the task, like every task push (notifications.md § What
+          // a push says): "Book the venue" / "From Paul · due Fri, Nov 14".
+          title: task.title,
+          body: joinFacts(
+            assigner ? `From ${assigner}` : 'Assigned to you',
+            `due ${formatDueDate(task.due_date)}`,
+            task.point_reward ? `${task.point_reward} points` : null,
+          ),
+          priority: 'NORMAL',
+          category: 'tasks',
+          data: { target: { screen: 'tasks', taskId: task.id } },
+        },
+        task.id,
+        'assignment',
+      );
+    }
 
     // The `/task` slash command asks us to surface an interactive assignment
     // card in chat. The card is server-originated (a client cannot forge
@@ -339,8 +362,10 @@ export class TaskService {
       task.created_by,
       chapterId,
       {
-        title: 'Task Completed',
-        body: `"${task.title}" was marked complete and needs your confirmation.`,
+        title: task.title,
+        body: `${
+          (await this.displayNameOf(task.assignee_id)) ?? 'The assignee'
+        } marked it done. Confirm it to award the points.`,
         priority: 'NORMAL',
         category: 'tasks',
         data: { target: { screen: 'tasks', taskId: task.id } },
@@ -408,8 +433,10 @@ export class TaskService {
       task.assignee_id,
       chapterId,
       {
-        title: 'Task Confirmed',
-        body: `Your task "${task.title}" has been confirmed`,
+        title: task.title,
+        body: updated.point_reward
+          ? `Confirmed · +${updated.point_reward} points`
+          : 'Confirmed',
         priority: 'NORMAL',
         category: 'tasks',
         data: { target: { screen: 'tasks', taskId: task.id } },
@@ -450,10 +477,10 @@ export class TaskService {
       task.assignee_id,
       chapterId,
       {
-        title: 'Task Completion Rejected',
+        title: task.title,
         body: comment
-          ? `Your task "${task.title}" was rejected: ${comment}`
-          : `Your task "${task.title}" was rejected and moved back to in progress.`,
+          ? `Sent back: ${comment}`
+          : 'Sent back to in progress. It needs more before it counts.',
         priority: 'NORMAL',
         category: 'tasks',
         data: { target: { screen: 'tasks', taskId: task.id } },

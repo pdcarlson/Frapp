@@ -56,10 +56,15 @@ export async function createEventServiceFixture() {
   };
 
   const mockNotificationService: jest.Mocked<
-    Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
+    Pick<
+      NotificationService,
+      'notifyUser' | 'notifyChapter' | 'notifyMembers' | 'timeZoneFor'
+    >
   > = {
     notifyUser: jest.fn().mockResolvedValue(undefined),
     notifyChapter: jest.fn().mockResolvedValue(undefined),
+    notifyMembers: jest.fn().mockResolvedValue(undefined),
+    timeZoneFor: jest.fn().mockResolvedValue(null),
   };
 
   const mockUserRepo: { findByIds: jest.Mock } = {
@@ -75,8 +80,12 @@ export async function createEventServiceFixture() {
   const mockChatService: { sendMessage: jest.Mock } = {
     sendMessage: jest.fn().mockResolvedValue(undefined),
   };
-  const mockRbacService: { memberHasAnyPermission: jest.Mock } = {
+  const mockRbacService: {
+    memberHasAnyPermission: jest.Mock;
+    getAlumniRoleId: jest.Mock;
+  } = {
     memberHasAnyPermission: jest.fn().mockResolvedValue(false),
+    getAlumniRoleId: jest.fn().mockResolvedValue(null),
   };
 
   const module: TestingModule = await Test.createTestingModule({
