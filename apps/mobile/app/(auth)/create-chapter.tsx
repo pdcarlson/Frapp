@@ -1,3 +1,4 @@
+import { errorCopy } from "@repo/hooks/error-copy";
 import {
   useEffect,
   useState,
@@ -37,7 +38,6 @@ import {
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import { SignetTokens } from "@repo/theme/signet";
-import { serverMessageOf } from "@repo/api-sdk";
 import {
   CHAPTER_SHORT_NAME_MAX_LENGTH,
   resolveChapterMark,
@@ -333,8 +333,10 @@ export default function CreateChapter() {
       successHaptic();
     } catch (caught) {
       setError(
-        serverMessageOf(caught) ??
+        errorCopy(
+          caught,
           "Couldn't create that chapter. Check the details and try again.",
+        ),
       );
     }
   }

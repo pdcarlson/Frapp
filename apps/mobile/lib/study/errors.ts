@@ -11,6 +11,7 @@
  * cases a member can actually act on get their own copy.
  */
 
+import { serverCopyOf } from "@repo/hooks/error-copy";
 import { serverMessageOf, statusOf } from "@repo/api-sdk";
 import { moduleRefusalOf } from "@/lib/module-refusal";
 import {
@@ -112,7 +113,7 @@ export function isActiveSessionConflict(error: unknown): boolean {
  */
 export function startErrorCopy(error: unknown): string {
   const status = statusOf(error);
-  const serverMessage = serverMessageOf(error);
+  const serverMessage = serverCopyOf(error);
 
   // Above the generic 403 arm, which relays the server's own words (see
   // `permanentRefusalCopy` for why neither gate's may reach a member).
@@ -150,7 +151,7 @@ export function startErrorCopy(error: unknown): string {
  */
 export function sessionErrorCopy(error: unknown): string {
   const status = statusOf(error);
-  const serverMessage = serverMessageOf(error);
+  const serverMessage = serverCopyOf(error);
 
   // Above the generic 403 arm, as in `startErrorCopy`. In-session copy: the
   // session is still running server-side (see `permanentRefusalCopy`).

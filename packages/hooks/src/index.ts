@@ -41,6 +41,7 @@ export * from "./use-roles";
 export * from "./use-invites";
 export * from "./use-user";
 export * from "./legal-acceptance";
+export * from "./error-copy";
 export * from "./join-errors";
 export * from "./pay-errors";
 export * from "./use-org-config";

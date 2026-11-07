@@ -9,7 +9,6 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import { cardFilledContainers } from "@/tests/card-surfaces";
-import { MAX_UPLOAD_LABEL } from "@repo/validation";
 import {
   expectClearingEntriesEmpty,
   expectRefusedEntriesKeep,
@@ -407,8 +406,10 @@ describe("ServiceHoursPage review queue", () => {
     expect(queue).not.toHaveTextContent("2026-08-01");
     const history = screen.getByRole("region", { name: /history/i });
     expect(history).toHaveTextContent(/Aug 1(, 2026)? · 2h/);
-    // The status badge renders the server's §5 token unchanged.
-    expect(within(history).getByText("APPROVED")).toBeInTheDocument();
+    // The status badge renders a word from the shared label map, never the
+    // token (principles.md P2.1).
+    expect(within(history).getByText("Approved")).toBeInTheDocument();
+    expect(within(history).queryByText("APPROVED")).not.toBeInTheDocument();
   });
 });
 
@@ -600,8 +601,7 @@ describe("ServiceHoursPage proof upload ticket contract", () => {
     await waitFor(() =>
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
-          description:
-            "Upload URL response missing signed URL or storage path.",
+          description: expect.not.stringMatching(/signed URL|storage path/i),
         }),
       ),
     );
@@ -635,7 +635,7 @@ describe("ServiceHoursPage proof upload ticket contract", () => {
     await waitFor(() =>
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
-          description: `Storage rejected upload (413). Proof accepts images/PDF up to ${MAX_UPLOAD_LABEL}.`,
+          description: "That file is too large.",
         }),
       ),
     );

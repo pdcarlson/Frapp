@@ -1,3 +1,4 @@
+import { statusLabel } from "@repo/validation";
 import type { BadgeKind } from "@/components/ui/badge";
 
 export type StudySessionStatus =
@@ -70,20 +71,5 @@ export function studySessionStatusKind(status: StudySessionStatus): BadgeKind {
  * a status added server-side reads as words, not as an enum.
  */
 export function studySessionStatusLabel(status: StudySessionStatus): string {
-  switch (status) {
-    case "ACTIVE":
-      return "Active";
-    case "COMPLETED":
-      return "Completed";
-    case "EXPIRED":
-      return "Expired";
-    case "PAUSED_EXPIRED":
-      return "Expired while paused";
-    case "LOCATION_INVALID":
-      return "Outside zone";
-    default: {
-      const words = String(status).toLowerCase().replace(/_/g, " ");
-      return words.charAt(0).toUpperCase() + words.slice(1);
-    }
-  }
+  return statusLabel("studySession", status);
 }
