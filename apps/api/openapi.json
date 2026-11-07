@@ -2112,7 +2112,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteListItemDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -2140,7 +2147,17 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InviteListItemDto"
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -2158,7 +2175,7 @@
             "bearer": []
           }
         ],
-        "summary": "List chapter invites",
+        "summary": "List chapter invites, newest first",
         "tags": [
           "Invites"
         ]
@@ -2220,7 +2237,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkEmailInviteResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -12125,6 +12149,71 @@
           }
         }
       },
+      "InviteStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "joined",
+          "expired",
+          "revoked"
+        ],
+        "description": "pending: still joinable. joined: someone joined with it. expired: unused past expires_at. revoked: an officer revoked it."
+      },
+      "InviteListItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string",
+            "description": "The single-use token. Clients build the join link from it; they never show it."
+          },
+          "role": {
+            "type": "string",
+            "description": "The role name joining grants"
+          },
+          "email": {
+            "type": "string",
+            "nullable": true,
+            "description": "The address the invite was emailed to, or null for a share-link invite"
+          },
+          "status": {
+            "description": "pending: still joinable. joined: someone joined with it. expired: unused past expires_at. revoked: an officer revoked it.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/InviteStatus"
+              }
+            ]
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "used_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "Set when it was used, and also when it was revoked"
+          },
+          "revoked_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "token",
+          "role",
+          "email",
+          "status",
+          "expires_at",
+          "used_at",
+          "revoked_at",
+          "created_at"
+        ]
+      },
       "BatchCreateInvitesDto": {
         "type": "object",
         "properties": {
@@ -12158,6 +12247,28 @@
         },
         "required": [
           "emails"
+        ]
+      },
+      "BulkEmailInviteResponseDto": {
+        "type": "object",
+        "properties": {
+          "invites": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InviteListItemDto"
+            }
+          },
+          "failed": {
+            "description": "Addresses whose invite was created but whose email did not send. Their invites still work as links.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "invites",
+          "failed"
         ]
       },
       "PreviewInviteDto": {

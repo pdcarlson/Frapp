@@ -76,8 +76,50 @@ export interface InvitePreview {
   expires_at: string;
 }
 
+/**
+ * Where an invite stands, for the inviter's list (`GET /v1/invites`).
+ * `revoked` before `joined` because a revoke also sets `used_at`; `expired`
+ * only for one nobody used.
+ */
+export type InviteStatus = 'pending' | 'joined' | 'expired' | 'revoked';
+
+export function inviteStatus(invite: Invite, now = new Date()): InviteStatus {
+  if (invite.revoked_at) return 'revoked';
+  if (invite.used_at) return 'joined';
+  if (new Date(invite.expires_at) <= now) return 'expired';
+  return 'pending';
+}
+
+/** One row of `GET /v1/invites`: the stored invite plus its status. */
+function toListItem(invite: Invite, now: Date): InviteListItem {
+  return {
+    id: invite.id,
+    token: invite.token,
+    role: invite.role,
+    email: invite.email ?? null,
+    status: inviteStatus(invite, now),
+    expires_at: invite.expires_at,
+    used_at: invite.used_at,
+    revoked_at: invite.revoked_at ?? null,
+    created_at: invite.created_at,
+  };
+}
+
+export interface InviteListItem {
+  id: string;
+  token: string;
+  role: string;
+  email: string | null;
+  status: InviteStatus;
+  expires_at: string;
+  used_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+}
+
 export interface BulkEmailInviteResult {
-  invites: Invite[];
+  /** The new invites, as `GET /v1/invites` lists them. */
+  invites: InviteListItem[];
   /** Addresses whose invite token was created but the email failed to send. */
   failed: string[];
 }
@@ -136,6 +178,7 @@ export class InviteService {
     chapterId: string,
     createdBy: string,
     role: string,
+    email: string | null = null,
   ): Partial<Invite> {
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 24);
@@ -146,6 +189,7 @@ export class InviteService {
       role,
       expires_at: expiresAt.toISOString(),
       created_by: createdBy,
+      email,
     };
   }
 
@@ -208,7 +252,7 @@ export class InviteService {
     chapterId: string,
     createdBy: string,
     requestedRole?: string,
-  ): Promise<Invite> {
+  ): Promise<InviteListItem> {
     // No billing check here by design — subscription state is enforced at the
     // request boundary by ChapterGuard, not in this service. Do not read that
     // as "invites are ungated": the controller is @FreeTier() (so an
@@ -223,7 +267,7 @@ export class InviteService {
     await this.activation.record(chapterId, 'activation-first-invite-created', {
       batch_size: 1,
     });
-    return invite;
+    return toListItem(invite, new Date());
   }
 
   async createBatch(
@@ -266,15 +310,25 @@ export class InviteService {
     const role = await this.resolveInviteRole(chapterId, requestedRole);
     const uniqueEmails = dedupeEmails(emails);
 
-    const inviteData = uniqueEmails.map(() =>
-      this.prepareInviteData(chapterId, createdBy, role),
+    // The address rides on the row so the inviter's list can name who each
+    // invite went to (`GET /v1/invites`), not show a token.
+    const inviteData = uniqueEmails.map((email) =>
+      this.prepareInviteData(chapterId, createdBy, role, email),
     );
     const origin = resolveAppOrigin(this.config);
     // Refuse a public http: APP_URL before inserting tokens. mintJoinUrl
     // would otherwise throw inside the send loop, after createMany, and
     // bypass the per-address `.catch` on sendInviteEmail.
     assertHttpsJoinOrigin(new URL(origin));
-    const invites = await this.inviteRepo.createMany(inviteData);
+    const [invites, chapter, inviter] = await Promise.all([
+      this.inviteRepo.createMany(inviteData),
+      // The email names the chapter and who sent it, so the recipient knows
+      // what they are joining before they open the link. Read alongside the
+      // insert; a missing row, or a failed read, only drops that line from the
+      // email, because the tokens are already in by then.
+      this.chapterRepo.findById(chapterId).catch(() => null),
+      this.userRepo.findById(createdBy).catch(() => null),
+    ]);
 
     // Correlate by token rather than by array position: each token was
     // generated here, before the insert, so it is a stable key regardless of
@@ -300,18 +354,63 @@ export class InviteService {
             to,
             joinUrl: buildJoinUrl(invite.token, origin),
             role,
+            chapterName: chapter?.name ?? null,
+            inviterName: inviter?.display_name ?? null,
           })
           .catch(() => false);
         return { to, sent };
       },
     );
     const failed = deliveries.filter((d) => !d.sent).map((d) => d.to);
+    await this.replaceOlderInvites(
+      chapterId,
+      deliveries.filter((d) => d.sent).map((d) => d.to),
+      new Set(invites.map((invite) => invite.id)),
+    );
 
     await this.activation.record(chapterId, 'activation-first-invite-created', {
       batch_size: invites.length,
     });
 
-    return { invites, failed };
+    const now = new Date();
+    return {
+      invites: invites.map((invite) => toListItem(invite, now)),
+      failed,
+    };
+  }
+
+  /**
+   * A new invite that reached an address replaces that address's older
+   * pending ones, so resending never leaves two live links for one person
+   * (spec/behavior/members.md § Invite Flow). An address whose new email
+   * failed keeps its older invite, which may be the one that arrived. Best
+   * effort: the new invites are already out, so a failure here is logged, not
+   * thrown.
+   */
+  private async replaceOlderInvites(
+    chapterId: string,
+    delivered: string[],
+    newIds: Set<string>,
+  ): Promise<void> {
+    if (delivered.length === 0) return;
+    const addresses = new Set(delivered.map((email) => email.toLowerCase()));
+    try {
+      const older = (await this.inviteRepo.findByChapter(chapterId)).filter(
+        (invite) =>
+          !newIds.has(invite.id) &&
+          !invite.used_at &&
+          !!invite.email &&
+          addresses.has(invite.email.toLowerCase()),
+      );
+      await this.inviteRepo.revokePending(older.map((invite) => invite.id));
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        'Failed to revoke older invites after a resend',
+        error,
+      );
+    }
   }
 
   /**
@@ -478,8 +577,9 @@ export class InviteService {
       // 410 the same token (#1863). Skip the release if a membership row is
       // already there — create() can throw after the insert committed, and
       // releasing then would let a second redeemer join on the same token.
-      // Match this claim's used_at so a concurrent revoke's markUsed is not
-      // undone. A lookup or release failure must not hide `error`.
+      // Match this claim's used_at, so a revoke that landed inside this window
+      // (it overwrites used_at) stays revoked. A lookup or release failure
+      // must not hide `error`.
       let membershipLanded = false;
       try {
         membershipLanded = Boolean(
@@ -612,8 +712,16 @@ export class InviteService {
     }
   }
 
-  async findByChapter(chapterId: string): Promise<Invite[]> {
-    return this.inviteRepo.findByChapter(chapterId);
+  /**
+   * The chapter's invites, newest first, each with its status (#3607), so
+   * clients read one field rather than inferring revoked from `used_at`.
+   * `created_by` and `chapter_id` stay server-side: the list is the inviter's
+   * view of who was asked, not an audit of who asked.
+   */
+  async findByChapter(chapterId: string): Promise<InviteListItem[]> {
+    const now = new Date();
+    const invites = await this.inviteRepo.findByChapter(chapterId);
+    return invites.map((invite) => toListItem(invite, now));
   }
 
   async revoke(id: string, chapterId: string): Promise<void> {
@@ -627,7 +735,9 @@ export class InviteService {
       throw new BadRequestException('Invite has already been used');
     }
 
-    await this.inviteRepo.markUsed(id);
+    // A redeem racing this write may still land its membership; the revoke
+    // wins the token either way, so a failed redeem can't reopen it.
+    await this.inviteRepo.markRevoked(id);
   }
 }
 
