@@ -11599,9 +11599,9 @@ export interface operations {
     ChapterDirectoryController_search_v1: {
         parameters: {
             query?: {
-                /** @description Search query (org name, letters, designation) */
+                /** @description Search query. Every word must start a word of the organization (name, letters or nickname), chapter, or school (name, short name or nickname); a longer word may be a close misspelling. With no query and no university, finds nothing. */
                 q?: string;
-                /** @description Filter by university short name */
+                /** @description Narrow to chapters where a word of the school name, short name or a nickname starts with this ("rens", "RPI"). Without q, lists that school's chapters. */
                 university?: string;
             };
             header?: never;
