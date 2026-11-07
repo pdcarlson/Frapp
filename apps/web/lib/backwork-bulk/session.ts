@@ -1,5 +1,6 @@
 "use client";
 
+import { MemberFacingError } from "@repo/hooks/error-copy";
 import { statusOf } from "@repo/api-sdk";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import {
@@ -111,14 +112,14 @@ function createSession(userId: string, chapterId: string): BulkSession {
       // removed item, or this item on a retry, doesn't count.
       const owner = seenHashes.get(hash);
       if (owner && owner !== id && queue.has(owner)) {
-        throw new Error("This file is already in this batch.");
+        throw new MemberFacingError("This file is already in this batch.");
       }
       seenHashes.set(hash, id);
       let doc: PDFDocumentProxy;
       try {
         doc = await loadPdf(bytes);
       } catch {
-        throw new Error("This PDF couldn't be opened. It may be damaged or password-protected.");
+        throw new MemberFacingError("This PDF couldn't be opened. It may be damaged or password-protected.");
       }
       const previews = new Map<number, Promise<PagePreview>>();
       const first = renderPagePreview(doc, 1);
@@ -134,7 +135,7 @@ function createSession(userId: string, chapterId: string): BulkSession {
     finish: async (job) => {
       try {
         const bound = mutations;
-        if (!bound) throw new Error("Bulk upload isn't ready yet. Retry this one.");
+        if (!bound) throw new MemberFacingError("Bulk upload isn't ready yet. Retry this one.");
         // Policy, not plumbing: the bound mutations would still send this
         // batch's chapter, but a batch never files anything once its chapter
         // is no longer the active one, nor under any account but its own.
@@ -144,7 +145,7 @@ function createSession(userId: string, chapterId: string): BulkSession {
           const stale = () =>
             ended || useChapterStore.getState().activeChapterId !== chapterId;
           if (stale() || (await liveUserId()) !== userId || stale()) {
-            throw new Error("You switched chapters or accounts, so this one wasn't uploaded.");
+            throw new MemberFacingError("You switched chapters or accounts, so this one wasn't uploaded.");
           }
         };
         const { flattenPdf } = await loadPdfModule();
@@ -158,7 +159,7 @@ function createSession(userId: string, chapterId: string): BulkSession {
               body,
               contentType: "application/pdf",
               upsert: true,
-              describeRejection: (status) => `Storage rejected the upload (${status}).`,
+              describeRejection: () => "The file didn't upload.",
             }),
           confirm: (body) => bound.confirmUpload.mutateAsync(body),
         });

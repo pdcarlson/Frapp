@@ -58,6 +58,8 @@ const FAILED = {
   message: "Check-in service is unavailable.",
   requestId: "req_failed",
 };
+/** What a member reads for {@link FAILED}: never the server's own text. */
+const FAILED_SHOWN = "Couldn't check you in.";
 
 const EVENT = {
   id: "evt-1",
@@ -332,7 +334,7 @@ describe("Check-in on a subscription refusal (#2297)", () => {
     const tree = render();
     await submitManualCode(tree);
 
-    expect(screenText(tree)).toContain(FAILED.message);
+    expect(screenText(tree)).toContain(FAILED_SHOWN);
     expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
     expect(manualSubmit(tree).props.disabled).toBe(false);
     act(() => tree.unmount());
@@ -586,10 +588,10 @@ describe("Check-in's success moment", () => {
     moveTo(tree, OTHER_EVENT.id);
     await act(async () => answer.refuse(FAILED));
 
-    expect(screenText(tree)).not.toContain(FAILED.message);
+    expect(screenText(tree)).not.toContain(FAILED_SHOWN);
     expect(
       drawnText(tree.root.findByType("BottomSheetModal" as never)),
-    ).not.toContain(FAILED.message);
+    ).not.toContain(FAILED_SHOWN);
     act(() => tree.unmount());
   });
 
@@ -961,33 +963,39 @@ describe("Check-in's manual code", () => {
     await submitManualCode(tree);
 
     const sheet = tree.root.findByType("BottomSheetModal" as never);
-    expect(drawnText(sheet)).toContain(FAILED.message);
+    expect(drawnText(sheet)).toContain(FAILED_SHOWN);
     act(() => tree.unmount());
   });
 
   it("keeps a scan's refusal when the sheet opens: it is still true of a typed code", async () => {
-    for (const refusal of [
-      {
-        statusCode: 400,
-        error: "Bad Request",
-        message: "You're outside the check-in zone.",
-      },
+    for (const [refusal, shown] of [
+      [
+        {
+          statusCode: 400,
+          error: "Bad Request",
+          message: "Location is outside the geofence",
+        },
+        "You're outside the zone. Move inside it and try again.",
+      ],
       // No signing secret here: a typed code is refused the same way.
-      {
-        statusCode: 503,
-        error: "Service Unavailable",
-        message: CHECK_IN_CODES_UNCONFIGURED_MESSAGE,
-      },
-    ]) {
+      [
+        {
+          statusCode: 503,
+          error: "Service Unavailable",
+          message: CHECK_IN_CODES_UNCONFIGURED_MESSAGE,
+        },
+        FAILED_SHOWN,
+      ],
+    ] as const) {
       checkIn.mockRejectedValue(refusal);
       const tree = render();
       try {
         await scan(tree, qrFor("evt-1"));
-        expect(screenText(tree)).toContain(refusal.message);
+        expect(screenText(tree)).toContain(shown);
 
         openSheet(tree);
         const sheet = tree.root.findByType("BottomSheetModal" as never);
-        expect(drawnText(sheet)).toContain(refusal.message);
+        expect(drawnText(sheet)).toContain(shown);
       } finally {
         act(() => tree.unmount());
       }
@@ -1013,11 +1021,14 @@ describe("Check-in's manual code", () => {
     for (const [refusal, shown] of [
       [
         { statusCode: 403, message: CHECK_IN_CODE_REFUSED_MESSAGE },
-        CHECK_IN_CODE_REFUSED_MESSAGE,
+        "That code is wrong or has expired. Ask the host for the current one.",
       ],
-      [{ statusCode: 400, message: [TOKEN_TOO_LONG] }, TOKEN_TOO_LONG],
-      [new TypeError("Network request failed"), "Network request failed"],
-      [{ statusCode: 408, message: "Request Timeout" }, "Request Timeout"],
+      [{ statusCode: 400, message: [TOKEN_TOO_LONG] }, FAILED_SHOWN],
+      [
+        new TypeError("Network request failed"),
+        "Couldn't reach Frapp. Check your connection and try again.",
+      ],
+      [{ statusCode: 408, message: "Request Timeout" }, FAILED_SHOWN],
     ] as const) {
       checkIn.mockRejectedValue(refusal);
       const tree = render();
@@ -1135,7 +1146,7 @@ describe("Check-in after a failed attempt", () => {
       const tree = render();
       try {
         await attempt(tree);
-        expect(screenText(tree)).toContain(FAILED.message);
+        expect(screenText(tree)).toContain(FAILED_SHOWN);
 
         await attempt(tree);
         expect(checkIn).toHaveBeenCalledTimes(2);

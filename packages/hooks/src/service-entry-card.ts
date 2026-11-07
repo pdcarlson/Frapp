@@ -1,3 +1,5 @@
+import { STATUS_LABELS } from "@repo/validation";
+
 /**
  * The rules a chat hours card applies, shared by web's
  * (`apps/web/components/chat/renderers/hours-card.tsx`) and mobile's
@@ -19,9 +21,8 @@ export type ServiceEntryStatus = "PENDING" | "APPROVED" | "REJECTED";
  * and the longer phrase says who it is waiting on.
  */
 export const SERVICE_ENTRY_CARD_LABELS: Record<ServiceEntryStatus, string> = {
+  ...STATUS_LABELS.serviceEntry,
   PENDING: "Pending review",
-  APPROVED: "Approved",
-  REJECTED: "Rejected",
 };
 
 /** The entry as `GET /v1/service-entries/{id}` returns it, as much as a card reads. */

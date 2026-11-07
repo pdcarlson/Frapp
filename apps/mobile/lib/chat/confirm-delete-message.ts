@@ -1,3 +1,4 @@
+import { errorCopy } from "@repo/hooks/error-copy";
 import { Alert } from "react-native";
 import {
   DELETE_MESSAGE_CONFIRM_BODY,
@@ -26,10 +27,7 @@ export function confirmDeleteMessage(remove: () => Promise<void>): void {
       style: "destructive",
       onPress: () => {
         remove().catch((error: unknown) => {
-          Alert.alert(
-            DELETE_MESSAGE_FAILED_TITLE,
-            error instanceof Error ? error.message : undefined,
-          );
+          Alert.alert(DELETE_MESSAGE_FAILED_TITLE, errorCopy(error));
         });
       },
     },
