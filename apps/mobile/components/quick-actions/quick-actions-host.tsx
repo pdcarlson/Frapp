@@ -154,6 +154,10 @@ export function useQuickActionsHost({
         case "upload":
           openSheet(key);
           return;
+        case "invite":
+          // The Invite members screen, whose one button shares a fresh link.
+          router.push("/invite");
+          return;
         case "message":
           // Pick who to write to; their card's Message opens the thread.
           router.push("/directory");

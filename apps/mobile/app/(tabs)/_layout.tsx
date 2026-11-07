@@ -173,6 +173,10 @@ export default function TabLayout() {
         name="directory"
         options={{ title: "Directory", href: null }}
       />
+      <Tabs.Screen
+        name="invite"
+        options={{ title: "Invite members", href: null }}
+      />
       <Tabs.Screen name="ask" options={{ title: "Ask", href: null }} />
       <Tabs.Screen
         name="check-in"
