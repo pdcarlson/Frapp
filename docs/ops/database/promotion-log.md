@@ -31,13 +31,13 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ## 2026-11-07: Invites remember their address and their revoke
 
-### 20261107040000_invites_email_and_revoked_at.sql
+### 20261107060000_invites_email_and_revoked_at.sql
 
 - **Purpose**: Adds two nullable columns to `invites`: `email` (the address `POST /v1/invites/email` sent the invite to; null for a share link) and `revoked_at` (set by `DELETE /v1/invites/:id` together with `used_at`). `GET /v1/invites` derives each row's `status` from them, and the web Invite members panel lists invites by address instead of by token. The rule is in [`spec/behavior/members.md`](../../../spec/behavior/members.md#invite-flow) § Invite Flow. No backfill: older rows read as share links, and an older revoke reads as Joined until it ages off the list.
 - **Checks**: After `db push`, `select column_name, is_nullable from information_schema.columns where table_name = 'invites' and column_name in ('email', 'revoked_at');` returns both, `YES`. An emailed invite's row then carries its address.
 - **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API never names the columns, so it is unaffected. The newer API against an unmigrated database fails every invite create (share links included, since every insert names `email`) and every revoke on the unknown column, so don't deploy the API first. `add column if not exists` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-invite-email-and-revoked_at-20261107040000) § Rollback invite email and revoked_at.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-invite-email-and-revoked_at-20261107060000) § Rollback invite email and revoked_at.
 
 ## 2026-11-07: Chapter directory with real chapters, and search that finds them
 
