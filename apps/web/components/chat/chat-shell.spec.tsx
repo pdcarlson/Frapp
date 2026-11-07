@@ -172,6 +172,14 @@ const mockBookmarkIsError = vi.fn(() => false);
 const mockLeaveMutateAsync = vi.fn();
 const mockReopenMutate = vi.fn();
 const mockToast = vi.fn();
+// The rail's right-click menu (owner, 2026-11-06): what the shell hands it.
+const mockDeleteChannel = vi.fn();
+const mockSetRailLevel = vi.fn();
+const mockRouterPush = vi.fn();
+const railRowActions = vi.hoisted(() => ({
+  value: undefined as
+    import("./channel-row-menu").ChannelRowActions | undefined,
+}));
 const mockSetChannelPinned = vi.fn();
 const mockSetSectionCollapsed = vi.fn();
 const mockSetSidebarFilter = vi.fn();
@@ -267,7 +275,13 @@ vi.mock("@repo/hooks", async () => ({
         SETUP_CHECKLIST_WEB_PATH,
         sidebarMutedChannelIds,
         sidebarUnreadCounts,
+        deleteChannelConfirmTitle,
+        DELETE_CHANNEL_CONFIRM_BODY,
+        DELETE_CHANNEL_LABEL,
       }) => ({
+        deleteChannelConfirmTitle,
+        DELETE_CHANNEL_CONFIRM_BODY,
+        DELETE_CHANNEL_LABEL,
         HIDE_SETUP_CHECKLIST_LABEL,
         landingChannelId,
         lastChannelStorageKey,
@@ -305,8 +319,10 @@ vi.mock("@repo/hooks", async () => ({
     variables: undefined,
     reset: vi.fn(),
     mutate: vi.fn(),
+    mutateAsync: mockSetRailLevel,
   }),
   useMarkChannelRead: () => ({ mutate: vi.fn() }),
+  useDeleteChannel: () => ({ mutateAsync: mockDeleteChannel }),
   useChannelUnreadCounts: () => ({
     data: [{ channel_id: "chan-general", unread_count: 2, mention_count: 1 }],
     isError: sidebarState.unreadError,
@@ -429,6 +445,10 @@ vi.mock("@repo/hooks", async () => ({
 
 // Captured so the hide failure (#2303) is observable; no other case here
 // asserts on a toast.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: mockRouterPush }),
+}));
+
 vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
@@ -487,7 +507,9 @@ vi.mock("./channel-list", () => ({
     categories,
     sidebar,
     unreadByChannelId,
+    rowActions,
   }: {
+    rowActions?: import("./channel-row-menu").ChannelRowActions;
     unreadByChannelId?: Map<string, unknown>;
     sidebar?: {
       mutedChannelIds: ReadonlySet<string> | undefined;
@@ -503,7 +525,10 @@ vi.mock("./channel-list", () => ({
     onHide?: (ch: { id: string; name: string; type: string }) => void;
     categories?: { id: string; name: string }[];
   }) => (
-    <div data-testid="channel-list">
+    <div
+      data-testid="channel-list"
+      ref={() => void (railRowActions.value = rowActions)}
+    >
       {/* The rail's pin control and the muted set it filters with (#2877). */}
       <button
         data-testid="rail-pin"
@@ -3839,6 +3864,105 @@ describe("ChatShell member list", () => {
     stubWide(false);
     rerender(<ChatShell />);
     expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
+  });
+});
+
+describe("ChatShell rail row menu (owner, 2026-11-06)", () => {
+  beforeEach(() => {
+    railRowActions.value = undefined;
+    mockDeleteChannel.mockReset();
+    mockSetRailLevel.mockReset();
+    mockRouterPush.mockReset();
+    mockToast.mockClear();
+  });
+
+  it("scopes the menu by the member's own permissions", () => {
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["channels:manage"] },
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(railRowActions.value?.permissions).toEqual(["channels:manage"]);
+  });
+
+  it("asks before deleting, and deletes only on yes", async () => {
+    mockDeleteChannel.mockResolvedValue(undefined);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    act(() => railRowActions.value!.onDelete("chan-random"));
+    await waitFor(() => {
+      expect(screen.getByText("Delete #random?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(screen.queryByText("Delete #random?")).toBeNull();
+    });
+    expect(mockDeleteChannel).not.toHaveBeenCalled();
+
+    act(() => railRowActions.value!.onDelete("chan-random"));
+    await waitFor(() => {
+      expect(screen.getByText("Delete #random?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delete channel" }));
+    await waitFor(() => {
+      expect(mockDeleteChannel).toHaveBeenCalledWith("chan-random");
+    });
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith({
+        description: "#random deleted.",
+      });
+    });
+  });
+
+  it("opens Chat settings on the channel for Edit", () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    railRowActions.value!.onEdit("chan-random");
+    expect(mockRouterPush).toHaveBeenCalledWith(
+      "/chat-admin?channel=chan-random",
+    );
+  });
+
+  it("toasts each failed level change, not only the latest", async () => {
+    mockSetRailLevel.mockRejectedValue(new Error("offline"));
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    railRowActions.value!.onSetNotificationLevel("chan-random", "off");
+    railRowActions.value!.onSetNotificationLevel("chan-general", "mentions");
+    await waitFor(() => {
+      expect(
+        mockToast.mock.calls.filter(
+          ([arg]) =>
+            arg.description === "Couldn't change notifications. Try again.",
+        ),
+      ).toHaveLength(2);
+    });
+  });
+
+  it("copies the channel's link, and says so when the clipboard is missing", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    railRowActions.value!.onCopyLink("chan-random");
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith({ description: "Link copied" });
+    });
+    expect(writeText).toHaveBeenCalledWith(
+      `${window.location.origin}/chat?channel=chan-random`,
+    );
+
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: undefined,
+    });
+    railRowActions.value!.onCopyLink("chan-random");
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Copy failed" }),
+      );
+    });
   });
 });
 
