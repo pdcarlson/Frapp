@@ -72,7 +72,11 @@ import { threadLayout } from "@/lib/chat/thread-layout";
 import { ErrorState } from "@/components/state-block";
 import { BackGlyph, CloseGlyph } from "@/components/control-glyphs";
 import { IconButton } from "@/components/icon-button";
-import { pickAndUploadPhoto } from "@/lib/chat/attachment-upload";
+import {
+  CHAT_PHOTO_LIMIT,
+  pickChatPhotos,
+  uploadChatPhoto,
+} from "@/lib/chat/attachment-upload";
 import {
   confirmUnblockMember,
   useBlockActions,
@@ -211,9 +215,10 @@ export default function ChatThreadScreen() {
     react,
     unreact,
     act,
-    attachments,
-    addAttachment,
-    removeAttachment,
+    photos,
+    addPhotos,
+    removePhoto,
+    retryPhoto,
     draft,
     setDraft,
     sendError,
@@ -367,91 +372,74 @@ export default function ChatThreadScreen() {
   );
 
   /**
-   * Pick a photo, upload it, and stage the claim.
+   * Pick photos and stage them. The tray shows each one the moment the picker
+   * closes; its upload runs in the background (`addPhotos` in
+   * `use-chat-channel.ts`), so nothing here waits on the network.
    *
-   * `isUploading` is state rather than the mutation's own `isPending` because
-   * the picker half runs before any mutation starts — the member is in the
-   * system photo sheet, which is most of the wall-clock time, and an attach
-   * button that stays live through it invites a second picker on top of the
-   * first.
-   *
-   * Failures land in `attachError`, which feeds the composer hint. There is no
-   * toast on this platform (chat-core's are no-ops here), so a swallowed error
-   * would be completely invisible to the member.
+   * `isPicking` covers the system photo sheet only, so the attach control
+   * cannot open a second picker on top of the first. A refused pick (photo
+   * access) lands in `attachError`, which feeds the composer hint: there is no
+   * toast on this platform, so a swallowed error would be invisible.
    */
-  const [isUploading, setIsUploading] = useState(false);
+  const [isPicking, setIsPicking] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
   /**
-   * Re-entry guard, a ref rather than the `isUploading` state beside it.
-   *
-   * Same reason `sendingRef` is a ref in `use-chat-channel.ts`: two taps
-   * landing in one tick both read the pre-commit state value and both open a
-   * picker. On Android the second `launchImageLibraryAsync` rejects with an
-   * already-in-progress error. The state flag still exists, because it is what
-   * paints the spinner.
+   * Re-entry guard, a ref beside the state: two taps landing in one tick both
+   * read the pre-commit state and both open a picker, and on Android the
+   * second `launchImageLibraryAsync` rejects.
    */
-  const uploadingRef = useRef(false);
+  const pickingRef = useRef(false);
   /**
-   * The channel this screen is currently showing.
-   *
-   * `chat-thread` is a `Tabs.Screen` that React Navigation keeps mounted, so
-   * `channelId` changes *in place* — the component does not remount. An upload
-   * started in one channel can therefore resolve while another is on screen,
-   * and the claim it produces is bound to the channel it was minted under
-   * (`validateAttachmentInputs` re-checks the path prefix server-side). Staging
-   * it into the wrong composer would produce a 400 the member can only escape
-   * by discarding, since Retry replays the identical claim.
+   * The channel this screen is currently showing. `chat-thread` stays mounted
+   * and `channelId` changes in place, so a pick finishing after a switch must
+   * not stage into the new channel: its uploads are minted under the old one.
    */
   const attachChannelRef = useRef(channelId);
   useEffect(() => {
     attachChannelRef.current = channelId;
   }, [channelId]);
 
-  // Attach state is per-channel, like the hook's own errors (#1431). Reset
-  // inline during render rather than in an effect, matching that pattern.
   const [attachResetChannelId, setAttachResetChannelId] = useState(channelId);
   if (attachResetChannelId !== channelId) {
     setAttachResetChannelId(channelId);
     if (attachError !== null) setAttachError(null);
-    // A spinner carried into the new channel would sit there disabled and
-    // never clear: the in-flight upload resolves against the old channel and
-    // is discarded below.
-    if (isUploading) setIsUploading(false);
+    if (isPicking) setIsPicking(false);
   }
 
+  const photoRoom = CHAT_PHOTO_LIMIT - photos.length;
   const handleAttach = useCallback(() => {
-    // `channelId` is null until the route param resolves. The attach control
-    // is already gated on `canSend`, which is false in that window, so this is
-    // the belt to that braces rather than a reachable branch.
-    if (uploadingRef.current || !channelId) return;
-    uploadingRef.current = true;
+    if (pickingRef.current || !channelId || photoRoom < 1) return;
+    pickingRef.current = true;
     const forChannelId = channelId;
     setAttachError(null);
-    setIsUploading(true);
+    setIsPicking(true);
     void (async () => {
       try {
-        const result = await pickAndUploadPhoto(
-          forChannelId,
-          requestUploadUrl.mutateAsync,
-        );
-        // The member left this channel while the PUT was in flight. The bytes
-        // are in the bucket under the old channel's prefix; abandoning the
-        // claim leaves an unreferenced object (nothing collects an upload no
-        // message claimed until #2197), which is the same trade the composer
-        // already makes for a removed chip — and far better than staging a
-        // claim the send would reject forever.
+        const result = await pickChatPhotos(photoRoom);
         if (attachChannelRef.current !== forChannelId) return;
-        if (result.status === "attached") {
-          addAttachment(result.attachment);
+        if (result.status === "picked") {
+          addPhotos(
+            result.photos.map((photo) => ({
+              previewUri: photo.previewUri,
+              width: photo.width,
+              height: photo.height,
+              upload: () =>
+                uploadChatPhoto(
+                  forChannelId,
+                  photo,
+                  requestUploadUrl.mutateAsync,
+                ),
+            })),
+          );
         } else if (result.status === "refused") {
           setAttachError(result.reason);
         }
       } finally {
-        uploadingRef.current = false;
-        if (attachChannelRef.current === forChannelId) setIsUploading(false);
+        pickingRef.current = false;
+        if (attachChannelRef.current === forChannelId) setIsPicking(false);
       }
     })();
-  }, [addAttachment, channelId, requestUploadUrl.mutateAsync]);
+  }, [addPhotos, channelId, photoRoom, requestUploadUrl.mutateAsync]);
 
   const handleChangeText = useCallback(
     (next: string) => {
@@ -580,7 +568,7 @@ export default function ChatThreadScreen() {
     blockState,
     draft,
     setDraft: handleChangeText,
-    hasAttachments: attachments.length > 0,
+    hasAttachments: photos.length > 0,
     send,
     sendInFlight,
     edit,
@@ -1217,10 +1205,12 @@ export default function ChatThreadScreen() {
             }
             // An edit changes text only, so the staged photos and the attach
             // control stand aside until it is saved or cancelled.
-            attachments={staging.isEditing ? undefined : attachments}
+            photos={staging.isEditing ? undefined : photos}
             onAttach={staging.isEditing ? undefined : handleAttach}
-            onRemoveAttachment={removeAttachment}
-            isUploading={isUploading}
+            attachFull={photoRoom < 1}
+            onRemovePhoto={removePhoto}
+            onRetryPhoto={retryPhoto}
+            isPicking={isPicking}
             // An upload is a live PUT with no outbox behind it, unlike a send —
             // so unlike the composer itself, the attach control does have to go
             // dark offline. It stays visible and states why rather than

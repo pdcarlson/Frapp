@@ -1417,3 +1417,192 @@ describe("reload after a failed first read", () => {
     expect(GET).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("staged photos", () => {
+  const claim = (name: string) => ({
+    storagePath: `chapters/c/chat/m/${name}`,
+    filename: name,
+    contentType: "image/jpeg",
+    byteSize: 1000,
+  });
+  const newPhoto = (name: string, upload: () => Promise<unknown>) => ({
+    previewUri: `file:///${name}`,
+    width: 3,
+    height: 4,
+    upload: upload as never,
+  });
+
+  it("stages each photo at once as uploading, then ready with its claim", async () => {
+    const gate = deferred<unknown>();
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    act(() => {
+      result.current.addPhotos([newPhoto("a.jpg", () => gate.promise)]);
+    });
+    expect(result.current.photos).toMatchObject([
+      { previewUri: "file:///a.jpg", status: "uploading" },
+    ]);
+
+    await act(async () => {
+      gate.resolve({ status: "attached", attachment: claim("a.jpg") });
+    });
+    expect(result.current.photos).toMatchObject([
+      { status: "ready", attachment: claim("a.jpg") },
+    ]);
+  });
+
+  it("runs at most three uploads at once", async () => {
+    const gates = Array.from({ length: 5 }, () => deferred<unknown>());
+    const started: number[] = [];
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    act(() => {
+      result.current.addPhotos(
+        gates.map((gate, index) =>
+          newPhoto(`${index}.jpg`, () => {
+            started.push(index);
+            return gate.promise;
+          }),
+        ),
+      );
+    });
+    expect(started).toEqual([0, 1, 2]);
+    await act(async () => {
+      gates[0]!.resolve({ status: "attached", attachment: claim("0.jpg") });
+    });
+    expect(started).toEqual([0, 1, 2, 3]);
+  });
+
+  it("sends while a photo still uploads, handing chat-core the pending claims", async () => {
+    const gate = deferred<unknown>();
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    act(() => {
+      result.current.addPhotos([newPhoto("a.jpg", () => gate.promise)]);
+    });
+
+    let sent!: Promise<boolean>;
+    act(() => {
+      sent = result.current.send("formal pics");
+    });
+    // The tray empties and the message goes up at once.
+    expect(result.current.photos).toEqual([]);
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+    const [, args] = mocks.sendMessage.mock.calls[0] as unknown as [
+      unknown,
+      {
+        attachments?: unknown;
+        attachmentsReady: Promise<unknown>;
+        attachmentCount: number;
+        clientMessageId: string;
+      },
+    ];
+    expect(args.attachments).toBeUndefined();
+    expect(args.attachmentCount).toBe(1);
+    expect(typeof args.clientMessageId).toBe("string");
+
+    await act(async () => {
+      gate.resolve({ status: "attached", attachment: claim("a.jpg") });
+    });
+    await expect(args.attachmentsReady).resolves.toEqual([claim("a.jpg")]);
+    await act(async () => {
+      await sent;
+    });
+  });
+
+  it("sends ready photos as plain claims", async () => {
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    await act(async () => {
+      result.current.addPhotos([
+        newPhoto("a.jpg", async () => ({
+          status: "attached",
+          attachment: claim("a.jpg"),
+        })),
+      ]);
+    });
+    await act(async () => {
+      await result.current.send("");
+    });
+    const [, args] = mocks.sendMessage.mock.calls[0] as unknown as [
+      unknown,
+      { attachments: unknown; attachmentsReady: unknown },
+    ];
+    expect(args.attachments).toEqual([claim("a.jpg")]);
+    expect(args.attachmentsReady).toBeNull();
+  });
+
+  it("holds the send while a photo is marked failed, and names it", async () => {
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    await act(async () => {
+      result.current.addPhotos([
+        newPhoto("a.jpg", async () => ({ status: "refused", reason: "nope" })),
+      ]);
+    });
+    expect(result.current.photos[0]).toMatchObject({
+      status: "failed",
+      reason: "nope",
+    });
+    let queued = true;
+    await act(async () => {
+      queued = await result.current.send("hi");
+    });
+    expect(queued).toBe(false);
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(result.current.sendError).toMatch(/didn't upload/);
+  });
+
+  it("retries a failed photo with the same upload", async () => {
+    let attempts = 0;
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    await act(async () => {
+      result.current.addPhotos([
+        newPhoto("a.jpg", async () =>
+          ++attempts === 1
+            ? { status: "refused", reason: "nope" }
+            : { status: "attached", attachment: claim("a.jpg") },
+        ),
+      ]);
+    });
+    const key = result.current.photos[0]!.key;
+    await act(async () => {
+      result.current.retryPhoto(key);
+    });
+    expect(attempts).toBe(2);
+    expect(result.current.photos[0]).toMatchObject({ status: "ready" });
+  });
+
+  it("puts the text and the photos back when an upload fails after Send", async () => {
+    const gate = deferred<unknown>();
+    mocks.sendMessage.mockImplementation(
+      async (_ctx: unknown, args: unknown) => {
+        await (args as { attachmentsReady: Promise<unknown> }).attachmentsReady;
+      },
+    );
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    act(() => {
+      result.current.addPhotos([newPhoto("a.jpg", () => gate.promise)]);
+    });
+    let sent!: Promise<boolean>;
+    act(() => {
+      sent = result.current.send("formal pics");
+    });
+    await act(async () => {
+      gate.resolve({
+        status: "refused",
+        reason: "Couldn't upload that photo.",
+      });
+      await sent;
+    });
+    expect(result.current.draft).toBe("formal pics");
+    expect(result.current.photos).toMatchObject([
+      { previewUri: "file:///a.jpg", status: "failed" },
+    ]);
+    expect(result.current.sendError).toBe("Couldn't upload that photo.");
+  });
+});

@@ -315,6 +315,17 @@ export interface SendMessageArgs {
    * claim, not an instruction.
    */
   attachments?: OutboxAttachment[] | null;
+  /**
+   * Claims still uploading when the member pressed Send (mobile's photo tray).
+   * The optimistic row goes up at once, carrying `attachmentCount`; the
+   * outbox write and the POST wait for this to resolve, and the claims it
+   * resolves to are sent in place of `attachments`. A rejection takes the
+   * optimistic row back out and rethrows, exactly as a failed enqueue does,
+   * so the caller can put the draft back: there is nothing queued to retry.
+   */
+  attachmentsReady?: Promise<OutboxAttachment[]> | null;
+  /** How many files the optimistic row shows while `attachmentsReady` runs. */
+  attachmentCount?: number;
   /** Reuse a previously-generated id (outbox flush, idempotent retry). */
   clientMessageId?: string;
   /**
@@ -398,18 +409,30 @@ export async function sendMessage(
     kind: args.kind,
     payload: args.payload,
     replyToId: args.replyToId ?? null,
-    attachmentCount: args.attachments?.length ?? 0,
+    attachmentCount: args.attachmentCount ?? args.attachments?.length ?? 0,
   });
 
   patchCache(ctx.queryClient, args.channelId, (cache) =>
     upsertOptimistic(cache, optimistic),
   );
 
+  let attachments = args.attachments ?? null;
+  if (args.attachmentsReady) {
+    try {
+      attachments = await args.attachmentsReady;
+    } catch (err) {
+      patchCache(ctx.queryClient, args.channelId, (cache) =>
+        removeMessage(cache, clientId),
+      );
+      throw err;
+    }
+  }
+
   const intent = {
     kind: args.kind ?? "text",
     payload: args.payload ?? null,
     replyToId: args.replyToId ?? null,
-    attachments: args.attachments ?? null,
+    attachments,
   } as const;
 
   // Draft clear is a Dexie drafts-table op that happens to sit on this
@@ -461,8 +484,8 @@ export async function sendMessage(
           kind: args.kind ?? "text",
           payload: (args.payload ?? undefined) as unknown as undefined,
           reply_to_id: args.replyToId ?? undefined,
-          attachments: args.attachments?.length
-            ? args.attachments.map((attachment) => ({
+          attachments: attachments?.length
+            ? attachments.map((attachment) => ({
                 storage_path: attachment.storagePath,
                 filename: attachment.filename,
                 content_type: attachment.contentType,

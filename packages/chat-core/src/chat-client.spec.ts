@@ -1899,3 +1899,92 @@ describe("definitiveRefusalMessage", () => {
     ).toBe(POLLS_OFF_COPY);
   });
 });
+
+describe("sendMessage with attachments still uploading", () => {
+  const claim = {
+    storagePath: "chapters/c/chat/m/a.jpg",
+    filename: "a.jpg",
+    contentType: "image/jpeg",
+    byteSize: 1000,
+  };
+
+  it("shows the row at once, then queues and posts the claims once they land", async () => {
+    let release!: (value: (typeof claim)[]) => void;
+    const ready = new Promise<(typeof claim)[]>((resolve) => {
+      release = resolve;
+    });
+    const outbox = stubOutbox();
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: { message: { id: "msg-1", client_message_id: "c-1" } },
+        error: null,
+        response: { status: 201 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      outbox,
+    });
+
+    const sent = sendMessage(ctx, {
+      channelId: "chan-1",
+      content: "formal pics",
+      clientMessageId: "c-1",
+      attachmentsReady: ready,
+      attachmentCount: 1,
+    });
+    await Promise.resolve();
+
+    const pending = ctx.queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("chan-1"),
+    );
+    expect(selectMessages(pending!)).toMatchObject([
+      { client_message_id: "c-1", attachment_count: 1 },
+    ]);
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+    expect(apiClient.POST).not.toHaveBeenCalled();
+
+    release([claim]);
+    await sent;
+
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: "c-1", attachments: [claim] }),
+    );
+    expect(apiClient.POST).toHaveBeenCalledWith(
+      "/v1/channels/{id}/messages",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          attachments: [
+            {
+              storage_path: claim.storagePath,
+              filename: "a.jpg",
+              content_type: "image/jpeg",
+              byte_size: 1000,
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("takes the row back out and rethrows when an upload fails, queueing nothing", async () => {
+    const outbox = stubOutbox();
+    const ctx = buildCtx({ outbox });
+
+    await expect(
+      sendMessage(ctx, {
+        channelId: "chan-1",
+        content: "formal pics",
+        clientMessageId: "c-1",
+        attachmentsReady: Promise.reject(new Error("Couldn't upload")),
+        attachmentCount: 1,
+      }),
+    ).rejects.toThrow("Couldn't upload");
+
+    const cache = ctx.queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("chan-1"),
+    );
+    expect(selectMessages(cache!)).toEqual([]);
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+});

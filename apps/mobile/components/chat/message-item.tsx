@@ -598,6 +598,8 @@ export function MessageItem({
         channelId={message.channel_id}
         messageId={message.id}
         count={message.attachment_count}
+        clientMessageId={message.client_message_id}
+        confirmed={isConfirmed}
         onLongPress={onOpenActions}
       />
     ) : null;

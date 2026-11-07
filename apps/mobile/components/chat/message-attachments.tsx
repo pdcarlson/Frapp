@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ComponentProps } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import { useMessageAttachments } from "@repo/hooks";
@@ -6,6 +6,11 @@ import { formatBytes } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useOpenImageViewer, viewerImages } from "./image-viewer";
+import {
+  attachmentMatchKey,
+  localPhotosFor,
+  type LocalPhoto,
+} from "@/lib/chat/local-photos";
 
 /**
  * Files attached to one message, in the s05 thread.
@@ -48,12 +53,29 @@ import { useOpenImageViewer, viewerImages } from "./image-viewer";
  * An image opens the thread's image viewer, stepping through the
  * message's other images (#2874). Any other file, and an image outside a
  * screen that hosts a viewer, opens through the signed URL in the browser.
+ *
+ * **Two or more photos draw as one grid**, two across in squares, the fourth
+ * carrying "+N" when there are more, as iMessage and Discord do. A batch of
+ * six photos from a formal is one block in the thread, not six screens of it.
+ *
+ * **The sender's own photos come from the phone** (`lib/chat/local-photos.ts`).
+ * While the message is still sending there is no server row to read, so the
+ * pictures the member picked draw at once, at their real shape; once it is
+ * confirmed, each server row that matches a local photo still draws the local
+ * file, so the sender never downloads back what they just uploaded.
  */
 export interface MessageAttachmentsProps {
   channelId: string;
   messageId: string;
   /** `message.attachment_count` — 0 means nothing is fetched. */
   count: number;
+  /** The row's `client_message_id`, which finds the sender's local photos. */
+  clientMessageId?: string | null;
+  /**
+   * False while the message is still sending: there is no server row to read
+   * yet, so nothing is fetched and the local photos (if any) draw alone.
+   */
+  confirmed?: boolean;
   /**
    * The message's own long-press (report, block — #2257), forwarded to each
    * file. A file row is a `Pressable` that claims the touch, so without it a
@@ -67,16 +89,44 @@ export function MessageAttachments({
   channelId,
   messageId,
   count,
+  clientMessageId,
+  confirmed = true,
   onLongPress,
 }: MessageAttachmentsProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const query = useMessageAttachments(channelId, messageId, count > 0);
+  const query = useMessageAttachments(
+    channelId,
+    messageId,
+    count > 0 && confirmed,
+  );
+  const local = localPhotosFor(clientMessageId);
+  const localPhotos = local && local.length === count ? local : undefined;
   const openViewer = useOpenImageViewer();
   const [openFailed, setOpenFailed] = useState(false);
   const [openingId, setOpeningId] = useState<string | null>(null);
 
   if (count === 0) return null;
+
+  if ((!confirmed || query.isPending) && localPhotos) {
+    return (
+      <View style={styles.list}>
+        <PhotoLayout
+          photos={localPhotos.map((photo, index) => ({
+            key: String(index),
+            uri: photo.uri,
+            width: photo.width,
+            height: photo.height,
+            label: `Photo ${index + 1}`,
+          }))}
+          onLongPress={onLongPress}
+          styles={styles}
+        />
+      </View>
+    );
+  }
+
+  if (!confirmed) return null;
 
   if (query.isPending) {
     return (
@@ -127,94 +177,208 @@ export function MessageAttachments({
   }
 
   const imageIds = new Set(viewerImages(query.data).map((image) => image.id));
+  const localByMatch = new Map<string, LocalPhoto>();
+  for (const photo of localPhotos ?? []) {
+    if (photo.match) localByMatch.set(photo.match, photo);
+  }
+  const images = query.data
+    .filter((attachment) => imageIds.has(attachment.id))
+    .map<GridPhoto>((attachment) => {
+      const mine = localByMatch.get(
+        attachmentMatchKey(attachment.filename, attachment.byte_size),
+      );
+      return {
+        key: attachment.id,
+        uri: mine?.uri ?? attachment.download_url,
+        fallbackUri: mine ? attachment.download_url : undefined,
+        width: mine?.width ?? attachment.width ?? null,
+        height: mine?.height ?? attachment.height ?? null,
+        label: attachment.filename,
+        verb: openViewer ? "View" : "Open",
+        onPress: openViewer
+          ? () => openViewer({ channelId, messageId, imageId: attachment.id })
+          : () => void open(attachment.id, attachment.download_url),
+      };
+    });
+  const files = query.data.filter((attachment) => !imageIds.has(attachment.id));
 
   return (
     <View style={styles.list}>
-      {query.data.map((attachment) => {
-        const isImage = imageIds.has(attachment.id);
-        const aspect =
-          attachment.width && attachment.height
-            ? attachment.width / attachment.height
-            : null;
-        // A sized photo's row is the photo's own box: full column width at
-        // its aspect ratio, narrowed to the width at which it reaches the
-        // height cap. The row hugs the picture at every shape, so `contain`
-        // never leaves empty sides and the rounded corners land on the photo.
-        const sized = isImage && aspect !== null;
-        return (
-          <Pressable
-            key={attachment.id}
-            accessibilityRole="button"
-            // The filename alone would read as a label with no verb; the row is
-            // the only way to reach the file, so it says so.
-            accessibilityLabel={
-              isImage && openViewer
-                ? `View ${attachment.filename}`
-                : `Open ${attachment.filename}`
-            }
-            onPress={() =>
-              isImage && openViewer
-                ? openViewer({ channelId, messageId, imageId: attachment.id })
-                : void open(attachment.id, attachment.download_url)
-            }
-            onLongPress={onLongPress}
-            // A photo draws bare at the media radius; the framed row is for
-            // files (components.md § Chrome weight).
-            style={
-              !isImage
-                ? styles.row
-                : sized
-                  ? [
-                      styles.imageRow,
-                      styles.imageRowSized,
-                      {
-                        maxWidth: PREVIEW_MAX_HEIGHT * aspect,
-                        aspectRatio: aspect,
-                      },
-                    ]
-                  : styles.imageRow
-            }
-          >
-            {isImage ? (
-              <Image
-                source={{ uri: attachment.download_url }}
-                accessibilityLabel={attachment.filename}
-                resizeMode="contain"
-                // Sized from the stored dimensions when they exist so the row does
-                // not jump when the image lands. `chat_message_attachments` allows
-                // both to be null, so a fixed height is the fallback rather than
-                // an aspect ratio computed from nothing.
-                style={
-                  sized
-                    ? [styles.preview, styles.previewFill]
-                    : [
-                        styles.preview,
-                        styles.previewFull,
-                        styles.previewUnsized,
-                      ]
-                }
-              />
-            ) : (
-              <View style={styles.fileRow}>
-                <Text style={styles.filename} numberOfLines={1}>
-                  {attachment.filename}
-                </Text>
-                {attachment.byte_size != null ? (
-                  <Text style={styles.size}>
-                    {formatBytes(attachment.byte_size)}
-                  </Text>
-                ) : null}
-              </View>
-            )}
-          </Pressable>
-        );
-      })}
+      {images.length > 0 ? (
+        <PhotoLayout
+          photos={images}
+          onLongPress={onLongPress}
+          styles={styles}
+        />
+      ) : null}
+      {files.map((attachment) => (
+        <Pressable
+          key={attachment.id}
+          accessibilityRole="button"
+          // The filename alone would read as a label with no verb; the row is
+          // the only way to reach the file, so it says so.
+          accessibilityLabel={`Open ${attachment.filename}`}
+          onPress={() => void open(attachment.id, attachment.download_url)}
+          onLongPress={onLongPress}
+          // The framed row is for files; a photo draws bare at the media
+          // radius (components.md § Chrome weight).
+          style={styles.row}
+        >
+          <View style={styles.fileRow}>
+            <Text style={styles.filename} numberOfLines={1}>
+              {attachment.filename}
+            </Text>
+            {attachment.byte_size != null ? (
+              <Text style={styles.size}>
+                {formatBytes(attachment.byte_size)}
+              </Text>
+            ) : null}
+          </View>
+        </Pressable>
+      ))}
       {openFailed ? (
         <Text style={styles.error}>
           Couldn&apos;t open that file. Try again.
         </Text>
       ) : null}
     </View>
+  );
+}
+
+/** One picture in a message, from the phone or from storage. */
+interface GridPhoto {
+  key: string;
+  uri: string;
+  /** The server copy, tried when a local file is gone (the OS cleaned it up). */
+  fallbackUri?: string;
+  width: number | null;
+  height: number | null;
+  label: string;
+  /** "View" in the thread's viewer, "Open" in the browser. */
+  verb?: "View" | "Open";
+  /** Omitted while the message is still sending: nothing to open yet. */
+  onPress?: () => void;
+}
+
+/** How many tiles a grid draws before the last one says "+N". */
+const GRID_MAX_TILES = 4;
+
+function PhotoLayout({
+  photos,
+  onLongPress,
+  styles,
+}: {
+  photos: GridPhoto[];
+  onLongPress?: () => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  if (photos.length === 1) {
+    const photo = photos[0]!;
+    const aspect =
+      photo.width && photo.height ? photo.width / photo.height : null;
+    // A sized photo's row is the photo's own box: full column width at its
+    // aspect ratio, narrowed to the width at which it reaches the height cap.
+    // The row hugs the picture at every shape, so `contain` never leaves
+    // empty sides and the rounded corners land on the photo.
+    return (
+      <Pressable
+        accessibilityRole={photo.onPress ? "button" : "image"}
+        accessibilityLabel={
+          photo.onPress ? `${photo.verb ?? "View"} ${photo.label}` : photo.label
+        }
+        disabled={!photo.onPress}
+        onPress={photo.onPress}
+        onLongPress={onLongPress}
+        style={
+          aspect !== null
+            ? [
+                styles.imageRow,
+                styles.imageRowSized,
+                { maxWidth: PREVIEW_MAX_HEIGHT * aspect, aspectRatio: aspect },
+              ]
+            : styles.imageRow
+        }
+      >
+        <PhotoImage
+          photo={photo}
+          // Sized from the stored dimensions when they exist so the row does
+          // not jump when the image lands; otherwise a fixed height.
+          style={
+            aspect !== null
+              ? [styles.preview, styles.previewFill]
+              : [styles.preview, styles.previewFull, styles.previewUnsized]
+          }
+          resizeMode="contain"
+        />
+      </Pressable>
+    );
+  }
+
+  const shown = photos.slice(0, GRID_MAX_TILES);
+  const hidden = photos.length - shown.length;
+  return (
+    <View style={styles.grid}>
+      {shown.map((photo, index) => {
+        const more = index === shown.length - 1 && hidden > 0 ? hidden : 0;
+        return (
+          <Pressable
+            key={photo.key}
+            accessibilityRole={photo.onPress ? "button" : "image"}
+            accessibilityLabel={
+              more > 0
+                ? `View ${photos.length} photos`
+                : photo.onPress
+                  ? `${photo.verb ?? "View"} ${photo.label}`
+                  : photo.label
+            }
+            disabled={!photo.onPress}
+            onPress={photo.onPress}
+            onLongPress={onLongPress}
+            style={[
+              styles.tile,
+              // Three photos: the third spans the row, as iMessage lays them.
+              shown.length === 3 && index === 2 ? styles.tileWide : null,
+            ]}
+          >
+            <PhotoImage
+              photo={photo}
+              style={styles.previewFill}
+              resizeMode="cover"
+            />
+            {more > 0 ? (
+              <View style={styles.tileMore}>
+                <Text style={styles.tileMoreText}>+{more}</Text>
+              </View>
+            ) : null}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/** An image that falls back to the server copy when the local file is gone. */
+function PhotoImage({
+  photo,
+  style,
+  resizeMode,
+}: {
+  photo: GridPhoto;
+  style: ComponentProps<typeof Image>["style"];
+  resizeMode: "contain" | "cover";
+}) {
+  const [failedLocal, setFailedLocal] = useState(false);
+  const uri = failedLocal && photo.fallbackUri ? photo.fallbackUri : photo.uri;
+  return (
+    <Image
+      source={{ uri }}
+      accessibilityIgnoresInvertColors
+      resizeMode={resizeMode}
+      onError={() => {
+        if (photo.fallbackUri) setFailedLocal(true);
+      }}
+      style={style}
+    />
   );
 }
 
@@ -226,6 +390,10 @@ const PREVIEW_FALLBACK_HEIGHT = 180;
 
 /** The tallest a preview draws: web's `max-h-64`, 256px. */
 const PREVIEW_MAX_HEIGHT = 256;
+
+/** A grid's width: two 128pt squares and the gap, so a row is half a single photo's height cap. */
+const GRID_GAP = 2;
+const GRID_MAX_WIDTH = 258;
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
@@ -240,6 +408,44 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: tokens.spacing.sm,
       paddingVertical: tokens.spacing.xs,
+    },
+    // Two across, squares, a hairline apart: the grid reads as one picture
+    // block, capped at the single photo's height budget per row.
+    grid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: GRID_GAP,
+      maxWidth: GRID_MAX_WIDTH,
+      borderRadius: tokens.radius.control,
+      overflow: "hidden",
+    },
+    tile: {
+      width: (GRID_MAX_WIDTH - GRID_GAP) / 2,
+      aspectRatio: 1,
+      backgroundColor: tokens.color.surface.popover,
+    },
+    tileWide: {
+      width: GRID_MAX_WIDTH,
+      aspectRatio: 2,
+    },
+    // Photo-overlay ink, fixed in both themes: it sits on the picture.
+    tileMore: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "rgba(0,0,0,0.45)",
+    },
+    tileMoreText: {
+      ...typeRole({
+        ...tokens.typography.role.body,
+        weight: tokens.typography.weight.semibold,
+      }),
+      color: "#FFFFFF",
+      fontSize: 20,
     },
     imageRow: {
       alignSelf: "stretch",

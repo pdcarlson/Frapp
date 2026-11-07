@@ -91,6 +91,14 @@ import {
   type ChatMessage,
 } from "@repo/chat-core/types";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
+import { randomClientId } from "@repo/api-sdk";
+import type { AttachmentPickResult } from "./attachment-upload";
+import {
+  attachmentMatchKey,
+  forgetLocalPhotos,
+  matchLocalPhotos,
+  rememberLocalPhotos,
+} from "./local-photos";
 import { useFrappClient } from "@repo/hooks";
 
 import { getSupabaseClient } from "@/lib/supabase";
@@ -98,6 +106,40 @@ import { bootChatAdapters, useChatRuntime } from "./use-chat-runtime";
 
 /** Matches web's debounce so a draft write never rides every keystroke. */
 const DRAFT_SAVE_DEBOUNCE_MS = 400;
+
+/** How many photo uploads run at once: enough to fill LTE, few enough to finish in order. */
+const PHOTO_UPLOAD_CONCURRENCY = 3;
+
+/** A photo just picked, with the upload that turns it into a claim. */
+export interface NewStagedPhoto {
+  previewUri: string;
+  width: number | null;
+  height: number | null;
+  /** Never rejects (`uploadChatPhoto`); `cancelled` reads as failed. */
+  upload: () => Promise<AttachmentPickResult>;
+}
+
+export interface StagedPhoto {
+  key: string;
+  previewUri: string;
+  width: number | null;
+  height: number | null;
+  status: "uploading" | "ready" | "failed";
+  attachment: OutboxAttachment | null;
+  /** Why it failed, in a sentence. */
+  reason: string | null;
+}
+
+interface PhotoJob {
+  upload: () => Promise<AttachmentPickResult>;
+  /** Settles with this attempt's claim; rejects with the reason. */
+  claim: Promise<OutboxAttachment>;
+}
+
+/** Couldn't upload, with no reason given back. */
+const PHOTO_FAILED = "A photo didn't upload. Tap it to try again.";
+
+let photoKeySeq = 0;
 
 export interface SendOptions {
   /**
@@ -153,7 +195,7 @@ export interface UseChatChannelResult {
   /** False while `ctx` is null — the composer must disable rather than no-op silently. */
   canSend: boolean;
   /**
-   * Sends the body *and* whatever `attachments` currently holds — the staged
+   * Sends the body *and* whatever `photos` currently holds — the staged
    * list is owned here, not passed in, for the same reason `draft` is: it has
    * to survive a failed send and reset on a channel switch, and both of those
    * are this hook's existing jobs. A photo staged in #general riding the next
@@ -163,6 +205,13 @@ export interface UseChatChannelResult {
    * was queued (an empty body, an earlier send still in flight, no runtime, or an
    * outbox that refused the row), so a caller holding state for this send (a
    * staged reply) can keep it. Never rejects.
+   *
+   * Photos still uploading do not hold the send: the message goes up at once
+   * with the sender's own pictures, and its outbox write waits for the
+   * uploads (`attachmentsReady` in chat-core). A photo that then fails takes
+   * the message back out and puts the draft and the tray back, with the
+   * failure named. A photo already marked failed holds the send instead, so
+   * the member decides: try it again or remove it.
    */
   send: (content: string, options?: SendOptions) => Promise<boolean>;
   /**
@@ -193,13 +242,17 @@ export interface UseChatChannelResult {
     payload?: Record<string, unknown>,
   ) => Promise<void>;
   /**
-   * Uploaded-and-waiting attachments the next send will claim. The bytes are
-   * already in the bucket (`lib/chat/attachment-upload.ts`), so dropping one
-   * drops the claim, not the object.
+   * Photos staged for the next send, in the order picked: uploading in the
+   * background, ready (the bytes are in the bucket, `attachment` is the
+   * claim), or failed with a reason. Removing a ready one drops the claim,
+   * not the object.
    */
-  attachments: OutboxAttachment[];
-  addAttachment: (attachment: OutboxAttachment) => void;
-  removeAttachment: (storagePath: string) => void;
+  photos: StagedPhoto[];
+  /** Stage freshly picked photos; each starts uploading at once. */
+  addPhotos: (photos: NewStagedPhoto[]) => void;
+  removePhoto: (key: string) => void;
+  /** Start a failed photo's upload again. */
+  retryPhoto: (key: string) => void;
   draft: string;
   setDraft: (body: string) => void;
   /**
@@ -398,7 +451,16 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
 
   // Draft: load once per channel, debounce writes.
   const [draftState, setDraftState] = useState("");
-  const [attachments, setAttachments] = useState<OutboxAttachment[]>([]);
+  const [photos, setPhotos] = useState<StagedPhoto[]>([]);
+  /**
+   * The upload behind each staged photo, by key. A ref, because a send reads
+   * the claims at the moment of the tap, and a status landing between the
+   * tap and the next render must not be missed.
+   */
+  const photoJobsRef = useRef(new Map<string, PhotoJob>());
+  /** Uploads waiting for a slot, oldest first, and how many are running. */
+  const photoQueueRef = useRef<(() => void)[]>([]);
+  const photoRunningRef = useRef(0);
   useEffect(() => {
     if (!channelId) return;
     let cancelled = false;
@@ -447,7 +509,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     // claimed until #2197). Carrying it across the switch
     // would be the worse failure — the photo would ride the next message in a
     // channel it was never meant for.
-    if (attachments.length > 0) setAttachments([]);
+    if (photos.length > 0) setPhotos([]);
   }
   /**
    * Always the current `channelId`, for the generation check below. Refs
@@ -565,7 +627,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       // Snapshotted before the await, and cleared by identity afterwards: a
       // photo that finishes uploading while this send is in flight must not be
       // cleared as though it had been claimed.
-      const staged = attachments;
+      const staged = photos;
       // `sendingRef`, not state: this guards re-entry within a single tick, and
       // a state flag would not be visible to a second tap landing before the
       // re-render. Without it, a send held open by a slow POST leaves the
@@ -584,6 +646,55 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         sendingRef.current
       )
         return false;
+      // A failed photo holds the send: sending without it would quietly drop
+      // a picture the member can still see in the tray.
+      if (staged.some((photo) => photo.status === "failed")) {
+        setSendError(
+          staged.filter((photo) => photo.status === "failed").length === 1
+            ? "A photo didn't upload. Tap it to try again, or remove it."
+            : "Some photos didn't upload. Tap them to try again, or remove them.",
+        );
+        return false;
+      }
+      const jobs = staged.map((photo) => photoJobsRef.current.get(photo.key));
+      const allReady = staged.every(
+        (photo) => photo.status === "ready" && photo.attachment,
+      );
+      const clientMessageId = randomClientId();
+      rememberLocalPhotos(
+        clientMessageId,
+        staged.map((photo) => ({
+          uri: photo.previewUri,
+          width: photo.width,
+          height: photo.height,
+          match: photo.attachment
+            ? attachmentMatchKey(
+                photo.attachment.filename,
+                photo.attachment.byteSize,
+              )
+            : null,
+        })),
+      );
+      const attachmentsReady =
+        staged.length > 0 && !allReady
+          ? Promise.all(
+              jobs.map((job, index) =>
+                job
+                  ? job.claim
+                  : staged[index]!.attachment
+                    ? Promise.resolve(staged[index]!.attachment!)
+                    : Promise.reject(new Error(PHOTO_FAILED)),
+              ),
+            ).then((claims) => {
+              matchLocalPhotos(
+                clientMessageId,
+                claims.map((claim) =>
+                  attachmentMatchKey(claim.filename, claim.byteSize),
+                ),
+              );
+              return claims;
+            })
+          : null;
       sendingRef.current = true;
       let queued = false;
       const forChannelId = channelId;
@@ -595,9 +706,8 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       // appears, then put the text back if the send never got anywhere.
       setDraftState("");
       if (staged.length > 0) {
-        setAttachments((current) =>
-          current.filter((row) => !staged.includes(row)),
-        );
+        const keys = new Set(staged.map((photo) => photo.key));
+        setPhotos((current) => current.filter((photo) => !keys.has(photo.key)));
       }
       setSendError(null);
       try {
@@ -605,8 +715,18 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
           channelId,
           content: body,
           replyToId: options?.replyToId ?? null,
-          attachments: staged.length > 0 ? staged : undefined,
+          clientMessageId,
+          attachments:
+            allReady && staged.length > 0
+              ? staged.map((photo) => photo.attachment!)
+              : undefined,
+          attachmentsReady,
+          attachmentCount: staged.length,
         });
+        for (const photo of staged) {
+          photoJobsRef.current.delete(photo.key);
+          latestPhotoRef.current.delete(photo.key);
+        }
         queued = true;
         await drafts.clear(channelId);
       } catch (error) {
@@ -617,15 +737,21 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         // the failure is the only way the member learns their message did not
         // go anywhere — but only onto the channel this send was actually for;
         // see the generation/channel guard above.
+        forgetLocalPhotos(clientMessageId);
         if (
           currentChannelIdRef.current === forChannelId &&
           sendGenerationRef.current === generation
         ) {
           setDraftState(body);
-          // Put the claims back too, or the member loses a photo that is
-          // still sitting in the bucket with no way to reach it again.
+          // Put the photos back too, each as it stands now: a photo whose
+          // upload failed comes back marked, so the member sees which one.
           if (staged.length > 0) {
-            setAttachments((current) => [...staged, ...current]);
+            setPhotos((current) => [
+              ...staged.map(
+                (photo) => latestPhotoRef.current.get(photo.key) ?? photo,
+              ),
+              ...current,
+            ]);
           }
           setSendError(
             error instanceof Error && error.message
@@ -638,7 +764,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       }
       return queued;
     },
-    [attachments, cancelDraftTimer, channelId, ctx, drafts],
+    [photos, cancelDraftTimer, channelId, ctx, drafts],
   );
   const sendInFlight = useCallback(() => sendingRef.current, []);
 
@@ -670,15 +796,106 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
-  const addAttachment = useCallback((attachment: OutboxAttachment) => {
-    setAttachments((current) => [...current, attachment]);
+  /**
+   * The newest state of every photo still in flight or staged, including ones
+   * a send took out of the tray, so a send that fails can put each back as it
+   * now stands.
+   */
+  const latestPhotoRef = useRef(new Map<string, StagedPhoto>());
+  const updatePhoto = useCallback(
+    (key: string, patch: Partial<StagedPhoto>) => {
+      const before = latestPhotoRef.current.get(key);
+      if (before) latestPhotoRef.current.set(key, { ...before, ...patch });
+      setPhotos((current) =>
+        current.map((photo) =>
+          photo.key === key ? { ...photo, ...patch } : photo,
+        ),
+      );
+    },
+    [],
+  );
+
+  const pumpPhotoQueue = useCallback(() => {
+    while (
+      photoRunningRef.current < PHOTO_UPLOAD_CONCURRENCY &&
+      photoQueueRef.current.length > 0
+    ) {
+      const next = photoQueueRef.current.shift()!;
+      photoRunningRef.current += 1;
+      next();
+    }
   }, []);
 
-  const removeAttachment = useCallback((storagePath: string) => {
-    setAttachments((current) =>
-      current.filter((row) => row.storagePath !== storagePath),
-    );
+  const startPhotoJob = useCallback(
+    (key: string, upload: () => Promise<AttachmentPickResult>) => {
+      const claim = new Promise<OutboxAttachment>((resolve, reject) => {
+        photoQueueRef.current.push(() => {
+          void upload()
+            .then((result) => {
+              if (result.status === "attached") {
+                updatePhoto(key, {
+                  status: "ready",
+                  attachment: result.attachment,
+                  reason: null,
+                });
+                resolve(result.attachment);
+              } else {
+                const reason =
+                  result.status === "refused" ? result.reason : PHOTO_FAILED;
+                updatePhoto(key, { status: "failed", reason });
+                reject(new Error(reason));
+              }
+            })
+            .finally(() => {
+              photoRunningRef.current -= 1;
+              pumpPhotoQueue();
+            });
+        });
+      });
+      // Read by a send, if one is waiting; otherwise the tray shows it.
+      claim.catch(() => undefined);
+      photoJobsRef.current.set(key, { upload, claim });
+      pumpPhotoQueue();
+    },
+    [pumpPhotoQueue, updatePhoto],
+  );
+
+  const addPhotos = useCallback(
+    (picked: NewStagedPhoto[]) => {
+      const staged = picked.map<StagedPhoto>((photo) => ({
+        key: `photo-${++photoKeySeq}`,
+        previewUri: photo.previewUri,
+        width: photo.width,
+        height: photo.height,
+        status: "uploading",
+        attachment: null,
+        reason: null,
+      }));
+      for (const photo of staged) latestPhotoRef.current.set(photo.key, photo);
+      setPhotos((current) => [...current, ...staged]);
+      staged.forEach((photo, index) =>
+        startPhotoJob(photo.key, picked[index]!.upload),
+      );
+    },
+    [startPhotoJob],
+  );
+
+  const removePhoto = useCallback((key: string) => {
+    photoJobsRef.current.delete(key);
+    latestPhotoRef.current.delete(key);
+    setPhotos((current) => current.filter((photo) => photo.key !== key));
   }, []);
+
+  const retryPhoto = useCallback(
+    (key: string) => {
+      const job = photoJobsRef.current.get(key);
+      if (!job) return;
+      setSendError(null);
+      updatePhoto(key, { status: "uploading", reason: null });
+      startPhotoJob(key, job.upload);
+    },
+    [startPhotoJob, updatePhoto],
+  );
 
   const react = useCallback(
     async (messageId: string, emoji: string) => {
@@ -768,9 +985,10 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     react,
     unreact,
     act,
-    attachments,
-    addAttachment,
-    removeAttachment,
+    photos,
+    addPhotos,
+    removePhoto,
+    retryPhoto,
     draft,
     setDraft,
     sendError,

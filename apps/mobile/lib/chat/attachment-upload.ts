@@ -338,10 +338,22 @@ export function uploadFailureReason(err: unknown): string {
   return definitiveRefusalMessage(err) ?? UPLOAD_FAILED;
 }
 
-async function pickImageUnguarded(
+/** A library asset as the picker hands it back, narrowed to what is read. */
+type LibraryAsset = ImagePicker.ImagePickerAsset;
+
+/**
+ * Ask for library access and open the picker. `limit` above 1 turns on
+ * multi-select, in the order the member tapped.
+ */
+async function launchLibrary(
   options: ImagePickOptions,
-): Promise<ImagePickResult> {
-  const { kind, copy } = options;
+  limit: number,
+): Promise<
+  | { status: "cancelled" }
+  | { status: "refused"; reason: string }
+  | { status: "picked"; assets: LibraryAsset[] }
+> {
+  const { copy } = options;
   const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!permission.granted) {
     return {
@@ -356,13 +368,33 @@ async function pickImageUnguarded(
     // re-encodes, which would defeat the conditional transcode above. On for a
     // profile photo, which every surface draws in a circle.
     ...(options.cropSquare ? { allowsEditing: true, aspect: [1, 1] } : {}),
-    allowsMultipleSelection: false,
+    ...(limit > 1
+      ? {
+          allowsMultipleSelection: true,
+          selectionLimit: limit,
+          orderedSelection: true,
+        }
+      : { allowsMultipleSelection: false }),
   });
   if (picked.canceled) return { status: "cancelled" };
+  const assets = (picked.assets ?? []).slice(0, limit);
+  if (assets.length === 0) return { status: "cancelled" };
+  return { status: "picked", assets };
+}
 
-  const asset = picked.assets?.[0];
-  if (!asset) return { status: "cancelled" };
-
+/**
+ * Turn one picked asset into the bytes to PUT: transcode or shrink when
+ * `resolveUploadable` says to, then gate type and size. Throws only from the
+ * native calls; {@link pickImage} and {@link uploadChatPhoto} guard it.
+ */
+async function preparePickedAsset(
+  asset: LibraryAsset,
+  options: ImagePickOptions,
+): Promise<
+  | { status: "picked"; image: PickedImage }
+  | { status: "refused"; reason: string }
+> {
+  const { kind, copy } = options;
   let uploadable: Awaited<ReturnType<typeof resolveUploadable>>;
   try {
     uploadable = await resolveUploadable(asset, kind);
@@ -403,6 +435,14 @@ async function pickImageUnguarded(
       byteSize: size,
     },
   };
+}
+
+async function pickImageUnguarded(
+  options: ImagePickOptions,
+): Promise<ImagePickResult> {
+  const launched = await launchLibrary(options, 1);
+  if (launched.status !== "picked") return launched;
+  return preparePickedAsset(launched.assets[0]!, options);
 }
 
 /**
@@ -531,22 +571,88 @@ export async function pickUploadAndConfirmImage(
   }
 }
 
-/** Pick a photo and put it in the bucket, returning the claim the next send carries. */
-export async function pickAndUploadPhoto(
+/** The most photos one chat pick stages: iMessage and Discord both stop at 10. */
+export const CHAT_PHOTO_LIMIT = 10;
+
+const CHAT_COPY: ImagePickOptions["copy"] = {
+  askAccess: "Frapp needs access to your photos to send one.",
+  settingsAccess: "Allow photo access for Frapp in Settings to send a photo.",
+  type: TYPE_REFUSAL,
+  size: SIZE_REFUSAL,
+};
+
+/**
+ * A photo the member picked for chat, still only on the device.
+ *
+ * `previewUri` is the picker's own file, which the composer tray and the
+ * sender's own message draw at once. Nothing is transcoded, shrunk or
+ * uploaded yet: that is {@link uploadChatPhoto}, run in the background so
+ * the tray shows the picture the moment the picker closes.
+ */
+export interface PickedChatPhoto {
+  previewUri: string;
+  width: number | null;
+  height: number | null;
+  /** The picker's asset, handed back to {@link uploadChatPhoto}. */
+  asset: LibraryAsset;
+}
+
+export type ChatPhotoPickResult =
+  | { status: "cancelled" }
+  | { status: "picked"; photos: PickedChatPhoto[] }
+  | { status: "refused"; reason: string };
+
+/**
+ * Open the library for up to `limit` photos. Never throws. Uploads nothing:
+ * a photo removed from the tray before its upload starts costs no request.
+ */
+export async function pickChatPhotos(
+  limit: number = CHAT_PHOTO_LIMIT,
+): Promise<ChatPhotoPickResult> {
+  if (limit < 1) return { status: "cancelled" };
+  try {
+    const launched = await launchLibrary(
+      { kind: "document", copy: CHAT_COPY },
+      limit,
+    );
+    if (launched.status !== "picked") return launched;
+    return {
+      status: "picked",
+      photos: launched.assets.map((asset) => ({
+        previewUri: asset.uri,
+        width: asset.width > 0 ? asset.width : null,
+        height: asset.height > 0 ? asset.height : null,
+        asset,
+      })),
+    };
+  } catch {
+    return { status: "refused", reason: PICK_FAILED };
+  }
+}
+
+/**
+ * Prepare one picked photo (transcode or shrink, then gate) and PUT it to a
+ * signed URL minted for `channelId`, returning the claim a send carries.
+ * Never throws: every failure is a sentence for the tray.
+ */
+export async function uploadChatPhoto(
   channelId: string,
+  photo: PickedChatPhoto,
   requestUploadUrl: RequestUploadUrl,
 ): Promise<AttachmentPickResult> {
-  const result = await pickAndUploadImage({
-    kind: "document",
-    requestUploadUrl: (body) => requestUploadUrl({ id: channelId, body }),
-    copy: {
-      askAccess: "Frapp needs access to your photos to send one.",
-      settingsAccess:
-        "Allow photo access for Frapp in Settings to send a photo.",
-      type: TYPE_REFUSAL,
-      size: SIZE_REFUSAL,
-    },
-  });
+  let prepared: Awaited<ReturnType<typeof preparePickedAsset>>;
+  try {
+    prepared = await preparePickedAsset(photo.asset, {
+      kind: "document",
+      copy: CHAT_COPY,
+    });
+  } catch {
+    return { status: "refused", reason: PICK_FAILED };
+  }
+  if (prepared.status !== "picked") return prepared;
+  const result = await uploadPickedImage(prepared.image, (body) =>
+    requestUploadUrl({ id: channelId, body }),
+  );
   if (result.status !== "uploaded") return result;
   return { status: "attached", attachment: result.image };
 }

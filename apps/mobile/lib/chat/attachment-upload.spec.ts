@@ -3,10 +3,13 @@ import { ImageManipulator } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  CHAT_PHOTO_LIMIT,
   PHOTO_JPEG_QUALITY,
   PHOTO_MAX_EDGE,
-  pickAndUploadPhoto,
+  pickChatPhotos,
   resolveUploadable,
+  uploadChatPhoto,
+  type RequestUploadUrl,
   safeBasename,
   uploadFailureReason,
 } from "./attachment-upload";
@@ -18,6 +21,19 @@ import {
  * `vitest.setup.ts` mocks the picker to "permission denied / cancelled" by
  * default, so each happy-path test opts in explicitly.
  */
+
+/**
+ * One photo through the whole chat path, pick then upload: what the composer
+ * runs for each photo in the tray, in the order it runs them.
+ */
+async function pickAndUploadPhoto(
+  channelId: string,
+  requestUploadUrl: RequestUploadUrl,
+) {
+  const result = await pickChatPhotos();
+  if (result.status !== "picked") return result;
+  return uploadChatPhoto(channelId, result.photos[0]!, requestUploadUrl);
+}
 
 const picker = vi.mocked(ImagePicker);
 const fs = vi.mocked(FileSystem);
@@ -641,5 +657,69 @@ describe("uploadFailureReason", () => {
       .calls[0] as [Record<string, unknown>];
     expect(options).not.toHaveProperty("allowsEditing");
     expect(options).not.toHaveProperty("aspect");
+  });
+});
+
+describe("pickChatPhotos", () => {
+  it("opens the library for several photos, in the order tapped", async () => {
+    grantedLibrary();
+    picked({ uri: "file:///a.jpg", width: 3024, height: 4032 });
+
+    await pickChatPhotos();
+
+    const [options] = picker.launchImageLibraryAsync.mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+    expect(options).toMatchObject({
+      allowsMultipleSelection: true,
+      selectionLimit: CHAT_PHOTO_LIMIT,
+      orderedSelection: true,
+    });
+  });
+
+  it("asks only for the room left in the tray", async () => {
+    grantedLibrary();
+    picked({ uri: "file:///a.jpg" });
+    await pickChatPhotos(3);
+    const [options] = picker.launchImageLibraryAsync.mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+    expect(options).toMatchObject({ selectionLimit: 3 });
+  });
+
+  it("hands back the picker's own file to draw, and uploads nothing yet", async () => {
+    grantedLibrary();
+    picker.launchImageLibraryAsync.mockResolvedValue({
+      canceled: false,
+      assets: [
+        { uri: "file:///a.HEIC", width: 3024, height: 4032 },
+        { uri: "file:///b.jpg", width: 0, height: 0 },
+      ],
+    } as never);
+
+    const result = await pickChatPhotos();
+
+    expect(result.status).toBe("picked");
+    if (result.status !== "picked") return;
+    expect(
+      result.photos.map(({ previewUri, width, height }) => ({
+        previewUri,
+        width,
+        height,
+      })),
+    ).toEqual([
+      { previewUri: "file:///a.HEIC", width: 3024, height: 4032 },
+      // A size the picker could not read is unknown, not zero.
+      { previewUri: "file:///b.jpg", width: null, height: null },
+    ]);
+    expect(fs.uploadAsync).not.toHaveBeenCalled();
+    expect(manipulator.manipulate).not.toHaveBeenCalled();
+  });
+
+  it("reads a picker that throws as a sentence, never a rejection", async () => {
+    grantedLibrary();
+    picker.launchImageLibraryAsync.mockRejectedValue(new Error("busy"));
+    const result = await pickChatPhotos();
+    expect(result.status).toBe("refused");
   });
 });

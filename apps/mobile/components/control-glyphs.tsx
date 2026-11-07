@@ -5,7 +5,7 @@ import { Frame, paint } from "@/components/more/more-glyphs";
 /**
  * The verbs an icon-only control draws (`spec/ui/design-system/components.md`
  * § Icon-only actions, `iconography.md` §6.1.5): close or dismiss, edit, mark
- * all read, share, and back. Share also leads a labelled button (setup's
+ * all read, try again, share, and back. Share also leads a labelled button (setup's
  * `Share invite`), and the invite link's own mark, `LinkGlyph`, lives here
  * beside it. Control furniture, so they draw only the §1 stroke recipe's
  * detail strokes, with no silhouette fill, from `more-glyphs.tsx`'s `Frame`
@@ -33,6 +33,17 @@ export function CloseGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   return (
     <Frame size={size}>
       <Path d="M6 6l12 12M18 6L6 18" {...detail} />
+    </Frame>
+  );
+}
+
+/** Try again: web draws Lucide's `RotateCw` for the same intent. */
+export function RetryGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M20 12a8 8 0 11-2.34-5.66" {...detail} />
+      <Path d="M20 4v5h-5" {...detail} />
     </Frame>
   );
 }
