@@ -150,22 +150,72 @@ describe("Documents upload (#3399)", () => {
     expect(sheets(tree)).toHaveLength(0);
   });
 
-  it("says where a filed document went, until the sheet opens again", () => {
+  it("draws the upload the sheet closed on as a quiet first row", async () => {
+    permissions = ["*"];
+    documentRows = [
+      {
+        id: "d1",
+        title: "Bylaws",
+        created_at: "2026-11-01T12:00:00Z",
+      },
+    ];
+    const tree = render();
+    const sheet = () =>
+      tree.root.find((node) => typeof node.props.onPending === "function");
+
+    act(() => {
+      sheet().props.onPending({ title: "Look at this", failed: null });
+    });
+    const rows = () => tree.root.findAllByType(ListRow);
+    expect(rows()[0]!.props.label).toBe("Look at this");
+    expect(rows()[0]!.props.description).toBe("Uploading…");
+    // No chevron and no tap while it sends: nothing to open yet.
+    expect(rows()[0]!.props.onPress).toBeUndefined();
+    expect(rows()[1]!.props.label).toBe("Bylaws");
+
+    // Filed: the list re-reads, then the row gives way to the document.
+    let refetched!: () => void;
+    refetchDocuments.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => {
+          refetched = () => resolve(undefined);
+        }),
+    );
+    act(() => {
+      sheet().props.onUploaded("Look at this");
+    });
+    expect(rows()[0]!.props.label).toBe("Look at this");
+    await act(async () => refetched());
+    expect(rows().map((row) => row.props.label)).toEqual(["Bylaws"]);
+  });
+
+  it("says a failed upload didn't go through, and reopens the sheet on a tap", () => {
     permissions = ["*"];
     const tree = render();
-    const sheet = tree.root.find(
-      (node) => typeof node.props.onUploaded === "function",
-    );
+    const sheet = () =>
+      tree.root.find((node) => typeof node.props.onPending === "function");
 
     act(() => {
-      sheet.props.onUploaded("Minutes — Nov 2");
+      sheet().props.onPending({
+        title: "Look at this",
+        failed: "Couldn't upload that photo. Try again in a moment.",
+      });
     });
-    expect(screenText(tree)).toContain("“Minutes — Nov 2” is in the library.");
-
+    // Drawn even in an empty library, in place of the empty state.
+    expect(tree.root.findAllByType(EmptyState)).toHaveLength(0);
+    const [row] = tree.root.findAllByType(ListRow);
+    expect(row!.props.description).toBe("Didn't upload. Tap to try again.");
+    expect(row!.props.descriptionTone).toBe("destructive");
     act(() => {
-      uploadControls(tree)[0]!.props.onPress();
+      row!.props.onPress();
     });
-    expect(screenText(tree)).not.toContain("is in the library.");
+    expect(present).toHaveBeenCalledTimes(1);
+
+    // Cancel in the sheet gives the upload up, and the row with it.
+    act(() => {
+      sheet().props.onPending(null);
+    });
+    expect(tree.root.findAllByType(ListRow)).toHaveLength(0);
   });
 
   it("opens s21 on the folder s12 is filtered to", () => {
