@@ -1,4 +1,9 @@
-import { StyleSheet, Text, View } from "react-native";
+import {
+  type GestureResponderEvent,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { initialsFor } from "@/lib/chat/display-name";
@@ -67,15 +72,21 @@ export interface ChannelRowProps {
   onHide?: () => void;
   /**
    * Pin or unpin the row (#2877), as a named accessibility action. The long
-   * press reaches it through `onLongPress`'s chooser.
+   * press reaches it through `onLongPress`'s menu.
    */
   onTogglePin?: () => void;
   /**
-   * What a long press does. The screen passes the row-actions chooser here;
-   * without it a long press falls back to `onHide`, as before #2877.
+   * What a long press does: the screen opens the row's actions menu
+   * (`ChannelActionsMenu`) beside the press. Without it a long press falls
+   * back to `onHide`, as before #2877. Also a named accessibility action,
+   * "Channel actions", since a long press is not discoverable by a screen
+   * reader; that one has no press point, so its event is `undefined`.
    */
-  onLongPress?: () => void;
+  onLongPress?: (event: GestureResponderEvent | undefined) => void;
 }
+
+/** The menu action's `name`; its spoken label is "Channel actions". */
+export const ACTIONS_ACTION = "actions";
 
 /** The accessibility action's `name`; its spoken label is `HIDE_CONVERSATION_LABEL`. */
 export const HIDE_ACTION = "hide";
@@ -133,8 +144,11 @@ export function ChannelRow({
       onPress={onPress}
       onLongPress={onLongPress ?? onHide}
       accessibilityActions={
-        onTogglePin || onHide
+        onLongPress || onTogglePin || onHide
           ? [
+              ...(onLongPress
+                ? [{ name: ACTIONS_ACTION, label: "Channel actions" }]
+                : []),
               ...(onTogglePin
                 ? [
                     {
@@ -150,9 +164,10 @@ export function ChannelRow({
           : undefined
       }
       onAccessibilityAction={
-        onTogglePin || onHide
+        onLongPress || onTogglePin || onHide
           ? (event) => {
               const action = event.nativeEvent.actionName;
+              if (action === ACTIONS_ACTION) onLongPress?.(undefined);
               if (action === PIN_ACTION) onTogglePin?.();
               if (action === HIDE_ACTION) onHide?.();
             }
