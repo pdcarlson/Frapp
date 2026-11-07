@@ -53,20 +53,20 @@ function profile(userId: string, name: string) {
   };
 }
 
-// Keyed by member id, the id `GET /v1/members/{id}` takes: a sheet that
-// fetched by user id would find nothing here, as it found a 404 on the API.
+// Keyed by user id, the id `GET /v1/members/by-user/{userId}` takes: chat
+// opens the sheet with a sender or mention id, which is never a member row id.
 const PROFILES: Record<string, ReturnType<typeof profile>> = Object.fromEntries(
   [
     profile(ADA, "Ada"),
     profile(BOB, "Bob"),
     profile(SYSTEM_SENDER_ID, "Frapp"),
     profile(VIEWER, "Me"),
-  ].map((p) => [p.id, p]),
+  ].map((p) => [p.user_id, p]),
 );
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useMember: (id: string) => ({
+  useMemberByUserId: (id: string) => ({
     data: PROFILES[id],
     isPending: false,
     isError: false,
@@ -121,7 +121,7 @@ function sheet(userId: string | null) {
     <FrappThemeProvider>
       <MemberDetailSheet
         ref={sheetRef}
-        member={userId ? { memberId: `m-${userId}`, userId } : null}
+        member={userId ? { userId } : null}
       />
     </FrappThemeProvider>
   );
@@ -281,7 +281,7 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     const tree = render(ADA);
     const [row] = messageRows(tree);
     expect(row.props.disabled).toBe(true);
-    expect(row.props.description).toBe(MESSAGE_CHECKING_BLOCK_LIST);
+    expect(row.props.accessibilityHint).toBe(MESSAGE_CHECKING_BLOCK_LIST);
     act(() => tree.unmount());
   });
 
@@ -291,7 +291,7 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     const tree = render(ADA);
     const [row] = messageRows(tree);
     expect(row.props.disabled).toBe(true);
-    expect(row.props.description).toBe(
+    expect(row.props.accessibilityHint).toBe(
       "Couldn't check your block list first. Retries when you're back online.",
     );
     act(() => tree.unmount());
@@ -302,7 +302,7 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     const tree = render(ADA);
     const [row] = messageRows(tree);
     expect(row.props.disabled).toBe(false);
-    expect(row.props.description).toBe(
+    expect(row.props.accessibilityHint).toBe(
       "Couldn't check your block list first. Tap to try again.",
     );
 
@@ -318,7 +318,7 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     const tree = render(ADA);
     const [row] = messageRows(tree);
     expect(row.props.disabled).toBe(true);
-    expect(row.props.description).toBe(MESSAGE_CHECKING_BLOCK_LIST);
+    expect(row.props.accessibilityHint).toBe(MESSAGE_CHECKING_BLOCK_LIST);
     act(() => tree.unmount());
   });
 
@@ -533,7 +533,7 @@ describe("MemberDetailSheet fact rows", () => {
     state.blockStatus = "ready";
     state.blocked = new Set();
     state.blockPaused = false;
-    PROFILES[`m-${CARA}`] = {
+    PROFILES[CARA] = {
       ...profile(CARA, "Cara"),
       custom_fields: [
         {
@@ -546,26 +546,25 @@ describe("MemberDetailSheet fact rows", () => {
     };
   });
 
-  it("draws Email, Roles, Joined and each custom field as detail rows", () => {
+  it("draws Email, Member since and each custom field as detail rows", () => {
     const tree = render(CARA);
     const rows = tree.root.findAllByType(ListRow);
-    const variantOf = (label: string) =>
-      rows.find((row) => row.props.label === label)?.props.variant;
+    const rowOf = (label: string) =>
+      rows.find((row) => row.props.label === label);
 
-    expect(variantOf("Email")).toBe("detail");
-    expect(variantOf("Roles")).toBe("detail");
-    expect(variantOf("Joined")).toBe("detail");
-    expect(variantOf(LONG_LABEL)).toBe("detail");
-    expect(
-      rows.find((row) => row.props.label === LONG_LABEL)?.props.value,
-    ).toBe("Jordan Lee, 555-0100");
-    // The actions stay default rows: their label names what a tap does.
-    expect(variantOf("Message")).toBeUndefined();
+    expect(rowOf("Email")?.props.variant).toBe("detail");
+    // Tapping the address starts an email to them.
+    expect(rowOf("Email")?.props.onPress).toBeTypeOf("function");
+    expect(rowOf("Member since")?.props.variant).toBe("detail");
+    // Written out: no abbreviated month in the UI.
+    expect(rowOf("Member since")?.props.value).toMatch(/August/);
+    expect(rowOf(LONG_LABEL)?.props.variant).toBe("detail");
+    expect(rowOf(LONG_LABEL)?.props.value).toBe("Jordan Lee, 555-0100");
     act(() => tree.unmount());
   });
 });
 
-describe("MemberDetailSheet Roles row", () => {
+describe("MemberDetailSheet roles", () => {
   beforeEach(() => {
     state.viewer = VIEWER;
     state.blockStatus = "ready";
@@ -575,25 +574,43 @@ describe("MemberDetailSheet Roles row", () => {
     ];
   });
 
-  function rolesRow(tree: ReactTestRenderer) {
-    return tree.root
-      .findAllByType(ListRow)
-      .find((row) => row.props.label === "Roles");
+  function editButton(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) =>
+        node.props.accessibilityLabel === "Edit Ada's roles" &&
+        typeof node.props.onPress === "function",
+    )[0];
   }
 
-  it("is a read-only fact for a viewer without roles:manage", () => {
+  it("draws the member's roles as chips, top-ranked first", () => {
+    state.roles = [
+      { id: "r-b", name: "Brothers", color: "#5CC8F0", display_order: 5 },
+      { id: "r-p", name: "President", color: "#F2994A", display_order: 1 },
+    ];
+    PROFILES[ADA] = { ...profile(ADA, "Ada"), role_ids: ["r-b", "r-p"] as never[] };
+    const tree = render(ADA);
+    const text = tree.root
+      .findAllByType("Text" as never)
+      .map((node) => node.props.children)
+      .filter((child) => child === "President" || child === "Brothers");
+    expect(text).toEqual(["President", "Brothers"]);
+    act(() => tree.unmount());
+    PROFILES[ADA] = profile(ADA, "Ada");
+  });
+
+  it("offers no Edit to a viewer without roles:manage", () => {
     state.permissions = ["members:view"];
     const tree = render(ADA);
-    expect(rolesRow(tree)?.props.onPress).toBeUndefined();
+    expect(editButton(tree)).toBeUndefined();
     act(() => tree.unmount());
   });
 
   it("opens the role editor for this member when the viewer holds roles:manage", () => {
     state.permissions = ["members:view", "roles:manage"];
     const tree = render(ADA);
-    const row = rolesRow(tree);
-    expect(row?.props.onPress).toBeTypeOf("function");
-    act(() => row?.props.onPress());
+    const button = editButton(tree);
+    expect(button?.props.onPress).toBeTypeOf("function");
+    act(() => button?.props.onPress());
     const editor = tree.root.find(
       (node) =>
         typeof node.type !== "string" && node.props.session !== undefined,

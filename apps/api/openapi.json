@@ -1826,6 +1826,52 @@
         ]
       }
     },
+    "/v1/members/by-user/{userId}": {
+      "get": {
+        "operationId": "MemberController_getByUser_v1",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberProfileDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get member profile by user ID",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
     "/v1/members/{id}": {
       "get": {
         "operationId": "MemberController_getOne_v1",
