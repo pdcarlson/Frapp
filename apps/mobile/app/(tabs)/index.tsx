@@ -106,6 +106,10 @@ import {
 } from "@/lib/chat/channel-list";
 import { confirmHideConversation } from "@/lib/chat/hide-conversation-prompt";
 import {
+  channelsErrorCopy,
+  reportChannelsRefused,
+} from "@/lib/chat/channels-error";
+import {
   claimChatLaunch,
   readLastChannel,
   settleChatLaunch,
@@ -161,6 +165,10 @@ export default function ChatHomeScreen() {
   const { chapterName } = useChapterBranding();
 
   const channelsQuery = useChannels();
+  const channelsError = channelsErrorCopy(channelsQuery.error, chapterName);
+  useEffect(() => {
+    if (channelsQuery.isError) reportChannelsRefused(channelsQuery.error);
+  }, [channelsQuery.isError, channelsQuery.error]);
   const categoriesQuery = useCategories();
   const unreadQuery = useChannelUnreadCounts();
   const eventsQuery = useEvents();
@@ -604,8 +612,8 @@ export default function ChatHomeScreen() {
         // recovers on its own since C8 (#998) wired `onlineManager` and
         // `focusManager` (`lib/connection/query-connectivity.ts`).
         <ErrorState
-          title="Couldn't load channels"
-          body="Chat couldn't reach the server."
+          title={channelsError.title}
+          body={channelsError.body}
           onRetry={() => void channelsQuery.refetch()}
           // Names what it retries, so the button still makes sense heard on
           // its own (a screen reader's list of buttons) and not only under
