@@ -232,6 +232,8 @@ Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assem
 
 A chapter with no events opens on the Calendar tab rather than an empty list, and a viewer with `events:create` gets a dashed `+` on today's square, where the first event will go. The choice is made once, when the events first load, so making that first event doesn't move the officer to the list. A viewer without `events:create` sees the dates as text, with no New event button and nothing to press on a day (2026-11-06). The time-window line is its own row because the default window (Upcoming) hides every past event without the officer touching a filter, and "No events yet" there would be false (2026-11-05). The lines are `InlineNote`s, like [Points (dashboard)](#points-dashboard); error and offline keep their cards.
 
+Mobile's Events tab (s06) has no calendar, so with nothing scheduled its list is one line where the rows go: `Nothing scheduled yet. Tap + to add the first event.` for a viewer the tab bar's + offers New event to, and `Nothing scheduled yet.` for everyone else (2026-11-07). It is mobile's `InlineNote` (`components/inline-note.tsx`), which replaced the `Nothing scheduled` card.
+
 ### Attendance (dashboard)
 
 | State | Title | Description |
@@ -319,6 +321,8 @@ The **Accent server contrast disclosure** row is independent of every row above 
 | Offline | `Tasks unavailable offline` | `Reconnect to load the chapter board and move tasks through it.` |
 
 The board keeps its four columns at zero for a `tasks:manage` holder, and the add row at the top of To do is its one way to create a task: it replaced the New task button and dialog (2026-11-06). Pressing it opens the row in place; Enter in the title creates the task once it has an assignee and a due date, which `POST /v1/tasks` requires, and the row stays open for the next one. A member without `tasks:manage` reads only their own tasks, so with none the four empty columns give way to the one line above; `{when}` is `formatRelativeDayTime`'s shape (`Tomorrow · 7:00 PM`).
+
+Mobile's Tasks tab (s08) is a personal board for everyone, so with nothing assigned it writes the same line under the points card, from the same `nextUpLine` (`@repo/formatting`), and a `tasks:manage` holder reads ` Tap + to assign a task.` after it, since New task lives in the tab bar's + (2026-11-07). It replaced the `You're all clear` card.
 
 ### Service Hours (dashboard)
 

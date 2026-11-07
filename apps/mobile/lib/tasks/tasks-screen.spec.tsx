@@ -97,6 +97,13 @@ const mutateAsync = vi.fn(async () => {
 });
 
 let chapterId: string | null = "chapter-1";
+/** The board's rows, the viewer's grants and the chapter, per spec. */
+let tasks: unknown[] = TASKS;
+let permissions: string[] = [];
+let enabledModules: Record<string, boolean> | undefined = undefined;
+let events: unknown[] | undefined = [];
+/** Each `useEvents` call's `enabled`, so a spec can see whether it read. */
+const eventsEnabled: (boolean | undefined)[] = [];
 
 /** Each query's `refetch`, kept across renders so a pull can be asserted on. */
 const refetch = vi.hoisted(() => ({
@@ -112,7 +119,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useViewerUserId: () => "user-1",
   useCurrentUser: () => ({ isError: false, refetch: refetch.viewer }),
   useTasks: () => ({
-    data: TASKS,
+    data: tasks,
+    isSuccess: true,
     isPending: false,
     isError: false,
     isFetching: false,
@@ -120,7 +128,15 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useMyPoints: () => ({ data: undefined, refetch: refetch.points }),
   useLeaderboard: () => ({ data: undefined, refetch: refetch.leaderboard }),
-  usePermissionList: () => [],
+  usePermissionList: () => permissions,
+  useCurrentChapter: () => ({
+    isSuccess: true,
+    data: { enabled_modules: enabledModules },
+  }),
+  useEvents: (options?: { enabled?: boolean }) => {
+    eventsEnabled.push(options?.enabled);
+    return { data: options?.enabled ? events : undefined };
+  },
   useUpdateTaskStatus: () => ({ mutateAsync }),
 }));
 
@@ -426,6 +442,67 @@ describe("Tasks board pull-to-refresh", () => {
 
     expect(refetch.tasks).not.toHaveBeenCalled();
     expect(refetch.viewer).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+});
+
+/**
+ * Rule 7 of the empty-states plan: a member with nothing assigned reads one
+ * line under the points card, the same line web's board writes, rather than a
+ * card. The + lives in the tab bar, so only an officer hears about it.
+ */
+describe("Tasks with nothing assigned", () => {
+  const soon = (hours: number) =>
+    new Date(Date.now() + hours * 3_600_000).toISOString();
+  const text = (tree: ReactTestRenderer) => screenText(tree);
+
+  afterEach(() => {
+    tasks = TASKS;
+    permissions = [];
+    enabledModules = undefined;
+    events = [];
+    eventsEnabled.length = 0;
+  });
+
+  it("says the plate is clear and names the next event", () => {
+    tasks = [];
+    events = [
+      { name: "Formal", start_time: soon(72) },
+      { name: "Chapter meeting", start_time: soon(2) },
+    ];
+    const tree = render();
+
+    expect(text(tree)).toMatch(/Nothing on your plate\. Next up: Chapter meeting, /);
+    expect(text(tree)).not.toContain("all clear");
+    expect(text(tree)).not.toContain("Tap +");
+    act(() => tree.unmount());
+  });
+
+  it("tells an officer the + assigns a task", () => {
+    tasks = [];
+    permissions = ["tasks:manage"];
+    const tree = render();
+
+    expect(text(tree)).toContain("Nothing on your plate. Tap + to assign a task.");
+    act(() => tree.unmount());
+  });
+
+  it("leaves the events read off when Events is off", () => {
+    tasks = [];
+    enabledModules = { events: false };
+    events = [{ name: "Chapter meeting", start_time: soon(2) }];
+    const tree = render();
+
+    expect(eventsEnabled.every((enabled) => !enabled)).toBe(true);
+    expect(text(tree)).toContain("Nothing on your plate.");
+    expect(text(tree)).not.toContain("Next up");
+    act(() => tree.unmount());
+  });
+
+  it("reads no events while the board has rows", () => {
+    const tree = render();
+
+    expect(eventsEnabled.every((enabled) => !enabled)).toBe(true);
     act(() => tree.unmount());
   });
 });

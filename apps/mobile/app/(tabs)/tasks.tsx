@@ -3,7 +3,9 @@ import { useFocusEffect } from "expo-router";
 import { AppState, StyleSheet, Text, View } from "react-native";
 import {
   useActiveChapterId,
+  useCurrentChapter,
   useCurrentUser,
+  useEvents,
   useLeaderboard,
   useMyPoints,
   usePermissionList,
@@ -11,7 +13,8 @@ import {
   useUpdateTaskStatus,
   useViewerUserId,
 } from "@repo/hooks";
-import { can } from "@repo/validation";
+import { nextUpLine } from "@repo/formatting";
+import { can, isModuleEnabled } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
@@ -20,11 +23,11 @@ import {
   SectionHeaderSkeleton,
 } from "@/components/list-section";
 import {
-  EmptyState,
   ErrorState,
   NoChapterState,
   SkeletonRegion,
 } from "@/components/state-block";
+import { InlineNote } from "@/components/inline-note";
 import { TaskRow, TaskRowSkeleton } from "@/components/tasks/task-row";
 import { PointsSummaryCard } from "@/components/tasks/points-summary-card";
 import { selectTaskRows, type TaskRowModel } from "@/lib/tasks/board";
@@ -114,6 +117,22 @@ export default function TasksScreen() {
     () => selectTaskRows(tasksQuery.data, viewerUserId, now),
     [tasksQuery.data, viewerUserId, now],
   );
+  // "Next up" names the chapter's next event, so the events read runs only
+  // when it can be shown: the board has loaded with nothing on it, and the
+  // chapter has Events on. The chapter must be read first, because an unread
+  // `enabled_modules` counts as on and would fire a read Events-off refuses.
+  const chapterQuery = useCurrentChapter();
+  const enabledModules = (
+    chapterQuery.data as
+      | { enabled_modules?: Record<string, boolean> }
+      | undefined
+  )?.enabled_modules;
+  const eventsOn =
+    chapterQuery.isSuccess && isModuleEnabled(enabledModules, "events");
+  const plateIsClear =
+    tasksQuery.isSuccess && viewerUserId !== null && board.total === 0;
+  const eventsQuery = useEvents({ enabled: plateIsClear && eventsOn });
+
   const summary = useMemo(
     () => selectPointsSummary(pointsQuery.data),
     [pointsQuery.data],
@@ -251,7 +270,7 @@ export default function TasksScreen() {
     }
 
     // `viewerUserId === null` here is "/v1/users/me has not answered yet", not
-    // "no tasks". Treating it as empty flashes "You're all clear" on every cold
+    // "no tasks". Treating it as empty flashes "Nothing on your plate" on every cold
     // start, a beat before the real rows land.
     if (tasksQuery.isPending || viewerUserId === null) {
       // A section caption over task-shaped rows, so the real board lands in
@@ -282,15 +301,15 @@ export default function TasksScreen() {
 
     if (board.total === 0) {
       return (
-        <EmptyState
-          glyph="✓"
-          title="You're all clear"
-          body={
-            canManageTasks
-              ? "Nothing is assigned to you. Tap + to assign a task."
-              : "Nothing is assigned to you right now."
-          }
-        />
+        // One line under the points card, not a card of its own (`writing.md`
+        // § 4, rule 7): the plate is clear, then what comes next, so the line
+        // says more than what isn't there. Web's Tasks board writes the same
+        // line (`nextUpLine`). An officer also hears where assigning lives,
+        // the tab bar's + (New task).
+        <InlineNote>
+          {nextUpLine(eventsOn ? eventsQuery.data : undefined, now.getTime())}
+          {canManageTasks ? " Tap + to assign a task." : null}
+        </InlineNote>
       );
     }
 
