@@ -2781,6 +2781,35 @@ describe("ChatShell greenfield grammar (#2142)", () => {
       screen.getByRole("region", { name: "Channels" }),
     ).toBeInTheDocument();
   });
+
+  it("says a refusal by role is about the member's role, not access in general", () => {
+    channelsQueryState.value = {
+      isError: true,
+      data: undefined,
+      error: Object.assign(new Error("Forbidden"), { status: 403 }),
+    };
+    render(<ChatShell />);
+
+    expect(screen.getByText("Chat isn't open to you yet")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Ask an officer to give you the Member role/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Couldn't load channels")).toBeNull();
+  });
+
+  it("keeps the generic copy for the chapter guard's 403", () => {
+    channelsQueryState.value = {
+      isError: true,
+      data: undefined,
+      error: Object.assign(new Error("Forbidden"), {
+        status: 403,
+        code: "chapter.context.mismatch",
+      }),
+    };
+    render(<ChatShell />);
+
+    expect(screen.getByText("Couldn't load channels")).toBeInTheDocument();
+  });
 });
 
 /**

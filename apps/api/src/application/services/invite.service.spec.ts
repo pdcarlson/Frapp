@@ -1181,6 +1181,137 @@ describe('InviteService', () => {
     );
   });
 
+  // 2026-11-07: two testers invited as "Cabinet", a role a Discord import
+  // brought over with only `channels:read:cabinet`, were refused on every
+  // screen because nothing gave them `members:view`.
+  describe('a custom role with no base access comes with Member', () => {
+    const memberRole: Role = roleFixture({
+      id: 'role-member',
+      name: 'Member',
+      system_key: SystemRoleKeys.MEMBER,
+      is_system: true,
+      display_order: 5,
+    });
+    const cabinetRole: Role = roleFixture({
+      id: 'role-cabinet',
+      name: 'Cabinet',
+      system_key: null,
+      is_system: false,
+      display_order: 21,
+      permissions: ['channels:read:cabinet'],
+    });
+    const newMemberRole: Role = roleFixture({
+      id: 'role-new-member',
+      name: 'New Member',
+      system_key: SystemRoleKeys.NEW_MEMBER,
+      is_system: true,
+      display_order: 6,
+      permissions: ['members:view', 'backwork:upload'],
+    });
+
+    function inviteFor(role: string): Invite {
+      return {
+        id: 'inv-1',
+        token: 'test-uuid',
+        chapter_id: 'ch-1',
+        role,
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        created_by: 'user-1',
+        used_at: null,
+        created_at: '2024-01-01',
+      };
+    }
+
+    beforeEach(() => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+      mockInviteRepo.markUsedAtomically.mockResolvedValue(
+        '2026-01-01T00:00:00.000Z',
+      );
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        memberRole,
+        cabinetRole,
+        newMemberRole,
+      ]);
+      mockMemberRepo.create.mockResolvedValue(memberFixture());
+    });
+
+    it('grants Member after a custom role that lacks members:view', async () => {
+      mockInviteRepo.findByToken.mockResolvedValue(inviteFor('Cabinet'));
+
+      await service.redeem('test-uuid', 'user-2');
+
+      // The invited role stays first: web's Members list labels by role_ids[0].
+      expect(mockMemberRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          role_ids: ['role-cabinet', 'role-member'],
+        }),
+      );
+    });
+
+    it('grants a custom role that already carries members:view alone', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        memberRole,
+        roleFixture({
+          id: 'role-guest',
+          name: 'Rush Guest',
+          system_key: null,
+          is_system: false,
+          display_order: 22,
+          permissions: ['members:view', 'channels:read:rush'],
+        }),
+      ]);
+      mockInviteRepo.findByToken.mockResolvedValue(inviteFor('Rush Guest'));
+
+      await service.redeem('test-uuid', 'user-2');
+
+      expect(mockMemberRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ role_ids: ['role-guest'] }),
+      );
+    });
+
+    it('grants a seeded role renamed before system_key existed alone', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        memberRole,
+        roleFixture({
+          id: 'role-pledge',
+          name: 'Pledge',
+          system_key: null,
+          is_system: true,
+          display_order: 6,
+          permissions: ['backwork:upload'],
+        }),
+      ]);
+      mockInviteRepo.findByToken.mockResolvedValue(inviteFor('Pledge'));
+
+      await service.redeem('test-uuid', 'user-2');
+
+      expect(mockMemberRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ role_ids: ['role-pledge'] }),
+      );
+    });
+
+    it('grants a seeded role alone', async () => {
+      mockInviteRepo.findByToken.mockResolvedValue(inviteFor('New Member'));
+
+      await service.redeem('test-uuid', 'user-2');
+
+      expect(mockMemberRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ role_ids: ['role-new-member'] }),
+      );
+    });
+
+    it('grants only the custom role when the chapter has no Member role', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([cabinetRole]);
+      mockInviteRepo.findByToken.mockResolvedValue(inviteFor('Cabinet'));
+
+      await service.redeem('test-uuid', 'user-2');
+
+      expect(mockMemberRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ role_ids: ['role-cabinet'] }),
+      );
+    });
+  });
+
   it('should reject expired invite', async () => {
     const invite: Invite = {
       id: 'inv-1',
