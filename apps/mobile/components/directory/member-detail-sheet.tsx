@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
@@ -7,7 +8,7 @@ import {
   useBlockedUserIds,
   useCustomRoles,
   useGetOrCreateDm,
-  useMember,
+  useMemberByUserId,
   usePermissionList,
   useRoles,
   useViewerUserId,
@@ -22,9 +23,11 @@ import {
 } from "@/lib/chat/block-actions";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { ErrorState, SkeletonLines } from "@/components/state-block";
 import {
   SheetGrabber,
+  SheetPrimaryButton,
   SheetScrim,
   TallSheetHeader,
   useSheetBackgroundStyle,
@@ -34,8 +37,9 @@ import {
 } from "@/components/sheet-scaffold";
 import {
   resolveCustomRoleNames,
-  resolveRoleNames,
+  resolveRoleChips,
   selectMemberDetail,
+  type MemberRoleChip,
 } from "@/lib/directory/member-detail";
 import { parseRoleOptions } from "@/lib/directory/role-editor";
 import {
@@ -52,7 +56,7 @@ import {
 } from "@/lib/directory/start-dm";
 
 /**
- * s13 member profile detail — a sheet, not a route, per the issue's own scope
+ * A member's profile — a sheet, not a route, per s13's own scope
  * note: the route layouts are frozen (`spec/ui/mobile/navigation.md`
  * § Hotspot freeze), so this reaches the fields `spec/behavior/members.md`'s
  * detail view specifies (name, email, role, joined date) without one.
@@ -64,16 +68,24 @@ import {
  * the same "omit, don't fake" call `profile.tsx` makes for the drawn
  * attendance stat no member can read.
  *
+ * **One profile, every door.** The directory row, a sender's name or photo in
+ * chat, and an `@mention` all open this same sheet, keyed by `users.id` (the
+ * id chat carries), so a member sees the same card wherever they tap a name.
+ * It leads with what an everyday member opens a profile for: who this is
+ * (photo, name, grad year), a way to reach them (Message, email), and their
+ * roles; officer controls ride the same rows rather than a separate screen.
+ *
  * **Message** (#2773) opens a 1:1 DM with the member, or the one you already
- * have. It comes before the profile's details because starting a DM is the
- * thing a member most often opens a profile to do. Who it is offered for is
+ * have. It is the sheet's one accent button, under the name, because starting
+ * a DM is the thing a member most often opens a profile to do. Who it is offered for is
  * `spec/ui/mobile/screens.md` s13's rule, implemented in
  * `lib/directory/start-dm.ts`.
  *
- * **Roles** opens {@link MemberRolesSheet} for a viewer holding `roles:manage`
- * (the gate on `PATCH /v1/members/{id}/roles`). It is the one place on mobile
- * where roles are edited (Paul, 2026-11-07); for everyone else the row is a
- * read-only fact.
+ * **Roles** are chips in the chapter's rank order (`resolveRoleChips`), each
+ * with its role color. A viewer holding `roles:manage` (the gate on
+ * `PATCH /v1/members/{id}/roles`) gets Edit, which opens
+ * {@link MemberRolesSheet}: the one role editor on mobile (Paul, 2026-11-07),
+ * now reachable from chat too; for everyone else the chips are read-only.
  *
  * **Block / Unblock** (#2257) sits at the foot of another member's profile,
  * because the directory is where a member you have blocked is still listed and
@@ -99,11 +111,12 @@ import {
  */
 export interface MemberDetailSheetProps {
   /**
-   * The tapped row's ids, or `null` while no row is selected; the sheet stays
-   * mounted regardless. The profile is fetched by `memberId` (the route takes
-   * the member row's id) and the stale-DM guard keys on `userId`.
+   * Whose profile, by `users.id`, or `null` while nobody is selected; the
+   * sheet stays mounted regardless. The profile is read by user id
+   * (`GET /v1/members/by-user/{userId}`), which also hands back the membership
+   * id a role edit needs, so chat can open it with only a sender or mention id.
    */
-  member: { memberId: string; userId: string } | null;
+  member: { userId: string } | null;
   onDismiss?: () => void;
 }
 
@@ -120,7 +133,8 @@ export const MemberDetailSheet = forwardRef<
 
   // `useMember` is already `enabled: !!id`, so this stays idle until a row is
   // actually tapped rather than firing for every mounted-but-closed sheet.
-  const memberQuery = useMember(member?.memberId ?? "");
+  const memberQuery = useMemberByUserId(userId ?? "");
+  const { accent } = useChapterBranding();
   const rolesQuery = useRoles();
 
   // Custom roles (`chapter_custom_roles` — chapter-specific titles like
@@ -137,8 +151,8 @@ export const MemberDetailSheet = forwardRef<
     () => selectMemberDetail(memberQuery.data),
     [memberQuery.data],
   );
-  const roleNames = useMemo(
-    () => resolveRoleNames(rolesQuery.data, detail?.roleIds ?? []),
+  const roleChips = useMemo(
+    () => resolveRoleChips(rolesQuery.data, detail?.roleIds ?? []),
     [rolesQuery.data, detail?.roleIds],
   );
   const customRoleNames = useMemo(
@@ -149,7 +163,12 @@ export const MemberDetailSheet = forwardRef<
       ),
     [canViewCustomRoles, customRolesQuery.data, detail?.customRoleIds],
   );
-  const allRoleNames = [...roleNames, ...customRoleNames];
+  // Custom titles carry no color or rank in this read, so they follow the
+  // ranked roles as plain chips.
+  const allRoleChips: MemberRoleChip[] = [
+    ...roleChips,
+    ...customRoleNames.map((name) => ({ id: `custom:${name}`, name, color: null })),
+  ];
 
   const canEditRoles = can("roles:manage", permissions);
   const roleOptions = useMemo(
@@ -278,24 +297,27 @@ export const MemberDetailSheet = forwardRef<
           {detail ? (
             <>
               <View style={styles.identity}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{detail.initials}</Text>
-                </View>
-                <Text style={styles.name}>{detail.displayName}</Text>
+                <MemberPhoto
+                  url={detail.avatarUrl}
+                  initials={detail.initials}
+                  styles={styles}
+                />
+                <Text style={styles.name} accessibilityRole="header">
+                  {detail.displayName}
+                </Text>
                 {detail.meta ? (
                   <Text style={styles.meta}>{detail.meta}</Text>
                 ) : null}
               </View>
 
               {messageRow.kind !== "hidden" ? (
-                <ListSection>
-                  <ListRow
+                <View style={styles.messageBlock}>
+                  <SheetPrimaryButton
                     label="Message"
-                    description={messageRowDescription(messageRow)}
-                    // Busy while the DM opens, so the row keeps its look and
-                    // shows a spinner; disabled only while the block list
-                    // can't vouch for a DM yet, which is the row being
-                    // unavailable rather than working.
+                    accent={accent}
+                    onAccent={tokens.color.gold.onHouse}
+                    // Busy while the DM opens; disabled only while the block
+                    // list can't vouch for a DM yet.
                     busy={
                       messageRow.kind === "ready" &&
                       dmPending.has(detail.userId)
@@ -303,51 +325,89 @@ export const MemberDetailSheet = forwardRef<
                     disabled={
                       messageRow.kind !== "ready" && messageRow.kind !== "retry"
                     }
+                    accessibilityHint={
+                      messageRowDescription(messageRow) ?? undefined
+                    }
                     onPress={() => {
                       if (messageRow.kind === "retry") blockList.retry();
                       else void startDm(detail.userId, detail.displayName);
                     }}
                   />
-                </ListSection>
+                  {messageRowDescription(messageRow) ? (
+                    <Text style={styles.messageNote}>
+                      {messageRowDescription(messageRow)}
+                    </Text>
+                  ) : null}
+                </View>
               ) : null}
 
+              <View style={styles.rolesBlock}>
+                <View style={styles.rolesHeader}>
+                  <Text style={styles.sectionLabel} accessibilityRole="header">
+                    Roles
+                  </Text>
+                  {canEditRoles && rolesQuery.isSuccess && detail.memberId ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Edit ${detail.displayName}'s roles`}
+                      hitSlop={12}
+                      onPress={() => {
+                        setRolesSession({
+                          memberId: detail.memberId ?? "",
+                          name: detail.displayName,
+                          heldIds: detail.roleIds,
+                          customRoleNames,
+                          fetchedAt: memberQuery.dataUpdatedAt,
+                        });
+                        rolesSheetRef.current?.present();
+                      }}
+                    >
+                      <Text style={[styles.editLink, { color: accent }]}>
+                        Edit
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+                {rolesStillLoading ? (
+                  <Text style={styles.meta}>Loading roles</Text>
+                ) : allRoleChips.length > 0 ? (
+                  <View style={styles.chips}>
+                    {allRoleChips.map((chip) => (
+                      <View key={chip.id} style={styles.chip}>
+                        <View
+                          style={[
+                            styles.chipDot,
+                            chip.color
+                              ? { backgroundColor: chip.color }
+                              : styles.chipDotPlain,
+                          ]}
+                        />
+                        <Text style={styles.chipText}>{chip.name}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.meta}>No roles yet</Text>
+                )}
+              </View>
+
               <ListSection>
+                {detail.email ? (
+                  <ListRow
+                    variant="detail"
+                    label="Email"
+                    value={detail.email}
+                    accessibilityHint="Opens a new email to them"
+                    onPress={() =>
+                      void Linking.openURL(`mailto:${detail.email}`).catch(
+                        () => undefined,
+                      )
+                    }
+                  />
+                ) : null}
                 <ListRow
                   variant="detail"
-                  label="Email"
-                  value={detail.email ?? "Not set"}
-                />
-                <ListRow
-                  variant="detail"
-                  label="Roles"
-                  value={
-                    rolesStillLoading
-                      ? "Loading…"
-                      : allRoleNames.length > 0
-                        ? allRoleNames.join(", ")
-                        : "—"
-                  }
-                  onPress={
-                    canEditRoles && rolesQuery.isSuccess
-                      ? () => {
-                          setRolesSession({
-                            memberId: member?.memberId ?? "",
-                            name: detail.displayName,
-                            heldIds: detail.roleIds,
-                            customRoleNames,
-                            fetchedAt: memberQuery.dataUpdatedAt,
-                          });
-                          rolesSheetRef.current?.present();
-                        }
-                      : undefined
-                  }
-                  accessibilityHint={
-                    canEditRoles ? "Opens their roles to edit" : undefined
-                  }
-                />
-                <ListRow
-                  variant="detail"
-                  label="Joined"
+                  label="Member since"
                   value={detail.joinedLabel ?? "—"}
                 />
               </ListSection>
@@ -423,8 +483,37 @@ export const MemberDetailSheet = forwardRef<
   );
 });
 
+/** The member's photo, or their initials when there is none or it fails. */
+function MemberPhoto({
+  url,
+  initials,
+  styles,
+}: {
+  url: string | null;
+  initials: string;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  if (url && failedUrl !== url) {
+    return (
+      <Image
+        source={{ uri: url }}
+        style={styles.avatar}
+        onError={() => setFailedUrl(url)}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      />
+    );
+  }
+  return (
+    <View style={styles.avatar}>
+      <Text style={styles.avatarText}>{initials}</Text>
+    </View>
+  );
+}
+
 function createStyles(tokens: SignetTokens) {
-  const avatarSize = 64;
+  const avatarSize = 80;
   return StyleSheet.create({
     scroll: {
       flex: 1,
@@ -462,6 +551,57 @@ function createStyles(tokens: SignetTokens) {
     meta: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
+    },
+    messageBlock: {
+      gap: tokens.spacing.xs,
+    },
+    messageNote: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      textAlign: "center",
+    },
+    rolesBlock: {
+      gap: tokens.spacing.sm,
+    },
+    rolesHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    sectionLabel: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.mutedForeground,
+    },
+    editLink: {
+      ...typeRole(tokens.typography.role.label),
+    },
+    chips: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: tokens.spacing.xs,
+    },
+    chip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+      paddingHorizontal: tokens.spacing.sm,
+      paddingVertical: tokens.spacing.xs,
+      borderRadius: tokens.radius.card,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.card,
+    },
+    chipDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+    },
+    chipDotPlain: {
+      backgroundColor: tokens.color.text.muted,
+    },
+    chipText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.foreground,
     },
     bioCard: {
       // The ListSection recipe beside it, as Profile's own bio card draws it.

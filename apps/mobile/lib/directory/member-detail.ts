@@ -15,6 +15,7 @@
  */
 import { parseInstant } from "@repo/formatting";
 import { memberLabel } from "@repo/hooks";
+import { roleColorOrNull } from "@repo/validation";
 import { formatGraduationYear } from "../more/profile";
 import {
   initialsFor,
@@ -33,7 +34,11 @@ export interface MemberCustomField {
 }
 
 export interface MemberDetail {
+  /** The membership row's id, which a role edit (`PATCH /v1/members/{id}/roles`) takes. */
+  memberId: string | null;
   userId: string;
+  /** Signed photo URL, or `null` for initials. */
+  avatarUrl: string | null;
   displayName: string;
   initials: string;
   email: string | null;
@@ -43,7 +48,10 @@ export interface MemberDetail {
    * known.
    */
   meta: string | null;
-  /** e.g. `"Aug 21, 2026"`, or `null` when the timestamp can't be parsed. */
+  /**
+   * e.g. `"August 21, 2026"`, written out (no abbreviated months in the UI), or
+   * `null` when the timestamp can't be parsed.
+   */
   joinedLabel: string | null;
   roleIds: string[];
   customRoleIds: string[];
@@ -57,7 +65,9 @@ export function selectMemberDetail(data: unknown): MemberDetail | null {
   const rawDisplayName = str(data, "display_name");
 
   return {
+    memberId: str(data, "id"),
     userId,
+    avatarUrl: str(data, "avatar_url"),
     // `display_name` is `NOT NULL DEFAULT ''`, so absent and empty are the
     // same "no name set" case — matches `DirectoryRow`'s fallback.
     displayName: memberLabel(rawDisplayName, userId),
@@ -87,7 +97,7 @@ function formatJoinedDate(value: string | null): string | null {
   const date = parseInstant(value);
   if (!date) return null;
   return date.toLocaleDateString(undefined, {
-    month: "short",
+    month: "long",
     day: "numeric",
     year: "numeric",
   });
@@ -113,27 +123,48 @@ function formatCustomFieldValue(row: Record<string, unknown>): string {
   return str(row, "type") === "boolean" ? (raw === "true" ? "Yes" : "No") : raw;
 }
 
+/** One role as the profile draws it: a chip with its color dot. */
+export interface MemberRoleChip {
+  id: string;
+  name: string;
+  /** The role's palette color, or `null` for a plain chip. */
+  color: string | null;
+}
+
 /**
- * `role_ids` → role names, resolved off `GET /v1/roles`.
+ * `role_ids` → role chips, resolved off `GET /v1/roles` and ordered the way
+ * the chapter ranks its roles (`display_order`, then name), so the member's
+ * top role leads, the same rank that picks their name color (#3485, #3710).
  *
  * That endpoint declares no response schema (`openapi-typescript` infers
  * `never`), so it is read defensively like every other undeclared read in
  * this app rather than cast. A role id with no match (a since-deleted role,
  * or the list still loading) is dropped rather than rendered as a raw id,
  * and a duplicate id (the API does not dedupe `role_ids` — see
- * `member.service.spec.ts`) contributes its name only once.
+ * `member.service.spec.ts`) contributes its chip only once.
  */
-export function resolveRoleNames(rolesData: unknown, roleIds: string[]): string[] {
+export function resolveRoleChips(
+  rolesData: unknown,
+  roleIds: string[],
+): MemberRoleChip[] {
   if (roleIds.length === 0) return [];
-  const byId = new Map<string, string>();
+  const held = new Set(roleIds);
+  const chips: Array<MemberRoleChip & { order: number }> = [];
   for (const row of records(rolesData)) {
     const id = str(row, "id");
     const name = str(row, "name");
-    if (id && name) byId.set(id, name);
+    if (!id || !name || !held.has(id)) continue;
+    held.delete(id);
+    chips.push({
+      id,
+      name,
+      color: roleColorOrNull(str(row, "color")),
+      order: num(row, "display_order") ?? Number.MAX_SAFE_INTEGER,
+    });
   }
-  return [...new Set(roleIds)]
-    .map((id) => byId.get(id))
-    .filter((name): name is string => !!name);
+  return chips
+    .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
+    .map(({ id, name, color }) => ({ id, name, color }));
 }
 
 /**

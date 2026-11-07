@@ -20,7 +20,7 @@ import {
   showsEditedMarker,
 } from "@repo/chat-core/message-actions";
 import { formatTimeOfDay } from "@repo/formatting";
-import { SYSTEM_SENDER_ID } from "@repo/validation";
+import { matchMentionCandidate, SYSTEM_SENDER_ID } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -138,6 +138,57 @@ export interface MessageItemProps {
    * block-list placeholder is not a control.
    */
   onJumpToParent?: () => void;
+  /**
+   * Opens a member's profile by `users.id`: the author's from their name or
+   * photo, or a mentioned member's from an `@` chip. Optional, so a surface
+   * with no profile sheet draws plain names.
+   */
+  onOpenProfile?: (userId: string) => void;
+}
+
+/** The author's profile, as a named action beside the message actions. */
+export const OPEN_PROFILE_A11Y_LABEL = "Open profile";
+const OPEN_PROFILE_ACTION: AccessibilityActionInfo = {
+  name: "openProfile",
+  label: OPEN_PROFILE_A11Y_LABEL,
+};
+
+/**
+ * The tap that opens a row's author's profile, or nothing for a row with no
+ * member behind it: Frapp's own posts, and an imported archive message whose
+ * author never joined (`sender_id` null).
+ */
+export function authorProfileOpener(
+  message: ChatMessage,
+  onOpenProfile: ((userId: string) => void) | undefined,
+): (() => void) | undefined {
+  const senderId = message.sender_id;
+  if (!onOpenProfile || !senderId || senderId === SYSTEM_SENDER_ID) {
+    return undefined;
+  }
+  return () => onOpenProfile(senderId);
+}
+
+/**
+ * Who a tapped `@handle` chip names: matched only against the members the
+ * server resolved for this message (`chat_messages.mentions`), with the same
+ * fail-closed tiers the API used, so a tap never opens someone the message
+ * didn't notify. A role mention (`@Brothers`) expands to its holders, and none
+ * of them is named "Brothers", so it opens nothing.
+ */
+export function mentionedUserId(
+  message: ChatMessage,
+  handle: string,
+  nameFor: (userId: string) => string | null,
+): string | null {
+  const candidates = message.mentions.flatMap((userId) => {
+    const name = nameFor(userId);
+    return name ? [{ user_id: userId, display_name: name }] : [];
+  });
+  const token = handle.replace(/^@/, "");
+  // Exact tiers only would be stricter, but the chip is drawn from the same
+  // tokenizer the API resolved, so the full ladder lands where the push did.
+  return matchMentionCandidate(candidates, token)?.user_id ?? null;
 }
 
 /** The add chip's accessible name: it opens the sheet that holds the picks. */
@@ -184,11 +235,16 @@ type MessageActionsA11yProps =
  */
 export function messageActionsA11yProps(
   onOpenActions: (() => void) | undefined,
-  body: { links?: MessageLink[]; onJumpToParent?: () => void } = {},
+  body: {
+    links?: MessageLink[];
+    onJumpToParent?: () => void;
+    onOpenProfile?: () => void;
+  } = {},
 ): MessageActionsA11yProps {
   const links = body.links ?? [];
   const actions = [
     ...(onOpenActions ? MESSAGE_ACTIONS : []),
+    ...(body.onOpenProfile ? [OPEN_PROFILE_ACTION] : []),
     ...(body.onJumpToParent ? [JUMP_TO_PARENT_ACTION] : []),
     ...linkA11yActions(links),
   ];
@@ -198,6 +254,7 @@ export function messageActionsA11yProps(
     onAccessibilityAction: (event) => {
       const { actionName } = event.nativeEvent;
       if (actionName === "longpress") onOpenActions?.();
+      else if (actionName === OPEN_PROFILE_ACTION.name) body.onOpenProfile?.();
       else if (actionName === JUMP_TO_PARENT_ACTION.name) {
         body.onJumpToParent?.();
       } else runLinkA11yAction(links, actionName);
@@ -274,6 +331,7 @@ export function MessageRowFrame({
   onOpenActions,
   onJumpToParent,
   authorInline = false,
+  onOpenProfile,
   children,
 }: {
   message: ChatMessage;
@@ -296,6 +354,8 @@ export function MessageRowFrame({
    * starts a run, so the author line is always there.
    */
   onJumpToParent?: () => void;
+  /** `users.id` → opens their profile; see `MessageItemProps`. */
+  onOpenProfile?: (userId: string) => void;
   children: ReactNode;
 }) {
   const { tokens } = useFrappTheme();
@@ -323,8 +383,13 @@ export function MessageRowFrame({
     roleColorFor,
   );
   const time = formatTimeOfDay(message.created_at);
+  // The name and photo open the author's profile, as Discord's do. Each is a
+  // nested touchable that would otherwise swallow the row's long-press, so it
+  // forwards it.
+  const openAuthor = authorProfileOpener(message, onOpenProfile);
   const headerA11y = messageActionsA11yProps(onOpenActions, {
     onJumpToParent: quote ? onJumpToParent : undefined,
+    onOpenProfile: openAuthor,
   });
 
   return (
@@ -386,6 +451,9 @@ export function MessageRowFrame({
                     : styles.compactName
                 }
                 numberOfLines={1}
+                onPress={openAuthor}
+                onLongPress={openAuthor ? onOpenActions : undefined}
+                suppressHighlighting
               >
                 {authorLabel}
               </Text>
@@ -415,13 +483,20 @@ export function MessageRowFrame({
                 />
               </View>
             ) : (
-              <View style={styles.avatar}>
+              <Pressable
+                style={styles.avatar}
+                onPress={openAuthor}
+                onLongPress={openAuthor ? onOpenActions : undefined}
+                disabled={!openAuthor}
+                // The author line carries the same tap as a named action.
+                accessible={false}
+              >
                 <Text style={styles.avatarText}>
                   {authorName
                     ? initialsFor(authorName)
                     : authorInitialsFallback(message)}
                 </Text>
-              </View>
+              </Pressable>
             )
           ) : (
             // A follow-on row draws no author or time, so its gutter is where a
@@ -448,6 +523,9 @@ export function MessageRowFrame({
                       : styles.name
                   }
                   numberOfLines={1}
+                  onPress={openAuthor}
+                  onLongPress={openAuthor ? onOpenActions : undefined}
+                  suppressHighlighting
                 >
                   {authorLabel}
                 </Text>
@@ -497,14 +575,19 @@ function CompactLead({
   viewerId,
   nameFor,
   roleColorFor,
+  onOpenProfile,
+  onOpenActions,
   styles,
 }: {
   message: ChatMessage;
   viewerId: string;
   nameFor: (userId: string) => string | null;
   roleColorFor?: (userId: string) => string | null;
+  onOpenProfile?: (userId: string) => void;
+  onOpenActions?: () => void;
   styles: ReturnType<typeof createStyles>;
 }) {
+  const openAuthor = authorProfileOpener(message, onOpenProfile);
   const { authorLabel, roleColor } = rowAuthor(
     message,
     nameFor,
@@ -522,6 +605,9 @@ function CompactLead({
             ? [styles.compactName, { color: roleColor }]
             : styles.compactName
         }
+        onPress={openAuthor}
+        onLongPress={openAuthor ? onOpenActions : undefined}
+        suppressHighlighting
       >
         {authorLabel}
       </Text>{" "}
@@ -584,6 +670,7 @@ export function MessageItem({
   replyParentHidden,
   onOpenActions,
   onJumpToParent,
+  onOpenProfile,
 }: MessageItemProps) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
@@ -634,6 +721,12 @@ export function MessageItem({
     links: hasText ? parsed.links : [],
     onJumpToParent: quoteJump(message, onJumpToParent),
   });
+  const openMention = onOpenProfile
+    ? (handle: string) => {
+        const userId = mentionedUserId(message, handle, nameFor);
+        if (userId) onOpenProfile(userId);
+      }
+    : undefined;
 
   const quote =
     message.reply_to_id && !message.is_deleted ? (
@@ -676,6 +769,8 @@ export function MessageItem({
       viewerId={viewerId}
       nameFor={nameFor}
       roleColorFor={roleColorFor}
+      onOpenProfile={onOpenProfile}
+      onOpenActions={onOpenActions}
       styles={styles}
     />
   ) : null;
@@ -691,6 +786,7 @@ export function MessageItem({
       lead={leadsWithAuthor ? lead : undefined}
       trailing={trailing}
       onLongPress={onOpenActions}
+      onMentionPress={openMention}
     />
   ) : null;
 
@@ -704,6 +800,7 @@ export function MessageItem({
       quote={quote}
       authorInline={leadsWithAuthor}
       onOpenActions={onOpenActions}
+      onOpenProfile={onOpenProfile}
       // The body's container carries the jump when there is text; a photo-only
       // reply has none, so its author line does.
       onJumpToParent={text ? undefined : quoteJump(message, onJumpToParent)}

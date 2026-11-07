@@ -1123,6 +1123,45 @@ describe('MemberService', () => {
     });
   });
 
+  describe('findProfileByUserId', () => {
+    it("reads the profile of the user's membership in this chapter", async () => {
+      const member = memberFixture({
+        chapter_id: 'chapter-1',
+        has_completed_onboarding: true,
+      });
+      mockRepo.findByUserAndChapter.mockResolvedValue(member);
+      mockRepo.findById.mockResolvedValue(member);
+      mockUserRepo.findById.mockResolvedValue(
+        userFixture({ display_name: 'John Doe' }),
+      );
+
+      const result = await service.findProfileByUserId(
+        'user-1',
+        'chapter-1',
+        'viewer-1',
+      );
+
+      expect(mockRepo.findByUserAndChapter).toHaveBeenCalledWith(
+        'user-1',
+        'chapter-1',
+      );
+      expect(result).toMatchObject({
+        id: 'member-1',
+        user_id: 'user-1',
+        display_name: 'John Doe',
+      });
+    });
+
+    it('answers 404 for a user with no membership in this chapter', async () => {
+      mockRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.findProfileByUserId('user-9', 'chapter-1', 'viewer-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockRepo.findById).not.toHaveBeenCalled();
+    });
+  });
+
   describe('findProfileById', () => {
     it('should return member profile with user info', async () => {
       const member = memberFixture({

@@ -265,6 +265,16 @@ export class MemberService {
     return member;
   }
 
+  /** {@link findProfileById} for the member a `users.id` names in this chapter. */
+  async findProfileByUserId(
+    userId: string,
+    chapterId: string,
+    viewerUserId: string,
+  ): Promise<MemberProfile> {
+    const member = await this.findByUserAndChapter(userId, chapterId);
+    return this.findProfileById(member.id, chapterId, viewerUserId);
+  }
+
   async updateRoles(
     memberId: string,
     roleIds: string[],
