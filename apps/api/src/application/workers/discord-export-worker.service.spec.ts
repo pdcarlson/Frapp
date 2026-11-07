@@ -861,6 +861,40 @@ describe('DiscordExportWorkerService — a channel that fails (#2857)', () => {
     ]);
   });
 
+  it('leaves the row alone through a temporary error the sweep will try again (#1692)', async () => {
+    const harness = await build();
+    harness.bot.fetchMessagePage.mockRejectedValue(
+      new TypeError('fetch failed'),
+    );
+
+    await expect(harness.worker.runSlice(runArgs(harness))).rejects.toThrow(
+      'fetch failed',
+    );
+    expect(harness.repo.updateChannel).not.toHaveBeenCalledWith(
+      'mapping-1',
+      IMPORT_ID,
+      expect.objectContaining({ status: 'failed' }),
+    );
+  });
+
+  it('marks the row on the last try, when the import fails with it (#1692)', async () => {
+    const harness = await build();
+    harness.bot.fetchMessagePage.mockRejectedValue(
+      new TypeError('fetch failed'),
+    );
+
+    await expect(
+      harness.worker.runSlice(
+        runArgs(harness, { job: job({ attempt_count: 4 }) }),
+      ),
+    ).rejects.toThrow('fetch failed');
+    expect(harness.repo.updateChannel).toHaveBeenCalledWith(
+      'mapping-1',
+      IMPORT_ID,
+      { status: 'failed', error: 'fetch failed' },
+    );
+  });
+
   it('keeps the reason the import fails with when that write fails too', async () => {
     const harness = await build();
     harness.bot.fetchMessagePage.mockRejectedValue(new Error('page failed'));
