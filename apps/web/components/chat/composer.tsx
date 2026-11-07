@@ -27,6 +27,7 @@ import {
   AttachGlyph,
   OfflineGlyph,
   ReactionGlyph,
+  SendArrowGlyph,
   SlashCommandGlyph,
 } from "./chat-glyphs";
 import { cn } from "@/lib/utils";
@@ -542,7 +543,11 @@ function createSubmitKeymap(sendRef: { current: () => void }) {
  * a paragraph; consecutive newlines yield empty paragraphs.
  */
 function buildDocFromPlainText(text: string): JSONContent {
-  if (text.length === 0) return { type: "doc", content: [] };
+  // An empty draft is one empty paragraph, not an empty doc: the Placeholder
+  // extension paints "Message #name" on the first empty paragraph, so a doc
+  // with no paragraph drew a blank box (principles.md P6.5).
+  if (text.length === 0)
+    return { type: "doc", content: [{ type: "paragraph" }] };
   const lines = text.split("\n");
   return {
     type: "doc",
@@ -919,7 +924,7 @@ export function Composer({
         // `prose prose-sm` used to lead this list and did nothing at all —
         // `@tailwindcss/typography` is not installed in this app or in the
         // shared preset, so both classes compiled to no rules.
-        class: COMPOSER_INPUT_CLASS,
+        class: cn(COMPOSER_INPUT_CLASS, "chat-composer-editor"),
         "aria-label": COMPOSER_LABEL,
       },
     },
@@ -1602,21 +1607,25 @@ export function Composer({
             <ComposerHelp />
           </div>
           {/*
-            32px and text-only (`1b` pin 13, `1t`: "Composer 48px Send with icon
-            → 32px text button shrunk"). The glyph is dropped rather than
-            shrunk: at 32px the icon and the word competed for a button whose
-            word already says everything the icon did.
+            A round arrow, the mobile composer's send (principles.md P6.5):
+            one glyph for one action on both apps. 32px to a mouse and 44px to
+            a finger, like every control on this row; the name lives in
+            `aria-label` and the tooltip. Accent-filled when there is
+            something to send, muted when there isn't, so the button says
+            whether Enter will do anything.
           */}
           <Button
             type="button"
-            size="sm"
-            className="h-8 pointer-coarse:h-11"
+            size="icon"
+            className="h-8 w-8 shrink-0 rounded-full pointer-coarse:h-11 pointer-coarse:w-11"
             onClick={submit}
+            aria-label="Send message"
+            title="Send (Enter)"
             /* An attached file is enough to send: an empty editor with a staged
                attachment is a real message, and `submit` accepts it. */
             disabled={!editor || (editor.isEmpty && pending.length === 0)}
           >
-            Send
+            <SendArrowGlyph className="h-4 w-4" />
           </Button>
         </div>
       </div>
