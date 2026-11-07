@@ -20,7 +20,7 @@ import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
  * s21: put a photo into the chapter library from the phone (#3399).
  *
  * The same three wire steps as web's `useDocumentUpload`
- * (`apps/web/components/documents/upload-document-dialog.tsx`): mint a signed
+ * (`apps/web/components/documents/upload-document-panel.tsx`): mint a signed
  * URL with `POST /v1/documents/upload-url`, PUT the bytes, confirm with
  * `POST /v1/documents`. The pick and the PUT are `lib/chat/attachment-upload.ts`'s,
  * split so the sheet can show the pick before anything is sent: a member who
