@@ -187,14 +187,17 @@ code path, so a message delivered by both a poll and the reconnect backfill
 merges to one entry. Implementation: `packages/chat-core/src/realtime-manager.ts`
 (`POLL_DEGRADE_AFTER_MS`, `POLL_INTERVAL_MS`, `ConnectionStatus === "polling"`).
 
-**The in-thread pill is reconciled with [the connection banner](connection-state.md#ui-indicators), not removed.** They answer
-different questions — the pill reports the *realtime transport*, the banner reports
-whether the API is reachable at all — but when both are saying "offline" they are one
-fact told twice, stacked on one screen in two different sentences. So the mobile pill
-**yields only its offline branch** while the global banner is already saying so, and
-keeps the two states it alone can report: `"Real-time updates paused. Polling for new
-messages."` (normative, above — polling is a working degraded mode, and calling it
-"reconnecting" would report a live surface as broken) and `"Reconnecting…"`.
+**The transport's state is said by the one connection indicator, not by a pill of
+its own** ([`connection-state.md` § One indicator](connection-state.md#one-indicator),
+2026-11-06). The open chat reports its transport (`useReportOpenChatTransport`), and
+the app-wide pill folds it with the app's connection state: a slow or dead API is
+said as "Slow connection" or "Offline", because a reconnecting or polling transport
+is only its symptom, and only on a healthy connection does the transport speak, as
+"Live updates paused" (with the normative sentence above as its accessible name and
+detail; polling is a working degraded mode, and calling it "reconnecting" would
+report a live surface as broken) or "Reconnecting…". Until then each chat drew its
+own pill in the thread header beside the global banner (web, and a tinted band on
+mobile), which put one fact on screen twice or three times.
 
 ## Message Ordering
 
