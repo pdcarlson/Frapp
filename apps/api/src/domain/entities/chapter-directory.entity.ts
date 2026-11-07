@@ -46,7 +46,7 @@ export interface ChapterDirectoryEntry {
   /**
    * The `search_*` columns are `GENERATED ALWAYS … STORED`: the normalized
    * text and names `search_chapter_directory` matches and ranks against
-   * (20261106220000_chapter_directory_search.sql). No caller selects them and
+   * (20261107043000_chapter_directory_search.sql). No caller selects them and
    * they can never be written, but they are declared so this interface
    * describes the table as it actually is: `.eq`/`.order` are checked against
    * `keyof Row`, so an undeclared column is a compile error at those call

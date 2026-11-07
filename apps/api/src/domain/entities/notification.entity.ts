@@ -42,6 +42,13 @@ export interface UserSettings {
   quiet_hours_start: string | null;
   quiet_hours_end: string | null;
   quiet_hours_tz: string | null;
+  /**
+   * The zone the member's device last reported (`x-time-zone`), which pushes
+   * name times in. Not a setting the member edits, so it is not in
+   * {@link UserSettingsValues}. Optional so fixtures that predate it still
+   * type-check.
+   */
+  time_zone?: string | null;
   theme: Theme;
   updated_at: string;
 }

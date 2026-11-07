@@ -2791,6 +2791,20 @@ A function body. It re-creates `get_channel_unread_counts` with one more join pr
 
 Afterwards every settings change lights the `#chapter-audit` badge again, for every member.
 
+## Rollback user settings time zone (20261106230000)
+
+* **Migration**: `20261106230000_user_settings_time_zone.sql`
+
+One nullable column, `user_settings.time_zone`, and its length check. Nothing was backfilled.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API stops writing the column and stops reading it for push text; clients keep sending `x-time-zone`, which the older API ignores.
+
+**Keep the column unless it is itself the problem.** It holds only what devices report again on their next request, so dropping it loses nothing that does not come back. To remove it, do it in a later forward migration after the code revert has shipped:
+
+```sql
+alter table public.user_settings drop column if exists time_zone;
+```
+
 ## Rollback users major (20261106200000)
 
 * **Migration**: `20261106200000_users_major.sql`
@@ -2835,9 +2849,9 @@ drop index if exists public.chat_channels_one_default_per_chapter;
 alter table public.chat_channels drop column if exists is_default;
 ```
 
-## Rollback chapter directory search (20261106220000)
+## Rollback chapter directory search (20261107043000)
 
-* **Migration**: `20261106220000_chapter_directory_search.sql`
+* **Migration**: `20261107043000_chapter_directory_search.sql`
 
 Two columns added (`chapter_directory.aliases`, `org_aliases`), generated columns swapped (`search_vector` and its GIN index out; `search_text`, `search_org_names`, `search_chapter_names` and `search_school_names` in), four functions (`chapter_directory_normalize`, `chapter_directory_search_text`, `chapter_directory_search_names`, `search_chapter_directory`), and `pg_trgm` in `extensions` if it wasn't there. No row's data changed.
 
@@ -2858,9 +2872,9 @@ create index if not exists idx_chapter_directory_search
 
 Leave the alias and `search_*` columns and the functions in place; nothing old reads them. Leave `pg_trgm`, which backwork search also uses.
 
-## Rollback chapter directory Wikipedia rows (20261106220100)
+## Rollback chapter directory Wikipedia rows (20261107043100)
 
-* **Migration**: `20261106220100_chapter_directory_wikipedia_rows.sql`
+* **Migration**: `20261107043100_chapter_directory_wikipedia_rows.sql`
 
 Rows only, in `chapter_directory`, which only the onboarding wizard reads. No schema change.
 
