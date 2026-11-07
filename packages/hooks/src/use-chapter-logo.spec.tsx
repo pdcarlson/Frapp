@@ -114,7 +114,7 @@ describe("chapter logo hooks", () => {
     });
 
     await expect(act(() => result.current.mutateAsync(upload))).rejects.toThrow(
-      "Logo upload failed (413)",
+      "The logo didn't upload. Use a PNG, JPEG, GIF or WebP image and try again.",
     );
     expect(post).toHaveBeenCalledTimes(1);
   });

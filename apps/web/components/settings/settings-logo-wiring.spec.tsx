@@ -126,7 +126,7 @@ describe("the Settings page's chapter logo wiring", () => {
       expect(toast).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Couldn't upload the logo",
-          description: "Logo upload failed (413)",
+          description: "Retry or check your connection.",
           variant: "destructive",
         }),
       ),

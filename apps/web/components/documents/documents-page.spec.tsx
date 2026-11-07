@@ -618,8 +618,7 @@ describe("DocumentsPage upload metadata", () => {
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Couldn't upload document",
-          description:
-            "Storage rejected upload (413). Retry or check file size.",
+          description: "That file is too large.",
         }),
       ),
     );

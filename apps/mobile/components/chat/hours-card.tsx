@@ -9,7 +9,7 @@ import {
   useServiceEntry,
   type ServiceEntryStatus,
 } from "@repo/hooks";
-import { can } from "@repo/validation";
+import { can, statusLabel } from "@repo/validation";
 import { StatusChip } from "@/components/status-chip";
 import { useFrappTheme } from "@/lib/theme";
 import { ServiceHoursGlyph } from "./card-glyphs";
@@ -74,7 +74,10 @@ export function HoursCard({
             trailing={
               live ? (
                 <StatusChip
-                  label={SERVICE_ENTRY_CARD_LABELS[live.status]}
+                  label={
+                    SERVICE_ENTRY_CARD_LABELS[live.status] ??
+                    statusLabel("serviceEntry", live.status)
+                  }
                   hue={statusHue(live.status, tokens)}
                 />
               ) : null

@@ -1,3 +1,4 @@
+import { statusLabel } from "@repo/validation";
 import type { BadgeKind } from "@/components/ui/badge";
 
 /** The four states the server stores, plus the client-only "no row yet". */
@@ -58,28 +59,12 @@ export function attendanceStatusKind(
 /**
  * Attendance state as a person should read it.
  *
- * These stay plain language rather than the raw token. `writing.md` §5's
- * "render the server's own token" governs the six states it *names* — `ACTIVE`,
- * `PAID`, `OPEN`, `OVERDUE`, `PENDING`, `FAILED` — and the attendance states
- * are not among them, so `invoice-status.ts`'s disposition for Stripe's tokens
- * applies: a vocabulary with no §5 row maps to plain language **once**, here,
- * rather than being re-cased at each call site. What §5 actually forbids is one
- * state reading differently on the two platforms, and nothing on mobile renders
- * an attendance status label to diverge from.
+ * Plain language rather than the raw token, from the shared label map
+ * (`STATUS_LABELS.attendance` in `@repo/validation`, `writing.md` §5), so a
+ * mobile attendance label can't drift from this one.
  */
 export function attendanceStatusLabel(
   status: AttendanceStatusOrUnrecorded,
 ): string {
-  switch (status) {
-    case "PRESENT":
-      return "Present";
-    case "EXCUSED":
-      return "Excused";
-    case "ABSENT":
-      return "Absent";
-    case "LATE":
-      return "Late";
-    default:
-      return "Unrecorded";
-  }
+  return statusLabel("attendance", status);
 }

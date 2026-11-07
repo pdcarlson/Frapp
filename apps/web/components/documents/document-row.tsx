@@ -30,10 +30,7 @@ function DownloadButton({ id, title }: { id: string; title: string }) {
     } catch (error) {
       toast({
         title: "Couldn't fetch download link",
-        description: getErrorMessage(
-          error,
-          "Retry in a moment. Signed links are time-limited.",
-        ),
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     } finally {
