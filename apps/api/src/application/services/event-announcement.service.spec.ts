@@ -23,6 +23,7 @@ describe('EventAnnouncementService', () => {
   let mockUserRepo: EventServiceFixture['mockUserRepo'];
   let mockMemberRepo: EventServiceFixture['mockMemberRepo'];
   let mockChatService: EventServiceFixture['mockChatService'];
+  let mockRbacService: EventServiceFixture['mockRbacService'];
 
   beforeEach(async () => {
     captureException.mockClear();
@@ -33,74 +34,238 @@ describe('EventAnnouncementService', () => {
       mockUserRepo,
       mockMemberRepo,
       mockChatService,
+      mockRbacService,
     } = await createEventServiceFixture());
   });
 
+  /** The copy one recipient reads from the last `notifyMembers` call. */
+  function copyFor(userId: string, timeZone: string | null = null) {
+    const payload = mockNotificationService.notifyMembers.mock.calls.at(-1)![2];
+    return payload.personalize!({ userId, timeZone });
+  }
+
+  function recipients(): readonly string[] {
+    return mockNotificationService.notifyMembers.mock.calls.at(-1)![1];
+  }
+
+  // 2026-11-26T23:00Z is Thu Nov 26, 6 PM in New York and 3 PM in Los Angeles.
+  const thanksgiving = {
+    ...baseEvent,
+    name: 'Chapter',
+    start_time: '2026-11-26T23:00:00.000Z',
+    end_time: '2026-11-27T00:00:00.000Z',
+  };
+
   describe('notifications', () => {
-    it('should notify chapter when event is created', async () => {
-      mockEventRepo.create.mockResolvedValue(baseEvent);
+    beforeEach(() => {
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        { user_id: 'user-creator', role_ids: ['role-member'] },
+        { user_id: 'user-a', role_ids: ['role-member'] },
+        { user_id: 'user-alum', role_ids: ['role-alumni'] },
+      ]);
+    });
+
+    it("names the event, when it is in the reader's zone, and where, and skips its creator", async () => {
+      mockEventRepo.create.mockResolvedValue({
+        ...thanksgiving,
+        location: 'The Lodge',
+      });
 
       await service.create({
         chapter_id: 'ch-1',
-        name: 'Chapter Meeting',
-        start_time: baseEvent.start_time,
-        end_time: baseEvent.end_time,
+        name: 'Chapter',
+        start_time: thanksgiving.start_time,
+        end_time: thanksgiving.end_time,
+        created_by: 'user-creator',
       });
 
-      expect(mockNotificationService.notifyChapter).toHaveBeenCalledWith(
+      expect(recipients()).toEqual(['user-a', 'user-alum']);
+      expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
         'ch-1',
-        expect.objectContaining({
-          title: 'New Event',
-          priority: 'SILENT',
-          category: 'events',
-        }),
+        expect.any(Array),
+        expect.objectContaining({ priority: 'SILENT', category: 'events' }),
+      );
+      expect(copyFor('user-a', 'America/New_York')).toEqual({
+        title: 'Chapter',
+        body: 'Optional · Thu, Nov 26, 6–7 PM · The Lodge',
+      });
+      expect(copyFor('user-a', 'America/Los_Angeles').body).toBe(
+        'Optional · Thu, Nov 26, 3–4 PM · The Lodge',
       );
     });
 
-    it('should notify chapter when event time is updated', async () => {
-      mockEventRepo.findById.mockResolvedValue(baseEvent);
-      mockEventRepo.update.mockResolvedValue({
-        ...baseEvent,
-        end_time: '2026-02-26T20:00:00.000Z',
+    it('says Required to members a mandatory event holds, and Optional to alumni', async () => {
+      mockEventRepo.create.mockResolvedValue({
+        ...thanksgiving,
+        is_mandatory: true,
+      });
+      mockRbacService.getAlumniRoleId.mockResolvedValue('role-alumni');
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter',
+        start_time: thanksgiving.start_time,
+        end_time: thanksgiving.end_time,
+        is_mandatory: true,
+        created_by: 'user-creator',
       });
 
-      await service.update('evt-1', 'ch-1', {
-        end_time: '2026-02-26T20:00:00.000Z',
-      });
-
-      expect(mockNotificationService.notifyChapter).toHaveBeenCalledWith(
-        'ch-1',
-        expect.objectContaining({
-          title: 'Event Updated',
-          priority: 'NORMAL',
-          category: 'events',
-        }),
+      expect(copyFor('user-a', 'America/New_York').body).toBe(
+        'Required · Thu, Nov 26, 6–7 PM',
+      );
+      expect(copyFor('user-alum', 'America/New_York').body).toBe(
+        'Optional · Thu, Nov 26, 6–7 PM',
       );
     });
 
-    it('should notify chapter when event location is updated', async () => {
+    // Attendance by role: each reader's answer is the one their roles reach,
+    // an alumnus a role names is held to it, and a role left out hears nothing.
+    it('says each reader the answer their roles reach, and skips a role left out', async () => {
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        { user_id: 'user-a', role_ids: ['role-member'] },
+        { user_id: 'user-alum', role_ids: ['role-alumni'] },
+        { user_id: 'user-new', role_ids: ['role-new'] },
+      ]);
+      mockRbacService.getAlumniRoleId.mockResolvedValue('role-alumni');
+      mockEventRepo.create.mockResolvedValue({
+        ...thanksgiving,
+        is_mandatory: false,
+        required_role_ids: ['role-alumni'],
+        excluded_role_ids: ['role-new'],
+        others_invited: true,
+      });
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter',
+        start_time: thanksgiving.start_time,
+        end_time: thanksgiving.end_time,
+        required_role_ids: ['role-alumni'],
+        excluded_role_ids: ['role-new'],
+        others_invited: true,
+      });
+
+      expect(recipients()).toEqual(['user-a', 'user-alum']);
+      expect(copyFor('user-a', 'America/New_York').body).toBe(
+        'Optional · Thu, Nov 26, 6–7 PM',
+      );
+      expect(copyFor('user-alum', 'America/New_York').body).toBe(
+        'Required · Thu, Nov 26, 6–7 PM',
+      );
+    });
+
+    it("reads a reader with no zone in the creator's zone, labelled", async () => {
+      mockEventRepo.create.mockResolvedValue(thanksgiving);
+      mockNotificationService.timeZoneFor.mockResolvedValue('America/Chicago');
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter',
+        start_time: thanksgiving.start_time,
+        end_time: thanksgiving.end_time,
+        created_by: 'user-creator',
+      });
+
+      expect(mockNotificationService.timeZoneFor).toHaveBeenCalledWith(
+        'user-creator',
+      );
+      expect(copyFor('user-a', null).body).toBe(
+        'Optional · Thu, Nov 26, 5–6 PM CST',
+      );
+    });
+
+    it('announces a series once, as its pattern', async () => {
+      mockEventRepo.create.mockResolvedValue({
+        ...thanksgiving,
+        recurrence_rule: 'WEEKLY',
+      });
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter',
+        start_time: thanksgiving.start_time,
+        end_time: thanksgiving.end_time,
+        recurrence_rule: 'WEEKLY',
+        created_by: 'user-creator',
+      });
+
+      expect(mockNotificationService.notifyMembers).toHaveBeenCalledTimes(1);
+      expect(copyFor('user-a', 'America/New_York').body).toBe(
+        'Optional · Every Thu, 6–7 PM, from Nov 26',
+      );
+    });
+
+    it('announces a reschedule with the new time, and not to whoever moved it', async () => {
+      mockEventRepo.findById.mockResolvedValue(thanksgiving);
       mockEventRepo.update.mockResolvedValue({
-        ...baseEvent,
-        location: 'New Location',
+        ...thanksgiving,
+        start_time: '2026-11-27T23:00:00.000Z',
+        end_time: '2026-11-28T00:00:00.000Z',
+      });
+
+      await service.update(
+        'evt-1',
+        'ch-1',
+        {
+          start_time: '2026-11-27T23:00:00.000Z',
+          end_time: '2026-11-28T00:00:00.000Z',
+        },
+        'instance',
+        'user-creator',
+      );
+
+      expect(recipients()).toEqual(['user-a', 'user-alum']);
+      expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
+        'ch-1',
+        expect.any(Array),
+        expect.objectContaining({ priority: 'NORMAL', category: 'events' }),
+      );
+      expect(copyFor('user-a', 'America/New_York')).toEqual({
+        title: 'Chapter rescheduled',
+        body: 'Now Fri, Nov 27, 6–7 PM · Optional',
+      });
+    });
+
+    it('announces a new location', async () => {
+      mockEventRepo.findById.mockResolvedValue(thanksgiving);
+      mockEventRepo.update.mockResolvedValue({
+        ...thanksgiving,
+        location: 'The Lodge',
+      });
+
+      await service.update('evt-1', 'ch-1', { location: 'The Lodge' });
+
+      expect(copyFor('user-a', 'America/New_York')).toEqual({
+        title: 'Chapter moved',
+        body: 'Now at The Lodge · Thu, Nov 26, 6–7 PM · Optional',
+      });
+    });
+
+    it('stays quiet for a save that round-trips the same time and place', async () => {
+      mockEventRepo.findById.mockResolvedValue({
+        ...thanksgiving,
+        location: 'The Lodge',
+      });
+      mockEventRepo.update.mockResolvedValue({
+        ...thanksgiving,
+        name: 'Chapter (formal)',
+        location: 'The Lodge',
       });
 
       await service.update('evt-1', 'ch-1', {
-        location: 'New Location',
+        name: 'Chapter (formal)',
+        // Postgres spells it +00:00; the client sends Z. Not a move.
+        start_time: '2026-11-26T23:00:00+00:00',
+        end_time: thanksgiving.end_time,
+        location: 'The Lodge',
       });
 
-      expect(mockNotificationService.notifyChapter).toHaveBeenCalledWith(
-        'ch-1',
-        expect.objectContaining({
-          title: 'Event Updated',
-          priority: 'NORMAL',
-          category: 'events',
-        }),
-      );
+      expect(mockNotificationService.notifyMembers).not.toHaveBeenCalled();
     });
 
     it('should not fail if notification throws on create, and reports it once', async () => {
       mockEventRepo.create.mockResolvedValue(baseEvent);
-      mockNotificationService.notifyChapter.mockRejectedValue(
+      mockNotificationService.notifyMembers.mockRejectedValue(
         new Error('push failed'),
       );
       const error = jest
@@ -133,8 +298,9 @@ describe('EventAnnouncementService', () => {
 
     it('should not fail if notification throws on update', async () => {
       const moved = { ...baseEvent, location: 'New Location' };
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
       mockEventRepo.update.mockResolvedValue(moved);
-      mockNotificationService.notifyChapter.mockRejectedValue(
+      mockNotificationService.notifyMembers.mockRejectedValue(
         new Error('push failed'),
       );
       const error = jest
@@ -158,61 +324,60 @@ describe('EventAnnouncementService', () => {
       error.mockRestore();
     });
 
-    // A role-targeted event's "New Event"/"Event Updated" push must not name
-    // it to a member who now correctly 404s reading the event itself (#1463)
-    // — only members whose role_ids intersect required_role_ids are notified.
+    // A role-targeted event's push must not name it to a member who correctly
+    // 404s reading the event itself (#1463), and its role holders are required
+    // whatever `is_mandatory` says, as the attendance sweep holds them.
     describe('role-targeted notifications (#1463)', () => {
-      it('notifies only eligible members when a role-targeted event is created', async () => {
-        mockEventRepo.create.mockResolvedValue({
-          ...baseEvent,
-          name: 'Exec Meeting',
-          required_role_ids: ['role-officer'],
-          others_invited: false,
-        });
+      beforeEach(() => {
         mockMemberRepo.findByChapter.mockResolvedValue([
           { user_id: 'user-officer', role_ids: ['role-officer'] },
           { user_id: 'user-member', role_ids: ['role-member'] },
         ]);
+      });
+
+      it('notifies only eligible members, as required, when a role-targeted event is created', async () => {
+        mockEventRepo.create.mockResolvedValue({
+          ...thanksgiving,
+          name: 'Exec Meeting',
+          required_role_ids: ['role-officer'],
+          others_invited: false,
+        });
 
         await service.create({
           chapter_id: 'ch-1',
           name: 'Exec Meeting',
-          start_time: baseEvent.start_time,
-          end_time: baseEvent.end_time,
+          start_time: thanksgiving.start_time,
+          end_time: thanksgiving.end_time,
           required_role_ids: ['role-officer'],
           others_invited: false,
         });
 
         expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
-        expect(mockNotificationService.notifyUser).toHaveBeenCalledTimes(1);
-        expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
-          'user-officer',
-          'ch-1',
-          expect.objectContaining({ title: 'New Event' }),
-        );
+        expect(recipients()).toEqual(['user-officer']);
+        expect(copyFor('user-officer', 'America/New_York')).toEqual({
+          title: 'Exec Meeting',
+          body: 'Required · Thu, Nov 26, 6–7 PM',
+        });
       });
 
       it('notifies only eligible members when a role-targeted event is updated', async () => {
-        mockEventRepo.update.mockResolvedValue({
-          ...baseEvent,
+        const exec = {
+          ...thanksgiving,
           name: 'Exec Meeting',
           required_role_ids: ['role-officer'],
           others_invited: false,
+        };
+        mockEventRepo.findById.mockResolvedValue(exec);
+        mockEventRepo.update.mockResolvedValue({
+          ...exec,
           location: 'New Location',
         });
-        mockMemberRepo.findByChapter.mockResolvedValue([
-          { user_id: 'user-officer', role_ids: ['role-officer'] },
-          { user_id: 'user-member', role_ids: ['role-member'] },
-        ]);
 
         await service.update('evt-1', 'ch-1', { location: 'New Location' });
 
-        expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
-        expect(mockNotificationService.notifyUser).toHaveBeenCalledTimes(1);
-        expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
-          'user-officer',
-          'ch-1',
-          expect.objectContaining({ title: 'Event Updated' }),
+        expect(recipients()).toEqual(['user-officer']);
+        expect(copyFor('user-officer', 'America/New_York').title).toBe(
+          'Exec Meeting moved',
         );
       });
     });

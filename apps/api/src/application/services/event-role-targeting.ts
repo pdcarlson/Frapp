@@ -2,6 +2,7 @@ import {
   eventAttendanceFor,
   type EventAttendance,
   type EventAttendanceFields,
+  type EventAttendanceStatus,
 } from '@repo/validation';
 
 /**
@@ -24,4 +25,29 @@ export function isInvited(
   memberRoleIds: readonly string[],
 ): boolean {
   return attendanceFor(event, memberRoleIds).status !== 'not_invited';
+}
+
+/**
+ * What an event asks of one member, as the attendance sweep holds them to it:
+ * `attendanceFor`, except that an alumnus required only by the event's default
+ * (not by a role that names them) is optional, because the sweep never marks
+ * them absent (`AttendanceService`, `spec/behavior/alumni.md`). The push names
+ * this answer ("Required"), so it never calls an event required that the sweep
+ * would not hold the member to.
+ */
+export function memberAttendance(
+  event: EventAttendanceFields,
+  memberRoleIds: readonly string[],
+  alumniRoleId: string | null,
+): EventAttendanceStatus {
+  const { status, byRole } = attendanceFor(event, memberRoleIds);
+  if (
+    status === 'required' &&
+    !byRole &&
+    alumniRoleId &&
+    memberRoleIds.includes(alumniRoleId)
+  ) {
+    return 'optional';
+  }
+  return status;
 }

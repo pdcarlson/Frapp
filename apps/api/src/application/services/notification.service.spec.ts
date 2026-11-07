@@ -78,6 +78,7 @@ describe('NotificationService', () => {
       findByUser: jest.fn(),
       findByUserIds: jest.fn(),
       upsert: jest.fn(),
+      setTimeZone: jest.fn(),
     };
     mockMemberRepo = {
       findById: jest.fn(),
@@ -691,6 +692,136 @@ describe('NotificationService', () => {
 
       expect(mockNotificationRepo.create).toHaveBeenCalled();
       expect(mockPushProvider.sendToUser).not.toHaveBeenCalled();
+    });
+  });
+
+  // Pushes name times in the reader's own zone (notifications.md § What a
+  // push says), so the per-recipient copy has to reach both the in-app row and
+  // the push, with that recipient's zone.
+  describe('personalized copy', () => {
+    const personalize = jest.fn(
+      ({ userId, timeZone }: { userId: string; timeZone: string | null }) => ({
+        title: `for ${userId}`,
+        body: `zone ${timeZone ?? 'none'}`,
+      }),
+    );
+
+    beforeEach(() => personalize.mockClear());
+
+    it('writes each member their own copy, in their reported zone, on the batched path', async () => {
+      stubChapterNotify({
+        userIds: ['u-1', 'u-2'],
+        settings: [
+          {
+            ...baseSettings,
+            user_id: 'u-1',
+            quiet_hours_start: null,
+            quiet_hours_end: null,
+            time_zone: 'America/Chicago',
+          },
+          {
+            ...baseSettings,
+            user_id: 'u-2',
+            quiet_hours_start: null,
+            quiet_hours_end: null,
+            quiet_hours_tz: 'Europe/London',
+          },
+        ],
+        createManyImpl: echoCreateMany,
+      });
+      mockPushProvider.sendToUser.mockResolvedValue({ invalidTokens: [] });
+
+      await service.notifyMembers('ch-1', ['u-1', 'u-2'], {
+        title: 'fallback',
+        body: 'fallback',
+        priority: 'SILENT',
+        category: 'events',
+        personalize,
+      });
+
+      expect(mockNotificationRepo.createMany).toHaveBeenCalledWith([
+        expect.objectContaining({
+          user_id: 'u-1',
+          title: 'for u-1',
+          body: 'zone America/Chicago',
+        }),
+        expect.objectContaining({
+          user_id: 'u-2',
+          title: 'for u-2',
+          // No reported zone: quiet hours' zone is the next best.
+          body: 'zone Europe/London',
+        }),
+      ]);
+      expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
+        [basePushToken.token],
+        expect.objectContaining({
+          title: 'for u-1',
+          body: 'zone America/Chicago',
+        }),
+      );
+    });
+
+    it('reads settings for zones even for an URGENT personalized send', async () => {
+      stubChapterNotify({ userIds: ['u-1'], createManyImpl: echoCreateMany });
+      mockPushProvider.sendToUser.mockResolvedValue({ invalidTokens: [] });
+
+      await service.notifyMembers('ch-1', ['u-1'], {
+        title: 'fallback',
+        body: 'fallback',
+        priority: 'URGENT',
+        personalize,
+      });
+
+      expect(mockSettingsRepo.findByUserIds).toHaveBeenCalled();
+      expect(personalize).toHaveBeenCalledWith({
+        userId: 'u-1',
+        timeZone: null,
+      });
+    });
+
+    it('notifies only the members it is given', async () => {
+      stubChapterNotify({ userIds: ['u-2'], createManyImpl: echoCreateMany });
+
+      await service.notifyMembers('ch-1', ['u-2', 'u-2'], {
+        title: 'Hi',
+        body: 'There',
+      });
+
+      expect(mockMemberRepo.findByChapter).not.toHaveBeenCalled();
+      expect(mockNotificationRepo.createMany).toHaveBeenCalledWith([
+        expect.objectContaining({ user_id: 'u-2' }),
+      ]);
+    });
+
+    it('personalizes a single send too', async () => {
+      mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(null);
+      mockSettingsRepo.findByUser.mockResolvedValue({
+        ...baseSettings,
+        quiet_hours_start: null,
+        quiet_hours_end: null,
+        time_zone: 'Not/AZone',
+      });
+      mockNotificationRepo.create.mockResolvedValue(baseNotification);
+      mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+      mockPushProvider.sendToUser.mockResolvedValue({ invalidTokens: [] });
+
+      await service.notifyUser('u-1', 'ch-1', {
+        title: 'fallback',
+        body: 'fallback',
+        personalize,
+      });
+
+      // An unresolvable reported zone falls back to quiet hours' zone.
+      expect(mockNotificationRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'for u-1',
+          body: 'zone America/New_York',
+        }),
+      );
+      expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
+        [basePushToken.token],
+        expect.objectContaining({ body: 'zone America/New_York' }),
+      );
     });
   });
 
