@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Pencil, Plus, Power, PowerOff, Trash2 } from "lucide-react";
 import { StudyZonesGlyph } from "@/components/events/chapter-ops-glyphs";
@@ -624,7 +625,7 @@ export function GeofencesAdminPage() {
             <NestedError
               sole
               title="Couldn't load study zones"
-              description="Confirm your chapter access and retry."
+              description={describeLoadFailure(geofencesQuery.error)}
               onRetry={() => void geofencesQuery.refetch()}
             />
           ) : geofences.length === 0 ? (
