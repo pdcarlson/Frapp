@@ -43,3 +43,26 @@ export function isForeignKeyViolation(error: unknown): boolean {
     (error as { code?: unknown }).code === PG_FOREIGN_KEY_VIOLATION
   );
 }
+
+/**
+ * SQLSTATEs for a fault that clears on its own, so a job may try the same
+ * work again (#1692): a serialization failure (40001) or deadlock (40P01),
+ * too many connections (53300), a statement cancelled by its timeout (57014),
+ * and the server shutting down or still starting (57P01, 57P02, 57P03). Any
+ * code in class 08, a connection exception, belongs here too; test it with
+ * {@link isTransientPostgresCode} rather than this set alone.
+ */
+export const PG_TRANSIENT_CODES: ReadonlySet<string> = new Set([
+  '40001',
+  '40P01',
+  '53300',
+  '57014',
+  '57P01',
+  '57P02',
+  '57P03',
+]);
+
+/** Whether a SQLSTATE names a fault that clears on its own. */
+export function isTransientPostgresCode(code: string): boolean {
+  return PG_TRANSIENT_CODES.has(code) || /^08[0-9A-Z]{3}$/.test(code);
+}
