@@ -94,7 +94,8 @@ function readString(
  * palette stored before then paints its older, darker fill until the
  * stale-palette sweep recomputes it; `accent-engine.md` §4). Step 11 measures
  * 7.5–8.6:1 on `--card` for each of the five colours the chapter directory
- * seed holds today, and reads equally well as a chip fill under the fixed
+ * seed held when it was measured (`#BF0A30`, `#C0C0C0`, `#C9A56F`, `#FF69B4`,
+ * `#FFFFFF`; the seed now carries `#C9A56F` alone), and reads equally well as a chip fill under the fixed
  * `gold.onHouse` label (7.2:1+).
  *
  * So the generated scale removes the problem rather than compensating for it —

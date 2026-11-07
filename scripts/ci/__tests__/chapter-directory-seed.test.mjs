@@ -63,10 +63,12 @@ test("drops trailing blank lines but keeps a blank line in the middle", () => {
   assert.deepEqual(parseCsv("a\n\nb\n\n\n"), [["a"], [""], ["b"]]);
 });
 
-test("the shipped seed parses to the expected header and 50 data rows", () => {
+test("the shipped seed parses to the expected header and the Wikipedia build's rows", () => {
+  // Thousands of rows since #232 replaced the 50-row hand-written seed. The
+  // floor catches a build that silently read almost nothing.
   const rows = parseCsv(readFileSync(SEED_PATH, "utf8"));
   assert.deepEqual(rows[0], [...EXPECTED_HEADER]);
-  assert.equal(rows.length - 1, 50);
+  assert.ok(rows.length - 1 > 5000, `only ${rows.length - 1} rows`);
   for (const [i, row] of rows.entries()) {
     assert.equal(row.length, EXPECTED_HEADER.length, `row ${i} column count`);
   }
@@ -83,4 +85,20 @@ test("every seeded default_colors holds accent and nothing else (#1225)", () => 
     assert.deepEqual(Object.keys(colors), ["accent"], row[0]);
     assert.match(colors.accent, /^#[0-9A-F]{6}$/);
   }
+});
+
+test("the seed has the RPI chapter the first seed got wrong, findable by its school's names", () => {
+  // The hand-written seed listed Phi Gamma Delta at RPI as "Pi Tau", a chapter
+  // that doesn't exist, and stored the school only as "RPI" (2026-11-06).
+  const rows = parseCsv(readFileSync(SEED_PATH, "utf8"));
+  const at = (name) => EXPECTED_HEADER.indexOf(name);
+  const tauNu = rows.find(
+    (r) => r[at("org_name")] === "Phi Gamma Delta" && r[at("chapter_designation")] === "Tau Nu",
+  );
+  assert.ok(tauNu, "Tau Nu missing");
+  assert.equal(tauNu[at("university")], "Rensselaer Polytechnic Institute");
+  assert.equal(tauNu[at("university_short")], "RPI");
+  assert.deepEqual(tauNu[at("aliases")].split("|").sort(), ["RPI", "Rensselaer"]);
+  assert.deepEqual(tauNu[at("org_aliases")].split("|").sort(), ["FIJI", "Phi Gam"]);
+  assert.ok(!rows.some((r) => r[at("chapter_designation")] === "Pi Tau" && r[at("university")] === "RPI"));
 });
