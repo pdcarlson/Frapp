@@ -6,8 +6,11 @@ import {
   resetChannelsRefusedReport,
 } from "./channels-error";
 
-function httpError(status: number): Error {
-  return Object.assign(new Error(`HTTP ${status}`), { status });
+function httpError(status: number, code?: string): Error {
+  return Object.assign(new Error(`HTTP ${status}`), {
+    status,
+    ...(code ? { code } : {}),
+  });
 }
 
 describe("channelsErrorCopy", () => {
@@ -15,7 +18,7 @@ describe("channelsErrorCopy", () => {
     const copy = channelsErrorCopy(httpError(403), "Phi Gamma Delta");
     expect(copy.title).toBe("Chat isn't open to you yet");
     expect(copy.body).toBe(
-      "Your role in Phi Gamma Delta doesn't include chat. Ask an officer to give you the Member role, then pull down to refresh.",
+      "Your role in Phi Gamma Delta doesn't include chat. Ask an officer to give you the Member role.",
     );
   });
 
@@ -25,8 +28,12 @@ describe("channelsErrorCopy", () => {
     );
   });
 
-  it("keeps the network copy for anything else", () => {
-    for (const error of [httpError(500), new Error("fetch failed")]) {
+  it("keeps the network copy for anything else, the chapter guard's 403s included", () => {
+    for (const error of [
+      httpError(500),
+      new Error("fetch failed"),
+      httpError(403, "chapter.context.mismatch"),
+    ]) {
       expect(channelsErrorCopy(error, "X")).toEqual({
         title: "Couldn't load channels",
         body: "Chat couldn't reach the server.",
@@ -46,7 +53,7 @@ describe("reportChannelsRefused", () => {
     reportChannelsRefused(httpError(403));
     expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
     expect(Sentry.captureMessage).toHaveBeenCalledWith(
-      "Chat home: channel list refused (403)",
+      "Chat home: channel list refused by role (403)",
       expect.objectContaining({
         level: "warning",
         fingerprint: ["chat-home-channels-refused"],
@@ -57,6 +64,7 @@ describe("reportChannelsRefused", () => {
   it("leaves other failures to the shared query-error reporter", () => {
     reportChannelsRefused(httpError(500));
     reportChannelsRefused(new Error("fetch failed"));
+    reportChannelsRefused(httpError(403, "chapter.context.mismatch"));
     expect(Sentry.captureMessage).not.toHaveBeenCalled();
   });
 });

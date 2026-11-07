@@ -2782,9 +2782,9 @@ Afterwards every settings change lights the `#chapter-audit` badge again, for ev
 ## Rollback members keep the Member role (20261107020000)
 
 * **Migration**: `20261107020000_members_keep_base_role.sql`
-* **Action**: none needed. It only added a role to members who had no base access, so leaving it in place is safe even if the API change is reverted.
+* **Action**: normally none. It only appended Member to members whose in-chapter roles were all custom and carried neither `members:view` nor `*`, who were refused on every screen, so leaving it in place is safe even if the API change is reverted.
 
-To take the role back off a specific member, an officer removes Member from them on web Members, which locks that member out of every screen again. There is no bulk undo, by design: the rows it touched were broken.
+It records no list of the rows it changed. To take Member back off a specific member, an officer removes it on web Members, which locks that member out of every screen again unless another role gives them `members:view`.
 
 ## Rollback users major (20261106200000)
 

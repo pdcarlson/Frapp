@@ -258,6 +258,8 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import ChatHomeScreen from "@/app/(tabs)/index";
+import * as Sentry from "@sentry/react-native";
+import { resetChannelsRefusedReport } from "@/lib/chat/channels-error";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   resetChatLaunchForTests,
@@ -1178,6 +1180,22 @@ describe("Chat home loading and error states", () => {
       "Ask an officer to give you the Member role",
     );
     expect(error.props.body).not.toContain("reach the server");
+  });
+
+  it("reports a refusal by role to Sentry", () => {
+    resetChannelsRefusedReport();
+    vi.mocked(Sentry.captureMessage).mockClear();
+    channelsState.value = {
+      ...channelsState.value,
+      isError: true,
+      error: Object.assign(new Error("Forbidden"), { status: 403 }),
+    };
+    render();
+
+    expect(Sentry.captureMessage).toHaveBeenCalledWith(
+      "Chat home: channel list refused by role (403)",
+      expect.objectContaining({ level: "warning" }),
+    );
   });
 
   it("says Retrying… and holds the control while a retry is in flight", () => {
