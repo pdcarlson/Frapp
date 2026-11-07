@@ -37,6 +37,25 @@ export function CloseGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   );
 }
 
+/**
+ * Add a reaction (any emoji): web draws Lucide's `SmilePlus` on a message
+ * row's reaction button for the same intent.
+ */
+export function AddReactionGlyph({
+  color,
+  size = DEFAULT_SIZE,
+}: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M22 11v1a10 10 0 11-9-10" {...detail} />
+      <Path d="M8 14s1.5 2 4 2 4-2 4-2" {...detail} />
+      <Path d="M9 9h.01M15 9h.01" {...detail} />
+      <Path d="M16 5h6M19 2v6" {...detail} />
+    </Frame>
+  );
+}
+
 /** Try again: web draws Lucide's `RotateCw` for the same intent. */
 export function RetryGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   const { detail } = paint({ color });

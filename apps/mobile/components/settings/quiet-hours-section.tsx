@@ -122,9 +122,6 @@ export function QuietHoursSection({
     <ListSection>
       <ListRow
         label="Quiet hours"
-        // Said once, and only while it applies: what quiet hours do to a push
-        // isn't obvious from the name (they arrive silently, not not at all).
-        description={enabled ? "Notifications arrive silently." : null}
         trailing={
           <Toggle
             value={enabled}
