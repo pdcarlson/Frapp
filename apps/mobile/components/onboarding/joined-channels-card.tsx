@@ -10,20 +10,16 @@ import { SkeletonRegion, SkeletonText } from "@/components/state-block";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * The public channels a member is already in, as a card: s03 shows it to a
- * member who just joined, and chapter setup's live step to the officer who
- * just created the chapter (#3351). Both read `GET /v1/channels` for the
- * active chapter; `#alumni` is role-gated, so only the public ones are named
- * (`selectJoinedPublicChannels`).
+ * The chapter's public channels, as a card: chapter setup's live step shows it
+ * to the officer who just created the chapter (#3351), each row marked
+ * "ready". It reads `GET /v1/channels` for the active chapter; `#alumni` is
+ * role-gated, so only the public ones are named (`selectJoinedPublicChannels`).
  *
- * `trailing` is the word on the right of each row: "joined" for a member,
- * "ready" for a chapter that was only just made.
+ * s03 showed it to a member who just joined, marked "joined", until the
+ * first-run tour replaced that card (2026-11-07, `lib/onboarding/tour.ts`).
  */
-export function JoinedChannelsCard({
-  trailing = "joined",
-}: {
-  trailing?: string;
-}) {
+export function JoinedChannelsCard() {
+  const trailing = "ready";
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const channels = useChannels();

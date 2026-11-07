@@ -30,6 +30,13 @@ vi.mock("@/lib/auth-session", () => ({
   }),
 }));
 
+// The first-run tour wraps the navigator and reads the signed-in member; it
+// has its own spec (`components/onboarding/tour.spec.tsx`).
+vi.mock("@/components/onboarding/tour", () => ({
+  TourHost: ({ children }: { children: React.ReactNode }) => children,
+  useTourAnchor: () => undefined,
+  useTourReady: () => undefined,
+}));
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#F4CB63" }),
 }));

@@ -471,6 +471,11 @@ it (2026-11-07).
   name, the `Member` stand-in or empty), `edited` (a real one was changed) or
   `kept`. Never the name itself. A save that fails sends nothing, since the
   member stays on the beat.
+- **`onboarding-tour-finished`** is sent once when the first-run tour over chat
+  ends (`apps/mobile/lib/onboarding/tour.ts`): `outcome` is `done` (the last
+  stop) or `skipped`, `stop` is the 1-based stop it ended on, and `stops` how
+  many this member was shown (a stop whose control wasn't on screen is left
+  out). Not a funnel step: a tour that ran is read off it on its own.
 - Steps 2 and 3 are optional, so the funnel in PostHog marks them optional.
   Break it down by `sign_in_method` (on step 1) and `app`.
 

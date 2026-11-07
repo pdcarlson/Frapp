@@ -45,6 +45,9 @@ interface StoredAsk {
 function usePushAskState() {
   const [stored, setStored] = useState<StoredAsk | null>(null);
   const [push, setPush] = useState<PushState | null>(null);
+  // Whether the first push read has come back, failed or not: `push` stays
+  // `null` on a failure, so it can't say this itself.
+  const [pushRead, setPushRead] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -63,7 +66,9 @@ function usePushAskState() {
       void readPushState()
         .catch(() => null)
         .then((next) => {
-          if (live) setPush(next);
+          if (!live) return;
+          setPush(next);
+          setPushRead(true);
         });
     };
     readStored();
@@ -82,7 +87,7 @@ function usePushAskState() {
     };
   }, []);
 
-  return { stored, setStored, push, setPush, now };
+  return { stored, setStored, push, setPush, pushRead, now };
 }
 
 /** What a tap on the ask's main button will do, so its label can say so. */
@@ -111,7 +116,7 @@ function trackedAnswer(outcome: PushAskOutcome) {
  * it asks, so a crash mid-prompt still counts as asked.
  */
 export function usePushPrimer() {
-  const { stored, push, setPush } = usePushAskState();
+  const { stored, push, setPush, pushRead } = usePushAskState();
   const [isRequesting, setIsRequesting] = useState(false);
   // One answer per step: a second tap (or Not now, then Turn on) while the
   // first is still being stored would send a second event and could show the
@@ -179,6 +184,8 @@ export function usePushPrimer() {
 
   return {
     showPrimer,
+    /** Both reads are back, so `showPrimer` is the answer, not a first frame. */
+    ready: stored !== null && pushRead,
     action: actionFor(push),
     isRequesting,
     turnOn,
