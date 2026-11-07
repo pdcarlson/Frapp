@@ -442,6 +442,56 @@ export class ChannelUnreadCountDto {
 }
 
 /**
+ * `GET /v1/channels/latest`: one readable channel's latest message, for Chat
+ * home's row preview. A channel with no message has no row.
+ */
+export class ChannelLatestMessageDto {
+  @ApiProperty({ format: 'uuid' })
+  channel_id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  message_id: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      "The sender's `users.id`, or null for an imported archive message, which carries `author_name` instead.",
+  })
+  sender_id: string | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  author_name: string | null;
+
+  @ApiProperty({
+    description:
+      'The message body, cut to its first 500 characters. Empty for a card or a file-only message.',
+  })
+  content: string;
+
+  @ApiProperty({
+    description: 'The message kind (`text`, `event`, `system_audit`, ...).',
+  })
+  kind: string;
+
+  @ApiProperty({
+    type: 'object',
+    additionalProperties: true,
+    nullable: true,
+    description:
+      'The audit payload, set only when `kind` is `system_audit`; null for every other kind.',
+  })
+  payload: Record<string, unknown> | null;
+
+  @ApiProperty({ type: Number })
+  attachment_count: number;
+
+  @ApiProperty({ format: 'date-time' })
+  created_at: string;
+}
+
+/**
  * The three per-channel notification levels (ADR-06), mirroring the
  * `chat_notification_preferences.level` CHECK constraint.
  *
