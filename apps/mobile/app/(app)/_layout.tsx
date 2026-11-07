@@ -77,6 +77,10 @@ export default function AppLayout() {
         name="notifications"
         options={{ title: SCREEN_TITLES.notifications }}
       />
+      <Stack.Screen
+        name="messages"
+        options={{ title: SCREEN_TITLES.messages }}
+      />
       {/* s16's drawn title is "Settings"; the route filename stays
           `preferences.tsx` per spec/ui/mobile/screens.md § Notes. */}
       <Stack.Screen

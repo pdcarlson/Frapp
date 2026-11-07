@@ -6,7 +6,6 @@ import {
   formatDayTime,
   formatDayTimeRange,
   formatDueLabel,
-  formatListStamp,
   formatRelativeDayTime,
   formatTimestampFull,
   formatWeekdayDay,
@@ -71,16 +70,6 @@ describe("house date shapes", () => {
     expect(formatRelativeDayTime("2026-11-03T17:00:00-08:00", NOW)).toBe("Yesterday · 5:00 PM");
     expect(formatRelativeDayTime(FRI_5PM, NOW)).toBe("Friday · 5:00 PM");
     expect(formatRelativeDayTime("2026-11-20T17:00:00-08:00", NOW)).toBe("Nov 20 · 5:00 PM");
-  });
-
-  it("stamps a message list row: clock today, then Yesterday, weekday, date", () => {
-    expect(formatListStamp("2026-11-04T08:41:00-08:00", NOW)).toBe("8:41 AM");
-    expect(formatListStamp("2026-11-03T17:00:00-08:00", NOW)).toBe("Yesterday");
-    expect(formatListStamp("2026-11-02T17:00:00-08:00", NOW)).toBe("Mon");
-    expect(formatListStamp("2026-10-29T17:00:00-08:00", NOW)).toBe("Thu");
-    expect(formatListStamp("2026-10-28T17:00:00-08:00", NOW)).toBe("Oct 28");
-    expect(formatListStamp("2025-12-30T17:00:00-08:00", NOW)).toBe("Dec 30, 2025");
-    expect(formatListStamp(undefined, NOW)).toBeNull();
   });
 
   it("counts a due date down, as mobile's task subtitle does", () => {

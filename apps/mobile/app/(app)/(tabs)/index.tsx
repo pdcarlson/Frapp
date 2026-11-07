@@ -14,24 +14,18 @@ import {
   canHideConversation,
   foldedSectionAnnouncement,
   groupChannelsByCategory,
-  HIDDEN_CONVERSATIONS_LABEL,
   NO_MATCHING_CHANNELS,
-  otherMemberId,
   SHOW_ALL_CHANNELS_LABEL,
   SIDEBAR_SAVE_FAILED_BODY,
   SIDEBAR_SAVE_FAILED_TITLE,
   sidebarMutedChannelIds,
   sidebarSections,
   sidebarUnreadCounts,
-  resolveAuthorLabel,
-  resolveAuthorName,
   useCategories,
-  useChannelLatestMessages,
   useChannelNotificationPreferences,
   useChannelUnreadCounts,
   lastChannelLandingId,
   useActiveChapterId,
-  useGetOrCreateDm,
   useChannels,
   useChapterSetupChecklist,
   useChapterRoster,
@@ -59,18 +53,20 @@ import {
   type ChatNotificationLevel,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import {
-  channelPreviewLine,
-  NO_MESSAGES_PREVIEW,
-} from "@repo/chat-core/channel-preview";
-import { formatListStamp } from "@repo/formatting";
 import { ChapterMark } from "@/components/chapter-mark";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { PushReminder } from "@/components/notifications/push-reminder";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
-import { NotificationsBell } from "@/components/chat/notifications-bell";
+import {
+  AccountButton,
+  AccountMenu,
+  MessagesButton,
+  useAccountMenu,
+} from "@/components/chat/home-header";
+import { DisclosureGlyph } from "@/components/control-glyphs";
+import { selectViewerProfile } from "@/lib/more/profile";
 import {
   ChannelFilterButton,
   ChannelFilterMenu,
@@ -82,9 +78,7 @@ import {
   UnreadBadge,
 } from "@/components/chat/channel-row";
 import { gutterBleed, PressableRow } from "@/components/list-section";
-import {
-  ErrorState,
-} from "@/components/state-block";
+import { ErrorState } from "@/components/state-block";
 import {
   MOBILE_SETUP_CHECKLIST_OMIT,
   SetupChecklistView,
@@ -94,7 +88,6 @@ import { isAskAvailable } from "@/lib/ask/flag";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   displayChannelName,
-  hiddenChannels,
   isDirectChannel,
   listedChannels,
   selectCategories,
@@ -175,23 +168,29 @@ export default function ChatHomeScreen() {
   // `users.id` to subtract. Deliberately not `useChatRuntime()`, which would
   // reconfigure the realtime manager and boot the outbox flush from this screen.
   const viewerId = useViewerUserId();
-  const { byId: memberNames, nameFor } = useMemberDisplayNames();
-  // Each row's latest message and time (2026-11-06 redesign).
-  const latestQuery = useChannelLatestMessages();
+  const { byId: memberNames } = useMemberDisplayNames();
 
   const leaveChannel = useLeaveChannel();
-  const reopenDm = useGetOrCreateDm();
-  const [showHidden, setShowHidden] = useState(false);
 
   // A DM the member hid (#2303) is still in the payload, so a thread opened by
-  // id keeps resolving. The main list leaves it out; the collapsed Hidden
-  // conversations group at the end is the way back to it.
+  // id keeps resolving. The list leaves it out.
   const allChannels = useMemo(
     () => selectChannels(channelsQuery.data),
     [channelsQuery.data],
   );
-  const channels = useMemo(() => listedChannels(allChannels), [allChannels]);
-  const hidden = useMemo(() => hiddenChannels(allChannels), [allChannels]);
+  // Chat home lists channels only; direct messages live behind the Messages
+  // door at the top right (owner, 2026-11-07).
+  const channels = useMemo(
+    () =>
+      listedChannels(allChannels).filter(
+        (channel) => !isDirectChannel(channel),
+      ),
+    [allChannels],
+  );
+  const directChannels = useMemo(
+    () => listedChannels(allChannels).filter(isDirectChannel),
+    [allChannels],
+  );
   // One map for the rows' badges and the arrangement alike, so a folded
   // header and the rows never disagree. `undefined` while the counts are
   // unknown (pending, or the last read failed): rows then draw no badge (after
@@ -204,6 +203,11 @@ export default function ChatHomeScreen() {
       }),
     [unreadQuery.data, unreadQuery.isError],
   );
+  // The Messages door's badge: conversations with anything unread.
+  const unreadConversations = directChannels.filter(
+    (channel) => (unreadByChannelId?.get(channel.id)?.unreadCount ?? 0) > 0,
+  ).length;
+  const accountMenu = useAccountMenu();
 
   // The member's own arrangement (#2877): pins, folded sections and the two
   // filters, stored server-side so they match web. A failed read leaves the
@@ -297,6 +301,10 @@ export default function ChatHomeScreen() {
   const sidebarRefetch = useSidebarPreferencesRefetch();
   const rosterQuery = useChapterRoster();
   const viewerQuery = useCurrentUser();
+  const viewerProfile = useMemo(
+    () => selectViewerProfile(viewerQuery.data),
+    [viewerQuery.data],
+  );
   const inboxQuery = useNotifications();
   // The officer setup checklist. Held here, not in its view, so the pull below
   // re-reads the lists it counts.
@@ -315,7 +323,6 @@ export default function ChatHomeScreen() {
     notificationPrefsQuery,
     sidebarRefetch,
     rosterQuery,
-    latestQuery,
   ]);
 
   // Categories are grouping only. While they load, or if the read fails,
@@ -338,10 +345,6 @@ export default function ChatHomeScreen() {
     [notificationPrefsQuery.data, notificationPrefsQuery.isError],
   );
   const filterMenu = useChannelFilterMenu();
-  const latestById = useMemo(
-    () => new Map((latestQuery.data ?? []).map((row) => [row.channel_id, row])),
-    [latestQuery.data],
-  );
   const titleOf = useCallback(
     (channel: ChannelSummary) =>
       displayChannelName(channel, viewerId, memberNames),
@@ -353,8 +356,8 @@ export default function ChatHomeScreen() {
       // categories" rule): the default group is "Channels", and it stays first
       // below Pinned.
       sections: sidebarSections(groupChannelsByCategory(channels, categories), {
-        channels: "CHANNELS",
-        direct: "DIRECT",
+        channels: "Channels",
+        direct: "Direct messages",
       }),
       pinnedIds: preferences.pinnedIds,
       collapsed: preferences.collapsed,
@@ -419,19 +422,6 @@ export default function ChatHomeScreen() {
     router.push({ pathname: "/chat-thread", params: { channelId } });
   }
 
-  /**
-   * Opening a hidden DM from its group is "opening it again yourself", which
-   * is what clears a hide: `POST /v1/channels/dm` with the other member does it
-   * server-side, and its refetch moves the row back into the list. The thread
-   * opens either way — it is readable while hidden — so a failed unhide costs
-   * the member nothing but the row staying in the group.
-   */
-  function reopenHidden(channel: ChannelSummary) {
-    const memberId = otherMemberId(channel, viewerId);
-    if (memberId) reopenDm.mutate({ member_id: memberId });
-    openChannel(channel.id);
-  }
-
   function renderChannel(channel: ChannelSummary) {
     const counts = unreadByChannelId?.get(channel.id);
     const name = displayChannelName(channel, viewerId, memberNames);
@@ -446,29 +436,12 @@ export default function ChatHomeScreen() {
           })
       : undefined;
     const isDirect = isDirectChannel(channel);
-    const latest = latestById.get(channel.id);
     return (
       <ChannelRow
         key={channel.id}
         name={name}
         isDirect={isDirect}
         isPinned={pinned}
-        preview={
-          // Held blank until the previews answer (or if they fail), so no
-          // row grows when they arrive.
-          !latestQuery.isSuccess
-            ? ""
-            : latest
-              ? channelPreviewLine(latest, {
-                  isOneToOne: channel.type === "DM",
-                  viewerId,
-                  nameOf: (author) => resolveAuthorName(author, nameFor),
-                  fallbackLabel: (author) =>
-                    resolveAuthorLabel(author, nameFor, null),
-                })
-              : NO_MESSAGES_PREVIEW
-        }
-        timestamp={latest ? formatListStamp(latest.created_at) : null}
         isMuted={mutedChannelIds?.has(channel.id) ?? false}
         unreadCount={counts?.unreadCount ?? 0}
         mentionCount={counts?.mentionCount ?? 0}
@@ -531,9 +504,9 @@ export default function ChatHomeScreen() {
         <Text
           accessibilityRole="header"
           numberOfLines={1}
-          style={[styles.sectionLabel, styles.plainHeading]}
+          style={[styles.heading, styles.plainHeading]}
         >
-          CHANNELS
+          Channels
         </Text>
         {filterButton}
       </View>
@@ -547,8 +520,10 @@ export default function ChatHomeScreen() {
       titleMark={<ChapterMark />}
       refresh={refresh}
       overlay={{
-        open: filterMenu.visible,
-        content: (
+        open: filterMenu.visible || accountMenu.visible,
+        content: accountMenu.visible ? (
+          <AccountMenu menu={accountMenu} />
+        ) : (
           <ChannelFilterMenu
             menu={filterMenu}
             unreadOnly={preferences.filters.unreadOnly}
@@ -565,8 +540,16 @@ export default function ChatHomeScreen() {
           {isAskAvailable() ? (
             <AskPill onPress={() => askSheetRef.current?.present()} />
           ) : null}
-          {/* The inbox's entry (#3362), where the web keeps it: on home. */}
-          <NotificationsBell />
+          {/* The Messages door, then the member's avatar, whose menu holds
+              Profile, Notifications (the inbox, #3362) and Settings
+              (owner, 2026-11-07). */}
+          <MessagesButton unreadConversations={unreadConversations} />
+          <AccountButton
+            menu={accountMenu}
+            initials={viewerProfile?.initials ?? "?"}
+            photoUrl={viewerProfile?.photoUrl ?? null}
+            fetchedAt={viewerQuery.dataUpdatedAt}
+          />
         </View>
       }
     >
@@ -629,7 +612,7 @@ export default function ChatHomeScreen() {
           retryLabel="Try loading channels again"
           isRetrying={channelsQuery.isFetching}
         />
-      ) : allChannels.length === 0 ? (
+      ) : channels.length === 0 ? (
         // No line saying channels appear here, which would only restate what
         // Chat is for; the one line says what to do, since mobile has no way
         // to create a channel (writing.md §4, as amended 2026-11-05).
@@ -686,15 +669,9 @@ export default function ChatHomeScreen() {
                         }
                         style={[styles.sectionHeader, styles.headingGrow]}
                       >
-                        <Text style={styles.sectionChevron}>
-                          {section.collapsed ? "▸" : "▾"}
-                        </Text>
                         <Text
                           numberOfLines={1}
-                          style={[
-                            styles.sectionLabel,
-                            styles.sectionLabelInHeader,
-                          ]}
+                          style={[styles.heading, styles.headingInHeader]}
                         >
                           {section.label}
                         </Text>
@@ -706,7 +683,16 @@ export default function ChatHomeScreen() {
                             addressed={section.addressed}
                           />
                         ) : null}
+                        {/* Drawn, at the right edge where a thumb expects
+                            it; the typed ▸ ▾ sat low and read as noise. */}
+                        <DisclosureGlyph
+                          color={tokens.color.text.mutedForeground}
+                          size={18}
+                          direction={section.collapsed ? "right" : "down"}
+                        />
                       </PressableRow>
+                      {/* Outside the fold control, so a screen reader
+                          reaches it as its own button. */}
                       {index === 0 ? filterButton : null}
                     </View>
                   </StickyHeader>,
@@ -732,64 +718,6 @@ export default function ChatHomeScreen() {
             >
               {NO_MATCHING_CHANNELS}
             </InlineNote>
-          ) : null}
-
-          {hidden.length > 0 ? (
-            <>
-              {/* Pinned like the section headings, so the last heading never sits over these rows. */}
-              <StickyHeader>
-                <PressableRow
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: showHidden }}
-                  onPress={() => setShowHidden((open) => !open)}
-                  style={styles.hiddenToggle}
-                >
-                  <Text style={styles.sectionLabel}>
-                    {`${HIDDEN_CONVERSATIONS_LABEL} (${hidden.length})`}
-                  </Text>
-                </PressableRow>
-              </StickyHeader>
-              {showHidden ? (
-                <View style={[styles.section, styles.sectionRows]}>
-                  {hidden.map((channel) => (
-                    <ChannelRow
-                      key={channel.id}
-                      name={displayChannelName(channel, viewerId, memberNames)}
-                      isDirect
-                      // A hidden DM carries no count (`GET /v1/channels/unread`
-                      // leaves it out), so there is no badge to draw.
-                      unreadCount={0}
-                      mentionCount={0}
-                      onPress={() => reopenHidden(channel)}
-                      // Hidden, a DM offers no pin and no hide, so its menu
-                      // holds Notifications, as web's right-click does.
-                      onLongPress={(event) => {
-                        pressHaptic();
-                        setMenuTarget({
-                          channelId: channel.id,
-                          name: displayChannelName(
-                            channel,
-                            viewerId,
-                            memberNames,
-                          ),
-                          pageY: event?.nativeEvent.pageY ?? windowHeight / 3,
-                          pinned: false,
-                          level: levelFor(channel.id),
-                          actions: channelRowActions({
-                            channel: { ...channel, hidden: true },
-                            unread: false,
-                            pinned: null,
-                            permissions,
-                            surface: { copyLink: false, edit: false },
-                          }),
-                          onTogglePin: () => {},
-                        });
-                      }}
-                    />
-                  ))}
-                </View>
-              ) : null}
-            </>
           ) : null}
         </>
       )}
@@ -833,31 +761,27 @@ function createStyles(tokens: SignetTokens) {
     sectionRows: {
       marginTop: tokens.spacing.xs - tokens.spacing.md,
     },
-    sectionLabel: {
-      ...typeRole(tokens.typography.role.caption),
-      letterSpacing: 0.8,
-      textTransform: "uppercase",
-      color: tokens.color.text.muted,
-      marginBottom: tokens.spacing.xs,
+    // A section heading (2026-11-07): sentence case, a step above the rows'
+    // caption and in their own brightness, so a Discord category's name reads
+    // as a name. The old uppercase caption in the muted grey was the dimmest
+    // thing on a dim screen.
+    heading: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.mutedForeground,
     },
-    // The fold header and the Hidden conversations toggle take the rows'
-    // `gutterBleed`, so their captions line up with the rows' sigils.
+    // The fold header takes the rows' `gutterBleed`, so its name lines up
+    // with the rows' sigils.
     sectionHeader: {
       flexDirection: "row",
       alignItems: "center",
-      gap: tokens.spacing.xs,
+      gap: tokens.spacing.sm,
       minHeight: tokens.touch.minimum,
       ...gutterBleed(tokens),
     },
-    // Inside the fold control the row carries the spacing, so the label drops
-    // its own bottom margin and gives up width to the badge.
-    sectionLabelInHeader: {
+    // Inside the fold control the label gives up width to the badge and the
+    // chevron.
+    headingInHeader: {
       flex: 1,
-      marginBottom: 0,
-    },
-    sectionChevron: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
     },
     headingRow: {
       flexDirection: "row",
@@ -893,11 +817,6 @@ function createStyles(tokens: SignetTokens) {
       }),
       color: tokens.color.text.foreground,
       textDecorationLine: "underline",
-    },
-    hiddenToggle: {
-      minHeight: tokens.touch.minimum,
-      justifyContent: "center",
-      ...gutterBleed(tokens),
     },
     unreadWarning: {
       ...typeRole(tokens.typography.role.caption),
