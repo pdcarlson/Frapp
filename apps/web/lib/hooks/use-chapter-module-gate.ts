@@ -164,7 +164,7 @@ export function useChapterModuleGateState(): ChapterModuleGateState {
  * nothing flashes out of the nav on first paint, including the server render
  * and hydration, where no chapter is active yet, and a read paused offline
  * keeps its rows rather than hiding modules the chapter never switched off
- * (design-system README §5 rule 4). The offline banner already says why the
+ * (design-system README §5 rule 4). The connection pill already says why the
  * rows can't be checked.
  *
  * Once the read has **failed**, the gate closes: a module row it cannot vouch
