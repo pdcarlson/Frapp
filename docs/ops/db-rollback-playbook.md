@@ -2769,6 +2769,22 @@ alter table public.chat_message_reports
   drop column if exists reported_attachments;
 ```
 
+## Rollback invite email and revoked_at (20261107090000)
+
+* **Migration**: `20261107090000_invites_email_and_revoked_at.sql`
+
+Two nullable columns on `invites`, `email` and `revoked_at`. The API from the same PR writes both (an email invite stores its address, a revoke stamps `revoked_at`), so roll the API back first: a column dropped under the new API fails every invite create (share links included, since every insert names `email`) and every revoke.
+
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). After the API is back on the earlier version:
+
+```sql
+alter table public.invites
+  drop column if exists email,
+  drop column if exists revoked_at;
+```
+
+Dropping them loses which address each invite went to and which ones were revoked rather than used. Every invite keeps working; a revoked one still has `used_at` set, so it still can't be redeemed.
+
 ## Rollback Chat home previews (20261106210000)
 
 * **Migration**: `20261106210000_chat_channel_latest_messages.sql`

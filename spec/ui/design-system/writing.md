@@ -220,6 +220,23 @@ The API's throttler sets this sentence (`THROTTLED_MESSAGE`, `custom-throttler.g
 
 Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assembled at the call site because it quotes the live query.
 
+### Invite members (dashboard panel and setup wizard)
+
+The composer is shared by the Members panel and the web setup wizard's last step, so its copy is one set ([`members.md` § Invite Flow](../../behavior/members.md#invite-flow)). No string anywhere shows a token. (2026-11-06: replaced `Role` / `Invite count` / `Generate`, `Freshly generated tokens` and `Active invite tokens`, which listed raw UUIDs.)
+
+| Element | Copy |
+|---|---|
+| Email field | Label `Invite by email`, placeholder `name@school.edu` |
+| Role picker | `Joins as <role>` (panel only; the wizard invites as Member) |
+| Send | `Send invite`, or `Send N invites` for more than one address |
+| Not an address | `One address in red isn't an email address. Fix or remove it.` / `N addresses in red aren't email addresses. Fix or remove them.` |
+| Too many | `Up to 50 addresses at a time. Remove some, then send.` |
+| Couldn't email | `Couldn't email this address. Send again, or copy a link for them.` / `Couldn't email these N addresses. Send again, or copy links for them.` |
+| Sent (toast) | `Invite sent to <address>` / `N invites sent` |
+| Link row | `Or share a link` over `Paste it in a group chat. Each link lets one person join, for 24 hours.`; the button reads `Copy link`, then `Copied` for two seconds |
+| List | Section `Invited`; a row is the address or `Invite link`, then `<role> · Sent today at 4:46 PM`, then `Pending`, `Joined` or `Expired`. Empty: `Nobody yet. People you invite show up here until they join.` |
+| Row menu | `Copy link`, `Send again`, `Revoke invite`; revoked toast `Invite revoked` / `<address> can't join with it now.` |
+
 ### Events (dashboard)
 
 | State | Title | Description |

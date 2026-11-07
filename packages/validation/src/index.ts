@@ -116,10 +116,19 @@ export const ChapterBrandingSchema = z
   })
   .optional();
 
-export const EmailInviteSchema = z.object({
-  role: z.string().min(1),
-  emails: z.array(z.string().email()).min(1).max(50),
-});
+/** The most addresses one `POST /v1/invites/email` takes. */
+export const MAX_INVITE_EMAILS = 50;
+
+const inviteEmailSchema = z.string().email();
+
+/**
+ * Whether `value` is an address `POST /v1/invites/email` accepts. The API's
+ * `BulkEmailInviteDto` validates with this same function, so the web chip
+ * field marks exactly the addresses the server would refuse.
+ */
+export function isInviteEmail(value: string): boolean {
+  return inviteEmailSchema.safeParse(value.trim()).success;
+}
 
 /**
  * Case-insensitively de-dupes email addresses, preserving the first-seen

@@ -3,6 +3,15 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { markLegalAcceptanceRecorded } from "./legal-acceptance";
+import type { components } from "@repo/api-sdk";
+
+/**
+ * One row of `GET /v1/invites` (#3607): who it went to (`email`, null for a
+ * share link) and where it stands (`status`). `token` is there to build the
+ * join link from; no client shows it.
+ */
+export type InviteListItem = components["schemas"]["InviteListItemDto"];
+export type InviteStatus = components["schemas"]["InviteStatus"];
 
 /**
  * `refetchInterval` is for a screen that watches its invites get used while
@@ -29,7 +38,7 @@ export function useInvites(options?: {
 }
 
 /**
- * `role` is optional on all three create routes (#422). Omitting it makes the
+ * `role` is optional on every create route (#422). Omitting it makes the
  * API resolve the chapter's configured default invite role, then the seeded
  * Member role. Typed optional here so a caller can actually express "use the
  * chapter default" — a required `role` would leave that server-side path
@@ -42,22 +51,6 @@ export function useCreateInvite() {
   return useMutation({
     mutationFn: async (body: { role?: string }) => {
       const { data, error } = await client.POST("/v1/invites", { body });
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["invites", chapterId] });
-    },
-  });
-}
-
-export function useBatchCreateInvites() {
-  const client = useFrappClient();
-  const chapterId = useActiveChapterId();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (body: { role?: string; count: number }) => {
-      const { data, error } = await client.POST("/v1/invites/batch", { body });
       if (error) throw error;
       return data;
     },

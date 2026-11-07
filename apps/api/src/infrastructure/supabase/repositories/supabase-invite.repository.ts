@@ -65,14 +65,35 @@ export class SupabaseInviteRepository implements IInviteRepository {
     return data;
   }
 
-  async markUsed(id: string): Promise<void> {
+  async markRevoked(id: string): Promise<void> {
+    // `used_at` too, so every path that refuses a used token refuses a revoked
+    // one without learning about `revoked_at`, and a redeem's `releaseClaim`
+    // (which matches its own `used_at`) can't reopen it.
+    const now = new Date().toISOString();
     const patch: TablesUpdate<'invites'> = {
-      used_at: new Date().toISOString(),
+      used_at: now,
+      revoked_at: now,
     };
     const { error } = await this.supabase
       .from('invites')
       .update(patch)
-      .eq('id', id);
+      .eq('id', id)
+      .is('revoked_at', null);
+    if (error) throw new SupabaseQueryError(error);
+  }
+
+  async revokePending(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    const now = new Date().toISOString();
+    const patch: TablesUpdate<'invites'> = {
+      used_at: now,
+      revoked_at: now,
+    };
+    const { error } = await this.supabase
+      .from('invites')
+      .update(patch)
+      .in('id', ids)
+      .is('used_at', null);
     if (error) throw new SupabaseQueryError(error);
   }
 
@@ -100,6 +121,8 @@ export class SupabaseInviteRepository implements IInviteRepository {
       .update(patch)
       .eq('id', id)
       .eq('used_at', claimedAt)
+      // A revoke in the same millisecond would leave used_at equal.
+      .is('revoked_at', null)
       .select('id');
     if (error) throw new SupabaseQueryError(error);
     return Array.isArray(data) && data.length > 0;
