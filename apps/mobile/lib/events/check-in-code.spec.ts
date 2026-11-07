@@ -37,7 +37,10 @@ describe("CHECK_IN_TOKEN_WINDOW_MS", () => {
     const match = /export const CHECK_IN_TOKEN_WINDOW_MS = ([\d_]+);/.exec(
       source,
     );
-    expect(match, "CHECK_IN_TOKEN_WINDOW_MS not found in the API").not.toBeNull();
+    expect(
+      match,
+      "CHECK_IN_TOKEN_WINDOW_MS not found in the API",
+    ).not.toBeNull();
     expect(Number(match![1].replace(/_/g, ""))).toBe(CHECK_IN_TOKEN_WINDOW_MS);
   });
 });
@@ -50,9 +53,9 @@ describe("parseCheckInCode", () => {
   const token = "test-signature-placeholder";
 
   it("parses a payload minted by the API", () => {
-    expect(parseCheckInCode(`${CHECK_IN_QR_PREFIX}:${eventId}:${token}`)).toEqual(
-      { eventId, token },
-    );
+    expect(
+      parseCheckInCode(`${CHECK_IN_QR_PREFIX}:${eventId}:${token}`),
+    ).toEqual({ eventId, token });
   });
 
   it("tolerates surrounding whitespace from the scanner", () => {
@@ -64,9 +67,10 @@ describe("parseCheckInCode", () => {
   it("keeps a token containing colons intact", () => {
     // Defensive against a future token format: everything after the event id is
     // the token, rather than the third of N colon-separated fields.
-    expect(
-      parseCheckInCode(`${CHECK_IN_QR_PREFIX}:${eventId}:a:b:c`),
-    ).toEqual({ eventId, token: "a:b:c" });
+    expect(parseCheckInCode(`${CHECK_IN_QR_PREFIX}:${eventId}:a:b:c`)).toEqual({
+      eventId,
+      token: "a:b:c",
+    });
   });
 
   it("returns null for codes that are not ours", () => {
@@ -78,9 +82,7 @@ describe("parseCheckInCode", () => {
   });
 
   it("rejects a future prefix version rather than mis-reading it", () => {
-    expect(
-      parseCheckInCode(`frapp-checkin:v2:${eventId}:${token}`),
-    ).toBeNull();
+    expect(parseCheckInCode(`frapp-checkin:v2:${eventId}:${token}`)).toBeNull();
   });
 
   it("rejects a well-prefixed payload with a missing half", () => {
