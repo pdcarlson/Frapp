@@ -284,6 +284,7 @@ jobs:
           DEPLOYS_FUNCTIONS: ${{ steps.plan.outputs.plan != 'stale' }}
           VERIFIES_API: ${{ steps.plan.outputs.verify_sha != '' }}
           ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
+          TRUSTED_SHA: ${{ github.sha }}
           TRUSTED_CI: ${{ runner.temp }}/trusted-ci
         run: node "$TRUSTED_CI/check-deploy-config.mjs"
 
@@ -296,6 +297,7 @@ jobs:
           DEPLOYS_FUNCTIONS: ${{ inputs.scope != 'migrations-only' }}
           VERIFIES_API: "true"
           ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
+          TRUSTED_SHA: ${{ github.sha }}
           TRUSTED_CI: ${{ runner.temp }}/trusted-ci
         run: node "$TRUSTED_CI/check-deploy-config.mjs"
 
