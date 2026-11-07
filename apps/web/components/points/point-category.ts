@@ -4,8 +4,8 @@
  *
  * `point_transactions.category` is an enum (`ATTENDANCE | ACADEMIC | SERVICE |
  * FINE | MANUAL | STUDY`, `packages/api-sdk/src/types.ts`). It is not a status,
- * so `writing.md` §5's "render the server token" rule does not reach it, and an
- * ALL CAPS token on screen read as a database column leaking through. The
+ * so `writing.md` §5's status label map doesn't hold it, and an ALL CAPS
+ * token on screen read as a database column leaking through. The
  * leaderboard's transactions, the audit list, both category filters and the CSV
  * export all read this module, so a filter option and the row it matches can
  * never spell the same category two ways.

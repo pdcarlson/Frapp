@@ -156,7 +156,7 @@ describe("pickAndSetProfilePhoto", () => {
     await expect(run()).resolves.toMatchObject({ status: "refused" });
   });
 
-  it("shows the API's own reason when the confirm is refused", async () => {
+  it("never shows the API's field-named reason when the confirm is refused", async () => {
     granted();
     picked({ uri: "file:///me.png", fileName: "me.png", mimeType: "image/png" });
     // What a `@repo/hooks` mutation throws: the API's error body, not an Error.
@@ -167,7 +167,7 @@ describe("pickAndSetProfilePhoto", () => {
 
     await expect(run()).resolves.toEqual({
       status: "refused",
-      reason: "storage_path must be a photo in your own profile folder",
+      reason: "Try again in a moment.",
     });
   });
 

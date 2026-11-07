@@ -1,5 +1,6 @@
 "use client";
 
+import { DISCORD_ROUTES_WRITE_FOR_MEMBERS } from "@/lib/discord-error-copy";
 import { useEffect, useRef } from "react";
 import {
   useBeginDiscordConnect,
@@ -133,6 +134,7 @@ export function ConnectStep({
           getErrorMessage(
             error,
             "That Discord authorization could not be confirmed for this chapter.",
+            DISCORD_ROUTES_WRITE_FOR_MEMBERS,
           ),
         );
       });
@@ -155,6 +157,7 @@ export function ConnectStep({
         description: getErrorMessage(
           error,
           "Could not start the Discord connection.",
+          DISCORD_ROUTES_WRITE_FOR_MEMBERS,
         ),
       });
     }

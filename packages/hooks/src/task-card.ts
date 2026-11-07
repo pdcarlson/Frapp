@@ -1,3 +1,4 @@
+import { STATUS_LABELS } from "@repo/validation";
 import type { TaskStatus } from "./use-tasks";
 
 /**
@@ -21,12 +22,8 @@ import type { TaskStatus } from "./use-tasks";
  * to act on. "Done" alone was what mobile said, and it meant the opposite of
  * web's "Awaiting confirmation" to the member reading it.
  */
-export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  TODO: "To do",
-  IN_PROGRESS: "In progress",
-  COMPLETED: "Waiting on an officer",
-  OVERDUE: "Overdue",
-};
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> =
+  STATUS_LABELS.task;
 
 /** The word for a completion an officer has confirmed. */
 export const TASK_CONFIRMED_LABEL = "Confirmed";

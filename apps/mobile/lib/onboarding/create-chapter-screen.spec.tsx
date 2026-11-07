@@ -365,12 +365,18 @@ describe("chapter setup — step order", () => {
     expect(title(root)).toBe(SETUP_TITLES.find);
   });
 
-  it("keeps the officer on color with the server's words when create fails", async () => {
-    onboard.mockRejectedValue({ message: "That chapter already exists." });
+  it("keeps the officer on color, in their words, when create fails", async () => {
+    onboard.mockRejectedValue({
+      statusCode: 409,
+      message: "That chapter already exists.",
+    });
     const { root } = await render();
     await createFromMatch(root);
     expect(title(root)).toBe(SETUP_TITLES.color);
-    expect(allText(root)).toContain("That chapter already exists.");
+    expect(allText(root)).toContain(
+      "Couldn't create that chapter. Check the details and try again.",
+    );
+    expect(allText(root)).not.toContain("That chapter already exists.");
     expect(successHaptic).not.toHaveBeenCalled();
   });
 });
@@ -976,12 +982,12 @@ describe("chapter setup — invite", () => {
 
     await press(root, "Share invite");
     expect(Share.share).not.toHaveBeenCalled();
-    expect(allText(root)).toContain("Offline");
+    expect(allText(root)).toContain("Couldn't create an invite.");
 
     createInvite.mockResolvedValueOnce({ token: "tok789" });
     await press(root, "Share invite");
     expect(sharedText(0)).toContain("tok789");
-    expect(allText(root)).not.toContain("Offline");
+    expect(allText(root)).not.toContain("Couldn't create an invite.");
   });
 
   it("points to the web dashboard when the share sheet won't open", async () => {
