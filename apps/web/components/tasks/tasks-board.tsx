@@ -18,7 +18,7 @@ import {
 } from "@repo/hooks";
 import type { TaskStatus } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
-import { formatWeekdayDay } from "@repo/formatting";
+import { formatWeekdayDay, nextUpLine } from "@repo/formatting";
 import { can } from "@repo/validation";
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
@@ -47,7 +47,6 @@ import {
 import { asArray, getErrorMessage } from "@/lib/utils";
 import { taskDueClause } from "./task-due";
 import { AddTaskRow, type TaskDraft } from "./add-task-row";
-import { nextUpLine } from "./next-up";
 import { TasksPageSkeleton } from "@/components/tasks/tasks-skeleton";
 
 type Task = {

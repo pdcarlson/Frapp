@@ -29,3 +29,4 @@ export {
   formatTimestampFull,
   formatWeekdayDay,
 } from "./display";
+export { nextUpLine } from "./next-up";
