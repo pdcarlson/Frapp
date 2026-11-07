@@ -6,12 +6,12 @@ Visual truth: [`../design-system/reference/canvas-screens.dc.html`](../design-sy
 
 ## Tab bar — 4 tabs, locked
 
-| Position | Tab        | Route                     | Notes                                            |
-| -------- | ---------- | ------------------------- | ------------------------------------------------ |
-| 1        | **Chat**   | `(app)/(tabs)/index.tsx`  | Home. The app opens here — chat is home.         |
-| 2        | **Events** | `(app)/(tabs)/events.tsx` |                                                  |
-| 3        | **Tasks**  | `(app)/(tabs)/tasks.tsx`  | Absorbs points (balance + rank at top of board). |
-| 4        | **More**   | `(app)/(tabs)/more.tsx`   | Hub for everything else (below).                 |
+| Position | Tab | Route | Notes |
+| -------- | --- | ----- | ----- |
+| 1 | **Chat** | `(app)/(tabs)/index.tsx` | Home. The app opens here — chat is home. |
+| 2 | **Events** | `(app)/(tabs)/events.tsx` | |
+| 3 | **Tasks** | `(app)/(tabs)/tasks.tsx` | Absorbs points (balance + rank at top of board). |
+| 4 | **More** | `(app)/(tabs)/more.tsx` | Hub for everything else (below). |
 
 - There is **no Home tab**. This is a locked decision; do not reintroduce one.
 - Known stale reference: panel 4g ("Mobile chrome") of [`../design-system/reference/signet-design-system.dc.html`](../design-system/reference/signet-design-system.dc.html) draws a 5-tab bar. It is wrong — the Canvas header and all 23 screens lock 4 tabs, and Canvas wins per the precedence rules in [`../README.md`](../README.md).
@@ -50,19 +50,19 @@ The app groups the rows differently from the board, by owner decision on 2026-11
 
 The board's Notifications row is not in the app's More: the inbox opens from the avatar menu on Chat home ([§ Global entries outside the tab bar](#global-entries-outside-the-tab-bar), #3362).
 
-| Group                                     | Row                                 | Destination                                                | Trailing status                                                                                                                                    |
-| ----------------------------------------- | ----------------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| —                                         | Profile card (avatar, name, points) | `profile.tsx` (s15)                                        | chevron                                                                                                                                            |
-| Chapter tools                             | Study hours                         | `study.tsx` (s10)                                          | this week's total, e.g. "4.0 hrs"                                                                                                                  |
-|                                           | Service hours                       | `service-hours.tsx` (host of the s20 sheet)                | —                                                                                                                                                  |
-|                                           | Dues                                | `dues.tsx` (s11)                                           | the next bill's chip: warning hue for "Due Sept 15", destructive for "Past due Sept 15"                                                            |
-|                                           | Documents                           | `documents.tsx` (s12)                                      | —                                                                                                                                                  |
-|                                           | Directory                           | `directory.tsx` (s13)                                      | —                                                                                                                                                  |
-| You                                       | Settings                            | `preferences.tsx` (s16)                                    | —                                                                                                                                                  |
-|                                           | Switch chapter                      | `(auth)/chapter-picker.tsx`                                | the current chapter's name. When `GET /v1/chapters` is empty the slot is **Create a chapter** instead, opening `(auth)/create-chapter.tsx` (#1084) |
-| **Admin** (role-gated, captioned "Admin") | Invite members                      | `invite.tsx` ([§ Inviting members](#inviting-members))     | —                                                                                                                                                  |
-|                                           | Host check-in                       | `host-check-in.tsx` (s22)                                  | the next hostable event                                                                                                                            |
-|                                           | Adjust points                       | s23 sheet — **not rendered** until the sheet ships (#2300) | —                                                                                                                                                  |
+| Group | Row | Destination | Trailing status |
+| ----- | --- | ----------- | --------------- |
+| — | Profile card (avatar, name, points) | `profile.tsx` (s15) | chevron |
+| Chapter tools | Study hours | `study.tsx` (s10) | this week's total, e.g. "4.0 hrs" |
+| | Service hours | `service-hours.tsx` (host of the s20 sheet) | — |
+| | Dues | `dues.tsx` (s11) | the next bill's chip: warning hue for "Due Sept 15", destructive for "Past due Sept 15" |
+| | Documents | `documents.tsx` (s12) | — |
+| | Directory | `directory.tsx` (s13) | — |
+| You | Settings | `preferences.tsx` (s16) | — |
+| | Switch chapter | `(auth)/chapter-picker.tsx` | the current chapter's name. When `GET /v1/chapters` is empty the slot is **Create a chapter** instead, opening `(auth)/create-chapter.tsx` (#1084) |
+| **Admin** (role-gated, captioned "Admin") | Invite members | `invite.tsx` ([§ Inviting members](#inviting-members)) | — |
+| | Host check-in | `host-check-in.tsx` (s22) | the next hostable event |
+| | Adjust points | s23 sheet — **not rendered** until the sheet ships (#2300) | — |
 
 Study hours leaves the list while the chapter has no active study zone, and Documents leaves it for a viewer who can't upload while there are no documents; each comes back once the first one exists ([`modules.md` § Not-set-up features](../../product/modules.md#not-set-up-features)).
 
@@ -71,7 +71,7 @@ The admin section renders only for members whose role grants the underlying perm
 Two rows above are not drawn in Canvas and exist for reachability:
 
 - **Service hours** — `service-hours.tsx` is a live route hosting the s20 sheet, and without a row it would be unreachable.
-- **Switch chapter** — the only in-app entry to `(auth)/chapter-picker.tsx` (a `frapp://chapter-picker` link also opens it). The picker is deliberately _not_ forced on members whose token lacks an `active_chapter_id` claim (`apps/mobile/lib/auth-gate.ts` explains why claim-absence is not a destination), so it needs a door.
+- **Switch chapter** — the only in-app entry to `(auth)/chapter-picker.tsx` (a `frapp://chapter-picker` link also opens it). The picker is deliberately *not* forced on members whose token lacks an `active_chapter_id` claim (`apps/mobile/lib/auth-gate.ts` explains why claim-absence is not a destination), so it needs a door.
 
 **Implementation status.** Every row above except Adjust points is routed, the admin section included — its gate landed with C4 of #937. The gate is `usePermissionList()` (a thin wrapper over `useMyPermissions()`) plus `can` from `@repo/validation` (`canAny` when a gate is composite), never a bare `permissions.includes(…)`: an owner's grant is the wildcard `*`, so a membership test would hide these rows from exactly the people they exist for. Each row carries its own gate, Invite members `members:invite` and Host check-in `events:update`, and the section renders when either does (since 2026-11-06; before then the gate was `events:update` alone) — see Host check-in below.
 
@@ -88,10 +88,9 @@ The drawn s16 also carries an inline `CHAPTER · ADMIN` group, gated on `chapter
 - **Messages door and account menu** (s04, owner decision 2026-11-07, option B of the round-two Chat home redesign). Chat home's title row ends in two controls, the way Instagram, Slack, Discord and GroupMe fill that corner. First a glass speech-bubble button, **Messages**, which opens the member's direct and group messages on their own screen (`messages.tsx`, `‹ Chat`), newest conversation first, each row with its last line; it badges the number of conversations with anything unread in mention red, since a direct message addresses the member. Chat home itself then lists channels only. Second, the member's own avatar (photo, else initials on a neutral fill, never the accent), which opens a small menu: **Profile**, **Notifications** (the inbox, s14) and **Settings** (s16). The avatar carries a house-gold dot while the inbox has anything unread, and the Notifications row carries the count, both fixed house gold and never the chapter accent ([`../design-system/components.md`](../design-system/components.md) § App bar chips). The count leaves out rows whose target is chat, which the channel and Messages badges already show (`selectUnreadNonChatCount`, the app-icon badge's split). `components/chat/home-header.tsx`; `lib/chat/chat-home.spec.tsx` pins it.
 
   > **Replaced 2026-11-07.** From 2026-11-04 ([#3362](https://github.com/pdcarlson/Frapp/issues/3362)) the inbox was a bell on this row, which had replaced the board's Notifications row in More (s09). The bell folded into the avatar menu when the Messages door arrived, so the header holds two controls beside a long chapter name rather than three. The reason it left More still holds: the count belongs where the member lands. A channel's alert level stays behind the thread header's `⋯` (`notification-level-control.tsx`).
-
 - **✦ Ask pill** (s04, s06): a sparkle pill in the top bar of Chat home and Events opens the Ask sheet (s17). Ask is a global entry, not a tab — it MUST NOT become a fifth tab. Answer behavior and corpus rules: [`../../behavior/ai.md`](../../behavior/ai.md). Both halves now exist: the s06 pill landed with C7 (#998), which is also when the pill stopped navigating and started **presenting** — s17 is a sheet its host screen owns, so the pill takes an `onPress` and the host holds the `BottomSheetModal` ref ([`patterns.md`](patterns.md) § Bottom sheets). **The pill exists only in a build that has Ask.** With `EXPO_PUBLIC_ASK_ENABLED` off (the default; `apps/mobile/lib/ask/flag.ts`) neither host draws it, the sheet renders nothing, and the `ask` route redirects to Chat home, so a build without Ask shows no Ask surface anywhere.
 
-  > **Reversed 2026-09-22, owner decision ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)).** This bullet used to require the opposite: the pill "presses through even when Ask is switched off … the sheet states the reason, because a control that silently does nothing is the dead end §5 bans". The sheet then read "Ask isn't switched on for this build yet". That argument holds for a member who knows Ask is coming, but App Review is the other reader: a prominent control on the first screen after sign-in whose only function is to announce that its feature is off is the placeholder Guideline 2.1 rejects. Nor is it the dead end the old rule was guarding against. That rule bans a control that is _present_ and does nothing; a control that is not drawn has nothing to discover. The line between the two is [`../design-system/README.md`](../design-system/README.md) §5 rule 4, _disable, don't hide, for recoverable states_, which names this pill as one of the things to hide: no member can switch Ask on, and the pill has no function but Ask, so it is hidden, like a module the chapter has switched off. That is the Ask pill's case, not a rule for every build-time switch. The push primer, also gated at build time, was left open here and has since followed it: onboarding skips its notifications step when the build cannot push ([#2299](https://github.com/pdcarlson/Frapp/issues/2299), 2026-09-24; [`patterns.md`](patterns.md#push-notifications) § Push notifications). (The old text also cited `components.md` §5, which is Badges and chips; the rule was always in the design-system README.)
+  > **Reversed 2026-09-22, owner decision ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)).** This bullet used to require the opposite: the pill "presses through even when Ask is switched off … the sheet states the reason, because a control that silently does nothing is the dead end §5 bans". The sheet then read "Ask isn't switched on for this build yet". That argument holds for a member who knows Ask is coming, but App Review is the other reader: a prominent control on the first screen after sign-in whose only function is to announce that its feature is off is the placeholder Guideline 2.1 rejects. Nor is it the dead end the old rule was guarding against. That rule bans a control that is *present* and does nothing; a control that is not drawn has nothing to discover. The line between the two is [`../design-system/README.md`](../design-system/README.md) §5 rule 4, *disable, don't hide, for recoverable states*, which names this pill as one of the things to hide: no member can switch Ask on, and the pill has no function but Ask, so it is hidden, like a module the chapter has switched off. That is the Ask pill's case, not a rule for every build-time switch. The push primer, also gated at build time, was left open here and has since followed it: onboarding skips its notifications step when the build cannot push ([#2299](https://github.com/pdcarlson/Frapp/issues/2299), 2026-09-24; [`patterns.md`](patterns.md#push-notifications) § Push notifications). (The old text also cited `components.md` §5, which is Badges and chips; the rule was always in the design-system README.)
   >
   > **Why dues' Pay control does not follow.** `lib/payments/stripe.ts` gates on a build-time value too, and it still renders Pay disabled with its reason. The difference is what the control is for. Pay sits on an invoice the member really owes, so the disabled control is one route through a real task, and its caption names the other ("Ask your treasurer how to pay this invoice"). The ✦ pill has no function except Ask. Keep the two distinct, rather than "fixing" either to match the other.
   >
@@ -121,12 +120,12 @@ A screen reached from another one draws a back row above its title, as the board
 
 The row names the screen it pops to, so these are the rows a member sees arriving the usual way. Arriving another way, the row says where that way leads: `‹ Chat` over an event opened from Chat home's Up next, `‹ Notifications` over Dues opened from the inbox.
 
-| Screen                                                                                            | Usual way in                   | Row        |
-| ------------------------------------------------------------------------------------------------- | ------------------------------ | ---------- |
-| s07 Event detail                                                                                  | Events                         | `‹ Events` |
-| s10 Study hours, s11 Dues, s12 Documents, s13 Directory, s15 Profile, s16 Settings, Service hours | More                           | `‹ More`   |
-| s14 Notifications                                                                                 | The avatar menu on Chat home   | `‹ Chat`   |
-| Messages                                                                                          | The Messages door on Chat home | `‹ Chat`   |
+| Screen | Usual way in | Row |
+| ------ | ------------ | --- |
+| s07 Event detail | Events | `‹ Events` |
+| s10 Study hours, s11 Dues, s12 Documents, s13 Directory, s15 Profile, s16 Settings, Service hours | More | `‹ More` |
+| s14 Notifications | The avatar menu on Chat home | `‹ Chat` |
+| Messages | The Messages door on Chat home | `‹ Chat` |
 
 - **It pops the stack, as the swipe does, and names what it pops to** (2026-11-06, [§ Going back](#going-back)). The label is the title of the screen under it (`useScreenBelow` in `apps/mobile/lib/back-target.ts`, from `SCREEN_TITLES`), or the tab the tabs are showing. Each screen still passes a fixed label and destination (`BACK_TO_MORE`, `BACK_TO_EVENTS`, `BACK_TO_CHAT`), which the row uses only with nothing under it. Until 2026-11-06 the row always went to that fixed destination, because the screens were hidden tabs and `router.back()` could land somewhere the label didn't say; on the stack, going back always lands on what the label names.
 - **s15 draws Edit at the row's far end**, as the board does (`‹ More` … `Edit`), through `ScreenShell`'s `backAction` ([#3387](https://github.com/pdcarlson/Frapp/issues/3387)). It appears only over a loaded profile.
@@ -157,26 +156,26 @@ Launch opens the last channel the member was in, then back goes to chat home (s0
 
 The first matching row wins.
 
-| Authenticated state                                                                                                                                                                                                                                                                     | Destination                  |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
-| No chapter yet, and the `active_chapter_id` claim is still being read                                                                                                                                                                                                                   | `hold`                       |
-| Chapters list still loading (first read, its retry included, even paused offline)                                                                                                                                                                                                       | `hold`                       |
-| **Chapters read succeeded:** zero memberships                                                                                                                                                                                                                                           | `join` (s02)                 |
-| A member (in the last chapters list, even if a refetch since failed), the first Terms read still loading (its retry included)                                                                                                                                                           | `hold`                       |
-| A member (likewise) who hasn't accepted the current Terms (#2302)                                                                                                                                                                                                                       | `terms` (`(auth)/terms.tsx`) |
-| **Chapters read succeeded:** active membership has `has_completed_onboarding === false`                                                                                                                                                                                                 | `welcome` (s03)              |
-| Otherwise: onboarded, or the chapters read failed in any other case (fail open), or the first Terms read failed. A read that failed (retries spent) with no answer keeps reading as failed while it refetches, so it doesn't hold again; a failed Terms refetch keeps its cached answer | `tabs`                       |
+| Authenticated state | Destination |
+| --- | --- |
+| No chapter yet, and the `active_chapter_id` claim is still being read | `hold` |
+| Chapters list still loading (first read, its retry included, even paused offline) | `hold` |
+| **Chapters read succeeded:** zero memberships | `join` (s02) |
+| A member (in the last chapters list, even if a refetch since failed), the first Terms read still loading (its retry included) | `hold` |
+| A member (likewise) who hasn't accepted the current Terms (#2302) | `terms` (`(auth)/terms.tsx`) |
+| **Chapters read succeeded:** active membership has `has_completed_onboarding === false` | `welcome` (s03) |
+| Otherwise: onboarded, or the chapters read failed in any other case (fail open), or the first Terms read failed. A read that failed (retries spent) with no answer keeps reading as failed while it refetches, so it doesn't hold again; a failed Terms refetch keeps its cached answer | `tabs` |
 
 `terms` comes before `welcome` so a new member agrees before they can post. The server decides it (`GET /v1/users/me/legal-acceptance`), never a version compiled into the binary ([`../../behavior/legal.md`](../../behavior/legal.md#acceptance-record) § Acceptance record). While the gate reads `terms`, `/create-chapter` is also permitted, since the wizard carries the same checkbox.
 
-A missing `active_chapter_id` claim is still not a destination — see `lib/auth-gate.ts`. `(app)/_layout.tsx` is frozen and still only redirects to sign-in; walking a member _out_ of the tabs onto s02/s03 or the Terms prompt is `AppRuntime` (`lib/onboarding/use-onboarding-redirect.ts`) so that file does not have to thaw.
+A missing `active_chapter_id` claim is still not a destination — see `lib/auth-gate.ts`. `(app)/_layout.tsx` is frozen and still only redirects to sign-in; walking a member *out* of the tabs onto s02/s03 or the Terms prompt is `AppRuntime` (`lib/onboarding/use-onboarding-redirect.ts`) so that file does not have to thaw.
 
 ## Typed routes
 
 - `typedRoutes` is enabled (`experiments.typedRoutes` in `apps/mobile/app.json`), so route strings are compile-checked against the file tree **during local development**.
 - **They are not checked in CI.** The generated types live in `.expo/types` and `expo-env.d.ts`, both gitignored (`apps/mobile/.gitignore`) and written only by `expo start`. CI runs a bare `tsc`, and with those files absent `Href` widens back to `string` — a nonexistent path assigned to `Href` type-checks clean. Do not rely on the compiler to catch a bad route on a branch.
 - **`apps/mobile/lib/routes.spec.ts` is the guard that actually runs.** It walks the real route tree and resolves route literals against it, and asserts the tab bar registers exactly the four locked tabs with a backing file behind every registration. A rename that misses a call site fails there.
-- **Know what that guard does not cover.** It matches _double-quoted string literals_ at `href="…"`, `href: "…"`, `asRoute("…")`, `router.replace|push|navigate("…")`, and `pathname: "…"` — the last added with C1 (#937), whose chat list is the first screen to navigate with a param and therefore the first to use the object form `router.push({ pathname: "/chat-thread", params: { channelId } })`, which every other pattern misses. A route built from a template literal, a variable, or a prop is still invisible to it, which is why the More hub's rows navigate with literal `router.push("…")` calls rather than passing a route through a prop. It also only checks that literals resolve, never that a route has an inbound link, so an orphaned route stays green. When you add a route, add its entry point in the same change; neither gate will remind you.
+- **Know what that guard does not cover.** It matches *double-quoted string literals* at `href="…"`, `href: "…"`, `asRoute("…")`, `router.replace|push|navigate("…")`, and `pathname: "…"` — the last added with C1 (#937), whose chat list is the first screen to navigate with a param and therefore the first to use the object form `router.push({ pathname: "/chat-thread", params: { channelId } })`, which every other pattern misses. A route built from a template literal, a variable, or a prop is still invisible to it, which is why the More hub's rows navigate with literal `router.push("…")` calls rather than passing a route through a prop. It also only checks that literals resolve, never that a route has an inbound link, so an orphaned route stays green. When you add a route, add its entry point in the same change; neither gate will remind you.
 - All renames and removals in [`screens.md`](screens.md) MUST still land in **one PR** — a partial rename leaves half the app's links broken whether or not a compiler notices.
 - `asRoute()` in `apps/mobile/lib/href.ts` is the sanctioned escape hatch for static paths that typed-route generation misses. It MUST NOT be used to paper over a route the type-checker correctly rejects. Note it takes a plain `string`, so it defeats the dev-time check entirely — `routes.spec.ts` is what keeps its call sites honest.
 
@@ -199,7 +198,7 @@ The point is contention: these files are the ones every parallel slice would oth
 props-less `<NetworkBanner />` beside a new one-line `<AppRuntime />`. The first two
 are the integrator carve-out above working as intended (a dependency and its config
 plugin cannot be added any other way). The third is a real edit to a frozen file, and
-the smallest one available: the banner's props _were_ the second, independent reading
+the smallest one available: the banner's props *were* the second, independent reading
 of `expo-network` that [`../resilience/connection-state.md`](../resilience/connection-state.md) now forbids, so they
 had to go, and every future app-wide runtime hangs off `components/app-runtime.tsx`
 instead of adding another hook call here — which is the whole reason that component
@@ -220,7 +219,7 @@ camera capture is not used); `expo-document-picker`'s plugin only touches iCloud
 entitlements behind `ios.usesIcloudStorage`, which this app does not set, so it needs no
 `plugins` entry. Same integrator carve-out as the rest of this section — the three
 surfaces themselves were still unbuilt then and landed as their own slices.
-_Corrected 2026-11-05 (this sentence used to call them still unbuilt):_ all three have
+*Corrected 2026-11-05 (this sentence used to call them still unbuilt):* all three have
 since shipped as photo-library picks, s15's avatar photo (#2897), s21's upload (#3399)
 and, last, s20's proof attachment (2026-11-05), each dated below. What is still unbuilt
 is the file half of the last two: a PDF or Office file on s21 needs
@@ -232,7 +231,7 @@ whether s20's proof takes a PDF from Files too.
 later, and the declarations were not merely premature but actively harmful. The
 `photosPermission` string shipped in the binary as a purpose string for a feature that
 does not exist (Guideline 5.1.1(i)), and the `cameraPermission: false` above compiled
-to `withBlockedPermissions(['android.permission.CAMERA'])`, which _removed_ the
+to `withBlockedPermissions(['android.permission.CAMERA'])`, which *removed* the
 permission `expo-camera` contributes and wrote `tools:node="remove"` into the manifest —
 silently breaking QR check-in (`app/(tabs)/check-in.tsx`) on every Android build. The
 declining-a-permission half is the reusable lesson: a plugin option that declines a
@@ -241,9 +240,9 @@ permission nothing in the app requests. `scripts/check-mobile-native-declaration
 pins both halves in `mobile-validate`. It reads the Info.plist and AndroidManifest that
 `expo config --type introspect` resolves, rather than `app.json`: the exact iOS purpose
 strings, and no `tools:node="remove"` on a permission a screen requests. So re-adding
-this picker the same way fails CI rather than shipping. _Updated 2026-09-30 (#2343):_
+this picker the same way fails CI rather than shipping. *Updated 2026-09-30 (#2343):*
 the `app.json`-level assertions in `app.config.spec.ts` that this replaced weren't an
-airtight fence. An option left _omitted_ inherits its plugin's default purpose string,
+airtight fence. An option left *omitted* inherits its plugin's default purpose string,
 and a vendor option spelled something other than `*Permission`/`*UsageDescription`
 wasn't scanned. The introspected gate sees both, because it reads what the mods write.
 Re-add the dependency and its plugin entry in the slice that actually builds a picker
@@ -253,7 +252,7 @@ surface — which is what #1045 should have been.
 upload, `apps/mobile/lib/chat/attachment-upload.ts`, which is the importer #1045 never
 had. `expo-image-manipulator` came with it, and earns its place rather than riding
 along: iOS hands HEIC back from the photo library, `image/heic` is on neither the
-`document` allowlist nor the chat bucket, and the bucket gates the _declared_
+`document` allowlist nor the chat bucket, and the bucket gates the *declared*
 `Content-Type` and never the bytes — so declaring `image/jpeg` over HEIC would be
 accepted, stored, and then render broken. The transcode is what makes the declared
 type true. It is deliberately **conditional**: an already-allowlisted pick uploads
@@ -261,7 +260,7 @@ untouched, because re-encoding everything would flatten a transparent PNG and re
 an animated GIF to one frame, and a GIF sent as a file is a feature that already works
 through the `document` kind.
 
-_2026-11-07:_ one re-encode is not about the type. A camera photo (a JPEG, or the HEIC
+*2026-11-07:* one re-encode is not about the type. A camera photo (a JPEG, or the HEIC
 transcode) longer than 2560 px on its long edge, or a JPEG over 1.5 MB, is shrunk to
 2560 px at JPEG quality 0.8 (`PHOTO_MAX_EDGE`, `PHOTO_JPEG_QUALITY`). A full-size phone
 photo was 4 MB and up, and a 4.1 MB document photo took about 30 seconds to file. The
@@ -271,38 +270,38 @@ not to be quick. The trade is that a PUT stops if the app is suspended mid-uploa
 the caller reports as a failure to retry; a shrunk photo takes a second or two. PNG, GIF
 and WebP still upload untouched.
 
-_2026-09-30:_ the profile photo on s15 (#2897, `lib/more/profile-photo.ts`) is the
+*2026-09-30:* the profile photo on s15 (#2897, `lib/more/profile-photo.ts`) is the
 picker's second caller, through the same `pickAndUploadImage`. #2895 edited `app.json`
 as an integrator change so `photosPermission` names both uses ("set your profile photo
 and send photos in chapter chat"), with the privacy policy and the store records in the
 same PR.
 
-_2026-11-04:_ chapter setup's live step (#3351,
+*2026-11-04:* chapter setup's live step (#3351,
 `lib/onboarding/chapter-wizard/chapter-logo.ts`) is the third caller, adding the chapter's
 logo. `photosPermission` names it too ("add your chapter's logo"), as do the store records
 and the privacy policy's permissions clause. The owner ruled that policy edit non-material
 ([#3395](https://github.com/pdcarlson/Frapp/issues/3395)), so it moved only the page's pin
 (`legal.md` § Acceptance record).
 
-_2026-11-04:_ s21's document upload (#3399, `lib/more/document-upload.ts`) is the fourth
+*2026-11-04:* s21's document upload (#3399, `lib/more/document-upload.ts`) is the fourth
 caller, through `pickImage`, the pick half of the same pipeline. It needs no native
 change, so it ships over the air, but the compiled `photosPermission` text can only
 widen in a store build: #3401 does that with `expo-document-picker`, and the store
-records with it _(superseded 2026-11-05: widened on its own, see below)_. The privacy policy is a web page, so it names the new use in the
+records with it *(superseded 2026-11-05: widened on its own, see below)*. The privacy policy is a web page, so it names the new use in the
 same PR (ruled non-material by the owner, 2026-11-04).
 
-_2026-11-05:_ s20's photo proof (`lib/more/service-proof.ts`) is the fifth caller,
+*2026-11-05:* s20's photo proof (`lib/more/service-proof.ts`) is the fifth caller,
 through `pickImage` and the PUT half of the same pipeline, attaching a photo to a
 service entry. Like the fourth it needs no native change and ships over the air, and
 `photosPermission` can only widen in a store build, so
 [#3401](https://github.com/pdcarlson/Frapp/issues/3401) widens it to name service-hour
-proof alongside document uploads, with the store records _(superseded 2026-11-05: widened
-on its own, see below)_. The privacy policy's
+proof alongside document uploads, with the store records *(superseded 2026-11-05: widened
+on its own, see below)*. The privacy policy's
 permissions clause names it in the same change, moving only the page's pin on the
 #3395 precedent; whether that edit is material, and what each ruling does, is
 [`legal.md` § Acceptance record](../../behavior/legal.md#acceptance-record)'s.
 
-_2026-11-05, later:_ the purpose string was widened on its own, ahead of #3401's Files
+*2026-11-05, later:* the purpose string was widened on its own, ahead of #3401's Files
 picker, so the 0.9.1 store build carries it. `photosPermission` now names all five
 callers ("send photos in chapter chat, add photos to your chapter's documents, and attach
 photo proof to service hours"). #3401 keeps the picker and #2620.
@@ -313,7 +312,7 @@ key at all**. Each of those three is load-bearing:
 
 - `cameraPermission` is omitted rather than declined because declining is what
   compiled to `withBlockedPermissions(['android.permission.CAMERA'])` and broke QR
-  check-in. Omitting is safe — and _not_ an instance of the omitted-option hazard
+  check-in. Omitting is safe — and *not* an instance of the omitted-option hazard
   above — because `IOSConfig.Permissions.applyPermissions` resolves each key as
   `permissions[key] || infoPlist[key] || default`, so an undefined option falls
   through to whatever a plugin already wrote before it ever reaches the vendor
@@ -329,9 +328,9 @@ key at all**. Each of those three is load-bearing:
 - `photosPermission` is set explicitly rather than left to the plugin default, per the
   unread-pin note above. `scripts/check-mobile-native-declarations.mjs` pins its text
   in `IOS_PURPOSE_STRINGS` with the call that requests it, so declining it fails CI.
-  _(Moved 2026-09-30, #2343, from `app.config.spec.ts`'s `REQUESTED_AT_RUNTIME` list.)_
+  *(Moved 2026-09-30, #2343, from `app.config.spec.ts`'s `REQUESTED_AT_RUNTIME` list.)*
 
-_Corrected 2026-11-05:_ "decline what nothing requests" is not the whole rule on iOS.
+*Corrected 2026-11-05:* "decline what nothing requests" is not the whole rule on iOS.
 App Store Connect's upload scan flags some APIs a linked library references and rejects
 the binary when their key is missing (ITMS-90683), whether or not the app ever asks.
 `expo-location` links `CMMotionActivityManager` for its motion permission requester, so
@@ -352,8 +351,8 @@ surface. `scripts/ci/__tests__/frapp-mobile-permissions.test.mjs` (then
 `signet-mobile-permissions.test.mjs`; ADR-25 renamed it with the copy it locks) raised its
 prompt floor from two to three with this slice, which is exactly what that file's block on
 the floor going three to two (#2296) and back to three (#2464) said the raise was for.
-_2026-09-30 (#2343):_ the floor is gone. The introspected gate pins which prompts exist,
-and the copy lock asserts only that they name Frapp. _2026-10-07 (#3225):_ that copy lock is
+*2026-09-30 (#2343):* the floor is gone. The introspected gate pins which prompts exist,
+and the copy lock asserts only that they name Frapp. *2026-10-07 (#3225):* that copy lock is
 now a row in `scripts/ci/__tests__/frapp-naming.test.mjs`, which replaced the thirteen per-surface
 rename locks.
 
@@ -376,7 +375,7 @@ keeps spreading `config` and overriding only `extra` and `android` — `app.conf
 asserts the resolved config to pin exactly that. Recorded here rather than glossed,
 per this section's practice; the nutrition-label half stays owner work on #2196 §4.
 
-_Corrected 2026-09-24 (#2526):_ "two required-reason categories" is now four, and two
+*Corrected 2026-09-24 (#2526):* "two required-reason categories" is now four, and two
 bases above no longer hold. `CA92.1` rests on `expo-updates` as well as Stripe, so it is
 not Stripe's alone. `C617.1` also covers the timestamp reads of pods whose own manifests
 never ship: pod manifests reach the shipped file only through react-native's `pod install`
