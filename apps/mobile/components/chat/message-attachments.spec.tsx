@@ -289,6 +289,9 @@ describe("rendering", () => {
       expect(rowStyle).toContain('"width":"100%"');
       expect(rowStyle).toContain(`"maxWidth":${maxWidth}`);
       expect(rowStyle).toContain(`"aspectRatio":${aspect}`);
+      // Without the row's own height cap, Yoga sizes a portrait row's height
+      // from the full column width and leaves an empty block under the photo.
+      expect(rowStyle).toContain('"maxHeight":256');
       const image = tree.root.findAllByType(
         "ExpoImage" as unknown as React.ElementType,
       )[0]!;
