@@ -7,6 +7,7 @@ import {
 } from "@repo/chat-core/block-copy";
 import type { MaskedRefreshState } from "@repo/chat-core/blocks";
 import { cn } from "@/lib/utils";
+import { useChatDensity } from "@/lib/chat/chat-density";
 import { CHIP, CHIP_HIT_AREA } from "./chip";
 
 export interface BlockedMessageTombstoneProps {
@@ -59,6 +60,9 @@ export function BlockedMessageTombstone({
   onReload,
   showHeader,
 }: BlockedMessageTombstoneProps) {
+  // The row's gutter and run gap follow the member's density (§11 § Density),
+  // so the line stays in the body column beside the rows around it.
+  const compact = useChatDensity() === "compact";
   const hiddenFrom = senderName
     ? `hidden messages from ${senderName}`
     : "hidden messages";
@@ -66,10 +70,14 @@ export function BlockedMessageTombstone({
   return (
     <div
       role="listitem"
-      className={cn("flex gap-3 px-5 pb-0.5", showHeader ? "pt-4" : "pt-0.5")}
+      className={cn(
+        "flex px-5 pb-0.5",
+        compact ? "gap-2" : "gap-3",
+        showHeader ? (compact ? "pt-1" : "pt-4") : "pt-0.5",
+      )}
       data-blocked="true"
     >
-      <div className="w-8 shrink-0" />
+      <div className={cn("shrink-0", compact ? "w-14" : "w-8")} />
       {/*
         One muted line in the body column (§11 § What rides the row). It used
         to sit in an incoming-bubble outline; the compact layout has no bubble

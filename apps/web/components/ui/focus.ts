@@ -194,6 +194,25 @@ export const FOCUS_RING_OFFSET_WITHIN =
   "focus-within:outline-none focus-within:ring-2 focus-within:ring-accent-text focus-within:ring-offset-2 focus-within:ring-offset-popover";
 
 /**
+ * `FOCUS_RING_OFFSET`'s ring on a `<label>` card whose radio or checkbox is
+ * `sr-only` inside it, drawn only for keyboard focus.
+ *
+ * For a choice card whose **border already encodes its checked state**: the
+ * Profile chat-density cards (`components/profile/chat-density-control.tsx`).
+ * `FOCUS_RING_WITHIN` would swap that border, and `focus-within` also matches
+ * the focus a mouse click leaves on the radio, so after every pointer pick the
+ * checked card would wear the focus border instead of its checked one until
+ * focus moved. `has-[:focus-visible]` matches only when the hidden control is
+ * keyboard-focused, and the ring sits outside the border, so both states read.
+ *
+ * The offset band is `--background`, where these cards sit, as in
+ * `FOCUS_RING_OFFSET`. A host on another surface needs its own band (see
+ * `FOCUS_RING_OFFSET_WITHIN`).
+ */
+export const FOCUS_RING_OFFSET_HAS_VISIBLE =
+  "has-[:focus-visible]:outline-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent-text has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-background";
+
+/**
  * For a container that owns the focus indicator on behalf of the control inside
  * it — the chat composer, whose editable surface is a ProseMirror node inside a
  * framed well.
