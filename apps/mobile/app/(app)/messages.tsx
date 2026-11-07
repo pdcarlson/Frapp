@@ -15,6 +15,7 @@ import {
   useGetOrCreateDm,
   useLeaveChannel,
   useMemberDisplayNames,
+  useSidebarPreferences,
   useViewerUserId,
   sidebarMutedChannelIds,
 } from "@repo/hooks";
@@ -104,18 +105,23 @@ export default function MessagesScreen() {
   );
   const titleOf = (channel: ChannelSummary) =>
     displayChannelName(channel, viewerId, memberNames);
-  // Newest first; a conversation with no message yet sorts last, by name.
+  // A DM the member pinned (pins are shared with web's rail) leads, then the
+  // rest newest first; a conversation with no message yet sorts last, by name.
+  const { pinnedIds } = useSidebarPreferences();
   const listed = useMemo(() => {
     const at = (channel: ChannelSummary) =>
       latestById.get(channel.id)?.created_at ?? "";
+    const pinRank = (channel: ChannelSummary) =>
+      pinnedIds.has(channel.id) ? 0 : 1;
     return [...listedChannels(direct)].sort(
       (a, b) =>
+        pinRank(a) - pinRank(b) ||
         at(b).localeCompare(at(a)) ||
         displayChannelName(a, viewerId, memberNames).localeCompare(
           displayChannelName(b, viewerId, memberNames),
         ),
     );
-  }, [direct, latestById, viewerId, memberNames]);
+  }, [direct, latestById, pinnedIds, viewerId, memberNames]);
   const hidden = useMemo(() => hiddenChannels(direct), [direct]);
 
   function openChannel(channelId: string) {
@@ -154,7 +160,9 @@ export default function MessagesScreen() {
         </IconButton>
       }
     >
-      {channelsQuery.isPending ? (
+      {/* The order comes from the latest messages, so the list waits for
+          them (or their failure) rather than reordering under a thumb. */}
+      {channelsQuery.isPending || latestQuery.isPending ? (
         <ChannelListSkeleton />
       ) : channelsQuery.isError ? (
         <ErrorState

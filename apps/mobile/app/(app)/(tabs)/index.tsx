@@ -11,7 +11,6 @@ import {
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   arrangeChannelSidebar,
-  canHideConversation,
   foldedSectionAnnouncement,
   groupChannelsByCategory,
   NO_MATCHING_CHANNELS,
@@ -32,7 +31,6 @@ import {
   useCurrentUser,
   useNotifications,
   useEvents,
-  useLeaveChannel,
   useMemberDisplayNames,
   useSetChannelPinned,
   useSetSidebarFilter,
@@ -94,7 +92,6 @@ import {
   selectChannels,
   type ChannelSummary,
 } from "@/lib/chat/channel-list";
-import { confirmHideConversation } from "@/lib/chat/hide-conversation-prompt";
 import {
   channelsErrorCopy,
   reportChannelsRefused,
@@ -170,8 +167,6 @@ export default function ChatHomeScreen() {
   const viewerId = useViewerUserId();
   const { byId: memberNames } = useMemberDisplayNames();
 
-  const leaveChannel = useLeaveChannel();
-
   // A DM the member hid (#2303) is still in the payload, so a thread opened by
   // id keeps resolving. The list leaves it out.
   const allChannels = useMemo(
@@ -203,10 +198,6 @@ export default function ChatHomeScreen() {
       }),
     [unreadQuery.data, unreadQuery.isError],
   );
-  // The Messages door's badge: conversations with anything unread.
-  const unreadConversations = directChannels.filter(
-    (channel) => (unreadByChannelId?.get(channel.id)?.unreadCount ?? 0) > 0,
-  ).length;
   const accountMenu = useAccountMenu();
 
   // The member's own arrangement (#2877): pins, folded sections and the two
@@ -242,7 +233,6 @@ export default function ChatHomeScreen() {
   const [menuTarget, setMenuTarget] = useState<
     | (ChannelActionsMenuTarget & {
         onTogglePin: () => void;
-        onHide?: () => void;
       })
     | null
   >(null);
@@ -262,9 +252,6 @@ export default function ChatHomeScreen() {
         return;
       case "toggle-pin":
         target.onTogglePin();
-        return;
-      case "hide":
-        target.onHide?.();
         return;
       case "delete":
         Alert.alert(
@@ -344,6 +331,13 @@ export default function ChatHomeScreen() {
       }),
     [notificationPrefsQuery.data, notificationPrefsQuery.isError],
   );
+  // The Messages door's badge: conversations with anything unread. A muted
+  // DM counts too: anything unread in a DM addresses the member, and that
+  // gets past a mute, as it does on the row and for push (§ Sidebar
+  // arrangement, Hide muted).
+  const unreadConversations = directChannels.filter(
+    (channel) => (unreadByChannelId?.get(channel.id)?.unreadCount ?? 0) > 0,
+  ).length;
   const filterMenu = useChannelFilterMenu();
   const titleOf = useCallback(
     (channel: ChannelSummary) =>
@@ -428,25 +422,15 @@ export default function ChatHomeScreen() {
     const pinned = preferences.pinnedIds.has(channel.id);
     const togglePin = () =>
       setChannelPinned({ channelId: channel.id, pinned: !pinned });
-    const hide = canHideConversation(channel)
-      ? () =>
-          confirmHideConversation({
-            name,
-            run: () => leaveChannel.mutateAsync(channel.id),
-          })
-      : undefined;
-    const isDirect = isDirectChannel(channel);
     return (
       <ChannelRow
         key={channel.id}
         name={name}
-        isDirect={isDirect}
         isPinned={pinned}
         isMuted={mutedChannelIds?.has(channel.id) ?? false}
         unreadCount={counts?.unreadCount ?? 0}
         mentionCount={counts?.mentionCount ?? 0}
         onPress={() => openChannel(channel.id)}
-        onHide={hide}
         onTogglePin={togglePin}
         onLongPress={(event) => {
           pressHaptic();
@@ -468,7 +452,6 @@ export default function ChatHomeScreen() {
               surface: { copyLink: false, edit: false },
             }),
             onTogglePin: togglePin,
-            onHide: hide,
           });
         }}
       />

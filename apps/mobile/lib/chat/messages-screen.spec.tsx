@@ -26,6 +26,7 @@ const {
   unreadData,
   levelsData,
   latestData,
+  pinnedIds,
   leaveMutateAsync,
   reopenMutate,
   refetches,
@@ -53,7 +54,9 @@ const {
     }[],
   },
   levelsData: { value: [] as { channel_id: string; level: string }[] },
+  pinnedIds: { value: new Set<string>() },
   latestData: {
+    failed: false,
     answered: true,
     value: [] as {
       channel_id: string;
@@ -104,7 +107,14 @@ vi.mock("@repo/hooks", async () => {
       query(levelsData.value, refetches.levels),
     useChannelLatestMessages: () => ({
       ...query(latestData.value, refetches.latest),
+      isPending: !latestData.answered && !latestData.failed,
+      isError: latestData.failed,
       isSuccess: latestData.answered,
+    }),
+    useSidebarPreferences: () => ({
+      pinnedIds: pinnedIds.value,
+      collapsed: new Set<string>(),
+      filters: { unreadOnly: false, hideMuted: false },
     }),
     useLeaveChannel: () => ({ mutateAsync: leaveMutateAsync }),
     useGetOrCreateDm: () => ({ mutate: reopenMutate }),
@@ -215,6 +225,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   latestData.value = [];
   latestData.answered = true;
+  latestData.failed = false;
+  pinnedIds.value = new Set();
   channelsData.value = [general, dmAlice, dmBobHidden, group];
   unreadData.value = [];
   levelsData.value = [];
@@ -336,9 +348,31 @@ describe("Messages previews", () => {
     );
   });
 
-  it("holds each preview line blank until the previews answer, so no row grows", () => {
+  // The order comes from the previews, so the list waits for them rather
+  // than reordering under a thumb.
+  it("loads on the skeleton until the previews answer", () => {
     latestData.answered = false;
+    const tree = render();
+    expect(rows(tree)).toHaveLength(0);
+    expect(tree.root.findAllByType(ChannelListSkeleton)).toHaveLength(1);
+  });
+
+  it("holds each preview line blank if the previews fail, so no row grows", () => {
+    latestData.answered = false;
+    latestData.failed = true;
     expect(rows(render()).map((row) => row.props.preview)).toEqual(["", ""]);
+  });
+
+  it("puts a DM the member pinned first", () => {
+    latestData.value = [
+      latest(dmAlice.id, "2026-09-25T10:00:00Z"),
+      latest(group.id, "2026-09-25T17:00:00Z"),
+    ];
+    pinnedIds.value = new Set([dmAlice.id]);
+    expect(rows(render()).map((row) => row.props.name)).toEqual([
+      "Alice Chen",
+      "Exec board",
+    ]);
   });
 });
 
