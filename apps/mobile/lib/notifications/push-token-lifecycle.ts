@@ -15,21 +15,62 @@
  * drop the old id. `NotificationService.registerPushToken` returns the existing
  * row for the same (user, token) pair and creates a new row when the token
  * string changes, so the superseded id is never updated in place.
+ *
+ * ## Why every register POSTs, even when storage already holds the token (#2617)
+ *
+ * The stored row is this device's memory of the server, not the server. The
+ * API drops rows on its own: `DeviceNotRegistered` receipts prune them, a
+ * second account signing in on the same device takes the token over
+ * (`registerPushToken` deletes the other user's row), and an account or data
+ * wipe cascades them away. A "stored token matches, skip" shortcut never
+ * notices any of that, so push stayed dead for the install until a sign-out
+ * cleared storage. The POST is idempotent, so it runs on every register.
  */
 
-import {
-  isAlreadyRegistered,
-  narrowPushTokenRow,
-  type PushTokenRow,
-} from "./push-registration";
+import { narrowPushTokenRow, type PushTokenRow } from "./push-registration";
 
 /**
  * `getExpoPushTokenAsync` may emit `onDevicePushToken` before it resolves.
  * The listener would then re-enter this function, `getToken` again, and
- * recurse. One in-flight register is enough: a later rotation fires the
- * listener again after this returns.
+ * recurse, so a call that finds one in flight returns at once (and asks for
+ * the single follow-up below).
  */
 let registerInFlight = false;
+
+type RegisterDeps = Parameters<typeof registerCurrentPushToken>[0];
+
+/**
+ * A register asked for while one was in flight (a grant on s03 landing during
+ * the sign-in register). Run once more when the current one ends, so the grant
+ * still counts if the in-flight register fails. Only one follow-up ever runs:
+ * a re-entry from inside the follow-up is the recursion the guard exists for.
+ */
+let rerunDeps: RegisterDeps | null = null;
+let isRerun = false;
+
+const permissionGrantedListeners = new Set<() => void>();
+
+/**
+ * Subscribes to "the member just granted push permission" (#2617).
+ *
+ * The auth-edge register runs at sign-in, before the s03 primer or Settings'
+ * push switch has asked the OS. Neither platform's token call checks
+ * permission (iOS `registerForRemoteNotifications`, Android's FCM token), so
+ * that register should already have a row, but nothing proves it on a device.
+ * Registering again on the grant takes the question off the table, and costs
+ * one idempotent POST. Returns the unsubscribe.
+ */
+export function onPushPermissionGranted(listener: () => void): () => void {
+  permissionGrantedListeners.add(listener);
+  return () => {
+    permissionGrantedListeners.delete(listener);
+  };
+}
+
+/** Called by `acceptPrimer()` when the OS reports permission granted. */
+export function notifyPushPermissionGranted(): void {
+  for (const listener of permissionGrantedListeners) listener();
+}
 
 export function sessionOwnsPushRegistration(
   isAuthenticated: boolean,
@@ -47,7 +88,10 @@ export async function registerCurrentPushToken(deps: {
   writeStored: (row: PushTokenRow) => Promise<void>;
   warn?: (message: string, error?: unknown) => void;
 }): Promise<void> {
-  if (registerInFlight) return;
+  if (registerInFlight) {
+    if (!isRerun) rerunDeps = deps;
+    return;
+  }
   registerInFlight = true;
   try {
     try {
@@ -55,7 +99,7 @@ export async function registerCurrentPushToken(deps: {
       if (!token || deps.isCancelled()) return;
 
       const stored = await deps.readStored();
-      if (isAlreadyRegistered(stored, token) || deps.isCancelled()) return;
+      if (deps.isCancelled()) return;
 
       const supersededId =
         stored?.id && stored.token !== token ? stored.id : null;
@@ -89,6 +133,16 @@ export async function registerCurrentPushToken(deps: {
     }
   } finally {
     registerInFlight = false;
+    const next = rerunDeps;
+    rerunDeps = null;
+    if (next && !isRerun && !next.isCancelled()) {
+      isRerun = true;
+      try {
+        await registerCurrentPushToken(next);
+      } finally {
+        isRerun = false;
+      }
+    }
   }
 }
 
