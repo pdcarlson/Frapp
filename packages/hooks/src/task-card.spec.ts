@@ -5,7 +5,8 @@ import {
   isTaskStatus,
   readLiveTask,
   taskCardControls,
-  taskCardStatusLabel,
+  taskStatusLabel,
+  canReopenOwnTask,
   type LiveTask,
 } from "./task-card";
 import { countCheckedIn } from "./use-attendance";
@@ -59,7 +60,15 @@ describe("isTaskStatus", () => {
     for (const status of ["TODO", "IN_PROGRESS", "COMPLETED", "OVERDUE"]) {
       expect(isTaskStatus(status)).toBe(true);
     }
-    for (const other of ["ARCHIVED", "todo", "", "toString", "constructor", null, 3]) {
+    for (const other of [
+      "ARCHIVED",
+      "todo",
+      "",
+      "toString",
+      "constructor",
+      null,
+      3,
+    ]) {
       expect(isTaskStatus(other)).toBe(false);
     }
   });
@@ -98,16 +107,31 @@ describe("readLiveTask", () => {
   });
 });
 
-describe("taskCardStatusLabel", () => {
+describe("taskStatusLabel", () => {
   it("names each status, and a confirmed completion as Confirmed", () => {
-    expect(taskCardStatusLabel(live())).toBe("To do");
-    expect(taskCardStatusLabel(live({ status: "OVERDUE" }))).toBe("Overdue");
-    expect(taskCardStatusLabel(live({ status: "COMPLETED" }))).toBe(
-      "Awaiting confirmation",
+    expect(taskStatusLabel(live())).toBe("To do");
+    expect(taskStatusLabel(live({ status: "OVERDUE" }))).toBe("Overdue");
+    expect(taskStatusLabel(live({ status: "COMPLETED" }))).toBe(
+      "Waiting on an officer",
     );
     expect(
-      taskCardStatusLabel(live({ status: "COMPLETED", points_awarded: true })),
+      taskStatusLabel(live({ status: "COMPLETED", points_awarded: true })),
     ).toBe("Confirmed");
+  });
+});
+
+describe("canReopenOwnTask", () => {
+  it("is the assignee's own unconfirmed completion, and nothing else", () => {
+    const base = {
+      stored: "COMPLETED" as const,
+      pointsAwarded: false,
+      isAssignee: true,
+    };
+    expect(canReopenOwnTask(base)).toBe(true);
+    expect(canReopenOwnTask({ ...base, pointsAwarded: true })).toBe(false);
+    expect(canReopenOwnTask({ ...base, isAssignee: false })).toBe(false);
+    expect(canReopenOwnTask({ ...base, stored: "IN_PROGRESS" })).toBe(false);
+    expect(canReopenOwnTask({ ...base, stored: undefined })).toBe(false);
   });
 });
 
@@ -132,7 +156,7 @@ describe("taskCardControls", () => {
     expect(taskCardControls({ live: null, ...assigneeAdmin })).toEqual([]);
   });
 
-  it("walks the assignee through Start and Mark complete off the stored status", () => {
+  it("walks the assignee through Start and Mark done off the stored status", () => {
     expect(taskCardControls({ live: live(), ...assignee })).toEqual(["start"]);
     expect(
       taskCardControls({

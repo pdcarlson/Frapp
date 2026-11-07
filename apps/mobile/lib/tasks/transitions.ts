@@ -24,7 +24,12 @@
  * read here stays correct through an optimistic write.
  */
 
-import { actionStatus, isTaskStatus, type TaskStatus } from "@repo/hooks";
+import {
+  actionStatus,
+  canReopenOwnTask,
+  isTaskStatus,
+  type TaskStatus,
+} from "@repo/hooks";
 
 /**
  * The full write sequence one tap should send, keyed by the stored status.
@@ -85,4 +90,31 @@ export function nextTapSequence(
   if (status === undefined) return [];
   const rung = actionStatus({ status, stored_status: stored });
   return rung === undefined || rung === "OVERDUE" ? [] : LADDER[rung];
+}
+
+/**
+ * What the board's checkbox sends, both ways: the ladder to done on an open
+ * task, and back to `IN_PROGRESS` on the viewer's own completion an officer
+ * hasn't confirmed (`canReopenOwnTask`), the way a checked reminder unchecks.
+ * Empty once confirmed: points have moved, and the server refuses the reopen.
+ *
+ * Every row on the board is the viewer's own (`selectTaskRows` filters by
+ * assignee), so this takes no assignee argument.
+ */
+export function checkboxSequence(row: {
+  storedStatus: string | null;
+  displayStatus: string | null;
+  pointsAwarded: boolean;
+}): TaskStatus[] {
+  const stored = isTaskStatus(row.storedStatus) ? row.storedStatus : undefined;
+  if (
+    canReopenOwnTask({
+      stored,
+      pointsAwarded: row.pointsAwarded,
+      isAssignee: true,
+    })
+  ) {
+    return ["IN_PROGRESS"];
+  }
+  return nextTapSequence(row.storedStatus, row.displayStatus);
 }
