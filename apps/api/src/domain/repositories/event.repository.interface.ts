@@ -14,6 +14,12 @@ export interface IEventRepository {
    */
   findChildren(parentId: string, chapterId: string): Promise<Event[]>;
   create(data: Partial<Event>): Promise<Event>;
+  /**
+   * Insert several rows in one statement, so they all land or none do. A
+   * recurring series' generated occurrences go through here (#3235). An
+   * empty list writes nothing.
+   */
+  createMany(data: Partial<Event>[]): Promise<Event[]>;
   update(id: string, chapterId: string, data: Partial<Event>): Promise<Event>;
   updateMany(
     ids: string[],
