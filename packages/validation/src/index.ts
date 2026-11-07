@@ -582,6 +582,7 @@ export type {
 export {
   activeMentionQuery,
   extractMentionTokens,
+  draftWithMention,
   findMentionSpans,
   foldMentionName,
   matchMentionCandidate,
