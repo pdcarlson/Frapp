@@ -10,15 +10,16 @@
  * Why a generated file and not the package: the package's smallest English
  * file is ~540 KB of JSON, and the picker needs only the emoji, its group
  * and the words a search matches. Bundling the package would ship all of it
- * in every OTA update. Web's picker (`frimousse`) reads the same emojibase
- * data, so both clients offer the same set and the same names.
+ * in every OTA update. Web's picker (`frimousse`) reads emojibase too, so the
+ * names match; web offers newer emoji where the browser draws them.
  *
  * Emoji newer than `MAX_VERSION` are left out: a phone whose OS predates
  * them draws an empty box, and a reaction nobody can see is worse than one
  * missing from the picker.
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const MAX_VERSION = 14;
 const COMPONENT_GROUP = 2;
@@ -83,7 +84,13 @@ export const EMOJI_GROUPS: readonly EmojiGroup[] = [
 ${body}
 ];
 `;
-writeFileSync("apps/mobile/lib/chat/emoji-data.ts", out);
+writeFileSync(
+  join(
+    dirname(fileURLToPath(import.meta.url)),
+    "../apps/mobile/lib/chat/emoji-data.ts",
+  ),
+  out,
+);
 console.log(
   `wrote ${groups.reduce((n, g) => n + g.entries.length, 0)} emoji, ${out.length} bytes`,
 );

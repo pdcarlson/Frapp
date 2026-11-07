@@ -28,9 +28,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * Every emoji, for a reaction the quick row doesn't have: the long-press
  * menu's last reaction cell opens it, as Discord's and Slack's do. A search
- * field over the emoji grouped the way the system keyboard groups them. Web's
- * picker (`frimousse`) reads the same emojibase names, so a search finds the
- * same emoji on both.
+ * field over the emoji grouped the way the system keyboard groups them. The
+ * names are emojibase's, as on web's picker (`frimousse`); this one stops at
+ * Emoji 14 (`scripts/generate-emoji-data.mjs`), which web does not.
  *
  * It replaces the menu (`stackBehavior="replace"`), so closing it returns to
  * the thread. Picking closes it; the chip under the message confirms.

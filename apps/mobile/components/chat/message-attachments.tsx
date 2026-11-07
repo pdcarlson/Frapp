@@ -93,7 +93,7 @@ export interface MessageAttachmentsProps {
    */
   confirmed?: boolean;
   /**
-   * The message's own long-press (report, block — #2257), forwarded to each
+   * The message's own long-press (its actions sheet — #2257), forwarded to each
    * file. A file row is a `Pressable` that claims the touch, so without it a
    * long press on a photo would end as a tap that opens the photo, and a
    * photo-only message would have no way to reach its actions at all.

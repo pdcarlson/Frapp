@@ -710,6 +710,9 @@ export default function ChatThreadScreen() {
         canMention:
           actions.canReport &&
           channelCanPost &&
+          // An open edit owns the input; a mention would land in the hidden
+          // draft instead.
+          !staging.isEditing &&
           isBlockableSender(message.sender_id),
         canDelete: actions.canDelete,
         canReport: actions.canReport,
@@ -729,6 +732,7 @@ export default function ChatThreadScreen() {
       isMember,
       nameFor,
       refetchRoster,
+      staging.isEditing,
       viewerId,
     ],
   );
@@ -741,14 +745,13 @@ export default function ChatThreadScreen() {
   const sheetTarget = useMemo<MessageActionsTarget | null>(() => {
     if (!actionTarget) return null;
     const current = byId.get(actionTarget.messageId);
+    const groups = current && viewerId ? groupReactions(current, viewerId) : [];
     return {
       ...actionTarget,
-      reactedWith:
-        current && viewerId
-          ? groupReactions(current, viewerId)
-              .filter((group) => group.mine)
-              .map((group) => group.emoji)
-          : [],
+      reactedWith: groups
+        .filter((group) => group.mine)
+        .map((group) => group.emoji),
+      messageEmojis: groups.map((group) => group.emoji),
     };
   }, [actionTarget, byId, viewerId]);
 

@@ -193,6 +193,11 @@ export interface MessageActionsTarget {
    * open.
    */
   reactedWith: readonly string[];
+  /**
+   * Every emoji on the message, anyone's, so a pick from the picker joins an
+   * existing chip spelled without U+FE0F rather than starting a twin.
+   */
+  messageEmojis?: readonly string[];
 }
 
 /** What the report form shows once a request has come back. */
@@ -205,7 +210,10 @@ function announce(message: string) {
 
 export interface MessageActionsSheetHandle {
   present: () => void;
-  /** Closes the menu. The report form, once open, is the member's to close. */
+  /**
+   * Closes the menu and the emoji picker. The report form, once open, is the
+   * member's to close.
+   */
   dismiss: () => void;
 }
 
@@ -263,7 +271,11 @@ export const MessageActionsSheet = forwardRef<
     ref,
     () => ({
       present: () => menuRef.current?.present(),
-      dismiss: () => menuRef.current?.dismiss(),
+      // The picker too: it replaced the menu and acts on the same message.
+      dismiss: () => {
+        menuRef.current?.dismiss();
+        pickerRef.current?.dismiss();
+      },
     }),
     [],
   );
@@ -393,6 +405,7 @@ export const MessageActionsSheet = forwardRef<
       // joins that chip rather than starting a twin (`canonicalEmoji`).
       const spelled = canonicalEmoji(emoji, [
         ...(target?.reactedWith ?? []),
+        ...(target?.messageEmojis ?? []),
         ...QUICK_REACTIONS,
       ]);
       if (mine) onUnreact?.(messageId, spelled);

@@ -637,7 +637,9 @@ describe("draftWithMention", () => {
     expect(draftWithMention("hey ", "Shawn Klein")).toBe("hey @ShawnKlein ");
   });
 
-  it("writes nothing for a name with no label", () => {
+  it("writes nothing the picker wouldn't, since it would reach nobody", () => {
     expect(draftWithMention("hey", "!!")).toBeNull();
+    expect(draftWithMention("hey", "2Fast")).toBeNull();
+    expect(draftWithMention("hey", "a".repeat(65))).toBeNull();
   });
 });
