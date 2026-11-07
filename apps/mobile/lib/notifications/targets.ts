@@ -77,6 +77,16 @@ const FALLBACK: NotificationTarget = {
   pathname: NOTIFICATION_FALLBACK_PATHNAME,
 };
 
+/**
+ * The channel a chat push is about, or `null` for any other push. Reads the
+ * same `target` a tap resolves (`{ screen: "chat", channelId }`).
+ */
+export function chatChannelIdFrom(data: unknown): string | null {
+  if (!isRecord(data) || !isRecord(data.target)) return null;
+  if (str(data.target, "screen") !== "chat") return null;
+  return str(data.target, "channelId");
+}
+
 /** The in-app `notifications` row id, so a tap can mark it read. */
 export function notificationIdFrom(data: unknown): string | null {
   return isRecord(data) ? str(data, "notificationId") : null;

@@ -485,6 +485,7 @@ vi.mock("expo-notifications", () => ({
   scheduleNotificationAsync: vi.fn().mockResolvedValue("local-1"),
   cancelScheduledNotificationAsync: vi.fn().mockResolvedValue(undefined),
   dismissNotificationAsync: vi.fn().mockResolvedValue(undefined),
+  getPresentedNotificationsAsync: vi.fn().mockResolvedValue([]),
   setNotificationHandler: vi.fn(),
   setBadgeCountAsync: vi.fn().mockResolvedValue(true),
 }));

@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PushNotificationResponse } from "./push-types";
+import type {
+  PresentedNotification,
+  PushNotificationResponse,
+} from "./push-types";
 
 // The module caches its load attempt, so each test re-imports a fresh copy.
 // `vi.hoisted`, because the factory below is lifted to the top of the file —
@@ -63,6 +66,9 @@ function fakeModule() {
     scheduleNotificationAsync: vi.fn().mockResolvedValue("local-1"),
     cancelScheduledNotificationAsync: vi.fn().mockResolvedValue(undefined),
     dismissNotificationAsync: vi.fn().mockResolvedValue(undefined),
+    getPresentedNotificationsAsync: vi
+      .fn<() => Promise<PresentedNotification[]>>()
+      .mockResolvedValue([]),
     setNotificationHandler: vi.fn(),
     setBadgeCountAsync: vi.fn().mockResolvedValue(true),
   };
@@ -70,6 +76,13 @@ function fakeModule() {
 
 async function importPush() {
   return await import("./push");
+}
+
+function presented(identifier: string, data: unknown): PresentedNotification {
+  return {
+    date: 0,
+    request: { identifier, content: { title: null, body: null, data } },
+  };
 }
 
 describe("push isolation module", () => {
@@ -383,5 +396,47 @@ describe("push isolation module", () => {
 
     expect(push.addPushTokenListener(vi.fn())).toBeNull();
     expect(mod.addPushTokenListener).not.toHaveBeenCalled();
+  });
+});
+
+describe("clearReadChatNotifications", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    constantsState.executionEnvironment = "bare";
+    constantsState.projectId = "00000000-0000-4000-8000-000000000000";
+  });
+
+  it("dismisses only chat pushes for read channels", async () => {
+    const push = await importPush();
+    const mod = fakeModule();
+    push.setPushLoaderForTests(() => mod);
+    mod.getPresentedNotificationsAsync.mockResolvedValue([
+      presented("a1", { target: { screen: "chat", channelId: "read" } }),
+      presented("a2", { target: { screen: "chat", channelId: "read" } }),
+      presented("b", { target: { screen: "chat", channelId: "unread" } }),
+      presented("c", { target: { screen: "events", eventId: "read" } }),
+      presented("d", null),
+    ]);
+
+    await push.clearReadChatNotifications(new Set(["read"]));
+
+    expect(
+      mod.dismissNotificationAsync.mock.calls.map(([id]) => id).sort(),
+    ).toEqual(["a1", "a2"]);
+  });
+
+  it("leaves the tray alone when nothing is read or the read throws", async () => {
+    const push = await importPush();
+    const mod = fakeModule();
+    push.setPushLoaderForTests(() => mod);
+
+    await push.clearReadChatNotifications(new Set());
+    expect(mod.getPresentedNotificationsAsync).not.toHaveBeenCalled();
+
+    mod.getPresentedNotificationsAsync.mockRejectedValue(new Error("old build"));
+    await expect(
+      push.clearReadChatNotifications(new Set(["read"])),
+    ).resolves.toBeUndefined();
+    expect(mod.dismissNotificationAsync).not.toHaveBeenCalled();
   });
 });
