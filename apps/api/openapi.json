@@ -2801,6 +2801,46 @@
         ]
       }
     },
+    "/v1/channels/latest": {
+      "get": {
+        "operationId": "ChatController_getLatestMessages_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChannelLatestMessageDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The latest message in every channel the caller can read, for the channel list previews",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/notification-preferences": {
       "get": {
         "operationId": "ChatController_getChannelNotificationPreferences_v1",
@@ -12266,6 +12306,61 @@
           "channel_id",
           "unread_count",
           "mention_count"
+        ]
+      },
+      "ChannelLatestMessageDto": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sender_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The sender's `users.id`, or null for an imported archive message, which carries `author_name` instead."
+          },
+          "author_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "content": {
+            "type": "string",
+            "description": "The message body, cut to its first 500 characters. Empty for a card or a file-only message."
+          },
+          "kind": {
+            "type": "string",
+            "description": "The message kind (`text`, `event`, `system_audit`, ...)."
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true,
+            "description": "The audit payload, set only when `kind` is `system_audit`; null for every other kind."
+          },
+          "attachment_count": {
+            "type": "number"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id",
+          "sender_id",
+          "author_name",
+          "content",
+          "kind",
+          "payload",
+          "attachment_count",
+          "created_at"
         ]
       },
       "ChannelNotificationPreferenceDto": {

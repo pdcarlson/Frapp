@@ -134,7 +134,7 @@ as $$
 $$;
 
 comment on function public.chapter_directory_normalize(text) is
-  'The normalization chapter directory search applies to rows and queries alike: lowercase, accents folded, apostrophes dropped, & spelled out, other punctuation a space. See 20261106210000_chapter_directory_search.sql.';
+  'The normalization chapter directory search applies to rows and queries alike: lowercase, accents folded, apostrophes dropped, & spelled out, other punctuation a space. See 20261106220000_chapter_directory_search.sql.';
 
 create or replace function public.chapter_directory_search_text(
   p_org_name text,
@@ -166,7 +166,7 @@ as $$
 $$;
 
 comment on function public.chapter_directory_search_text(text, text, text, text, text, text[], text[]) is
-  'Generates chapter_directory.search_text, the normalized, space-led text search_chapter_directory matches query words against. See 20261106210000_chapter_directory_search.sql.';
+  'Generates chapter_directory.search_text, the normalized, space-led text search_chapter_directory matches query words against. See 20261106220000_chapter_directory_search.sql.';
 
 create or replace function public.chapter_directory_search_names(p_names text[])
 returns text[]
@@ -184,7 +184,7 @@ as $$
 $$;
 
 comment on function public.chapter_directory_search_names(text[]) is
-  'Generates chapter_directory''s search_*_names columns: each name normalized and space-wrapped, for the ranking in search_chapter_directory. See 20261106210000_chapter_directory_search.sql.';
+  'Generates chapter_directory''s search_*_names columns: each name normalized and space-wrapped, for the ranking in search_chapter_directory. See 20261106220000_chapter_directory_search.sql.';
 
 alter table public.chapter_directory
   add column if not exists search_text text
@@ -311,7 +311,7 @@ as $$
 $$;
 
 comment on function public.search_chapter_directory(text, text, integer) is
-  'Onboarding chapter search for GET /chapter-directory/search: word prefixes over organization, letters, chapter, school and aliases, with trigram typo tolerance. See 20261106210000_chapter_directory_search.sql.';
+  'Onboarding chapter search for GET /chapter-directory/search: word prefixes over organization, letters, chapter, school and aliases, with trigram typo tolerance. See 20261106220000_chapter_directory_search.sql.';
 
 do $$
 declare

@@ -12,7 +12,10 @@ import {
   ChatMessageDuplicateError,
 } from '#domain/repositories/chat.repository.interface';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
-import { ChatMessage } from '#domain/entities/chat.entity';
+import {
+  ChannelLatestMessage,
+  ChatMessage,
+} from '#domain/entities/chat.entity';
 import {
   LIST_QUERY_LIMIT_DEFAULT,
   LIST_QUERY_LIMIT_MAX,
@@ -105,6 +108,23 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       .maybeSingle();
     if (error) throw new SupabaseQueryError(error);
     return data;
+  }
+
+  async findLatestPerChannel(
+    chapterId: string,
+    userId: string,
+  ): Promise<ChannelLatestMessage[]> {
+    const { data, error } = await this.supabase.rpc(
+      'get_channel_latest_messages',
+      { p_chapter_id: chapterId, p_user_id: userId },
+    );
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).map((row) => ({
+      ...row,
+      // An `integer` from the RPC, but the count decides between "Attachment"
+      // and "3 attachments", so coerce rather than trust the wire type.
+      attachment_count: Number(row.attachment_count) || 0,
+    }));
   }
 
   async findByChannel(

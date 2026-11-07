@@ -20,7 +20,7 @@ export class SupabaseChapterDirectoryRepository implements IChapterDirectoryRepo
 
   /**
    * Onboarding autocomplete through `search_chapter_directory`
-   * (20261106210000_chapter_directory_search.sql): every word of the query
+   * (20261106220000_chapter_directory_search.sql): every word of the query
    * starts a word of the organization, letters, chapter, school or its
    * aliases ("phi gam rens" finds Tau Nu at Rensselaer), and a longer word
    * may be a close misspelling. The raw query travels as one opaque argument

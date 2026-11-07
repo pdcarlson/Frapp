@@ -2769,6 +2769,18 @@ alter table public.chat_message_reports
   drop column if exists reported_attachments;
 ```
 
+## Rollback Chat home previews (20261106210000)
+
+* **Migration**: `20261106210000_chat_channel_latest_messages.sql`
+
+A new read-only function, `get_channel_latest_messages`. No data changes, and nothing else in the schema refers to it. Only `GET /v1/channels/latest` calls it.
+
+Roll the API back first, or accept that the endpoint answers 500 until it is: mobile Chat home then draws its rows without previews, and nothing else breaks. Then drop the function in a new forward migration, not by hand ([§ 3) Undo one migration](#3-undo-one-migration)), shipped through Deploy production (`scope: migrations-only` is enough):
+
+```sql
+drop function if exists public.get_channel_latest_messages(uuid, uuid);
+```
+
 ## Rollback silent audit entries in unread counts (20261106193000)
 
 * **Migration**: `20261106193000_chat_unread_skip_audit_mirror.sql`
@@ -2823,9 +2835,9 @@ drop index if exists public.chat_channels_one_default_per_chapter;
 alter table public.chat_channels drop column if exists is_default;
 ```
 
-## Rollback chapter directory search (20261106210000)
+## Rollback chapter directory search (20261106220000)
 
-* **Migration**: `20261106210000_chapter_directory_search.sql`
+* **Migration**: `20261106220000_chapter_directory_search.sql`
 
 Two columns added (`chapter_directory.aliases`, `org_aliases`), generated columns swapped (`search_vector` and its GIN index out; `search_text`, `search_org_names`, `search_chapter_names` and `search_school_names` in), four functions (`chapter_directory_normalize`, `chapter_directory_search_text`, `chapter_directory_search_names`, `search_chapter_directory`), and `pg_trgm` in `extensions` if it wasn't there. No row's data changed.
 
@@ -2846,9 +2858,9 @@ create index if not exists idx_chapter_directory_search
 
 Leave the alias and `search_*` columns and the functions in place; nothing old reads them. Leave `pg_trgm`, which backwork search also uses.
 
-## Rollback chapter directory Wikipedia rows (20261106210100)
+## Rollback chapter directory Wikipedia rows (20261106220100)
 
-* **Migration**: `20261106210100_chapter_directory_wikipedia_rows.sql`
+* **Migration**: `20261106220100_chapter_directory_wikipedia_rows.sql`
 
 Rows only, in `chapter_directory`, which only the onboarding wizard reads. No schema change.
 

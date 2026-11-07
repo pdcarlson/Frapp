@@ -307,7 +307,7 @@ export const LANDMARKS = [
       rows.length === 1 && rows[0].display_name === "Frapp System",
   },
   {
-    // 20261106210000_chapter_directory_search.sql replaced the tsvector with a
+    // 20261106220000_chapter_directory_search.sql replaced the tsvector with a
     // generated `search_text` that search_chapter_directory matches word
     // prefixes against. Losing the generation would freeze it.
     name: "chapter_directory has GENERATED search_text, no search_vector",

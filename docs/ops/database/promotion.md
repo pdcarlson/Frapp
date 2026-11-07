@@ -384,7 +384,7 @@ Post-apply production checks:
   `20260907011500_chapter_directory_seed_rows.sql` only the local bootstrap scripts
   loaded them, so both hosted projects had an empty table (#840). That migration loads
   them everywhere ([promotion log](promotion-log.md#2026-09-07-chapter-directory-reference-rows-reach-every-environment-840)).
-  Since `20261106210100_chapter_directory_wikipedia_rows.sql` the CSV's rows carry
+  Since `20261106220100_chapter_directory_wikipedia_rows.sql` the CSV's rows carry
   `source = 'wikipedia'`, and after a load
   `select count(*) from chapter_directory where source = 'wikipedia'` matches the CSV's
   row count. A changed CSV ships as a **new** migration generated with
