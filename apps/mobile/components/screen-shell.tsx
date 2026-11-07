@@ -1,4 +1,11 @@
-import { ReactNode } from "react";
+import {
+  Children,
+  Fragment,
+  type ReactElement,
+  type ReactNode,
+  cloneElement,
+  isValidElement,
+} from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
@@ -127,6 +134,13 @@ export function ScreenShell({
   const clearance =
     useTabBarClearance() +
     (createAction ? CREATE_BUTTON_SIZE + FLOATING_TAB_BAR.gap : 0);
+  // The scroll view's own children, so a `StickyHeader` anywhere in the body's
+  // top level (fragments and arrays included) can be pinned. Index 0 is the
+  // title block, which scrolls away.
+  const body = flattenChildren(children);
+  const stickyHeaderIndices = body.flatMap((child, index) =>
+    child.type === StickyHeader ? [index + 1] : [],
+  );
 
   return (
     <View style={styles.frame}>
@@ -142,6 +156,9 @@ export function ScreenShell({
           <View style={styles.safeArea}>
             {back ? <PinnedBackRow back={back} trailing={backAction} /> : null}
             <ScrollView
+              stickyHeaderIndices={
+                stickyHeaderIndices.length > 0 ? stickyHeaderIndices : undefined
+              }
               contentContainerStyle={[
                 styles.content,
                 back ? { paddingTop: pinnedBackClearance(tokens) } : null,
@@ -165,7 +182,7 @@ export function ScreenShell({
                   <Text style={styles.subtitle}>{subtitle}</Text>
                 ) : null}
               </View>
-              {children}
+              {body}
             </ScrollView>
           </View>
         </SafeAreaView>
@@ -173,6 +190,48 @@ export function ScreenShell({
       {overlay?.content}
     </View>
   );
+}
+
+/**
+ * A heading that pins to the top of the screen while its part of the body
+ * scrolls under it, until the next one pushes it off (Chat home's section
+ * headings, owner 2026-11-07; `spec/behavior/chat/README.md` § Sidebar
+ * arrangement). It paints the screen's background edge to edge, so the rows
+ * passing beneath never show through. Only a top-level child of `ScreenShell`
+ * pins (a fragment or an array there counts as top level): React Native pins
+ * direct children of the scroll view, so one nested inside a `View` stays put.
+ */
+export function StickyHeader({ children }: { children: ReactNode }) {
+  const { tokens } = useFrappTheme();
+  return (
+    <View
+      style={{
+        backgroundColor: tokens.color.surface.background,
+        marginHorizontal: -tokens.spacing.lg,
+        paddingHorizontal: tokens.spacing.lg,
+      }}
+    >
+      {children}
+    </View>
+  );
+}
+
+/**
+ * The body's top-level elements with fragments opened, keyed by their path so
+ * a row keeps its identity, and its state, when a sibling comes or goes.
+ */
+function flattenChildren(children: ReactNode, prefix = ""): ReactElement[] {
+  return Children.toArray(children).flatMap((child) => {
+    if (!isValidElement(child)) return [];
+    const key = `${prefix}${String(child.key)}`;
+    if (child.type === Fragment) {
+      return flattenChildren(
+        (child.props as { children?: ReactNode }).children,
+        `${key}/`,
+      );
+    }
+    return [cloneElement(child, { key })];
+  });
 }
 
 /**
