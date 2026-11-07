@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import {
   channelStartCopy,
+  isSystemChannel,
   type ChannelStartType,
 } from "@repo/hooks/channel-start";
 import { SignetTokens } from "@repo/theme/signet";
@@ -68,7 +69,7 @@ export function ChannelStart({
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
       >
-        {channelName === "chapter-audit" && !isDirect ? (
+        {isSystemChannel({ name: channelName }) && !isDirect ? (
           <AuditGlyph
             focused
             accent={brand.accent}

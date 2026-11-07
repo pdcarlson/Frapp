@@ -77,3 +77,14 @@ export function channelStartCopy(input: ChannelStartInput): ChannelStartCopy {
 export const EDIT_CHANNEL_LABEL = "Edit channel";
 /** The same shortcut when the channel has no description yet. */
 export const ADD_CHANNEL_DESCRIPTION_LABEL = "Add a description";
+
+/**
+ * Channels the server writes to itself (`#chapter-audit`, the audit log's
+ * mirror). Both clients mark them with the audit glyph, and the row menu
+ * (`channel-row-actions.ts`) offers them no Edit or Delete.
+ */
+const SYSTEM_CHANNEL_NAMES: ReadonlySet<string> = new Set(["chapter-audit"]);
+
+export function isSystemChannel(channel: { name: string }): boolean {
+  return SYSTEM_CHANNEL_NAMES.has(channel.name);
+}

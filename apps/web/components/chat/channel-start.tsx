@@ -5,6 +5,7 @@ import {
   ADD_CHANNEL_DESCRIPTION_LABEL,
   EDIT_CHANNEL_LABEL,
   channelStartCopy,
+  isSystemChannel,
   type ChannelStartType,
 } from "@repo/hooks/channel-start";
 import { isDirectChannel } from "@repo/validation";
@@ -21,11 +22,7 @@ export interface ChannelStartChannel {
 }
 
 /** Channels the app posts to itself; the rail, header and start mark them alike. */
-const SYSTEM_CHANNEL_NAMES = new Set(["chapter-audit"]);
-
-export function isSystemChannel(channel: Pick<ChannelStartChannel, "name">) {
-  return SYSTEM_CHANNEL_NAMES.has(channel.name);
-}
+export { isSystemChannel };
 
 /**
  * Leading mark for a channel: in the header, and large in the channel start.
