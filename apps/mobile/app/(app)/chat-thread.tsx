@@ -11,6 +11,7 @@ import { goBackTo } from "@/lib/href";
 import {
   Alert,
   FlatList,
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -47,7 +48,7 @@ import {
   useRequestChatUploadUrl,
   useSetChannelNotificationLevel,
 } from "@repo/hooks";
-import { can } from "@repo/validation";
+import { can, draftWithMention } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ChatComposer } from "@/components/chat/chat-composer";
@@ -111,6 +112,7 @@ import {
   ChannelMemberSheet,
   ChannelMembersButton,
 } from "@/components/chat/channel-member-sheet";
+import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useComposerStaging } from "@/lib/chat/use-composer-staging";
 import {
@@ -598,6 +600,19 @@ export default function ChatThreadScreen() {
     [remove],
   );
 
+  // The menu's Mention: `@Name ` at the end of the draft, the body the `@`
+  // picker would have written.
+  const handleMention = useCallback(
+    (messageId: string) => {
+      const message = byId.get(messageId);
+      if (!message) return;
+      const name = resolveAuthorName(message, nameFor);
+      const next = name ? draftWithMention(draft, name) : null;
+      if (next !== null) handleChangeText(next);
+    },
+    [byId, draft, handleChangeText, nameFor],
+  );
+
   // A reaction chip's tap and the actions sheet's quick row, through the same
   // optimistic calls; a refusal lands in the reaction banner. Each tap ticks
   // once (`spec/ui/mobile/README.md` § Native-feel rules), here where the
@@ -663,6 +678,24 @@ export default function ChatThreadScreen() {
   useEffect(() => {
     if (!showMemberList) memberSheetRef.current?.dismiss();
   }, [showMemberList]);
+  // A member's profile, opened by tapping their name, photo or an `@` chip:
+  // the directory's sheet, so a profile reads the same from every door. It
+  // closes on blur for the same reason the member list does.
+  const profileSheetRef = useRef<BottomSheetModal>(null);
+  const [profileTarget, setProfileTarget] = useState<{ userId: string } | null>(
+    null,
+  );
+  const openProfile = useCallback((userId: string) => {
+    Keyboard.dismiss();
+    setProfileTarget({ userId });
+    profileSheetRef.current?.present();
+  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      if (!channelId) return;
+      return () => profileSheetRef.current?.dismiss();
+    }, [channelId]),
+  );
   const [actionTarget, setActionTarget] = useState<Omit<
     MessageActionsTarget,
     "reactedWith"
@@ -692,6 +725,15 @@ export default function ChatThreadScreen() {
         copyText: copyableText(message),
         canReply: actions.canReply,
         canEdit: actions.canEdit,
+        // Someone else's message from a real member, where the viewer can
+        // post: the system actor and an imported author have nobody to ping.
+        canMention:
+          actions.canReport &&
+          channelCanPost &&
+          // An open edit owns the input; a mention would land in the hidden
+          // draft instead.
+          !staging.isEditing &&
+          isBlockableSender(message.sender_id),
         canDelete: actions.canDelete,
         canReport: actions.canReport,
         blockUserId: actions.canBlock ? message.sender_id : null,
@@ -710,6 +752,7 @@ export default function ChatThreadScreen() {
       isMember,
       nameFor,
       refetchRoster,
+      staging.isEditing,
       viewerId,
     ],
   );
@@ -722,14 +765,13 @@ export default function ChatThreadScreen() {
   const sheetTarget = useMemo<MessageActionsTarget | null>(() => {
     if (!actionTarget) return null;
     const current = byId.get(actionTarget.messageId);
+    const groups = current && viewerId ? groupReactions(current, viewerId) : [];
     return {
       ...actionTarget,
-      reactedWith:
-        current && viewerId
-          ? groupReactions(current, viewerId)
-              .filter((group) => group.mine)
-              .map((group) => group.emoji)
-          : [],
+      reactedWith: groups
+        .filter((group) => group.mine)
+        .map((group) => group.emoji),
+      messageEmojis: groups.map((group) => group.emoji),
     };
   }, [actionTarget, byId, viewerId]);
 
@@ -776,6 +818,7 @@ export default function ChatThreadScreen() {
           onUnreact={handleUnreact}
           onOpenActions={openActions}
           onJumpToMessage={jumpToMessage}
+          onOpenProfile={openProfile}
           onUnblock={handleUnblock}
           maskedRefresh={maskedRefresh}
           onReload={handleReload}
@@ -798,6 +841,7 @@ export default function ChatThreadScreen() {
       layout,
       blockState,
       openActions,
+      openProfile,
       jumpToMessage,
       handleUnblock,
       maskedRefresh,
@@ -1260,7 +1304,19 @@ export default function ChatThreadScreen() {
           }}
         />
       </KeyboardAvoidingArea>
-      <ChannelMemberSheet ref={memberSheetRef} channelId={channelId ?? null} />
+      <ChannelMemberSheet
+        ref={memberSheetRef}
+        channelId={channelId ?? null}
+        onOpenProfile={openProfile}
+      />
+      <MemberDetailSheet
+        ref={profileSheetRef}
+        member={profileTarget}
+        // Cleared on close, which is what tells a DM request still in flight
+        // that the member backed out (the sheet's stale-DM guard).
+        onDismiss={() => setProfileTarget(null)}
+        openChannelId={channelId ?? null}
+      />
       <MessageActionsSheet
         ref={actionsSheetRef}
         target={sheetTarget}
@@ -1268,6 +1324,7 @@ export default function ChatThreadScreen() {
         onReply={staging.startReply}
         onEdit={staging.startEdit}
         onDelete={handleDelete}
+        onMention={handleMention}
         onReact={handleReact}
         onUnreact={handleUnreact}
       />
