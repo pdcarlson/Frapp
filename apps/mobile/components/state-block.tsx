@@ -497,13 +497,6 @@ function createStyles(tokens: SignetTokens) {
       // The sanctioned semantic border, and the only one in the family.
       borderColor: tint(tokens.color.semantic.destructive, 0.28),
     },
-    tile: {
-      width: tokens.touch.minimum,
-      height: tokens.touch.minimum,
-      borderRadius: tokens.radius.card,
-      alignItems: "center",
-      justifyContent: "center",
-    },
     errorTile: {
       width: tokens.touch.minimum,
       height: tokens.touch.minimum,
@@ -512,9 +505,6 @@ function createStyles(tokens: SignetTokens) {
       justifyContent: "center",
       // `tint`'s default alpha is 0.13, which is the danger fill §10 specifies.
       backgroundColor: tint(tokens.color.semantic.destructive),
-    },
-    glyph: {
-      ...typeRole(tokens.typography.role.title),
     },
     errorGlyph: {
       ...typeRole(tokens.typography.role.title),
@@ -551,12 +541,6 @@ function createStyles(tokens: SignetTokens) {
     retryText: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
-    },
-    actionText: {
-      ...typeRole({
-        ...tokens.typography.role.label,
-        weight: tokens.typography.weight.bold,
-      }),
     },
     pressed: {
       opacity: 0.7,
