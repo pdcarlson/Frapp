@@ -75,8 +75,8 @@ describe("analyticsRouteTemplate", () => {
   });
 
   it("keeps route groups, templated params, and a trailing slash", () => {
-    expect(analyticsRouteTemplate("/(tabs)/chat-thread")).toBe(
-      "/(tabs)/chat-thread",
+    expect(analyticsRouteTemplate("/(app)/chat-thread")).toBe(
+      "/(app)/chat-thread",
     );
     expect(analyticsRouteTemplate("/events/[id]")).toBe("/events/[id]");
     expect(analyticsRouteTemplate("/events/")).toBe("/events/");

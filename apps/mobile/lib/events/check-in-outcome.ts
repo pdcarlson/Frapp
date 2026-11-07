@@ -9,7 +9,7 @@ import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 
 /**
  * What a member is told after a self check-in, on both surfaces that make one:
- * s18's scanner (`app/(tabs)/check-in.tsx`) and the chat event card
+ * s18's scanner (`app/(app)/check-in.tsx`) and the chat event card
  * (`components/chat/event-card.tsx`). One copy, so the two can't drift into
  * telling the same member two different things about the same refusal.
  */

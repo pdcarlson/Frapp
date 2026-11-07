@@ -282,7 +282,7 @@ export function UpNextStrip({
           accessibilityRole="button"
           accessibilityLabel={`${task.title}, ${formatDueDate(task.due_date, at)}`}
           accessibilityHint="Open the task board."
-          onPress={() => router.push("/tasks")}
+          onPress={() => router.navigate("/tasks")}
           style={styles.row}
         >
           <TasksGlyph

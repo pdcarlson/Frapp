@@ -216,7 +216,7 @@ export function selectOpenInvoicesByDueDate(rows: InvoiceRow[]): InvoiceRow[] {
  * The invoice a "Pay now" tap settles: a PaymentIntent is per invoice, so only
  * one can be paid at a time, and the earliest due date is the one that turns
  * overdue next. While a payment is confirming, the Dues card stays on that
- * invoice instead (`app/(tabs)/dues.tsx`), which is the one this named when
+ * invoice instead (`app/(app)/dues.tsx`), which is the one this named when
  * the member tapped Pay.
  *
  * Exported rather than inlined because two surfaces need the same rule — the

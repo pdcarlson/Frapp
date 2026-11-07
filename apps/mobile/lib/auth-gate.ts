@@ -1,7 +1,7 @@
 /**
  * The single decision behind both routing gates.
  *
- * `(auth)/_layout.tsx` and `(tabs)/_layout.tsx` have to agree exactly, because
+ * `(auth)/_layout.tsx` and `(app)/_layout.tsx` have to agree exactly, because
  * each redirects into the other's territory: if both ever decide to redirect
  * for the same state, the app ping-pongs between them forever. Keeping the
  * conditionals inline in two files made that agreement a matter of remembering
@@ -86,7 +86,7 @@ export type AuthGateInput = {
   chapterId: string | null;
   isChapterResolving: boolean;
   /**
-   * Optional because `(tabs)/_layout.tsx` is frozen and still calls this with
+   * Optional because `(app)/_layout.tsx` is frozen and still calls this with
    * only the session. Missing values behave as `idle` / `[]` — fail *open* to
    * tabs — so that layout never blanks. `AppRuntime` is what walks a member
    * *out* of the tabs onto join/welcome once `GET /v1/chapters` is in.

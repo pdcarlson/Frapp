@@ -191,8 +191,10 @@ export default function StudyScreen() {
    * Clear the latch whenever the member comes back to this screen.
    *
    * Without this the refusal is permanent for the life of the process, and a
-   * tab screen is never unmounted (`tasks.tsx` says the same: "A tab is never
-   * unmounted and the JS context survives days of backgrounding"). So an
+   * screen can stay mounted for days (`tasks.tsx` says the same: "A tab is
+   * never unmounted and the JS context survives days of backgrounding"; Study
+   * is pushed over the tabs, but stays up as long while the app is
+   * backgrounded on it). So an
    * officer could resolve the chapter's billing seconds later and this member
    * would still find Start greyed out until they force-quit the app — a
    * member-facing dead end, and the same "dead until a force-quit" defect that
@@ -301,7 +303,8 @@ export default function StudyScreen() {
    * that still says on is stale. Refetch it so the module-off screen takes
    * over (#2718); otherwise a foregrounded app keeps the card, its refused End
    * and a "that didn't save" line for as long as the 5-minute cached payload
-   * goes unrefreshed, which on a never-unmounted tab can be indefinitely. The
+   * goes unrefreshed, which on a screen left up in the background can be
+   * indefinitely. The
    * reverse, a write that succeeds under a payload saying off, is
    * `applyResponse`'s. With no payload at all (the query is disabled without
    * an `active_chapter_id` claim, and `hoursEnabled` failed open) there is

@@ -4,6 +4,8 @@ import { useRouter, type Href } from "expo-router";
 import { SignetTokens } from "@repo/theme/signet";
 import { BackGlyph } from "@/components/control-glyphs";
 import { GlassSurface } from "@/components/glass-surface";
+import { useScreenBelow } from "@/lib/back-target";
+import { goBackTo } from "@/lib/href";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -26,7 +28,13 @@ export function pinnedBackClearance(tokens: SignetTokens): number {
   return tokens.spacing.xs + BACK_ROW_HEIGHT + tokens.spacing.sm;
 }
 
-/** Where a back row leads: the name it shows, and the route it opens. */
+/**
+ * Where a back row leads when nothing is under its screen (a cold link with
+ * no stack behind it, in practice never, since the tabs are anchored under
+ * every pushed screen): the name it shows, and the route it opens. With a
+ * screen under it, the row pops to that screen and names it instead
+ * (`lib/back-target.ts`).
+ */
 export type BackTarget = {
   /** The destination's name, as its tab or screen title reads ("More"). */
   label: string;
@@ -76,13 +84,14 @@ type BackRowProps = {
  * screen reached from another one (s07, s10–s16, `canvas-screens.dc.html`).
  * `spec/ui/mobile/navigation.md` § Back rows owns the rule.
  *
- * It goes to a fixed destination rather than `router.back()`, as s05's `‹`
- * does (`app/(tabs)/chat-thread.tsx`). These routes are hidden tabs, so a
- * notification tap or a `frapp://` link can open one with nothing behind it,
- * and the row must still land where its label says. A label that names the
- * place it goes is also one a member can trust: `back()` from a screen opened
- * off Chat home would land on Chat under a row that says More. Android's back
- * button keeps the history behavior, which is where a member expects it.
+ * It goes back through the stack, exactly as the iOS edge swipe and Android's
+ * back do, and names the screen it returns to (`useScreenBelow`): `‹ Events`
+ * over an event opened from Events, `‹ Chat` over the same event opened from
+ * Chat home's Up next. A row that went somewhere other than the swipe would
+ * be two answers to "back", and a label that names where it goes is one a
+ * member can trust. The `label` and `href` a screen passes are the fallback
+ * for a screen with nothing under it, which the anchored tabs make rare
+ * (`spec/ui/mobile/navigation.md` § Going back).
  *
  * A glass capsule, `‹ Events` in a bubble of its own (owner ask 2026-11-05,
  * `spec/ui/mobile/navigation.md` § Back rows). `ScreenShell` pins it at the
@@ -136,6 +145,11 @@ function BackRowView({
   const router = useRouter();
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  // A step-back row (`onPress`) steps inside its own route; only a row that
+  // leaves the screen goes back through the stack.
+  const below = useScreenBelow();
+  const popsTo = onPress ? null : below;
+  const shown = popsTo ? popsTo.title : label;
   // Held state drives the capsule's lift. The glass, not the target, is what
   // lifts, so the feedback keeps the capsule's shape on every platform rather
   // than an Android ripple filling the 44pt rectangle around it.
@@ -145,14 +159,15 @@ function BackRowView({
     <View style={styles.row} testID="back-row">
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={accessibilityLabel ?? `Back to ${label}`}
+        accessibilityLabel={accessibilityLabel ?? `Back to ${shown}`}
         accessibilityState={disabled ? { disabled } : undefined}
         disabled={disabled}
         onPressIn={() => setHeld(true)}
         onPressOut={() => setHeld(false)}
         onPress={() => {
           if (onPress) onPress();
-          else if (href) router.navigate(href);
+          else if (popsTo) popsTo.goBack();
+          else if (href) goBackTo(router, href);
         }}
         style={styles.target}
       >
@@ -165,7 +180,7 @@ function BackRowView({
         >
           <View style={styles.content}>
             <BackGlyph color={color} size={18} />
-            <Text style={styles.text}>{label}</Text>
+            <Text style={styles.text}>{shown}</Text>
           </View>
         </GlassSurface>
       </Pressable>

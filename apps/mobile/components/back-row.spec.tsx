@@ -8,6 +8,7 @@ import { signetDarkTokens } from "@repo/theme/signet";
 import { GlassSurface } from "@/components/glass-surface";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
+import { stackScreen } from "@/test/stack-screen";
 // A purple stand-in, so a row painted house gold fails instead of passing.
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#CB9FFF" }),
@@ -21,9 +22,9 @@ import {
 } from "./back-row";
 
 /**
- * #3022. The row the board draws above the title on s07 and s10–s16. It goes
- * to a fixed destination, so a screen opened from a notification or a link,
- * with no history behind it, still lands where the label says.
+ * #3022. The row the board draws above the title on s07 and s10–s16. On a
+ * pushed screen it pops the stack, as the edge swipe does, and names what it
+ * pops to; with nothing under it, it goes to its fixed destination.
  */
 
 function render(element: React.ReactElement): ReactTestRenderer {
@@ -50,10 +51,49 @@ describe("BackRow (#3022)", () => {
     ["More", BACK_TO_MORE, "/more"],
     ["Events", BACK_TO_EVENTS, "/events"],
     ["Chat", BACK_TO_CHAT, "/"],
-  ])("‹ %s goes to its tab", (label, target, href) => {
+  ])("‹ %s goes to its tab with nothing under the screen", (label, target, href) => {
     const tree = render(<BackRow {...target} />);
 
     expectBackRow(tree, label, href);
+  });
+
+  it.each([
+    ["Events", { name: "(tabs)", state: { index: 1, routes: [{ name: "index" }, { name: "events" }] } }],
+    ["Chat", { name: "(tabs)", state: { index: 0, routes: [{ name: "index" }] } }],
+    ["Chat", { name: "(tabs)" }],
+    ["More", { name: "(tabs)", params: { screen: "more" } }],
+    ["Notifications", { name: "notifications" }],
+  ])("pops to the screen under it, named ‹ %s", (label, below) => {
+    const { element, navigation } = stackScreen(
+      [{ name: "(tabs)" }, below].slice(below.name === "(tabs)" ? 1 : 0),
+      // The label it passes is only the fallback.
+      <BackRow {...BACK_TO_EVENTS} />,
+    );
+    const tree = render(element);
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "button",
+    );
+
+    expect(row.props.accessibilityLabel).toBe(`Back to ${label}`);
+    expect(labelText(tree).props.children).toBe(label);
+    act(() => row.props.onPress());
+    expect(navigation.goBack).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(useRouter)().navigate).not.toHaveBeenCalled();
+  });
+
+  it("keeps a step-back row on its own step, whatever is under the screen", () => {
+    const onPress = vi.fn();
+    const { element, navigation } = stackScreen(
+      [{ name: "(tabs)" }],
+      <BackRow label="Back" onPress={onPress} house />,
+    );
+    const tree = render(element);
+    expect(labelText(tree).props.children).toBe("Back");
+    act(() => tree.root.findByProps({ accessibilityRole: "button" }).props.onPress());
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(navigation.goBack).not.toHaveBeenCalled();
   });
 
   it("draws its arrow in the chapter accent, not house gold", () => {

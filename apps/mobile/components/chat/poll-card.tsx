@@ -81,7 +81,7 @@ export function PollCard(props: PollCardProps) {
   // A card vote is a Polls write, and the server refuses it while Polls is off
   // (#2993). The gate is mirrored here so the member sees that before tapping
   // (#3012). It reads the member view (`useCurrentChapter`'s
-  // `enabled_modules`, as `app/(tabs)/study.tsx` does), never the officer-only
+  // `enabled_modules`, as `app/(app)/study.tsx` does), never the officer-only
   // config, and fails closed until that read answers, saying whether it is
   // still running or needs a Retry (`pollsGateOf`, shared with web). A missing
   // `polls` key is on.

@@ -4,7 +4,7 @@
  *
  * Web does this in a `ChatProvider` mounted in its tree
  * (`apps/web/lib/chat/chat-provider.tsx`). Mobile cannot: `app/_layout.tsx` is
- * one of the seven frozen hotspot files (`spec/ui/mobile/navigation.md`
+ * one of the eight frozen hotspot files (`spec/ui/mobile/navigation.md`
  * § Hotspot freeze), and a screen slice only adds files. So the wiring is a
  * hook the chat screens call instead of a provider above them.
  *

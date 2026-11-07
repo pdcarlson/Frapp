@@ -16,7 +16,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * can see where a link goes. In setup the tile's gold is the house's, not the
  * chapter's: setup is drawn before the founder is inside the chapter
  * (`spec/behavior/branding.md`). The Invite members screen
- * (`app/(tabs)/invite.tsx`) is inside one, so it passes the chapter accent as
+ * (`app/(app)/invite.tsx`) is inside one, so it passes the chapter accent as
  * `tile`, and its Share invite button as `action`, which sits between the
  * card and the list so the list can grow without pushing the button away.
  */

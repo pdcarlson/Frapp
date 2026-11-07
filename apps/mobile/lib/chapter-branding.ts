@@ -84,7 +84,7 @@ function readString(
  * The role this value plays is `accent-text` — "accent-colored text and icons
  * on neutral or subtle-bg surfaces" (`accent-engine.md` §2). Almost every
  * consumer treats it as a foreground: the active tab tint
- * (`app/(tabs)/_layout.tsx`), the state-block glyph, chip labels.
+ * (`app/(app)/(tabs)/_layout.tsx`), the state-block glyph, chip labels.
  *
  * `accent-primary` (step 9) is the *solid fill* role, and §8 holds it only to
  * the 3:1 non-text floor, not the 4.5:1 text floor. Painting it as a

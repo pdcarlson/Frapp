@@ -6,6 +6,8 @@ import {
   useLocalSearchParams,
   useRouter,
 } from "expo-router";
+import { useScreenBelow } from "@/lib/back-target";
+import { goBackTo } from "@/lib/href";
 import {
   Alert,
   FlatList,
@@ -166,6 +168,7 @@ export default function ChatThreadScreen() {
   const brand = useChapterBranding();
   const styles = createStyles(tokens);
   const router = useRouter();
+  const below = useScreenBelow();
 
   // Params arrive as `string | string[]`; a repeated query key would otherwise
   // silently produce an array where a channel id is expected.
@@ -339,10 +342,10 @@ export default function ChatThreadScreen() {
   // This is a **focus** effect, not a mount effect, and it stamps on the way out
   // as well as the way in. Both halves are load-bearing:
   //
-  //  - `chat-thread` is a `Tabs.Screen`, so React Navigation keeps it mounted
-  //    after first focus. A mount effect keyed on `channelId` would never re-run
-  //    when the member leaves to Chat and taps the same channel again, leaving
-  //    its badge stuck until they visited some *other* channel.
+  //  - The thread stays mounted under a screen pushed over it (an event opened
+  //    from a card) and while the app is in the background. A mount effect
+  //    would not re-run when the member comes back to it, and a badge read
+  //    meanwhile would stay stuck.
   //  - Messages arriving over realtime while the thread is open are read as they
   //    land, but the cursor was stamped before them. Stamping again on blur
   //    covers that burst in one request, where re-stamping per message would be
@@ -359,7 +362,7 @@ export default function ChatThreadScreen() {
     }, [channelId, markReadMutate]),
   );
   // The channel the next launch opens (`lib/chat/last-channel.ts`). On focus,
-  // like the read mark, because this screen stays mounted between visits.
+  // like the read mark, for the read mark's reason.
   useFocusEffect(
     useCallback(() => {
       if (channelId && viewerId) {
@@ -396,8 +399,9 @@ export default function ChatThreadScreen() {
   /**
    * The channel this screen is currently showing.
    *
-   * `chat-thread` is a `Tabs.Screen` that React Navigation keeps mounted, so
-   * `channelId` changes *in place* — the component does not remount. An upload
+   * `channelId` can change *in place*: a navigation that hands this screen
+   * new params doesn't remount it (it was a tab until 2026-11-06, which did
+   * that on every channel switch). An upload
    * started in one channel can therefore resolve while another is on screen,
    * and the claim it produces is bound to the channel it was minted under
    * (`validateAttachmentInputs` re-checks the path prefix server-side). Staging
@@ -926,11 +930,10 @@ export default function ChatThreadScreen() {
           }
         >
           {/*
-          The rewrite dropped the old screen's "Back to chat overview" link, and
-          a tab-registered route gets no header back button of its own — on iOS
-          that left no way out but the Chat tab. The Canvas draws a `‹` here
-          (s05, canvas-screens.dc.html:163), so this is the specced affordance
-          rather than a reinstated stopgap.
+          The Canvas draws a `‹` here (s05, canvas-screens.dc.html:163). It is
+          the drawn twin of the iOS edge swipe and Android's back, which pop
+          the thread off the stack (`spec/ui/mobile/navigation.md` § Going
+          back).
         */}
           <View
             style={styles.header}
@@ -941,9 +944,12 @@ export default function ChatThreadScreen() {
           >
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Back to chat"
+              accessibilityLabel={`Back to ${below?.title.toLowerCase() ?? "chat"}`}
               hitSlop={12}
-              onPress={() => router.push("/")}
+              // Pops the thread, as the edge swipe does, to whatever opened
+              // it (Chat home, a member's card, a notification), and to Chat
+              // home when nothing is under it (`lib/back-target.ts`).
+              onPress={() => (below ? below.goBack() : goBackTo(router, "/"))}
               style={({ pressed }) => (pressed ? styles.pressed : null)}
             >
               <BackGlyph color={brand.accent} />

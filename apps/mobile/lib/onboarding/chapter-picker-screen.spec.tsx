@@ -13,7 +13,7 @@ import { flatStyle } from "@/test/flat-style";
 import { drawnText } from "@/test/screen-text";
 
 /**
- * The chapter picker, opened from More (`app/(tabs)/more.tsx`). It draws
+ * The chapter picker, opened from More (`app/(app)/(tabs)/more.tsx`). It draws
  * `‹ More` like every screen opened from a More row (navigation.md § Back
  * rows), but only when More's row says it opened it: a link has sign-in
  * anchored under it, so "something to go back to" doesn't mean More. The row
