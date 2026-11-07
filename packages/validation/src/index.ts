@@ -574,14 +574,19 @@ export {
   activeMentionQuery,
   extractMentionTokens,
   findMentionSpans,
+  foldMentionName,
   matchMentionCandidate,
   mentionLabelFor,
+  mentionPickerEntries,
   mentionSuggestions,
   resolveMentions,
 } from "./mentions";
 export type {
   ActiveMentionQuery,
   MentionCandidate,
+  MentionPickerEntry,
+  MentionRole,
+  MentionRoleOption,
   MentionSpan,
   MentionSuggestion,
 } from "./mentions";

@@ -36,4 +36,10 @@ export interface ChapterMemberIdentity {
   /** `users.id` — the application id, not `supabase_auth_id`. */
   user_id: string;
   display_name: string;
+  /**
+   * `members.role_ids`, so `@`-resolution can expand a role mention to its
+   * holders without a second read (2026-11-06). Empty when the column held
+   * anything but strings.
+   */
+  role_ids: string[];
 }
