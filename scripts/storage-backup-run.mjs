@@ -45,9 +45,11 @@ import {
   assertSafeObjectPath,
   assertStorageBackupTarget,
   backupKey,
+  budgetStopVerdict,
   checkDeletionSanity,
   downloadObject,
   isMissingObjectError,
+  isRehearsalCanary,
   knownGapIds,
   listBucketObjects,
   MAX_TRANSFER_FAILURES,
@@ -64,6 +66,7 @@ import {
   uploadObject,
   uploadOrder,
   verifyOffsiteMirror,
+  withRetry,
 } from "./storage-backup.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -303,9 +306,20 @@ async function runBackup(opts) {
     // Before any write. A short listing looks exactly like a mass deletion from
     // in here, and the difference only becomes visible once retention starts
     // pruning -- by which point the run has looked green for a month.
-    const sanity = checkDeletionSanity({ manifest, tombstone: plan.tombstone });
+    const sanity = checkDeletionSanity({
+      manifest,
+      tombstone: plan.tombstone,
+      listed: remote.filter((o) => !isRehearsalCanary(o)).length,
+    });
     if (!sanity.ok && process.env.STORAGE_BACKUP_ALLOW_MASS_DELETE !== "true") {
       throw new Error(sanity.reason);
+    }
+    if (sanity.turnover && sanity.ratio > 0.5) {
+      console.log(
+        `${sanity.deleting} of ${sanity.live} backed-up object(s) left Storage, and Storage now lists at least as many ` +
+          "as the mirror held, so this reads as content replaced (an import run again), not a short listing. " +
+          "The old copies stay offsite as tombstones for the retention window.",
+      );
     }
     if (!sanity.ok) {
       console.log(`STORAGE_BACKUP_ALLOW_MASS_DELETE=true -- proceeding with ${sanity.deleting} deletions.`);
@@ -336,7 +350,7 @@ async function runBackup(opts) {
     const uploadRun = await runPool(uploadOrder(plan), pool(), async (obj, slot) => {
       let body;
       try {
-        body = await downloadObject({ supabaseUrl, serviceKey, bucket: obj.bucket, path: obj.path });
+        body = await withRetry(() => downloadObject({ supabaseUrl, serviceKey, bucket: obj.bucket, path: obj.path }));
       } catch (err) {
         // A listing that fails too counts as "still listed": the download
         // failure is reported rather than assumed away.
@@ -382,7 +396,21 @@ async function runBackup(opts) {
     const notStarted = new Set(
       [...plan.upload, ...plan.prune].map(objectId).filter((id) => !uploaded.has(id) && !pruned.has(id) && !vanished.has(id) && !failed.has(id)),
     );
-    const next = settleManifest({ plan, previous: manifest, uploaded, pruned, deferred: notStarted, vanished });
+    // Stopped by the budget with work left: converging if it copied anything
+    // (`budgetStopVerdict`). The cap is a failure whatever was copied.
+    const leftUploads = plan.upload.filter((o) => notStarted.has(objectId(o))).length;
+    const leftPrunes = plan.prune.filter((o) => notStarted.has(objectId(o))).length;
+    const budgetStop = budgetStopVerdict({
+      previous: manifest?.behind ?? null,
+      progressed: uploaded.size + pruned.size,
+      left: leftUploads + leftPrunes,
+      at: plan.manifest.generated_at,
+      budgetMinutes,
+    });
+    const next = {
+      ...settleManifest({ plan, previous: manifest, uploaded, pruned, deferred: notStarted, vanished }),
+      behind: budgetStop.behind,
+    };
 
     const manifestPath = join(tmp, "manifest.next.json");
     const written = JSON.stringify(next, null, 2);
@@ -463,19 +491,26 @@ async function runBackup(opts) {
       );
     }
     // Progress is kept, the gap is not hidden: the manifest holds what was
-    // written, and the run fails so a mirror that is behind never looks green.
-    const leftUploads = plan.upload.filter((o) => notStarted.has(objectId(o))).length;
-    const leftPrunes = plan.prune.filter((o) => notStarted.has(objectId(o))).length;
+    // written and records `behind`. A budget stop that copied something passes
+    // with a warning, so the freshness watch and the operator can tell a mirror
+    // that is catching up from a broken one; anything else fails.
     if (leftUploads > 0 || leftPrunes > 0) {
       const why =
         stoppedBy === "cap"
           ? "The run reached MAX_TRANSFER_FAILURES and stopped"
           : `The ${budgetMinutes}-minute budget (STORAGE_BACKUP_BUDGET_MINUTES) ran out`;
-      failures.push(
+      const detail =
         `${why}: uploaded ${uploaded.size} of ${plan.upload.length} object(s) and pruned ${pruned.size} of ` +
-          `${plan.prune.length}. The manifest records only what was written, so the next run starts with the ` +
-          `${leftUploads} upload(s) and ${leftPrunes} prune(s) never started. Re-run the workflow to continue now.`,
-      );
+        `${plan.prune.length}. The manifest records only what was written, so the next run starts with the ` +
+        `${leftUploads} upload(s) and ${leftPrunes} prune(s) never started.`;
+      if (stoppedBy === "cap" || budgetStop.fail) {
+        failures.push(`${detail} Re-run the workflow to continue now.${stoppedBy === "budget" ? `\n${budgetStop.message}` : ""}`);
+      } else if (failures.length === 0) {
+        console.log(`::warning::${budgetStop.message}`);
+        console.log(detail);
+      } else {
+        failures.push(detail);
+      }
     }
     if (failures.length > 0) throw new Error(failures.join("\n\n"));
 

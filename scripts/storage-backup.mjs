@@ -116,6 +116,82 @@ export const TRANSFER_CONCURRENCY = 8;
 export const DEFAULT_BUDGET_MINUTES = 40;
 export const MAX_TRANSFER_FAILURES = 10;
 
+// -- How long a big corpus takes, and a run that stops at the budget --------
+// Measured on production's first full mirror (Nightly Backup run 42376512765,
+// 2026-11-07): 6,423 objects, 14.65 GB, in 36 minutes, about 3 objects and
+// 6.7 MB a second. Bytes, not object count, set the pace: chat-archive files
+// are attachments. So a corpus like staging's (11,653 objects, 21 GB) needs
+// about 55 minutes, more than one run's budget: the first run stops at the
+// budget, the second finishes, and every night after copies only what changed.
+//
+// A run that stopped at the budget AFTER copying something is converging, not
+// broken, so it passes with a `::warning::` and records `behind` in the
+// manifest (`budgetStopVerdict`). It fails when it copied nothing (a budget
+// spent on listing, or one object bigger than the budget), or when the mirror
+// has been behind for more than `MAX_BEHIND_RUNS` runs in a row, which means
+// the corpus is growing faster than a nightly run can copy it.
+export const MAX_BEHIND_RUNS = 3;
+
+// One transient error is not a failed transfer. Production's first full mirror
+// failed on a single HTTP 503 from Storage among 6,424 downloads (#3099), which
+// turned a run that copied everything else red. A download that fails with
+// 429, a 5xx, or no response at all is tried again after these delays.
+export const TRANSFER_RETRY_DELAYS_MS = [2_000, 10_000];
+
+/** No HTTP status (the request never got an answer), 429, or a 5xx. Storage answers a missing object with 400. */
+export function isTransientError(err) {
+  const status = err?.status;
+  if (status === undefined || status === null) return true;
+  return status === 429 || status >= 500;
+}
+
+/** `fn()`, tried again after each of `delaysMs` while it throws a transient error. */
+export async function withRetry(fn, { delaysMs = TRANSFER_RETRY_DELAYS_MS, isTransient = isTransientError, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= delaysMs.length || !isTransient(err)) throw err;
+      await sleep(delaysMs[attempt]);
+    }
+  }
+}
+
+/**
+ * What a run that left planned transfers unstarted because its budget ran out
+ * reports (`left` > 0), and the `behind` record its manifest carries. `previous`
+ * is the last manifest's `behind` (null when that run finished).
+ *
+ * Returns `{ behind, fail, message }`. `behind` is null when nothing was left.
+ * `fail` is false only while the run copied something and the mirror has been
+ * behind for at most `MAX_BEHIND_RUNS` runs; then `message` is the warning.
+ */
+export function budgetStopVerdict({ previous, progressed, left, at, budgetMinutes, maxBehindRuns = MAX_BEHIND_RUNS }) {
+  if (left === 0) return { behind: null, fail: false, message: null };
+  const runs = (previous?.runs ?? 0) + 1;
+  const behind = { since: previous?.since ?? at, runs, left };
+  const stopped = `The ${budgetMinutes}-minute budget (STORAGE_BACKUP_BUDGET_MINUTES) ran out`;
+  if (progressed === 0) {
+    return { behind, fail: true, message: `${stopped} before a single transfer finished, so the next run would stop at the same place.` };
+  }
+  if (runs > maxBehindRuns) {
+    return {
+      behind,
+      fail: true,
+      message:
+        `The mirror has been behind for ${runs} runs in a row (since ${behind.since}), more than MAX_BEHIND_RUNS ` +
+        `(${maxBehindRuns}): Storage is gaining objects faster than a run copies them.`,
+    };
+  }
+  return {
+    behind,
+    fail: false,
+    message:
+      `Behind, and catching up (run ${runs} of at most ${maxBehindRuns}): ${stopped} with ${left} transfer(s) left. ` +
+      `Everything copied is recorded, and the next run carries on.`,
+  };
+}
+
 /** The key a manifest record and a Storage listing entry are matched on. */
 export function objectId(o) {
   return `${o.bucket}\u0000${o.path}`;
@@ -464,8 +540,17 @@ export function planSync({ remote, manifest, nowMs, retentionMs, destination = n
  * Rehearsal canaries are left out of both counts. The rehearsal writes one,
  * backs it up and deletes it, so the next nightly on an otherwise empty corpus
  * sees its only live object vanish. That is the drill working, not a wipe.
+ *
+ * A TURNOVER is not a short listing either (#3099). When Storage lists at least
+ * as many objects as the mirror holds live (`listed`, canaries left out), the
+ * listing did not come back short: whatever left was replaced. That is what a
+ * Discord import deleted and run again looks like (staging, 2026-09-30: 9,241
+ * attachments gone, 11,653 new), and refusing it left staging's mirror frozen
+ * for five weeks behind a guard that can only be passed by hand. The old copies
+ * stay offsite as tombstones for the retention window, as for any deletion.
+ * Without `listed` the guard judges on the ratio alone, as before.
  */
-export function checkDeletionSanity({ manifest, tombstone, maxRatio = 0.5, minCorpus = 20 }) {
+export function checkDeletionSanity({ manifest, tombstone, listed = null, maxRatio = 0.5, minCorpus = 20 }) {
   const live = (manifest?.objects ?? []).filter((o) => !o.deleted_at && !isRehearsalCanary(o)).length;
   const deleting = tombstone.filter((o) => !isRehearsalCanary(o)).length;
   const refuse = (ratio, what) => ({
@@ -482,6 +567,9 @@ export function checkDeletionSanity({ manifest, tombstone, maxRatio = 0.5, minCo
   });
 
   if (live === 0) return { ok: true, live, deleting, ratio: 0 };
+  if (deleting > 0 && listed !== null && listed >= live) {
+    return { ok: true, live, deleting, ratio: deleting / live, turnover: true };
+  }
   if (deleting >= live) return refuse(1, `all ${live} of ${live}`);
   if (live < minCorpus) return { ok: true, live, deleting, ratio: 0 };
 
@@ -898,7 +986,7 @@ export async function downloadObject({ supabaseUrl, serviceKey, bucket, path, fe
     { headers: storageHeaders(serviceKey) },
   );
   if (!res.ok) {
-    throw new Error(`Downloading ${bucket}/${path} failed: HTTP ${res.status}`);
+    throw Object.assign(new Error(`Downloading ${bucket}/${path} failed: HTTP ${res.status}`), { status: res.status });
   }
   return Buffer.from(await res.arrayBuffer());
 }

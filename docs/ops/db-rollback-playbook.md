@@ -513,7 +513,10 @@ acting. Read the job's `::error::` line and match it:
   answered `200`. From inside the job those look identical to everyone deleting
   everything, and the difference would otherwise surface only a month later,
   when retention began pruning. Rehearsal canaries don't count toward either
-  threshold. Nothing is written offsite when this fires, so the previous backup
+  threshold. A **turnover** passes without it: when Storage lists at least as
+  many objects as the mirror held, the listing wasn't short, so the departed
+  objects were replaced (a Discord import deleted and run again) and the run
+  logs that and tombstones them as usual (#3099). Nothing is written offsite when this fires, so the previous backup
   is intact. Check what Storage actually returns. If the deletion is genuine (a
   chapter offboarded, a bucket deliberately emptied), re-run **Nightly Backup**
   with **`storage_allow_mass_delete`** set to that environment
@@ -559,6 +562,14 @@ acting. Read the job's `::error::` line and match it:
   early (next entry), and an object it didn't reach had changed in Storage
   after R2 lost its old copy. That object is listed here until a run uploads
   its new version.
+- **"Behind, and catching up"** (a `::warning::` on a green job). The budget
+  ran out after the run had copied something, so the mirror is converging: it
+  recorded what it wrote and `behind` in the manifest, and the next run carries
+  on. Nothing to do. A corpus of about 12,000 attachments (21 GB) takes two
+  nightly runs; production's first full mirror copied 14.65 GB in 36 minutes
+  (#3099). The job fails instead when the budget ran out before any transfer
+  finished, or when the mirror has been behind for more than `MAX_BEHIND_RUNS`
+  runs in a row: Storage is growing faster than a run copies it.
 - **"budget (STORAGE_BACKUP_BUDGET_MINUTES) ran out"**, **"reached
   MAX_TRANSFER_FAILURES"** or **"transfer(s) failed"**. The run didn't copy
   everything it planned, but it kept what it did copy (#2916). It copies
@@ -569,14 +580,16 @@ acting. Read the job's `::error::` line and match it:
   The run then writes a manifest listing only what it actually wrote. New
   objects it didn't reach are not in the backup yet. Changed ones keep their
   previous copy, and prunes that didn't happen keep their tombstone. A failed
-  download is checked against a fresh listing of its folder. If the object is
+  download that answers 429, a 5xx or nothing at all is tried twice more
+  first (`TRANSFER_RETRY_DELAYS_MS`); a single 503 failed production's first
+  full mirror. A download still failing is checked against a fresh listing of its folder. If the object is
   gone, it was deleted after the listing: that's not a failure, the log counts
   it, and the next listing records the deletion. If it is still listed, the
   download really failed.
-  - **A budget overrun** means more changed in Storage than one run can copy.
-    A Discord import can add thousands of objects to `chat-archive` at once.
-    Re-run **Nightly Backup** to continue now, or leave it for the next night.
-    Each run picks up where the last one stopped. If every night runs out on the
+  - **A budget overrun that fails** copied nothing, or has been behind for more
+    than `MAX_BEHIND_RUNS` runs (one that copied something is the warning
+    above). Re-run **Nightly Backup** to continue now, or leave it for the next
+    night. Each run picks up where the last one stopped. If every night runs out on the
     same work, don't raise the budget toward the job's `timeout-minutes`: a run
     cut off by the timeout writes no manifest at all. Find out why the copies
     are slow.
