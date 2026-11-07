@@ -489,7 +489,16 @@ first run where it matches Storage's, and is length-checked from then on. So the
 freshness watch's P1 ([`alert-routing.md`](alert-routing.md)) reads a job that
 mirrored nothing, or mirrored into the wrong bucket, as the failure it is.
 
-Two gaps are deliberate:
+Three gaps are deliberate:
+
+- **A mirror catching up passes**, with a `::warning::` and the *Storage mirror
+  catching up* step. A run that stopped at its budget after copying something,
+  with less left than the run before, records `behind` in the manifest and the
+  next run carries on (#3099). Objects it hasn't reached have no offsite copy
+  yet. The freshness watch reads this as a pass that is never fresh, so it
+  neither raises nor closes the alert. The job fails once the mirror stops
+  converging, copies nothing, or has been behind for more than
+  `MAX_BEHIND_RUNS` runs (`scripts/storage-backup.mjs`).
 
 - **An empty mirror passes**, with a `::warning::` in the job log. A run that
   would take a mirror from live objects to none is refused, but a mirror that
@@ -513,10 +522,11 @@ acting. Read the job's `::error::` line and match it:
   answered `200`. From inside the job those look identical to everyone deleting
   everything, and the difference would otherwise surface only a month later,
   when retention began pruning. Rehearsal canaries don't count toward either
-  threshold. A **turnover** passes without it: when Storage lists at least as
-  many objects as the mirror held, the listing wasn't short, so the departed
-  objects were replaced (a Discord import deleted and run again) and the run
-  logs that and tombstones them as usual (#3099). Nothing is written offsite when this fires, so the previous backup
+  threshold. A bucket's **turnover** is not refused: when the bucket lists at
+  least as many objects as the mirror held from it and as it listed last run,
+  its listing wasn't short, so what left was replaced (a Discord import deleted
+  and run again). The run names it in a `::warning::`, tombstones what left as
+  usual, and judges the other buckets as before (#3099). Nothing is written offsite when this fires, so the previous backup
   is intact. Check what Storage actually returns. If the deletion is genuine (a
   chapter offboarded, a bucket deliberately emptied), re-run **Nightly Backup**
   with **`storage_allow_mass_delete`** set to that environment
@@ -562,14 +572,12 @@ acting. Read the job's `::error::` line and match it:
   early (next entry), and an object it didn't reach had changed in Storage
   after R2 lost its old copy. That object is listed here until a run uploads
   its new version.
-- **"Behind, and catching up"** (a `::warning::` on a green job). The budget
-  ran out after the run had copied something, so the mirror is converging: it
-  recorded what it wrote and `behind` in the manifest, and the next run carries
-  on. Nothing to do. A corpus of about 12,000 attachments (21 GB) takes two
-  nightly runs; production's first full mirror copied 14.65 GB in 36 minutes
-  (#3099). The job fails instead when the budget ran out before any transfer
-  finished, or when the mirror has been behind for more than `MAX_BEHIND_RUNS`
-  runs in a row: Storage is growing faster than a run copies it.
+- **"Behind, and catching up"** (a `::warning::` on a green job). The mirror
+  is converging (the first gap under [A green backup job](#a-green-backup-job-means-the-content-was-verified)).
+  Nothing to do. A corpus of about 12,000 attachments (21 GB) takes two nightly
+  runs at the pace measured in `scripts/storage-backup.mjs`. A rehearsal
+  refuses to go on while its backup is catching up; run it once the mirror has
+  caught up.
 - **"budget (STORAGE_BACKUP_BUDGET_MINUTES) ran out"**, **"reached
   MAX_TRANSFER_FAILURES"** or **"transfer(s) failed"**. The run didn't copy
   everything it planned, but it kept what it did copy (#2916). It copies
@@ -579,20 +587,23 @@ acting. Read the job's `::error::` line and match it:
   `scripts/storage-backup.mjs`, and the error line prints the budget it used.
   The run then writes a manifest listing only what it actually wrote. New
   objects it didn't reach are not in the backup yet. Changed ones keep their
-  previous copy, and prunes that didn't happen keep their tombstone. A failed
-  download that answers 429, a 5xx or nothing at all is tried twice more
-  first (`TRANSFER_RETRY_DELAYS_MS`); a single 503 failed production's first
-  full mirror. A download still failing is checked against a fresh listing of its folder. If the object is
+  previous copy, and prunes that didn't happen keep their tombstone. A download
+  that answers 429, a 5xx or nothing at all is retried after each of
+  `TRANSFER_RETRY_DELAYS_MS` first (#3099). A download still failing is
+  checked against a fresh listing of its folder. If the object is
   gone, it was deleted after the listing: that's not a failure, the log counts
   it, and the next listing records the deletion. If it is still listed, the
   download really failed.
-  - **A budget overrun that fails** copied nothing, or has been behind for more
-    than `MAX_BEHIND_RUNS` runs (one that copied something is the warning
-    above). Re-run **Nightly Backup** to continue now, or leave it for the next
-    night. Each run picks up where the last one stopped. If every night runs out on the
-    same work, don't raise the budget toward the job's `timeout-minutes`: a run
-    cut off by the timeout writes no manifest at all. Find out why the copies
-    are slow.
+  - **A budget overrun that fails** says which of three it is. *No transfer
+    finished*: a re-run stops at the same place, so find out why the copies
+    are slow (a listing that takes the whole budget, or one object too big to
+    copy within it). *Not catching up*: as much was left as after the run
+    before, so Storage is growing faster than a run copies it. *Behind for
+    more than `MAX_BEHIND_RUNS` runs*: converging, but too slowly to leave
+    unwatched. For the last two, a re-run of **Nightly Backup** continues
+    where the last one stopped, and buys time while you find out why. Either
+    way, don't raise the budget toward the job's `timeout-minutes`: a run cut
+    off by the timeout writes no manifest at all.
   - **Failed transfers** are listed in the error, with object paths withheld
     in CI. The next run retries them. A handful that clear on the retry were
     transient. A run that reaches `MAX_TRANSFER_FAILURES` points at Storage or
