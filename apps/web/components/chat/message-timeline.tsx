@@ -13,6 +13,7 @@ import { ErrorState, Skeleton } from "@/components/shared/async-states";
 import { Button } from "@/components/ui/button";
 import { useTapRevealedMessage } from "@/lib/hooks/use-tap-revealed-message";
 import { cn } from "@/lib/utils";
+import { useChatDensity } from "@/lib/chat/chat-density";
 import { COLD_LOAD_MARKS, markColdLoad } from "@/lib/chat/cold-load-marks";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
 import {
@@ -69,11 +70,12 @@ const SKELETON_ROWS: readonly (readonly [boolean, string])[] = [
  * Three things make the geometry actually reserved rather than merely
  * skeleton-shaped:
  *
- * - **Same box metrics as `MessageItem`.** `px-5`, `pb-0.5`, `pt-4` on a row
- *   that starts a run and `pt-0.5` on a follow-on, a `w-8` avatar gutter and a
- *   `gap-3` beside it, a 20px author line and a 25px body line. Copied
- *   deliberately: a placeholder whose padding is "close enough" moves the
- *   first real row by the difference.
+ * - **Same box metrics as `MessageItem`, in the member's density.** Cozy:
+ *   `px-5`, `pb-0.5`, `pt-4` on a row that starts a run and `pt-0.5` on a
+ *   follow-on, a `w-8` avatar gutter and a `gap-3` beside it, a 20px author
+ *   line and a 25px body line. Compact: `pt-1`, a `w-14` time gutter and
+ *   `gap-2`, and the body line only. Copied deliberately: a placeholder whose
+ *   padding is "close enough" moves the first real row by the difference.
  * - **Bottom-aligned.** The timeline opens at its end (`initialTopMostItemIndex`
  *   is the last row) with the composer pinned below it, so content arrives
  *   against the bottom edge. A top-aligned skeleton would reserve the right
@@ -87,6 +89,9 @@ const SKELETON_ROWS: readonly (readonly [boolean, string])[] = [
  * by the `role="status"` region `chat-shell.tsx` owns for exactly this reason.
  */
 export function MessageTimelineSkeleton() {
+  // Compact rows (§11 § Density) have no avatar or author line: a 56px time
+  // gutter, the name leading a 25px body line, and runs 4 apart.
+  const compact = useChatDensity() === "compact";
   return (
     <div
       aria-hidden="true"
@@ -97,13 +102,25 @@ export function MessageTimelineSkeleton() {
           key={index}
           // The row metrics `MessageItem` draws, restated so the swap is a
           // repaint and not a reflow.
-          className={cn("flex gap-3 px-5 pb-0.5", startsRun ? "pt-4" : "pt-0.5")}
+          className={cn(
+            "flex px-5 pb-0.5",
+            compact ? "gap-2" : "gap-3",
+            startsRun ? (compact ? "pt-1" : "pt-4") : "pt-0.5",
+          )}
         >
-          <div className="w-8 shrink-0">
-            {startsRun ? <Skeleton className="h-8 w-8 rounded-full" /> : null}
+          <div className={cn("shrink-0", compact ? "w-14" : "w-8")}>
+            {startsRun ? (
+              compact ? (
+                <div className="flex h-[25px] items-center justify-end">
+                  <Skeleton className="h-[13px] w-12" />
+                </div>
+              ) : (
+                <Skeleton className="h-8 w-8 rounded-full" />
+              )
+            ) : null}
           </div>
           <div className="flex min-w-0 flex-1 flex-col">
-            {startsRun ? (
+            {startsRun && !compact ? (
               // `message-item.tsx`'s author line: a 20px line box.
               <div className="flex h-5 items-center">
                 <Skeleton className="h-[13px] w-24" />
