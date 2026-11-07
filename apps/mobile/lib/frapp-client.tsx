@@ -7,12 +7,18 @@ import { readClientVersion } from "./client-version";
 import { useAuthSession } from "./auth-session";
 import { queryClient } from "./query-client";
 import { forgetDuesMemory } from "./dues/visit-memory";
+import { createRejectedSessionHandler } from "./rejected-session";
+import { getSupabaseClient } from "./supabase";
 
 export { AUTH_TOKEN_STORAGE_KEY } from "./auth-token";
 export { useIsApiAuthenticated } from "./use-is-api-authenticated";
 
 export function FrappProvider({ children }: { children: React.ReactNode }) {
-  const { chapterId } = useAuthSession();
+  const { chapterId, signOut } = useAuthSession();
+  const signOutRef = useRef(signOut);
+  useEffect(() => {
+    signOutRef.current = signOut;
+  }, [signOut]);
 
   // The SDK's `getChapterId` is synchronous and baked into the client's
   // middleware, so it reads through a ref. Rebuilding the client on every
@@ -81,6 +87,13 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
         getChapterId: () => chapterIdRef.current,
         // Read once: a running process never changes its native build.
         clientVersion: readClientVersion(),
+        // A 401 means the API no longer accepts this session (an account
+        // deleted on another device, most often): sign out once, for every
+        // screen. `lib/rejected-session.ts`.
+        onUnauthorized: createRejectedSessionHandler({
+          getSupabase: getSupabaseClient,
+          signOut: () => signOutRef.current(),
+        }),
       }),
     [],
   );

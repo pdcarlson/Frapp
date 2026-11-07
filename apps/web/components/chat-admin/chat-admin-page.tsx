@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useCallback, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { Loader2, Pencil, PinOff, Plus, Trash2 } from "lucide-react";
@@ -585,7 +586,9 @@ function ChatAdminBody({
       <NestedError
         sole
         title="Couldn't load channels"
-        description="Confirm your chapter access and retry."
+        description={describeLoadFailure(
+          channelsQuery.error ?? categoriesQuery.error,
+        )}
         onRetry={retryQueries}
       />
     );
@@ -1040,7 +1043,7 @@ function ChatAdminBody({
                       Offline first, and both ways a read goes offline
                       (`readIsOffline` in async-states.tsx): it pauses, or,
                       with the API unreachable or a page restored offline, it
-                      fails, which would otherwise blame chapter access.
+                      fails, which would otherwise read as a load error.
                     */}
                     {readIsOffline(isOffline, pinsQuery) ? (
                       <NestedOffline
@@ -1055,7 +1058,7 @@ function ChatAdminBody({
                     ) : pinsQuery.isError && pinsQuery.data === undefined ? (
                       <NestedError
                         title="Couldn't load pins"
-                        description="Confirm your chapter access and retry."
+                        description={describeLoadFailure(pinsQuery.error)}
                         onRetry={() => void pinsQuery.refetch()}
                       />
                     ) : pins.length === 0 ? (

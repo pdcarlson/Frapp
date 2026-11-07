@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useCallback, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import {
@@ -353,7 +354,7 @@ export function EventsPage() {
         <NestedError
           sole
           title={stateMicrocopy.events.errorTitle}
-          description={stateMicrocopy.events.errorDescription}
+          description={describeLoadFailure(eventsQuery.error)}
           onRetry={() => void eventsQuery.refetch()}
         />
       </div>

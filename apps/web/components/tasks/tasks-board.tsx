@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useState } from "react";
 import { CheckCircle2, Trash2, Undo2 } from "lucide-react";
 import {
@@ -409,7 +410,7 @@ export function TasksBoard() {
         <NestedError
           sole
           title="Couldn't load tasks"
-          description="Confirm your chapter access and retry."
+          description={describeLoadFailure(tasksQuery.error)}
           onRetry={() => void tasksQuery.refetch()}
         />
       </div>

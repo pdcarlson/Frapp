@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Loader2, Plus } from "lucide-react";
 import {
@@ -705,7 +706,7 @@ export function InvoiceList({ id }: { id?: string }) {
         <NestedError
           sole
           title="Couldn't load invoices"
-          description="Confirm your chapter access and retry."
+          description={describeLoadFailure(invoicesQuery.error)}
           onRetry={() => void invoicesQuery.refetch()}
         />
       ) : filtered.length === 0 ? (
