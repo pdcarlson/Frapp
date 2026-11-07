@@ -23,6 +23,7 @@ import { QuickActionsPanel } from "@/components/quick-actions/quick-actions-pane
 import { useQuickActionsHost } from "@/components/quick-actions/quick-actions-host";
 import { useQuickActions } from "@/components/quick-actions/use-quick-actions";
 import { TabLabel } from "@/components/tab-glyphs";
+import { useTourAnchor } from "@/components/onboarding/tour";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   FLOATING_TAB_BAR,
@@ -66,6 +67,9 @@ export function GlassTabBar({
   const { width } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
   const { shown, available, save, ready } = useQuickActions();
+  // Two of the first-run tour's stops: the + and the More tab.
+  const plusAnchor = useTourAnchor("quickActions");
+  const moreAnchor = useTourAnchor("more");
   const { run, sheets, notice } = useQuickActionsHost({
     events: available.includes("checkIn") || available.includes("hostCheckIn"),
   });
@@ -232,6 +236,7 @@ export function GlassTabBar({
             return (
               <Pressable
                 key={route.key}
+                ref={name === "more" ? moreAnchor : undefined}
                 accessibilityRole="tab"
                 accessibilityState={{ selected: focused }}
                 accessibilityLabel={label}
@@ -275,6 +280,7 @@ export function GlassTabBar({
         ]}
       >
         <Pressable
+          ref={plusAnchor}
           accessibilityRole="button"
           accessibilityLabel={open ? "Close quick actions" : "Quick actions"}
           accessibilityHint={
