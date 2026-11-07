@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import {
   avatarRadius,
+  fieldTypeRole,
   FIGTREE_FACES,
   FIGTREE_FAMILY,
   FIGTREE_ITALIC_FAMILY,
@@ -36,6 +37,19 @@ describe("FrappThemeProvider", () => {
     expect(() => renderHook(() => useFrappTheme())).toThrow(
       /within FrappThemeProvider/,
     );
+  });
+});
+
+describe("fieldTypeRole", () => {
+  it("is typeRole without the lineHeight that sits single-line field text low on iOS", () => {
+    for (const role of Object.values(signetDarkTokens.typography.role)) {
+      const full = typeRole(role);
+      expect(fieldTypeRole(role)).toEqual({
+        fontSize: full.fontSize,
+        fontFamily: full.fontFamily,
+      });
+      expect(fieldTypeRole(role)).not.toHaveProperty("lineHeight");
+    }
   });
 });
 

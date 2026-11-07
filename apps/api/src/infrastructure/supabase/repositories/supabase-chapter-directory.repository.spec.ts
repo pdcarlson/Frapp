@@ -13,10 +13,10 @@ import {
  * Tenant scope for the onboarding directory.
  *
  * `chapter_directory` is a global curated catalog with no chapter column, so
- * `search` has nothing to scope; its full-text operator is also outside the
- * PostgREST subset the tenant harness implements, so the query shape is
- * pinned against a recording client below instead. Nothing here runs it
- * against Postgres. `chapter_directory_requests` does carry the chapter that
+ * `search` has nothing to scope; it is an RPC, outside the PostgREST subset
+ * the tenant harness implements, so the call shape is pinned against a
+ * recording client below instead. The function itself runs against Postgres
+ * in the PGlite job (`scripts/pglite/tiers/chapter-directory-seed.mjs`). `chapter_directory_requests` does carry the chapter that
  * raised the request, and that is what the harness pins: the insert lands in
  * the chapter it names and nowhere else.
  */
@@ -62,12 +62,10 @@ describe('SupabaseChapterDirectoryRepository — tenant scope', () => {
 describe('SupabaseChapterDirectoryRepository — search query', () => {
   function recordingClient(rows: unknown[] = []) {
     const builder: Record<string, unknown> = {};
-    for (const method of ['select', 'limit', 'ilike', 'textSearch']) {
-      builder[method] = jest.fn(() => builder);
-    }
+    builder.select = jest.fn(() => builder);
     builder.then = (resolve: (value: unknown) => unknown) =>
       Promise.resolve({ data: rows, error: null }).then(resolve);
-    const client = { from: jest.fn(() => builder) };
+    const client = { rpc: jest.fn(() => builder) };
     const repo = new SupabaseChapterDirectoryRepository(
       client as unknown as ConstructorParameters<
         typeof SupabaseChapterDirectoryRepository
@@ -76,22 +74,20 @@ describe('SupabaseChapterDirectoryRepository — search query', () => {
     return { client, builder: builder as Record<string, jest.Mock>, repo };
   }
 
-  it('caps the result, narrows by school, and full-text searches the vector', async () => {
+  it('passes the raw query, school and cap to search_chapter_directory', async () => {
     const { client, builder, repo } = recordingClient([{ id: 'dir-1' }]);
 
-    await expect(repo.search('phi gamma', 'UCLA', 20)).resolves.toEqual([
+    await expect(repo.search('phi gam rens', 'RPI', 20)).resolves.toEqual([
       { id: 'dir-1' },
     ]);
 
-    expect(client.from).toHaveBeenCalledWith('chapter_directory');
-    expect(builder.limit).toHaveBeenCalledWith(20);
-    expect(builder.ilike).toHaveBeenCalledWith('university_short', '%UCLA%');
-    expect(builder.textSearch).toHaveBeenCalledWith(
-      'search_vector',
-      'phi gamma',
-      { type: 'websearch', config: 'english' },
-    );
-    // The projection is the autocomplete contract; `search_vector` stays out.
+    expect(client.rpc).toHaveBeenCalledWith('search_chapter_directory', {
+      p_query: 'phi gam rens',
+      p_university: 'RPI',
+      p_limit: 20,
+    });
+    // The projection is the autocomplete contract; the generated `search_*`
+    // columns and the aliases stay out.
     const [columns] = builder.select.mock.calls[0] as [string];
     expect(columns.split(', ')).toEqual([
       'id',
@@ -107,12 +103,15 @@ describe('SupabaseChapterDirectoryRepository — search query', () => {
     ]);
   });
 
-  it('skips the filters it was not given', async () => {
-    const { builder, repo } = recordingClient();
+  it('sends no school when it was not given one', async () => {
+    const { client, repo } = recordingClient();
 
-    await repo.search('', undefined, 20);
+    await repo.search('fiji', undefined, 20);
 
-    expect(builder.ilike).not.toHaveBeenCalled();
-    expect(builder.textSearch).not.toHaveBeenCalled();
+    expect(client.rpc).toHaveBeenCalledWith('search_chapter_directory', {
+      p_query: 'fiji',
+      p_university: null,
+      p_limit: 20,
+    });
   });
 });
