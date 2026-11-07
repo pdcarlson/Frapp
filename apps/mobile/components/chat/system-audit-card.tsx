@@ -1,9 +1,6 @@
 import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  auditLineText,
-  type SystemAuditPayload,
-} from "@repo/chat-core/cards";
+import { auditLineText, type SystemAuditPayload } from "@repo/chat-core/cards";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { formatTimeOfDay } from "@repo/formatting";
 import { actorLabel, type NameResolver } from "@repo/hooks";
@@ -11,6 +8,7 @@ import type { SignetTokens } from "@repo/theme/signet";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 import { AuditGlyph } from "./card-glyphs";
 import { useCardStyles } from "./chat-card";
+import { useChatDensity } from "@/lib/chat/chat-density";
 import {
   groupReactions,
   MESSAGE_AVATAR_SIZE,
@@ -61,6 +59,9 @@ export function SystemAuditLine({
 }) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
+  // Compact has no gutter (§11 § Density): the line starts at the row's
+  // inset, where compact message text starts, and draws no shield.
+  const compact = useChatDensity() === "compact";
   const reactionStyles = useCardStyles();
   const actor = actorLabel(payload.actor_user_id, nameFor);
   const { phrase, detail } = auditLineText(payload);
@@ -75,14 +76,16 @@ export function SystemAuditLine({
       style={[styles.row, startsRun ? styles.rowFirst : null]}
       testID="audit-line"
     >
-      <View style={styles.gutter}>
-        <AuditGlyph
-          focused={false}
-          accent={tokens.color.text.muted}
-          muted={tokens.color.text.muted}
-          size={GLYPH_SIZE}
-        />
-      </View>
+      {compact ? null : (
+        <View style={styles.gutter}>
+          <AuditGlyph
+            focused={false}
+            accent={tokens.color.text.muted}
+            muted={tokens.color.text.muted}
+            size={GLYPH_SIZE}
+          />
+        </View>
+      )}
       <View style={styles.column}>
         {/* The actions ride an accessible View, never a bare Text
             (`messageActionsA11yProps`). */}
