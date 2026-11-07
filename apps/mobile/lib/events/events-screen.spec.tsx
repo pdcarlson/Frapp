@@ -40,6 +40,7 @@ const refetch = vi.fn();
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => chapterId,
+  useListChapters: () => ({ data: [{ chapter_id: "chapter-1", role_ids: [] }] }),
   useEvents: () => ({ ...query, data: events, refetch }),
   usePermissionList: () => permissions,
 }));

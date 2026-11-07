@@ -9,8 +9,10 @@ import {
   SheetBackToClose,
   SheetHeader,
   SheetScrim,
+  sheetFieldStyles,
   useSheetClose,
 } from "./sheet-scaffold";
+import { signetDarkTokens } from "@repo/theme/signet";
 
 /**
  * Which sheets carry a Cancel: `spec/ui/design-system/components.md`
@@ -93,5 +95,23 @@ describe("a sheet's way out with no Cancel", () => {
     render(<Harness />);
     act(() => close());
     expect(dismiss).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("sheet fields", () => {
+  // Paul, iOS 0.10.0: "text is not centered in the box". iOS sits a
+  // single line at the bottom of a line box taller than its font, so the
+  // shared single-line field carries no lineHeight; a multiline field adds
+  // the body's leading back.
+  const styles = sheetFieldStyles(signetDarkTokens, "#DDB844");
+
+  it("keeps lineHeight off the single-line field every sheet shares", () => {
+    expect(styles.field).not.toHaveProperty("lineHeight");
+  });
+
+  it("gives a multiline field the body's leading", () => {
+    expect(styles.fieldMultilineText.lineHeight).toBe(
+      signetDarkTokens.typography.role.body.lineHeight,
+    );
   });
 });

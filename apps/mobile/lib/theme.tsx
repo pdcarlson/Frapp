@@ -123,7 +123,9 @@ export function typeRole(role: SignetTypeRole): TextStyle {
  * keeps `typeRole` (its lines need the leading) with `textAlignVertical:
  * "top"`. Rule: `spec/ui/design-system/components.md` § Text input.
  */
-export function fieldTypeRole(role: SignetTypeRole): TextStyle {
+export function fieldTypeRole(
+  role: SignetTypeRole,
+): Pick<TextStyle, "fontSize" | "fontFamily"> {
   return {
     fontSize: role.size,
     fontFamily: FIGTREE_FAMILY[role.weight],
@@ -148,7 +150,11 @@ export function avatarRadius(size: number): number {
   return size / 2;
 }
 
-export function FrappThemeProvider({ children }: { children: React.ReactNode }) {
+export function FrappThemeProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const value = useMemo(() => ({ tokens: getSignetTokens("dark") }), []);
 
   return (
