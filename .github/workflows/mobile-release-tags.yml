@@ -1,0 +1,54 @@
+name: Mobile release tags
+
+# Tag each store version as `mobile-vX.Y.Z` with its own GitHub Release, so
+# GitHub shows the same numbers App Store Connect and Play Console do. The
+# plain `vX.Y.Z` tags stay what they are: one per production deploy of the
+# web app and the API (`release.yml`). Why the two are separate, and every
+# rule this follows: `scripts/ci/mint-mobile-release-tags.mjs`.
+#
+# Runs when a record PR (`_mobile-build.yml`'s `record` job) or a hand edit
+# lands `apps/mobile/store/shipped-builds.json` on `main`. Idempotent, so
+# `workflow_dispatch` is the retry and the backfill.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/mobile/store/shipped-builds.json
+  workflow_dispatch:
+
+concurrency:
+  group: mobile-release-tags
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # RELEASE_GITHUB_TOKEN lives in `automation` (main only, #2518). A
+    # recorded commit's `.github/workflows` usually differs from main's HEAD,
+    # and only that user PAT may create a tag ref on such a commit (trap 4 in
+    # release.yml).
+    environment:
+      name: automation
+      deployment: false
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: ./.github/actions/node-setup
+        with:
+          install: none
+
+      - name: Mint missing mobile-v tags and Releases
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+        run: node scripts/ci/mint-mobile-release-tags.mjs
