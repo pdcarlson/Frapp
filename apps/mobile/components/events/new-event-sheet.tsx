@@ -70,8 +70,8 @@ import {
   EDIT_EVENT_PERMISSIONS,
   draftFromEvent,
   isEmptyPatch,
-  isInSeries,
   leavesAfterSave,
+  offersSeriesChoice,
   saveRequestFor,
   saveScopeFor,
   validateEventEdit,
@@ -166,6 +166,15 @@ export function useEventEditGrants(): { edit: boolean; delete: boolean } {
   };
 }
 
+/** A 400: the request itself is refused, so a retry fails the same way. */
+function isBadRequest(error: unknown): boolean {
+  return (
+    !!error &&
+    typeof error === "object" &&
+    (error as { statusCode?: unknown }).statusCode === 400
+  );
+}
+
 /**
  * Calendar's question for a repeating event, as the platform's own alert.
  * Resolves `null` on Cancel.
@@ -234,6 +243,11 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     const [submitFailed, setSubmitFailed] = useState(false);
     /** A gate refusal's member copy: retrying can't win, so Create goes. */
     const [refusal, setRefusal] = useState<string | null>(null);
+    /**
+     * The server refused this exact change (a 400): Save stays, since a
+     * different change can win, and editing anything clears the line.
+     */
+    const [rejected, setRejected] = useState<string | null>(null);
     const sending = useRef(false);
 
     const pending =
@@ -249,6 +263,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       (patch: Partial<NewEventDraft>, clears: (keyof NewEventErrors)[]) => {
         if (pending) return;
         setDraft((previous) => ({ ...previous, ...patch }));
+        setRejected(null);
         setErrors((previous) => {
           if (!clears.some((key) => previous[key])) return previous;
           const next = { ...previous };
@@ -275,6 +290,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       setErrors({});
       setSubmitFailed(false);
       setRefusal(null);
+      setRejected(null);
     }, [freshDraft]);
 
     /** A swipe or scrim close: the draft stays, the visit's state goes. */
@@ -283,6 +299,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       setFocused(null);
       setSubmitFailed(false);
       setRefusal(null);
+      setRejected(null);
     }, [markClosed]);
 
     const cancel = useCallback(() => {
@@ -312,7 +329,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
         return;
       }
       Keyboard.dismiss();
-      let scope = saveScopeFor(target, result.patch);
+      let scope = saveScopeFor(target, result.patch, new Date());
       if (scope === "ask") {
         sending.current = true;
         const picked = await askSeriesScope({
@@ -326,6 +343,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       }
       const request = saveRequestFor(target, result.patch, scope);
       sending.current = true;
+      setRejected(null);
       setSubmitFailed(false);
       setRefusal(null);
       const sentFrom = visit();
@@ -347,7 +365,14 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
             if (!isSameVisit(sentFrom)) return;
             const gated = gateRefusalOf(error, GATE_COPY);
             if (gated) setRefusal(gated);
-            else setSubmitFailed(true);
+            else if (isBadRequest(error)) {
+              // Sending it again can't win, so say what to do instead.
+              setRejected(
+                request.scope === "series"
+                  ? "That change can't be made to the whole series. Save it to this event only, or open the next event and change that."
+                  : "That change can't be saved. Check the times and try something else.",
+              );
+            } else setSubmitFailed(true);
           },
         },
       );
@@ -358,7 +383,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       Keyboard.dismiss();
       let scope: EventEditScope | null;
       sending.current = true;
-      if (isInSeries(target.event)) {
+      if (offersSeriesChoice(target, new Date())) {
         scope = await askSeriesScope({
           title: "Delete a repeating event",
           message:
@@ -675,6 +700,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
             ) : null}
 
             {refusal ? <Text style={styles.error}>{refusal}</Text> : null}
+            {rejected ? <Text style={styles.error}>{rejected}</Text> : null}
             {submitFailed ? (
               <Text style={styles.error}>
                 That didn&apos;t save. Your{" "}

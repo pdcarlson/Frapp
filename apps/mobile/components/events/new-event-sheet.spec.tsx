@@ -509,6 +509,23 @@ describe("Edit event", () => {
     expect(onSaved).toHaveBeenCalledWith({ leave: false });
   });
 
+  it("says what to do when the server refuses the change, and keeps Save", async () => {
+    updateMutate.mockImplementationOnce((_body, options) =>
+      options.onError({
+        statusCode: 400,
+        message: "end_time must be after start_time",
+      }),
+    );
+    const tree = renderEdit(single);
+    type(tree, "Location", "Great Hall");
+    await act(async () => saveButton(tree).props.onPress());
+    expect(screenText(tree)).toContain("That change can't be saved.");
+    expect(saveButton(tree).props.disabled).toBe(false);
+    // Editing clears the line.
+    type(tree, "Location", "Great Hall 2");
+    expect(screenText(tree)).not.toContain("That change can't be saved.");
+  });
+
   it("saves nothing for an untouched form", async () => {
     const tree = renderEdit(single);
     await act(async () => saveButton(tree).props.onPress());

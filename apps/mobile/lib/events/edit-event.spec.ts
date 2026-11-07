@@ -125,6 +125,14 @@ describe("validateEventEdit", () => {
     });
   });
 
+  it("doesn't read a stored stray space as a change", () => {
+    const target = {
+      ...single,
+      event: { ...EVENT, name: "Chapter ", location: "Sanctuary " },
+    };
+    expect(isEmptyPatch(patchOf(target, () => {}))).toBe(true);
+  });
+
   it("clears a description emptied out", () => {
     const target = {
       ...single,
@@ -144,22 +152,38 @@ describe("validateEventEdit", () => {
 
 describe("saveScopeFor", () => {
   it("asks for an event in a series", () => {
-    expect(saveScopeFor(occurrence, { name: "x" })).toBe("ask");
+    expect(saveScopeFor(occurrence, { name: "x" }, NOW)).toBe("ask");
     const head = {
       ...single,
       event: { ...EVENT, recurrence_rule: "WEEKLY" },
       seriesRule: "WEEKLY" as const,
     };
-    expect(saveScopeFor(head, { name: "x" })).toBe("ask");
+    expect(saveScopeFor(head, { name: "x" }, NOW)).toBe("ask");
   });
 
   it("doesn't ask for a one-time event", () => {
-    expect(saveScopeFor(single, { name: "x" })).toBe("instance");
+    expect(saveScopeFor(single, { name: "x" }, NOW)).toBe("instance");
+  });
+
+  it("doesn't offer All upcoming for an event already under way", () => {
+    // The server never edits a started event with the series, so the choice
+    // would skip the event on screen.
+    const during = new Date("2026-11-10T00:00:00Z");
+    expect(saveScopeFor(occurrence, { name: "x" }, during)).toBe("instance");
+  });
+
+  it("doesn't offer All upcoming when the series parent couldn't be read", () => {
+    const orphan = { ...occurrence, parent: null };
+    expect(saveScopeFor(orphan, { name: "x" }, NOW)).toBe("instance");
   });
 
   it("treats a Repeat change as a series change", () => {
-    expect(saveScopeFor(single, { recurrence_rule: "WEEKLY" })).toBe("series");
-    expect(saveScopeFor(occurrence, { recurrence_rule: null })).toBe("series");
+    expect(saveScopeFor(single, { recurrence_rule: "WEEKLY" }, NOW)).toBe(
+      "series",
+    );
+    expect(saveScopeFor(occurrence, { recurrence_rule: null }, NOW)).toBe(
+      "series",
+    );
   });
 });
 

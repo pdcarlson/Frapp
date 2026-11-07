@@ -182,12 +182,15 @@ export function validateEventEdit(
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
 
+  // Stored values are compared trimmed, as the draft is: the API doesn't
+  // trim on write, and a stray space must not read as a change (a location
+  // in the patch pages the chapter).
   const patch: EventEditPatch = {};
-  if (name !== event.name) patch.name = name;
+  if (name !== event.name.trim()) patch.name = name;
   if (startMoved) patch.start_time = start.toISOString();
   if (endMoved) patch.end_time = end.toISOString();
   const location = draft.location.trim();
-  if (location !== (event.location ?? "")) patch.location = location;
+  if (location !== (event.location ?? "").trim()) patch.location = location;
   const description = draft.description.trim();
   if (description !== (event.description ?? "").trim()) {
     patch.description = description;
@@ -211,16 +214,39 @@ export function isEmptyPatch(patch: EventEditPatch): boolean {
   return Object.keys(patch).length === 0;
 }
 
+/** Whether the event has started: the server never edits it with the series. */
+export function hasStarted(event: EventDetail, now: Date): boolean {
+  return new Date(event.start_time).getTime() <= now.getTime();
+}
+
 /**
- * Whether saving has to ask "this event or all upcoming": only for an event
- * in a series, and not when Repeat changed, which is about the series.
+ * Whether the "this event or all upcoming" question applies.
+ *
+ * Not for a one-time event. Not for one already under way either: a series
+ * edit or delete only reaches events that haven't started, so "All upcoming"
+ * would skip the very event on screen. And not for a generated occurrence
+ * whose parent couldn't be read, since a series time change has to go
+ * through the parent.
+ */
+export function offersSeriesChoice(
+  target: EventEditTarget,
+  now: Date,
+): boolean {
+  if (!isInSeries(target.event) || hasStarted(target.event, now)) return false;
+  return !target.event.parent_event_id || target.parent !== null;
+}
+
+/**
+ * Whether saving has to ask "this event or all upcoming". A Repeat change is
+ * about the series, so it isn't asked.
  */
 export function saveScopeFor(
   target: EventEditTarget,
   patch: EventEditPatch,
+  now: Date,
 ): EventEditScope | "ask" {
   if (patch.recurrence_rule !== undefined) return "series";
-  return isInSeries(target.event) ? "ask" : "instance";
+  return offersSeriesChoice(target, now) ? "ask" : "instance";
 }
 
 /** The request one save makes. */
