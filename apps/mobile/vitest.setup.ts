@@ -61,6 +61,12 @@ vi.mock("expo-location", () => ({
   Accuracy: { Balanced: 3, High: 4 },
 }));
 
+// The clipboard is native; specs assert on the call (expo-clipboard).
+vi.mock("expo-clipboard", () => ({
+  setStringAsync: vi.fn().mockResolvedValue(true),
+  getStringAsync: vi.fn().mockResolvedValue(""),
+}));
+
 // Chapter setup marks the chapter going live with a tap (#3351), and a
 // reaction ticks, and a channel row's long press taps (`lib/haptics.ts`).
 vi.mock("expo-haptics", () => ({
