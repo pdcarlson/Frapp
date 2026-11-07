@@ -1,5 +1,5 @@
 import { useDeferredValue, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text } from "react-native";
+import { AccessibilityInfo, StyleSheet, Text } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import * as WebBrowser from "expo-web-browser";
 import {
@@ -14,7 +14,10 @@ import { can } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { BACK_TO_MORE } from "@/components/back-row";
-import { UploadDocumentSheet } from "@/components/documents/upload-document-sheet";
+import {
+  UploadDocumentSheet,
+  type PendingDocumentUpload,
+} from "@/components/documents/upload-document-sheet";
 import { FilterChips, SearchField } from "@/components/filter-chips";
 import {
   ListRow,
@@ -95,10 +98,36 @@ export default function DocumentsScreen() {
   const [search, setSearch] = useState("");
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [openFailed, setOpenFailed] = useState(false);
-  const [uploadedTitle, setUploadedTitle] = useState<string | null>(null);
+  // The upload the sheet closed on, drawn as the list's first row until the
+  // filed document takes its place (`UploadDocumentSheet` § "Upload closes
+  // the sheet at once").
+  // Held with the chapter it was sent from, so a chapter switch (which mounts
+  // a new sheet) doesn't show the last chapter's upload in this one's list.
+  const [pendingFor, setPendingFor] = useState<{
+    chapterId: string | null;
+    upload: PendingDocumentUpload | null;
+  }>({ chapterId: null, upload: null });
   const uploadSheetRef = useRef<BottomSheetModal>(null);
   const canUpload = can("chapter_docs:upload", usePermissionList());
   const chapterId = useActiveChapterId();
+  const pendingUpload =
+    pendingFor.chapterId === (chapterId ?? null) ? pendingFor.upload : null;
+  const setPendingUpload = (
+    next:
+      | PendingDocumentUpload
+      | null
+      | ((
+          current: PendingDocumentUpload | null,
+        ) => PendingDocumentUpload | null),
+  ) =>
+    setPendingFor((prev) => {
+      const current =
+        prev.chapterId === (chapterId ?? null) ? prev.upload : null;
+      return {
+        chapterId: chapterId ?? null,
+        upload: typeof next === "function" ? next(current) : next,
+      };
+    });
 
   // Deferred, like s13's: `search` is in the query key, so feeding raw
   // keystrokes would mint a cache entry and fire a request per character, and
@@ -158,6 +187,40 @@ export default function DocumentsScreen() {
     }
   }
 
+  // Filed: the pending row holds until the list has re-read, so the document
+  // replaces it in the same slot (newest first) instead of the row going and
+  // the document arriving a beat later. A later upload's row is left alone.
+  function uploaded(title: string) {
+    AccessibilityInfo.announceForAccessibility(`“${title}” is in the library.`);
+    const filed = pendingUpload;
+    void documentsQuery.refetch().finally(() => {
+      setPendingUpload((current) =>
+        current === filed || current?.title === title ? null : current,
+      );
+    });
+  }
+
+  // The upload in flight, or the one that failed, in the slot the document
+  // will take. Same two lines as a document row, so nothing moves when it is
+  // replaced; "Uploading…" is the quiet caption, no spinner. A failure says
+  // so in the destructive hue and reopens the sheet, which kept the draft.
+  const pendingRow = pendingUpload ? (
+    <ListRow
+      key="pending-upload"
+      label={pendingUpload.title}
+      description={
+        pendingUpload.failed ? "Didn't upload. Tap to try again." : "Uploading…"
+      }
+      descriptionTone={pendingUpload.failed ? "destructive" : "default"}
+      accessibilityHint={pendingUpload.failed ?? undefined}
+      onPress={
+        pendingUpload.failed
+          ? () => uploadSheetRef.current?.present()
+          : undefined
+      }
+    />
+  ) : null;
+
   function renderList() {
     if (documentsQuery.isPending) {
       // Document rows in the list's own section: a title and its meta line.
@@ -181,7 +244,7 @@ export default function DocumentsScreen() {
         />
       );
     }
-    if (rows.length === 0) {
+    if (rows.length === 0 && !pendingRow) {
       return (
         // A title alone when the library or folder is empty: the screen is
         // the documents list, and a line saying so told the member nothing.
@@ -202,6 +265,7 @@ export default function DocumentsScreen() {
     }
     return (
       <ListSection>
+        {pendingRow}
         {rows.map((row) => (
           <ListRow
             key={row.id}
@@ -227,10 +291,7 @@ export default function DocumentsScreen() {
           ? {
               label: "Upload document",
               hint: "Opens a sheet to upload a photo to the library.",
-              onPress: () => {
-                setUploadedTitle(null);
-                uploadSheetRef.current?.present();
-              },
+              onPress: () => uploadSheetRef.current?.present(),
             }
           : undefined
       }
@@ -259,12 +320,6 @@ export default function DocumentsScreen() {
         />
       ) : null}
 
-      {uploadedTitle ? (
-        <Text accessibilityRole="alert" style={styles.uploadedNote}>
-          {`“${uploadedTitle}” is in the library.`}
-        </Text>
-      ) : null}
-
       {openFailed ? (
         <Text style={styles.errorNote}>
           That document couldn&apos;t be opened. Try again in a moment.
@@ -283,7 +338,8 @@ export default function DocumentsScreen() {
           ref={uploadSheetRef}
           folders={folders}
           initialFolder={folder}
-          onUploaded={setUploadedTitle}
+          onUploaded={uploaded}
+          onPending={setPendingUpload}
         />
       ) : null}
     </ScreenShell>
@@ -292,11 +348,6 @@ export default function DocumentsScreen() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    uploadedNote: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-      paddingHorizontal: tokens.spacing.xs,
-    },
     errorNote: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
