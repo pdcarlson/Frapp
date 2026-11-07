@@ -248,7 +248,8 @@ export const MemberRolesSheet = forwardRef<
       ? "Saving…"
       : status === "saved"
         ? "Saved"
-        : "Tap a role to add or remove it.";
+        : // A no-break space holds the line, so "Saving…" never shifts the list.
+          "\u00a0";
 
   const customCaption = customRolesCaption(session?.customRoleNames ?? []);
 

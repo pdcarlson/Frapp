@@ -133,8 +133,8 @@ export interface MessageItemProps {
    */
   replyParentHidden?: string;
   /**
-   * Opens the message actions sheet (reply, edit, delete, report, block —
-   * #2257, #2775). Passed only for a row that offers them
+   * Opens the message actions sheet (react, reply, edit, copy, mention,
+   * report, delete; Block is on its report form — #2257, #2775). Passed only for a row that offers them
    * (`canOpenMessageActions` in `@repo/chat-core/message-actions`): a confirmed, undeleted
    * message, the viewer's own included.
    */
