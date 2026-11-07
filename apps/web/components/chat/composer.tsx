@@ -25,7 +25,6 @@ import {
 } from "@/components/ui/popover";
 import {
   AttachGlyph,
-  OfflineGlyph,
   ReactionGlyph,
   SendArrowGlyph,
   SlashCommandGlyph,
@@ -473,8 +472,10 @@ interface ComposerBaseProps {
   slashCommandsStatus?: ChapterModuleGateStatus;
   onRetrySlashCommands?: () => void;
   /**
-   * Realtime is down. The composer stays **live** and says so — it does not
-   * disable.
+   * Realtime is down. The composer stays **live** — it does not disable —
+   * and refuses only the queueless slash commands. It draws no offline line
+   * of its own: the top bar's connection pill says it, with the queue's
+   * promise, while a chat is open (`connection-state.md` § One indicator).
    *
    * This used to be `disabled`, and it was a defect: `sendMessage` writes the
    * row to the Dexie outbox and returns *before* it touches the network
@@ -1629,20 +1630,6 @@ export function Composer({
           </Button>
         </div>
       </div>
-      {/*
-        The offline label is deliberately NOT a live region. `ReconnectPill` in
-        the same header already announces the connection change from the same
-        `channel.connection` source, and `OfflineBanner` announces it again from
-        the root layout — three polite regions would read one event three times.
-        This is the label beside the control, which is what spec/ui/resilience/connection-state.md asks
-        the queued surface to carry.
-      */}
-      {isOffline ? (
-        <p className="mt-2 flex items-center gap-1.5 text-caption text-muted-foreground">
-          <OfflineGlyph className="h-4 w-4 shrink-0" />
-          You&rsquo;re offline — messages send when you reconnect.
-        </p>
-      ) : null}
       {paletteMounted ? (
         <SlashPalette
           open={palette.open}
