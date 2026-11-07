@@ -285,6 +285,7 @@ the chapter accent in a back-row slot (2026-11-05).
 | Mark all read | `CheckAllGlyph` (two checks) | the Notifications screen header | Lucide `CheckCheck` |
 | Share | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark (moved here from the image viewer's own file, 2026-11-06) | the image viewer (24px), chapter setup's `Share invite` gold button, in the button's ink | Lucide `Share` |
 | Invite link | `LinkGlyph` (two joined links) | chapter setup's invite step: its link card, in `gold.askText` on the ask tile, and each shared row (16px) | Lucide `Link` |
+| Back | `BackGlyph` (a left chevron, stroke 2.2, heavier than the recipe), in the chapter accent or the house gold | the chat thread header at 20 (2026-11-06; it was a typed `‹`), every back-row capsule at 18 | Lucide `ChevronLeft` |
 
 ### 6.2 Web Dashboard shell (Signet duotone)
 
@@ -372,6 +373,7 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Attach a file | `AttachGlyph` |
 | Add a reaction | `ReactionGlyph` |
 | Slash commands | `SlashCommandGlyph` |
+| Send a message: an up arrow, stroke only at 2.4 on the accent-filled round button, the web face of mobile's `↑` (2026-11-06) | `SendArrowGlyph` |
 | Announcement | `AnnouncementGlyph` |
 | `#chapter-audit` / audit row | `AuditGlyph` |
 | Private / role-gated channel | `LockGlyph` |

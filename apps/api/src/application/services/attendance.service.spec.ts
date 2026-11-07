@@ -76,6 +76,7 @@ describe('AttendanceService', () => {
       findById: jest.fn(),
       findByChapter: jest.fn(),
       create: jest.fn(),
+      createMany: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
       findChildren: jest.fn(),
