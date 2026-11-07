@@ -12,12 +12,16 @@ export const PUSH_PROMPT_ANSWERED_EVENT = "push-prompt-answered";
 /**
  * - `allowed` / `denied`: what the OS prompt returned after "Turn on". A
  *   prompt the OS didn't show (iOS after one answer) reads as `denied`.
- * - `not_now`: the primer card's "Not now"; no OS prompt was shown.
+ * - `not_now`: onboarding's "Not now", or the chat home's reminder closed;
+ *   no OS prompt was shown.
  */
 export type PushPromptAnswer = "allowed" | "denied" | "not_now";
 
-/** Where the member answered: the C7 primer card, or s16 Settings' push row. */
-export type PushPromptSurface = "primer" | "settings";
+/**
+ * Where the member answered: onboarding's notifications step (s03, or chapter
+ * setup), s16 Settings' push row, or the chat home's one reminder.
+ */
+export type PushPromptSurface = "primer" | "settings" | "reminder";
 
 export function pushPromptAnsweredProperties(
   answer: PushPromptAnswer,
