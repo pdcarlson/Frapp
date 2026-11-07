@@ -5,7 +5,9 @@ import {
   useDeleteDocument,
   useDocumentFolders,
   useDocuments,
+  useMyPermissions,
 } from "@repo/hooks";
+import { can } from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import { PageActions } from "@/components/layout/page-actions";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -133,6 +135,11 @@ function ChapterDocumentsPage() {
   }, [folders, foldersQuery.isError, deferredSearch, documents]);
 
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
+  const { data: permissionsPayload } = useMyPermissions();
+  const canUpload = can(
+    "chapter_docs:upload",
+    permissionsPayload?.permissions ?? [],
+  );
 
   /*
     Folder filtering stays client-side while search goes to the server. The
@@ -384,6 +391,8 @@ function ChapterDocumentsPage() {
           gate={gate}
           deletingIds={deletingIds}
           onDelete={(doc) => void handleDelete(doc)}
+          onShowAllFiles={() => setActiveFolder(null)}
+          onUpload={canUpload ? () => upload.openPanel() : undefined}
         />
       </div>
       {/*

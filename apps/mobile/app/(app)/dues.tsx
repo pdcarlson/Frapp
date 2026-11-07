@@ -19,7 +19,8 @@ import { useDuesMemory } from "@/lib/dues/visit-memory";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { SectionHeader } from "@/components/list-section";
-import { EmptyState, ErrorState } from "@/components/state-block";
+import { ErrorState } from "@/components/state-block";
+import { InlineNote } from "@/components/inline-note";
 import { CardListSkeleton } from "@/components/card-list-skeleton";
 import { CardMessages } from "@/components/card-messages";
 import {
@@ -704,11 +705,8 @@ function ChapterDues() {
       return (
         <>
           {standalone}
-          <EmptyState
-            glyph="✓"
-            title="No dues yet"
-            body="Your chapter hasn't billed you. Anything they send will show up here."
-          />
+          {/* Empty-states plan rule 7: one line (writing.md § Billing). */}
+          <InlineNote>You have no invoices.</InlineNote>
         </>
       );
     }

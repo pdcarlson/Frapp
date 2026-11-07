@@ -58,9 +58,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 import DocumentsScreen from "@/app/(app)/documents";
 import { FilterChips } from "@/components/filter-chips";
 import { ListRow } from "@/components/list-section";
-import { DocumentsGlyph } from "@/components/more/more-glyphs";
-import { SearchGlyph } from "@/components/search-glyph";
-import { EmptyState } from "@/components/state-block";
+import { InlineNote } from "@/components/inline-note";
 
 const present = vi.fn();
 const mounted: ReactTestRenderer[] = [];
@@ -202,7 +200,7 @@ describe("Documents upload (#3399)", () => {
       });
     });
     // Drawn even in an empty library, in place of the empty state.
-    expect(tree.root.findAllByType(EmptyState)).toHaveLength(0);
+    expect(tree.root.findAllByType(InlineNote)).toHaveLength(0);
     const [row] = tree.root.findAllByType(ListRow);
     expect(row!.props.description).toBe("Didn't upload. Tap to try again.");
     expect(row!.props.descriptionTone).toBe("destructive");
@@ -264,29 +262,30 @@ describe("Documents upload (#3399)", () => {
   it("no longer sends anyone to the web dashboard", () => {
     const tree = render();
 
-    expect(screenText(tree)).toContain("Nothing filed here yet");
+    expect(screenText(tree)).toContain("No documents yet.");
     expect(screenText(tree)).not.toContain("web dashboard");
   });
 });
 
 /**
- * The owner's design review, 2026-11-04: the empty states draw the More
- * hub's glyphs rather than a fallback-font character and don't narrate, and
- * opening one document marks that row alone.
+ * Empty-states plan rule 7 (2026-11-07): an empty library or a search miss is
+ * one line where the rows would be, with the way out as its link; and opening
+ * one document marks that row alone.
  */
 describe("Documents states and rows", () => {
-  const emptyState = (tree: ReactTestRenderer) =>
-    tree.root.findByType(EmptyState);
+  const note = (tree: ReactTestRenderer) => tree.root.findByType(InlineNote);
 
-  it("says the library is empty with a title and the Documents glyph alone", () => {
-    const state = emptyState(render());
+  it("says the library is empty in one line, and points an uploader to +", () => {
+    expect(screenText(render())).toContain("No documents yet.");
+    expect(screenText(render())).not.toContain("Tap + to upload one.");
 
-    expect(state.props.glyph).toBe(DocumentsGlyph);
-    expect(state.props.title).toBe("Nothing filed here yet");
-    expect(state.props.body).toBeUndefined();
+    permissions = ["chapter_docs:upload"];
+    expect(screenText(render())).toContain(
+      "No documents yet. Tap + to upload one.",
+    );
   });
 
-  it("names the query, and the folder it searched, when a search matches nothing", () => {
+  it("names the query on a miss, and offers Search all files inside a folder", () => {
     folderRows = [{ id: "f1", name: "Bylaws", sort_order: 0 }];
     const tree = render();
     const search = () =>
@@ -295,25 +294,27 @@ describe("Documents states and rows", () => {
           node.props.accessibilityLabel === "Search documents by title" &&
           typeof node.props.onChangeText === "function",
       );
+    const folderChips = () =>
+      tree.root.find(
+        (node) =>
+          node.props.accessibilityLabel === "Filter by folder" &&
+          typeof node.props.onSelect === "function",
+      );
 
     act(() => search().props.onChangeText("budget"));
-    expect(emptyState(tree).props.glyph).toBe(SearchGlyph);
-    expect(emptyState(tree).props.body).toBe(
-      "No document title matches “budget”.",
-    );
+    expect(screenText(tree)).toContain("No documents match “budget”.");
+    expect(note(tree).props.action.label).toBe("Clear search");
 
-    act(() => {
-      tree.root
-        .find(
-          (node) =>
-            node.props.accessibilityLabel === "Filter by folder" &&
-            typeof node.props.onSelect === "function",
-        )
-        .props.onSelect("Bylaws");
-    });
-    expect(emptyState(tree).props.body).toBe(
-      "Nothing in Bylaws matches “budget”.",
-    );
+    act(() => folderChips().props.onSelect("Bylaws"));
+    expect(screenText(tree)).toContain("Nothing in Bylaws matches “budget”.");
+    expect(note(tree).props.action.label).toBe("Search all files");
+
+    act(() => note(tree).props.action.onPress());
+    expect(folderChips().props.selected).toBeNull();
+    expect(screenText(tree)).toContain("No documents match “budget”.");
+
+    act(() => note(tree).props.action.onPress());
+    expect(screenText(tree)).toContain("No documents yet.");
   });
 
   it("marks only the opening row busy, and greys out none", async () => {

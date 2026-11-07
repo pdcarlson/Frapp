@@ -464,6 +464,28 @@ describe("Service hours back row (#3022)", () => {
  * keyboard never opens for it, and the date can be a recent day rather than
  * always today.
  */
+describe("Service hours with nothing logged (empty-states plan rule 7)", () => {
+  it("says so in one line, pointing a member who can log to +", () => {
+    const tree = render();
+    expect(screenText(tree)).toContain(
+      "No service logged yet. Tap + to log your first hours.",
+    );
+    act(() => tree.unmount());
+  });
+
+  it("leaves out the + pointer for a role that can't log hours", () => {
+    permissions.list = ["members:view"];
+    try {
+      const tree = render();
+      expect(screenText(tree)).toContain("No service logged yet.");
+      expect(screenText(tree)).not.toContain("Tap +");
+      act(() => tree.unmount());
+    } finally {
+      permissions.list = ["service:log"];
+    }
+  });
+});
+
 describe("Log service hours sheet", () => {
   const sent = () =>
     mutate.mock.calls[0]?.[0] as {
