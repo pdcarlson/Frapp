@@ -294,26 +294,31 @@ and fails the `pglite-migrations` job if any `SECURITY DEFINER` function in `pub
 
 A function in `public` is an RPC at `/rest/v1/rpc/<name>` for every role that holds EXECUTE on it.
 Supabase's default privileges grant EXECUTE on a new function straight to `anon`, `authenticated`
-and `service_role`, so `revoke ... from public` alone leaves the direct `anon` grant in place. A
-definer function has to revoke both.
+and `service_role`, so `revoke ... from public` alone leaves the direct grants in place. A definer
+function revokes PUBLIC, `anon` and `authenticated`, and grants `service_role`, unless it is one of
+the accepted functions below.
 
 - **`anon` may call none of them.** The Supabase advisor's lint 0028
   (`anon_security_definer_function_executable`) stays at zero.
-- **`authenticated` may call exactly these six**, and the advisor's lint 0029 lists them as
-  accepted. Each one backs a check that runs as the signed-in caller, so revoking it breaks that
+- **`authenticated` may call exactly these six.** The advisor's lint 0029
+  (`authenticated_security_definer_function_executable`) still reports each of them as a WARN, since
+  it has no accepted state; the acceptance is this repo's decision, recorded here and in the tier
+  below. Each one backs a check that runs as the signed-in caller, so revoking it breaks that
   check: `can_read_chat_message` and `chat_viewer_has_blocked` (the `chat_message_actions` and
   `chat_messages` policies above), `can_read_chat_channel` (`realtime_messages_scoped_*` on the
   `chat:channel:` topic), and `realtime_can_read_user_scope`, `realtime_can_read_chapter_scope` and
   `realtime_can_read_event_scope` (the other Realtime topics). Each resolves the caller from
   `auth.uid()`, so over RPC it only answers about what the caller may already read.
-- **Trigger functions are callable by no client role.** A trigger fires without an EXECUTE check
-  on its function, so the `realtime_notify_*` change-ping functions hold no grant for `anon` or
-  `authenticated` (#830, `20261107160000`).
+- **Trigger functions are callable by no client role**, definer or invoker. A trigger fires
+  without an EXECUTE check on its function, so the `realtime_notify_*` change-ping functions,
+  `update_updated_at` and the rest hold no grant for `anon` or `authenticated` (#830,
+  `20261107160000`).
 
 The `pglite-migrations` job checks this against the applied catalog, with Supabase's default
 privileges installed before the migrations run (`scripts/pglite/tiers/security-definer-search-path.mjs`).
-It fails a definer function `anon` can call, a trigger function a client can call, and a seventh
-function granted to `authenticated` (or one of the six losing its grant). A new definer function
+It fails a definer function `anon` can call, a trigger function a client can call, a definer
+function granted to `authenticated` that is not on the list, and a listed one that lost its grant
+or stopped being a definer function. A new definer function
 that a policy really does need to call as the caller is added to that tier's
 `ACCEPTED_AUTHENTICATED_DEFINERS` and to this list in the same PR. The same tier fails any `public`
 function that pins no `search_path` at all (the advisor's lint 0011), invoker functions included.
@@ -562,13 +567,13 @@ RLS-enabled tables changes no assertion in the harness; the every-public-table i
 `relrowsecurity` only, not what the policies do. `chat_notification_preferences` is the known gap —
 it carries a client-reachable `SELECT` policy with no black-box coverage (tracked separately).
 
-**Grants that come from hosted's default privileges are not modelled.** Hosted Supabase grants
-`anon` and `authenticated` access to new tables and functions through `ALTER DEFAULT PRIVILEGES`,
-and the harness does not replay those defaults. So its `anon` EXECUTE assertions catch an explicit
-`grant … to anon`, but not a drop/recreate that forgets its `revoke … from anon`, which on hosted
-hands the grant back. Only the per-migration `has_function_privilege('anon', …)` checks in
-`docs/ops/database/promotion-log.md` cover that, at promotion time and only for the functions whose entries
-carry one. Replaying the defaults is #3052.
+**Grants that come from hosted's default privileges are modelled** (#3052, #830, 2026-11-07).
+Hosted Supabase grants `anon`, `authenticated` and `service_role` access to every table, sequence
+and function a migration creates in `public` through `ALTER DEFAULT PRIVILEGES`, and `run.mjs`
+installs the same defaults before the migrations. So a drop/recreate that forgets its
+`revoke … from anon` fails the job's EXECUTE assertions, as it would leave the grant on hosted. The
+per-migration `has_function_privilege` checks in `docs/ops/database/promotion-log.md` stay as the
+hosted-side confirmation. Until then this paragraph said the defaults were not replayed.
 
 Both probes are granted `SELECT` only, so this tier proves the **read** path by execution. The
 own-row `INSERT`/`DELETE` policies on `chat_message_actions` are covered by shape assertions over

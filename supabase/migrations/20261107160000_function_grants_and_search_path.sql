@@ -8,11 +8,12 @@
 --     `realtime_notify_notifications`, `realtime_notify_events` and
 --     `realtime_notify_event_attendance`. 20260816140000 created them after its
 --     own hardening block, which revoked `anon` from a hand-written array that
---     did not name them, so they kept Supabase's default grants and are callable
---     through `/rest/v1/rpc/` with the publishable key. A direct call errors
---     inside the body today (it reads the trigger's transition table) and the
---     error is swallowed, so nothing leaks; but `realtime.send` is in reach, and
---     a swallowed exception is not a grant.
+--     did not name them, so they kept Supabase's default grants and are listed
+--     at `/rest/v1/rpc/` for the publishable key. Nothing is reachable through
+--     that listing today: PL/pgSQL refuses a direct call to a trigger function
+--     ("trigger functions can only be called as triggers") before its body
+--     runs. But a grant nothing needs is a grant the next change can make
+--     dangerous, and the advisor stays red while it exists.
 --   * lint 0011 (`function_search_path_mutable`) x 20: every `public` function
 --     that does not pin `search_path`, all of them SECURITY INVOKER.
 --
@@ -28,28 +29,30 @@
 --
 -- A trigger fires with no EXECUTE check on its function (Postgres checks the
 -- privilege once, at CREATE TRIGGER), so a trigger function needs no grant for
--- any role, and keeping one only publishes it at `/rest/v1/rpc/<name>`. Every
--- SECURITY DEFINER trigger function in `public` loses EXECUTE for PUBLIC,
--- `anon` and `authenticated`. `service_role` keeps it: it bypasses RLS anyway,
--- and the advisor does not flag it.
+-- any client role, and keeping one only lists it at `/rest/v1/rpc/<name>`.
+-- Every trigger function in `public`, definer or invoker, loses EXECUTE for
+-- `authenticated` here, and for PUBLIC and `anon` in 2 (definer) or below
+-- (invoker). `service_role` keeps it: it bypasses RLS anyway, and the advisor
+-- does not flag it.
 do $$
 declare
   r record;
 begin
   for r in
-    select p.oid::regprocedure as fn
+    select p.oid::regprocedure as fn, p.prosecdef
       from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'public'
-       and p.prosecdef
        and p.prorettype = 'trigger'::regtype
        and not exists (
          select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e'
        )
   loop
-    execute format('revoke all on function %s from public', r.fn);
-    if exists (select 1 from pg_roles where rolname = 'anon') then
-      execute format('revoke all on function %s from anon', r.fn);
+    if not r.prosecdef then
+      execute format('revoke all on function %s from public', r.fn);
+      if exists (select 1 from pg_roles where rolname = 'anon') then
+        execute format('revoke all on function %s from anon', r.fn);
+      end if;
     end if;
     if exists (select 1 from pg_roles where rolname = 'authenticated') then
       execute format('revoke all on function %s from authenticated', r.fn);
@@ -69,9 +72,6 @@ do $$
 declare
   r record;
 begin
-  if not exists (select 1 from pg_roles where rolname = 'anon') then
-    return;
-  end if;
   for r in
     select p.oid::regprocedure as fn
       from pg_proc p
@@ -83,7 +83,9 @@ begin
        )
   loop
     execute format('revoke all on function %s from public', r.fn);
-    execute format('revoke all on function %s from anon', r.fn);
+    if exists (select 1 from pg_roles where rolname = 'anon') then
+      execute format('revoke all on function %s from anon', r.fn);
+    end if;
   end loop;
 end
 $$;

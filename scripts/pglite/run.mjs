@@ -109,14 +109,24 @@ await db.exec(`
   create role supabase_auth_admin nologin noinherit createrole;
 `);
 
-// Supabase's default privileges, as the local image's `pg_default_acl` has
-// them for functions the migration role creates in `public` (#830). Without
-// them a function here is callable by `anon` only through PUBLIC, so a
-// migration that revoked PUBLIC alone passed this job while the hosted
-// project kept a direct `anon` grant, which is how three definer functions
-// stayed callable with the publishable key. The grants tier in
-// `security-definer-search-path.mjs` reads the result.
+// Supabase's default privileges for objects the migration role creates in
+// `public`, as hosted's `pg_default_acl` has them (and the local image's, read
+// 2026-11-07): tables, sequences and functions all go to `anon`,
+// `authenticated` and `service_role` directly, with no PUBLIC entry on
+// functions (#3052, #830). Without them a function here was callable by `anon`
+// only through PUBLIC, so a migration that revoked PUBLIC alone, or a
+// drop/recreate that forgot its `revoke ... from anon`, passed this job while
+// the hosted project kept a direct `anon` grant. That is how three definer
+// functions stayed callable with the publishable key. The grant assertions in
+// `rls-smoke.mjs` and the tiers read the result; the hosted-side
+// `has_function_privilege` checks in the promotion log stay as confirmation.
+// Table grants do not open a table: every `public` table enables RLS, which
+// `rls-smoke.mjs` asserts, so a grant without a policy still reads no rows.
 await db.exec(`
+  alter default privileges in schema public
+    grant all on tables to anon, authenticated, service_role;
+  alter default privileges in schema public
+    grant usage, select, update on sequences to anon, authenticated, service_role;
   alter default privileges in schema public
     grant execute on functions to anon, authenticated, service_role;
 `);
