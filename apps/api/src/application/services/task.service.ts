@@ -290,6 +290,20 @@ export class TaskService {
       );
     }
 
+    // The assignee taking back their own "done" before an officer confirms it
+    // (a stray tap, or a second look). It is the reject write without the
+    // reject: same compare-and-set, so a confirm that lands first wins and
+    // this refuses rather than un-completing a task whose points were paid.
+    // Only the assignee: an officer moving someone else's completed task back
+    // is a rejection, which notifies them, and goes through its own endpoint.
+    if (
+      task.status === TaskStatus.COMPLETED &&
+      newStatus === TaskStatus.IN_PROGRESS &&
+      task.assignee_id === userId
+    ) {
+      return this.reopenOwnCompletion(task, chapterId);
+    }
+
     const allowed = VALID_ASSIGNEE_TRANSITIONS[task.status];
     if (!allowed?.includes(newStatus)) {
       if (
@@ -318,6 +332,26 @@ export class TaskService {
       await this.notifyTaskCompleted(updated, userId, chapterId);
     }
 
+    return toDisplayStatus(updated);
+  }
+
+  private async reopenOwnCompletion(
+    task: Task,
+    chapterId: string,
+  ): Promise<TaskView> {
+    if (task.points_awarded) {
+      throw new BadRequestException(
+        'An officer already confirmed this task, so it stays done',
+      );
+    }
+    const updated = await this.taskRepo.reopenCompletion(task.id, chapterId);
+    if (!updated) {
+      // Null is any write that moved it first: an officer's confirm, their
+      // reject, or this member's own take-back from another device.
+      throw new BadRequestException(
+        'This task is no longer waiting on confirmation',
+      );
+    }
     return toDisplayStatus(updated);
   }
 
@@ -468,10 +502,14 @@ export class TaskService {
       );
     }
 
-    const updated = await this.taskRepo.update(id, chapterId, {
-      status: TaskStatus.IN_PROGRESS,
-      completed_at: null,
-    });
+    // Compare-and-set, so a confirm (or the assignee taking it back) that
+    // lands between the guards above and this write is not overwritten.
+    const updated = await this.taskRepo.reopenCompletion(id, chapterId);
+    if (!updated) {
+      throw new BadRequestException(
+        'Task is no longer waiting on confirmation — it was confirmed or moved back already',
+      );
+    }
 
     await this.safeNotifyUser(
       task.assignee_id,

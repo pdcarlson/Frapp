@@ -100,30 +100,6 @@ function dueOn(due: Date): string {
   return `Due ${due.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
 }
 
-/**
- * The subtitle under a completed task's title — drawn as "Done Tuesday".
- *
- * Falls back to a bare "Done" rather than `null`: the row is already dimmed and
- * struck through, and a completed row with no subtitle at all loses the one
- * word that explains why.
- */
-export function formatDoneSubtitle(
-  completedAt: string | null,
-  now: Date,
-): string {
-  if (!completedAt) return "Done";
-  const at = parseInstant(completedAt);
-  if (!at) return "Done";
-
-  const days = dayDelta(at, now);
-  if (days <= 0) return "Done today";
-  if (days === 1) return "Done yesterday";
-  if (days < 7) {
-    return `Done ${at.toLocaleDateString(undefined, { weekday: "long" })}`;
-  }
-  return `Done ${at.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
-}
-
 export type PointsChip =
   /** Gold chip — points on offer, or earned but not yet confirmed. */
   | { tone: "offered"; label: string }

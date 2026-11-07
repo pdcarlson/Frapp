@@ -441,6 +441,15 @@ export function useUpdateTaskStatus() {
       if (body.status === "COMPLETED") {
         patch.completed_at = new Date().toISOString();
       }
+      // The assignee taking back their own "done" (`COMPLETED → IN_PROGRESS`):
+      // the server clears `completed_at` on that move, so a done row doesn't
+      // keep its done subtitle for a round trip.
+      if (
+        body.status !== "COMPLETED" &&
+        (row?.stored_status ?? row?.status) === "COMPLETED"
+      ) {
+        patch.completed_at = null;
+      }
       return applyTaskPatch(queryClient, chapterId, id, patch);
     },
     onError: (_error, _variables, context) => {

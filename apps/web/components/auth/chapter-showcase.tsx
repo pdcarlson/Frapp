@@ -44,7 +44,7 @@
 
 import { useEffect, useState } from "react";
 import { Check, CheckCircle2 } from "lucide-react";
-import { taskCardStatusLabel } from "@repo/hooks";
+import { taskStatusLabel } from "@repo/hooks";
 import type { TaskStatus } from "@repo/hooks";
 import {
   EventsGlyph,
@@ -241,12 +241,7 @@ function TaskCard({ t }: { t: number }) {
   const status: TaskStatus =
     t >= AT.taskDone ? "COMPLETED" : t >= AT.taskStarted ? "IN_PROGRESS" : "TODO";
   const confirmed = t >= AT.taskConfirmed;
-  const label = taskCardStatusLabel({
-    id: "showcase",
-    status,
-    stored_status: status,
-    points_awarded: confirmed,
-  });
+  const label = taskStatusLabel({ status, points_awarded: confirmed });
   return (
     <Card className={cn(MESSAGE_CARD, ENTER)}>
       <div className="flex items-center justify-between gap-6">

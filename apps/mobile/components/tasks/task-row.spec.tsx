@@ -3,6 +3,7 @@ import React from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { StyleSheet } from "react-native";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 
@@ -36,10 +37,13 @@ function row(overrides: Partial<TaskRowModel> = {}): TaskRowModel {
   return {
     id: "t1",
     title: "Submit ride-share list",
+    description: null,
+    createdBy: null,
     storedStatus: "TODO",
     displayStatus: "TODO",
     dueDate: "2026-08-18",
     completedAt: null,
+    confirmedAt: null,
     pointReward: 5,
     pointsAwarded: false,
     isDone: false,
@@ -96,7 +100,11 @@ describe("TaskRow — the overdue colour", () => {
   it("draws an urgent due date in semantic.destructiveText, not the mention red", () => {
     const tree = render(
       <TaskRow
-        row={row({ dueDate: "2026-08-15", displayStatus: "OVERDUE", isOverdue: true })}
+        row={row({
+          dueDate: "2026-08-15",
+          displayStatus: "OVERDUE",
+          isOverdue: true,
+        })}
         now={NOW}
         onToggle={() => {}}
       />,
@@ -109,7 +117,11 @@ describe("TaskRow — the overdue colour", () => {
 
   it("leaves a distant due date on the calm muted role", () => {
     const tree = render(
-      <TaskRow row={row({ dueDate: "2026-09-30" })} now={NOW} onToggle={() => {}} />,
+      <TaskRow
+        row={row({ dueDate: "2026-09-30" })}
+        now={NOW}
+        onToggle={() => {}}
+      />,
     );
 
     expect(styleOfText(tree, "Due Sep 30").color).toBe(
@@ -125,9 +137,7 @@ describe("TaskRow — the overdue colour", () => {
 // from the floor, not from a card of its own.
 describe("TaskRow — press feedback", () => {
   it("ripples on Android and lifts floor to card on iOS, never fading", () => {
-    const tree = render(
-      <TaskRow row={row()} now={NOW} onToggle={() => {}} />,
-    );
+    const tree = render(<TaskRow row={row()} now={NOW} onOpen={() => {}} />);
     const pressable = tree.root.find(
       (node) => (node.type as unknown) === "Pressable",
     );
@@ -144,9 +154,9 @@ describe("TaskRow — press feedback", () => {
 
   it("draws a hairline above every row but the first in its group", () => {
     const first = render(
-      <TaskRow row={row()} now={NOW} onToggle={() => {}} isFirst />,
+      <TaskRow row={row()} now={NOW} onOpen={() => {}} isFirst />,
     );
-    const next = render(<TaskRow row={row()} now={NOW} onToggle={() => {}} />);
+    const next = render(<TaskRow row={row()} now={NOW} onOpen={() => {}} />);
     const style = (tree: typeof first) =>
       flatten(
         tree.root
@@ -179,7 +189,7 @@ describe("TaskRow — a row in flight", () => {
 
   it("dims and reads busy as a pressable row too", () => {
     const tree = render(
-      <TaskRow row={row()} now={NOW} isPending onToggle={() => {}} />,
+      <TaskRow row={row()} now={NOW} isPending onOpen={() => {}} />,
     );
     const pressable = tree.root.find(
       (node) => (node.type as unknown) === "Pressable",
@@ -188,18 +198,20 @@ describe("TaskRow — a row in flight", () => {
     // The dim is the row's own: `splitRowStyle` keeps opacity on the Pressable.
     const resting = flatten(pressable.props.style({ pressed: false }));
     expect(resting.opacity).toBe(0.8);
-    expect(flatten(pressable.parent!.props.style)).not.toHaveProperty("opacity");
+    expect(flatten(pressable.parent!.props.style)).not.toHaveProperty(
+      "opacity",
+    );
   });
 
   it("is neither dimmed nor busy at rest", () => {
-    const tree = render(<TaskRow row={row()} now={NOW} onToggle={() => {}} />);
+    const tree = render(<TaskRow row={row()} now={NOW} onOpen={() => {}} />);
     const pressable = tree.root.find(
       (node) => (node.type as unknown) === "Pressable",
     );
     expect(pressable.props.accessibilityState).toMatchObject({ busy: false });
-    expect(flatten(pressable.props.style({ pressed: false }))).not.toHaveProperty(
-      "opacity",
-    );
+    expect(
+      flatten(pressable.props.style({ pressed: false })),
+    ).not.toHaveProperty("opacity");
   });
 });
 
@@ -224,12 +236,15 @@ describe("TaskRow — the completed row", () => {
     expect(pressables).toHaveLength(0);
   });
 
-  it("is dimmed and struck through", () => {
+  it("is dimmed and struck through once confirmed", () => {
     const tree = render(<TaskRow row={done} now={NOW} />);
+    expect(texts(tree)).toContain("Confirmed");
     expect(styleOfText(tree, "Submit ride-share list").textDecorationLine).toBe(
       "line-through",
     );
-    const container = flatten(tree.root.findAllByType("View" as never)[0]?.props.style);
+    const container = flatten(
+      tree.root.findAllByType("View" as never)[0]?.props.style,
+    );
     expect(Number(container.opacity)).toBeLessThan(1);
   });
 
@@ -245,7 +260,11 @@ describe("TaskRow — the completed row", () => {
 describe("TaskRow — the points chip", () => {
   it("draws nothing for a task carrying no reward", () => {
     const tree = render(
-      <TaskRow row={row({ pointReward: null })} now={NOW} onToggle={() => {}} />,
+      <TaskRow
+        row={row({ pointReward: null })}
+        now={NOW}
+        onToggle={() => {}}
+      />,
     );
     expect(texts(tree).some((text) => text.startsWith("+"))).toBe(false);
   });
@@ -285,7 +304,11 @@ describe("TaskRow — the checkbox stays off the accent", () => {
   it("fills a done box with the raised neutral and a muted check", () => {
     const tree = render(
       <TaskRow
-        row={row({ storedStatus: "COMPLETED", isDone: true, pointReward: null })}
+        row={row({
+          storedStatus: "COMPLETED",
+          isDone: true,
+          pointReward: null,
+        })}
         now={NOW}
       />,
     );
@@ -307,10 +330,68 @@ describe("TaskRow — the checkbox stays off the accent", () => {
       />,
     );
     const style = box(tree);
-    expect(style.borderColor).toBe(
-      signetDarkTokens.color.text.mutedForeground,
-    );
+    expect(style.borderColor).toBe(signetDarkTokens.color.text.mutedForeground);
     expect(style.backgroundColor).toBeUndefined();
     expect(JSON.stringify(tree.toJSON())).not.toContain("#CB9FFF");
+  });
+});
+
+// Owner audit 2026-11-06, P6.1: the row said "Done" where web said "Awaiting
+// confirmation", and a stray tap anywhere on it completed the task for good.
+describe("TaskRow — two targets and the shared words", () => {
+  const waiting = row({
+    storedStatus: "COMPLETED",
+    displayStatus: "COMPLETED",
+    isDone: true,
+    completedAt: new Date(2026, 7, 16, 9).toISOString(),
+  });
+
+  it("says a completion is waiting on an officer, not done, and doesn't dim it", () => {
+    const tree = render(<TaskRow row={waiting} now={NOW} onOpen={() => {}} />);
+    expect(texts(tree)).toContain("Waiting on an officer");
+    expect(texts(tree).some((text) => text.startsWith("Done"))).toBe(false);
+    const pressable = tree.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    expect(
+      StyleSheet.flatten(pressable.props.style({ pressed: false })),
+    ).not.toHaveProperty("opacity");
+  });
+
+  it("opens the task on a row tap and changes it only from the box", () => {
+    const onOpen = vi.fn();
+    const onToggle = vi.fn();
+    const tree = render(
+      <TaskRow row={row()} now={NOW} onOpen={onOpen} onToggle={onToggle} />,
+    );
+    const [rowPress, boxPress] = tree.root.findAll(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    act(() => rowPress!.props.onPress());
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onToggle).not.toHaveBeenCalled();
+
+    act(() => boxPress!.props.onPress());
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives a screen reader the box's move as a named action on the row", () => {
+    const onToggle = vi.fn();
+    const tree = render(
+      <TaskRow row={waiting} now={NOW} onOpen={() => {}} onToggle={onToggle} />,
+    );
+    const rowPress = tree.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    expect(rowPress.props.accessibilityActions).toEqual([
+      { name: "toggle", label: "Mark not done" },
+    ]);
+    act(() =>
+      rowPress.props.onAccessibilityAction({
+        nativeEvent: { actionName: "toggle" },
+      }),
+    );
+    expect(onToggle).toHaveBeenCalledTimes(1);
   });
 });
