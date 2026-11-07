@@ -178,6 +178,36 @@ describe("rendering", () => {
     expect(JSON.stringify(row.props.style)).toContain('"aspectRatio":2');
   });
 
+  it("sizes a photo with no stored size from the image once it loads, against the start of the column", () => {
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: [attachment({ content_type: "image/jpeg", filename: "old.jpg" })],
+    };
+
+    const tree = render();
+    const row = () =>
+      tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityRole === "button",
+      );
+    expect(JSON.stringify(row().props.style)).not.toContain("aspectRatio");
+
+    const image = tree.root.findAllByType(
+      "Image" as unknown as React.ElementType,
+    )[0]!;
+    act(() =>
+      image.props.onLoad({
+        nativeEvent: { source: { width: 600, height: 800 } },
+      }),
+    );
+
+    const style = JSON.stringify(row().props.style);
+    expect(style).toContain('"aspectRatio":0.75');
+    expect(style).toContain('"alignSelf":"flex-start"');
+  });
+
   it("caps a tall preview so it cannot push the thread off screen", () => {
     // A 400x2000 phone screenshot is the ordinary case, not a pathological one:
     // width:100% plus its aspect ratio would derive a height many times the
