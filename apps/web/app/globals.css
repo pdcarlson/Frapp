@@ -89,4 +89,20 @@
       content: none;
     }
   }
+
+  /*
+   * The chat composer's placeholder ("Message #general"). Tiptap's Placeholder
+   * extension only marks the empty paragraph with `is-editor-empty` and a
+   * `data-placeholder` attribute; drawing it is the stylesheet's job, and
+   * without this rule the box sat blank (principles.md P6.5). Muted ink, the
+   * same as a native input's `placeholder:` utility, and zero-height so the
+   * caret sits where the text will start.
+   */
+  .chat-composer-editor p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    color: var(--muted-foreground);
+    pointer-events: none;
+  }
 }
