@@ -126,6 +126,18 @@ vi.mock("@/components/settings/blocked-members-sheet", () => ({
   BlockedMembersSheet: "BlockedMembersSheet",
 }));
 
+// The density sheet as a stand-in whose `present` a spec can see.
+const densitySheet = vi.hoisted(() => ({ present: vi.fn() }));
+vi.mock("@/components/settings/chat-density-sheet", async () => {
+  const { forwardRef, useImperativeHandle } = await import("react");
+  return {
+    ChatDensitySheet: forwardRef(function ChatDensitySheet(_props, ref) {
+      useImperativeHandle(ref, () => densitySheet);
+      return null;
+    }),
+  };
+});
+
 // A purple chapter, so a control painted house gold fails.
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
@@ -323,6 +335,21 @@ describe("Settings copy", () => {
     expect(screenText(tree)).toContain(
       "Mute a channel or DM from the chat itself.",
     );
+  });
+
+  it("names the chat density on its row, which opens the density sheet", () => {
+    densitySheet.present.mockClear();
+    const tree = render();
+    expect(screenText(tree)).toContain("Chat density");
+    expect(screenText(tree)).toContain("Cozy");
+    const row = tree.root.find(
+      (node) =>
+        node.props.accessibilityHint ===
+          "Choose how tightly messages are drawn in chat." &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => row.props.onPress());
+    expect(densitySheet.present).toHaveBeenCalled();
   });
 
   it("gives an editor's accent row no narration, and no web footnote", () => {
