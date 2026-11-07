@@ -509,6 +509,12 @@ export function ChannelList({
                 }
                 className={cn(
                   "flex w-full items-center gap-1 px-2 pb-1 text-left text-muted-foreground hover:text-foreground",
+                  // Pinned to the top of the rail while its rows scroll under
+                  // it, until the next heading pushes it off (owner
+                  // 2026-11-07). The rail's own surface, so no row shows
+                  // through; the 4px pulled up and padded back keeps the
+                  // resting layout and gives the pinned label room.
+                  "sticky top-0 z-10 -mt-1 bg-surface-1 pt-1",
                   EYEBROW,
                 )}
               >
@@ -646,9 +652,7 @@ export function ChannelFilters({
           variant="ghost"
           size="icon"
           className={cn(compactControlClassName, "relative ml-auto")}
-          aria-label={
-            active ? FILTER_CHANNELS_ON_LABEL : FILTER_CHANNELS_LABEL
-          }
+          aria-label={active ? FILTER_CHANNELS_ON_LABEL : FILTER_CHANNELS_LABEL}
         >
           <ListFilter className="h-4 w-4" aria-hidden="true" />
           {active ? (
