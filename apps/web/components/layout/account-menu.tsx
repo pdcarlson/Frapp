@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Bell, ChevronsUpDown, LogOut, User } from "lucide-react";
+import { Bell, ChevronsUpDown, LogOut, Sparkles, User } from "lucide-react";
 import { useCurrentUser } from "@repo/hooks";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -33,8 +33,9 @@ type CurrentUser = {
  * top-bar avatar" — which is what freed the bottom of the nav for the collapse
  * toggle and nothing else.
  *
- * Contents are exactly Profile, Notification settings, a divider, Sign out
- * (`1i`). **Chapter switching is deliberately not here**: it lives in the nav's
+ * Contents are exactly Profile, Notification settings, What's new, a divider,
+ * Sign out (`1i`, plus What's new, 2026-11-07: the changelog members read,
+ * the same list as mobile Settings → What's new). **Chapter switching is deliberately not here**: it lives in the nav's
  * chapter header row, because identity and chapter are separate menus. Putting
  * a chapter action in the account menu is the merge that board note warns
  * against.
@@ -169,6 +170,12 @@ export function AccountMenu({
           <Link href="/profile#notification-settings" onClick={onNavigate}>
             <Bell className="h-4 w-4" aria-hidden="true" />
             <span>Notification settings</span>
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/whats-new" onClick={onNavigate}>
+            <Sparkles className="h-4 w-4" aria-hidden="true" />
+            <span>What&apos;s new</span>
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

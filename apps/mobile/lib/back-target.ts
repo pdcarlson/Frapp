@@ -42,6 +42,7 @@ export const SCREEN_TITLES = {
   invite: "Invite members",
   "check-in": "Check in",
   "host-check-in": "Host check-in",
+  "whats-new": "What's new",
 } as const satisfies Record<string, string>;
 
 /** The group in `app/(app)/` that holds the tab navigator. */

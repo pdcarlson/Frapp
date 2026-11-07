@@ -10,6 +10,12 @@ import {
 import { isBetaOffModule } from "./beta-off-modules";
 
 export { BETA_OFF_MODULES, isBetaOffModule } from "./beta-off-modules";
+export {
+  RELEASE_NOTES,
+  formatReleaseNoteDate,
+  releaseNoteText,
+  type ReleaseNote,
+} from "./release-notes";
 
 // ── Legal / compliance ───────────────────────────────────────────────────────
 // The policy version itself is the API's (`apps/api/src/domain/constants/

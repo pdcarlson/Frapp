@@ -113,6 +113,10 @@ export default function AppLayout() {
         name="host-check-in"
         options={{ title: SCREEN_TITLES["host-check-in"] }}
       />
+      <Stack.Screen
+        name="whats-new"
+        options={{ title: SCREEN_TITLES["whats-new"] }}
+      />
     </Stack>
   );
 }
