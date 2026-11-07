@@ -610,6 +610,20 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
     expect(onSetCollapsed).toHaveBeenCalledWith("channels", true);
   });
 
+  it("pins each section header to the top of the rail on its own surface (owner 2026-11-07)", () => {
+    renderArranged(sidebarControls());
+
+    // `sticky` inside the section's own box, so the next section's header
+    // pushes it off; the surface keeps the rows under it from showing through.
+    for (const name of ["Channels", "Direct messages"]) {
+      const header = screen.getByRole("button", { name });
+      expect(header).toHaveClass("sticky", "top-0", "bg-surface-1");
+      expect(header.parentElement).toContainElement(
+        screen.getByRole("list", { name }),
+      );
+    }
+  });
+
   it("shows a folded section's total on its header, red when it holds a mention", () => {
     renderArranged(
       sidebarControls({
