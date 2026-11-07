@@ -38,7 +38,9 @@ vi.mock("@repo/hooks", () => ({
   useMembers: () => ({ data: MEMBERS, isPending: false, isError: false }),
   useUpdateAttendanceStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useAutoAbsent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useMyPermissions: () => ({ data: { permissions: ["events:update"] } }),
+  useMyPermissions: () => ({
+    data: { permissions: ["events:update", "events:create"] },
+  }),
   useEvents: () => ({
     data: [],
     isLoading: false,
@@ -227,21 +229,27 @@ describe("AttendancePanel subscription gating", () => {
 describe("EventsPage subscription gating", () => {
   // `POST /v1/events` and `PATCH /v1/events/:id` are paid-ops. The page owns the
   // editor dialog's `open`, so §5 rule 1 lands here: the New event button and
-  // the empty-state CTA are the triggers that must refuse to open it (#841).
+  // the calendar's day controls are the triggers that must refuse to open it
+  // (#841). With no events the page opens on the calendar, so both are on
+  // screen together.
   beforeEach(() => vi.clearAllMocks());
 
   const newEvent = () => screen.getByRole("button", { name: /new event/i });
 
-  it("disables both create entry points and names the blocker when incomplete", () => {
+  it("disables every create entry point and names the blocker when incomplete", () => {
     chapter.incomplete();
     render(<EventsPage />);
 
     expect(newEvent()).toBeDisabled();
-    // The empty-state CTA is the second way into the same dialog; gating only
-    // the header button would leave a live path to a doomed form.
-    expect(
-      screen.getByRole("button", { name: /create first event/i }),
-    ).toBeDisabled();
+    // The calendar's days are more ways into the same dialog; gating only the
+    // header button would leave a live path to a doomed form. The dashed +
+    // on today isn't drawn at all while the days are off.
+    for (const day of screen.getAllByRole("button", {
+      name: /^create event on/i,
+    })) {
+      expect(day).toBeDisabled();
+    }
+    expect(screen.queryByTestId("calendar-first-event-slot")).toBeNull();
     expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
   });
 
