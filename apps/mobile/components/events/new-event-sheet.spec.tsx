@@ -46,6 +46,15 @@ const mutate = vi.fn((_body: unknown, options: Options) =>
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCreateEvent: () => ({ mutate, isPending: false }),
+  useRoles: () => ({
+    data: [
+      { id: "role-officers", name: "Officers" },
+      { id: "role-new", name: "New Members" },
+      { id: "role-alumni", name: "Alumni" },
+    ],
+    isPending: false,
+    isError: false,
+  }),
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
@@ -99,6 +108,17 @@ const createButton = (tree: ReactTestRenderer) =>
       node.props.label === "Create event" && typeof node.type === "function",
   );
 
+/** The chip whose text is `label`. */
+function chip(tree: ReactTestRenderer, label: string) {
+  const [node] = tree.root.findAll(
+    (each) =>
+      typeof each.props.onPress === "function" &&
+      each.findAll((child) => child.props.children === label).length > 0,
+  );
+  if (!node) throw new Error(`no chip ${label}`);
+  return node;
+}
+
 function type(tree: ReactTestRenderer, label: string, text: string) {
   act(() => byLabel(tree, label).props.onChangeText(text));
 }
@@ -137,8 +157,34 @@ describe("New event", () => {
     const tree = render(onCreated);
     type(tree, "Event name", "Formal");
     type(tree, "Location", "Great Hall");
+    // The options start closed, and say what they hold.
+    expect(screenText(tree)).not.toContain("Points for attending");
+    expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
+      "More options: 10 pts · Optional for everyone · Doesn't repeat",
+    );
+    act(() => byLabel(tree, "More options").props.onPress());
     type(tree, "Points for attending", "25");
-    act(() => byLabel(tree, "Mandatory").props.onValueChange(true));
+    // Required for everyone, but alumni only optional: set in the stacked
+    // Who's coming sheet (its own spec drives its controls).
+    const attendance = tree.root.find(
+      (node) =>
+        typeof node.props.onChange === "function" &&
+        node.props.value?.everyone !== undefined,
+    );
+    act(() =>
+      attendance.props.onChange({
+        everyone: "required",
+        roles: { "role-alumni": "optional" },
+      }),
+    );
+    expect(byLabel(tree, "Who's coming").props.accessibilityLabel).toBe(
+      "Who's coming: Required for everyone, optional for Alumni",
+    );
+    act(() => chip(tree, "Every week").props.onPress());
+    // Read against the default start, Thursday the 5th at 7 PM.
+    expect(screenText(tree)).toContain(
+      "13 meetings, the last on Jan 28, 2027.",
+    );
 
     // Saturday the 7th at 9:30 PM; the end follows, an hour on.
     const dayPicker = pick(tree, "Starts day", local(7, 0));
@@ -163,11 +209,15 @@ describe("New event", () => {
       end_time: local(8, 1, 30).toISOString(),
       point_value: 25,
       is_mandatory: true,
+      optional_role_ids: ["role-alumni"],
+      recurrence_rule: "WEEKLY",
     });
     expect(successHaptic).toHaveBeenCalledTimes(1);
     expect(onCreated).toHaveBeenCalledTimes(1);
     expect(byLabel(tree, "Event name").props.value).toBe("");
-    expect(byLabel(tree, "Mandatory").props.value).toBe(false);
+    expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
+      "More options: 10 pts · Optional for everyone · Doesn't repeat",
+    );
     act(() => tree.unmount());
   });
 
@@ -233,6 +283,21 @@ describe("New event", () => {
     act(() => tree.unmount());
   });
 
+  it("opens the options to show an error inside them", () => {
+    const tree = render();
+    type(tree, "Event name", "Formal");
+    act(() => byLabel(tree, "More options").props.onPress());
+    type(tree, "Points for attending", "1.5");
+    act(() => byLabel(tree, "Fewer options").props.onPress());
+    act(() => createButton(tree).props.onPress());
+
+    expect(mutate).not.toHaveBeenCalled();
+    expect(screenText(tree)).toContain(
+      "Points must be a whole number, up to 100,000.",
+    );
+    act(() => tree.unmount());
+  });
+
   it("keeps the draft and Create after an ordinary failure", () => {
     outcome = { ok: false, error: FAILED };
     const tree = render();
@@ -273,7 +338,8 @@ describe("the When row on iOS", () => {
       ["time", "compact"],
     ]);
     expect(pickers[0]!.props.minimumDate).toEqual(local(5, 0));
-    expect(pickers[1]!.props.minuteInterval).toBe(5);
+    // Every minute, as Calendar allows: a 5-minute step couldn't set 6:48.
+    expect(pickers[1]!.props.minuteInterval).toBe(1);
 
     // A new time keeps the held day.
     act(() => pickers[1]!.props.onValueChange({}, local(1, 20, 15)));

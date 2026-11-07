@@ -18,7 +18,8 @@ import {
 } from './event-announcement.service';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { toRRuleLine } from '@repo/validation';
-import { hasRequiredRole } from './event-role-targeting';
+import { isInvited } from './event-role-targeting';
+import { eventLimitsAudience } from '@repo/validation';
 import { normalizeCheckInZone } from './event-input';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import type {
@@ -46,9 +47,9 @@ export class EventService {
   ) {}
 
   /**
-   * `spec/behavior/events.md` § Role-based required attendance: a role-targeted
-   * event is visible only to members who hold one of its `required_role_ids`
-   * (an untargeted event, `null`/`[]`, is visible chapter-wide) — **or** who
+   * `spec/behavior/events.md` § Attendance by role: an event is visible only
+   * to the members it invites (`isInvited`; an event that leaves nobody out is
+   * visible chapter-wide) — **or** to members who
    * hold `events:update` (which covers the wildcard President role too, per
    * `RbacService.memberHasAnyPermission`). Without that exemption, an officer
    * who can `PATCH`/`DELETE` any event but doesn't hold the specific targeted
@@ -65,9 +66,7 @@ export class EventService {
     chapterId: string,
     viewerId: string,
   ): Promise<boolean> {
-    if (!event.required_role_ids || event.required_role_ids.length === 0) {
-      return true;
-    }
+    if (!eventLimitsAudience(event)) return true;
     if (
       await this.rbac.memberHasAnyPermission(chapterId, viewerId, [
         SystemPermissions.EVENTS_UPDATE,
@@ -80,7 +79,7 @@ export class EventService {
       chapterId,
     );
     if (!member) return false;
-    return hasRequiredRole(event.required_role_ids, member.role_ids);
+    return isInvited(event, member.role_ids);
   }
 
   async findById(
@@ -107,9 +106,7 @@ export class EventService {
     // Skip the permission/member lookups entirely for the common case — a
     // chapter with no role-targeted events — rather than paying for them on
     // every list call.
-    const hasTargetedEvents = events.some(
-      (event) => event.required_role_ids && event.required_role_ids.length > 0,
-    );
+    const hasTargetedEvents = events.some(eventLimitsAudience);
     if (!hasTargetedEvents) return events;
     if (
       await this.rbac.memberHasAnyPermission(chapterId, viewerId, [
@@ -123,9 +120,7 @@ export class EventService {
       chapterId,
     );
     const memberRoleIds = member?.role_ids ?? [];
-    return events.filter((event) =>
-      hasRequiredRole(event.required_role_ids, memberRoleIds),
-    );
+    return events.filter((event) => isInvited(event, memberRoleIds));
   }
 
   async create(input: CreateEventInput): Promise<CreateEventResult> {
@@ -142,7 +137,7 @@ export class EventService {
       throw new BadRequestException('end_time must be after start_time');
     }
 
-    // A role-targeted event must not be broadcast as a chat card. #1463 made
+    // An event that leaves anyone out must not be broadcast as a chat card. #1463 made
     // `required_role_ids` gate read access — list, detail, ICS, search and the
     // event notifications all restrict a targeted event to members holding one
     // of its roles — but the `kind:"event"` card bypassed all of it: it embeds
@@ -169,23 +164,28 @@ export class EventService {
     // (`dispatchEvent` in `packages/chat-core/src/dispatch.ts` sends no such
     // key and the parser has no syntax for one), so only a direct
     // `POST /v1/events` reaches this branch. Thrown before the repo write, so
-    // a refused create leaves no event row behind. An empty array is
-    // untargeted per `spec/behavior/events.md` § `required_role_ids` wire
-    // semantics and is deliberately allowed through.
+    // a refused create leaves no event row behind. An event that invites
+    // everyone, whatever it asks of some roles, posts its card as before.
     //
     // Either chat key alone is refused, not just the pair. Neither half posts
     // a card on its own today (the mismatch is warned about in
     // `EventAnnouncementService.tryPostEventCard`), but
     // accepting one piecemeal would make the guard depend on which key a
     // caller happened to omit.
-    if (
-      (input.required_role_ids?.length ?? 0) > 0 &&
-      (input.channel_id || input.client_message_id)
-    ) {
+    //
+    // `others_invited` is stored as sent; omitted, it stays null and reads
+    // with the older meaning of `required_role_ids` (`eventOthersInvited`).
+    const others_invited = input.others_invited ?? null;
+    const limitsAudience = eventLimitsAudience({
+      others_invited,
+      required_role_ids: input.required_role_ids,
+      excluded_role_ids: input.excluded_role_ids,
+    });
+    if (limitsAudience && (input.channel_id || input.client_message_id)) {
       throw new BadRequestException(
-        'A role-targeted event cannot post a chat card: the card would show the ' +
-          'event to everyone in the channel, including members its ' +
-          'required_role_ids exclude. Create it without channel_id/client_message_id.',
+        'An event that leaves anyone out cannot post a chat card: the card ' +
+          'would show the event to everyone in the channel. Create it without ' +
+          'channel_id/client_message_id.',
       );
     }
 
@@ -201,6 +201,9 @@ export class EventService {
       recurrence_rule: input.recurrence_rule ?? null,
       parent_event_id: null,
       required_role_ids: input.required_role_ids ?? null,
+      optional_role_ids: input.optional_role_ids ?? null,
+      excluded_role_ids: input.excluded_role_ids ?? null,
+      others_invited,
       notes: input.notes ?? null,
       check_in_zone: normalizeCheckInZone(input.check_in_zone) ?? null,
       check_in_zone_name: input.check_in_zone_name ?? null,
@@ -290,10 +293,12 @@ export class EventService {
       }
     }
 
+    const patch: UpdateEventInput = input;
+
     if (scope === 'series') {
       // Hand on the row already read rather than reading it twice.
       const target = existing ?? (await this.findById(id, chapterId));
-      return this.series.updateSeries(target, chapterId, input, actorId);
+      return this.series.updateSeries(target, chapterId, patch, actorId);
     }
 
     // The row as it was, to tell a real move from a round-tripped save
@@ -305,7 +310,7 @@ export class EventService {
         : null);
 
     const updated = await this.eventRepo.update(id, chapterId, {
-      ...input,
+      ...patch,
       // Spread first, then overwrite: `normalizeCheckInZone` returns `undefined`
       // for an absent key, which the repository's partial update ignores, so an
       // update that never mentions the zone leaves it untouched.
@@ -317,7 +322,7 @@ export class EventService {
     await this.announcements.notifyEventUpdated(
       chapterId,
       updated,
-      before ? eventChangeOf(before, input) : null,
+      before ? eventChangeOf(before, patch) : null,
       actorId,
     );
 

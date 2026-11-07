@@ -9,8 +9,8 @@ import { NotificationService } from './notification.service';
 import type { NotifyPayload, NotifyRecipient } from './notification.service';
 import { ChatService } from './chat.service';
 import { RbacService } from './rbac.service';
-import { eventAttendanceFor } from './event-role-targeting';
-import type { EventAttendance } from './event-role-targeting';
+import { memberAttendance } from './event-role-targeting';
+import type { EventAttendanceStatus as EventAttendance } from '@repo/validation';
 import type { CreateEventInput, UpdateEventInput } from './event-input';
 import {
   DEFAULT_PUSH_TIME_ZONE,
@@ -172,10 +172,10 @@ export class EventAnnouncementService {
    * creator into the channel they ran the command from; channel access is
    * re-checked by `ChatService.sendMessage`.
    *
-   * Only ever reached for an **untargeted** event: `create` rejects a
-   * role-targeted event that asks for a card before writing the row, because
-   * this payload is broadcast to every reader of the channel and would bypass
-   * the `required_role_ids` read gate #1463 installed.
+   * Only ever reached for an event that invites everyone: `create` rejects
+   * one that limits its audience (`eventLimitsAudience`) and asks for a card
+   * before writing the row, because this payload is broadcast to every reader
+   * of the channel and would bypass the read gate #1463 installed.
    */
   private async postEventCard(
     input: CreateEventInput,
@@ -283,8 +283,8 @@ export class EventAnnouncementService {
    * of them, leaving out `actorId`: whoever scheduled or moved it already
    * knows, and a push about your own action reads as noise.
    *
-   * The audience follows the event's read rule. A role-targeted event reaches
-   * only members holding one of its roles; without that, the push named a
+   * The audience follows the event's read rule (attendance by role): a member
+   * the event does not invite is left out; without that, the push named a
    * role-targeted event (and deep-linked to it) for every member, even one who
    * correctly 404s reading the event itself (#1463).
    */
@@ -309,11 +309,7 @@ export class EventAnnouncementService {
     const attendanceByUser = new Map<string, EventAttendance>();
     for (const member of members) {
       if (member.user_id === actorId) continue;
-      const attendance = eventAttendanceFor(
-        event,
-        member.role_ids,
-        alumniRoleId,
-      );
+      const attendance = memberAttendance(event, member.role_ids, alumniRoleId);
       if (attendance !== 'not_invited') {
         attendanceByUser.set(member.user_id, attendance);
       }

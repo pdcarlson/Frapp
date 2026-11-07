@@ -13,7 +13,12 @@ import {
   useCreateTask,
   useViewerUserId,
 } from "@repo/hooks";
-import { avatarRadius, fieldTypeRole, typeRole, useFrappTheme } from "@/lib/theme";
+import {
+  avatarRadius,
+  fieldTypeRole,
+  typeRole,
+  useFrappTheme,
+} from "@/lib/theme";
 import {
   useChapterBranding,
   type ChapterBranding,
@@ -33,13 +38,13 @@ import {
   SheetBackToClose,
   useSheetClose,
 } from "@/components/sheet-scaffold";
-import { CalendarGlyph } from "@/components/tasks/task-glyphs";
+import { DueDateField } from "@/components/tasks/due-date-field";
+import { localIsoDate } from "@repo/formatting";
 import { TITLE_MAX_LENGTH } from "@/lib/tasks/limits";
 import {
   DEFAULT_DUE_CHOICE,
   dueChoiceOf,
   duePresets,
-  formatDueFieldLabel,
   parsePointReward,
   resolveDue,
   validateNewTask,
@@ -61,12 +66,13 @@ import {
  * plain `TextInput` breaks the sheet's keyboard coordination. s20's log sheet
  * (`components/service-hours/log-hours-sheet.tsx`) is built on the same chrome.
  *
- * ## Two deviations from the drawing, both forced
+ * ## The due date
  *
- * **The date is presets, not a free field.** No date-picker dependency exists
- * and `package.json` is frozen under #937's hotspot protocol — see the header of
- * `lib/tasks/create-task.ts` for the full reasoning. (2026-11-06: the native
- * picker is a dependency now; moving this row to it is #3597.)
+ * The drawn free date field, as the platform's picker (`due-date-field.tsx`,
+ * #3597), with the preset chips under it kept as quick picks: most tasks are
+ * due today, tomorrow or this week, and a chip is one tap.
+ *
+ * ## One deviation from the drawing, forced
  *
  * **The focus ring is a border, not a shadow.** Canvas draws
  * `box-shadow: 0 0 0 3px rgba(239,182,59,.22)`. React Native has no
@@ -391,10 +397,12 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
 
             <View style={styles.splitRow}>
               <View style={[styles.field, styles.splitField]}>
-                <CalendarGlyph color={tokens.color.text.mutedForeground} />
-                <Text style={styles.fieldValue}>
-                  {formatDueFieldLabel(dueDate)}
-                </Text>
+                <DueDateField
+                  value={dueDate}
+                  today={localIsoDate(at)}
+                  disabled={pending}
+                  onChange={(date) => setDue({ kind: "date", date })}
+                />
               </View>
 
               <View style={[styles.field, styles.splitField]}>
@@ -595,6 +603,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     pointsInput: {
       flex: 1,
+      // No lineHeight on a single-line input, or iOS draws the text low.
       ...fieldTypeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },
