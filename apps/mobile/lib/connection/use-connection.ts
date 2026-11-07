@@ -10,18 +10,12 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { connectionMonitor } from "./monitor";
 import { bindQueryConnectivity } from "./query-connectivity";
-import {
-  connectionBannerCopy,
-  writeBlockedReason,
-  type ConnectionState,
-} from "./state";
+import { writeBlockedReason, type ConnectionState } from "./state";
 
 export interface Connection {
   state: ConnectionState;
   isOffline: boolean;
   isDegraded: boolean;
-  /** Banner copy, or `null` when there is nothing to say. */
-  message: string | null;
   /**
    * Why a *queueless* write is disabled, or `null`.
    *
@@ -44,7 +38,6 @@ export function useConnection(): Connection {
     state,
     isOffline: state === "OFFLINE",
     isDegraded: state === "DEGRADED",
-    message: connectionBannerCopy(state),
     writeBlockedReason: writeBlockedReason(state),
   };
 }

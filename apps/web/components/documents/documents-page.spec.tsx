@@ -9,7 +9,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import { networkMock } from "@/tests/network";
-import { OfflineBanner } from "@/components/shared/offline-banner";
+import { ConnectionPill } from "@/components/shared/connection-pill";
 
 const {
   mockCurrentChapter,
@@ -595,7 +595,7 @@ describe("DocumentsPage state ordering", () => {
     // TanStack does not clear `data` when the link goes; README §4 scopes the
     // offline state to "no cached data" and §10 keeps stale content in place.
     // An unconditional `isOffline` branch threw away a list the member could
-    // still read, on a WiFi blip. The shell's OfflineBanner states the
+    // still read, on a WiFi blip. The shell's ConnectionPill states the
     // connection on every route, so the screen owes no state here.
     mockOffline.value = true;
 
@@ -1202,7 +1202,7 @@ describe("DocumentsPage offline write gating", () => {
     const user = userEvent.setup();
     const { rerender } = render(
       <>
-        <OfflineBanner />
+        <ConnectionPill />
         <DocumentsPage />
       </>,
     );
@@ -1215,7 +1215,7 @@ describe("DocumentsPage offline write gating", () => {
     mockOffline.value = true;
     rerender(
       <>
-        <OfflineBanner />
+        <ConnectionPill />
         <DocumentsPage />
       </>,
     );
@@ -1233,7 +1233,7 @@ describe("DocumentsPage offline write gating", () => {
     const user = userEvent.setup();
     const { rerender } = render(
       <>
-        <OfflineBanner />
+        <ConnectionPill />
         <DocumentsPage />
       </>,
     );
@@ -1244,7 +1244,7 @@ describe("DocumentsPage offline write gating", () => {
     mockOffline.value = true;
     rerender(
       <>
-        <OfflineBanner />
+        <ConnectionPill />
         <DocumentsPage />
       </>,
     );
@@ -1254,7 +1254,7 @@ describe("DocumentsPage offline write gating", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
-    expect(screen.getByRole("alert")).toHaveFocus();
+    expect(screen.getByRole("button", { name: /You're offline/ })).toHaveFocus();
     expect(document.body).not.toHaveFocus();
   });
 });

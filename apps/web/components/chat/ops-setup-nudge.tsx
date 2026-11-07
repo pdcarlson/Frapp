@@ -175,7 +175,7 @@ export function OpsSetupNudgeCard({
         `region`, not `alert` or `status`. The nudge is not news — it is
         standing suggestion that is equally true on the member's tenth visit,
         and a live region would announce it over whatever the member came to
-        chat to read. `offline-banner.tsx` is the contrasting case: that one IS
+        chat to read. `connection-pill.tsx` is the contrasting case: that one IS
         an event, and takes `role="alert"`.
       */
       role="region"
