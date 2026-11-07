@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEGRADED_THRESHOLD,
+  connectionIndicator,
   deriveConnectionState,
   healthProbeIsReachable,
   type ConnectionState,
@@ -84,5 +85,60 @@ describe("healthProbeIsReachable", () => {
 
   it("treats a mock that only sets ok as a failure when ok is false", () => {
     expect(healthProbeIsReachable({ ok: false })).toBe(false);
+  });
+});
+
+describe("connectionIndicator (one indicator for the app and the open chat)", () => {
+  it("says nothing on a healthy connection, with or without a live chat", () => {
+    expect(connectionIndicator("ONLINE", null)).toBeNull();
+    expect(connectionIndicator("ONLINE", "live")).toBeNull();
+  });
+
+  it("says Offline, and promises the queue only while a chat is open", () => {
+    expect(connectionIndicator("OFFLINE", null)).toEqual({
+      tone: "danger",
+      label: "Offline",
+      description: "You're offline. Showing cached data.",
+    });
+    const inChat = connectionIndicator("OFFLINE", "offline");
+    expect(inChat?.label).toBe("Offline");
+    expect(inChat?.description).toMatch(/go out when you reconnect/);
+    // A transport that calls itself offline on an app that does not is still
+    // one "Offline", never a second pill.
+    expect(connectionIndicator("ONLINE", "offline")?.label).toBe("Offline");
+  });
+
+  it("lets the app's slow connection speak over the transport's symptoms", () => {
+    for (const transport of [null, "live", "reconnecting", "polling"] as const) {
+      expect(connectionIndicator("DEGRADED", transport)).toEqual({
+        tone: "warning",
+        label: "Slow connection",
+        description: "Slow connection. Some features may be delayed.",
+      });
+    }
+  });
+
+  it("reports the transport only on an otherwise healthy connection", () => {
+    expect(connectionIndicator("ONLINE", "polling")).toEqual({
+      tone: "warning",
+      label: "Live updates paused",
+      description: "Real-time updates paused. Polling for new messages.",
+    });
+    expect(connectionIndicator("ONLINE", "reconnecting")?.label).toBe(
+      "Reconnecting…",
+    );
+  });
+
+  it("never draws an emoji", () => {
+    const all = (["ONLINE", "DEGRADED", "OFFLINE"] as const).flatMap((state) =>
+      ([null, "live", "polling", "reconnecting", "offline"] as const).map(
+        (transport) => connectionIndicator(state, transport),
+      ),
+    );
+    for (const indicator of all) {
+      expect(`${indicator?.label} ${indicator?.description}`).not.toMatch(
+        /[\u{1F300}-\u{1FAFF}⚡]/u,
+      );
+    }
   });
 });

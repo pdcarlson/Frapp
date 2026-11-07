@@ -137,7 +137,7 @@ real.
 its whole-route early return was folded into a `no-chapter` state the frame
 renders, so the sessionless run now measures the real two-column layout — both
 48px column headers, the channels column and its hairline, the thread column's
-`h2`, its reconnect pill and its `⋯` menu — with a "No chapter selected" card
+`h2` and its `⋯` menu — with a "No chapter selected" card
 where the timeline goes. That is more coverage than before, not less, and it is
 why the floor number for this route is now measuring something worth measuring.
 
