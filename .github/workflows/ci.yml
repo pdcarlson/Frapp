@@ -554,8 +554,9 @@ jobs:
         if: github.event_name == 'pull_request'
         run: npm run check:migration-safety -- --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
 
-      # No range on push: the promotion-docs half is a PR-time gate. Filename checks
-      # (#980) and the ledger-coverage ratchet still run here.
+      # No range on push: the applied-migration edit check (#2751) and the
+      # promotion-docs check are PR-time gates. Filename checks (#980) and the
+      # ledger-coverage ratchet still run here.
       - name: Check migration safety (push)
         if: github.event_name == 'push'
         run: npm run check:migration-safety

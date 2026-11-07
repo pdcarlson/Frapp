@@ -148,7 +148,9 @@ match their DTOs.
 
 - filenames match `{14-digit-timestamp}_{snake_case}.sql`, with no duplicate timestamps;
 - a migration change also updates one of the runbooks in `MIGRATION_DOCS`, and every migration has
-  an entry in both runbooks, with a shrink-only `UNLEDGERED` allowlist for older migrations.
+  an entry in both runbooks, with a shrink-only `UNLEDGERED` allowlist for older migrations;
+- with a commit range, no migration already on the base has its executable SQL edited, or is
+  removed, unless `EDITED_MIGRATION_EXCEPTIONS` records it (#2751).
 
 Exit 2, not 1, means the gate can't do its job rather than that your change is wrong: a rename
 outran `MIGRATION_DOCS`, a declared doc has no entry shape in `LEDGER_ENTRY_PATTERNS`, or
