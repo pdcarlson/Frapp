@@ -17,6 +17,9 @@ const mockState = vi.hoisted(() => ({
   setBadgeCount: vi.fn(async (count: number) => {
     void count;
   }),
+  clearRead: vi.fn(async (ids: ReadonlySet<string>) => {
+    void ids;
+  }),
 }));
 
 vi.mock("@repo/hooks", () => ({
@@ -30,6 +33,8 @@ vi.mock("@repo/hooks", () => ({
 
 vi.mock("./push", () => ({
   setBadgeCount: (count: number) => mockState.setBadgeCount(count),
+  clearReadChatNotifications: (ids: ReadonlySet<string>) =>
+    mockState.clearRead(ids),
 }));
 
 const { useBadgeSyncRuntime } = await import("./use-badge-sync");
@@ -40,6 +45,7 @@ beforeEach(() => {
   mockState.channelUnread = [];
   mockState.channelUnreadOptions = [];
   mockState.setBadgeCount.mockClear();
+  mockState.clearRead.mockClear();
 });
 
 afterEach(() => {
@@ -115,5 +121,21 @@ describe("useBadgeSyncRuntime", () => {
     rerender();
 
     expect(mockState.setBadgeCount).toHaveBeenLastCalledWith(1);
+  });
+
+  it("clears the tray for channels that read as fully read", () => {
+    mockState.channelUnread = [
+      { channel_id: "read", unread_count: 0 },
+      { channel_id: "unread", unread_count: 2 },
+    ];
+    renderHook(() => useBadgeSyncRuntime());
+    expect(mockState.clearRead).toHaveBeenCalledWith(new Set(["read"]));
+  });
+
+  it("clears nothing without an active chapter", () => {
+    mockState.chapterId = null;
+    mockState.channelUnread = [{ channel_id: "read", unread_count: 0 }];
+    renderHook(() => useBadgeSyncRuntime());
+    expect(mockState.clearRead).not.toHaveBeenCalled();
   });
 });
