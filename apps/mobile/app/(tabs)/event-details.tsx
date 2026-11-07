@@ -1,4 +1,5 @@
 import { checkInZoneLine } from "@repo/validation";
+import { useRequiredOfViewer } from "@/lib/events/viewer-roles";
 import { useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -62,6 +63,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 export default function EventDetailsScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const requiredOf = useRequiredOfViewer();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const eventId = Array.isArray(params.id) ? params.id[0] : (params.id ?? "");
 
@@ -148,6 +150,7 @@ export default function EventDetailsScreen() {
   }
 
   const window = resolveCheckInWindow(event.start_time, event.end_time, now);
+  const requiredOfViewer = requiredOf(event.attendance);
 
   return (
     <ScreenShell
@@ -160,9 +163,9 @@ export default function EventDetailsScreen() {
         .filter(Boolean)
         .join(" · ")}
     >
-      {event.is_mandatory || event.point_value ? (
+      {requiredOfViewer || event.point_value ? (
         <View style={styles.badgeRow}>
-          {event.is_mandatory ? (
+          {requiredOfViewer ? (
             <StatusChip
               label="Mandatory"
               hue={tokens.color.semantic.destructive}
@@ -279,12 +282,7 @@ function CheckInCard({
             },
           ]}
         />
-        <Text
-          style={[
-            styles.checkInTitle,
-            isOpen ? { color: accent } : null,
-          ]}
-        >
+        <Text style={[styles.checkInTitle, isOpen ? { color: accent } : null]}>
           {title}
         </Text>
         {trailing ? <Text style={styles.checkInMeta}>{trailing}</Text> : null}

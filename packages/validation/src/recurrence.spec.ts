@@ -49,7 +49,9 @@ describe("toRRuleLine — rule mapping", () => {
 
   it("spells BIWEEKLY as a weekly rule with an interval", () => {
     // RFC 5545 has no BIWEEKLY frequency; INTERVAL=2 is the sanctioned form.
-    expect(toRRuleLine("BIWEEKLY")).toBe("RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=7");
+    expect(toRRuleLine("BIWEEKLY")).toBe(
+      "RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=7",
+    );
   });
 
   // The defect this module exists to prevent. RFC 5545 §3.8.5.3: "The DTSTART

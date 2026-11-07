@@ -3055,3 +3055,21 @@ One `COMMENT ON COLUMN public.discord_imports.role_mapping` (#2887). No column, 
 ```sql
 comment on column public.discord_imports.role_mapping is null;
 ```
+
+## Rollback attendance by role (20261107070000)
+
+* **Migration**: `20261107070000_event_attendance_by_role.sql`
+
+Three nullable columns on `events`: `optional_role_ids`, `excluded_role_ids`, `others_invited`. Nothing was backfilled.
+
+**Revert the API and clients forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). A row the new API wrote with only a null `others_invited` and `required_role_ids` reads the same to the older API. A row saved with optional or excluded roles, or with an explicit `others_invited`, does not: the older API ignores those columns, so "Optional for everyone, Pledges not invited" shows to pledges and "Required for Officers, optional for everyone" becomes officers-only. Before reverting, list them with `select id, name from events where others_invited is not null or optional_role_ids is not null or excluded_role_ids is not null;` and have an officer re-save each in the older editor, or accept the change.
+
+**Keep the columns unless they are themselves the problem.** Dropping them loses every officer's per-role choice. To remove them anyway, do it in a later forward migration after the code revert has shipped:
+
+```sql
+alter table public.events
+  drop column if exists optional_role_ids,
+  drop column if exists excluded_role_ids,
+  drop column if exists others_invited;
+```
+

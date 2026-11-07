@@ -80,7 +80,7 @@ describe("groupByWeek", () => {
       start_time: typeof start === "string" ? start : start.toISOString(),
       end_time: typeof start === "string" ? start : start.toISOString(),
       point_value: null,
-      is_mandatory: false,
+      attendance: { is_mandatory: false },
     };
   }
   // Wednesday 8 PM, local time, so the split is by calendar day wherever the

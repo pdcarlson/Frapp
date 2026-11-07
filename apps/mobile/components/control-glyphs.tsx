@@ -123,6 +123,29 @@ export function LinkGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
 }
 
 /**
+ * A disclosure chevron: down while what it opens is shown, right while it is
+ * hidden, as a "More options" row or a row that opens a picker draws it.
+ */
+export function DisclosureGlyph({
+  color,
+  size = DEFAULT_SIZE,
+  direction,
+}: ControlGlyphProps & { direction: "right" | "down" | "up" }) {
+  const { detail } = paint({ color });
+  const d =
+    direction === "right"
+      ? "M9.5 6l6 6-6 6"
+      : direction === "down"
+        ? "M6 9.5l6 6 6-6"
+        : "M6 14.5l6-6 6 6";
+  return (
+    <Frame size={size}>
+      <Path d={d} {...detail} />
+    </Frame>
+  );
+}
+
+/**
  * The back arrow's stroke: heavier than the recipe's 1.6, the weight the
  * back-row capsule drew its own arrow at before it drew this one. Every back
  * arrow on mobile takes it.
