@@ -14,22 +14,11 @@ import { localIsoDate, parseBareDateLocalNoon } from "@repo/formatting";
  * knows will 400. Same relationship `CHECK_IN_GRACE_MINUTES` has to the
  * attendance service.
  *
- * ## Why the due date is presets and not a picker
+ * ## The due date
  *
- * (2026-11-06: `@react-native-community/datetimepicker` is a dependency now,
- * so the reason below is history; moving to it is #3597.)
- * `apps/mobile` had no date-picker dependency, and `package.json` was frozen
- * under #937's hotspot protocol — adding one is an integrator PR that this slice
- * would then have to wait behind. Expo Go is the only run path
- * (`spec/ui/mobile/README.md`) and this app is on SDK 57, so a picker's Go
- * compatibility could not be verified here anyway. C4 made exactly this call one
- * cluster ago when `service-hours.tsx` dropped the drawn proof-upload rather
- * than take a file-picker dependency.
- *
- * TODO-DESIGN: `canvas-screens.dc.html` s19 draws a single free date field
- * ("Fri, Aug 21"); these presets cannot express a date beyond next week. Nearest
- * pattern used: the existing `FilterChips` selection row. Restore the drawn
- * field once an integrator lands a picker.
+ * Any day from today on, picked with the platform's date picker
+ * (`components/tasks/due-date-field.tsx`, #3597), or with a preset chip.
+ * A picked day is held as a date, like "Friday" ({@link resolveDue}).
  */
 
 import { POINTS_MAX, TITLE_MAX_LENGTH } from "./limits";

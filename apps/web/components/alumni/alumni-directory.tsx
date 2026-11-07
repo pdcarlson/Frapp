@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useState } from "react";
 import { SearchGlyph } from "@/components/members/directory-glyphs";
 import { useAlumni } from "@repo/hooks";
@@ -270,7 +271,7 @@ export function AlumniDirectory() {
         <NestedError
           sole
           title="Couldn't load alumni"
-          description="Check your chapter access."
+          description={describeLoadFailure(query.error)}
           onRetry={() => void query.refetch()}
         />
       ) : alumni.length === 0 ? (

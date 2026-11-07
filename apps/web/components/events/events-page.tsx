@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useCallback, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import {
@@ -13,7 +14,12 @@ import {
   useMyPermissions,
   useNow,
 } from "@repo/hooks";
-import { can } from "@repo/validation";
+import {
+  attendanceFieldsOf,
+  can,
+  eventDefaultAttendance,
+  eventSetsRolesApart,
+} from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -168,8 +174,10 @@ export function EventsPage() {
       const recurrenceRule =
         typeof event.recurrence_rule === "string" ? event.recurrence_rule : "";
       const isRecurring = recurrenceRule.length > 0;
+      // Required of everyone by default, as the row's Mandatory badge and the
+      // calendar say; an event that sets roles apart also carries "By role".
       const isMandatory =
-        typeof event.is_mandatory === "boolean" ? event.is_mandatory : false;
+        eventDefaultAttendance(attendanceFieldsOf(event)) === "required";
 
       if (
         queryLower &&
@@ -346,7 +354,7 @@ export function EventsPage() {
         <NestedError
           sole
           title={stateMicrocopy.events.errorTitle}
-          description={stateMicrocopy.events.errorDescription}
+          description={describeLoadFailure(eventsQuery.error)}
           onRetry={() => void eventsQuery.refetch()}
         />
       </div>
@@ -605,11 +613,13 @@ export function EventsPage() {
                   event.id ?? event.name ?? "unknown-event",
                 );
                 const eventName = String(event.name ?? "Untitled event");
-                const isMandatory = event.is_mandatory === true;
+                const fields = attendanceFieldsOf(event);
+                // "Mandatory" means required of everyone; an event that sets
+                // roles apart says so with its own badge instead.
+                const isMandatory =
+                  eventDefaultAttendance(fields) === "required";
                 const cadence = recurrenceLabel(event.recurrence_rule);
-                const isTargeted =
-                  Array.isArray(event.required_role_ids) &&
-                  event.required_role_ids.some((id) => typeof id === "string");
+                const isTargeted = eventSetsRolesApart(fields);
                 // One derived value: the row fill and the checkbox must never
                 // disagree about whether the row is selected.
                 const isSelected = selectedEventIds.includes(eventId);
@@ -695,7 +705,7 @@ export function EventsPage() {
                           {isTargeted ? (
                             <Badge variant="outline" className="gap-1">
                               <RolesGlyph className="h-3.5 w-3.5" />
-                              Targeted
+                              By role
                             </Badge>
                           ) : null}
                         </span>

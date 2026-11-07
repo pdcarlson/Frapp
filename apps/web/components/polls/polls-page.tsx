@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 import {
@@ -477,7 +478,7 @@ export function PollsPage() {
           <NestedError
             sole
             title="Couldn't load polls"
-            description="Confirm your chapter access and retry."
+            description={describeLoadFailure(pollsQuery.error)}
             onRetry={() => void pollsQuery.refetch()}
           />
         ) : polls.length === 0 ? (
