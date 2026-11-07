@@ -284,7 +284,9 @@ Rules that go with it:
 - **No decorative glyph before a title.** The title names the surface; a glyph repeating the button just pressed is chrome.
 - **Mobile picks match web.** A member's profile is a panel on web and a tall sheet on mobile. Assign to, which lists the whole roster, is a tall sheet with its search pinned above the list.
 
-Not covered here: the Find dialog, whose size and scrolling result list §7's app bar table owns (its Find row), and the upload sheet, board `1j`'s drawn dialog.
+Not covered here: the Find dialog, whose size and scrolling result list §7's app bar table owns (its Find row), and the backwork upload sheet, board `1j`'s drawn dialog.
+
+**Chapter document upload is a panel (2026-11-06).** It holds a file plus four fields that grow, so it moved off board `1j`'s dialog onto the panel. Its file well (`UploadFileField`, shared with the backwork sheet) is a drop target on both: a dragged file lights the well to the neutral hover step, and the Documents page takes a file dropped anywhere on it and opens the panel with it. A picked file fills the title from its name and guesses the type; type is a chip row (the find dialog's filter chip) and folder a picker of the chapter's folders. Free text is the fallback, not the field: an Other chip and a New folder item each open an input, and both values still reach the API as free text until #3642. Optional details wait behind one disclosure line. Role visibility, expiry and AI autofill are #3642.
 
 Not on this yet: the notifications drawer and the backwork category drawer and merge dialog keep their own widths (#3517); three mobile sheets are still fixed boxes closed with a word, two of which (Edit profile and the report step) scroll their primary button away with the body (#3519).
 
