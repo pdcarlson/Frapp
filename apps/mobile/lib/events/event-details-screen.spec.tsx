@@ -53,6 +53,7 @@ let chapterId: string | null = "chapter-1";
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => chapterId,
+  useListChapters: () => ({ data: [{ chapter_id: "chapter-1", role_ids: [] }] }),
   useEvent: () => ({
     isPending: eventPending,
     isError: false,

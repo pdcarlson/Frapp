@@ -13,6 +13,9 @@ export interface CreateEventInput {
   is_mandatory?: boolean;
   recurrence_rule?: string | null;
   required_role_ids?: string[] | null;
+  optional_role_ids?: string[] | null;
+  excluded_role_ids?: string[] | null;
+  others_invited?: boolean;
   notes?: string | null;
   check_in_zone?: GeofenceCoordinate[] | null;
   check_in_zone_name?: string | null;
@@ -54,6 +57,9 @@ export interface UpdateEventInput {
   is_mandatory?: boolean;
   recurrence_rule?: string | null;
   required_role_ids?: string[] | null;
+  optional_role_ids?: string[] | null;
+  excluded_role_ids?: string[] | null;
+  others_invited?: boolean;
   notes?: string | null;
   check_in_zone?: GeofenceCoordinate[] | null;
   check_in_zone_name?: string | null;

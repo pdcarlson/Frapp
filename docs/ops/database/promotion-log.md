@@ -39,6 +39,16 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-invite-email-and-revoked_at-20261107090000) § Rollback invite email and revoked_at.
 
+## 2026-11-07: Attendance by role
+
+### 20261107070000_event_attendance_by_role.sql
+
+- **Purpose**: Adds three nullable columns to `events`: `optional_role_ids text[]`, `excluded_role_ids text[]`, `others_invited boolean` (no default). With `is_mandatory` and `required_role_ids` they say, per role and for everyone else, whether a member is required, optional or not invited. The rule is in [`spec/behavior/events.md`](../../../spec/behavior/events.md#event-creation) § Event Creation, "Attendance by role". No backfill; no row is rewritten. A null `others_invited` reads as "invited unless `required_role_ids` is non-empty", the old meaning, so every existing row and every row an older API writes keeps meaning what it meant.
+- **Checks**: After `db push`, `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'events' and column_name in ('optional_role_ids','excluded_role_ids','others_invited');` returns three rows, all `YES` with no default. `select count(*) from events where others_invited is not null;` returns 0 until the new API writes.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first, and the older API reads `select('*')` rows with three extra columns it ignores. The newer API against an unmigrated database fails event creates and reads that name the new columns, so don't deploy the API first. Mobile builds from this PR send `others_invited` or a role list only when an officer sets roles apart, so a plain event still creates against the older API if an OTA reaches phones first. `add column if not exists` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-attendance-by-role-20261107070000) § Rollback attendance by role.
+
 ## 2026-11-07: Whether anyone can @ a role
 
 ### 20261107061000_roles_mentionable.sql

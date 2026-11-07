@@ -4312,15 +4312,22 @@ export interface components {
             is_mandatory: boolean;
             /** @description Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY) */
             recurrence_rule?: string;
+            /** @description Roles that must attend. See `others_invited` for members holding none of the listed roles. */
             required_role_ids?: string[];
+            /** @description Roles invited but not required. */
+            optional_role_ids?: string[];
+            /** @description Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional. */
+            excluded_role_ids?: string[];
+            /** @description Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted on create, it is stored as null, which reads as true unless `required_role_ids` is non-empty: the older "only these roles" meaning, for a caller that predates this field. Omitted on update, it is left as stored. */
+            others_invited?: boolean;
             notes?: string;
             /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. */
             check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
             /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
             check_in_zone_name?: string;
-            /** @description When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when `required_role_ids` is non-empty, on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both target roles and post one. (`PATCH` can still add targeting to an event whose card already posted; that card is left as-is.) */
+            /** @description When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when the event keeps anyone out (`others_invited` false, including its default when `required_role_ids` is non-empty, or a non-empty `excluded_role_ids`), on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both limit its audience and post one. (`PATCH` can still limit the audience of an event whose card already posted; that card is left as-is.) */
             channel_id?: string;
-            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when `required_role_ids` is non-empty, even without `channel_id` — see that field. */
+            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when the event keeps anyone out, even without `channel_id` — see that field. */
             client_message_id?: string;
         };
         CreateEventResponseDto: {
@@ -4341,6 +4348,10 @@ export interface components {
             /** Format: uuid */
             parent_event_id: string | null;
             required_role_ids: string[] | null;
+            optional_role_ids: string[] | null;
+            excluded_role_ids: string[] | null;
+            /** @description Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`). */
+            others_invited: boolean | null;
             notes: string | null;
             /** @description Optional check-in geofence. `null` means the event has no zone. */
             check_in_zone: components["schemas"]["GeofenceCoordinateDto"][] | null;
@@ -4360,7 +4371,14 @@ export interface components {
             is_mandatory?: boolean;
             /** @description Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY) */
             recurrence_rule?: string;
+            /** @description Roles that must attend. See `others_invited` for members holding none of the listed roles. */
             required_role_ids?: string[];
+            /** @description Roles invited but not required. */
+            optional_role_ids?: string[];
+            /** @description Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional. */
+            excluded_role_ids?: string[];
+            /** @description Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored. A stored null reads as true unless `required_role_ids` is non-empty, the older "only these roles" meaning. */
+            others_invited?: boolean;
             notes?: string;
             /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone. */
             check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];

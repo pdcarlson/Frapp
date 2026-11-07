@@ -12,6 +12,10 @@
  * whole screen component into the scanner's bundle.
  */
 import type { DeviceInstant } from "@repo/hooks";
+import {
+  attendanceFieldsOf,
+  type EventAttendanceFields,
+} from "@repo/validation";
 import { dayDelta, parseInstant } from "@repo/formatting";
 import { isCurrentOrUpcoming, sortEventsByStart } from "./format";
 
@@ -22,7 +26,11 @@ export interface EventRow {
   start_time: string;
   end_time: string;
   point_value: number | null;
-  is_mandatory: boolean;
+  /**
+   * Who's coming, by role. Whether it is required of the viewer depends on
+   * their roles, so a screen asks `useRequiredOfViewer` (`viewer-roles.ts`).
+   */
+  attendance: EventAttendanceFields;
 }
 
 export interface EventDetail extends EventRow {
@@ -85,7 +93,7 @@ function toRow(row: Record<string, unknown>): EventRow | null {
     start_time: startTime,
     end_time: endTime,
     point_value: typeof row.point_value === "number" ? row.point_value : null,
-    is_mandatory: row.is_mandatory === true,
+    attendance: attendanceFieldsOf(row),
   };
 }
 

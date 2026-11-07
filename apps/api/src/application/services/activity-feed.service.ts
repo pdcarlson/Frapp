@@ -196,7 +196,7 @@ export class ActivityFeedService {
    * name and location to members `GET /v1/events/:id` returns 404 to. This
    * route is gated on `members:view` — the same permission the role-filtered
    * `GET /v1/events` requires — so the gate above is not a substitute for the
-   * filter. See `spec/behavior/events.md` § Role-based required attendance.
+   * filter. See `spec/behavior/events.md` § Attendance by role.
    */
   private async eventItems(
     chapterId: string,
