@@ -59,6 +59,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { ChapterMark } from "@/components/chapter-mark";
 import { useRefetchAll } from "@/components/pull-to-refresh";
+import { PushReminder } from "@/components/notifications/push-reminder";
 import { ScreenShell } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
@@ -466,6 +467,15 @@ export default function ChatHomeScreen() {
           onHide={setup.hide}
           onReturnFromWeb={() => void setup.refetch()}
         />
+      ) : null}
+
+      {/*
+        The one reminder to turn push on, the come-back for onboarding's
+        "Not now" (`shouldOfferReminder`). Under the checklist, and only once
+        channels have loaded, for the same reason the checklist waits.
+      */}
+      {!channelsQuery.isPending && !channelsQuery.isError ? (
+        <PushReminder />
       ) : null}
 
       {/*

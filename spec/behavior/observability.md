@@ -434,12 +434,12 @@ Like Outbox Telemetry above, `search-completed` carries no dedicated Frapp-owned
 
 ## Push Prompt Telemetry
 
-Mobile asks for notification permission only after the member taps "Turn on", on the C7 primer card or s16 Settings' push row ([`patterns.md` § Push notifications](../ui/mobile/patterns.md#push-notifications)). Whether members say yes decides whether chat pushes reach anyone, and the server can't see the answer: `POST /push-tokens` follows only an "allowed", and repeats on every launch. So mobile sends one client event, `push-prompt-answered` (defined in `apps/mobile/lib/notifications/push-analytics.ts`), through `AnalyticsContext` `track`, once per answer:
+Mobile asks for notification permission only after the member taps "Turn on", on onboarding's notifications step, the chat home's one reminder, or s16 Settings' push row ([`patterns.md` § Push notifications](../ui/mobile/patterns.md#push-notifications)). Whether members say yes decides whether chat pushes reach anyone, and the server can't see the answer: `POST /push-tokens` follows only an "allowed", and repeats on every launch. So mobile sends one client event, `push-prompt-answered` (defined in `apps/mobile/lib/notifications/push-analytics.ts`), through `AnalyticsContext` `track`, once per answer:
 
 | Property | Meaning |
 | --- | --- |
-| `answer` | `allowed` or `denied`, what the OS prompt returned after "Turn on" (a prompt the OS didn't show, as on iOS after one answer, reads as `denied`); or `not_now`, the primer card's "Not now", where no OS prompt was shown |
-| `surface` | `primer` (the card, `use-push-primer.ts`) or `settings` (the push row, `app/(tabs)/preferences.tsx`) |
+| `answer` | `allowed` or `denied`, what the OS prompt returned after "Turn on" (a prompt the OS didn't show, as on iOS after one answer, reads as `denied`); or `not_now`, onboarding's "Not now" or the reminder closed, where no OS prompt was shown. A tap that opened the phone's settings instead (no prompt could appear) sends no event, since the answer happens outside the app |
+| `surface` | `primer` (onboarding's step, `use-push-primer.ts`), `reminder` (the chat home's reminder, same file) or `settings` (the push row, `app/(tabs)/preferences.tsx`) |
 
 Neither property is content. The allow rate is a Trends insight: events with `answer = allowed` over all `push-prompt-answered` events, broken down by `surface`.
 

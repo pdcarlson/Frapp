@@ -9,26 +9,47 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { flatStyle } from "@/test/flat-style";
 
 /**
- * #2299. s03 is the first screen after joining a chapter, for a new member and
- * for an App Reviewer alike. In a build that cannot push (`isPushAvailable()`
- * false; `spec/ui/mobile/patterns.md` § Push notifications lists the causes)
- * it used to show the push primer with "Turn on" disabled and a build-status
- * apology under it. These pin that the card is not drawn there, and that it
- * still is, with a working "Turn on", when push can be turned on. `lib/notifications/primer.spec.ts` covers the
- * rule itself; this covers the screen wiring it.
+ * s03 is the first screen after joining a chapter, for a new member and for an
+ * App Reviewer alike, in two beats: "You're in." with the channels, then, when
+ * this build can push and push is off, "Turn on notifications" as its own
+ * step. In a build that cannot push (#2299; `isPushAvailable()` false,
+ * `spec/ui/mobile/patterns.md` § Push notifications lists the causes) there is
+ * no second beat at all, rather than a dead "Turn on" and an apology.
+ * `lib/notifications/primer.spec.ts` covers the rules; this covers the screen
+ * wiring them.
  *
  * It renders `app/(auth)/welcome.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
  */
 
+interface Permission {
+  granted: boolean;
+  canAskAgain: boolean;
+  status: string;
+}
 let pushAvailable = false;
-let permission: { granted: boolean } | null = null;
+let permission: Permission | null = null;
+const OFF: Permission = {
+  granted: false,
+  canAskAgain: true,
+  status: "undetermined",
+};
 
 vi.mock("@/lib/notifications/push", () => ({
   isPushAvailable: () => pushAvailable,
   getPushPermission: () => Promise.resolve(permission),
+  isPushChannelBlocked: () => Promise.resolve(false),
   requestPushPermission: vi.fn().mockResolvedValue(true),
 }));
+
+/** `Linking` isn't in the suite's `react-native` stub; this spec adds it. */
+const { openSettings } = vi.hoisted(() => ({
+  openSettings: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("react-native", async () => {
+  const { reactNativeStub } = await import("@/test/react-native-stub");
+  return { ...reactNativeStub, Linking: { openSettings } };
+});
 
 vi.mock("@/lib/auth-session", () => ({
   useAuthSession: () => ({ status: "authenticated", chapterId: null }),
@@ -55,7 +76,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 
 import { useRouter } from "expo-router";
 import Welcome from "@/app/(auth)/welcome";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { requestPushPermission } from "@/lib/notifications/push";
+import {
+  PUSH_PRIMER_DECLINED_AT_KEY,
+  PUSH_PRIMER_STORAGE_KEY,
+} from "@/lib/notifications/primer";
 
 type Node = ReactTestRenderer["root"];
 
@@ -96,52 +122,148 @@ const turnOn = (root: Node) =>
         pressable.props.accessibilityLabel === "Turn on notifications",
     );
 
-describe("s03 welcome, push primer (#2299)", () => {
+const pressables = (root: Node) =>
+  root.findAllByType("Pressable" as never, { deep: true });
+
+/** The Pressable whose own text reads `label`. */
+const button = (root: Node, label: string) =>
+  pressables(root).find((pressable) =>
+    pressable
+      .findAllByType("Text" as never, { deep: true })
+      .some((text) => text.props.children === label),
+  );
+
+async function press(target: Node | undefined) {
+  await act(async () => {
+    await target?.props.onPress();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+}
+
+describe("s03 welcome, notifications step", () => {
   beforeEach(() => {
     pushAvailable = false;
     permission = null;
+    completeOnboarding.mockClear();
+    openSettings.mockClear();
+    vi.mocked(requestPushPermission).mockClear().mockResolvedValue(true);
+    vi.mocked(vi.mocked(useRouter)().replace).mockClear();
   });
 
-  it("draws no primer card when push is unavailable", async () => {
+  it("has no notifications step when push is unavailable", async () => {
+    permission = OFF;
     const { root } = await render();
 
     expect(turnOn(root)).toBeUndefined();
-    expect(texts(root).some((t) => t.includes("miss @channel"))).toBe(false);
-    // Nor the reason line the dead card used to print.
-    expect(texts(root).some((t) => t.includes("Notifications"))).toBe(false);
-    // The rest of the screen is intact.
+    expect(button(root, "Continue")).toBeUndefined();
+    await press(button(root, "Go to chat"));
+    expect(requestPushPermission).not.toHaveBeenCalled();
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/(tabs)");
+  });
+
+  it("has no notifications step when push is already on", async () => {
+    pushAvailable = true;
+    permission = { granted: true, canAskAgain: true, status: "granted" };
+    const { root } = await render();
+
+    expect(button(root, "Go to chat")).toBeDefined();
+    expect(button(root, "Continue")).toBeUndefined();
+  });
+
+  it("asks on its own step after You're in, never inline under the channels", async () => {
+    pushAvailable = true;
+    permission = OFF;
+    const { root } = await render();
+
+    // First beat: the channels and Continue, nothing about notifications.
+    expect(turnOn(root)).toBeUndefined();
     expect(texts(root).some((t) => t.includes("in."))).toBe(true);
+    await press(button(root, "Continue"));
+
+    // Second beat: its own title, both answers pinned under the scroll.
+    expect(texts(root).some((t) => t.includes("Turn on notifications"))).toBe(
+      true,
+    );
+    expect(texts(root).some((t) => t.includes("in."))).toBe(false);
+    const scroll = root.findByType("ScrollView" as never);
+    expect(
+      scroll.findAllByType("Pressable" as never, { deep: true }),
+    ).toHaveLength(0);
+    expect(button(root, "Turn on notifications")).toBeDefined();
+    expect(button(root, "Not now")).toBeDefined();
+    expect(completeOnboarding).not.toHaveBeenCalled();
   });
 
-  it("draws the card with a working Turn on when push can be turned on", async () => {
+  it("shows the OS prompt on Turn on, then goes to chat", async () => {
     pushAvailable = true;
-    permission = { granted: false };
-
+    permission = OFF;
     const { root } = await render();
+    await press(button(root, "Continue"));
 
-    expect(texts(root).some((t) => t.includes("miss @channel"))).toBe(true);
-    const button = turnOn(root);
-    expect(button).toBeDefined();
-    expect(button?.props.disabled).toBe(false);
-  });
-
-  it("hides the card once Turn on is answered, even with Don't Allow", async () => {
-    // A denial leaves the permission not granted, so only the recorded
-    // decision hides the card. Left up, it would offer a "Turn on" that iOS
-    // now ignores, until the screen remounted.
-    pushAvailable = true;
-    permission = { granted: false };
-    vi.mocked(requestPushPermission).mockClear().mockResolvedValueOnce(false);
-
-    const { root } = await render();
-    await act(async () => {
-      turnOn(root)?.props.onPress();
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
+    await press(button(root, "Turn on notifications"));
 
     expect(requestPushPermission).toHaveBeenCalledTimes(1);
-    expect(turnOn(root)).toBeUndefined();
-    expect(texts(root).some((t) => t.includes("miss @channel"))).toBe(false);
+    expect(completeOnboarding).toHaveBeenCalledWith({
+      has_completed_onboarding: true,
+    });
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/(tabs)");
+  });
+
+  it("goes to chat after a Don't Allow too", async () => {
+    pushAvailable = true;
+    permission = OFF;
+    vi.mocked(requestPushPermission).mockResolvedValueOnce(false);
+    const { root } = await render();
+    await press(button(root, "Continue"));
+
+    await press(button(root, "Turn on notifications"));
+
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/(tabs)");
+  });
+
+  it("goes to chat on Not now, with no OS prompt, and keeps when it was said", async () => {
+    pushAvailable = true;
+    permission = OFF;
+    const { root } = await render();
+    await press(button(root, "Continue"));
+
+    await press(button(root, "Not now"));
+
+    expect(requestPushPermission).not.toHaveBeenCalled();
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      PUSH_PRIMER_STORAGE_KEY,
+      "declined",
+    );
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      PUSH_PRIMER_DECLINED_AT_KEY,
+      expect.any(String),
+    );
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/(tabs)");
+  });
+
+  // iOS after an earlier Don't Allow, or Android after
+  // a second one: no dialog can appear, so the button says where it goes.
+  it("opens the phone's settings when no prompt can appear", async () => {
+    pushAvailable = true;
+    permission = { granted: false, canAskAgain: false, status: "denied" };
+    const { root } = await render();
+    await press(button(root, "Continue"));
+
+    expect(button(root, "Turn on notifications")).toBeUndefined();
+    await press(button(root, "Open Settings"));
+
+    expect(requestPushPermission).not.toHaveBeenCalled();
+    expect(openSettings).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/(tabs)");
+  });
+
+  it("takes Android 13+ granted-but-blocked as off", async () => {
+    pushAvailable = true;
+    permission = { granted: true, canAskAgain: false, status: "denied" };
+    const { root } = await render();
+
+    await press(button(root, "Continue"));
+    expect(button(root, "Open Settings")).toBeDefined();
   });
 });
 
@@ -184,34 +306,11 @@ describe("s03 welcome, screen rules (#3352)", () => {
     });
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/(tabs)");
   });
-
-  it("draws the primer inside the scroll, so Go to chat stays the one pinned control", async () => {
-    pushAvailable = true;
-    permission = { granted: false };
-    const { root } = await render();
-
-    const scroll = root.findByType("ScrollView" as never);
-    expect(
-      scroll
-        .findAllByType("Pressable" as never, { deep: true })
-        .some((p) => p.props.accessibilityLabel === "Turn on notifications"),
-    ).toBe(true);
-    const outside = root
-      .findAllByType("Pressable" as never, { deep: true })
-      .filter(
-        (p) =>
-          !scroll
-            .findAllByType("Pressable" as never, { deep: true })
-            .includes(p),
-      );
-    expect(outside).toHaveLength(1);
-  });
 });
 
 /**
- * One gold button on s03. While the primer asks, its "Turn on" is the gold
- * one and "Go to chat" is the outlined Secondary under it, as the board draws
- * s03; with no primer, "Go to chat" is the step forward and takes the gold.
+ * One gold button on each beat of s03: Continue or Go to chat on the first,
+ * Turn on notifications on the second, with Not now as a quiet line.
  */
 describe("s03 welcome, one gold button", () => {
   const goToChat = (root: Node) =>
@@ -232,13 +331,21 @@ describe("s03 welcome, one gold button", () => {
     permission = null;
   });
 
-  it("outlines Go to chat while the primer's Turn on is the gold button", async () => {
+  it("makes Turn on notifications the gold button on the second beat", async () => {
     pushAvailable = true;
-    permission = { granted: false };
+    permission = OFF;
     const { root } = await render();
+    expect(fill(button(root, "Continue"))).toBe(
+      signetDarkTokens.color.gold.house,
+    );
+    await press(button(root, "Continue"));
 
-    expect(fill(turnOn(root))).toBe(signetDarkTokens.color.gold.house);
-    expect(fill(goToChat(root))).toBe(signetDarkTokens.color.surface.card);
+    expect(fill(button(root, "Turn on notifications"))).toBe(
+      signetDarkTokens.color.gold.house,
+    );
+    expect(fill(button(root, "Not now"))).not.toBe(
+      signetDarkTokens.color.gold.house,
+    );
   });
 
   it("makes Go to chat the gold button when there is no primer", async () => {
@@ -262,28 +369,5 @@ describe("s03 welcome, one gold button", () => {
       busy: true,
     });
     expect(texts(root).some((t) => t.includes("Opening chat"))).toBe(false);
-  });
-
-  it("spins under the same label as the outlined button, while the primer shows", async () => {
-    pushAvailable = true;
-    permission = { granted: false };
-    completeOnboarding.mockReturnValueOnce(new Promise(() => {}));
-    const { root } = await render();
-    act(() => {
-      void goToChat(root)?.props.onPress();
-    });
-
-    const button = root
-      .findAllByType("Pressable" as never, { deep: true })
-      .find((pressable) => pressable.props.accessibilityLabel === "Go to chat");
-    // Still the outlined one: Turn on keeps the gold.
-    expect(fill(button)).toBe(signetDarkTokens.color.surface.card);
-    expect(button?.props.accessibilityState).toEqual({
-      disabled: true,
-      busy: true,
-    });
-    expect(
-      button?.findAllByType("ActivityIndicator" as never, { deep: true }),
-    ).toHaveLength(1);
   });
 });

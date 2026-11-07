@@ -1,35 +1,50 @@
 /**
- * Whether to offer the push opt-in primer, and what the member last said.
+ * Whether to ask for push, and what the member last said.
  *
- * `spec/ui/mobile/patterns.md` § Push notifications: "The opt-in primer appears
- * at the first moment push has obvious value — first RSVP or first chat open —
- * and on the first-run screen (s03) as a card, never as a cold launch-time OS
- * prompt. Declining is a quiet 'Not now'; the OS prompt fires only after the
- * user accepts the primer."
+ * `spec/ui/mobile/patterns.md` § Push notifications: onboarding asks on its own
+ * step (s03's second beat, or chapter setup's), never as a cold launch-time OS
+ * prompt; the OS prompt fires only after the member taps "Turn on
+ * notifications"; and a "Not now" comes back once, days later, as the chat
+ * home's reminder.
  *
- * Two rules fall out of that, and both are why this module exists rather than a
+ * The rules that fall out of that, and why this module exists rather than a
  * boolean in a screen:
  *
- * - **The OS prompt is downstream of the card.** iOS gives an app exactly one
+ * - **The OS prompt is downstream of our ask.** iOS gives an app exactly one
  *   permission dialog ever; spending it on a cold launch is unrecoverable. So
  *   nothing calls `requestPushPermission()` except `acceptPrimer()` below,
- *   which the card's "Turn on" and a tap on s16 Settings' push switch (the
- *   member asking for it) both go through.
- * - **"Not now" has to stick.** A primer that reappears on every launch is the
- *   nag the contextual pattern exists to avoid, so the decision is persisted.
- *   It is deliberately *not* permanent: a member who changes their mind taps
- *   s16 Settings' push switch, which asks the OS while a prompt can still
- *   help and otherwise opens the OS settings.
+ *   which onboarding's step, the chat home's reminder (both through
+ *   `answerPushAsk()`) and a tap on s16 Settings' push switch all go through.
+ * - **When no prompt can appear, the ask opens the phone's settings**, and says
+ *   so on its button, rather than asking an OS that will silently refuse.
+ * - **"Not now" has to stick, but not forever.** The step never comes back;
+ *   the chat home asks once more after `PUSH_REMINDER_DELAY_MS`
+ *   (`shouldOfferReminder`), and after that Settings is the only place.
  *
  * The same reasoning already shipped for location in
  * `components/study/location-primer-sheet.tsx` (s10) — this is its push sibling.
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Linking } from "react-native";
 import { requestPushPermission } from "@/lib/notifications/push";
+import { pushIsOn, pushTapAsks, type PushState } from "./push-state";
 import { notifyPushPermissionGranted } from "./push-token-lifecycle";
 
 export const PUSH_PRIMER_STORAGE_KEY = "frapp.mobile.push-primer";
+/** When the member said "Not now", as epoch milliseconds. */
+export const PUSH_PRIMER_DECLINED_AT_KEY =
+  "frapp.mobile.push-primer.declined-at";
+/** `"done"` once the chat home's one reminder has been answered either way. */
+export const PUSH_REMINDER_STORAGE_KEY = "frapp.mobile.push-reminder";
+
+/**
+ * How long after a "Not now" the chat home asks once more. Long enough that
+ * the member has lived in the chapter for a few days (missed a ping or two,
+ * seen what the app is for), short enough that it lands before the first
+ * required event most chapters hold in a week.
+ */
+export const PUSH_REMINDER_DELAY_MS = 3 * 24 * 60 * 60 * 1000;
 
 /** `"unasked"` is the absence of a stored decision, not a stored value. */
 export type PrimerDecision = "unasked" | "declined" | "accepted";
@@ -88,19 +103,96 @@ export async function acceptPrimer(onRecorded?: () => void): Promise<boolean> {
   return granted;
 }
 
+/**
+ * "Not now": recorded as declined, with the time, so the chat home's reminder
+ * can wait `PUSH_REMINDER_DELAY_MS` before asking again.
+ */
+export async function declinePrimer(
+  storage: Storage = AsyncStorage,
+  now: number = Date.now(),
+): Promise<void> {
+  await recordPrimerDecision("declined", storage);
+  try {
+    await storage.setItem(PUSH_PRIMER_DECLINED_AT_KEY, String(now));
+  } catch {
+    // The reminder then reads the decline as old and may ask a little early.
+  }
+}
+
+export async function readDeclinedAt(
+  storage: Storage = AsyncStorage,
+): Promise<number | null> {
+  try {
+    const raw = await storage.getItem(PUSH_PRIMER_DECLINED_AT_KEY);
+    const at = raw === null ? NaN : Number(raw);
+    return Number.isFinite(at) ? at : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function readReminderDone(
+  storage: Storage = AsyncStorage,
+): Promise<boolean> {
+  try {
+    return (await storage.getItem(PUSH_REMINDER_STORAGE_KEY)) === "done";
+  } catch {
+    // Unknown reads as done: a reminder that never shows costs less than one
+    // that comes back on every launch.
+    return true;
+  }
+}
+
+export async function recordReminderDone(
+  storage: Storage = AsyncStorage,
+): Promise<void> {
+  try {
+    await storage.setItem(PUSH_REMINDER_STORAGE_KEY, "done");
+  } catch {
+    // Cosmetic. The worst case is the reminder offering itself again.
+  }
+}
+
+/** What answering the ask did: the OS prompt's answer, or the phone's settings opened. */
+export type PushAskOutcome = "allowed" | "denied" | "settings";
+
+/**
+ * "Turn on notifications", from any surface that asks (onboarding, the chat
+ * home's reminder). Shows the OS prompt while one can still help; otherwise
+ * (iOS after an earlier "Don't Allow", Android after a second one, Android 13+
+ * with the app's notifications blocked, or its channel switched off) no
+ * prompt would appear, so it opens the phone's settings for this app, the
+ * only place left to turn push on. Either way the decision is recorded as
+ * accepted first, so the ask isn't offered again. Never rejects.
+ */
+export async function answerPushAsk(
+  push: PushState,
+  onRecorded?: () => void,
+): Promise<PushAskOutcome> {
+  if (pushTapAsks(push)) {
+    const granted = await acceptPrimer(onRecorded).catch(() => false);
+    return granted ? "allowed" : "denied";
+  }
+  await recordPrimerDecision("accepted");
+  onRecorded?.();
+  await Linking.openSettings().catch(() => undefined);
+  return "settings";
+}
+
 export interface PrimerVisibilityInput {
   /** `isPushAvailable()` — the module loaded and a project id is configured. */
   isAvailable: boolean;
-  /** OS permission already granted. `null` while the read is in flight. */
-  permissionGranted: boolean | null;
+  /** The phone's answer (`readPushState()`). `null` while unread or unreadable. */
+  push: PushState | null;
   decision: PrimerDecision;
 }
 
 /**
- * Whether the primer card has anything to offer.
+ * Whether onboarding's notifications step has anything to offer.
  *
- * Hidden once permission is granted (there is nothing left to ask), and once
- * the member has declined (that was an answer, not a deferral).
+ * Hidden once push is on (there is nothing left to ask), and once the member
+ * has answered it. A "Not now" comes back once, later, as the chat home's
+ * reminder (`shouldOfferReminder`), never as this step again.
  *
  * Also **hidden when push is unavailable** (#2299): `isPushAvailable()` is
  * false, for any of the causes `spec/ui/mobile/patterns.md` § Push
@@ -113,7 +205,7 @@ export interface PrimerVisibilityInput {
  */
 export function shouldOfferPrimer({
   isAvailable,
-  permissionGranted,
+  push,
   decision,
 }: PrimerVisibilityInput): boolean {
   if (decision !== "unasked") return false;
@@ -122,8 +214,46 @@ export function shouldOfferPrimer({
   // granted, and would offer a "Turn on" that grants permission but can never
   // register a token.
   if (!isAvailable) return false;
-  // Available but not yet read — do not flash a card that may be about to
-  // resolve to "already granted".
-  if (permissionGranted === null) return false;
-  return !permissionGranted;
+  // Available but not yet read — do not flash a step that may be about to
+  // resolve to "already on".
+  if (push === null) return false;
+  // `pushIsOn`, not `granted`: Android 13+ can report the permission granted
+  // with the app's notifications blocked, and that phone shows nothing.
+  return !pushIsOn(push);
+}
+
+export interface ReminderVisibilityInput extends PrimerVisibilityInput {
+  declinedAt: number | null;
+  reminderDone: boolean;
+  now: number;
+}
+
+/**
+ * Whether the chat home asks once more. It is the one come-back for a member
+ * whose push is off:
+ *
+ * - **"Not now" in onboarding**, after `PUSH_REMINDER_DELAY_MS`. A decline
+ *   with no stored time (written before the time was kept) counts as old.
+ * - **Never asked**: a member who joined before onboarding had its own
+ *   notifications step, or on a build where the step was a skippable card.
+ *
+ * Not after "Turn on" whatever the OS said: a "Don't Allow" in the system
+ * dialog is the member's answer, and Settings (s16) is where it is undone.
+ * And only once: answering it either way (or closing it) is final.
+ */
+export function shouldOfferReminder({
+  isAvailable,
+  push,
+  decision,
+  declinedAt,
+  reminderDone,
+  now,
+}: ReminderVisibilityInput): boolean {
+  if (reminderDone || !isAvailable || push === null) return false;
+  if (pushIsOn(push)) return false;
+  if (decision === "accepted") return false;
+  if (decision === "declined" && declinedAt !== null) {
+    return now - declinedAt >= PUSH_REMINDER_DELAY_MS;
+  }
+  return true;
 }
