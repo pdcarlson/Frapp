@@ -5,7 +5,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useCurrentUser,
-  useListChapters,
   useUpdateOnboarding,
   useUpdateUser,
 } from "@repo/hooks";
@@ -16,7 +15,6 @@ import {
   PushAskBody,
 } from "@/components/notifications/push-ask";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
-import { JoinedChannelsCard } from "@/components/onboarding/joined-channels-card";
 import {
   OnboardingFieldLabel,
   OnboardingTextInput,
@@ -29,7 +27,6 @@ import {
 import { useAuthSession } from "@/lib/auth-session";
 import { initialsFor } from "@/lib/more/narrow";
 import { selectViewerProfile } from "@/lib/more/profile";
-import { selectOnboardingMembership } from "@/lib/onboarding/membership";
 import {
   PROFILE_NAME_REQUIRED,
   PROFILE_NAME_SAVE_FAILED,
@@ -41,49 +38,59 @@ import {
   onboardingProfileAnsweredProperties,
   shouldOfferProfileStep,
 } from "@/lib/onboarding/profile-step";
+import { TOUR_DUE_ANYONE, markTourDue } from "@/lib/onboarding/tour";
 import { usePushPrimer } from "@/lib/notifications/use-push-primer";
 import { useLatestTrack } from "@/lib/use-latest-track";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * s03, "You're in." (`spec/ui/mobile/screens.md`).
+ * s03, the member's first-run steps (`spec/ui/mobile/screens.md`).
  *
- * The first screen after a member joins, in up to three beats on one route:
+ * The screens right after a member joins, in up to two beats on one route,
+ * each shown only when it has something to ask:
  *
- * 1. **You're in.** The chapter and its school under the title, read from the
- *    membership this time, not from the invite preview the confirm step on
- *    `/join` showed (#3352), and the auto-joined public channels.
- * 2. **How the chapter sees you**, when the member has no photo or no real
+ * 1. **How the chapter sees you**, when the member has no photo or no real
  *    name yet (`lib/onboarding/profile-step.ts`). The photo is optional; the
  *    name is required only when there isn't one, and a real one comes
  *    pre-filled. Every message carries both, so a member who skips this looks
  *    like a stranger in every channel.
- * 3. **Turn on notifications**, when this build can push and push isn't on
- *    yet (`shouldOfferPrimer`, #2299). Its own step, not a card under the
- *    channels: the card was easy to scroll past on the way to Go to chat, and
- *    a member who joins and never turns push on misses the very pings the
- *    chapter invited them for. Either answer goes to chat; a "Not now" comes
- *    back once, days later, on the chat home (`usePushReminder`).
+ * 2. **Turn on notifications**, when this build can push and push isn't on
+ *    yet (`shouldOfferPrimer`, #2299). Either answer goes to chat; a "Not
+ *    now" comes back once, days later, on the chat home (`usePushReminder`).
+ *
+ * Then chat, with the first-run tour over it (`lib/onboarding/tour.ts`). The
+ * static "You're in." card that used to open s03 is gone (owner brief
+ * 2026-11-07): the tour's first stop says it, pointing at the real channels.
+ * A member with a photo, a name and push on sees no beat at all and goes
+ * straight to the tour.
+ *
+ * Which beat comes first waits on the profile and push reads; nothing is drawn
+ * until they're back, and a slow read is given up on after
+ * {@link DECIDE_TIMEOUT_MS} (the profile beat is then skipped; Profile in More
+ * still has both).
  *
  * Leaving PATCHes `has_completed_onboarding`, so the gate will not send the
  * member here again. One surface and one gold button pinned above the inset
  * on each beat (the #3348 screen rules).
  */
+const DECIDE_TIMEOUT_MS = 4_000;
+
 export default function Welcome() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
-  const { status, chapterId } = useAuthSession();
+  const { status } = useAuthSession();
   const queryClient = useQueryClient();
-  const chapters = useListChapters({ enabled: status === "authenticated" });
   const updateOnboarding = useUpdateOnboarding();
   const primer = usePushPrimer();
   const [leaving, setLeaving] = useState(false);
   // The guard itself, since two taps in one frame both read `leaving` false.
   const leavingRef = useRef(false);
-  const [step, setStep] = useState<"welcome" | "profile" | "notifications">(
-    "welcome",
-  );
+  // `deciding` until the profile and push reads are back (or given up on).
+  const [step, setStep] = useState<
+    "deciding" | "profile" | "notifications" | "none"
+  >("deciding");
+  const [waitedOut, setWaitedOut] = useState(false);
   const userQuery = useCurrentUser();
   const updateUser = useUpdateUser();
   const profile = useMemo(
@@ -91,27 +98,19 @@ export default function Welcome() {
     [userQuery.data],
   );
   const offerProfile = shouldOfferProfileStep(profile);
-  // Latched when the welcome beat moves on, so the notifications beat's back
-  // returns to the profile beat only when it was shown. A photo chosen on it
-  // must not make it vanish under the member.
+  // Latched when the profile beat opens, so the notifications beat's back
+  // returns to it only when it was shown. A photo chosen on it must not make
+  // it vanish under the member.
   const [profileShown, setProfileShown] = useState(false);
   // Whether there was a photo when the beat opened, so its event can tell a
   // photo chosen on it from one the member already had.
-  const hadPhotoRef = useRef(false);
+  const [hadPhoto, setHadPhoto] = useState(false);
   const track = useLatestTrack();
   // `null` until typed in: the field shows the loaded name until then.
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [savingName, setSavingName] = useState(false);
   const nameValue = nameDraft ?? initialNameField(profile?.displayName ?? null);
-
-  const membership = useMemo(() => {
-    const rows = Array.isArray(chapters.data) ? chapters.data : [];
-    return selectOnboardingMembership(rows, chapterId) ?? rows[0] ?? null;
-  }, [chapterId, chapters.data]);
-
-  const chapterName = membership?.chapter.name ?? "your chapter";
-  const university = membership?.chapter.university ?? null;
 
   async function finish() {
     if (leavingRef.current) return;
@@ -122,6 +121,9 @@ export default function Welcome() {
     } catch {
       // Non-fatal — the next session re-offers s03 if the write never landed.
     }
+    // The tour over chat runs once, for the member who just came through here.
+    const userId = (userQuery.data as { id?: string } | undefined)?.id;
+    await markTourDue(userId ?? TOUR_DUE_ANYONE);
     await queryClient.invalidateQueries({ queryKey: ["chapters"] });
     router.replace("/");
   }
@@ -132,17 +134,32 @@ export default function Welcome() {
   const asking = step === "notifications";
   const answering = primer.isRequesting || leaving || savingName;
 
-  function leaveWelcome() {
+  useEffect(() => {
+    const timer = setTimeout(() => setWaitedOut(true), DECIDE_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // The first beat, decided once both reads are back. Latched: a photo chosen
+  // on the profile beat, or push turned on in Settings meanwhile, must not
+  // move the member to another beat under their thumb.
+  const profileKnown =
+    userQuery.data !== undefined || userQuery.isError || waitedOut;
+  const primerKnown = primer.ready || waitedOut;
+  if (step === "deciding" && profileKnown && primerKnown) {
     if (offerProfile) {
-      hadPhotoRef.current = !!profile?.photoUrl;
+      setHadPhoto(!!profile?.photoUrl);
       setProfileShown(true);
       setStep("profile");
-    } else if (primer.showPrimer) {
-      setStep("notifications");
     } else {
-      void finish();
+      setStep(primer.showPrimer ? "notifications" : "none");
     }
   }
+  // Nothing to ask: straight on to chat, and the tour.
+  useEffect(() => {
+    if (step === "none") void finish();
+    // `finish` is latched by its own guard; only the step decides.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
 
   // Validated on Continue, not per keystroke. A name that didn't change isn't
   // sent again; one that did is saved before the member moves on, so a
@@ -169,7 +186,7 @@ export default function Welcome() {
     track(
       ONBOARDING_PROFILE_ANSWERED_EVENT,
       onboardingProfileAnsweredProperties({
-        hadPhoto: hadPhotoRef.current,
+        hadPhoto,
         hasPhoto: !!profile?.photoUrl,
         hadName: !needsName(profile?.displayName),
         nameChanged,
@@ -185,11 +202,11 @@ export default function Welcome() {
   // Android's back on a later beat returns to the one before it, as a back
   // gesture between two screens would; it never leaves onboarding half done.
   // Held while an answer is on its way out.
+  // The first beat leaves Android's back alone, as the old first beat did.
   useEffect(() => {
-    if (step === "welcome") return;
+    if (step !== "notifications" || !profileShown) return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (answering) return true;
-      setStep(step === "notifications" && profileShown ? "profile" : "welcome");
+      if (!answering) setStep("profile");
       return true;
     });
     return () => sub.remove();
@@ -197,6 +214,12 @@ export default function Welcome() {
 
   if (status === "unauthenticated") {
     return <Redirect href="/(auth)/sign-in" />;
+  }
+
+  // Nothing drawn while the first beat is decided (usually a frame or two):
+  // no spinner, and no beat that the next read would swap out.
+  if (step === "deciding" || step === "none") {
+    return <View style={styles.container} testID="welcome-deciding" />;
   }
 
   return (
@@ -224,7 +247,7 @@ export default function Welcome() {
                 <PushAskBody />
               </View>
             </>
-          ) : step === "profile" ? (
+          ) : (
             <>
               <Text accessibilityRole="header" style={styles.title}>
                 {PROFILE_STEP_TITLE}
@@ -262,27 +285,14 @@ export default function Welcome() {
                 ) : null}
               </View>
             </>
-          ) : (
-            <>
-              <Text accessibilityRole="header" style={styles.title}>
-                You&apos;re in.
-              </Text>
-              <Text style={styles.subtitle}>
-                {university ? `${chapterName} · ${university}` : chapterName}
-              </Text>
-
-              <View style={styles.channels}>
-                <JoinedChannelsCard />
-              </View>
-            </>
           )}
         </ScrollView>
 
         {/*
-        One gold button per beat. On the first two it moves on: to the next
-        beat when there is one to show, else to chat. On the notifications
-        beat it asks, and Not now is the quiet line under it; either answer
-        leaves for chat, after the OS dialog closes.
+        One gold button per beat. On the profile beat it moves on: to the
+        notifications beat when there is one to show, else to chat. On the
+        notifications beat it asks, and Not now is the quiet line under it;
+        either answer leaves for chat, after the OS dialog closes.
       */}
         <View style={styles.footer}>
           {asking ? (
@@ -300,21 +310,12 @@ export default function Welcome() {
                 });
               }}
             />
-          ) : step === "profile" ? (
+          ) : (
             <OnboardingPrimaryButton
               label={primer.showPrimer ? "Continue" : "Go to chat"}
               disabled={answering}
               busy={answering}
               onPress={() => void leaveProfile()}
-            />
-          ) : (
-            <OnboardingPrimaryButton
-              label={
-                offerProfile || primer.showPrimer ? "Continue" : "Go to chat"
-              }
-              disabled={leaving}
-              busy={leaving}
-              onPress={leaveWelcome}
             />
           )}
         </View>
