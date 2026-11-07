@@ -29,7 +29,7 @@
 //   node scripts/storage-backup-run.mjs verify   [--prefix storage]
 
 import { execFile, execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readFileSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -45,6 +45,7 @@ import {
   assertSafeObjectPath,
   assertStorageBackupTarget,
   backupKey,
+  budgetStopVerdict,
   checkDeletionSanity,
   downloadObject,
   isMissingObjectError,
@@ -52,6 +53,7 @@ import {
   listBucketObjects,
   MAX_TRANSFER_FAILURES,
   listBuckets,
+  listedByBucket,
   mirrorDestination,
   objectId,
   parseOffsiteListing,
@@ -64,6 +66,7 @@ import {
   uploadObject,
   uploadOrder,
   verifyOffsiteMirror,
+  withRetry,
 } from "./storage-backup.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -243,10 +246,15 @@ async function collectRemote({ supabaseUrl, serviceKey }) {
     console.log(`  ${bucket}: ${objects.length} object(s)`);
     remote.push(...objects);
   }
-  return remote;
+  return { remote, buckets };
 }
 
-async function runBackup(opts) {
+/**
+ * `requireComplete`: a budget stop fails even while the mirror is catching up.
+ * The rehearsal needs it, because it goes on to delete the canary and restore
+ * it from the copy this backup was meant to make.
+ */
+async function runBackup(opts, { requireComplete = false } = {}) {
   const supabaseUrl = requireEnv("SUPABASE_URL");
   const serviceKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
   const s3Bucket = requireEnv("BACKUP_S3_BUCKET");
@@ -281,7 +289,8 @@ async function runBackup(opts) {
       console.log("STORAGE_BACKUP_NEW_DESTINATION=true and no manifest offsite -- starting a new mirror.");
     }
 
-    const remote = await collectRemote({ supabaseUrl, serviceKey });
+    const { remote, buckets } = await collectRemote({ supabaseUrl, serviceKey });
+    const listed = listedByBucket(remote, buckets);
     const plan = planSync({
       remote,
       manifest,
@@ -303,9 +312,18 @@ async function runBackup(opts) {
     // Before any write. A short listing looks exactly like a mass deletion from
     // in here, and the difference only becomes visible once retention starts
     // pruning -- by which point the run has looked green for a month.
-    const sanity = checkDeletionSanity({ manifest, tombstone: plan.tombstone });
+    const sanity = checkDeletionSanity({ manifest, tombstone: plan.tombstone, listedByBucket: listed });
     if (!sanity.ok && process.env.STORAGE_BACKUP_ALLOW_MASS_DELETE !== "true") {
       throw new Error(sanity.reason);
+    }
+    // Named only where the guard would otherwise have refused: an ordinary
+    // deletion in a growing bucket is a turnover too, and needs no line.
+    for (const t of sanity.turnover.filter((b) => b.deleting * 2 > b.live)) {
+      console.log(
+        `::warning::${t.deleting} of the ${t.live} object(s) backed up from ${t.bucket} left Storage, and ${t.bucket} now ` +
+          "lists at least as many as before, so this reads as content replaced (an import run again), not a short " +
+          "listing. The old copies stay offsite as tombstones for the retention window.",
+      );
     }
     if (!sanity.ok) {
       console.log(`STORAGE_BACKUP_ALLOW_MASS_DELETE=true -- proceeding with ${sanity.deleting} deletions.`);
@@ -336,7 +354,7 @@ async function runBackup(opts) {
     const uploadRun = await runPool(uploadOrder(plan), pool(), async (obj, slot) => {
       let body;
       try {
-        body = await downloadObject({ supabaseUrl, serviceKey, bucket: obj.bucket, path: obj.path });
+        body = await withRetry(() => downloadObject({ supabaseUrl, serviceKey, bucket: obj.bucket, path: obj.path }));
       } catch (err) {
         // A listing that fails too counts as "still listed": the download
         // failure is reported rather than assumed away.
@@ -382,7 +400,24 @@ async function runBackup(opts) {
     const notStarted = new Set(
       [...plan.upload, ...plan.prune].map(objectId).filter((id) => !uploaded.has(id) && !pruned.has(id) && !vanished.has(id) && !failed.has(id)),
     );
-    const next = settleManifest({ plan, previous: manifest, uploaded, pruned, deferred: notStarted, vanished });
+    // Stopped by the budget with work left: is the mirror converging
+    // (`budgetStopVerdict`)? A cap stop fails whatever was copied, and keeps
+    // the previous `behind` as it was, so a bad night doesn't count as one
+    // spent catching up.
+    const leftUploads = plan.upload.filter((o) => notStarted.has(objectId(o))).length;
+    const leftPrunes = plan.prune.filter((o) => notStarted.has(objectId(o))).length;
+    const left = leftUploads + leftPrunes;
+    const budgetStop =
+      stoppedBy === "budget"
+        ? budgetStopVerdict({ previous: manifest?.behind ?? null, progressed: uploaded.size + pruned.size, left, at: plan.manifest.generated_at })
+        : { behind: left === 0 ? null : (manifest?.behind ?? null), fail: false, message: null };
+    const next = {
+      ...settleManifest({ plan, previous: manifest, uploaded, pruned, deferred: notStarted, vanished }),
+      behind: budgetStop.behind,
+      // What this run listed, so the next run's deletion guard can tell a
+      // bucket's turnover from a listing that came back short.
+      listed_by_bucket: listed,
+    };
 
     const manifestPath = join(tmp, "manifest.next.json");
     const written = JSON.stringify(next, null, 2);
@@ -463,20 +498,35 @@ async function runBackup(opts) {
       );
     }
     // Progress is kept, the gap is not hidden: the manifest holds what was
-    // written, and the run fails so a mirror that is behind never looks green.
-    const leftUploads = plan.upload.filter((o) => notStarted.has(objectId(o))).length;
-    const leftPrunes = plan.prune.filter((o) => notStarted.has(objectId(o))).length;
-    if (leftUploads > 0 || leftPrunes > 0) {
+    // written and records `behind`. A budget stop that is converging passes
+    // with a warning and the `behind` job output, which shows the step the
+    // freshness watch reads as "catching up" rather than fresh. Anything else
+    // fails, and so does any budget stop under `requireComplete`.
+    let catchingUp = false;
+    if (left > 0) {
       const why =
         stoppedBy === "cap"
           ? "The run reached MAX_TRANSFER_FAILURES and stopped"
           : `The ${budgetMinutes}-minute budget (STORAGE_BACKUP_BUDGET_MINUTES) ran out`;
-      failures.push(
+      const detail =
         `${why}: uploaded ${uploaded.size} of ${plan.upload.length} object(s) and pruned ${pruned.size} of ` +
-          `${plan.prune.length}. The manifest records only what was written, so the next run starts with the ` +
-          `${leftUploads} upload(s) and ${leftPrunes} prune(s) never started. Re-run the workflow to continue now.`,
-      );
+        `${plan.prune.length}. The manifest records only what was written, so the next run starts with the ` +
+        `${leftUploads} upload(s) and ${leftPrunes} prune(s) never started.`;
+      if (stoppedBy === "cap") {
+        failures.push(`${detail} Re-run the workflow to continue now.`);
+      } else if (budgetStop.fail) {
+        failures.push(`${detail}\n${budgetStop.message}`);
+      } else if (requireComplete) {
+        failures.push(`${detail} The mirror is catching up; run this once it has caught up.`);
+      } else if (failures.length > 0) {
+        failures.push(detail);
+      } else {
+        console.log(`::warning::${budgetStop.message}`);
+        console.log(detail);
+        catchingUp = true;
+      }
     }
+    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `behind=${catchingUp}\n`);
     if (failures.length > 0) throw new Error(failures.join("\n\n"));
 
     // A run that would take a mirror from live objects to none was refused
@@ -587,7 +637,7 @@ async function runRehearsal(opts) {
   // is correct: it is a real record of a deletion.
   try {
     console.log("2/5 backing up");
-    await runBackup(opts);
+    await runBackup(opts, { requireComplete: true });
 
     console.log("3/5 deleting the canary from Storage");
     const del = await deleteCanary();

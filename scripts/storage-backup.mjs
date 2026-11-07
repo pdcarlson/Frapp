@@ -100,7 +100,9 @@ export const DEFAULT_RETENTION_DAYS = 30;
 // So transfers run `TRANSFER_CONCURRENCY` at a time, and a run that goes past its
 // budget, or collects `MAX_TRANSFER_FAILURES` failed transfers, starts no new
 // transfer. It finishes the ones in flight, writes a manifest of what actually
-// happened (`settleManifest`), and fails. The next run carries on from there.
+// happened (`settleManifest`), and the next run carries on from there. A cap
+// stop fails; a budget stop passes with a warning while the mirror is
+// converging, and fails otherwise (`budgetStopVerdict`, below).
 // One failed transfer doesn't stop the others, and the run fails at the end
 // naming it. The cap is there so a broken destination stops quickly instead of
 // failing every object. A download that fails for an object that is no longer
@@ -115,6 +117,100 @@ export const DEFAULT_RETENTION_DAYS = 30;
 export const TRANSFER_CONCURRENCY = 8;
 export const DEFAULT_BUDGET_MINUTES = 40;
 export const MAX_TRANSFER_FAILURES = 10;
+
+// -- How long a big corpus takes, and a run that stops at the budget --------
+// Measured on production's first full mirror (Nightly Backup run 42376512765,
+// 2026-11-07): 6,423 objects, 14.65 GB, in 36 minutes, about 3 objects and
+// 6.7 MB a second. Bytes, not object count, set the pace: chat-archive files
+// are attachments. So a corpus like staging's (11,653 objects, 21 GB) needs
+// about 55 minutes, more than one run's budget: the first run stops at the
+// budget, the second finishes, and every night after copies only what changed.
+//
+// A run that stopped at the budget AFTER copying something, with less left
+// than the run before it, is converging, not broken. It passes with a
+// `::warning::`, records `behind` in the manifest, and sets the job output that
+// shows the step the freshness watch reads as "catching up" (`CATCHING_UP_STEP`
+// in scripts/ci/lib/backup-job-freshness.mjs): a pass that never closes an
+// open alert. It fails when it copied nothing (a budget spent on listing, or
+// one object bigger than the budget), when less is not left than the run
+// before (Storage grows faster than a run copies), or when the mirror has
+// been behind for more than `MAX_BEHIND_RUNS` runs in a row. A week covers a
+// one-time import of about 100 GB at the measured pace.
+export const MAX_BEHIND_RUNS = 7;
+
+// One transient error is not a failed transfer. Production's first full mirror
+// failed on a single HTTP 503 from Storage among 6,424 downloads (#3099), which
+// turned a run that copied everything else red. A download that fails with
+// 429, a 5xx, or no response at all is tried again after these delays.
+export const TRANSFER_RETRY_DELAYS_MS = [2_000, 10_000];
+
+/** No HTTP status (the request never got an answer), 429, or a 5xx. Storage answers a missing object with 400. */
+export function isTransientError(err) {
+  const status = err?.status;
+  if (status === undefined || status === null) return true;
+  return status === 429 || status >= 500;
+}
+
+/** `fn()`, tried again after each of `delaysMs` while it throws a transient error. */
+export async function withRetry(fn, { delaysMs = TRANSFER_RETRY_DELAYS_MS, isTransient = isTransientError, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= delaysMs.length || !isTransient(err)) throw err;
+      await sleep(delaysMs[attempt]);
+    }
+  }
+}
+
+/**
+ * What a run that stopped at its budget with transfers left (`left` > 0)
+ * reports, and the `behind` record its manifest carries. `previous` is the
+ * last manifest's `behind` (null when that run finished). A cap stop is not
+ * judged here: it fails, and keeps the previous record as it was.
+ *
+ * Returns `{ behind, fail, message }`. `behind` is null when nothing was left.
+ * `fail` is false only while the run copied something, left less than the run
+ * before it, and the mirror has been behind for at most `MAX_BEHIND_RUNS` runs;
+ * then `message` is the warning. Otherwise `message` says why it failed.
+ */
+export function budgetStopVerdict({ previous, progressed, left, at, maxBehindRuns = MAX_BEHIND_RUNS }) {
+  if (left === 0) return { behind: null, fail: false, message: null };
+  const runs = (previous?.runs ?? 0) + 1;
+  const behind = { since: previous?.since ?? at, runs, left };
+  if (progressed === 0) {
+    return {
+      behind,
+      fail: true,
+      message:
+        "No transfer finished inside the budget, so a re-run would stop at the same place. Find out why: " +
+        "a listing that takes the whole budget, or one object too big to copy within it.",
+    };
+  }
+  if (previous && left >= previous.left) {
+    return {
+      behind,
+      fail: true,
+      message:
+        `The mirror is not catching up: ${left} transfer(s) left, against ${previous.left} after the run before. ` +
+        "Storage is gaining objects faster than a run copies them.",
+    };
+  }
+  if (runs > maxBehindRuns) {
+    return {
+      behind,
+      fail: true,
+      message:
+        `The mirror has been behind for ${runs} runs in a row (since ${behind.since}), more than ` +
+        `MAX_BEHIND_RUNS (${maxBehindRuns}).`,
+    };
+  }
+  return {
+    behind,
+    fail: false,
+    message: `Behind, and catching up (run ${runs} of at most ${maxBehindRuns}): ${left} transfer(s) left for the next run.`,
+  };
+}
 
 /** The key a manifest record and a Storage listing entry are matched on. */
 export function objectId(o) {
@@ -161,12 +257,15 @@ function recoveringIds(plan) {
 
 /**
  * The order a run uploads in: re-uploads of what R2 lost first, since those are
- * a known gap in the mirror, then everything else in listing order. A run that
- * stops early leaves new objects for the next one before it leaves a gap.
+ * a known gap in the mirror, then rehearsal canaries, so a rehearsal on a
+ * mirror that is catching up isn't stuck behind a backlog (#3099), then
+ * everything else in listing order. A run that stops early leaves new objects
+ * for the next one before it leaves a gap.
  */
 export function uploadOrder(plan) {
   const recovering = recoveringIds(plan);
-  return [...plan.upload.filter((o) => recovering.has(objectId(o))), ...plan.upload.filter((o) => !recovering.has(objectId(o)))];
+  const rank = (o) => (recovering.has(objectId(o)) ? 0 : isRehearsalCanary(o) ? 1 : 2);
+  return [0, 1, 2].flatMap((r) => plan.upload.filter((o) => rank(o) === r));
 }
 
 /**
@@ -464,15 +563,44 @@ export function planSync({ remote, manifest, nowMs, retentionMs, destination = n
  * Rehearsal canaries are left out of both counts. The rehearsal writes one,
  * backs it up and deletes it, so the next nightly on an otherwise empty corpus
  * sees its only live object vanish. That is the drill working, not a wipe.
+ *
+ * A bucket's TURNOVER is not a short listing either (#3099). That is what a
+ * Discord import deleted and run again looks like (staging, 2026-09-30: 9,241
+ * attachments gone from `chat-archive`, 11,653 new), and refusing it froze
+ * staging's mirror for five weeks behind a guard only a person can pass. A
+ * bucket's deletions are a turnover when that bucket lists at least as many
+ * objects as both its live records and its previous listing
+ * (`listed_by_bucket` in the manifest, from `listedByBucket`): the listing
+ * didn't come back short, so whatever left was replaced. Per bucket, so growth
+ * in one can't cover a short listing of another; and against the previous
+ * listing too, because a mirror still catching up records fewer objects than
+ * Storage holds. Turnover buckets are left out of both counts, and the rest
+ * are judged as before. The old copies stay offsite as tombstones for the
+ * retention window, as for any deletion. Without `listedByBucket` every
+ * bucket is judged.
  */
-export function checkDeletionSanity({ manifest, tombstone, maxRatio = 0.5, minCorpus = 20 }) {
-  const live = (manifest?.objects ?? []).filter((o) => !o.deleted_at && !isRehearsalCanary(o)).length;
-  const deleting = tombstone.filter((o) => !isRehearsalCanary(o)).length;
+export function checkDeletionSanity({ manifest, tombstone, listedByBucket = null, maxRatio = 0.5, minCorpus = 20 }) {
+  const liveRecords = (manifest?.objects ?? []).filter((o) => !o.deleted_at && !isRehearsalCanary(o));
+  const departing = tombstone.filter((o) => !isRehearsalCanary(o));
+  const turnover = [];
+  if (listedByBucket) {
+    for (const bucket of new Set(departing.map((o) => o.bucket))) {
+      const count = (list) => list.filter((o) => o.bucket === bucket).length;
+      const listed = listedByBucket[bucket] ?? 0;
+      const previous = manifest?.listed_by_bucket?.[bucket] ?? 0;
+      const bucketLive = count(liveRecords);
+      if (listed >= Math.max(bucketLive, previous)) turnover.push({ bucket, deleting: count(departing), live: bucketLive, listed });
+    }
+  }
+  const replaced = new Set(turnover.map((t) => t.bucket));
+  const live = liveRecords.filter((o) => !replaced.has(o.bucket)).length;
+  const deleting = departing.filter((o) => !replaced.has(o.bucket)).length;
   const refuse = (ratio, what) => ({
     ok: false,
     live,
     deleting,
     ratio,
+    turnover,
     reason:
       `This run would mark ${what} backed-up objects deleted ` +
       `(${Math.round(ratio * 100)}%). That is more likely a short listing than a real ` +
@@ -481,13 +609,20 @@ export function checkDeletionSanity({ manifest, tombstone, maxRatio = 0.5, minCo
       `storage_allow_mass_delete input, set to this environment).`,
   });
 
-  if (live === 0) return { ok: true, live, deleting, ratio: 0 };
+  if (live === 0 || deleting === 0) return { ok: true, live, deleting, ratio: 0, turnover };
   if (deleting >= live) return refuse(1, `all ${live} of ${live}`);
-  if (live < minCorpus) return { ok: true, live, deleting, ratio: 0 };
+  if (live < minCorpus) return { ok: true, live, deleting, ratio: 0, turnover };
 
   const ratio = deleting / live;
-  if (ratio <= maxRatio) return { ok: true, live, deleting, ratio };
+  if (ratio <= maxRatio) return { ok: true, live, deleting, ratio, turnover };
   return refuse(ratio, `${deleting} of ${live}`);
+}
+
+/** Objects Storage listed, per bucket, rehearsal canaries left out: `checkDeletionSanity`'s `listedByBucket`. */
+export function listedByBucket(remote, buckets = []) {
+  const counts = Object.fromEntries(buckets.map((b) => [b, 0]));
+  for (const o of remote) if (!isRehearsalCanary(o)) counts[o.bucket] = (counts[o.bucket] ?? 0) + 1;
+  return counts;
 }
 
 /** A rehearsal canary (`REHEARSAL_BUCKET/REHEARSAL_PREFIX/...`), not chapter content. */
@@ -898,7 +1033,7 @@ export async function downloadObject({ supabaseUrl, serviceKey, bucket, path, fe
     { headers: storageHeaders(serviceKey) },
   );
   if (!res.ok) {
-    throw new Error(`Downloading ${bucket}/${path} failed: HTTP ${res.status}`);
+    throw Object.assign(new Error(`Downloading ${bucket}/${path} failed: HTTP ${res.status}`), { status: res.status });
   }
   return Buffer.from(await res.arrayBuffer());
 }

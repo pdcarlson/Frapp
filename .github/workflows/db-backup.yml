@@ -163,6 +163,7 @@ jobs:
 
       - name: Mirror Storage objects (or rehearse a restore)
         uses: ./.github/actions/storage-offsite-backup
+        id: storage
         with:
           environment: staging
           # The pre-existing prefix, kept so staging's mirror history and
@@ -171,6 +172,14 @@ jobs:
           rehearsal: ${{ inputs.storage_rehearsal == true && 'true' || 'false' }}
           new-destination: ${{ contains(fromJSON('["staging","both"]'), inputs.storage_new_destination) && 'true' || 'false' }}
           allow-mass-delete: ${{ contains(fromJSON('["staging","both"]'), inputs.storage_allow_mass_delete) && 'true' || 'false' }}
+
+      # Runs only when the mirror stopped at its budget while converging
+      # (#3099). The freshness watch reads this step on a green job as "catching
+      # up": a pass that never closes an alert (CATCHING_UP_STEP,
+      # scripts/ci/lib/backup-job-freshness.mjs). Keep the name in step with it.
+      - name: Storage mirror catching up
+        if: steps.storage.outputs.behind == 'true'
+        run: echo "::warning::The staging Storage mirror is behind and catching up; the next run carries on. db-rollback-playbook.md, 'Behind, and catching up'."
 
   # ── Production ────────────────────────────────────────────────────────────
   # See the header for why this is `production-backup`, not `production`, and
@@ -262,6 +271,7 @@ jobs:
       # production Storage rehearsal is a deliberate human step for now.
       - name: Mirror Storage objects
         uses: ./.github/actions/storage-offsite-backup
+        id: storage
         with:
           environment: production
           # A sibling of `storage`, not `production/storage`: the database prune
@@ -275,3 +285,11 @@ jobs:
           # Each takes effect only when the dispatch names `production` or `both`.
           new-destination: ${{ contains(fromJSON('["production","both"]'), inputs.storage_new_destination) && 'true' || 'false' }}
           allow-mass-delete: ${{ contains(fromJSON('["production","both"]'), inputs.storage_allow_mass_delete) && 'true' || 'false' }}
+
+      # Runs only when the mirror stopped at its budget while converging
+      # (#3099). The freshness watch reads this step on a green job as "catching
+      # up": a pass that never closes an alert (CATCHING_UP_STEP,
+      # scripts/ci/lib/backup-job-freshness.mjs). Keep the name in step with it.
+      - name: Storage mirror catching up
+        if: steps.storage.outputs.behind == 'true'
+        run: echo "::warning::The production Storage mirror is behind and catching up; the next run carries on. db-rollback-playbook.md, 'Behind, and catching up'."
