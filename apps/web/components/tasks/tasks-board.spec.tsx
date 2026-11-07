@@ -14,21 +14,43 @@ import {
   expectRefusedEntriesKeep,
 } from "@/tests/numeric-input";
 
-const { mockCurrentChapter, tasksRef, currentUserRef, createTaskMutate } =
-  vi.hoisted(() => ({
-    mockCurrentChapter: vi.fn(),
-    createTaskMutate: vi.fn(),
-    // Mutable so a test can swap the rows the board renders.
-    tasksRef: { current: [] as unknown[] },
-    // Mutable so a test can simulate `useCurrentUser` still in flight or errored,
-    // which is when the Confirm gate has to fail closed.
-    currentUserRef: { current: undefined as { id?: string } | undefined },
-  }));
+const {
+  mockCurrentChapter,
+  tasksRef,
+  currentUserRef,
+  createTaskMutate,
+  permissionsRef,
+  eventsRef,
+  eventsEnabled,
+  eventsModuleOn,
+  permissionsFailed,
+} = vi.hoisted(() => ({
+  mockCurrentChapter: vi.fn(),
+  createTaskMutate: vi.fn(),
+  // Mutable so a test can swap the rows the board renders.
+  tasksRef: { current: [] as unknown[] },
+  // Mutable so a test can simulate `useCurrentUser` still in flight or errored,
+  // which is when the Confirm gate has to fail closed.
+  currentUserRef: { current: undefined as { id?: string } | undefined },
+  // `undefined` is the permissions read still in flight.
+  permissionsRef: { current: ["tasks:manage"] as string[] | undefined },
+  eventsRef: { current: [] as unknown[] },
+  // Every `enabled` the board passed to `useEvents`, to prove when it reads.
+  eventsEnabled: [] as boolean[],
+  eventsModuleOn: { current: true },
+  // The permissions read failed (or can't run) rather than still loading.
+  permissionsFailed: { current: false },
+}));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
 // `subscriptionWriteState` run for real, so this covers the whole path from
 // the wire format to the disabled control.
 const ME = "u-me";
+
+const MEMBERS = [
+  { user_id: ME, display_name: "Paul Carlson" },
+  { user_id: "u-other", display_name: "Cole Martin" },
+];
 
 const TASKS = [
   {
@@ -88,7 +110,22 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isError: false,
     refetch: vi.fn(),
   }),
-  useMembers: () => ({ data: [] }),
+  useMembers: () => ({ data: MEMBERS }),
+  useMyPermissions: () => ({
+    data:
+      permissionsRef.current === undefined
+        ? undefined
+        : { permissions: permissionsRef.current },
+    fetchStatus:
+      permissionsRef.current === undefined && !permissionsFailed.current
+        ? "fetching"
+        : "idle",
+    isError: permissionsFailed.current,
+  }),
+  useEvents: (options?: { enabled?: boolean }) => {
+    eventsEnabled.push(options?.enabled ?? true);
+    return { data: options?.enabled ? eventsRef.current : undefined };
+  },
   useCurrentUser: () => ({ data: currentUserRef.current }),
   useCreateTask: () => ({ mutateAsync: createTaskMutate, isPending: false }),
   useUpdateTaskStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -97,13 +134,40 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useDeleteTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
+vi.mock("@/lib/hooks/use-chapter-module-gate", () => ({
+  useChapterModuleGateState: () => ({
+    status: "ready",
+    isModuleEnabled: (key: string) =>
+      key !== "events" || eventsModuleOn.current,
+    retry: vi.fn(),
+    fetchStatus: "idle",
+  }),
+}));
+
 vi.mock("@/lib/stores/chapter-store", () => ({
   useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
     selector({ activeChapterId: "chap-1" }),
 }));
 
+// `tasks:manage` is answered from `permissionsRef`, with a stand-in for the
+// real gate's offline chip when the read failed, so the board's own branching
+// is tested against the answer the gate would give. Every other gate on the
+// page (the notice's billing link) passes through, as before.
 vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  Can: ({
+    children,
+    permission,
+  }: {
+    children: React.ReactNode;
+    permission: string;
+  }) =>
+    permission !== "tasks:manage" ? (
+      <>{children}</>
+    ) : permissionsFailed.current ? (
+      <span>Permissions unavailable</span>
+    ) : permissionsRef.current?.includes(permission) ? (
+      <>{children}</>
+    ) : null,
 }));
 
 vi.mock("@/lib/hooks/use-toast", () => ({
@@ -114,7 +178,9 @@ const { TasksBoard } = await import("./tasks-board");
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
-const trigger = () => screen.getByRole("button", { name: /new task/i });
+// The add row at the top of To do: the board's one way to create a task.
+const trigger = () => screen.getByRole("button", { name: /^add a task$/i });
+const addForm = () => screen.getByRole("form", { name: /add a task/i });
 const startButton = () => screen.getByRole("button", { name: /^start$/i });
 const completeButton = () =>
   screen.getByRole("button", { name: /mark done/i });
@@ -123,6 +189,14 @@ const rejectButton = () => screen.getByRole("button", { name: /^reject$/i });
 // An icon on each tile, named for its task ("Delete Draft rush schedule").
 const deleteButtons = () =>
   screen.getAllByRole("button", { name: /^delete /i });
+
+beforeEach(() => {
+  permissionsRef.current = ["tasks:manage"];
+  permissionsFailed.current = false;
+  eventsRef.current = [];
+  eventsEnabled.length = 0;
+  eventsModuleOn.current = true;
+});
 
 describe("TasksBoard subscription gating", () => {
   beforeEach(() => {
@@ -243,9 +317,11 @@ describe("TasksBoard subscription gating", () => {
     // §5 rule 4: disabled, not hidden — the board is still readable.
     expect(screen.getByText(/sweep the chapter room/i)).toBeInTheDocument();
 
-    // And the dialog must not open onto an action that cannot succeed.
+    // And the row must not open onto an action that cannot succeed.
     await userEvent.click(trigger());
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("form", { name: /add a task/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("gates the other four task writes, not just Create", () => {
@@ -312,20 +388,22 @@ describe("TasksBoard subscription gating", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("closes an already-open dialog when the subscription lapses under it", async () => {
-    // Radix fires onOpenChange only on an open/close request, so a background
-    // refetch that revokes the write cannot be caught there.
+  it("disables Add task in an open row when the subscription lapses under it", async () => {
+    // A background refetch can revoke the write while the row is open. The
+    // row keeps what was typed, and its submit says why it can't run.
     chapter.active();
     const { rerender } = render(<TasksBoard />);
     await userEvent.click(trigger());
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    const submit = within(addForm()).getByRole("button", { name: "Add task" });
+    expect(submit).toBeEnabled();
 
     chapter.incomplete();
     rerender(<TasksBoard />);
 
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
-    );
+    expect(submit).toBeDisabled();
+    expect(
+      within(addForm()).getByRole("button", { name: "Cancel" }),
+    ).toBeEnabled();
   });
 
   it("leaves the reads and the board itself ungated", () => {
@@ -466,9 +544,18 @@ describe("TasksBoard point reward guard (#2206)", () => {
     chapter.active();
   });
 
+  // The row needs a title, an assignee and a due date before it submits.
   async function openCreate() {
     render(<TasksBoard />);
     await userEvent.click(trigger());
+    fireEvent.change(screen.getByLabelText("Task title"), {
+      target: { value: "Order the composites" },
+    });
+    await userEvent.click(screen.getByRole("combobox", { name: "Assignee" }));
+    await userEvent.click(screen.getByRole("option", { name: "Cole Martin" }));
+    fireEvent.change(screen.getByLabelText("Due date"), {
+      target: { value: "2026-12-01" },
+    });
     return screen.getByLabelText(/^points \(optional\)$/i);
   }
 
@@ -486,7 +573,7 @@ describe("TasksBoard point reward guard (#2206)", () => {
     const input = await openCreate();
     fireEvent.change(input, { target: { value: "7" } });
     fireEvent.change(input, { target: { value: "1.5" } });
-    fireEvent.submit(document.getElementById("tasks-create-form")!);
+    fireEvent.submit(addForm());
 
     await waitFor(() => expect(createTaskMutate).toHaveBeenCalledTimes(1));
     expect(createTaskMutate.mock.calls[0]![0].point_reward).toBe(7);
@@ -495,7 +582,7 @@ describe("TasksBoard point reward guard (#2206)", () => {
   it("omits the reward when the field is left empty", async () => {
     const input = await openCreate();
     fireEvent.change(input, { target: { value: "" } });
-    fireEvent.submit(document.getElementById("tasks-create-form")!);
+    fireEvent.submit(addForm());
 
     await waitFor(() => expect(createTaskMutate).toHaveBeenCalledTimes(1));
     expect(createTaskMutate.mock.calls[0]![0].point_reward).toBeUndefined();
@@ -549,13 +636,268 @@ describe("TasksBoard flush layout", () => {
     expect(screen.queryByText(/\d+\/\d+\/\d{4}/)).toBeNull();
   });
 
-  it("keeps the empty board on the page surface", () => {
+  it("keeps the columns at zero for an officer, on the page surface", () => {
     tasksRef.current = [];
     const { container } = render(<TasksBoard />);
 
+    for (const name of [
+      "To do",
+      "In progress",
+      "Waiting on an officer",
+      "Overdue",
+    ]) {
+      expect(screen.getByRole("region", { name })).toBeInTheDocument();
+    }
+    // The add row is where the first tile lands, in place of "No tasks".
+    const todo = screen.getByRole("region", { name: "To do" });
     expect(
-      screen.getByRole("heading", { name: "No tasks yet" }),
+      within(todo).getByRole("button", { name: /^add a task$/i }),
     ).toBeInTheDocument();
+    expect(within(todo).queryByText("No tasks")).toBeNull();
+    expect(screen.queryByRole("heading", { name: /no tasks yet/i })).toBeNull();
     expect(cardFilledContainers(container)).toEqual([]);
+  });
+});
+
+describe("TasksBoard add row", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    tasksRef.current = [];
+    currentUserRef.current = { id: ME };
+    chapter.active();
+    createTaskMutate.mockResolvedValue({});
+  });
+
+  it("is the only create control: no toolbar button, no dialog", async () => {
+    render(<TasksBoard />);
+
+    expect(screen.queryByRole("button", { name: /new task/i })).toBeNull();
+    await userEvent.click(trigger());
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(addForm()).toBeInTheDocument();
+    expect(screen.getByLabelText("Task title")).toHaveFocus();
+  });
+
+  it("flags a missing assignee and due date on Enter, and sends nothing", async () => {
+    render(<TasksBoard />);
+    await userEvent.click(trigger());
+
+    await userEvent.type(
+      screen.getByLabelText("Task title"),
+      "Order pizza{Enter}",
+    );
+
+    expect(createTaskMutate).not.toHaveBeenCalled();
+    expect(screen.getByText("Pick an assignee.")).toBeInTheDocument();
+    expect(screen.getByText("Pick a due date.")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Assignee" })).toHaveFocus();
+  });
+
+  it("flags nothing while typing", async () => {
+    render(<TasksBoard />);
+    await userEvent.click(trigger());
+
+    await userEvent.type(screen.getByLabelText("Task title"), "Order pizza");
+
+    expect(screen.queryByText("Pick an assignee.")).toBeNull();
+    expect(screen.queryByText("Pick a due date.")).toBeNull();
+  });
+
+  it("creates on Enter once the row is complete, then clears for the next one", async () => {
+    render(<TasksBoard />);
+    await userEvent.click(trigger());
+    await userEvent.click(screen.getByRole("combobox", { name: "Assignee" }));
+    await userEvent.click(screen.getByRole("option", { name: "Cole Martin" }));
+    fireEvent.change(screen.getByLabelText("Due date"), {
+      target: { value: "2026-12-01" },
+    });
+
+    await userEvent.type(
+      screen.getByLabelText("Task title"),
+      "  Order pizza  {Enter}",
+    );
+
+    await waitFor(() => expect(createTaskMutate).toHaveBeenCalledTimes(1));
+    expect(createTaskMutate.mock.calls[0]![0]).toEqual({
+      title: "Order pizza",
+      description: undefined,
+      assignee_id: "u-other",
+      due_date: "2026-12-01",
+      point_reward: undefined,
+    });
+    // Still open, emptied and focused, for the next task.
+    await waitFor(() =>
+      expect(screen.getByLabelText("Task title")).toHaveValue(""),
+    );
+    expect(screen.getByLabelText("Task title")).toHaveFocus();
+    expect(screen.getByLabelText("Due date")).toHaveValue("");
+  });
+
+  it("keeps what was typed when the create fails", async () => {
+    createTaskMutate.mockRejectedValueOnce(new Error("nope"));
+    await openRowWithEverything();
+    fireEvent.submit(addForm());
+
+    await waitFor(() => expect(createTaskMutate).toHaveBeenCalledTimes(1));
+    expect(screen.getByLabelText("Task title")).toHaveValue("Order pizza");
+  });
+
+  it("puts focus back on a blank title instead of sending it", async () => {
+    await openRowWithEverything();
+    fireEvent.change(screen.getByLabelText("Task title"), {
+      target: { value: "   " },
+    });
+    fireEvent.submit(addForm());
+
+    expect(createTaskMutate).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Task title")).toHaveFocus();
+  });
+
+  it("closes only the list on Escape inside the assignee picker", async () => {
+    render(<TasksBoard />);
+    await userEvent.click(trigger());
+    await userEvent.type(screen.getByLabelText("Task title"), "Order pizza");
+    await userEvent.click(screen.getByRole("combobox", { name: "Assignee" }));
+    expect(screen.getByRole("option", { name: "Cole Martin" })).toBeVisible();
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.queryByRole("option", { name: "Cole Martin" })).toBeNull();
+    expect(addForm()).toBeInTheDocument();
+    expect(screen.getByLabelText("Task title")).toHaveValue("Order pizza");
+  });
+
+  it("closes on Escape and hands focus back to the row", async () => {
+    render(<TasksBoard />);
+    await userEvent.click(trigger());
+    await userEvent.type(screen.getByLabelText("Task title"), "Order{Escape}");
+
+    expect(screen.queryByRole("form", { name: /add a task/i })).toBeNull();
+    await waitFor(() => expect(trigger()).toHaveFocus());
+    // Reopening starts blank.
+    await userEvent.click(trigger());
+    expect(screen.getByLabelText("Task title")).toHaveValue("");
+  });
+
+  it("stays at the top of To do once the column has tiles", () => {
+    tasksRef.current = TASKS;
+    render(<TasksBoard />);
+
+    const todo = screen.getByRole("region", { name: "To do" });
+    const row = within(todo).getByRole("button", { name: /^add a task$/i });
+    const tile = within(todo).getByText("Sweep the chapter room");
+    expect(
+      row.compareDocumentPosition(tile) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("isn't offered without tasks:manage", () => {
+    permissionsRef.current = ["members:view"];
+    tasksRef.current = TASKS.slice(0, 2);
+    render(<TasksBoard />);
+
+    expect(screen.queryByRole("button", { name: /^add a task$/i })).toBeNull();
+    expect(
+      within(screen.getByRole("region", { name: "To do" })).queryByText(
+        "No tasks",
+      ),
+    ).toBeNull();
+  });
+
+  async function openRowWithEverything() {
+    render(<TasksBoard />);
+    await userEvent.click(trigger());
+    fireEvent.change(screen.getByLabelText("Task title"), {
+      target: { value: "Order pizza" },
+    });
+    await userEvent.click(screen.getByRole("combobox", { name: "Assignee" }));
+    await userEvent.click(screen.getByRole("option", { name: "Cole Martin" }));
+    fireEvent.change(screen.getByLabelText("Due date"), {
+      target: { value: "2026-12-01" },
+    });
+  }
+});
+
+describe("TasksBoard member with nothing assigned", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    tasksRef.current = [];
+    currentUserRef.current = { id: ME };
+    permissionsRef.current = ["members:view"];
+    chapter.active();
+  });
+
+  const inDays = (days: number, hour = 19) => {
+    const at = new Date();
+    at.setDate(at.getDate() + days);
+    at.setHours(hour, 0, 0, 0);
+    return at.toISOString();
+  };
+
+  it("sees one line naming the next event instead of four empty columns", () => {
+    eventsRef.current = [
+      { id: "e-later", name: "Formal", start_time: inDays(20) },
+      { id: "e-past", name: "Last week's meeting", start_time: inDays(-7) },
+      { id: "e-next", name: "Chapter meeting", start_time: inDays(1) },
+    ];
+    render(<TasksBoard />);
+
+    expect(
+      screen.getByText(
+        /^Nothing on your plate\. Next up: Chapter meeting, Tomorrow · 7:00\sPM\.$/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "To do" })).toBeNull();
+  });
+
+  it("stops at the first sentence with nothing ahead", () => {
+    eventsRef.current = [
+      { id: "e-past", name: "Last week's meeting", start_time: inDays(-7) },
+    ];
+    render(<TasksBoard />);
+
+    expect(screen.getByText("Nothing on your plate.")).toBeInTheDocument();
+  });
+
+  it("doesn't read events when the chapter turned Events off", () => {
+    eventsModuleOn.current = false;
+    eventsRef.current = [
+      { id: "e-next", name: "Chapter meeting", start_time: inDays(1) },
+    ];
+    render(<TasksBoard />);
+
+    expect(screen.getByText("Nothing on your plate.")).toBeInTheDocument();
+    expect(eventsEnabled.every((enabled) => !enabled)).toBe(true);
+  });
+
+  it("keeps the board for a member who has tasks, and doesn't read events", () => {
+    tasksRef.current = TASKS.slice(0, 2);
+    render(<TasksBoard />);
+
+    expect(screen.getByRole("region", { name: "To do" })).toBeInTheDocument();
+    expect(screen.queryByText(/nothing on your plate/i)).toBeNull();
+    expect(eventsEnabled.every((enabled) => !enabled)).toBe(true);
+  });
+
+  it("keeps the columns, and says why, when the permissions read failed", () => {
+    // Not the loading window: nothing would ever answer it, so a blank page
+    // here would stay blank (#1211's pattern).
+    permissionsRef.current = undefined;
+    permissionsFailed.current = true;
+    render(<TasksBoard />);
+
+    const todo = screen.getByRole("region", { name: "To do" });
+    expect(
+      within(todo).getByText("Permissions unavailable"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/nothing on your plate/i)).toBeNull();
+  });
+
+  it("never flashes the line at an officer while permissions load", () => {
+    permissionsRef.current = undefined;
+    render(<TasksBoard />);
+
+    expect(screen.queryByText(/nothing on your plate/i)).toBeNull();
+    expect(screen.queryByRole("region", { name: "To do" })).toBeNull();
   });
 });

@@ -98,13 +98,13 @@ Every empty state MUST include:
 - A short explanation **only when it tells the member something the title doesn't**: why the view is empty, or what to do next. Never one that restates what the screen is for; without one the title stands alone.
 - A next-step CTA when possible
 
-Example (the Events surface, from the tables below):
+Example (the Events card as it stood until 2026-11-06, when a chapter with no events began opening on the calendar instead; see [Events (dashboard)](#events-dashboard). This section is rewritten once the last empty cards go, [#3429](https://github.com/pdcarlson/Frapp/issues/3429)):
 
 `No events yet`
 `Create your first chapter event to unlock attendance and point automation.`
 `[Create first event]`
 
-**Amended 2026-11-05**, after the owner's review of the Android build (2026-11-04): "we don't need to narrate stuff". The explanation used to be required on every empty state, which is how empty cards came to describe their own screen ("Documents the chapter uploads show up here.", "Members appear here once they join the chapter."). The rule above governs new and changed copy, for the reason [`../mobile/patterns.md` § Screen headers](../mobile/patterns.md#screen-headers) took the line under each screen title away: the member is already on the screen. The change that amended it removed those lines from the mobile screens it touched: Documents (s12), Directory (s13) and the notifications inbox (s14). Chat home's no-channels card (s04) swapped its line for what to do next: `No channels yet` / `Ask an admin to add one.` (mobile has no way to create one). A line that carries a fact stays: a search names its query, a filtered view says how to widen it, and the no-chapter state says where to pick a chapter.
+**Amended 2026-11-05**, after the owner's review of the Android build (2026-11-04): "we don't need to narrate stuff". The explanation used to be required on every empty state, which is how empty cards came to describe their own screen ("Documents the chapter uploads show up here.", "Members appear here once they join the chapter."). The rule above governs new and changed copy, for the reason [`../mobile/patterns.md` § Screen headers](../mobile/patterns.md#screen-headers) took the line under each screen title away: the member is already on the screen. The change that amended it removed those lines from the mobile screens it touched: Documents (s12), Directory (s13) and the notifications inbox (s14). Chat home's no-channels card (s04) swapped its line for what to do next: `No channels yet` / `Ask an admin to add one.` (mobile has no way to create one). A line that carries a fact stays: a search names its query, a filtered view says how to widen it, and the no-chapter state says where to pick a chapter. (2026-11-06: the one-line search misses on [Points](#points-dashboard) and [Events](#events-dashboard) name no query, because the line sits under the search field that shows it, and offer **Clear search** instead.)
 
 Lines that still narrate are follow-up ([#3429](https://github.com/pdcarlson/Frapp/issues/3429)), not changed by the amendment: the second sentence of mobile Dues' empty body, `Anything they send will show up here.` ([Dues (mobile, s11)](#dues-mobile-s11)); and on web the empty rows of [Members](#members-dashboard) (`Actives appear here once they join.`), [Alumni](#alumni-dashboard) (`Graduated members appear here.`), [Notifications](#notifications-dashboard) (`… will appear here.`) and [Points](#points-dashboard)' empty transactions (`Your attendance, study sessions, and adjustments will appear here.`).
 
@@ -221,13 +221,16 @@ Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assem
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading chapter events...` |
-| Empty | `No events yet` | `Create your first chapter event to unlock attendance and point automation.` |
-| Empty (filtered) | `No events match the filters` | `Clear a filter to see more.` |
-| Empty (search) | `No match for “{query}”` | `Check the spelling, or widen the filters.` |
+| No events, calendar, can create | — | `Pick a day to schedule the first event.` (one line under the month) |
+| No events, calendar, can't create | — | `Nothing on the calendar yet.` (one line under the month) |
+| No events, List tab | — | `No events yet.` (one line) |
+| Time window empty | — | `No upcoming events.` or `No past events.` then a **Show all events** link (one line) |
+| Attendance or cadence filter matched nothing | — | `No events match these filters.` then a **Clear filters** link (one line) |
+| Search matched nothing | — | `No events match that search.` then a **Clear search** link (one line) |
 | Error | `Couldn't load chapter events` | `Confirm your chapter access and retry.` |
 | Offline | `Events workspace unavailable offline` | `Reconnect to load event schedules and attendance updates.` |
 
-`No events yet` shows only when the chapter has no events at all. Under a filter that hides every event (the default Upcoming, once every event is past), the page says the filters matched nothing instead (2026-11-05).
+A chapter with no events opens on the Calendar tab rather than an empty list, and a viewer with `events:create` gets a dashed `+` on today's square, where the first event will go. The choice is made once, when the events first load, so making that first event doesn't move the officer to the list. A viewer without `events:create` sees the dates as text, with no New event button and nothing to press on a day (2026-11-06). The time-window line is its own row because the default window (Upcoming) hides every past event without the officer touching a filter, and "No events yet" there would be false (2026-11-05). The lines are `InlineNote`s, like [Points (dashboard)](#points-dashboard); error and offline keep their cards.
 
 ### Attendance (dashboard)
 
@@ -309,9 +312,13 @@ The **Accent server contrast disclosure** row is independent of every row above 
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading chapter tasks...` |
-| Empty | `No tasks yet` | `Admins can create the first chapter task to assign ownership and award points.` |
+| Nothing assigned (member) | — | `Nothing on your plate.` then, when an event is ahead and Events is on, `Next up: {event}, {when}.` (one line, in place of the board) |
+| Add row (officer) | — | `Add a task`, at the top of To do |
+| Add row, required field left out | — | `Pick an assignee.` / `Pick a due date.` (under the field, on submit only) |
 | Error | `Couldn't load tasks` | `Confirm your chapter access and retry.` |
 | Offline | `Tasks unavailable offline` | `Reconnect to load the chapter board and move tasks through it.` |
+
+The board keeps its four columns at zero for a `tasks:manage` holder, and the add row at the top of To do is its one way to create a task: it replaced the New task button and dialog (2026-11-06). Pressing it opens the row in place; Enter in the title creates the task once it has an assignee and a due date, which `POST /v1/tasks` requires, and the row stays open for the next one. A member without `tasks:manage` reads only their own tasks, so with none the four empty columns give way to the one line above; `{when}` is `formatRelativeDayTime`'s shape (`Tomorrow · 7:00 PM`).
 
 ### Service Hours (dashboard)
 
