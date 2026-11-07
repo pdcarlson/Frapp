@@ -30,6 +30,7 @@ complete, so add the row in the same change that adds the file.
 
 | Doc | Owns |
 | --- | --- |
+| [`principles.md`](principles.md) | The seven UI principles every screen is checked against, as yes/no checks |
 | [`foundations.md`](foundations.md) | Neutral ladder, semantic colors, type scale, radius map, spacing grid |
 | [`components.md`](components.md) | Buttons, inputs, cards, badges, sheets, tabs, and their variants |
 | [`iconography.md`](iconography.md) | Duotone icon recipe, sizing, usage |
@@ -285,5 +286,6 @@ A UI change is not ready unless it passes:
 7. Responsive/adaptive behavior checks
 8. Copy clarity per [`writing.md`](writing.md) — no placeholder language
 9. De-Google guardrails respected per their Binds column (§2) — behavioral bans on every surface, visual bans on Signet surfaces
+10. Each changed screen passes the checks in [`principles.md`](principles.md), on web and mobile, at its real-scale volumes, or each failed check is filed and named in the PR
 
 Icon standards: [`iconography.md`](iconography.md). Typography roles: [`foundations.md`](foundations.md). Logos, favicons, Open Graph, and asset sync: [`../assets.md`](../assets.md).
