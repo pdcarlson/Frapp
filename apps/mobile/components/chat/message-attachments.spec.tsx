@@ -43,6 +43,7 @@ import {
   clearLocalPhotosForTest,
   rememberLocalPhotos,
 } from "@/lib/chat/local-photos";
+import { chatPhotoCacheKey } from "@/lib/chat/photo-cache";
 
 /**
  * The behaviours this file exists for, all from #1229.
@@ -150,12 +151,13 @@ describe("rendering", () => {
 
     const tree = render();
     const images = tree.root.findAllByType(
-      "Image" as unknown as React.ElementType,
+      "ExpoImage" as unknown as React.ElementType,
     );
 
     expect(images).toHaveLength(1);
     expect(images[0]!.props.source).toEqual({
       uri: "https://example.test/signed/composite.png",
+      cacheKey: chatPhotoCacheKey("att-1", "original"),
     });
   });
 
@@ -192,7 +194,7 @@ describe("rendering", () => {
 
     const tree = render();
     const image = tree.root.findAllByType(
-      "Image" as unknown as React.ElementType,
+      "ExpoImage" as unknown as React.ElementType,
     )[0]!;
     const row = tree.root.find(
       (node) =>
@@ -262,7 +264,7 @@ describe("rendering", () => {
       expect(rowStyle).toContain(`"maxWidth":${maxWidth}`);
       expect(rowStyle).toContain(`"aspectRatio":${aspect}`);
       const image = tree.root.findAllByType(
-        "Image" as unknown as React.ElementType,
+        "ExpoImage" as unknown as React.ElementType,
       )[0]!;
       const imageStyle = JSON.stringify(image.props.style);
       expect(imageStyle).toContain('"height":"100%"');
@@ -281,7 +283,7 @@ describe("rendering", () => {
 
     const tree = render();
     const image = tree.root.findAllByType(
-      "Image" as unknown as React.ElementType,
+      "ExpoImage" as unknown as React.ElementType,
     )[0]!;
     const style = JSON.stringify(image.props.style);
 
@@ -371,7 +373,7 @@ describe("the loading tiles", () => {
     };
     const loaded = render({ count: 1 });
     const image = loaded.root.findAllByType(
-      "Image" as unknown as React.ElementType,
+      "ExpoImage" as unknown as React.ElementType,
     )[0]!;
 
     const height = (style: unknown) =>
@@ -407,7 +409,7 @@ describe("the loading tiles", () => {
 
     expect(tiles(tree)).toHaveLength(0);
     expect(
-      tree.root.findAllByType("Image" as unknown as React.ElementType),
+      tree.root.findAllByType("ExpoImage" as unknown as React.ElementType),
     ).toHaveLength(0);
     const [row] = tree.root.findAllByProps({ accessibilityRole: "button" });
     expect(row!.props.accessibilityLabel).toBe("Open minutes.pdf");
@@ -489,7 +491,7 @@ describe("opening an image", () => {
     const tree = render({}, openViewer);
 
     expect(
-      tree.root.findAllByType("Image" as unknown as React.ElementType),
+      tree.root.findAllByType("ExpoImage" as unknown as React.ElementType),
     ).toHaveLength(0);
     expect(textOf(tree)).toContain("logo.svg");
     const [row] = tree.root.findAllByProps({ accessibilityRole: "button" });
@@ -512,7 +514,7 @@ describe("several photos and the sender's own", () => {
     tree.root
       .findAll(
         (node) =>
-          (node.type as unknown) === "Image" &&
+          (node.type as unknown) === "ExpoImage" &&
           typeof node.props.source?.uri === "string",
       )
       .map((node) => node.props.source.uri as string);
@@ -589,28 +591,49 @@ describe("several photos and the sender's own", () => {
       preview_url: "https://example.test/signed/preview.jpg",
     });
     const images = (tree: ReactTestRenderer) =>
-      tree.root.findAllByType("Image" as unknown as React.ElementType);
+      tree.root.findAllByType("ExpoImage" as unknown as React.ElementType);
 
-    it("draws the preview copy, not the original, under a blur of the photo", () => {
+    it("draws the preview copy, keyed by file, over a blur of the photo", () => {
       hookState.result = { isPending: false, isError: false, data: [photoRow] };
 
       const tree = render();
-      const [placeholder, picture] = images(tree);
+      const [picture] = images(tree);
 
-      expect(placeholder!.props.testID).toBe("photo-placeholder");
-      expect(placeholder!.props.source.uri).toMatch(/^data:image\/png;base64,/);
       expect(picture!.props.source).toEqual({
         uri: "https://example.test/signed/preview.jpg",
+        cacheKey: chatPhotoCacheKey("att-1", "preview"),
       });
+      expect(picture!.props.placeholder).toEqual({ thumbhash: THUMBHASH });
+      expect(picture!.props.cachePolicy).toBe("disk");
     });
 
-    it("drops the blur once the photo has loaded", () => {
+    it("hits the cache when the same photo comes back with a freshly signed URL", () => {
       hookState.result = { isPending: false, isError: false, data: [photoRow] };
-      const tree = render();
+      const first = images(render())[0]!.props.source.cacheKey;
+      hookState.result = {
+        isPending: false,
+        isError: false,
+        data: [
+          { ...photoRow, preview_url: "https://example.test/signed/again.jpg" },
+        ],
+      };
+      const second = images(render())[0]!.props.source.cacheKey;
 
-      act(() => images(tree).at(-1)!.props.onLoad());
+      expect(second).toBe(first);
+    });
 
-      expect(images(tree)).toHaveLength(1);
+    it("crops a grid tile's blur like the photo, and fills a lone photo's box", () => {
+      hookState.result = { isPending: false, isError: false, data: [photoRow] };
+      expect(images(render())[0]!.props.placeholderContentFit).toBe("fill");
+
+      hookState.result = {
+        isPending: false,
+        isError: false,
+        data: [photoRow, { ...photoRow, id: "att-2" }],
+      };
+      expect(images(render({ count: 2 }))[0]!.props.placeholderContentFit).toBe(
+        "cover",
+      );
     });
 
     it("falls back to the original when the preview fails to load", () => {
@@ -621,6 +644,7 @@ describe("several photos and the sender's own", () => {
 
       expect(images(tree).at(-1)!.props.source).toEqual({
         uri: "https://example.test/signed/IMG_1.jpg",
+        cacheKey: chatPhotoCacheKey("att-1", "original"),
       });
     });
 
@@ -642,7 +666,9 @@ describe("several photos and the sender's own", () => {
       expect(images(tree)).toHaveLength(1);
       expect(images(tree)[0]!.props.source).toEqual({
         uri: "https://example.test/signed/old.jpg",
+        cacheKey: chatPhotoCacheKey("att-1", "original"),
       });
+      expect(images(tree)[0]!.props.placeholder).toBeNull();
     });
   });
 });
