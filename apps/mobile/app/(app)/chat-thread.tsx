@@ -1287,7 +1287,14 @@ export default function ChatThreadScreen() {
         channelId={channelId ?? null}
         onOpenProfile={openProfile}
       />
-      <MemberDetailSheet ref={profileSheetRef} member={profileTarget} />
+      <MemberDetailSheet
+        ref={profileSheetRef}
+        member={profileTarget}
+        // Cleared on close, which is what tells a DM request still in flight
+        // that the member backed out (the sheet's stale-DM guard).
+        onDismiss={() => setProfileTarget(null)}
+        openChannelId={channelId ?? null}
+      />
       <MessageActionsSheet
         ref={actionsSheetRef}
         target={sheetTarget}

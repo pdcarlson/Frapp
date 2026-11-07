@@ -51,8 +51,9 @@ import {
  * never made.
  *
  * A row opens that member's profile (the directory's sheet, stacked over
- * this one), the same as tapping their name in the thread. Rows stay 32pt so
- * a long list stays scannable; the row's full width is the target.
+ * this one), the same as tapping their name in the thread. As a control it
+ * takes the Small step's 44pt touch height (`components.md` § Chat member
+ * list).
  *
  * The reads live in {@link MemberRows}, a child of the modal, because gorhom
  * mounts a modal's children only while it is presented: the list is fetched
@@ -293,7 +294,8 @@ function MemberRowsSkeleton() {
 }
 
 /** 32pt rows with a 24pt avatar: web's numbers, Paul's for this list. */
-const ROW_HEIGHT = 32;
+/** `--touch-min`: a row that opens a profile is a control (foundations.md §9). */
+const TOUCH_ROW_HEIGHT = 44;
 const AVATAR_SIZE = 24;
 
 function createStyles(tokens: SignetTokens) {
@@ -319,7 +321,8 @@ function createStyles(tokens: SignetTokens) {
       paddingBottom: tokens.spacing.xl,
     },
     row: {
-      height: ROW_HEIGHT,
+      // A control now: the touch floor, not web's 32pt read-only row.
+      minHeight: TOUCH_ROW_HEIGHT,
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.sm,

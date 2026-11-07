@@ -155,15 +155,22 @@ const OPEN_PROFILE_ACTION: AccessibilityActionInfo = {
 
 /**
  * The tap that opens a row's author's profile, or nothing for a row with no
- * member behind it: Frapp's own posts, and an imported archive message whose
- * author never joined (`sender_id` null).
+ * member behind it: Frapp's own posts, an imported archive message whose
+ * author never joined (`sender_id` null), and a sender the roster no longer
+ * lists (they left the chapter), whose profile read would only 404.
  */
 export function authorProfileOpener(
   message: ChatMessage,
   onOpenProfile: ((userId: string) => void) | undefined,
+  nameFor: (userId: string) => string | null,
 ): (() => void) | undefined {
   const senderId = message.sender_id;
-  if (!onOpenProfile || !senderId || senderId === SYSTEM_SENDER_ID) {
+  if (
+    !onOpenProfile ||
+    !senderId ||
+    senderId === SYSTEM_SENDER_ID ||
+    nameFor(senderId) === null
+  ) {
     return undefined;
   }
   return () => onOpenProfile(senderId);
@@ -386,7 +393,7 @@ export function MessageRowFrame({
   // The name and photo open the author's profile, as Discord's do. Each is a
   // nested touchable that would otherwise swallow the row's long-press, so it
   // forwards it.
-  const openAuthor = authorProfileOpener(message, onOpenProfile);
+  const openAuthor = authorProfileOpener(message, onOpenProfile, nameFor);
   const headerA11y = messageActionsA11yProps(onOpenActions, {
     onJumpToParent: quote ? onJumpToParent : undefined,
     onOpenProfile: openAuthor,
@@ -587,7 +594,7 @@ function CompactLead({
   onOpenActions?: () => void;
   styles: ReturnType<typeof createStyles>;
 }) {
-  const openAuthor = authorProfileOpener(message, onOpenProfile);
+  const openAuthor = authorProfileOpener(message, onOpenProfile, nameFor);
   const { authorLabel, roleColor } = rowAuthor(
     message,
     nameFor,
@@ -717,9 +724,15 @@ export function MessageItem({
   // one (the bubble it replaced painted an empty box above the photo), and one
   // whose markdown renders nothing, such as `---` or a lone image.
   const hasText = parsed !== null && !parsed.empty;
+  // Compact draws the name inside the body on a run's first row, so the body
+  // carries the profile action there (`leadsWithAuthor`, below).
+  const leadsInline = compact && startsRun && (message.is_deleted || hasText);
   const bodyA11y = messageActionsA11yProps(onOpenActions, {
     links: hasText ? parsed.links : [],
     onJumpToParent: quoteJump(message, onJumpToParent),
+    onOpenProfile: leadsInline
+      ? authorProfileOpener(message, onOpenProfile, nameFor)
+      : undefined,
   });
   const openMention = onOpenProfile
     ? (handle: string) => {
@@ -761,8 +774,7 @@ export function MessageItem({
 
   // Compact leads the first row of a run with the time and name (§11 §
   // Density), the deleted placeholder included, so its run still says whose.
-  const leadsWithAuthor =
-    compact && startsRun && (message.is_deleted || hasText);
+  const leadsWithAuthor = leadsInline;
   const lead = leadsWithAuthor ? (
     <CompactLead
       message={message}

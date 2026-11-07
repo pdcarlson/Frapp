@@ -118,12 +118,18 @@ export interface MemberDetailSheetProps {
    */
   member: { userId: string } | null;
   onDismiss?: () => void;
+  /**
+   * The channel on screen under the sheet, when it is opened from a thread.
+   * Message for the member whose DM this already is just closes the sheet,
+   * rather than stacking a second copy of the same thread.
+   */
+  openChannelId?: string | null;
 }
 
 export const MemberDetailSheet = forwardRef<
   BottomSheetModal,
   MemberDetailSheetProps
->(function MemberDetailSheet({ member, onDismiss }, ref) {
+>(function MemberDetailSheet({ member, onDismiss, openChannelId }, ref) {
   const userId = member?.userId ?? null;
   const closeSheet = useSheetClose(ref);
   const { tokens } = useFrappTheme();
@@ -131,7 +137,7 @@ export const MemberDetailSheet = forwardRef<
   const backgroundStyle = useSheetBackgroundStyle();
   const tallSheet = useTallSheetProps();
 
-  // `useMember` is already `enabled: !!id`, so this stays idle until a row is
+  // `useMemberByUserId` is already `enabled: !!userId`, so this stays idle until a row is
   // actually tapped rather than firing for every mounted-but-closed sheet.
   const memberQuery = useMemberByUserId(userId ?? "");
   const { accent } = useChapterBranding();
@@ -234,6 +240,7 @@ export const MemberDetailSheet = forwardRef<
       if (openUserIdRef.current !== memberUserId) return;
       if (!channelId) throw new Error("No channel id returned");
       closeSheet();
+      if (channelId === openChannelId) return;
       router.push({ pathname: "/chat-thread", params: { channelId } });
     } catch {
       if (openUserIdRef.current !== memberUserId) return;

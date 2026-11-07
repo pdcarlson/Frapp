@@ -1222,13 +1222,19 @@ describe("opening a member's profile from a row", () => {
     act(() => tree.unmount());
   });
 
-  it("offers no profile for Frapp's own posts or an imported author who never joined", () => {
+  it("offers no profile for Frapp's own posts, an imported author, or a member who left", () => {
     const open = vi.fn();
+    const nameFor = (id: string) => (id === OTHER ? "Casey" : null);
     expect(
-      authorProfileOpener(message({ sender_id: SYSTEM_SENDER_ID }), open),
+      authorProfileOpener(message({ sender_id: SYSTEM_SENDER_ID }), open, nameFor),
     ).toBeUndefined();
-    expect(authorProfileOpener(message({ sender_id: null }), open)).toBeUndefined();
-    expect(authorProfileOpener(message(), undefined)).toBeUndefined();
+    expect(
+      authorProfileOpener(message({ sender_id: null }), open, nameFor),
+    ).toBeUndefined();
+    expect(authorProfileOpener(message(), undefined, nameFor)).toBeUndefined();
+    // Left the chapter: the roster no longer names them.
+    expect(authorProfileOpener(message(), open, () => null)).toBeUndefined();
+    expect(authorProfileOpener(message(), open, nameFor)).toBeTypeOf("function");
   });
 
   it("resolves a tapped @ chip only against the members the message mentioned", () => {

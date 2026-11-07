@@ -1130,7 +1130,6 @@ describe('MemberService', () => {
         has_completed_onboarding: true,
       });
       mockRepo.findByUserAndChapter.mockResolvedValue(member);
-      mockRepo.findById.mockResolvedValue(member);
       mockUserRepo.findById.mockResolvedValue(
         userFixture({ display_name: 'John Doe' }),
       );
@@ -1150,6 +1149,8 @@ describe('MemberService', () => {
         user_id: 'user-1',
         display_name: 'John Doe',
       });
+      // Built from the chapter-scoped row, not read a second time by id.
+      expect(mockRepo.findById).not.toHaveBeenCalled();
     });
 
     it('answers 404 for a user with no membership in this chapter', async () => {
