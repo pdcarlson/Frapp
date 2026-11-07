@@ -6,7 +6,7 @@ import type {
   TablesUpdate,
 } from '../database.types';
 import { ITaskRepository } from '#domain/repositories/task.repository.interface';
-import { Task } from '#domain/entities/task.entity';
+import { Task, TaskStatus } from '#domain/entities/task.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
 
 @Injectable()
@@ -87,6 +87,24 @@ export class SupabaseTaskRepository implements ITaskRepository {
     if (error) throw new SupabaseQueryError(error);
     const rows = data ?? [];
     return rows.length > 0 ? rows[0] : null;
+  }
+
+  async reopenCompletion(id: string, chapterId: string): Promise<Task | null> {
+    // The filters are the compare-and-set: a confirm that lands first sets
+    // `points_awarded`, and then this matches no row rather than leaving a
+    // confirmed, point-awarded task back in progress.
+    const { data, error } = await this.supabase
+      .from('tasks')
+      .update({ status: TaskStatus.IN_PROGRESS, completed_at: null })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('status', TaskStatus.COMPLETED)
+      .eq('points_awarded', false)
+      .select()
+      .maybeSingle();
+
+    if (error) throw new SupabaseQueryError(error);
+    return data;
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

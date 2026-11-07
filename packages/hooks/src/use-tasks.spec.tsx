@@ -272,6 +272,31 @@ describe("useUpdateTaskStatus", () => {
     });
   });
 
+  it("clears completed_at when the assignee takes back their completion", async () => {
+    seedTask(queryClient, {
+      status: "COMPLETED",
+      stored_status: "COMPLETED",
+      completed_at: "2026-10-01T12:00:00.000Z",
+    });
+    const { fn, succeed } = deferredCalls();
+    const { result } = renderHook(() => useUpdateTaskStatus(), {
+      wrapper: createWrapper({ PATCH: fn }, queryClient),
+    });
+
+    act(() => {
+      result.current.mutate({ id: TASK, body: { status: "IN_PROGRESS" } });
+    });
+
+    await waitFor(() => {
+      expect(cachedDetail(queryClient).stored_status).toBe("IN_PROGRESS");
+      expect(cachedDetail(queryClient).completed_at).toBeNull();
+    });
+
+    await act(async () => {
+      await succeed();
+    });
+  });
+
   it("rolls back on failure", async () => {
     seedTask(queryClient);
     const { fn, fail } = deferredCalls();
