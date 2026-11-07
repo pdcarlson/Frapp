@@ -371,3 +371,18 @@ export function canBlockSender(
     isMember(message.sender_id) !== false
   );
 }
+
+/**
+ * What "Copy text" puts on the clipboard for a message, or `null` when the
+ * action should not show: a card (its words are drawn from structured data,
+ * not a body), a deleted message, or a body that is only whitespace (a
+ * photo-only message). The body is copied as the member wrote it, markdown and
+ * `@handles` included, as Discord and iMessage copy what was typed rather than
+ * how it was drawn.
+ */
+export function copyableText(
+  message: Pick<ChatMessage, "content" | "kind" | "is_deleted">,
+): string | null {
+  if (message.is_deleted || isCardMessage(message)) return null;
+  return message.content.trim() ? message.content : null;
+}
