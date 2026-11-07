@@ -119,6 +119,24 @@ vi.mock("@/components/chat/message-actions-sheet", async () => {
   };
 });
 
+const presentProfileSheet = vi.fn();
+vi.mock("@/components/directory/member-detail-sheet", async () => {
+  const { createElement, forwardRef, useImperativeHandle } =
+    await import("react");
+  return {
+    MemberDetailSheet: forwardRef(function MemberDetailSheet(
+      props: Record<string, unknown>,
+      ref,
+    ) {
+      useImperativeHandle(ref, () => ({
+        present: presentProfileSheet,
+        dismiss: vi.fn(),
+      }));
+      return createElement("MemberDetailSheet", props);
+    }),
+  };
+});
+
 const presentMemberSheet = vi.fn();
 const dismissMemberSheet = vi.fn();
 vi.mock("@/components/chat/channel-member-sheet", async () => {
@@ -1690,6 +1708,23 @@ describe("chat thread channel start", () => {
 
     const edge = lists(tree)[0]!.findByType(ThreadHistoryEdge);
     expect(edge.props.start).toBeTruthy();
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread member profile", () => {
+  it("opens the profile sheet for whoever a row names, from a name, photo or @ chip", () => {
+    const tree = render();
+    const row = rows(tree)[0]!;
+    act(() => (row.props.onOpenProfile as (id: string) => void)("user-42"));
+    expect(presentProfileSheet).toHaveBeenCalled();
+    const sheet = tree.root.findByType("MemberDetailSheet" as never);
+    expect(sheet.props.member).toEqual({ userId: "user-42" });
+    expect(sheet.props.openChannelId).toBe(CHANNEL);
+    // The member list opens the same sheet.
+    expect(
+      tree.root.findByType("ChannelMemberSheet" as never).props.onOpenProfile,
+    ).toBe(row.props.onOpenProfile);
     act(() => tree.unmount());
   });
 });
