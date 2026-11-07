@@ -149,6 +149,26 @@ export function formatRelativeDayTime(
 }
 
 /**
+ * A list row's stamp for something that already happened, as a message list
+ * prints it: the clock time today (`"3:02 PM"`), `"Yesterday"`, the short
+ * weekday within the past week (`"Mon"`), otherwise `"Nov 2"` (with the year
+ * outside the current one). Mobile Chat home's channel rows (2026-11-06).
+ * A future instant, which a skewed device clock can produce, reads as today's.
+ */
+export function formatListStamp(
+  value: unknown,
+  now: Date = new Date(),
+): string | null {
+  const at = toDate(value);
+  if (!at) return null;
+  const days = dayDelta(now, at);
+  if (days >= 0) return time(at);
+  if (days === -1) return "Yesterday";
+  if (days > -7) return at.toLocaleDateString(undefined, { weekday: "short" });
+  return monthDay(at, now);
+}
+
+/**
  * A due date as a countdown: `"Due today"`, `"Due tomorrow"`, `"Due Friday"`
  * within the week, `"Due Nov 6"` beyond it, and `"Overdue by 2 days"` once it
  * has passed. Mobile's task subtitle (`formatDueSubtitle`) is a separate copy
