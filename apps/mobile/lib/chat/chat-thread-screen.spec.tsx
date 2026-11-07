@@ -413,7 +413,7 @@ function openImageViewer(tree: ReactTestRenderer, messageId = "m1") {
   expect(
     tree.root.findAll(
       (node) =>
-        node.type === ("Animated.Image" as never) &&
+        node.props.accessibilityRole === "image" &&
         node.props.accessibilityLabel === IMAGE.filename,
     ).length,
   ).toBeGreaterThan(0);

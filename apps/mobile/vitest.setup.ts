@@ -85,6 +85,10 @@ vi.mock("expo-haptics", () => ({
   },
 }));
 
+// expo-image is native. A host element named "ExpoImage" stands in, so a
+// spec reads the props a photo was drawn with (source, cacheKey, placeholder).
+vi.mock("expo-image", () => ({ Image: "ExpoImage" }));
+
 vi.mock("expo-image-manipulator", () => ({
   ImageManipulator: {
     manipulate: vi.fn(() => {

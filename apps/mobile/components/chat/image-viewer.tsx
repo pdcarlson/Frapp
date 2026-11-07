@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Image } from "expo-image";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -43,6 +44,7 @@ import {
   type ZoomState,
 } from "@/lib/chat/image-zoom";
 import { shareAttachment } from "@/lib/chat/share-attachment";
+import { chatPhotoCacheKey } from "@/lib/chat/photo-cache";
 import { CloseGlyph, ShareGlyph } from "@/components/control-glyphs";
 import { ChevronGlyph, VIEWER_GLYPH_SIZE } from "./viewer-glyphs";
 
@@ -79,6 +81,11 @@ export interface ViewerImage {
   filename: string;
   contentType: string | null;
   url: string;
+  /**
+   * The timeline's preview copy, already on disk from the thread, drawn
+   * while the original loads so the viewer opens on the photo, not a blank.
+   */
+  previewUrl: string | null;
 }
 
 /** The fields of an attachment row the viewer reads. */
@@ -87,6 +94,7 @@ interface AttachmentRow {
   filename: string;
   content_type: string | null;
   download_url: string;
+  preview_url?: string | null;
 }
 
 /** A message's images, in order: the attachments `isViewableImage` accepts. */
@@ -100,6 +108,7 @@ export function viewerImages(
       filename: attachment.filename,
       contentType: attachment.content_type,
       url: attachment.download_url,
+      previewUrl: attachment.preview_url ?? null,
     }));
 }
 
@@ -498,19 +507,40 @@ function ZoomableImage({
           stageHeight.set(event.nativeEvent.layout.height);
         }}
       >
-        <Animated.Image
+        <Animated.View
           ref={focusRef as never}
           accessible
-          source={{ uri: image.url }}
+          accessibilityRole="image"
           accessibilityLabel={image.filename}
           accessibilityHint="Pinch or double-tap to zoom"
-          resizeMode="contain"
-          onLoad={(event) => {
-            naturalWidth.set(event.nativeEvent.source.width);
-            naturalHeight.set(event.nativeEvent.source.height);
-          }}
           style={[styles.image, zoomStyle]}
-        />
+        >
+          <Image
+            // Keyed by file, not by the signed URL, so a photo opened before
+            // opens from disk (`photo-cache.ts`).
+            source={{
+              uri: image.url,
+              cacheKey: chatPhotoCacheKey(image.id, "original"),
+            }}
+            placeholder={
+              image.previewUrl
+                ? {
+                    uri: image.previewUrl,
+                    cacheKey: chatPhotoCacheKey(image.id, "preview"),
+                  }
+                : null
+            }
+            placeholderContentFit="contain"
+            contentFit="contain"
+            cachePolicy="disk"
+            accessibilityIgnoresInvertColors
+            onLoad={(event) => {
+              naturalWidth.set(event.source.width);
+              naturalHeight.set(event.source.height);
+            }}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
       </View>
     </GestureDetector>
   );

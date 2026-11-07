@@ -250,6 +250,7 @@ updates:
       - dependency-name: "expo-font"
       - dependency-name: "expo-glass-effect"
       - dependency-name: "expo-haptics"
+      - dependency-name: "expo-image"
       - dependency-name: "expo-image-manipulator"
       - dependency-name: "expo-image-picker"
       - dependency-name: "expo-linking"
