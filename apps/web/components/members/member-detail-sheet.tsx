@@ -94,35 +94,24 @@ type MemberDetailSheetProps = {
 
 // One row shared by the live-role and custom-role checklists so the two
 // adjacent sections can never drift in markup or behavior.
+/**
+ * One role the officer can tick. The row is the role's name alone: its id and
+ * key are the system's words, never the chapter's (principles.md P2.2).
+ */
 function RoleChecklistItem({
   title,
-  subtitle,
-  monoSubtitle,
   checked,
   disabled,
   onChange,
 }: {
   title: string;
-  subtitle: string;
-  monoSubtitle?: boolean;
   checked: boolean;
   disabled: boolean;
   onChange: (checked: boolean) => void;
 }) {
   return (
     <label className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition-colors hover:bg-card-hover">
-      <div>
-        <p className="text-sm font-semibold">{title}</p>
-        <p
-          className={
-            monoSubtitle
-              ? "font-mono text-caption text-muted-foreground"
-              : "text-caption text-muted-foreground"
-          }
-        >
-          {subtitle}
-        </p>
-      </div>
+      <p className="text-sm font-semibold">{title}</p>
       <input
         type="checkbox"
         className={dashboardTableCheckboxClassName}
@@ -253,13 +242,8 @@ export function MemberDetailSheet({
     resolvedMember?.display_name,
     resolvedMember?.user_id,
   );
-  const userId =
-    typeof resolvedMember?.user_id === "string"
-      ? resolvedMember.user_id
-      : "unknown-user";
-  // Distinct from the display-formatted `userId` above: this is null rather
-  // than the "unknown-user" placeholder, so the Message button and its
-  // handler can never fire a DM request at a fallback string.
+  // Null rather than a placeholder, so the Message button and its handler can
+  // never fire a DM request at a fallback string.
   const dmTargetUserId =
     typeof resolvedMember?.user_id === "string" &&
     resolvedMember.user_id.length > 0
@@ -481,10 +465,6 @@ export function MemberDetailSheet({
 
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <div className="rounded-md border border-border p-3">
-              <p className="text-caption text-muted-foreground">User ID</p>
-              <p className="mt-1 font-mono text-caption">{userId}</p>
-            </div>
-            <div className="rounded-md border border-border p-3">
               <p className="text-caption text-muted-foreground">Onboarding</p>
               <div className="mt-1">
                 <Badge variant={hasCompletedOnboarding ? "success" : "warning"}>
@@ -547,7 +527,6 @@ export function MemberDetailSheet({
                   <RoleChecklistItem
                     key={role.id}
                     title={role.name}
-                    subtitle={role.id}
                     checked={selectedRoleIds.includes(role.id)}
                     disabled={!canEditRoles}
                     onChange={(isChecked) =>
@@ -565,18 +544,11 @@ export function MemberDetailSheet({
                 <RolesGlyph className="h-4 w-4 text-muted-foreground" />
                 <p className="text-sm font-semibold">Custom roles</p>
               </div>
-              <p className="text-caption text-muted-foreground">
-                Capabilities from assigned custom roles apply on the
-                member&apos;s next request, alongside their live-role
-                permissions.
-              </p>
               <div className="space-y-2">
                 {customRoleOptions.map((role) => (
                   <RoleChecklistItem
                     key={role.id}
                     title={role.label}
-                    subtitle={role.key}
-                    monoSubtitle
                     checked={selectedCustomRoleIds.includes(role.id)}
                     disabled={!canEditRoles}
                     onChange={(isChecked) =>

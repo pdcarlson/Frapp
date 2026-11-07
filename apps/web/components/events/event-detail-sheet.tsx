@@ -1,5 +1,6 @@
 "use client";
 
+import { checkInZoneLine } from "@repo/validation";
 import { useEffect, useMemo } from "react";
 import {
   AlertTriangle,
@@ -355,15 +356,7 @@ export function EventDetailSheet({
                   Check-in zone
                 </p>
                 {hasCheckInZone ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="default">
-                      {checkInZoneName ? checkInZoneName : "Zone set"}
-                    </Badge>
-                    <span className="text-sm text-muted-foreground">
-                      {checkInZonePoints} points. Members must be inside to
-                      check in
-                    </span>
-                  </div>
+                  <p className="text-sm">{checkInZoneLine(checkInZoneName)}</p>
                 ) : checkInZoneIsMalformed ? (
                   <div className="flex items-start gap-2 rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />

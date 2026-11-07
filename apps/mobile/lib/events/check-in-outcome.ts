@@ -1,3 +1,4 @@
+import { errorCopy } from "@repo/hooks/error-copy";
 import { serverMessageOf, statusOf } from "@repo/api-sdk";
 import { isTransientCheckInFailure } from "@repo/hooks";
 import {
@@ -121,8 +122,8 @@ function refusesTheCode(error: unknown): boolean {
  * Whether a failure was of this attempt alone (see the `error` variant's
  * `attemptOnly`). A request with no HTTP status either never reached the
  * server, which `fetch` reports as a `TypeError`, or failed on the device
- * before it was sent, which is the location step: its refused-permission copy
- * and the location service's own errors are plain `Error`s, and those are
+ * before it was sent, which is the location step: its refused-permission and
+ * no-fix copy are `MemberFacingError`s, and those are
  * about the member's phone, so they stay. That is the one place this departs
  * from the shared rule, which counts every status-less failure as no answer.
  */
@@ -160,7 +161,7 @@ export function checkInFailure(
   }
   return {
     kind: "error",
-    message: serverMessageOf(error) ?? "Couldn't check you in.",
+    message: errorCopy(error, "Couldn't check you in."),
     attemptOnly: isAttemptOnly(error),
   };
 }

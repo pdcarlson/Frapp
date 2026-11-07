@@ -211,7 +211,7 @@ export function BackworkUploadSheet({
         body: file,
         contentType,
         upsert: true,
-        describeRejection: (status) => `Storage rejected upload (${status}).`,
+        describeRejection: () => "The file didn't upload.",
       });
 
       await confirmUpload.mutateAsync({
@@ -243,10 +243,7 @@ export function BackworkUploadSheet({
     } catch (error) {
       toast({
         title: "Couldn't upload backwork",
-        description: getErrorMessage(
-          error,
-          "Retry the upload. Duplicate files are rejected server-side.",
-        ),
+        description: getErrorMessage(error, "Try the upload again."),
         variant: "destructive",
       });
     } finally {

@@ -1,5 +1,6 @@
 import { statusOf } from "@repo/api-sdk";
 import type { useConfirmBackworkUpload } from "@repo/hooks";
+import { MemberFacingError } from "@repo/hooks/error-copy";
 import {
   ASSIGNMENT_TYPES,
   DOCUMENT_VARIANTS,
@@ -132,7 +133,7 @@ export async function finishUpload<Doc>(
     }
   }
   if (body.byteLength > MAX_BACKWORK_UPLOAD_BYTES) {
-    throw new Error(
+    throw new MemberFacingError(
       flatten
         ? `This file is over ${MAX_BACKWORK_UPLOAD_LABEL} once flattened. Split the PDF and try again.`
         : `This file is over ${MAX_BACKWORK_UPLOAD_LABEL}.`,

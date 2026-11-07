@@ -260,7 +260,8 @@ export function useUploadChapterLogo() {
         signedUrl,
         body,
         contentType,
-        describeRejection: (status) => `Logo upload failed (${status})`,
+        describeRejection: () =>
+          "The logo didn't upload. Use a PNG, JPEG, GIF or WebP image and try again.",
       });
       return confirmChapterLogo(client, storagePath);
     },

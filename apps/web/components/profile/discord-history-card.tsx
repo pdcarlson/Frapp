@@ -1,5 +1,6 @@
 "use client";
 
+import { DISCORD_ROUTES_WRITE_FOR_MEMBERS } from "@/lib/discord-error-copy";
 import { useCallback, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { CHAT_MESSAGE_QUERY_ROOT } from "@repo/chat-core/types";
@@ -134,6 +135,7 @@ export function DiscordHistoryCard() {
           description: getErrorMessage(
             error,
             "Couldn't link your Discord account. Try again.",
+            DISCORD_ROUTES_WRITE_FOR_MEMBERS,
           ),
         });
       });
@@ -154,6 +156,7 @@ export function DiscordHistoryCard() {
         description: getErrorMessage(
           error,
           "Couldn't start linking your Discord account.",
+          DISCORD_ROUTES_WRITE_FOR_MEMBERS,
         ),
       });
     }
@@ -175,6 +178,7 @@ export function DiscordHistoryCard() {
         description: getErrorMessage(
           error,
           "Couldn't unlink your Discord account.",
+          DISCORD_ROUTES_WRITE_FOR_MEMBERS,
         ),
       });
     }

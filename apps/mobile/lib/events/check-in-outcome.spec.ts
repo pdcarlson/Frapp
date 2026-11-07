@@ -1,3 +1,4 @@
+import { MemberFacingError } from "@repo/hooks/error-copy";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -71,13 +72,26 @@ describe("checkInFailure", () => {
     });
   });
 
-  it("relays anything else, a thrown permission copy included", () => {
+  it("words anything else through the shared map, a thrown permission copy included", () => {
     expect(
-      checkInFailure({ statusCode: 400, message: "You're outside the zone." }),
-    ).toMatchObject({ kind: "error", message: "You're outside the zone." });
-    expect(checkInFailure(new Error("Allow location access."))).toMatchObject({
+      checkInFailure({
+        statusCode: 400,
+        message: "Location is outside the geofence",
+      }),
+    ).toMatchObject({
+      kind: "error",
+      message: "You're outside the zone. Move inside it and try again.",
+    });
+    expect(
+      checkInFailure(new MemberFacingError("Allow location access.")),
+    ).toMatchObject({
       kind: "error",
       message: "Allow location access.",
+    });
+    // A plain Error was written for the console, not the member.
+    expect(checkInFailure(new Error("NSURLErrorDomain -1009"))).toMatchObject({
+      kind: "error",
+      message: "Couldn't check you in.",
     });
     expect(checkInFailure(undefined)).toMatchObject({
       kind: "error",
