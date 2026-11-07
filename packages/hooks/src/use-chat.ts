@@ -562,7 +562,12 @@ export function useRequestChatUploadUrl() {
       body,
     }: {
       id: string;
-      body: { filename: string; content_type: string; size_bytes?: number };
+      body: {
+        filename: string;
+        content_type: string;
+        size_bytes?: number;
+        with_preview?: boolean;
+      };
     }) => {
       const { data, error } = await client.POST(
         "/v1/channels/{id}/upload-url",
@@ -583,7 +588,14 @@ export interface MessageAttachment {
   byte_size: number | null;
   width: number | null;
   height: number | null;
+  /** ThumbHash, base64: draw it (`thumbhash` package) until the photo loads. */
+  thumbhash?: string | null;
   download_url: string;
+  /**
+   * Signed URL of the photo's smaller copy, for the timeline; open
+   * `download_url` full screen. Null or absent: draw `download_url`.
+   */
+  preview_url?: string | null;
 }
 
 /**

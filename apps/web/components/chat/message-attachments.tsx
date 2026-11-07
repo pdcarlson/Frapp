@@ -1,6 +1,7 @@
 "use client";
 
-import { useMessageAttachments } from "@repo/hooks";
+import { useState } from "react";
+import { useMessageAttachments, type MessageAttachment } from "@repo/hooks";
 import { formatBytes } from "@repo/formatting";
 import { AttachGlyph } from "./chat-glyphs";
 import {
@@ -10,6 +11,7 @@ import {
 } from "./image-viewer";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
+import { thumbhashPlaceholderUrl } from "@/lib/chat/photo-preview";
 
 interface MessageAttachmentsProps {
   channelId: string;
@@ -42,6 +44,13 @@ interface MessageAttachmentsProps {
  * unconditionally would make every plain text row — the overwhelming majority —
  * require a client context it has never needed. `MessageItem` guards on
  * `attachment_count` for that reason; the check below is belt and braces.
+ *
+ * **A photo loads small, behind a blur** (2026-11-07). One sent since then
+ * carries its size, a ThumbHash and a 1280 px preview copy
+ * (`lib/chat/photo-preview.ts`): the picture takes its shape at once, the
+ * hash fills it with a soft blur of its colours, and the preview, a fraction
+ * of the original's bytes, paints over it. The viewer and the download keep
+ * the original. An older photo has none of the three and draws as before.
  */
 export function MessageAttachments({
   channelId,
@@ -87,18 +96,8 @@ export function MessageAttachments({
     FOCUS_RING,
   );
 
-  const preview = (attachment: (typeof query.data)[number]) => (
-    /* A plain <img>, not next/image. The src is a per-request signed Storage
-       URL on a host the Next image loader is not configured for, and routing
-       it through /_next/image would strip the query string the signature
-       lives in. The alt is the filename so an image that fails to load still
-       says what it was. */
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={attachment.download_url}
-      alt={attachment.filename}
-      className="block max-h-64 max-w-full"
-    />
+  const preview = (attachment: MessageAttachment) => (
+    <AttachmentImage attachment={attachment} />
   );
 
   return (
@@ -166,5 +165,63 @@ export function MessageAttachments({
         );
       })}
     </ul>
+  );
+}
+
+/** The tallest a photo draws in the thread, `max-h-64`. */
+const PHOTO_MAX_HEIGHT = 256;
+
+/**
+ * One photo in the thread: the preview copy when there is one, the original
+ * when there is not or the preview fails, sized from the stored dimensions and
+ * filled with its ThumbHash blur until it paints.
+ */
+function AttachmentImage({ attachment }: { attachment: MessageAttachment }) {
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const src =
+    !previewFailed && attachment.preview_url
+      ? attachment.preview_url
+      : attachment.download_url;
+  const placeholder = loaded
+    ? null
+    : thumbhashPlaceholderUrl(attachment.thumbhash);
+  const { width, height } = attachment;
+  const sized = width != null && height != null && width > 0 && height > 0;
+  return (
+    /* A plain <img>, not next/image. The src is a per-request signed Storage
+       URL on a host the Next image loader is not configured for, and routing
+       it through /_next/image would strip the query string the signature
+       lives in. The alt is the filename so an image that fails to load still
+       says what it was. */
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={attachment.filename}
+      // With stored dimensions the box is the photo's shape before a byte
+      // arrives: as wide as the photo at the 256px height cap, never wider
+      // than the column, its height from the aspect ratio.
+      width={sized ? width : undefined}
+      height={sized ? height : undefined}
+      onLoad={() => setLoaded(true)}
+      onError={() => {
+        if (src !== attachment.download_url) setPreviewFailed(true);
+      }}
+      className={cn("block max-h-64 max-w-full", sized && "h-auto")}
+      style={{
+        ...(sized
+          ? {
+              aspectRatio: `${width} / ${height}`,
+              width: `${Math.min(width, (PHOTO_MAX_HEIGHT * width) / height)}px`,
+            }
+          : {}),
+        ...(placeholder
+          ? {
+              backgroundImage: `url("${placeholder}")`,
+              backgroundSize: "100% 100%",
+            }
+          : {}),
+      }}
+    />
   );
 }

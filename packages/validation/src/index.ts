@@ -845,7 +845,11 @@ export type {
   EventAttendanceStatus,
   EventAttendanceWire,
 } from "./event-attendance";
-export { MISSING_SIGNED_UPLOAD, readSignedUpload } from "./signed-upload";
+export {
+  MISSING_SIGNED_UPLOAD,
+  readPreviewUpload,
+  readSignedUpload,
+} from "./signed-upload";
 
 export {
   CHAT_NOTIFICATION_LEVELS,

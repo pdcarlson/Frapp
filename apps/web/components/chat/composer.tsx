@@ -41,6 +41,7 @@ import {
 } from "@repo/hooks";
 import * as Sentry from "@sentry/nextjs";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
+import { describeChatPhoto } from "@/lib/chat/photo-preview";
 import { definitiveRefusalMessage } from "@repo/chat-core/chat-client";
 // Imported, never restated. A structural copy of this shape is assignable even
 // when it is missing a field, so a hand-written `{ ok, error? }` silently erases
@@ -60,6 +61,7 @@ import {
   acceptAttribute,
   inspectUploadFile,
   isBetaOffModule,
+  readPreviewUpload,
   readSignedUpload,
 } from "@repo/validation";
 import { EmojiPicker } from "./emoji-picker";
@@ -1417,16 +1419,40 @@ export function Composer({
         { key, filename: file.name, previewUrl },
       ]);
       try {
+        // Size, blur and preview copy for readers (`lib/chat/photo-preview`).
+        // Never throws; whatever it could not make is not sent.
+        const described = await describeChatPhoto(file, contentType);
         const signed = await requestUploadUrl.mutateAsync({
           id: channelId,
-          body: { filename: file.name, content_type: contentType },
+          body: {
+            filename: file.name,
+            content_type: contentType,
+            ...(described.preview ? { with_preview: true } : {}),
+          },
         });
         const { signedUrl, storagePath } = readSignedUpload(signed);
-        await uploadSignedUrl.mutateAsync({
-          signedUrl,
-          file,
-          contentType,
-        });
+        const previewTicket = described.preview
+          ? readPreviewUpload(signed)
+          : null;
+        // Both PUTs at once; a preview that fails is left out of the claim,
+        // and readers draw the original.
+        const [, previewStoragePath] = await Promise.all([
+          uploadSignedUrl.mutateAsync({ signedUrl, file, contentType }),
+          previewTicket && described.preview
+            ? uploadSignedUrl
+                .mutateAsync({
+                  signedUrl: previewTicket.signedUrl,
+                  file: new File([described.preview], "preview.jpg", {
+                    type: "image/jpeg",
+                  }),
+                  contentType: "image/jpeg",
+                })
+                .then(
+                  () => previewTicket.storagePath,
+                  () => null,
+                )
+            : null,
+        ]);
         if (cancelledUploadsRef.current.has(key)) return;
         if (previewUrl) {
           setPreviews((current) =>
@@ -1447,6 +1473,10 @@ export function Composer({
             filename: file.name,
             contentType,
             byteSize: file.size,
+            width: described.width,
+            height: described.height,
+            thumbhash: described.thumbhash,
+            ...(previewStoragePath ? { previewStoragePath } : {}),
           },
         ]);
       } catch (err) {

@@ -539,6 +539,11 @@ export async function sendMessage(
                 filename: attachment.filename,
                 content_type: attachment.contentType,
                 byte_size: attachment.byteSize ?? undefined,
+                width: attachment.width ?? undefined,
+                height: attachment.height ?? undefined,
+                thumbhash: attachment.thumbhash ?? undefined,
+                preview_storage_path:
+                  attachment.previewStoragePath ?? undefined,
               }))
             : undefined,
         },

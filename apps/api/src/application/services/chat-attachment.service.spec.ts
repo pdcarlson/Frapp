@@ -61,6 +61,8 @@ describe('ChatAttachmentService', () => {
       byte_size: 2048,
       width: null,
       height: null,
+      thumbhash: null,
+      preview_storage_path: null,
       external_url: null,
       created_at: '2026-01-01T00:00:00.000Z',
     };
@@ -464,6 +466,8 @@ describe('ChatAttachmentService', () => {
       byte_size: 4096,
       width: 640,
       height: 480,
+      thumbhash: null,
+      preview_storage_path: null,
       external_url: null,
       created_at: '2026-01-01T00:00:00.000Z',
     };
@@ -1082,6 +1086,357 @@ describe('ChatAttachmentService', () => {
         }),
       );
       error.mockRestore();
+    });
+  });
+
+  // ── Photo previews (2026-11-07) ────────────────────────────────────
+  //
+  // A photo can carry its size, a ThumbHash placeholder and a smaller JPEG
+  // copy minted beside it. The copy's key is derived from the original's, so
+  // the claim check, the signing and the purge all agree on which object it is.
+  describe('photo previews', () => {
+    const original = 'chapters/ch-1/chat/ch-chan-1/m-9/IMG_1.jpg';
+    const preview = 'chapters/ch-1/chat/ch-chan-1/m-9/preview/preview.jpg';
+    const photoRow = {
+      id: 'att-9',
+      message_id: 'msg-1',
+      channel_id: 'ch-chan-1',
+      bucket: 'chat',
+      storage_path: original,
+      filename: 'IMG_1.jpg',
+      content_type: 'image/jpeg',
+      byte_size: 900_000,
+      width: 2560,
+      height: 1920,
+      thumbhash: '3OcRJYB4d3h/iIeHeEh3eIhw+j3A',
+      preview_storage_path: preview,
+      external_url: null,
+      created_at: '2026-11-07T00:00:00.000Z',
+    };
+
+    it('mints the preview upload beside the original, as image/jpeg, when asked for a photo', async () => {
+      mockStorageProvider.getSignedUploadUrl
+        .mockResolvedValueOnce('https://signed/original')
+        .mockResolvedValueOnce('https://signed/preview');
+
+      const result = await attachments.requestChatUploadUrl(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'IMG_1.heic.jpg',
+        'image/jpeg',
+        undefined,
+        true,
+      );
+
+      expect(result).toMatchObject({
+        signedUrl: 'https://signed/original',
+        previewSignedUrl: 'https://signed/preview',
+      });
+      const folder = result.storagePath.slice(
+        0,
+        result.storagePath.lastIndexOf('/'),
+      );
+      expect('previewStoragePath' in result && result.previewStoragePath).toBe(
+        `${folder}/preview/preview.jpg`,
+      );
+      expect(mockStorageProvider.getSignedUploadUrl).toHaveBeenLastCalledWith(
+        'chat',
+        `${folder}/preview/preview.jpg`,
+        'image/jpeg',
+      );
+    });
+
+    it('ignores the preview flag for a file that is not an image', async () => {
+      mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
+        'https://signed',
+      );
+
+      const result = await attachments.requestChatUploadUrl(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'minutes.pdf',
+        'application/pdf',
+        undefined,
+        true,
+      );
+
+      expect('previewSignedUrl' in result).toBe(false);
+      expect(mockStorageProvider.getSignedUploadUrl).toHaveBeenCalledTimes(1);
+    });
+
+    it('accepts a claim whose preview sits where the mint put it, with a size and a ThumbHash', () => {
+      const claim = {
+        storage_path: original,
+        filename: 'IMG_1.jpg',
+        content_type: 'image/jpeg',
+        width: 2560,
+        height: 1920,
+        thumbhash: photoRow.thumbhash,
+        preview_storage_path: preview,
+      };
+      expect(
+        attachments.validateAttachmentInputs([claim], 'ch-1', 'ch-chan-1'),
+      ).toEqual([claim]);
+    });
+
+    const claimOf = (override: Record<string, unknown>) => ({
+      storage_path: original,
+      filename: 'IMG_1.jpg',
+      content_type: 'image/jpeg',
+      width: 2560,
+      height: 1920,
+      thumbhash: photoRow.thumbhash,
+      preview_storage_path: preview,
+      ...override,
+    });
+
+    it.each([
+      [
+        'a preview path the mint did not hand out for this original',
+        {
+          preview_storage_path:
+            'chapters/ch-1/chat/ch-chan-1/other/preview/preview.jpg',
+        },
+        { preview_storage_path: null },
+      ],
+      [
+        'a preview on a file that is not an image',
+        { content_type: 'application/pdf' },
+        { preview_storage_path: null },
+      ],
+      [
+        'a ThumbHash that is not base64',
+        { thumbhash: '<script>' },
+        { thumbhash: null },
+      ],
+      ['a zero width', { width: 0 }, { width: null, height: null }],
+      [
+        'an absurd height (a panorama is still sent, just unsized)',
+        { height: 50_000 },
+        { width: null, height: null },
+      ],
+      ['a fractional width', { width: 10.5 }, { width: null, height: null }],
+      [
+        'a width with no height',
+        { height: undefined },
+        { width: null, height: null },
+      ],
+    ])(
+      'drops %s and keeps the rest, so the photo still sends',
+      (_label, override, dropped) => {
+        const [kept] = attachments.validateAttachmentInputs(
+          [claimOf(override)],
+          'ch-1',
+          'ch-chan-1',
+        );
+        expect(kept).toMatchObject({
+          ...claimOf(override),
+          ...dropped,
+        });
+      },
+    );
+
+    it('stores the photo fields with the row', async () => {
+      mockAttachmentRepo.createMany.mockResolvedValue([]);
+
+      await attachments.persistAttachments('msg-1', 'ch-chan-1', [
+        {
+          storage_path: original,
+          filename: 'IMG_1.jpg',
+          content_type: 'image/jpeg',
+          width: 2560,
+          height: 1920,
+          thumbhash: photoRow.thumbhash,
+          preview_storage_path: preview,
+        },
+      ]);
+
+      expect(mockAttachmentRepo.createMany).toHaveBeenCalledWith([
+        expect.objectContaining({
+          width: 2560,
+          height: 1920,
+          thumbhash: photoRow.thumbhash,
+          preview_storage_path: preview,
+        }),
+      ]);
+    });
+
+    it('signs the preview in the same batch as the original and hands it back as preview_url', async () => {
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockAttachmentRepo.findByMessage.mockResolvedValue([photoRow]);
+      mockStorageProvider.getSignedDownloadUrls.mockResolvedValue({
+        [original]: 'https://signed/original',
+        [preview]: 'https://signed/preview',
+      });
+
+      const rows = await attachments.listMessageAttachments(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'msg-1',
+      );
+
+      expect(mockStorageProvider.getSignedDownloadUrls).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(mockStorageProvider.getSignedDownloadUrls).toHaveBeenCalledWith(
+        'chat',
+        [original, preview],
+        expect.any(Number),
+        true,
+      );
+      expect(rows).toEqual([
+        expect.objectContaining({
+          download_url: 'https://signed/original',
+          preview_url: 'https://signed/preview',
+          width: 2560,
+          height: 1920,
+          thumbhash: photoRow.thumbhash,
+        }),
+      ]);
+    });
+
+    it('answers a null preview_url when the preview never landed, and still serves the original', async () => {
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockAttachmentRepo.findByMessage.mockResolvedValue([photoRow]);
+      mockStorageProvider.getSignedDownloadUrls.mockResolvedValue({
+        [original]: 'https://signed/original',
+      });
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+      const rows = await attachments.listMessageAttachments(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'msg-1',
+      );
+
+      expect(rows).toEqual([
+        expect.objectContaining({
+          download_url: 'https://signed/original',
+          preview_url: null,
+        }),
+      ]);
+    });
+
+    it('deletes the preview with its original when the message is removed', async () => {
+      mockAttachmentRepo.findByMessage.mockResolvedValue([photoRow]);
+      mockAttachmentRepo.findSharedObjects.mockResolvedValue([]);
+
+      await attachments.purgeRemovedMessageAttachments('msg-1', 'ch-1');
+
+      expect(mockAttachmentRepo.findSharedObjects).toHaveBeenLastCalledWith(
+        [{ bucket: 'chat', storage_path: preview }],
+        'msg-1',
+      );
+      expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('chat', [
+        original,
+        preview,
+      ]);
+    });
+
+    it('takes the preview with the original even when this row never named it (a forward of the photo)', async () => {
+      mockAttachmentRepo.findByMessage.mockResolvedValue([
+        { ...photoRow, preview_storage_path: null },
+      ]);
+      mockAttachmentRepo.findSharedObjects.mockResolvedValue([]);
+
+      await attachments.purgeRemovedMessageAttachments('msg-1', 'ch-1');
+
+      expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('chat', [
+        original,
+        preview,
+      ]);
+    });
+
+    it('keeps the preview while another live message still shows the original', async () => {
+      mockAttachmentRepo.findByMessage.mockResolvedValue([photoRow]);
+      mockAttachmentRepo.findSharedObjects.mockResolvedValue([
+        { bucket: 'chat', storage_path: original },
+      ]);
+
+      await attachments.purgeRemovedMessageAttachments('msg-1', 'ch-1');
+
+      expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+    });
+
+    it('keeps a preview another live message still names, and deletes the original', async () => {
+      mockAttachmentRepo.findByMessage.mockResolvedValue([photoRow]);
+      mockAttachmentRepo.findSharedObjects
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ bucket: 'chat', storage_path: preview }]);
+
+      await attachments.purgeRemovedMessageAttachments('msg-1', 'ch-1');
+
+      expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('chat', [
+        original,
+      ]);
+    });
+
+    it('keeps the preview but still deletes the original when the preview check cannot be read', async () => {
+      mockAttachmentRepo.findByMessage.mockResolvedValue([photoRow]);
+      mockAttachmentRepo.findSharedObjects
+        .mockResolvedValueOnce([])
+        .mockRejectedValueOnce(new Error('db down'));
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+      await attachments.purgeRemovedMessageAttachments('msg-1', 'ch-1');
+
+      expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('chat', [
+        original,
+      ]);
+    });
+
+    it('asks after no preview for a file that is not a photo', async () => {
+      mockAttachmentRepo.findByMessage.mockResolvedValue([
+        {
+          ...photoRow,
+          storage_path: 'chapters/ch-1/chat/ch-chan-1/m-9/minutes.pdf',
+          content_type: 'application/pdf',
+          preview_storage_path: null,
+        },
+      ]);
+      mockAttachmentRepo.findSharedObjects.mockResolvedValue([]);
+
+      await attachments.purgeRemovedMessageAttachments('msg-1', 'ch-1');
+
+      expect(mockAttachmentRepo.findSharedObjects).toHaveBeenCalledTimes(1);
+    });
+
+    it('deletes the preview but keeps the original a report holds: the officer reviews the original, and the release never names the preview', async () => {
+      mockAttachmentRepo.findByMessage.mockResolvedValue([photoRow]);
+      mockAttachmentRepo.findSharedObjects.mockResolvedValue([]);
+      mockReportRepo.findHeldObjects.mockResolvedValue([
+        { bucket: 'chat', storage_path: original },
+      ]);
+
+      await attachments.purgeRemovedMessageAttachments('msg-1', 'ch-1');
+
+      expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('chat', [
+        preview,
+      ]);
+    });
+
+    it('still mints the original when the preview cannot be signed, with no preview', async () => {
+      mockStorageProvider.getSignedUploadUrl
+        .mockResolvedValueOnce('https://signed/original')
+        .mockRejectedValueOnce(new Error('storage hiccup'));
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+      const result = await attachments.requestChatUploadUrl(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        'IMG_1.jpg',
+        'image/jpeg',
+        undefined,
+        true,
+      );
+
+      expect(result.signedUrl).toBe('https://signed/original');
+      expect('previewSignedUrl' in result).toBe(false);
     });
   });
 });

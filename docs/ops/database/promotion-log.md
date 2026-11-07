@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-07: Chat photos carry a blur and a preview copy
+
+### 20261107130000_chat_attachment_previews.sql
+
+- **Purpose**: Adds two nullable columns to `chat_message_attachments`: `thumbhash` (base64 ThumbHash of a photo; no CHECK, the API stores only a well-formed one of at most 36 characters) and `preview_storage_path` (the 1280 px JPEG copy the sender uploaded beside the original, always `<original folder>/preview/preview.jpg`). Chat sends now fill the existing `width` and `height` too. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md) § Messages, "Photo previews". No backfill: older photos have neither and draw as before.
+- **Checks**: After `db push`, `select column_name, is_nullable from information_schema.columns where table_name = 'chat_message_attachments' and column_name in ('thumbhash', 'preview_storage_path');` returns both, `YES`. A photo sent from a current client then carries both.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API never names the columns, so it is unaffected. The newer API names both on every attachment insert, so against an unmigrated database every send with a file fails; don't deploy the API first. Then the clients: web and a mobile OTA from this PR send `width`, `height`, `thumbhash` and `preview_storage_path` on a send and `with_preview` on upload-url, which an older API's validation (`forbidNonWhitelisted`) refuses with a 400, so they ship after the API, never before. Adding nullable columns with no default is a catalog update; `if not exists` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chat-attachment-previews-20261107130000) § Rollback chat attachment previews.
+
 ## 2026-11-07: Invites remember their address and their revoke
 
 ### 20261107090000_invites_email_and_revoked_at.sql
