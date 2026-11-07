@@ -1320,6 +1320,8 @@ describe('InviteService', () => {
         created_by: 'user-1',
         used_at: null,
         created_at: '2024-01-01',
+        email: null,
+        revoked_at: null,
       };
     }
 
