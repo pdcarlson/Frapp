@@ -413,6 +413,9 @@ describe("the When row on Android", () => {
         String(node.props.accessibilityLabel).startsWith("Ends day") &&
         typeof node.props.onPress === "function",
     );
+    // The pill says its day: it used to be blank, the label too.
+    expect(dayPill!.props.accessibilityLabel).toBe("Ends day, Sat, Nov 7");
+    expect(screenText(tree)).toContain("Sat, Nov 7");
     act(() => dayPill!.props.onPress());
 
     expect(open).toHaveBeenCalledTimes(1);

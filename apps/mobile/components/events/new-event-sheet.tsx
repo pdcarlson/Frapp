@@ -816,7 +816,9 @@ export function WhenRow({
     floor.getMonth(),
     floor.getDate(),
   );
-  const day = formatWeekdayDay(value, now) ?? "";
+  // An ISO string: `formatWeekdayDay` reads only strings, and a Date left
+  // the Android pill (and its label) blank.
+  const day = formatWeekdayDay(value.toISOString(), now) ?? "";
   const time = formatEventClock(value);
 
   if (platform === "ios") {
