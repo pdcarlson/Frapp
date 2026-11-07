@@ -197,7 +197,7 @@ describe("PollsPage disabled-query handling", () => {
   it("keeps loaded polls on screen when the connection drops", () => {
     // TanStack keeps `data` when the link goes; README §4 scopes the offline
     // state to "no cached data" and §10 keeps stale content in place. The
-    // shell's OfflineBanner states the connection on every route, and the vote
+    // shell's ConnectionPill states the connection on every route, and the vote
     // controls fail with their own message, so the list is not thrown away.
     mockOffline.value = true;
 
