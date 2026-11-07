@@ -20,6 +20,16 @@ describe("usedInviteTokens", () => {
     expect([...used]).toEqual(["a"]);
   });
 
+  it("reads status when the server sends it, so a revoked link isn't Joined", () => {
+    const used = usedInviteTokens([
+      { token: "a", status: "joined", used_at: "2026-11-06T20:00:00Z" },
+      { token: "r", status: "revoked", used_at: "2026-11-06T21:00:00Z" },
+      { token: "p", status: "pending", used_at: null },
+      { token: "e", status: "expired", used_at: null },
+    ]);
+    expect([...used]).toEqual(["a"]);
+  });
+
   it("reads anything that isn't a list as none used", () => {
     expect(usedInviteTokens(undefined).size).toBe(0);
     expect(usedInviteTokens({ token: "a", used_at: "x" }).size).toBe(0);
