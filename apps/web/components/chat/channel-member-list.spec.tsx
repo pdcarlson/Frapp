@@ -1,14 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import {
-  ChannelMemberList,
-  groupChannelMembers,
-  type ChannelMemberRow,
-} from "./channel-member-list";
+import { ChannelMemberList } from "./channel-member-list";
 
 const membersQuery = vi.hoisted(() => ({
   value: {} as {
-    data?: { user_id: string; role_rank: number | null }[];
+    data?: {
+      user_id: string;
+      role_rank: number | null;
+      role_id?: string | null;
+      role_name?: string | null;
+    }[];
     isPending?: boolean;
     isError?: boolean;
     refetch?: () => void;
@@ -66,66 +67,36 @@ vi.mock("@/lib/providers/chapter-presence-provider", () => ({
   useChapterPresenceContext: () => presence.value,
 }));
 
-function row(overrides: Partial<ChannelMemberRow>): ChannelMemberRow {
-  return {
-    userId: "u",
-    name: "Name",
-    avatarUrl: null,
-    roleColor: null,
-    roleRank: null,
-    status: "online",
-    ...overrides,
-  };
-}
-
-describe("groupChannelMembers", () => {
-  it("groups online, idle, offline in that order and drops empty groups", () => {
-    const groups = groupChannelMembers([
-      row({ userId: "a", status: "offline" }),
-      row({ userId: "b", status: "online" }),
-    ]);
-    expect(groups.map((group) => group.label)).toEqual(["Online", "Offline"]);
-  });
-
-  it("sorts by role rank, a member with no role last, then by name", () => {
-    const [group] = groupChannelMembers([
-      row({ userId: "none", name: "Aaron", roleRank: null }),
-      row({ userId: "member", name: "Zoe", roleRank: 5 }),
-      row({ userId: "member2", name: "bea", roleRank: 5 }),
-      row({ userId: "pres", name: "Yves", roleRank: 0 }),
-    ]);
-    expect(group?.rows.map((r) => r.userId)).toEqual([
-      "pres",
-      "member2",
-      "member",
-      "none",
-    ]);
-  });
-
-  it("makes one Members group, claiming no one Offline, before presence resolves", () => {
-    const groups = groupChannelMembers([
-      row({ userId: "a", status: null }),
-      row({ userId: "b", status: null }),
-    ]);
-    expect(groups).toHaveLength(1);
-    expect(groups[0]?.label).toBe("Members");
-  });
-
-  it("returns no groups for no rows", () => {
-    expect(groupChannelMembers([])).toEqual([]);
-  });
-});
-
 describe("ChannelMemberList", () => {
   beforeEach(() => {
     membersQuery.value = {
       data: [
-        { user_id: "u-member", role_rank: 5 },
-        { user_id: "u-officer", role_rank: 2 },
-        { user_id: "u-pres", role_rank: 0 },
-        { user_id: "u-idle", role_rank: null },
-        { user_id: "u-blank", role_rank: null },
-        { user_id: "u-gone0001", role_rank: 1 },
+        {
+          user_id: "u-member",
+          role_rank: 5,
+          role_id: "r-mem",
+          role_name: "Member",
+        },
+        {
+          user_id: "u-officer",
+          role_rank: 2,
+          role_id: "r-off",
+          role_name: "Treasurer",
+        },
+        {
+          user_id: "u-pres",
+          role_rank: 0,
+          role_id: "r-pres",
+          role_name: "President",
+        },
+        { user_id: "u-idle", role_rank: null, role_id: null, role_name: null },
+        { user_id: "u-blank", role_rank: null, role_id: null, role_name: null },
+        {
+          user_id: "u-gone0001",
+          role_rank: 5,
+          role_id: "r-mem",
+          role_name: "Member",
+        },
       ],
     };
     roster.value = {};
@@ -140,36 +111,90 @@ describe("ChannelMemberList", () => {
     };
   });
 
-  it("lists readers under their presence group, officers first, names in role color", () => {
+  it("groups readers under their highest role, in role order, names A to Z", () => {
     render(<ChannelMemberList channelId="chan-1" />);
 
-    const online = screen.getByRole("list", { name: /Online/ });
-    const items = within(online).getAllByRole("listitem");
-    expect(items).toHaveLength(3);
-    expect(items[0]).toHaveTextContent("Zed President");
+    const groups = screen.getAllByRole("list");
+    expect(
+      groups.map(
+        (list) =>
+          list.getAttribute("aria-labelledby") &&
+          list.previousSibling?.textContent,
+      ),
+    ).toEqual(["President1", "Treasurer1", "Member2", "No role2"]);
+    const members = within(
+      screen.getByRole("list", { name: /^Member/ }),
+    ).getAllByRole("listitem");
+    expect(members[0]).toHaveTextContent("Bob Member");
     // A reader the roster cannot name is still listed, under the fallback.
-    expect(items[1]).toHaveTextContent(/Member u-gon/);
-    expect(items[2]).toHaveTextContent("Amy Officer");
+    expect(members[1]).toHaveTextContent(/Member u-gon/);
     expect(screen.getByText("Amy Officer")).toHaveStyle({ color: "#5865F2" });
-    expect(screen.getByRole("list", { name: /Idle/ })).toHaveTextContent(
-      "Cal Idle",
+  });
+
+  it("does not move a row when presence arrives", () => {
+    presence.value = { isReady: false, statusOf: () => "offline" };
+    const { rerender } = render(<ChannelMemberList channelId="chan-1" />);
+    const before = screen
+      .getAllByRole("listitem")
+      .map((item) => item.textContent);
+
+    presence.value = {
+      isReady: true,
+      statusOf: (id) => (id === "u-idle" ? "idle" : "online"),
+    };
+    rerender(<ChannelMemberList channelId="chan-1" />);
+    const after = screen
+      .getAllByRole("listitem")
+      .map((item) => item.textContent?.replace(/, (Online|Idle|Offline)$/, ""));
+    expect(after).toEqual(before);
+  });
+
+  it("searches by name past 12 readers and says when no one matches", () => {
+    membersQuery.value = {
+      data: Array.from({ length: 13 }, (_, index) => ({
+        user_id:
+          index === 0 ? "u-pres" : `u-x${String(index).padStart(6, "0")}`,
+        role_rank: 5,
+        role_id: "r-mem",
+        role_name: "Member",
+      })),
+    };
+    render(<ChannelMemberList channelId="chan-1" />);
+
+    const search = screen.getByRole("searchbox", { name: "Search members" });
+    expect(search).toHaveAttribute("placeholder", "Search 13 members");
+    fireEvent.change(search, { target: { value: "zed" } });
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.getByText("Zed President")).toBeTruthy();
+
+    fireEvent.change(search, { target: { value: "nobody" } });
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "No one named “nobody”",
     );
+
+    fireEvent.keyDown(search, { key: "Escape" });
+    expect(screen.getAllByRole("listitem")).toHaveLength(13);
+  });
+
+  it("draws no search field for a small channel", () => {
+    render(<ChannelMemberList channelId="chan-1" />);
+    expect(screen.queryByRole("searchbox")).toBeNull();
   });
 
   it("lists a member who never set a name, and dims offline rows without losing contrast", () => {
     render(<ChannelMemberList channelId="chan-1" />);
 
-    const offline = screen.getByRole("list", { name: /Offline/ });
-    const [colored, blank] = within(offline).getAllByRole("listitem");
+    const colored = screen.getByText("Bob Member").closest("li")!;
+    const blank = screen.getByText(/^Member u-bla/).closest("li")!;
     // A role-colored offline name keeps its full color: only the avatar fades.
-    const coloredName = within(colored!).getByText("Bob Member");
+    const coloredName = within(colored).getByText("Bob Member");
     expect(coloredName).toHaveStyle({ color: "#5865F2" });
     expect(coloredName.className).not.toMatch(/opacity/);
-    expect(colored!.querySelector("[aria-hidden='true']")?.className).toMatch(
+    expect(colored.querySelector("[aria-hidden='true']")?.className).toMatch(
       /opacity-50/,
     );
     // An empty display name falls back to the id label, muted while offline.
-    expect(within(blank!).getByText(/^Member u-bla/)).toHaveClass(
+    expect(within(blank).getByText(/^Member u-bla/)).toHaveClass(
       "text-muted-foreground",
     );
   });
