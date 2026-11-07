@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CLIENT_VERSION_HEADER,
+  TIME_ZONE_HEADER,
   REQUEST_ID_HEADER,
   createFrappClient,
   mintRequestId,
@@ -160,6 +161,29 @@ describe("createFrappClient client version", () => {
     await client.GET("/v1/client-policy");
 
     expect(sentRequest().headers.has(CLIENT_VERSION_HEADER)).toBe(false);
+  });
+
+  it("sends the device's zone so pushes can name local times", async () => {
+    stubFetch();
+    const client = createFrappClient({
+      baseUrl: "http://api.test",
+      getTimeZone: () => "America/Chicago",
+    });
+
+    await client.GET("/v1/client-policy");
+
+    expect(sentRequest().headers.get(TIME_ZONE_HEADER)).toBe("America/Chicago");
+  });
+
+  it("defaults the zone to the runtime's own", async () => {
+    stubFetch();
+    const client = createFrappClient({ baseUrl: "http://api.test" });
+
+    await client.GET("/v1/client-policy");
+
+    expect(sentRequest().headers.get(TIME_ZONE_HEADER)).toBe(
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+    );
   });
 });
 

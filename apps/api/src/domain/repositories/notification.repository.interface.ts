@@ -70,4 +70,9 @@ export interface IUserSettingsRepository {
   findByUser(userId: string): Promise<UserSettings | null>;
   findByUserIds(userIds: string[]): Promise<UserSettings[]>;
   upsert(data: Partial<UserSettings>): Promise<UserSettings>;
+  /**
+   * Record the zone the member's device reports, creating their row if they
+   * have none, and leaving every other column as it is.
+   */
+  setTimeZone(userId: string, timeZone: string): Promise<void>;
 }

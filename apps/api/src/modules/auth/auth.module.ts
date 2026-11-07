@@ -3,6 +3,9 @@ import { AuthService } from '../../application/services/auth.service';
 import { LegalAcceptanceService } from '../../application/services/legal-acceptance.service';
 import { SupabaseUserRepository } from '../../infrastructure/supabase/repositories/supabase-user.repository';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import { TimeZoneSyncService } from '../../application/services/time-zone-sync.service';
+import { SupabaseUserSettingsRepository } from '../../infrastructure/supabase/repositories/supabase-user-settings.repository';
+import { USER_SETTINGS_REPOSITORY } from '#domain/repositories/notification.repository.interface';
 
 @Module({
   providers: [
@@ -12,7 +15,19 @@ import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface'
     // import AuthModule already, and all three inject it (#2302).
     LegalAcceptanceService,
     { provide: USER_REPOSITORY, useClass: SupabaseUserRepository },
+    // Every module that uses `AuthSyncInterceptor` imports this one, and the
+    // interceptor records the caller's `x-time-zone` through it.
+    TimeZoneSyncService,
+    {
+      provide: USER_SETTINGS_REPOSITORY,
+      useClass: SupabaseUserSettingsRepository,
+    },
   ],
-  exports: [AuthService, LegalAcceptanceService, USER_REPOSITORY],
+  exports: [
+    AuthService,
+    LegalAcceptanceService,
+    USER_REPOSITORY,
+    TimeZoneSyncService,
+  ],
 })
 export class AuthModule {}
