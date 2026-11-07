@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import {
+  useFocusEffect,
+  useIsFocused,
+  useLocalSearchParams,
+  useRouter,
+} from "expo-router";
 import { useScreenBelow } from "@/lib/back-target";
 import { goBackTo } from "@/lib/href";
 import {
@@ -75,6 +80,7 @@ import {
   useBlockActions,
 } from "@/lib/chat/block-actions";
 import {
+  copyableText,
   messageActionsFor,
   departedIn,
   noDepartedMembers,
@@ -109,6 +115,7 @@ import {
 import { useJumpToMessage } from "@/lib/chat/use-jump-to-message";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { useConnection } from "@/lib/connection/use-connection";
+import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { selectionHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -688,6 +695,7 @@ export default function ChatThreadScreen() {
       }
       setActionTarget({
         messageId: message.id,
+        copyText: copyableText(message),
         canReply: actions.canReply,
         canEdit: actions.canEdit,
         canDelete: actions.canDelete,
@@ -803,7 +811,6 @@ export default function ChatThreadScreen() {
     ],
   );
 
-  const isOffline = connection === "offline";
   const { isOffline: appOffline, writeBlockedReason } = useConnection();
 
   const notificationPrefsQuery = useChannelNotificationPreferences();
@@ -871,27 +878,17 @@ export default function ChatThreadScreen() {
   }
   const imageViewerOpen = imageViewer.target !== null;
 
-  /**
-   * What the in-thread pill says, or `null` when it has nothing to add.
-   *
-   * `null` when the transport is live, and also when the transport is offline
-   * while the global banner is already saying so — see the comment at the
-   * render site.
-   */
-  const pillMessage =
-    connection === "live"
-      ? null
-      : isOffline
-        ? appOffline
-          ? null
-          : "Offline — messages will send when you reconnect"
-        : connection === "polling"
-          ? // Verbatim from spec/ui/resilience/message-delivery.md#receiving-messages-realtime, which declares this
-            // string normative; `apps/web`'s reconnect pill carries the same
-            // one. Polling is a working degraded mode, so calling it
-            // "reconnecting" would report a live surface as broken.
-            "Real-time updates paused. Polling for new messages."
-          : "Reconnecting…";
+  // The app-wide connection pill (`components/network-banner.tsx`) says what
+  // this thread's realtime transport is doing, folded with the app's own
+  // connection state, so the thread draws no connection band of its own
+  // (`spec/ui/resilience/connection-state.md` § One indicator).
+  //
+  // Only while focused: this tab screen stays mounted after the member
+  // leaves it, and a hidden thread's transport must not reach the pill on
+  // Events or More, where "messages you send go out when you reconnect"
+  // would promise a queue that isn't there.
+  const threadFocused = useIsFocused();
+  useReportOpenChatTransport(channelId && threadFocused ? connection : null);
 
   return (
     // Every edge: the tab layout draws no navigator header (#2485), so the
@@ -989,22 +986,6 @@ export default function ChatThreadScreen() {
             <Text accessibilityRole="alert" style={styles.saveError}>
               Notification level not saved
             </Text>
-          ) : null}
-
-          {/*
-          Reconciled with the global banner rather than duplicating it (#998).
-          The two answer different questions — this pill is the *realtime
-          transport*, the banner is whether the API is reachable at all — but
-          when both are saying "offline" they are one fact told twice, stacked
-          on the same screen in two different sentences. So the pill yields its
-          offline branch to the banner and keeps the two it alone can report.
-          `polling` in particular must survive: it is a working degraded mode,
-          and `spec/ui/resilience/message-delivery.md#receiving-messages-realtime` declares its string normative.
-        */}
-          {pillMessage ? (
-            <View style={styles.connectionPill}>
-              <Text style={styles.connectionText}>{pillMessage}</Text>
-            </View>
           ) : null}
 
           {channelId ? (
@@ -1219,29 +1200,23 @@ export default function ChatThreadScreen() {
             // A send that never reached the outbox has no failed row to show
             // (nothing was queued), so this line is the only report of it.
             //
-            // The offline label is #501's "blocked **or clearly labeled**" half:
-            // this surface has a queue, so it labels. `lib/connection/state.ts`
-            // holds the rule for the surfaces that have to block instead.
+            // Offline is not said here: #501's "clearly labeled" half is the
+            // app-wide pill, whose sentence carries the queue's promise while
+            // a chat is open (`spec/ui/resilience/connection-state.md` § One
+            // indicator). `lib/connection/state.ts` holds the rule for the
+            // surfaces that have to block instead.
             disabledHint={
               attachError ??
               staging.editError ??
               sendError ??
               // `canSend` first. It is false until `ctx` resolves, and
-              // `ChatComposer` keys `editable` on it — so leading with the
-              // offline branch promised "messages send when you reconnect" over
-              // an input the member cannot type into, which is the one state
-              // where nothing will be queued and nothing will send. The
-              // channel-level `can_post` gate (#704) comes next, ahead of
-              // offline: a channel the caller cannot post in stays not-postable
-              // whether or not they're connected, so offline is not the more
-              // relevant fact to lead with there.
+              // `ChatComposer` keys `editable` on it. The channel-level
+              // `can_post` gate (#704) comes next.
               (!canSend
                 ? "Connecting to chat…"
                 : !channelCanPost
                   ? postRefusalHint(postCapability)
-                  : appOffline
-                    ? "You're offline — messages send when you reconnect, but photos need a connection."
-                    : null)
+                  : null)
             }
             hintTone={
               sendError || attachError || staging.editError ? "error" : "muted"
@@ -1256,10 +1231,11 @@ export default function ChatThreadScreen() {
             // so unlike the composer itself, the attach control does have to go
             // dark offline. It stays visible and states why rather than
             // disappearing.
-            // Gates the control only; the member-facing reason rides the single
-            // `disabledHint` above rather than competing with it for the one
-            // hint slot. Two hints for one composer is how the offline case
-            // ended up promising delivery for a photo that would not be sent.
+            // Gates the control only. Offline, the member-facing reason is the
+            // connection pill's sentence ("Photos and files need a
+            // connection."), not a composer line, so the screen says offline
+            // once (`connection-state.md` § One indicator). Other reasons ride
+            // the single `disabledHint` above.
             attachDisabledReason={
               !channelCanPost
                 ? "You can't post in this channel."
@@ -1357,18 +1333,6 @@ function createStyles(tokens: SignetTokens) {
     },
     pressed: {
       opacity: 0.6,
-    },
-    connectionPill: {
-      paddingHorizontal: tokens.spacing.lg,
-      paddingVertical: tokens.spacing.sm,
-      backgroundColor: tokens.color.surface.surface1,
-      borderBottomWidth: 1,
-      borderBottomColor: tokens.color.border.hairline,
-    },
-    connectionText: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-      textAlign: "center",
     },
     typingSlot: {
       paddingHorizontal: tokens.spacing.lg,

@@ -39,7 +39,9 @@ import {
   SheetBackToClose,
   useSheetClose,
 } from "@/components/sheet-scaffold";
+import * as Clipboard from "expo-clipboard";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { selectionHaptic } from "@/lib/haptics";
 import {
   BLOCK_ROW_DESCRIPTION,
   confirmBlockMember,
@@ -75,6 +77,10 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * `spec/behavior/chat/README.md` § Reactions describes. Either way the sheet
  * closes: the chip under the message is the confirmation.
  *
+ * **Copy text comes first among the rows**, as in iMessage and Discord: the
+ * message's text as written, for a card-free message with a body
+ * (`copyableText`). The row turns to "Copied" in place, then the sheet closes.
+ *
  * **Reply, Edit and Delete hand off to the thread.** Reply and Edit stage in
  * the composer and Delete asks for confirmation in a native alert, so each row
  * closes the sheet and tells the screen which message it was for.
@@ -107,6 +113,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 
 const REPORT_SNAP_POINTS = ["85%"];
 
+/** The Copy text row's label once the text is on the clipboard. */
+export const COPIED_LABEL = "Copied";
+/** How long "Copied" shows before the sheet closes: long enough to read. */
+const COPIED_HOLD_MS = 700;
+
 /**
  * The sheet's quick reactions, in web's order (`QUICK_REACTIONS` in
  * `apps/web/components/chat/reaction-bar.tsx`). A copy rather than a shared
@@ -123,6 +134,12 @@ export function quickReactionLabel(emoji: string, mine: boolean): string {
 export interface MessageActionsTarget {
   /** Server id — the sheet only opens on confirmed rows. */
   messageId: string;
+  /**
+   * What "Copy text" copies (`copyableText` in `@repo/chat-core`), or `null`
+   * for a card, a photo-only message or a deleted one, where the row is not
+   * drawn.
+   */
+  copyText: string | null;
   canReply: boolean;
   canEdit: boolean;
   canDelete: boolean;
@@ -260,6 +277,49 @@ export const MessageActionsSheet = forwardRef<
     [],
   );
 
+  /**
+   * Which message's text was just copied. "Copy text" confirms in place: the
+   * row reads "Copied" with a tick of haptics, then the sheet closes, so the
+   * member sees it worked without a toast landing over the thread.
+   */
+  const [copiedFor, setCopiedFor] = useState<string | null>(null);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    },
+    [],
+  );
+  /**
+   * However the menu closed (the timer, a swipe, Android back, another row),
+   * the next open starts on "Copy text", and a timer still pending can't
+   * close a sheet the member has opened since.
+   */
+  const resetCopy = useCallback(() => {
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    copyTimer.current = null;
+    setCopiedFor(null);
+  }, []);
+  const copyText = useCallback(() => {
+    const text = target?.copyText;
+    const messageId = target?.messageId;
+    if (!text || !messageId) return;
+    void Clipboard.setStringAsync(text)
+      .then(() => {
+        selectionHaptic();
+        setCopiedFor(messageId);
+        announce(COPIED_LABEL);
+        if (copyTimer.current) clearTimeout(copyTimer.current);
+        copyTimer.current = setTimeout(() => {
+          copyTimer.current = null;
+          menuRef.current?.dismiss();
+        }, COPIED_HOLD_MS);
+      })
+      .catch(() => {
+        Alert.alert("Couldn't copy", "Try again in a moment.");
+      });
+  }, [target]);
+
   const senderLabel = target?.senderName ?? UNNAMED_MEMBER;
   const canBlock = !!target?.blockUserId;
   const senderInDirectory = target?.senderInDirectory ?? false;
@@ -353,6 +413,7 @@ export const MessageActionsSheet = forwardRef<
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
+        onDismiss={resetCopy}
       >
         <SheetBackToClose onClose={closeMenu} />
         <BottomSheetView onAccessibilityEscape={closeMenu} style={styles.body}>
@@ -394,8 +455,20 @@ export const MessageActionsSheet = forwardRef<
               })}
             </View>
           ) : null}
-          {target?.canReply || target?.canEdit || target?.canDelete ? (
+          {target?.copyText ||
+          target?.canReply ||
+          target?.canEdit ||
+          target?.canDelete ? (
             <ListSection>
+              {target.copyText ? (
+                <ListRow
+                  label={
+                    copiedFor === target.messageId ? COPIED_LABEL : "Copy text"
+                  }
+                  action
+                  onPress={copyText}
+                />
+              ) : null}
               {target.canReply ? (
                 <ListRow
                   label="Reply"

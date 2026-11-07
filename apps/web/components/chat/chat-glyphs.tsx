@@ -129,6 +129,23 @@ export function SlashCommandGlyph({ className, active }: ChatGlyphProps) {
   );
 }
 
+/**
+ * Send — an up arrow, the mobile composer's `↑` (principles.md P6.5). Stroke
+ * only and heavier than the family's 1.6, because it is drawn at 16px on a
+ * filled accent circle where the thin stroke disappears.
+ */
+export function SendArrowGlyph({ className }: ChatGlyphProps) {
+  return (
+    <Svg className={className}>
+      <path
+        d="M12 19.5V5M5.5 11.5L12 5l6.5 6.5"
+        {...detail}
+        strokeWidth={2.4}
+      />
+    </Svg>
+  );
+}
+
 /** Announcement / broadcast. Horn filled, sound lines stroke-only. */
 export function AnnouncementGlyph({ className, active }: ChatGlyphProps) {
   return (
@@ -185,20 +202,6 @@ export function DirectMessageGlyph({ className, active }: ChatGlyphProps) {
         {...fillProps(active)}
       />
       <path d="M17.5 8.6h.9a2.6 2.6 0 012.6 2.6v6.6l-2.8-2h-3.3" {...detail} />
-    </Svg>
-  );
-}
-
-/** Connection lost. Cloud filled, the slash is a detail stroke. */
-export function OfflineGlyph({ className, active }: ChatGlyphProps) {
-  return (
-    <Svg className={className}>
-      <path
-        d="M7.5 18.5a4 4 0 01-.4-8A5.5 5.5 0 0117.7 11a3.8 3.8 0 01-.2 7.5z"
-        {...stroke}
-        {...fillProps(active)}
-      />
-      <path d="M4.5 4.5l15 15" {...detail} />
     </Svg>
   );
 }

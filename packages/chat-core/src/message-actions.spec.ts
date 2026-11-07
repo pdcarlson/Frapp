@@ -4,6 +4,7 @@ import {
   canDeleteMessage,
   canEditMessage,
   channelAllowsReplies,
+  copyableText,
   isOwnMessage,
   isCardMessage,
   replyTargetId,
@@ -106,9 +107,9 @@ describe("channelAllowsReplies", () => {
   });
 
   it("refuses them to an alumnus in an ordinary channel", () => {
-    expect(
-      channelAllowsReplies({ can_post: false, is_read_only: false }),
-    ).toBe(false);
+    expect(channelAllowsReplies({ can_post: false, is_read_only: false })).toBe(
+      false,
+    );
   });
 
   it("refuses them in #announcements even to someone who may post there", () => {
@@ -125,5 +126,26 @@ describe("isCardMessage", () => {
     expect(isCardMessage({ kind: null })).toBe(false);
     expect(isCardMessage({ kind: "poll" })).toBe(true);
     expect(isCardMessage({ kind: "event" })).toBe(true);
+  });
+});
+
+describe("copyableText", () => {
+  const base = {
+    content: "hey **all**",
+    kind: "text" as const,
+    is_deleted: false,
+  };
+
+  it("copies the body as written", () => {
+    expect(copyableText(base)).toBe("hey **all**");
+    expect(copyableText({ ...base, kind: "imported" as const })).toBe(
+      "hey **all**",
+    );
+  });
+
+  it("offers nothing for a card, a deleted message or an empty body", () => {
+    expect(copyableText({ ...base, kind: "poll" as const })).toBeNull();
+    expect(copyableText({ ...base, is_deleted: true })).toBeNull();
+    expect(copyableText({ ...base, content: "  \n" })).toBeNull();
   });
 });

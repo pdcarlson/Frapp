@@ -439,7 +439,7 @@ Mobile asks for notification permission only after the member taps "Turn on", on
 | Property | Meaning |
 | --- | --- |
 | `answer` | `allowed` or `denied`, what the OS prompt returned after "Turn on" (a prompt the OS didn't show, as on iOS after one answer, reads as `denied`); or `not_now`, the primer card's "Not now", where no OS prompt was shown |
-| `surface` | `primer` (the card, `use-push-primer.ts`) or `settings` (the push row, `app/(tabs)/preferences.tsx`) |
+| `surface` | `primer` (the card, `use-push-primer.ts`) or `settings` (the push row, `app/(app)/preferences.tsx`) |
 
 Neither property is content. The allow rate is a Trends insight: events with `answer = allowed` over all `push-prompt-answered` events, broken down by `surface`.
 

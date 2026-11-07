@@ -158,18 +158,21 @@ The tables below are the canonical strings for high-frequency state messages, so
 - **Loading rows on web are announcements, not captions** (2026-11-05). Dashboard loading states are skeletons shaped like their page, and a skeleton shows no text; its string is the screen-reader status line, written without the trailing `...` (`Loading chapter tasks`). Mobile follows the same rule for screen-level loading states (2026-11-05): each screen's skeleton shows no text, and the row's string without the ellipsis is the skeleton's accessible name (`SkeletonRegion`'s `label`); a mobile state with no row here (event details, the chapter picker, the joined-channels card) names what loads in the same form, such as `Loading your chapters`. A loading line drawn in place beside content that is already up (`Loading earlier messages…` above a thread, a settings row's own loading line) stays visible, since nothing else on screen says what that spot is doing. The rows below keep their visible-caption form only for the few web regions inside a loaded page still on the generic loading state ([`components.md`](components.md) §10).
 - The chat catch-up pulse deliberately does **not** use these states: a section that fails to read is omitted, never rendered as a zero or a generic error row. See [catch-up.md](../../behavior/chat/catch-up.md).
 
-### Connection banner (global)
+### Connection indicator (global)
 
-| State | Title | Description | Mobile pill (drawn) |
-|---|---|---|---|
-| Degraded | — | `Slow connection. Some features may be delayed.` | `Slow connection` |
-| Offline | — | `You're offline. Showing cached data.` | `Offline` |
+| State | Label (drawn) | Sentence (accessible name, web title, mobile tap) |
+|---|---|---|
+| Degraded | `Slow connection` | `Slow connection. Some features may be delayed.` |
+| Offline | `Offline` | `You're offline. Showing cached data.` |
+| Offline, chat open | `Offline` | `You're offline. Messages you send go out when you reconnect. Photos and files need a connection.` |
+| Chat polling, connection healthy | `Live updates paused` | `Real-time updates paused. Polling for new messages.` |
+| Chat reconnecting, connection healthy | `Reconnecting…` | `Reconnecting to live updates.` |
 
-Mobile's floating pill draws the last column so it fits over a header, and its accessible name is the Description (2026-11-06, `connectionPillLabel` in `apps/mobile/lib/connection/state.ts`).
+One pill on every screen, web and mobile, says exactly one of these (2026-11-06; the rule that picks the row is [connection-state.md § One indicator](../resilience/connection-state.md#one-indicator), the strings live in `connectionIndicator`, `@repo/validation`). The label is short so it fits a top bar or a phone header.
 
 **The closing clause was removed in #1707 and MUST NOT be re-added to the global banner.** The rule it replaces read: *"The offline string MUST keep its closing clause — a member who edited or posted while offline needs to be told the work is queued, not lost."* The intent was right and the placement was wrong. Only the chat composer has an outbox, so "changes will sync" was true on exactly one surface and false on every other route this global banner renders on — dashboard writes are queueless and now reject rather than pausing. Promising a queue that does not exist is the §1 principle 1 violation ("actions must never appear to succeed when they haven't") that the clause was meant to prevent.
 
-**The promise moves to the control that can keep it**, which is where a member acting on it is looking: the composer renders `You're offline — messages send when you reconnect.` and the chat header pill `Offline — messages will send when you reconnect`. Queue-backed surfaces MUST still say so at the control. [resilience](../resilience/README.md) carries the connection-state indicator strings alongside the detection thresholds and banner behavior; where the two differ, the wording above is approved.
+**The promise is said only where a queue exists**: the indicator's sentence carries it while a chat is open, and on no other screen. Until 2026-11-06 the composer said it in a line of its own and the chat header pill said it again, so with the global banner a chat screen showed offline three times; they were folded into the one indicator. [resilience](../resilience/README.md) carries the detection thresholds and indicator behavior; where the two differ, the wording above is approved.
 
 ### Permission check offline (global)
 
@@ -541,7 +544,6 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Archived conversation (mobile only: a Group DM everyone else left, #348; web's channel list leaves archived channels out) | — | `This conversation is archived because everyone else left. You can still read it.` |
 | No chapter selected | `No chapter selected` | `Pick an active chapter to load its channels and messages.` |
 | Composer placeholder (mobile; `app/(app)/chat-thread.tsx`) | — | `Message <title>`, the header's title (`Message #general`, `Message Casey`); plain `Message` while the title is blank or falls back to `Thread`. The input's accessible name is the same string |
-| Offline (composer) | — | `You're offline — messages send when you reconnect.` |
 | Composer mounted before the channels resolve (#2176); visible after Enter, announced from the first render | — | `Still opening your channels. You can keep typing.` |
 | Send refused by the outbox, message put back (toast, #1728) | `Message not sent` | `It couldn't be queued for delivery. It's back in the composer.` |
 | Send refused by the outbox, composer changed since (toast, #1728) | `Message not sent` | `It couldn't be queued for delivery and was discarded. Re-enter it to try again.` |

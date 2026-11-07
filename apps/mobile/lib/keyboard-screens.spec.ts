@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -89,9 +89,11 @@ describe("every route with an on-screen text field avoids the keyboard (#3354)",
     },
   );
 
-  it.each(["(tabs)/preferences.tsx", "(tabs)/check-in.tsx"])(
+  it.each(["(app)/preferences.tsx", "(app)/check-in.tsx"])(
     "%s keeps its text fields in sheets",
     (file) => {
+      // A moved route would pass the not.toContain below without a check.
+      expect(existsSync(join(APP_DIR, file))).toBe(true);
       expect(ROUTES_WITH_FIELDS).not.toContain(file);
     },
   );
