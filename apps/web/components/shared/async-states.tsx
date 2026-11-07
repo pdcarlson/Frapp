@@ -26,8 +26,8 @@ import { useNetwork } from "@/lib/providers/network-provider";
  * 3. **Empty is accent + neutral; error is semantic; neither borrows the
  *    other's colour.** `OfflineState` painted itself in `--primary` — the
  *    chapter accent stating a fact about the network. It now takes the
- *    destructive tint, matching `offline-banner.tsx` so the same condition
- *    reads the same whether it is announced in the banner or in the panel.
+ *    destructive tint, the same danger hue `connection-pill.tsx` draws as its
+ *    dot, so the same condition reads the same in the pill and in the panel.
  */
 
 /**
@@ -423,8 +423,8 @@ export function OfflineState({
  * foreground` row is indistinguishable from an ordinary `deniedFallback` like
  * the attendance sheet's "View only", which is the exact conflation of
  * "hidden because denied" and "hidden because we could not check" this whole
- * change exists to end. So the glyph carries the destructive tone, as it does
- * in `offline-banner.tsx` one layer up, and the caption stays on
+ * change exists to end. So the glyph carries the destructive tone, as the
+ * dot does in `connection-pill.tsx` one layer up, and the caption stays on
  * `--muted-foreground` because it is a sentence rather than a status.
  *
  * The glyph is the **solid** `--destructive`, not `--destructive-text`. §5's
@@ -435,7 +435,7 @@ export function OfflineState({
  * in the Chapter Ops slice already had to make.
  *
  * 16px, not 14: `iconography.md` §2 puts inline metadata rows at 16, which is
- * what `offline-banner.tsx` — the precedent this borrows — already draws. 14
+ * what the connection banner, the precedent this borrowed, drew. 14
  * is the badge-companion carve-out, and this glyph leads the notice rather
  * than trailing a badge.
  *
