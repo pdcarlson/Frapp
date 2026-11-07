@@ -1,4 +1,9 @@
-import { Inject, Injectable, BadRequestException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
 import type { IEventRepository } from '#domain/repositories/event.repository.interface';
 import { Event } from '#domain/entities/event.entity';
@@ -9,6 +14,7 @@ import {
 } from '@repo/validation';
 import { EventAnnouncementService } from './event-announcement.service';
 import { normalizeCheckInZone } from './event-input';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import type { UpdateEventInput } from './event-input';
 
 /**
@@ -56,40 +62,87 @@ function propagatableFields(
  */
 @Injectable()
 export class EventSeriesService {
+  private readonly logger = new Logger(EventSeriesService.name);
+
   constructor(
     @Inject(EVENT_REPOSITORY) private readonly eventRepo: IEventRepository,
     private readonly announcements: EventAnnouncementService,
   ) {}
 
   /**
-   * Materialize the generated occurrences of a recurring parent.
-   *
-   * `skipBefore`, when supplied, skips occurrences at or before that instant
-   * **without consuming the count**, so a regenerate always yields a full
-   * series' worth of *upcoming* dates. Creation passes nothing and is
-   * unchanged.
+   * Materialize the generated occurrences of a recurring parent, in one
+   * insert: they all land or none do. The caller owns the parent row and
+   * decides what a failure means for it (`EventService.create` deletes it).
    */
-  async generateRecurringInstances(
-    parent: Event,
-    skipBefore?: number,
-  ): Promise<void> {
-    await this.insertOccurrences(
-      this.buildOccurrencePayloads(parent, skipBefore),
-    );
+  async generateRecurringInstances(parent: Event): Promise<Event[]> {
+    return this.eventRepo.createMany(this.buildOccurrencePayloads(parent));
   }
 
   /**
-   * Write a batch of built occurrence rows: creation and both regenerate paths
-   * go through here. Concurrent rather than one awaited create per date, so a
-   * long series is not N sequential round-trips. `Promise.all`, not
-   * `allSettled`, so a failed insert fails the request instead of reporting
-   * success. It is not atomic: the parent and the inserts that landed stay
-   * written (#3235).
+   * Swap a series' upcoming occurrences for freshly built ones (#3235).
+   *
+   * Inserts first, as one statement, and only then deletes the old rows by
+   * the ids read before the insert. So when the replacement list is non-empty,
+   * no failure leaves the head without upcoming occurrences. (An empty list,
+   * from clearing the rule, deletes them on purpose; `updateSeries` checks the
+   * count before it gets here.)
+   *
+   * A failed write is not taken at its word: an insert or delete can commit
+   * and still report an error (a reset or timeout on the response). So on any
+   * failure the head's occurrences are read back. If the old rows are gone and
+   * every new one landed, the swap did happen: that is logged and the call
+   * succeeds. Otherwise whatever new rows landed are deleted, which puts the
+   * series back as it was, and the original error surfaces. Only when that
+   * read or delete fails too can the series carry both sets, and that is
+   * reported with the ids.
+   *
+   * `existingIds` are all of the head's occurrences before the swap, so rows
+   * the insert added can be told apart from ones it did not touch.
    */
-  private async insertOccurrences(payloads: Partial<Event>[]): Promise<void> {
-    await Promise.all(
-      payloads.map((payload) => this.eventRepo.create(payload)),
-    );
+  private async replaceOccurrences(swap: {
+    headId: string;
+    chapterId: string;
+    existingIds: string[];
+    oldIds: string[];
+    replacements: Partial<Event>[];
+  }): Promise<void> {
+    const { headId, chapterId, existingIds, oldIds, replacements } = swap;
+    try {
+      await this.eventRepo.createMany(replacements);
+      await this.eventRepo.deleteMany(oldIds, chapterId);
+      return;
+    } catch (error) {
+      let landedIds: string[] = [];
+      try {
+        const after = await this.eventRepo.findChildren(headId, chapterId);
+        const existing = new Set(existingIds);
+        const old = new Set(oldIds);
+        landedIds = after
+          .filter((row) => !existing.has(row.id))
+          .map((row) => row.id);
+        const oldLeft = after.some((row) => old.has(row.id));
+        if (!oldLeft && landedIds.length === replacements.length) {
+          reportCaughtFailure(this.logger, {
+            level: 'warning',
+            site: 'event-series-regenerate-committed',
+            message: `Series regenerate of ${headId} reported a failure, but reading it back shows the swap landed; carrying on.`,
+            error,
+          });
+          return;
+        }
+        if (landedIds.length > 0) {
+          await this.eventRepo.deleteMany(landedIds, chapterId);
+        }
+      } catch (cleanupError) {
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'event-series-regenerate-cleanup',
+          message: `Series regenerate of ${headId} failed, and so did putting its occurrences back. It may carry both the old and the new ones${landedIds.length > 0 ? ` (new: ${landedIds.join(', ')})` : ''}; check it by hand.`,
+          error: cleanupError,
+        });
+      }
+      throw error;
+    }
   }
 
   /**
@@ -381,24 +434,36 @@ export class EventSeriesService {
       });
     }
 
-    const updatedParent = await this.eventRepo.update(
-      parent.id,
-      chapterId,
-      normalized,
-    );
-
     const { future } = this.partitionByTime(children, now);
 
+    let updatedParent: Event;
     if (regenerates) {
-      // Build the replacements before destroying anything, so a regenerate that
-      // would produce none cannot leave the series empty.
-      const replacements = this.buildOccurrencePayloads(updatedParent, now);
-      await this.eventRepo.deleteMany(
-        future.map((child) => child.id),
+      // Occurrences first, then the parent (#3235). The parent's write is what
+      // a retry compares against: had it landed first and the regenerate then
+      // failed, the retried edit would read as "no change", skip the
+      // regenerate, and leave the old schedule under the new rule for good.
+      // In this order a failure anywhere before the parent write leaves a
+      // retry that still regenerates, and replacing the occurrences again is
+      // safe because it rebuilds whatever upcoming rows the parent has.
+      const template: Event = { ...parent, ...normalized };
+      await this.replaceOccurrences({
+        headId: parent.id,
         chapterId,
+        existingIds: children.map((child) => child.id),
+        oldIds: future.map((child) => child.id),
+        replacements: this.buildOccurrencePayloads(template, now),
+      });
+      updatedParent = await this.eventRepo.update(
+        parent.id,
+        chapterId,
+        normalized,
       );
-      await this.insertOccurrences(replacements);
     } else {
+      updatedParent = await this.eventRepo.update(
+        parent.id,
+        chapterId,
+        normalized,
+      );
       const propagate = propagatableFields(normalized);
       if (Object.keys(propagate).length > 0) {
         await this.eventRepo.updateMany(
@@ -536,31 +601,54 @@ export class EventSeriesService {
     // `nextRule` of null means they cleared the rule: the series ends here and
     // this row survives as a standalone event with the edit applied, rather
     // than the edit landing nowhere.
-    const newHead = await this.eventRepo.update(successor.id, chapterId, {
+    //
+    // A regenerating edit keeps the *old* rule on the new head until its
+    // occurrences are rebuilt, and writes the new rule last. The rule is what
+    // a retry compares against: written first, a failed rebuild would leave a
+    // head that already says MONTHLY over WEEKLY rows, and repeating the edit
+    // would read as no change (#3235).
+    let newHead = await this.eventRepo.update(successor.id, chapterId, {
       ...carried,
       ...retimed,
-      recurrence_rule: nextRule,
+      recurrence_rule: regenerates ? parent.recurrence_rule : nextRule,
       parent_event_id: null,
     });
 
-    if (regenerates) {
-      // Build before destroying, so a regenerate that would produce none cannot
-      // leave the series empty.
-      const replacements = this.buildOccurrencePayloads(newHead, now);
-      await this.eventRepo.deleteMany(
-        rest.map((child) => child.id),
-        chapterId,
-      );
-      await this.insertOccurrences(replacements);
-    } else if (rest.length > 0) {
-      // No regeneration, so the survivors keep their own dates — but they must
-      // be re-pointed at the new head, or they would still hang off the row
-      // that just left the series and no later series operation would find them.
+    // The survivors are re-pointed at the new head before anything else, or
+    // they would still hang off the row that just left the series and no
+    // later series operation would find them. A regenerate replaces them
+    // next, so it does not bother carrying the edit onto them.
+    if (rest.length > 0) {
       await this.eventRepo.updateMany(
         rest.map((child) => child.id),
         chapterId,
-        { ...carried, parent_event_id: newHead.id },
+        regenerates
+          ? { parent_event_id: newHead.id }
+          : { ...carried, parent_event_id: newHead.id },
       );
+    }
+
+    if (regenerates) {
+      // If this fails, the split itself stands: the old head is retired, the
+      // past detached, and the new head carries the caller's other changes
+      // over the occurrences it already had, under the old rule. That is a
+      // consistent series, just not regenerated; the request fails, and
+      // repeating a rule change against the new head finishes the rebuild.
+      await this.replaceOccurrences({
+        headId: newHead.id,
+        chapterId,
+        existingIds: rest.map((child) => child.id),
+        oldIds: rest.map((child) => child.id),
+        replacements: this.buildOccurrencePayloads(
+          { ...newHead, recurrence_rule: nextRule },
+          now,
+        ),
+      });
+      if (newHead.recurrence_rule !== nextRule) {
+        newHead = await this.eventRepo.update(newHead.id, chapterId, {
+          recurrence_rule: nextRule,
+        });
+      }
     }
 
     await this.announcements.notifyEventUpdated(chapterId, newHead, input);
