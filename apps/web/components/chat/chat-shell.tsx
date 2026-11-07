@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CHANNELS_ROLE_REFUSAL_TITLE,
@@ -2101,7 +2102,7 @@ export function ChatShell({
               description={
                 isRoleRefusal(channelsQuery.error)
                   ? channelsRoleRefusalBody(null)
-                  : "Check your chapter access."
+                  : describeLoadFailure(channelsQuery.error)
               }
               onRetry={() => void channelsQuery.refetch()}
             />

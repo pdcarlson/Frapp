@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -24,6 +25,7 @@ export type DocumentListState =
 
 export function DocumentList({
   listState,
+  loadError,
   visible,
   activeFolder,
   search,
@@ -35,6 +37,8 @@ export function DocumentList({
   onDelete,
 }: {
   listState: DocumentListState;
+  /** The failed read behind `listState === "error"`, for its wording. */
+  loadError?: unknown;
   visible: ChapterDocument[];
   activeFolder: string | null;
   search: string;
@@ -130,7 +134,7 @@ export function DocumentList({
           <NestedError
             sole
             title="Couldn't load documents"
-            description="Confirm your chapter access and retry."
+            description={describeLoadFailure(loadError)}
             onRetry={onRetry}
           />
         ) : listState === "empty" ? (

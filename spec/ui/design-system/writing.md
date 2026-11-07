@@ -78,7 +78,7 @@ Example:
 
 **One map for failures (2026-11-06).** A failed call reaches the member through one shared map, never as the server's own text: `errorCopy` in `@repo/hooks` (web's `getErrorMessage` and mobile both call it), over the strings in [`packages/validation/src/error-copy.ts`](../../../packages/validation/src/error-copy.ts), which `@repo/chat-core` uses for chat refusals too. The screen's toast title says what failed; the map says why and what next. A server sentence shows only when the map rewrites it (`Role name already exists in this chapter` becomes `A role with that name already exists. Pick another name.`); anything else falls back to what the status means (`403`: `Your role can't do this. Ask an officer if you need it.`) or the screen's own sentence. A message client code wrote for members is thrown as `MemberFacingError`; a plain `Error`'s message is never shown. The one exception is a screen whose routes already write for the officer (the Discord import): it opts in with `serverWritesForMembers`, and an unmapped 400, 403, 409 or 503 sentence then shows when it names no permission key or route. A new API refusal a member can act on gets a line in the map in the same change.
 
-Copy never shows a permission key such as `roles:manage`. A permission-denied line names what the role can't do (`Your role can't manage roles.`) and who can change that; an error that may be an access problem says `Confirm your chapter access and retry.`; a toast with no server message says `Try again in a moment.` Where a screen has to name a permission, it uses the words in [`permission-labels.ts`](../../../apps/web/lib/permission-labels.ts) (2026-11-05).
+Copy never shows a permission key such as `roles:manage`. A permission-denied line names what the role can't do (`Your role can't manage roles.`) and who can change that; a screen's load error names the cause it can see, never a guess: the **load-failure line** (`describeLoadFailure` in `packages/hooks/src/error-copy.ts`, imported from `@repo/hooks/error-copy`, shared by web and mobile, 2026-11-07) reads the same map as `errorCopy` above, so a load and an action say the same words for the same cause: the offline line when no response came back, the status line for a 401, 403 or 404 (module off and subscription lapsed get their own lines), and `Something went wrong on our side. Retry in a moment.` for any other failure. A session the API refuses signs the member out with one notice (§ Sign in, `Session ended`), a lost active chapter shows the switcher's `Chapter unavailable` card, and a one-chapter member whose roles grant nothing lands on `/no-access` (2026-11-06); [#3637](https://github.com/pdcarlson/Frapp/issues/3637) tracks routing a revoked membership to one state instead of each screen's 403 line; a toast with no server message says `Try again in a moment.` Where a screen has to name a permission, it uses the words in [`permission-labels.ts`](../../../apps/web/lib/permission-labels.ts) (2026-11-05).
 
 ## 3a. Form copy
 
@@ -207,7 +207,7 @@ The API's throttler sets this sentence (`THROTTLED_MESSAGE`, `custom-throttler.g
 | Empty | `No actives yet` | `Actives appear here once they join.` |
 | No results (filters) | `No actives match the filters` | `Clear a filter to see more.` |
 | No results (search) | `No match for “<query>”` | `Check the spelling, or widen the filters.` |
-| Error | `Couldn't load members` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load members` | the load-failure line (§ copy rules) |
 | Error (roles and points) | `Couldn't load roles and points` | `Filtering, sorting and assignment need both.` |
 | Offline | `Members unavailable offline` | `Reconnect to load the roster.` |
 
@@ -231,7 +231,7 @@ Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assem
 | Time window empty | — | `No upcoming events.` or `No past events.` then a **Show all events** link (one line) |
 | Attendance or cadence filter matched nothing | — | `No events match these filters.` then a **Clear filters** link (one line) |
 | Search matched nothing | — | `No events match that search.` then a **Clear search** link (one line) |
-| Error | `Couldn't load chapter events` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load chapter events` | the load-failure line (§ copy rules) |
 | Offline | `Events workspace unavailable offline` | `Reconnect to load event schedules and attendance updates.` |
 
 A chapter with no events opens on the Calendar tab rather than an empty list, and a viewer with `events:create` gets a dashed `+` on today's square, where the first event will go. The choice is made once, when the events first load, so making that first event doesn't move the officer to the list. A viewer without `events:create` sees the dates as text, with no New event button and nothing to press on a day (2026-11-06). The time-window line is its own row because the default window (Upcoming) hides every past event without the officer touching a filter, and "No events yet" there would be false (2026-11-05). The lines are `InlineNote`s, like [Points (dashboard)](#points-dashboard); error and offline keep their cards.
@@ -244,7 +244,7 @@ Mobile's Events tab (s06) has no calendar, so with nothing scheduled its list is
 |---|---|---|
 | Loading | — | `Loading attendance...` |
 | Empty | `No attendance records yet` | `Once members check in, or you record attendance manually, they'll show up here.` |
-| Error | `Attendance unavailable` | `Couldn't load attendance for this event. Confirm your chapter access and retry.` |
+| Error | `Attendance unavailable` | `Couldn't load attendance for this event. ` + the load-failure line (§ copy rules) |
 
 ### Points (dashboard)
 
@@ -256,7 +256,7 @@ Mobile's Events tab (s06) has no calendar, so with nothing scheduled its list is
 | Leaderboard search matched nothing | — | `No members match that search.` then a **Clear search** link (one line) |
 | Empty transactions | — | `No points in this period yet.` (one line) |
 | Transaction filters matched nothing | — | `No transactions match these filters.` then a **Clear filters** link (one line) |
-| Error | `Couldn't load the points ledger` | `Standings and transactions are unavailable, so none are shown. Confirm your chapter access and retry.` |
+| Error | `Couldn't load the points ledger` | `Standings and transactions are unavailable, so none are shown. ` + the load-failure line (§ copy rules) |
 | Offline | `Points ledger unavailable offline` | `Reconnect to refresh leaderboard standings and transaction history.` |
 
 The board lists the whole roster, at 0 until a member earns points ([`points.md` § Leaderboard](../../behavior/points.md#leaderboard)), so a new chapter sees its members tied for first with the one line above rather than a card. The empty and no-match states are single lines (`InlineNote`, `apps/web/components/shared/inline-note.tsx`) where the rows would be, not cards; error and offline keep theirs (2026-11-06).
@@ -268,7 +268,7 @@ The board lists the whole roster, at 0 until a member earns points ([`points.md`
 | Loading | — | `Loading audit transactions...` |
 | Empty (flagged only) | `No flagged transactions in this window` | `Single adjustments of \|amount\| ≥ {threshold} are flagged here automatically.`, or `Large single adjustments are flagged here automatically.` when the chapter's threshold can't be read |
 | Empty (filtered) | `No transactions match this filter` | `Try relaxing the category or member filter.` |
-| Error | `Audit unavailable` | `Couldn't load chapter transactions. Confirm your chapter access and retry.` |
+| Error | `Audit unavailable` | `Couldn't load chapter transactions. ` + the load-failure line (§ copy rules) |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can view the chapter's transaction log.` |
 | Permission denied | `Audit` (the section label) | `Your role can't see every transaction.` |
 
@@ -278,7 +278,7 @@ The board lists the whole roster, at 0 until a member earns points ([`points.md`
 |---|---|---|
 | Loading | — | `Loading roles and permissions...` |
 | Empty | `No roles yet` | `Chapters always start with default system roles. Refresh to reload or create a new custom role.` |
-| Error | `Couldn't load roles` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load roles` | the load-failure line (§ copy rules) |
 | Permission denied | — | `Your role can't manage roles. Ask your chapter president for access.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage roles.` |
 | Offline | `Roles unavailable offline` | `Reconnect to load the chapter's roles and edit their permissions.` |
@@ -295,7 +295,7 @@ The confirmation rows below and under Roles & Permissions are the five `window.c
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading chapter settings...` |
-| Error | `Couldn't load chapter settings` | `Confirm your chapter access and retry. Changes you make here update every surface in the dashboard.` |
+| Error | `Couldn't load chapter settings` | the load-failure line (§ copy rules), then `Changes you make here update every surface in the dashboard.` |
 | No chapter | `Chapter settings` | `Select an active chapter to edit its branding, semester state, or billing configuration.` |
 | Semester empty | `No archived semesters yet` | `After you run your first rollover, the history appears here.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can start a new semester.` |
@@ -321,7 +321,7 @@ The **Accent server contrast disclosure** row is independent of every row above 
 | Nothing assigned (member) | — | `Nothing on your plate.` then, when an event is ahead and Events is on, `Next up: {event}, {when}.` (one line, in place of the board) |
 | Add row (officer) | — | `Add a task`, at the top of To do |
 | Add row, required field left out | — | `Pick an assignee.` / `Pick a due date.` (under the field, on submit only) |
-| Error | `Couldn't load tasks` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load tasks` | the load-failure line (§ copy rules) |
 | Offline | `Tasks unavailable offline` | `Reconnect to load the chapter board and move tasks through it.` |
 
 The board keeps its four columns at zero for a `tasks:manage` holder, and the add row at the top of To do is its one way to create a task: it replaced the New task button and dialog (2026-11-06). Pressing it opens the row in place; Enter in the title creates the task once it has an assignee and a due date, which `POST /v1/tasks` requires, and the row stays open for the next one. A member without `tasks:manage` reads only their own tasks, so with none the four empty columns give way to the one line above; `{when}` is `formatRelativeDayTime`'s shape (`Tomorrow · 7:00 PM`).
@@ -335,7 +335,7 @@ Mobile's Tasks tab (s08) is a personal board for everyone, so with nothing assig
 | Loading | — | `Loading service entries...` |
 | Empty queue | `No pending entries` | `Approved or rejected entries appear under History.` |
 | Empty history | `No service activity yet` | `Log your first service entry to build up chapter service hours.` |
-| Error | `Couldn't load service entries` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load service entries` | the load-failure line (§ copy rules) |
 | Offline | `Service hours unavailable offline` | `Reconnect to log hours and review the approval queue.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can review submitted hours.` |
 
@@ -349,7 +349,7 @@ Mobile's Tasks tab (s08) is a personal board for everyone, so with nothing assig
 | Empty (search, inside a folder) | `No documents match that search` | `No match in this folder. Try "All files" to search the whole library.` |
 | Empty (search, all files), mobile s12 | `No matches` | `No document title matches “{query}”.` |
 | Empty (search, inside a folder), mobile s12 | `No matches` | `Nothing in {folder} matches “{query}”.` Mobile's search stays inside the picked folder chip, so the line names the folder it searched |
-| Error | `Couldn't load documents` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load documents` | the load-failure line (§ copy rules) |
 | Offline | `Documents unavailable offline` | `Reconnect to browse the chapter library and download files.` |
 | Offline (search active) | `Search needs a connection` | `Clear the search to browse the documents already on this device.` |
 | Folder list failed (inline, under the rail) | — | `Couldn't load the folder list, so these are read from the documents shown. Empty folders and folder management are unavailable until it loads.` |
@@ -383,7 +383,7 @@ Three of these exist to keep one state from impersonating another:
 | Idle | `No report generated yet` | `Generate a report to see a preview here.` |
 | Loading | — | `Generating report...` |
 | Empty filter | `Report returned no rows` | `The filters matched nothing in the active chapter.` |
-| Error | `Couldn't generate <kind> report` | the API's own message, or `Confirm your chapter access and retry.` |
+| Error | `Couldn't generate <kind> report` | the API's own message, or the load-failure line (§ copy rules) |
 | Truncated | `Incomplete report` (badge) | `<cap summary> This preview and the CSV built from it are not a complete record of the chapter.` |
 | Permission denied | — | `Your role can't export chapter data. Ask your chapter president for access.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can export chapter data.` |
@@ -400,7 +400,7 @@ Three of these exist to keep one state from impersonating another:
 | Empty (no files at all) | `No backwork yet` | `Upload the first exam, homework or study guide to start the library.` |
 | Empty (search or filters match nothing) | `No files match` | `Try fewer words, or clear a filter.` Action: `Clear search and filters` |
 | Truncated (the list hit the server's 1,000-row cap, #3525) | — | `Showing the newest 1,000 files. Search and filters look only at these for now.` |
-| Error | `Couldn't load backwork` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load backwork` | the load-failure line (§ copy rules) |
 | Offline | `Backwork unavailable offline` | `Reconnect to browse the coursework archive and download a resource.` |
 
 ### Study session (dashboard)
@@ -410,7 +410,7 @@ Three of these exist to keep one state from impersonating another:
 | Loading | — | `Loading study zones...` |
 | Empty zones | `No active study zones` | `Ask an officer who manages study zones to add one.` |
 | Empty history | `No sessions logged yet` | `Start a tracked session inside a study zone to start earning study points.` |
-| Error | `Couldn't load study data` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load study data` | the load-failure line (§ copy rules) |
 | Offline | `Study hours unavailable offline` | `Reconnect to start a session. Tracking needs a live location check.` |
 | Paused (tab hidden) | `Paused (tab hidden)` (badge) | Surfaced live while the timer is paused by the Page Visibility API. |
 
@@ -481,7 +481,7 @@ the state with `pollsGateOf` in `@repo/chat-core/polls`.
 The member's study screen has states the dashboard's *Study session* rows
 above don't cover (a session running on a phone, a pause, the location check,
 a refused write), and its error rows say which read failed rather than the
-dashboard's "Confirm your chapter access and retry".
+dashboard's load-failure line (§ copy rules).
 Per §"Do not rewrite equivalent state text ad hoc per screen unless the
 workflow intent is materially different", the member surface gets its own rows
 rather than inline strings. Where a state is the same for both, the row says
@@ -517,7 +517,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 |---|---|---|
 | Loading | — | `Loading study zones...` |
 | Empty | `No study zones yet` | `Create your first zone to let members start tracked study sessions for points.` |
-| Error | `Couldn't load study zones` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load study zones` | the load-failure line (§ copy rules) |
 | Offline | `Study zones unavailable offline` | `Reconnect to draw a zone or change its reward rate.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage study zones.` |
 | Permission denied | — | `Your role can't manage study zones. Ask your chapter president for access.` |
@@ -528,7 +528,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 |---|---|---|
 | Loading | — | `Loading chapter polls...` |
 | Empty | `No polls match this view` | `Create a poll inside a chat channel and it will appear here. Loosen the filters if you're expecting results.` |
-| Error | `Couldn't load polls` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load polls` | the load-failure line (§ copy rules) |
 | Offline | `Polls unavailable offline` | `Reconnect to load the chapter's polls and cast a vote.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can see the chapter's polls.` |
 | Permission denied | `Polls` (the page title) | `Your role can't see every poll. You can still vote in chat.` |
@@ -553,7 +553,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | No channels | `No channels yet` | `Onboarding seeds them. Ask an admin.` It names no channel: which ones a new chapter gets is [`chat/README.md` § Channels](../../behavior/chat/README.md#channels). |
 | Channel start (both clients, `@repo/hooks/channel-start`; an empty channel draws it just above the composer, and a channel with history draws it above its oldest message) | `Welcome to #<name>`; a DM's is the other member's name | `This is the start of #<name>.`, or `This is the start of the private #<name> channel.` for a private one (a role-gated channel takes the plain line, since who reads it depends on its permissions and the seeded `#alumni` is open to every member), `This is the start of your conversation with <name>.` for a DM and `This is the start of your group conversation.` for a group DM; then the channel's own description, when it has one. Web officers (`channels:manage`) get `Edit channel`, or `Add a description` when it is blank, opening Chat admin on that channel |
 | Channel header (web: `# <name> • <description>` on one line, the description muted and truncated; mobile: the description on a muted line under the name) | — | The channel's own description. The four default channels start with `The whole chapter. Plans, questions, whatever's going on.` (#general), `News from officers. Everyone gets notified.` (#announcements), `Officer changes to dues, roles and settings, posted automatically.` (#chapter-audit) and `Alumni and actives keeping in touch.` (#alumni), from `DEFAULT_CHANNELS` |
-| Error | `Couldn't load channels` / `Couldn't load messages` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load channels` / `Couldn't load messages` | the load-failure line (§ copy rules) |
 | Channel list refused by role (a 403 with no `chapter.*` code; both clients, `@repo/chat-core/channels-refused-copy`) | `Chat isn't open to you yet` | `Your role in <chapter> doesn't include chat. Ask an officer to give you the Member role.` (`this chapter` until the name loads). A `chapter.*` 403 keeps the error row above |
 | Read-only channel | — | `This channel is read-only for your role.` (mobile still quotes the permission key, [#3422](https://github.com/pdcarlson/Frapp/issues/3422)) |
 | Alumni-restricted channel | — | `Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.` |
@@ -596,12 +596,12 @@ The channel structure below the report queue on `/chat-admin`. Its states stand 
 | Loading (pins) | — | `Loading pins...` |
 | Empty (pins) | `Nothing pinned` | `Officers can pin key messages from the channel timeline.` |
 | Stale (pins) | — | `Couldn't refresh the pins. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded pins stay) |
-| Error (pins) | `Couldn't load pins` | `Confirm your chapter access and retry.` (never `Nothing pinned`: a failed read is not an empty list) |
+| Error (pins) | `Couldn't load pins` | the load-failure line (§ copy rules) (never `Nothing pinned`: a failed read is not an empty list) |
 | Offline (pins) | `Pins unavailable offline` | `Reconnect to load this channel's pins.` (whether the read paused or failed while offline) |
 | Loading (permission grid) | — | `Loading permissions…` |
 | Unavailable (permission grid) | — | `Couldn't load the permission list, which needs a role that can see the full directory. Your current selections are unaffected.` (nothing loaded; a failed refresh keeps the loaded grid) |
 | Offline (permission grid) | — | `Can't load the permission list while offline. Existing selections are unaffected; reconnect to change them.` |
-| Error | `Couldn't load channels` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load channels` | the load-failure line (§ copy rules) |
 | Stale | — | `Couldn't refresh the channels. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded channels and categories stay) |
 | Offline | `Channels unavailable offline` | `Reconnect to manage channels, categories and pins.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage chat channels.` |
@@ -620,7 +620,7 @@ The officer report queue ([`../../behavior/chat/README.md`](../../behavior/chat/
 | Loading | — | `Loading reports...` |
 | Empty (Open) | `No open reports` | `When a member reports a message, it lands here for officers to review.` |
 | Empty (Reviewed / Actioned / Dismissed) | `No reviewed reports` · `No actioned reports` · `No dismissed reports` | `Reports marked reviewed are kept here.` · `Reports whose message was removed are kept here.` · `Reports you dismiss are kept here.` |
-| Error | `Couldn't load reports` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load reports` | the load-failure line (§ copy rules) |
 | Stale | — | `Couldn't refresh the reports. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded reports stay, and so does an empty tab, which says it too) |
 | No chapter | `No chapter selected` | `Pick an active chapter to review its reports.` |
 | Offline | `Reports unavailable offline` | `Reconnect to review reported messages.` |
@@ -667,7 +667,7 @@ Implementation: `apps/web/components/chat-admin/chat-report-copy.ts`.
 | Finish notification | `Discord import finished` · `Discord import stopped` (failed) | `<n> messages from <server> are now in Frapp chat.` (`1 message … is`; without a server name, `from` and the name are left out) · `The import from <server> stopped on an error. Open the Discord import page to see why.` |
 | One import (API, 409) | — | `Your chapter already has a Discord import. Delete it before starting another.` |
 | Cutoff (wizard, review step) | `How far back should we go?` | `Older messages and their files are never read or stored. You can't change this once the import starts.` Choices: `Everything` · `Last 4 years` · `Last 2 years` · `Last year` · `Pick a date` (opens `Import messages from`). Under them: `Your server was made in <Mon YYYY>.` (bot path, read from the server's id), then `Messages before <Mon D, YYYY> are left out.` or `The server's whole history comes over.` Problems: `Pick a date, or choose Everything.` · `Enter a whole date, or choose Everything.` · `Pick a date in the past, or choose Everything.` |
-| Error | `Couldn't load the import` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load the import` | the load-failure line (§ copy rules) |
 | Stale | — | `Couldn't refresh the import. This is the last update that loaded.` · `Try again` (a background refresh failed; the import as it last loaded, and its meter, stay) |
 | Offline | `Import unavailable offline` | `Reconnect to load your chapter's Discord import.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can import Discord history.` |
@@ -703,7 +703,7 @@ Implementation: the page's read states inline in `apps/web/components/discord-im
 |---|---|---|
 | Loading | — | `Loading billing overview...` |
 | Empty | `No invoices yet` | `Create your first invoice to start chapter dues collection.` |
-| Error | `Couldn't load invoices` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load invoices` | the load-failure line (§ copy rules) |
 | Empty (filtered) | `No invoices match this filter` | `Try a different status, or clear the filter to see every invoice.` |
 | Loading (plan panel) | — | `Loading plan...` |
 | Offline | `Billing unavailable offline` | `Reconnect to sync subscription status and invoice balances.` |
@@ -957,14 +957,14 @@ no reason and no way back.
 | Empty | `No alumni yet` | `Graduated members appear here.` |
 | No results (filters) | `No alumni match the filters` | `Clear a field to see more.` |
 | No results (filters), mobile s13 | `No alumni match the filters` | `Clear a filter to see more.` The fields sit behind a chip named Filters there, so the line names that |
-| Error | `Couldn't load alumni` | `Check your chapter access.` |
+| Error | `Couldn't load alumni` | the load-failure line (§ copy rules) |
 | Offline | `Alumni unavailable offline` | `Reconnect to load alumni records.` |
 | No chapter selected | `No chapter selected` | `Pick a chapter to browse alumni.` |
 
 Rewritten by the same lane and on the same rule as the Members table above; the reasoning is not repeated here. Two things specific to this half:
 
 - **The no-chapter state changed shape, not just wording.** It was the one state on this route rendered as a bare `<Card>` with a title and a sentence rather than through the §10 state family, and on a page the lane left with no cards it would have been the only card on the screen. It is an `EmptyState` now, so its title names the condition (`No chapter selected`) rather than the screen (`Alumni directory`).
-- **The error description dropped a true sentence on purpose.** "Alumni visibility respects the same permission checks as the member directory" is a fact about the API, offered to a member who is looking at a failure they cannot diagnose. `Check your chapter access.` is the half they can act on.
+- **The error description dropped a true sentence on purpose.** "Alumni visibility respects the same permission checks as the member directory" is a fact about the API, offered to a member who is looking at a failure they cannot diagnose. The load-failure line is the half they can act on; access itself is answered above the screen (§ copy rules, 2026-11-06).
 
 ### Profile (dashboard)
 
@@ -990,6 +990,7 @@ The Quiet hours section (the Preferences card until 2026-11-05) is a **second qu
 | Submitting | — | The primary reads `Continue` throughout and disables; no separate copy. |
 | Auth error | `Unable to sign in` | The Supabase message, verbatim. It is deliberately non-enumerating ("Invalid login credentials" whether or not the address exists), so passing it through leaks nothing and says more than a generic line would. |
 | Email me a magic link instead (web) | — | A text link under Continue rather than a third full-width button (2026-11-05). After Continue in tab order, so Tab from the password never lands a keyboard user on it by accident. |
+| Session ended | `You've been signed out` | `This account no longer exists or its session ended. Sign in to continue.` Shown once on arrival when the API refused the session (a 401) and Supabase Auth agreed it is over, usually an account deleted on another device. Web: a toast on `/sign-in?signedOut=session_ended` (`apps/web/lib/auth/rejected-session.ts`). Mobile: an alert over the sign-in screen (`apps/mobile/lib/rejected-session.ts`). Every screen used to render its own failure for this instead (2026-11-06). |
 | Magic link sent | `Magic link sent` | `Check your inbox to continue signing in.` |
 | Magic link, no email | `Email required` | `Enter your email address to request a magic link.` |
 | Continue with Apple / Google | — | Button labels. Each carries the official brand mark at 20px (Apple silhouette in `currentColor`, Google four-color G) beside the label. Web: equal Secondary size, Apple first, side by side since 2026-11-05; half the column cannot hold the full label, so each shows `Apple` or `Google` and keeps `Continue with Apple` / `Continue with Google` as its accessible name. Mobile s01 (#3349): the phone's own account leads as the one filled button (Apple on iOS with Google beside it, Google elsewhere), and off iOS Apple sits behind `Other ways to sign in`. The board's equal-size, Apple-first pair is superseded on mobile, not drift. |

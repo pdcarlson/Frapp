@@ -9,8 +9,10 @@ export async function getSessionUser() {
   return data.user ?? null;
 }
 
-export async function signOutCurrentSession() {
+export async function signOutCurrentSession(
+  options: { scope?: "global" | "local" } = {},
+) {
   const supabase = createSupabaseBrowserClient();
-  await supabase.auth.signOut();
+  await supabase.auth.signOut(options.scope ? { scope: options.scope } : undefined);
   resetObservabilityOnLogout();
 }

@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import {
+  SESSION_ENDED_PARAM,
+  SESSION_ENDED_VALUE,
+} from "@/lib/auth/rejected-session";
 import { Loader2 } from "lucide-react";
 import { AuthModeToggle } from "@/components/auth/auth-mode-toggle";
 import { AuthDivider, AuthScreen } from "@/components/auth/auth-screen";
@@ -71,6 +75,8 @@ function SignInPageContent() {
   const [pendingOAuth, setPendingOAuth] = useState<OAuthProvider | null>(null);
   const redirectTo = resolveRedirectPath(searchParams.get("redirectTo"));
   const authError = searchParams.get("authError");
+  const sessionEnded =
+    searchParams.get(SESSION_ENDED_PARAM) === SESSION_ENDED_VALUE;
 
   // A link that could not be turned into a session lands here with the reason.
   // Shown once, on arrival; the parameter is not carried into the next hop.
@@ -83,6 +89,20 @@ function SignInPageContent() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- arrival only
   }, [authError]);
+
+  // The one thing a member hears when the API stopped accepting their session,
+  // usually because the account was deleted on another device
+  // (`lib/auth/rejected-session.ts`). Every dashboard screen used to say
+  // something different about it; now none of them renders and this does.
+  useEffect(() => {
+    if (!sessionEnded) return;
+    toast({
+      title: "You've been signed out",
+      description:
+        "This account no longer exists or its session ended. Sign in to continue.",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- arrival only
+  }, [sessionEnded]);
 
   async function handlePasswordSignIn(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
