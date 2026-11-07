@@ -17,6 +17,7 @@ import {
 import {
   bookmarkKeys,
   CHANNEL_LIST_KEY,
+  CHANNEL_LATEST_MESSAGES_KEY,
   CHANNEL_UNREAD_COUNTS_KEY,
 } from "./use-chat";
 import { FrappClientProvider } from "./use-frapp-client";
@@ -267,6 +268,10 @@ describe("useBlockMember / useUnblockMember", () => {
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: CHANNEL_UNREAD_COUNTS_KEY,
     });
+    // Chat home's previews skip a blocked sender the same way.
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: CHANNEL_LATEST_MESSAGES_KEY,
+    });
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: CHANNEL_LIST_KEY,
       exact: true,
@@ -349,6 +354,10 @@ describe("useBlockMember / useUnblockMember", () => {
     // with the counts: badged and listed agree.
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+    });
+    // Chat home's previews skip a blocked sender the same way.
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: CHANNEL_LATEST_MESSAGES_KEY,
     });
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: CHANNEL_LIST_KEY,
