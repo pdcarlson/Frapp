@@ -70,6 +70,17 @@ describe("SetupChecklistView (mobile)", () => {
     expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/documents");
   });
 
+  it("opens Invite members in the app, with the way back to Chat", () => {
+    const tree = render();
+    act(() => pressable(tree, "Invite members, done").props.onPress());
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith(
+      "/invite?from=chat",
+    );
+    expect(WebBrowser.openBrowserAsync).not.toHaveBeenCalledWith(
+      "https://app.frapp.live/members",
+    );
+  });
+
   it("opens Events in the app, where the New event sheet is", () => {
     const tree = render();
     act(() => pressable(tree, "Schedule the first event").props.onPress());
@@ -132,8 +143,8 @@ describe("SetupChecklistView (mobile)", () => {
         (node.type as unknown) === "Text" &&
         node.props.children === SETUP_CHECKLIST_WEB_NOTE,
     );
-    // Invite (done) and study zone. Documents and events are in the app.
-    expect(notes).toHaveLength(2);
+    // Study zone alone. Invite, documents and events are in the app.
+    expect(notes).toHaveLength(1);
   });
 
   it("never draws dues on the phone", () => {
