@@ -8,6 +8,8 @@ import {
   directChannelDisplayName,
   groupChannelsByCategory,
   HIDDEN_CONVERSATIONS_LABEL,
+  FILTER_CHANNELS_LABEL,
+  FILTER_CHANNELS_ON_LABEL,
   foldedSectionAnnouncement,
   HIDE_MUTED_LABEL,
   isAddressed,
@@ -247,11 +249,12 @@ export interface ChannelListProps {
  * The row carries the read/unread distinction in its **type weight and tone**,
  * which is what foundations.md §5 specifies: an unread row is a bold title in
  * `--foreground`, a read one drops to `--muted-foreground` and carries no badge
- * at all. That is the whole signal here — s04 also draws a message preview and a
- * timestamp per row, and neither is buildable on web today because
- * `GET /v1/channels` carries no last-message projection. Inventing one client-
- * side would be a second source of truth for "what was said last" — and wrong
- * for every channel the viewer has not opened. Filed as #1191.
+ * at all. That is the whole signal here. s04 also draws a message preview and a
+ * timestamp per row, which mobile has drawn since 2026-11-06 from
+ * `GET /v1/channels/latest` (`useChannelLatestMessages`, worded by
+ * `channelPreviewLine` in `@repo/chat-core/channel-preview`;
+ * spec/behavior/chat/README.md § Channel list previews). The rail doesn't yet:
+ * #1191.
  *
  * **Red means one thing.** A mention or a DM takes the fixed `#E5484D` badge and
  * nothing else does — a plain unread channel is the neutral `--input` badge,
@@ -644,7 +647,7 @@ export function ChannelFilters({
           size="icon"
           className={cn(compactControlClassName, "relative ml-auto")}
           aria-label={
-            active ? "Filter channels, filters on" : "Filter channels"
+            active ? FILTER_CHANNELS_ON_LABEL : FILTER_CHANNELS_LABEL
           }
         >
           <ListFilter className="h-4 w-4" aria-hidden="true" />
