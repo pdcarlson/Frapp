@@ -163,7 +163,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
         this.supabase
           .from('events')
           .select(
-            'id, chapter_id, name, start_time, is_mandatory, required_role_ids, optional_role_ids, excluded_role_ids, others_invited',
+            'id, chapter_id, name, start_time, location, is_mandatory, required_role_ids, optional_role_ids, excluded_role_ids, others_invited',
           )
           .gt('start_time', startAfter.toISOString())
           .lte('start_time', startOnOrBefore.toISOString())

@@ -980,7 +980,7 @@ export function ProfilePanel() {
                 preference gate (#1041), so a switch would suppress nothing.
 
                 Deliberately NOT claiming this is the only unswitchable
-                category — `admin` ("New Member Joined", `invite.service.ts`)
+                category — `admin` (the member-joined push, `invite.service.ts`)
                 is NORMAL priority with no catalog entry either. This names the
                 one a member is most likely to go looking for, and does not
                 pretend the grid is exhaustive.

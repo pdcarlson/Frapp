@@ -29,15 +29,25 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
-## 2026-11-06: Attendance by role
+## 2026-11-07: Attendance by role
 
-### 20261106230000_event_attendance_by_role.sql
+### 20261107000000_event_attendance_by_role.sql
 
 - **Purpose**: Adds three nullable columns to `events`: `optional_role_ids text[]`, `excluded_role_ids text[]`, `others_invited boolean` (no default). With `is_mandatory` and `required_role_ids` they say, per role and for everyone else, whether a member is required, optional or not invited. The rule is in [`spec/behavior/events.md`](../../../spec/behavior/events.md#event-creation) § Event Creation, "Attendance by role". No backfill; no row is rewritten. A null `others_invited` reads as "invited unless `required_role_ids` is non-empty", the old meaning, so every existing row and every row an older API writes keeps meaning what it meant.
 - **Checks**: After `db push`, `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'events' and column_name in ('optional_role_ids','excluded_role_ids','others_invited');` returns three rows, all `YES` with no default. `select count(*) from events where others_invited is not null;` returns 0 until the new API writes.
 - **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first, and the older API reads `select('*')` rows with three extra columns it ignores. The newer API against an unmigrated database fails event creates and reads that name the new columns, so don't deploy the API first. Mobile builds from this PR send `others_invited` or a role list only when an officer sets roles apart, so a plain event still creates against the older API if an OTA reaches phones first. `add column if not exists` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-attendance-by-role-20261106230000) § Rollback attendance by role.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-attendance-by-role-20261107000000) § Rollback attendance by role.
+
+## 2026-11-06: Each member's time zone, for push text
+
+### 20261106230000_user_settings_time_zone.sql
+
+- **Purpose**: Adds a nullable `user_settings.time_zone text` (at most 100 characters, by check constraint), the zone the member's device last reported. Both clients send it on every request as `x-time-zone`; the API records it when it changes (`TimeZoneSyncService`), and event pushes name times in it. The behaviour is in [`spec/behavior/notifications.md`](../../../spec/behavior/notifications.md#what-a-push-says) § What a push says. No backfill; account deletion's existing `delete from user_settings` clears it.
+- **Checks**: After `db push`, `select column_name, is_nullable from information_schema.columns where table_name = 'user_settings' and column_name = 'time_zone';` returns one row with `YES`. A few minutes after the API deploys, `select count(*) from user_settings where time_zone is not null;` grows as members open the app.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The newer API against an unmigrated database fails every zone write (PostgREST refuses the unknown column), which is logged per request and retried, so don't deploy the API first. The older API never reads or writes the column. `add column if not exists` and `drop constraint if exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-user-settings-time-zone-20261106230000) § Rollback user settings time zone.
 
 ## 2026-11-06: Chat home previews
 
