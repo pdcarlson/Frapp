@@ -98,7 +98,9 @@ describe("shipped options", () => {
     expect(defaults).toMatch(
       /typeof options\.replaysOnErrorSampleRate === 'number' \|\| typeof options\.replaysSessionSampleRate === 'number'/,
     );
-    expect(defaults).toMatch(/integrations\.push\(mobileReplayIntegration\(\)\)/);
+    expect(defaults).toMatch(
+      /integrations\.push\(mobileReplayIntegration\(\)\)/,
+    );
   });
 
   it("does not send Sentry Replay or a lowered error sample rate", async () => {
@@ -171,6 +173,25 @@ describe("shipped options", () => {
     const options = buildMobileSentryOptions(DSN);
     expect(options.enableNetworkBreadcrumbs).toBe(false);
     expect(options.reportAccessibilityIdentifier).toBe(false);
+  });
+
+  it("runs the native SDK versions whose breadcrumbs were last read (#3342)", () => {
+    // The two options above, and the list of what the native SDKs still
+    // record, come from reading these exact versions' breadcrumb sources. A
+    // `@sentry/react-native` bump that moves either pin can add a crumb no JS
+    // hook sees. When this fails, diff each SDK's crumb sources between the old
+    // pin and the new one, update spec/behavior/observability.md § "Mobile
+    // turns off native breadcrumb data no JS hook can reach", then move these.
+    const require = createRequire(import.meta.url);
+    const sdk = dirname(require.resolve("@sentry/react-native/package.json"));
+    const podspec = readFileSync(join(sdk, "RNSentry.podspec"), "utf8");
+    const gradle = readFileSync(join(sdk, "android", "build.gradle"), "utf8");
+    expect(podspec.match(/sentry_cocoa_version = '([^']+)'/)?.[1]).toBe(
+      "9.32.0",
+    );
+    expect(gradle.match(/def sentryAndroidVersion = '([^']+)'/)?.[1]).toBe(
+      "8.62.0",
+    );
   });
 
   it("scrubs a member email out of an error event", async () => {
