@@ -32,6 +32,8 @@ const state = vi.hoisted(() => ({
   retryBlockList: vi.fn(),
   mutateAsync: vi.fn(),
   dmOptions: [] as unknown[],
+  permissions: [] as string[],
+  roles: [] as unknown[],
 }));
 
 function profile(userId: string, name: string) {
@@ -72,9 +74,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isFetching: false,
     refetch: vi.fn(),
   }),
-  useRoles: () => ({ data: [], isPending: false }),
+  useRoles: () => ({ data: state.roles, isPending: false, isSuccess: true }),
   useCustomRoles: () => ({ data: [], isPending: false }),
-  usePermissionList: () => [],
+  usePermissionList: () => state.permissions,
+  useCurrentChapter: () => ({ data: undefined }),
+  useUpdateMemberRoles: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useViewerUserId: () => state.viewer,
   useBlockedUserIds: () => ({
     ids: state.blocked,
@@ -105,6 +109,7 @@ import { SheetHeader } from "@/components/sheet-scaffold";
 import { MemberDetailSheet } from "./member-detail-sheet";
 
 const dismiss = vi.fn();
+const present = vi.fn();
 
 // The directory hands the sheet a ref, and the sheet dismisses itself through
 // it; one ref across re-renders, as the directory's `useRef` is.
@@ -129,7 +134,7 @@ function render(userId: string | null): ReactTestRenderer {
       // The sheet dismisses itself through its ref; the stand-in modal is a
       // host string, so hand it an instance that records the call.
       createNodeMock: (element) =>
-        element.type === "BottomSheetModal" ? { dismiss } : null,
+        element.type === "BottomSheetModal" ? { dismiss, present } : null,
     });
   });
   return tree;
@@ -161,7 +166,8 @@ describe("MemberDetailSheet as a tall sheet", () => {
 
   it("opens full height, with no Member title or Done, and closes from its X", () => {
     const tree = render(ADA);
-    const modal = tree.root.findByType("BottomSheetModal" as never);
+    // The first modal is the profile; the role editor stacks after it.
+    const modal = tree.root.findAllByType("BottomSheetModal" as never)[0];
     expect(modal.props.snapPoints).toEqual(["100%"]);
     expect(modal.props.enableDynamicSizing).toBe(false);
     // Stops under the status bar, so the X is never in the unsafe area.
@@ -229,7 +235,13 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     expect(unblock.props.action).toBe(true);
     // The member's name heads the sheet (components.md § Chrome weight).
     expect(tree.root.findAllByType(SheetHeader)).toHaveLength(0);
-    expect(JSON.stringify(tree.toJSON())).not.toContain('"Done"');
+    // The role editor's list header is a React element prop, which links
+    // back to its fiber; skip those links.
+    expect(
+      JSON.stringify(tree.toJSON(), (key, value) =>
+        key === "_owner" || key === "_store" ? undefined : value,
+      ),
+    ).not.toContain('"Done"');
     act(() => tree.unmount());
   });
 
@@ -534,14 +546,14 @@ describe("MemberDetailSheet fact rows", () => {
     };
   });
 
-  it("draws Email, Role, Joined and each custom field as detail rows", () => {
+  it("draws Email, Roles, Joined and each custom field as detail rows", () => {
     const tree = render(CARA);
     const rows = tree.root.findAllByType(ListRow);
     const variantOf = (label: string) =>
       rows.find((row) => row.props.label === label)?.props.variant;
 
     expect(variantOf("Email")).toBe("detail");
-    expect(variantOf("Role")).toBe("detail");
+    expect(variantOf("Roles")).toBe("detail");
     expect(variantOf("Joined")).toBe("detail");
     expect(variantOf(LONG_LABEL)).toBe("detail");
     expect(
@@ -550,5 +562,49 @@ describe("MemberDetailSheet fact rows", () => {
     // The actions stay default rows: their label names what a tap does.
     expect(variantOf("Message")).toBeUndefined();
     act(() => tree.unmount());
+  });
+});
+
+describe("MemberDetailSheet Roles row", () => {
+  beforeEach(() => {
+    state.viewer = VIEWER;
+    state.blockStatus = "ready";
+    state.blocked = new Set();
+    state.roles = [
+      { id: "r-member", name: "Member", is_system: true, permissions: [] },
+    ];
+  });
+
+  function rolesRow(tree: ReactTestRenderer) {
+    return tree.root
+      .findAllByType(ListRow)
+      .find((row) => row.props.label === "Roles");
+  }
+
+  it("is a read-only fact for a viewer without roles:manage", () => {
+    state.permissions = ["members:view"];
+    const tree = render(ADA);
+    expect(rolesRow(tree)?.props.onPress).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("opens the role editor for this member when the viewer holds roles:manage", () => {
+    state.permissions = ["members:view", "roles:manage"];
+    const tree = render(ADA);
+    const row = rolesRow(tree);
+    expect(row?.props.onPress).toBeTypeOf("function");
+    act(() => row?.props.onPress());
+    const editor = tree.root.find(
+      (node) =>
+        typeof node.type !== "string" && node.props.session !== undefined,
+    );
+    expect(present).toHaveBeenCalled();
+    expect(editor.props.session).toEqual({
+      memberId: `m-${ADA}`,
+      name: "Ada",
+      heldIds: [],
+    });
+    act(() => tree.unmount());
+    state.permissions = [];
   });
 });
