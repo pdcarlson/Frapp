@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { LinkGlyph } from "@/components/control-glyphs";
@@ -12,25 +13,46 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * links already shared, newest first, each Not used yet or Joined.
  *
  * A token means nothing to a founder, so none is drawn. The host is, so they
- * can see where a link goes. Gold here is the house's, not the chapter's:
- * setup is drawn before the founder is inside the chapter
- * (`spec/behavior/branding.md`).
+ * can see where a link goes. In setup the tile's gold is the house's, not the
+ * chapter's: setup is drawn before the founder is inside the chapter
+ * (`spec/behavior/branding.md`). The Invite members screen
+ * (`app/(tabs)/invite.tsx`) is inside one, so it passes the chapter accent as
+ * `tile`, and its Share invite button as `action`, which sits between the
+ * card and the list so the list can grow without pushing the button away.
  */
 export function InviteLinksCard({
   shared,
   isJoined,
+  tile,
+  action,
 }: {
   shared: readonly SharedInvite[];
   isJoined: (token: string) => boolean;
+  /** The link tile's fill, border and glyph. Defaults to house gold. */
+  tile?: { fill: string; border: string; ink: string };
+  action?: ReactNode;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const tileColors = tile ?? {
+    fill: tokens.color.gold.askFill,
+    border: tokens.color.gold.askBorder,
+    ink: tokens.color.gold.askText,
+  };
 
   return (
     <View style={styles.stack}>
       <View style={styles.card}>
-        <View style={styles.tile}>
-          <LinkGlyph color={tokens.color.gold.askText} />
+        <View
+          style={[
+            styles.tile,
+            {
+              backgroundColor: tileColors.fill,
+              borderColor: tileColors.border,
+            },
+          ]}
+        >
+          <LinkGlyph color={tileColors.ink} />
         </View>
         <View style={styles.copy}>
           <Text style={styles.title}>A new link for each person</Text>
@@ -39,6 +61,8 @@ export function InviteLinksCard({
           </Text>
         </View>
       </View>
+
+      {action}
 
       {shared.length > 0 ? (
         <View style={styles.list}>
@@ -92,8 +116,6 @@ function createStyles(tokens: SignetTokens) {
       height: 40,
       borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.gold.askBorder,
-      backgroundColor: tokens.color.gold.askFill,
       alignItems: "center",
       justifyContent: "center",
     },
