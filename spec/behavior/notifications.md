@@ -116,15 +116,32 @@ Multiple notifications from the same source are collapsed before they reach the 
   `<N> new messages`; an announcement burst stays URGENT in the `announcements` category.
 - Events: "2 upcoming events today."
 
-**Grouping happens server-side, in the push worker — not on the device.** The
+**Bundling happens server-side, in the push worker.** The
 `BurstBundler` (`apps/api/src/application/workers/burst-bundler.ts`) collapses
 3+ messages from the same sender to the same recipient inside a 60s window into a
 single "N new messages" push, and that decision reaches the client only as
-`data.bundled` / `data.count`. No category, thread, collapse or channel identifier is
-sent: `ExpoPushProvider` builds each message from `to`, `title`, `body`, `data`,
-`sound` and `priority` alone, so a client cannot group on identifiers it never
-receives. The Android **notification channel** is a separate thing and is not a
-grouping key; which channels the app defines is owned by
+`data.bundled` / `data.count`.
+
+**On the device, a conversation's pushes stack and leave once read.**
+
+- Every chat push (bundled or not, announcements included) carries `threadId`
+  `chat:<channelId>`, which `ExpoPushProvider` sends as iOS `aps.thread-id`, so
+  Notification Center stacks one channel's pushes together. A DM or group DM is
+  its own channel, so a DM stacks per person. Android has no equivalent through
+  Expo's push service and keeps the system's own per-app bundling.
+- Mobile takes a channel's chat pushes out of the tray once the server counts
+  the channel as fully read (`GET /v1/channels/unread` reads `unread_count: 0`):
+  `useBadgeSyncRuntime` passes those channels to `clearReadChatNotifications`,
+  which dismisses presented notifications whose `data.target` is that chat
+  channel. Opening a channel marks it read and refetches the counts, and the
+  counts refetch on foreground, so a channel read on another device or the web
+  clears the next time the app comes forward. Clearing while the app stays
+  closed would need a silent (`content-available`) push and a background task,
+  which the app does not have.
+
+No collapse identifier is sent, so no push replaces another. The Android
+**notification channel** is a separate thing and is not a grouping key; which
+channels the app defines is owned by
 [`../ui/mobile/patterns.md` § Push notifications](../ui/mobile/patterns.md#push-notifications). The "2 upcoming events today" example
 above is aspirational: only chat is bundled today.
 

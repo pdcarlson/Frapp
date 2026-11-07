@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  chatChannelIdFrom,
   notificationHref,
   notificationIdFrom,
   resolveNotificationTarget,
@@ -135,5 +136,18 @@ describe("notificationHref", () => {
         params: { channelId: "a&b=c" },
       }),
     ).toBe("/chat-thread?channelId=a%26b%3Dc");
+  });
+});
+
+describe("chatChannelIdFrom", () => {
+  it("reads the channel of a chat push and nothing else", () => {
+    expect(
+      chatChannelIdFrom({ target: { screen: "chat", channelId: "c-1" } }),
+    ).toBe("c-1");
+    expect(
+      chatChannelIdFrom({ target: { screen: "events", eventId: "e-1" } }),
+    ).toBeNull();
+    expect(chatChannelIdFrom({ target: { screen: "chat" } })).toBeNull();
+    expect(chatChannelIdFrom(null)).toBeNull();
   });
 });

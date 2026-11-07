@@ -94,6 +94,8 @@ export type NotifyPayload = {
   data?: Record<string, unknown>;
   priority?: 'URGENT' | 'NORMAL' | 'SILENT';
   category?: string;
+  /** The push's iOS stack (`PushPayload.threadId`). Not stored on the in-app row. */
+  threadId?: string;
   /**
    * Per-recipient wording. When set, it replaces `title` and `body` for each
    * recipient, in both the in-app row and the push, so a push can name a time
@@ -516,6 +518,7 @@ export class NotificationService {
         // Forwarded for delivery telemetry only — lets `push_delivery`
         // records be sliced by category (see the Expo provider).
         category,
+        threadId: payload.threadId,
       },
     );
 

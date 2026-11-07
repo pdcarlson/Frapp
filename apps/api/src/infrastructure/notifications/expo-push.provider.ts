@@ -98,6 +98,7 @@ export class ExpoPushProvider implements INotificationProvider {
       title: payload.title,
       body: payload.body,
       data: payload.data,
+      ...(payload.threadId ? { threadId: payload.threadId } : {}),
       sound: payload.priority === 'SILENT' ? undefined : 'default',
       priority:
         payload.priority === 'URGENT'
