@@ -1,5 +1,12 @@
-import { useState, type ComponentProps } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type ViewStyle,
+} from "react-native";
+import { Image, type ImageStyle } from "expo-image";
 import * as WebBrowser from "expo-web-browser";
 import { useMessageAttachments } from "@repo/hooks";
 import { formatBytes } from "@repo/formatting";
@@ -11,7 +18,7 @@ import {
   localPhotosFor,
   type LocalPhoto,
 } from "@/lib/chat/local-photos";
-import { thumbhashPlaceholderUri } from "@/lib/chat/photo-preview";
+import { chatPhotoCacheKey } from "@/lib/chat/photo-cache";
 
 /**
  * Files attached to one message, in the s05 thread.
@@ -123,7 +130,7 @@ export function MessageAttachments({
         <PhotoLayout
           photos={localPhotos.map((photo, index) => ({
             key: String(index),
-            uri: photo.uri,
+            source: { uri: photo.uri },
             width: photo.width,
             height: photo.height,
             label: `Photo ${index + 1}`,
@@ -210,16 +217,23 @@ export function MessageAttachments({
       );
       // The timeline draws the preview copy when there is one; the original
       // is the fallback for a preview that fails, and what the viewer opens.
-      const serverUri = attachment.preview_url ?? attachment.download_url;
-      const uri = mine?.uri ?? serverUri;
+      const original = {
+        uri: attachment.download_url,
+        cacheKey: chatPhotoCacheKey(attachment.id, "original"),
+      };
+      const server = attachment.preview_url
+        ? {
+            uri: attachment.preview_url,
+            cacheKey: chatPhotoCacheKey(attachment.id, "preview"),
+          }
+        : original;
+      // The sender's own file is already on the phone: nothing to cache.
+      const source = mine ? { uri: mine.uri } : server;
       return {
         key: attachment.id,
-        uri,
-        fallbackUri:
-          uri !== attachment.download_url ? attachment.download_url : undefined,
-        placeholderUri: mine
-          ? null
-          : thumbhashPlaceholderUri(attachment.thumbhash),
+        source,
+        fallback: source !== original ? original : undefined,
+        thumbhash: mine ? null : (attachment.thumbhash ?? null),
         width: mine?.width ?? attachment.width ?? null,
         height: mine?.height ?? attachment.height ?? null,
         label: attachment.filename,
@@ -274,17 +288,27 @@ export function MessageAttachments({
   );
 }
 
+/**
+ * Where a photo is drawn from. `cacheKey` names the file, not the URL: a
+ * signed URL changes on every fetch, so keyed by URL every scroll back and
+ * every reopen of a channel downloaded the photo again (`photo-cache.ts`).
+ */
+interface PhotoSource {
+  uri: string;
+  cacheKey?: string;
+}
+
 /** One picture in a message, from the phone or from storage. */
 interface GridPhoto {
   key: string;
-  uri: string;
+  source: PhotoSource;
   /**
-   * The original on the server, tried when `uri` fails: a local file the OS
-   * cleaned up, or a preview copy that did not upload.
+   * The original on the server, tried when `source` fails: a local file the
+   * OS cleaned up, or a preview copy that did not upload.
    */
-  fallbackUri?: string;
-  /** A ThumbHash blur, drawn under the photo until it has loaded. */
-  placeholderUri?: string | null;
+  fallback?: PhotoSource;
+  /** The photo's ThumbHash, drawn as a blur until the photo has loaded. */
+  thumbhash?: string | null;
   width: number | null;
   height: number | null;
   label: string;
@@ -345,7 +369,7 @@ function PhotoLayout({
             <PhotoImage
               photo={photo}
               style={styles.previewFill}
-              resizeMode="cover"
+              contentFit="cover"
             />
             {more > 0 ? (
               <View style={styles.tileMore}>
@@ -416,7 +440,7 @@ function SinglePhoto({
             ? [styles.preview, styles.previewFill]
             : [styles.preview, styles.previewFull, styles.previewUnsized]
         }
-        resizeMode="contain"
+        contentFit="contain"
         onNaturalSize={
           stored === null
             ? (width, height) => {
@@ -432,53 +456,54 @@ function SinglePhoto({
 /**
  * One photo: its blur until it loads, then the photo, falling back to the
  * original on the server when its first source fails.
+ *
+ * `expo-image` draws it, for its disk cache (each file is downloaded once,
+ * under its {@link chatPhotoCacheKey}, however often its URL is re-signed)
+ * and because it decodes the ThumbHash natively and fades the photo in over
+ * it. The blur fills a lone photo's box, which is sized to the photo (the
+ * hash keeps the shape only roughly), and crops like the photo in a grid tile.
  */
 function PhotoImage({
   photo,
   style,
-  resizeMode,
+  contentFit,
   onNaturalSize,
 }: {
   photo: GridPhoto;
-  style: ComponentProps<typeof Image>["style"];
-  resizeMode: "contain" | "cover";
+  style: ImageStyle | ViewStyle | (ImageStyle | ViewStyle | false | null)[];
+  contentFit: "contain" | "cover";
   /** Told the image's own pixel size once it loads. */
   onNaturalSize?: (width: number, height: number) => void;
 }) {
   const [failedFirst, setFailedFirst] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const uri = failedFirst && photo.fallbackUri ? photo.fallbackUri : photo.uri;
+  const source = failedFirst && photo.fallback ? photo.fallback : photo.source;
   return (
-    <>
-      {photo.placeholderUri && !loaded ? (
-        <Image
-          testID="photo-placeholder"
-          source={{ uri: photo.placeholderUri }}
-          accessibilityIgnoresInvertColors
-          // A lone photo's box is sized to the photo, so its blur is
-          // stretched to fill it (the hash keeps the shape only roughly). A
-          // grid tile crops, so its blur crops the same way the photo will.
-          resizeMode={resizeMode === "cover" ? "cover" : "stretch"}
-          style={[style, StyleSheet.absoluteFill]}
-        />
-      ) : null}
-      <Image
-        source={{ uri }}
-        accessibilityIgnoresInvertColors
-        resizeMode={resizeMode}
-        onLoad={(event) => {
-          setLoaded(true);
-          const size = event?.nativeEvent?.source;
-          if (onNaturalSize && size) onNaturalSize(size.width, size.height);
-        }}
-        onError={() => {
-          if (photo.fallbackUri) setFailedFirst(true);
-        }}
-        style={style}
-      />
-    </>
+    <Image
+      source={source}
+      placeholder={photo.thumbhash ? { thumbhash: photo.thumbhash } : null}
+      placeholderContentFit={contentFit === "cover" ? "cover" : "fill"}
+      contentFit={contentFit}
+      transition={PHOTO_FADE_MS}
+      cachePolicy="disk"
+      recyclingKey={photo.key}
+      accessibilityIgnoresInvertColors
+      onLoad={(event) => {
+        const size = event?.source;
+        if (onNaturalSize && size) onNaturalSize(size.width, size.height);
+      }}
+      onError={() => {
+        if (photo.fallback) setFailedFirst(true);
+      }}
+      style={style as ImageStyle}
+    />
   );
 }
+
+/**
+ * The photo's fade over its blur: long enough to read as the blur sharpening,
+ * short enough that a photo from the disk cache simply appears.
+ */
+const PHOTO_FADE_MS = 150;
 
 /**
  * An image preview's height when the attachment stores no dimensions, and the

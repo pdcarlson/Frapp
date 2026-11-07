@@ -4,7 +4,7 @@ import {
   type ImageRef,
 } from "expo-image-manipulator";
 import { decode as decodeJpeg } from "jpeg-js";
-import { rgbaToThumbHash, thumbHashToDataURL } from "thumbhash";
+import { rgbaToThumbHash } from "thumbhash";
 
 /**
  * What a reader needs to draw a chat photo before the photo itself arrives
@@ -184,37 +184,6 @@ async function thumbhashOf(
     release(rendered);
   }
 }
-
-/**
- * The blurred placeholder for a ThumbHash, as a `data:image/png` URI an
- * `<Image>` draws. Null for a missing or malformed hash, so a bad one costs
- * only the placeholder.
- */
-export function thumbhashPlaceholderUri(
-  thumbhash: string | null | undefined,
-): string | null {
-  if (!thumbhash) return null;
-  const cached = placeholders.get(thumbhash);
-  if (cached !== undefined) return cached;
-  let uri: string | null;
-  try {
-    uri = thumbHashToDataURL(base64ToBytes(thumbhash));
-  } catch {
-    uri = null;
-  }
-  // Each bubble asks on every render, and a scroll back up re-mounts it; the
-  // decode and PNG encode run once per hash instead.
-  if (placeholders.size >= PLACEHOLDER_CACHE_SIZE) {
-    const oldest = placeholders.keys().next().value;
-    if (oldest !== undefined) placeholders.delete(oldest);
-  }
-  placeholders.set(thumbhash, uri);
-  return uri;
-}
-
-/** A few screens of photos; each entry is a data URI of a few KB. */
-const PLACEHOLDER_CACHE_SIZE = 200;
-const placeholders = new Map<string, string | null>();
 
 function base64ToBytes(value: string): Uint8Array {
   const binary = atob(value);
