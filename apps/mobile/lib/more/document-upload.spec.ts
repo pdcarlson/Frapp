@@ -91,9 +91,11 @@ describe("pickDocumentPhoto", () => {
       canceled: false,
       assets: [
         {
-          uri: "file:///huge.jpg",
-          fileName: "huge.jpg",
-          mimeType: "image/jpeg",
+          // A PNG: a JPEG this size is shrunk under the cap rather than
+          // refused (`attachment-upload.ts` § "Camera photos are shrunk").
+          uri: "file:///huge.png",
+          fileName: "huge.png",
+          mimeType: "image/png",
           fileSize: 26 * 1024 * 1024,
         },
       ],
