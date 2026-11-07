@@ -16,7 +16,7 @@ import { floatingScreenLayout } from "@/lib/floating-chrome";
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#CB9FFF" }),
 }));
-import { ScreenShell } from "./screen-shell";
+import { ScreenShell, StickyHeader } from "./screen-shell";
 
 /**
  * #2485 — the tab layout draws no navigator header, so the shell is the whole
@@ -173,9 +173,8 @@ describe("ScreenShell back-row action (#3387)", () => {
     const [action] = tree.root.findAllByProps({ testID: "edit" });
     expect(row.findAll((node) => node === action)).toHaveLength(1);
     expect(
-      row.findAll(
-        (node) => node.props.accessibilityLabel === "Back to More",
-      ).length,
+      row.findAll((node) => node.props.accessibilityLabel === "Back to More")
+        .length,
     ).toBeGreaterThan(0);
     expect(row.props.style).toMatchObject({ flexDirection: "row" });
   });
@@ -200,6 +199,50 @@ describe("ScreenShell refresh (#3385)", () => {
 
     expect(refreshControl(without)).toBeUndefined();
     expect(refreshControl(withRefresh)).toBeTruthy();
+  });
+});
+
+/**
+ * Pinned headings (owner 2026-11-07): Chat home's section headings stay at the
+ * top while their rows scroll under them. React Native pins only direct
+ * children of the scroll view, so the shell opens fragments and arrays and
+ * pins each `StickyHeader` among them; the title block, child 0, scrolls away.
+ */
+describe("ScreenShell sticky headers", () => {
+  const scrollView = (tree: ReactTestRenderer) =>
+    tree.root.findByType("ScrollView" as unknown as React.ElementType);
+
+  it("pins nothing on a screen without a StickyHeader", () => {
+    const tree = render(
+      <ScreenShell title="Tasks">
+        <View />
+      </ScreenShell>,
+    );
+
+    expect(scrollView(tree).props.stickyHeaderIndices).toBeUndefined();
+  });
+
+  it("pins each StickyHeader, counting through fragments, arrays and gaps", () => {
+    const sections = ["a", "b"];
+    const tree = render(
+      <ScreenShell title="Chat">
+        <View />
+        {null}
+        <>
+          {sections.flatMap((key) => [
+            <StickyHeader key={`${key}:heading`}>
+              <Text>{key}</Text>
+            </StickyHeader>,
+            <View key={`${key}:rows`} />,
+          ])}
+          <View />
+        </>
+      </ScreenShell>,
+    );
+
+    // 0 is the title, 1 the first View, then heading a (2), rows a (3),
+    // heading b (4), rows b (5), the trailing View (6).
+    expect(scrollView(tree).props.stickyHeaderIndices).toEqual([2, 4]);
   });
 });
 
