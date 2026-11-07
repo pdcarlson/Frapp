@@ -8,6 +8,7 @@ import {
   MessageReaction,
   ChannelReadReceipt,
   ChannelUnreadCount,
+  ChannelLatestMessage,
   ChatMessageBookmarkRef,
   StoredChatMessageBookmark,
 } from '../entities/chat.entity';
@@ -182,6 +183,16 @@ export interface IChatCategoryRepository {
 
 export interface IChatMessageRepository {
   findById(id: string): Promise<ChatMessage | null>;
+  /**
+   * Each channel's latest message in a chapter, for one viewer, through the
+   * `get_channel_latest_messages` RPC: deleted rows and members the viewer
+   * blocked are skipped. Rows for every channel, readable or not, as with
+   * the unread counts; the caller filters by access.
+   */
+  findLatestPerChannel(
+    chapterId: string,
+    userId: string,
+  ): Promise<ChannelLatestMessage[]>;
   /**
    * Newest first, at most `limit` rows. `before` keeps rows created strictly
    * before an instant. `since` keeps rows created after that message, and the
