@@ -81,6 +81,7 @@ import {
 } from "./push-registration";
 import {
   deregisterStoredPushToken,
+  onPushPermissionGranted,
   registerCurrentPushToken,
   sessionOwnsPushRegistration,
 } from "./push-token-lifecycle";
@@ -267,14 +268,15 @@ export function usePushRuntime(): void {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
   }, [isAuthenticated, status]);
 
-  // Mid-session token rotation. Auth edges above never see this: Expo can
-  // roll the token while the member stays signed in, and nothing in that
-  // path re-reads it. The listener is subscribed for the process lifetime;
-  // the handler no-ops unless the session currently owns a registration, so
-  // a rotation while signed out cannot POST a row for a signed-out member.
+  // Mid-session token rotation, and a permission grant (#2617). Auth edges
+  // above never see either: Expo can roll the token while the member stays
+  // signed in, and the s03 primer or Settings' push switch grants permission
+  // after the sign-in register already ran. Both listeners are subscribed for
+  // the process lifetime; the handler no-ops unless the session currently
+  // owns a registration, so neither can POST a row for a signed-out member.
   useEffect(() => {
     let cancelled = false;
-    const subscription = addPushTokenListener(() => {
+    const reregister = () => {
       if (cancelled) return;
       const auth = authRef.current;
       if (!sessionOwnsPushRegistration(auth.isAuthenticated, auth.status)) {
@@ -283,12 +285,24 @@ export function usePushRuntime(): void {
       if (!isPushAvailable()) return;
       void registerCurrentPushToken({
         ...tokenLifecycleDeps,
-        isCancelled: () => cancelled,
+        // Also cancelled by a sign-out that lands mid-register, so a POST that
+        // resolves after `deregisterStoredPushToken` cleared storage cannot
+        // write its row back.
+        isCancelled: () => {
+          const now = authRef.current;
+          return (
+            cancelled ||
+            !sessionOwnsPushRegistration(now.isAuthenticated, now.status)
+          );
+        },
       });
-    });
+    };
+    const subscription = addPushTokenListener(reregister);
+    const unsubscribeGrant = onPushPermissionGranted(reregister);
     return () => {
       cancelled = true;
       subscription?.remove();
+      unsubscribeGrant();
     };
     // Subscribe once; the handler reads authRef / mutation refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
