@@ -377,8 +377,8 @@ own, which is how the two came to be linked.
   wizard. Routes are split by the App Router; they are not hand-written dynamic imports.
 
   The board's `chat-extras` tier also names the **mention list**, which is deliberately *not* split:
-  `mention-list.tsx` pulls only `ui/avatar` and erased Tiptap types, all of which are in the shell
-  chunk already, so a dynamic boundary there buys indirection and no bytes — and
+  `mention-list.tsx` pulls only `ui/avatar`, the sidebar's `layout/nav-glyphs` (its role rows draw
+  the Roles glyph, 2026-11-06) and erased Tiptap types, all of which are in the shell chunk already, so a dynamic boundary there buys indirection and no bytes — and
   `mention-suggestion.ts` constructs it synchronously inside Tiptap's `onStart`, which an async
   import would have to be contorted around. Stated rather than left implicit, because this page
   exists as a correction of claims nobody checked: if a heavy dependency is ever added to that

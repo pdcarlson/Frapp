@@ -8,9 +8,9 @@ import {
 } from "./mention-list";
 
 const ITEMS: MentionSuggestionItem[] = [
-  { id: "u1", label: "JaneDoe", displayName: "Jane Doe", avatarUrl: null },
-  { id: "u2", label: "JohnSmith", displayName: "John Smith", avatarUrl: null },
-  { id: "u3", label: "AlexKim", displayName: "Alex Kim", avatarUrl: null },
+  { kind: "member", id: "u1", label: "JaneDoe", displayName: "Jane Doe", avatarUrl: null },
+  { kind: "member", id: "u2", label: "JohnSmith", displayName: "John Smith", avatarUrl: null },
+  { kind: "member", id: "u3", label: "AlexKim", displayName: "Alex Kim", avatarUrl: null },
 ];
 
 function renderList(items: MentionSuggestionItem[], command = vi.fn()) {
@@ -36,6 +36,32 @@ function press(ref: React.RefObject<MentionListHandle | null>, key: string) {
 }
 
 describe("MentionList", () => {
+  it("draws a role row with the group glyph and says it is a role", () => {
+    const { command } = renderList([
+      ...ITEMS.slice(0, 1),
+      {
+        kind: "role",
+        id: "r1",
+        label: "Officers",
+        displayName: "Officers",
+        avatarUrl: null,
+      },
+    ]);
+    const role = screen.getByRole("option", { name: /Officers/ });
+    expect(role).toHaveTextContent("Role");
+    expect(role.querySelector("[data-mention-role-glyph]")).not.toBeNull();
+    // A member row carries no such marker.
+    expect(
+      screen
+        .getByRole("option", { name: /Jane Doe/ })
+        .querySelector("[data-mention-role-glyph]"),
+    ).toBeNull();
+    act(() => role.click());
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "role", label: "Officers" }),
+    );
+  });
+
   it("renders 'No matching members.' when the filtered list is empty", () => {
     renderList([]);
     expect(screen.getByText("No matching members.")).toBeInTheDocument();

@@ -17,6 +17,7 @@ import { SupabaseQueryError } from '../supabase-query-error';
  */
 interface ChapterMemberIdentityRow {
   user_id?: string | null;
+  role_ids?: unknown;
   users?:
     | { id?: string | null; display_name?: string | null }
     | { id?: string | null; display_name?: string | null }[]
@@ -82,7 +83,7 @@ export class SupabaseMemberRepository implements IMemberRepository {
     // `chat_channels!inner(chapter_id)` embeds elsewhere).
     const { data, error } = await this.supabase
       .from('members')
-      .select('user_id, users!inner(id, display_name)')
+      .select('user_id, role_ids, users!inner(id, display_name)')
       .eq('chapter_id', chapterId);
     if (error) throw new SupabaseQueryError(error);
 
@@ -102,7 +103,16 @@ export class SupabaseMemberRepository implements IMemberRepository {
       const userId = user?.id ?? row?.user_id;
       if (typeof userId !== 'string' || typeof user?.display_name !== 'string')
         continue;
-      identities.push({ user_id: userId, display_name: user.display_name });
+      // A malformed `role_ids` costs this member their role mentions, never
+      // their name mentions.
+      const roleIds = Array.isArray(row?.role_ids)
+        ? row.role_ids.filter((id): id is string => typeof id === 'string')
+        : [];
+      identities.push({
+        user_id: userId,
+        display_name: user.display_name,
+        role_ids: roleIds,
+      });
     }
     return identities;
   }

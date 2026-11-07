@@ -159,6 +159,12 @@ const HTTP_LEDGER: Record<string, Entry> = {
         "a blocker's unread and mention counts skip the blocked member's messages in that chapter (#2521)",
     },
   },
+  // Role names and whether the caller may ping each; no message content and
+  // no membership (2026-11-06, role mentions).
+  ChatController_getMentionRoles_v1: {
+    status: 'no-foreign-content',
+    why: "The chapter's role names and the caller's own permission to ping each, with no message content and no role membership.",
+  },
   // Chat home's previews: other members' latest message text.
   // `get_channel_latest_messages` skips a sender the caller blocked, falling
   // back to the message before, as the timeline mask does.
