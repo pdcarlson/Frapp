@@ -433,7 +433,7 @@ describe("Settings push switch", () => {
 
   it("records the primer decision before it shows the OS prompt", async () => {
     // So an app killed while the prompt is up still counts as asked, and the
-    // s03 card isn't offered again with a "Turn on" the OS would ignore.
+    // onboarding step isn't offered again with a "Turn on" the OS would ignore.
     state.getPushPermission = async () => ({
       granted: false,
       canAskAgain: true,
