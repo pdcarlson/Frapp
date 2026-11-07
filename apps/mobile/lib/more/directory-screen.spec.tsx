@@ -2,6 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
+import { useRouter } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getSignetTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, typeRole } from "@/lib/theme";
@@ -74,7 +75,11 @@ function read(data: unknown, refetch = vi.fn()) {
   };
 }
 
-const state = vi.hoisted(() => ({ search: [] as unknown[], pending: false }));
+const state = vi.hoisted(() => ({
+  search: [] as unknown[],
+  pending: false,
+  permissions: [] as string[],
+}));
 
 // One refetch per read, so a pull can be checked against each of them.
 const refetches = vi.hoisted(() => ({
@@ -86,6 +91,7 @@ const refetches = vi.hoisted(() => ({
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => "c-1",
+  usePermissionList: () => state.permissions,
   useMembers: () => read(MEMBERS, refetches.members),
   useAlumni: (filters?: { company?: string }) =>
     read(filters?.company === "Acme" ? [CHARLES] : ALUMNI, refetches.alumni),
@@ -213,6 +219,7 @@ function countOf(tree: ReactTestRenderer, value: string) {
 beforeEach(() => {
   state.search = [];
   state.pending = false;
+  state.permissions = [];
   for (const refetch of Object.values(refetches)) {
     refetch.mockReset().mockResolvedValue(undefined);
   }
@@ -553,5 +560,54 @@ describe("s13's back row (#3022)", () => {
     expect(screenText(header).startsWith("Directory")).toBe(true);
     header.unmount();
     tree.unmount();
+  });
+});
+
+/** Owner ask 2026-11-06: the phone had no way in to invite. */
+describe("s13's Invite members button", () => {
+  function inviteButton(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Invite members",
+    );
+  }
+
+  it("is drawn only for a role that can invite", () => {
+    const member = render();
+    expect(inviteButton(member)).toHaveLength(0);
+    member.unmount();
+
+    state.permissions = ["members:invite"];
+    const president = render();
+    expect(inviteButton(president)).toHaveLength(1);
+    president.unmount();
+  });
+
+  it("opens Invite members with ‹ Directory under it", () => {
+    state.permissions = ["*"];
+    const tree = render();
+    const push = vi.mocked(useRouter().push);
+    push.mockClear();
+    act(() => inviteButton(tree)[0].props.onPress());
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/invite",
+      params: { from: "directory" },
+    });
+    tree.unmount();
+  });
+
+  it("pads the list so the last row clears the button", () => {
+    const without = render();
+    const bottom = (tree: ReactTestRenderer) =>
+      (
+        list(tree).props.contentContainerStyle as { paddingBottom?: number }[]
+      ).reduce((sum, style) => sum + (style?.paddingBottom ?? 0), 0);
+    const plain = bottom(without);
+    without.unmount();
+    state.permissions = ["members:invite"];
+    const withButton = render();
+    expect(bottom(withButton)).toBeGreaterThan(plain);
+    withButton.unmount();
   });
 });
