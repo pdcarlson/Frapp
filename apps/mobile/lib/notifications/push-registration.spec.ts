@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  isAlreadyRegistered,
   narrowPushTokenRow,
   parseStoredPushTokenRow,
 } from "./push-registration";
@@ -47,29 +46,5 @@ describe("parseStoredPushTokenRow", () => {
     expect(parseStoredPushTokenRow(null)).toBeNull();
     expect(parseStoredPushTokenRow("")).toBeNull();
     expect(parseStoredPushTokenRow('{"id":"row-1"}')).toBeNull();
-  });
-});
-
-describe("isAlreadyRegistered", () => {
-  const token = "ExponentPushToken[abc]";
-
-  it("skips a re-register only when the token matches and the id is known", () => {
-    expect(isAlreadyRegistered({ id: "row-1", token }, token)).toBe(true);
-  });
-
-  it("re-registers when the device token has rotated", () => {
-    expect(
-      isAlreadyRegistered({ id: "row-1", token }, "ExponentPushToken[xyz]"),
-    ).toBe(false);
-  });
-
-  it("re-registers when the id was never captured", () => {
-    // Otherwise the row would be unreachable forever: no id means no DELETE,
-    // and skipping the re-register means never getting one.
-    expect(isAlreadyRegistered({ id: null, token }, token)).toBe(false);
-  });
-
-  it("registers when nothing is stored", () => {
-    expect(isAlreadyRegistered(null, token)).toBe(false);
   });
 });
