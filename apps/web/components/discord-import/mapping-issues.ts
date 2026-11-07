@@ -53,7 +53,7 @@ export type PrivacyReason =
  * holding no private thread, takes the whole-chapter default. Unknown counts
  * as private, because the roles read that answers it can fail on its own, and
  * so does an uploaded export, which carries no permissions at all (the
- * "Set who can read…" control answers a whole export in one click).
+ * "Who can read" control answers a whole export in one click).
  */
 export function privacyReason(channel: StagedChannel): PrivacyReason | null {
   if (channel.privateInDiscord === true) return "private";
