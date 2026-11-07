@@ -73,4 +73,19 @@ export class SupabaseUserSettingsRepository implements IUserSettingsRepository {
     if (error) throw new SupabaseQueryError(error);
     return result;
   }
+
+  async setTimeZone(userId: string, timeZone: string): Promise<void> {
+    // PostgREST's upsert writes only the columns named here, so an existing
+    // row keeps its quiet hours and theme; a new one takes the column defaults.
+    const { error } = await this.supabase.from('user_settings').upsert(
+      {
+        user_id: userId,
+        time_zone: timeZone,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id', ignoreDuplicates: false },
+    );
+
+    if (error) throw new SupabaseQueryError(error);
+  }
 }
