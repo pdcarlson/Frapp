@@ -49,10 +49,17 @@ let event = EVENT;
 let eventPending = false;
 let routeId: string | undefined = EVENT.id as string;
 let chapterId: string | null = "chapter-1";
+// The viewer's grants: a plain member by default.
+let permissions: string[] = ["members:view"];
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => chapterId,
+  usePermissionList: () => permissions,
+  useRoles: () => ({ data: [], isPending: false, isError: false }),
+  useCreateEvent: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateEvent: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteEvent: () => ({ mutate: vi.fn(), isPending: false }),
   useListChapters: () => ({ data: [{ chapter_id: "chapter-1", role_ids: [] }] }),
   useEvent: () => ({
     isPending: eventPending,
@@ -381,5 +388,39 @@ describe("Event details layout", () => {
     expect(screenText(tree)).toContain("Check-in is closed");
     expect(screenText(tree)).not.toContain("window has ended");
     expect(textNode(tree, "Scan QR to check in")).toBeUndefined();
+  });
+});
+
+describe("Event details editing", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    permissions = ["members:view"];
+    event = EVENT;
+  });
+
+  function editButton(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) =>
+        node.props.accessibilityLabel === "Edit event" &&
+        node.props.accessibilityRole === "button",
+    );
+  }
+
+  it("gives a plain member no edit control", () => {
+    expect(editButton(render())).toHaveLength(0);
+  });
+
+  it("gives anyone who may update events a pencil, on any event", () => {
+    // Not the creator: the event carries someone else's id.
+    event = { ...EVENT, created_by: "someone-else" };
+    permissions = ["members:view", "events:update"];
+    expect(editButton(render()).length).toBeGreaterThan(0);
+  });
+
+  it("gives an owner's wildcard the pencil too", () => {
+    permissions = ["*"];
+    expect(editButton(render()).length).toBeGreaterThan(0);
   });
 });

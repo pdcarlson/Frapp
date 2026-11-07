@@ -2,6 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
+import { Alert } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import { moduleDisabledMessage } from "@repo/validation";
@@ -43,9 +44,20 @@ const mutate = vi.fn((_body: unknown, options: Options) =>
   outcome.ok ? options.onSuccess() : options.onError(outcome.error),
 );
 
+const updateMutate = vi.fn((_body: unknown, options: Options) =>
+  options.onSuccess(),
+);
+const deleteMutate = vi.fn((_body: unknown, options: Options) =>
+  options.onSuccess(),
+);
+let permissions: string[] = ["*"];
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCreateEvent: () => ({ mutate, isPending: false }),
+  useUpdateEvent: () => ({ mutate: updateMutate, isPending: false }),
+  useDeleteEvent: () => ({ mutate: deleteMutate, isPending: false }),
+  usePermissionList: () => permissions,
   useRoles: () => ({
     data: [
       { id: "role-officers", name: "Officers" },
@@ -71,6 +83,8 @@ vi.mock("@/lib/haptics", () => ({
 }));
 
 import { NewEventSheet, WhenRow } from "./new-event-sheet";
+import type { EventEditTarget } from "@/lib/events/edit-event";
+import type { EventDetail } from "@/lib/events/select";
 
 /** A Thursday afternoon, local time. */
 const NOW = new Date(2026, 10, 5, 14, 0);
@@ -399,6 +413,9 @@ describe("the When row on Android", () => {
         String(node.props.accessibilityLabel).startsWith("Ends day") &&
         typeof node.props.onPress === "function",
     );
+    // The pill says its day: it used to be blank, the label too.
+    expect(dayPill!.props.accessibilityLabel).toBe("Ends day, Sat, Nov 7");
+    expect(screenText(tree)).toContain("Sat, Nov 7");
     act(() => dayPill!.props.onPress());
 
     expect(open).toHaveBeenCalledTimes(1);
@@ -413,5 +430,169 @@ describe("the When row on Android", () => {
     );
     expect(onChange).toHaveBeenLastCalledWith(local(8, 22, 30));
     act(() => tree.unmount());
+  });
+});
+
+describe("Edit event", () => {
+  const EVENT: EventDetail = {
+    id: "evt-1",
+    name: "Chapter",
+    location: "Sanctuary",
+    start_time: local(9, 18, 45).toISOString(),
+    end_time: local(9, 20, 15).toISOString(),
+    point_value: 10,
+    attendance: {
+      is_mandatory: true,
+      others_invited: true,
+      required_role_ids: [],
+      optional_role_ids: [],
+      excluded_role_ids: [],
+    },
+    description: null,
+    notes: null,
+    check_in_zone_name: null,
+    hasCheckInZone: false,
+    recurrence_rule: null,
+    parent_event_id: null,
+  };
+  const single: EventEditTarget = {
+    event: EVENT,
+    seriesRule: null,
+    parent: null,
+  };
+  const alert = vi.mocked(Alert.alert);
+
+  beforeEach(() => {
+    updateMutate.mockClear();
+    deleteMutate.mockClear();
+    alert.mockReset();
+    permissions = ["*"];
+  });
+
+  function renderEdit(target: EventEditTarget, handlers = {}) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewEventSheet now={NOW} editing={target} {...handlers} />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+  const saveButton = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.props.label === "Save changes" && typeof node.type === "function",
+    );
+
+  it("opens filled in from the event", () => {
+    const tree = renderEdit(single);
+    expect(screenText(tree)).toContain("Edit event");
+    expect(byLabel(tree, "Event name").props.value).toBe("Chapter");
+    expect(byLabel(tree, "Location").props.value).toBe("Sanctuary");
+    expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
+      "More options: 10 pts · Required for everyone · Doesn't repeat",
+    );
+  });
+
+  it("saves only the changed room, without asking, for a one-time event", async () => {
+    const onSaved = vi.fn();
+    const tree = renderEdit(single, { onSaved });
+    type(tree, "Location", "Great Hall");
+    await act(async () => saveButton(tree).props.onPress());
+    expect(alert).not.toHaveBeenCalled();
+    expect(updateMutate).toHaveBeenCalledWith(
+      { id: "evt-1", body: { location: "Great Hall", scope: "instance" } },
+      expect.anything(),
+    );
+    expect(onSaved).toHaveBeenCalledWith({ leave: false });
+  });
+
+  it("says what to do when the server refuses the change, and keeps Save", async () => {
+    updateMutate.mockImplementationOnce((_body, options) =>
+      options.onError({
+        statusCode: 400,
+        message: "end_time must be after start_time",
+      }),
+    );
+    const tree = renderEdit(single);
+    type(tree, "Location", "Great Hall");
+    await act(async () => saveButton(tree).props.onPress());
+    expect(screenText(tree)).toContain("That change can't be saved.");
+    expect(saveButton(tree).props.disabled).toBe(false);
+    // Editing clears the line.
+    type(tree, "Location", "Great Hall 2");
+    expect(screenText(tree)).not.toContain("That change can't be saved.");
+  });
+
+  it("saves nothing for an untouched form", async () => {
+    const tree = renderEdit(single);
+    await act(async () => saveButton(tree).props.onPress());
+    expect(updateMutate).not.toHaveBeenCalled();
+  });
+
+  it("asks this event or all upcoming for a repeating event", async () => {
+    alert.mockImplementation((_title, _message, buttons) => {
+      buttons?.find((b) => b.text === "All upcoming events")?.onPress?.();
+    });
+    const occurrence: EventEditTarget = {
+      event: { ...EVENT, parent_event_id: "evt-parent" },
+      seriesRule: "WEEKLY",
+      parent: {
+        id: "evt-parent",
+        start_time: local(2, 18, 45).toISOString(),
+        end_time: local(2, 20, 15).toISOString(),
+      },
+    };
+    const tree = renderEdit(occurrence);
+    type(tree, "Event name", "Chapter meeting");
+    await act(async () => saveButton(tree).props.onPress());
+    expect(alert.mock.calls[0]?.[0]).toBe("This is a repeating event");
+    expect(alert.mock.calls[0]?.[2]?.map((b) => b.text)).toEqual([
+      "This event only",
+      "All upcoming events",
+      "Cancel",
+    ]);
+    expect(updateMutate).toHaveBeenCalledWith(
+      {
+        id: "evt-parent",
+        body: { name: "Chapter meeting", scope: "series" },
+      },
+      expect.anything(),
+    );
+  });
+
+  it("saves nothing when the officer cancels the question", async () => {
+    alert.mockImplementation((_title, _message, buttons) => {
+      buttons?.find((b) => b.text === "Cancel")?.onPress?.();
+    });
+    const tree = renderEdit({
+      ...single,
+      event: { ...EVENT, recurrence_rule: "WEEKLY" },
+      seriesRule: "WEEKLY",
+    });
+    type(tree, "Event name", "Chapter meeting");
+    await act(async () => saveButton(tree).props.onPress());
+    expect(updateMutate).not.toHaveBeenCalled();
+  });
+
+  it("offers Delete only with events:delete, and confirms first", async () => {
+    permissions = ["members:view", "events:update"];
+    expect(screenText(renderEdit(single))).not.toContain("Delete event");
+
+    permissions = ["*"];
+    alert.mockImplementation((_title, _message, buttons) => {
+      buttons?.find((b) => b.text === "Delete")?.onPress?.();
+    });
+    const onDeleted = vi.fn();
+    const tree = renderEdit(single, { onDeleted });
+    await act(async () => byLabel(tree, "Delete event").props.onPress());
+    expect(alert.mock.calls[0]?.[0]).toBe("Delete this event?");
+    expect(deleteMutate).toHaveBeenCalledWith(
+      { id: "evt-1", scope: "instance" },
+      expect.anything(),
+    );
+    expect(onDeleted).toHaveBeenCalled();
   });
 });
