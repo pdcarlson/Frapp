@@ -90,3 +90,84 @@ export function healthProbeIsReachable(response: {
   if (response.status === 429) return true;
   return response.ok;
 }
+
+/**
+ * The open chat's realtime transport, as `@repo/chat-core` reports it. Spelled
+ * out here rather than imported so this package stays dependency-free.
+ */
+export type RealtimeTransportStatus =
+  | "live"
+  | "polling"
+  | "reconnecting"
+  | "offline";
+
+/** What the one connection indicator draws, or `null` for nothing. */
+export interface ConnectionIndicator {
+  /** `danger` for offline, `warning` for everything that still works, slowly. */
+  tone: "danger" | "warning";
+  /** The short label the pill draws: fits between a header's controls. */
+  label: string;
+  /**
+   * The whole sentence: the indicator's accessible name, and what it shows
+   * when the member opens it.
+   */
+  description: string;
+}
+
+/**
+ * The single connection indicator on both surfaces
+ * (`spec/ui/resilience/connection-state.md` § One indicator).
+ *
+ * It folds two sources into one answer, so a screen never stacks two pills,
+ * or a pill and a line, saying the same thing:
+ *
+ * - the app's connection state (`deriveConnectionState`), which every screen
+ *   has, and
+ * - the realtime transport of the chat that is open, or `null` on every other
+ *   screen.
+ *
+ * The app state wins whenever it is not ONLINE: a slow or dead API is the
+ * cause, and a reconnecting or polling transport is only its symptom. Only on
+ * a healthy connection does the transport get to speak, because then it is
+ * the one thing wrong. With a chat open, the offline sentence also carries the
+ * outbox's promise, which is true there and nowhere else.
+ */
+export function connectionIndicator(
+  state: ConnectionState,
+  realtime: RealtimeTransportStatus | null,
+): ConnectionIndicator | null {
+  const chatOpen = realtime !== null;
+  if (state === "OFFLINE" || realtime === "offline") {
+    return {
+      tone: "danger",
+      label: "Offline",
+      description: chatOpen
+        ? "You're offline. Messages you send go out when you reconnect. Photos and files need a connection."
+        : "You're offline. Showing cached data.",
+    };
+  }
+  if (state === "DEGRADED") {
+    return {
+      tone: "warning",
+      label: "Slow connection",
+      description: "Slow connection. Some features may be delayed.",
+    };
+  }
+  if (realtime === "polling") {
+    return {
+      tone: "warning",
+      label: "Live updates paused",
+      // `spec/ui/resilience/message-delivery.md` § Receiving Messages
+      // (Realtime) holds this sentence normative.
+      description: "Real-time updates paused. Polling for new messages.",
+    };
+  }
+  if (realtime === "reconnecting") {
+    return {
+      tone: "warning",
+      label: "Reconnecting…",
+      description: "Reconnecting to live updates.",
+    };
+  }
+  return null;
+}

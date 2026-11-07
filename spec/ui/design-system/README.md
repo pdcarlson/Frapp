@@ -137,7 +137,7 @@ Unlike `<Can>`, the subscription mirror **fails open when the chapter cannot be 
 Two exceptions go the other way, and both fold into `allowed` rather than `state.allowed`:
 
 - **In-flight.** While the chapter query is still resolving, `useSubscriptionGate` holds the control disabled and says so ("Checking this chapter's subscription…"). That window is the most common path to the very 403 this gate prevents — a trigger that paints enabled for one round trip still lets a fast click reach a doomed form.
-- **Offline.** While `useNetwork().isOffline`, the same hook disables queueless writes with `title="Reconnect to make changes."` (the string `writeBlockedReason()` returns on mobile). `SubscriptionNotice` stays silent for an offline-only block — the page already has `OfflineBanner`, and a notice per chat card would be twelve live regions of the same sentence. DEGRADED does not disable. Do not put offline into `state.allowed`: `useGatedDialog` keys the revoke on the subscription verdict, and a dropped connection must not slam a half-filled dialog.
+- **Offline.** While `useNetwork().isOffline`, the same hook disables queueless writes with `title="Reconnect to make changes."` (the string `writeBlockedReason()` returns on mobile). `SubscriptionNotice` stays silent for an offline-only block — the page already has the connection pill (`ConnectionPill`), and a notice per chat card would be twelve live regions of the same sentence. DEGRADED does not disable. Do not put offline into `state.allowed`: `useGatedDialog` keys the revoke on the subscription verdict, and a dropped connection must not slam a half-filled dialog.
 
 Do not collapse these into the verdict: `allowed` folds in `isPending` and `isOffline`; `state.allowed` does not.
 
