@@ -61,7 +61,7 @@ import { setBadgeCount } from "./push";
 export function useBadgeSyncRuntime(): void {
   const chapterId = useActiveChapterId();
   // No explicit limit: matches the in-app history's own call
-  // (`app/(tabs)/notifications.tsx`), so both read the same default page.
+  // (`app/(app)/notifications.tsx`), so both read the same default page.
   const notifications = useNotifications();
   const channelUnread = useChannelUnreadCounts({ enabled: !!chapterId });
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   InviteGlyph,
@@ -24,7 +25,7 @@ import { SectionLabel } from "@/components/shared/section-label";
 import { anyReadUncached } from "@/components/shared/async-states";
 /*
   The **nested** state family, not the whole-screen one, and on a page with no
-  cards left that is the point rather than a technicality. `EmptyState` and its
+  cards left that is the point rather than a technicality. `ErrorState` and its
   siblings paint `--card`; this lane just deleted the three `<Card>`s on this
   route, so rendering one would put the card back through the door the lane
   closed. `elevation-contrast.spec.ts` argues the same side from the other end —
@@ -39,10 +40,10 @@ import { anyReadUncached } from "@/components/shared/async-states";
   (`directory-skeleton.tsx`).
 */
 import {
-  NestedEmpty,
   NestedError,
   NestedOffline,
 } from "@/components/shared/nested-states";
+import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import {
   dashboardCheckboxHitAreaClassName,
   dashboardFilterSelectClassName,
@@ -570,7 +571,7 @@ export function MembersDirectory() {
       <NestedError
         sole
         title={stateMicrocopy.members.errorTitle}
-        description={stateMicrocopy.members.errorDescription}
+        description={describeLoadFailure(activeQuery.error)}
         onRetry={() => {
           void activeQuery.refetch();
         }}
@@ -791,37 +792,34 @@ export function MembersDirectory() {
         <MemberRowsSkeleton />
       ) : sortedMembers.length === 0 ? (
         /*
-         * Three states where there was one, because the board draws them as
-         * three: "Empty = accent tile + tinted CTA. No results = neutral tile,
-         * names the query." The string this replaced ("Try a broader search or
-         * invite your first members to populate this directory.") guessed at
-         * both at once and instructed the reader in either case.
-         *
-         * No CTA on any of them. §10 makes the empty-state action optional, and
-         * the toolbar row above renders whether or not the list has rows, so
-         * Invite is already on screen — a second copy of it inside the state
-         * would be the same button twice, which reads worst here, where the
-         * screen has nothing else on it. That is the reasoning the deleted
-         * version carried, and it survives the flattening intact.
+         * One line where the rows go, not a card (empty-states plan rule 7,
+         * `writing.md` §4): a search or a filter that matches nothing says so
+         * and offers the way back, and the toolbar above stays put. A roster
+         * with nobody on it has no way back to offer; Invite is already in
+         * the toolbar.
          */
         usingSearch ? (
-          <NestedEmpty
-            sole
-            title={`No match for “${deferredQuery}”`}
-            description={stateMicrocopy.members.noMatchDescription}
-          />
+          <InlineNote>
+            No actives match “{deferredQuery}”.{" "}
+            <InlineNoteAction onClick={() => setQuery("")}>
+              Clear search
+            </InlineNoteAction>
+          </InlineNote>
         ) : narrowed ? (
-          <NestedEmpty
-            sole
-            title={stateMicrocopy.members.filteredTitle}
-            description={stateMicrocopy.members.filteredDescription}
-          />
+          <InlineNote>
+            {stateMicrocopy.members.noFilterMatches}{" "}
+            <InlineNoteAction
+              onClick={() => {
+                setRoleFilter("all");
+                setCohortFilter("all");
+                setStatusFilter("all");
+              }}
+            >
+              Clear filters
+            </InlineNoteAction>
+          </InlineNote>
         ) : (
-          <NestedEmpty
-            sole
-            title={stateMicrocopy.members.emptyTitle}
-            description={stateMicrocopy.members.emptyDescription}
-          />
+          <InlineNote>{stateMicrocopy.members.empty}</InlineNote>
         )
       ) : (
         <>

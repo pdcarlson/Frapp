@@ -10,6 +10,7 @@ import {
   type AccessibilityActionInfo,
   type StyleProp,
   type TextStyle,
+  type ViewStyle,
 } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { emojiFromActionType } from "@repo/chat-core/types";
@@ -39,6 +40,7 @@ import {
   resolveAuthorName,
 } from "@repo/hooks";
 import { initialsFor } from "@/lib/chat/display-name";
+import { useChatDensity } from "@/lib/chat/chat-density";
 import { MessageAttachments } from "./message-attachments";
 import {
   linkA11yActions,
@@ -52,7 +54,8 @@ import { ReplyQuote } from "./reply-quote";
 /**
  * One message row in the s05 thread, in the compact layout
  * (`spec/ui/design-system/components.md` §11, owner decision 2026-09-29,
- * #2873). It replaced the §11 chat bubble on mobile.
+ * #2873). It replaced the §11 chat bubble on mobile. That layout is the cozy
+ * density; `MessageRowFrame` says what compact changes (§11 § Density).
  *
  * **One shape for every row, the viewer's included.** The first row of a run
  * draws a 32pt avatar and an author line (name, then the time of day); a
@@ -249,6 +252,12 @@ export function groupReactions(
  * reason `messageActionsA11yProps` gives, and the screen-reader half of the
  * long-press rides the author line, or the gutter on a follow-on row.
  *
+ * **Compact** (`components.md` §11 § Density) draws no avatar and no gutter.
+ * A text row leads its body with the time and the name (`CompactLead`, passed
+ * in as `authorInline`); anything else, a card or a photo, gets them on a line
+ * of their own. A follow-on's screen-reader handle moves into the row's left
+ * inset, since there is no gutter to hold it.
+ *
  * A plain tap on the row puts the keyboard away. On a card row that holds
  * only for the gutter, avatar and author line: a tap on the card's body
  * doesn't (#3461), because the card wraps its body in a long-press
@@ -264,6 +273,7 @@ export function MessageRowFrame({
   quote,
   onOpenActions,
   onJumpToParent,
+  authorInline = false,
   children,
 }: {
   message: ChatMessage;
@@ -272,6 +282,11 @@ export function MessageRowFrame({
   /** `users.id` → role color for the author line (#3485); see `MessageItemProps`. */
   roleColorFor?: (userId: string) => string | null;
   startsRun: boolean;
+  /**
+   * Compact only: the body leads with the time and name itself
+   * (`CompactLead`), so the frame draws no author line.
+   */
+  authorInline?: boolean;
   /** The reply quote, when the row is a reply; drawn above the author line. */
   quote?: ReactNode;
   onOpenActions?: () => void;
@@ -285,22 +300,32 @@ export function MessageRowFrame({
 }) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
+  // A row that @-mentions the viewer wears the chapter accent the way Discord
+  // marks one (components.md §11, see `MentionHighlight`). The list is the
+  // server's (`chat_messages.mentions`), the same set the notifier used, and a
+  // viewer's own message never lights up.
+  const mentionsViewer =
+    !!viewerId &&
+    message.sender_id !== viewerId &&
+    // A deleted message no longer counts as a mention anywhere else (the
+    // unread badge skips it, the push is gone), so its tombstone stays plain.
+    !message.is_deleted &&
+    message.mentions.includes(viewerId);
+  const compact = useChatDensity() === "compact";
   // Resolved once and used for both the author line and the avatar initials —
   // two lookups would be two chances for them to drift apart. Both come from
   // `@repo/hooks`: `sender_id` is nullable, so an imported archive message has
   // no roster entry and names its author in `author_name`.
-  const authorName = resolveAuthorName(message, nameFor);
-  const authorLabel = resolveAuthorLabel(message, nameFor, viewerId);
+  const { authorName, authorLabel, roleColor } = rowAuthor(
+    message,
+    nameFor,
+    viewerId,
+    roleColorFor,
+  );
   const time = formatTimeOfDay(message.created_at);
   const headerA11y = messageActionsA11yProps(onOpenActions, {
     onJumpToParent: quote ? onJumpToParent : undefined,
   });
-  // Every name, the viewer's own "You" included, takes the author's role
-  // color (a contrast-checked palette value) or else the foreground text, and
-  // never the chapter accent (foundations.md §6, "Where the accent goes").
-  const roleColor = message.sender_id
-    ? (roleColorFor?.(message.sender_id) ?? null)
-    : null;
 
   return (
     <Pressable
@@ -315,78 +340,192 @@ export function MessageRowFrame({
       // the keyboard up (#3461, see above).
       onPress={Keyboard.dismiss}
       disabled={!onOpenActions}
-      style={[styles.row, startsRun ? styles.rowStartsRun : styles.rowFollows]}
+      style={[
+        styles.row,
+        startsRun
+          ? compact
+            ? styles.rowStartsRunCompact
+            : styles.rowStartsRun
+          : styles.rowFollows,
+      ]}
     >
+      {mentionsViewer ? (
+        <MentionHighlight style={styles.mentionHighlight} />
+      ) : null}
       {quote ? (
         <View style={styles.quoteLine}>
-          {/* From the avatar's centre up and across to the quote, so the quote
-              reads as the row below's rather than floating between two rows. */}
-          <View style={styles.elbow} />
+          {/* Compact has no avatar to point at, so the elbow drops onto the
+              name from the row's own edge. */}
+          <View style={[styles.elbow, compact ? styles.elbowCompact : null]} />
           <View style={styles.quote}>{quote}</View>
         </View>
       ) : null}
-      <View style={styles.main}>
-        {startsRun ? (
-          message.sender_id === SYSTEM_SENDER_ID ? (
-            // Frapp's own posts (the welcome, the audit bridge, a poll's
-            // closing notice, an invite-accept DM) wear the crest, not
-            // initials: the sender is the product, not a member (#3347).
+      {compact ? (
+        <>
+          {startsRun ? null : (
+            // The follow-on's handle, in the row's left inset: who sent it
+            // and when, and the long-press as an action.
             <View
-              style={[styles.avatar, styles.systemAvatar]}
-              testID="system-avatar"
-            >
-              <Image
-                // Metro asset id; a static import fails `tsc` (no `*.png`
-                // module declaration), as in `(auth)/sign-in.tsx`.
-                // eslint-disable-next-line @typescript-eslint/no-require-imports
-                source={require("../../assets/images/system-avatar.png")}
-                style={styles.systemAvatarImage}
-                accessibilityElementsHidden
-                importantForAccessibility="no-hide-descendants"
-              />
-            </View>
-          ) : (
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {authorName
-                  ? initialsFor(authorName)
-                  : authorInitialsFallback(message)}
-              </Text>
-            </View>
-          )
-        ) : (
-          // A follow-on row draws no author or time, so its gutter is where a
-          // screen reader hears them — and where the long-press action rides
-          // when the row has no text to carry it (a photo-only follow-on).
-          <View
-            style={styles.gutter}
-            accessible
-            accessibilityLabel={`${authorLabel}, ${time}`}
-            {...headerA11y}
-          />
-        )}
-        <View style={styles.column}>
-          {startsRun ? (
+              style={styles.gutterInset}
+              accessible
+              accessibilityLabel={`${authorLabel}, ${time}`}
+              {...headerA11y}
+            />
+          )}
+          {startsRun && !authorInline ? (
             <View
               style={styles.authorLine}
               accessible={"accessibilityActions" in headerA11y}
               {...headerA11y}
             >
+              <Text style={styles.compactTime}>{time}</Text>
               <Text
                 style={
-                  roleColor ? [styles.name, { color: roleColor }] : styles.name
+                  roleColor
+                    ? [styles.compactName, { color: roleColor }]
+                    : styles.compactName
                 }
                 numberOfLines={1}
               >
                 {authorLabel}
               </Text>
-              <Text style={styles.time}>{time}</Text>
             </View>
           ) : null}
           {children}
+        </>
+      ) : (
+        <View style={styles.main}>
+          {startsRun ? (
+            message.sender_id === SYSTEM_SENDER_ID ? (
+              // Frapp's own posts (the welcome, the audit bridge, a poll's
+              // closing notice, an invite-accept DM) wear the crest, not
+              // initials: the sender is the product, not a member (#3347).
+              <View
+                style={[styles.avatar, styles.systemAvatar]}
+                testID="system-avatar"
+              >
+                <Image
+                  // Metro asset id; a static import fails `tsc` (no `*.png`
+                  // module declaration), as in `(auth)/sign-in.tsx`.
+                  // eslint-disable-next-line @typescript-eslint/no-require-imports
+                  source={require("../../assets/images/system-avatar.png")}
+                  style={styles.systemAvatarImage}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
+                />
+              </View>
+            ) : (
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {authorName
+                    ? initialsFor(authorName)
+                    : authorInitialsFallback(message)}
+                </Text>
+              </View>
+            )
+          ) : (
+            // A follow-on row draws no author or time, so its gutter is where a
+            // screen reader hears them — and where the long-press action rides
+            // when the row has no text to carry it (a photo-only follow-on).
+            <View
+              style={styles.gutter}
+              accessible
+              accessibilityLabel={`${authorLabel}, ${time}`}
+              {...headerA11y}
+            />
+          )}
+          <View style={styles.column}>
+            {startsRun ? (
+              <View
+                style={styles.authorLine}
+                accessible={"accessibilityActions" in headerA11y}
+                {...headerA11y}
+              >
+                <Text
+                  style={
+                    roleColor
+                      ? [styles.name, { color: roleColor }]
+                      : styles.name
+                  }
+                  numberOfLines={1}
+                >
+                  {authorLabel}
+                </Text>
+                <Text style={styles.time}>{time}</Text>
+              </View>
+            ) : null}
+            {children}
+          </View>
         </View>
-      </View>
+      )}
     </Pressable>
+  );
+}
+
+/**
+ * Who a row is by, resolved one way for the frame's author line, its avatar
+ * initials and compact's lead (`CompactLead`), so the three can't drift.
+ * `@repo/hooks` resolves the name: `sender_id` is nullable, so an imported
+ * archive message has no roster entry and names its author in `author_name`.
+ * Every name, the viewer's own "You" included, takes the author's role color
+ * (a contrast-checked palette value) or else the foreground text, and never
+ * the chapter accent (foundations.md §6, "Where the accent goes").
+ */
+function rowAuthor(
+  message: ChatMessage,
+  nameFor: (userId: string) => string | null,
+  viewerId: string,
+  roleColorFor: ((userId: string) => string | null) | undefined,
+) {
+  return {
+    authorName: resolveAuthorName(message, nameFor),
+    authorLabel: resolveAuthorLabel(message, nameFor, viewerId),
+    roleColor: message.sender_id
+      ? (roleColorFor?.(message.sender_id) ?? null)
+      : null,
+  };
+}
+
+/**
+ * Compact's lead for a text row that starts a run: the time, then the name,
+ * nested at the front of the body's own `Text` so the message wraps back under
+ * them like one sentence (§11 § Density). A screen reader hears it with the
+ * body, so the row needs no separate author handle.
+ */
+function CompactLead({
+  message,
+  viewerId,
+  nameFor,
+  roleColorFor,
+  styles,
+}: {
+  message: ChatMessage;
+  viewerId: string;
+  nameFor: (userId: string) => string | null;
+  roleColorFor?: (userId: string) => string | null;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  const { authorLabel, roleColor } = rowAuthor(
+    message,
+    nameFor,
+    viewerId,
+    roleColorFor,
+  );
+  return (
+    <Text>
+      <Text style={styles.compactTime}>
+        {formatTimeOfDay(message.created_at)}{" "}
+      </Text>
+      <Text
+        style={
+          roleColor
+            ? [styles.compactName, { color: roleColor }]
+            : styles.compactName
+        }
+      >
+        {authorLabel}
+      </Text>{" "}
+    </Text>
   );
 }
 
@@ -448,6 +587,7 @@ export function MessageItem({
 }: MessageItemProps) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
+  const compact = useChatDensity() === "compact";
   // Reactions address a server id, so a message still in flight has nothing to
   // address. Web gates the same affordance on the same condition.
   const isConfirmed = message._status === "confirmed";
@@ -473,6 +613,8 @@ export function MessageItem({
         channelId={message.channel_id}
         messageId={message.id}
         count={message.attachment_count}
+        clientMessageId={message.client_message_id}
+        confirmed={isConfirmed}
         onLongPress={onOpenActions}
       />
     ) : null;
@@ -524,12 +666,29 @@ export function MessageItem({
       </Text>
     ) : null;
 
+  // Compact leads the first row of a run with the time and name (§11 §
+  // Density), the deleted placeholder included, so its run still says whose.
+  const leadsWithAuthor =
+    compact && startsRun && (message.is_deleted || hasText);
+  const lead = leadsWithAuthor ? (
+    <CompactLead
+      message={message}
+      viewerId={viewerId}
+      nameFor={nameFor}
+      roleColorFor={roleColorFor}
+      styles={styles}
+    />
+  ) : null;
   const text = message.is_deleted ? (
-    <Text style={styles.deleted}>{DELETED_MESSAGE_PLACEHOLDER}</Text>
+    <Text style={styles.deleted}>
+      {lead}
+      {DELETED_MESSAGE_PLACEHOLDER}
+    </Text>
   ) : hasText ? (
     <MessageMarkdown
       parsed={parsed}
       style={[styles.body, muted ? styles.bodyMuted : null]}
+      lead={leadsWithAuthor ? lead : undefined}
       trailing={trailing}
       onLongPress={onOpenActions}
     />
@@ -543,6 +702,7 @@ export function MessageItem({
       roleColorFor={roleColorFor}
       startsRun={startsRun}
       quote={quote}
+      authorInline={leadsWithAuthor}
       onOpenActions={onOpenActions}
       // The body's container carries the jump when there is text; a photo-only
       // reply has none, so its author line does.
@@ -666,6 +826,26 @@ function DeliveryLine({
       return _never;
     }
   }
+}
+
+/**
+ * The fill behind a row that @-mentions the viewer: the chapter's
+ * accent-subtle (step 3) with a 2pt accent bar on its leading edge, as
+ * Discord marks a ping. Its own component for the reason `AccentText` gives:
+ * only a row that mentions the viewer calls `useChapterBranding()`.
+ */
+function MentionHighlight({ style }: { style: StyleProp<ViewStyle> }) {
+  const { accentSubtle, accentPrimary } = useChapterBranding();
+  return (
+    <View
+      testID="message-mentions-viewer"
+      pointerEvents="none"
+      style={[
+        style,
+        { backgroundColor: accentSubtle, borderLeftColor: accentPrimary },
+      ]}
+    />
+  );
 }
 
 /**
@@ -854,7 +1034,19 @@ function createStyles(tokens: SignetTokens) {
     },
     // A run starts 16 below the row above; a follow-on sits 2 below.
     rowStartsRun: { paddingTop: tokens.spacing.lg },
+    // Compact starts a run 4 below (§11 § Density).
+    rowStartsRunCompact: { paddingTop: tokens.spacing.xs },
     rowFollows: { paddingTop: 2 },
+    // Behind the whole row, edge to edge, so the gutter and text stay where
+    // every other row has them; the 2pt bar sits inside the 16pt inset.
+    mentionHighlight: {
+      position: "absolute",
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+      borderLeftWidth: 2,
+    },
     quoteLine: {
       flexDirection: "row",
       alignItems: "flex-start",
@@ -871,6 +1063,7 @@ function createStyles(tokens: SignetTokens) {
       borderColor: tokens.color.surface.popover,
       borderTopLeftRadius: 6,
     },
+    elbowCompact: { marginLeft: 0, width: tokens.spacing.md },
     quote: { flex: 1, minWidth: 0 },
     main: {
       flexDirection: "row",
@@ -906,6 +1099,26 @@ function createStyles(tokens: SignetTokens) {
     // the first row's. Stretches to the row's height so a screen reader's
     // focus ring on it covers the row.
     gutter: { width: MESSAGE_AVATAR_SIZE, alignSelf: "stretch" },
+    // Compact's follow-on handle: the row's 16pt left inset, its full height.
+    gutterInset: {
+      position: "absolute",
+      left: 0,
+      top: 0,
+      bottom: 0,
+      width: tokens.spacing.lg,
+    },
+    // Compact's time and name, ahead of the body or on a line of their own.
+    // The name is body size at 600 so it shares the text's baseline.
+    compactTime: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+    },
+    compactName: {
+      ...typeRole(tokens.typography.role.body),
+      fontFamily: fontFamilyFor(600),
+      color: tokens.color.text.foreground,
+      flexShrink: 1,
+    },
     column: { flex: 1, minWidth: 0 },
     authorLine: {
       flexDirection: "row",

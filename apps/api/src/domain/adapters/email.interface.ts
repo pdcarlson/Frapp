@@ -7,6 +7,10 @@ export interface SendInviteEmailParams {
   joinUrl: string;
   /** Role name the invite grants, shown in the email body. */
   role: string;
+  /** The chapter's name, for the subject and body. Null drops it. */
+  chapterName?: string | null;
+  /** Who sent the invite, by display name. Null drops it. */
+  inviterName?: string | null;
 }
 
 /**

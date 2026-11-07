@@ -2112,7 +2112,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteListItemDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -2140,7 +2147,17 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InviteListItemDto"
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -2158,7 +2175,7 @@
             "bearer": []
           }
         ],
-        "summary": "List chapter invites",
+        "summary": "List chapter invites, newest first",
         "tags": [
           "Invites"
         ]
@@ -2220,7 +2237,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkEmailInviteResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -2796,6 +2820,86 @@
           }
         ],
         "summary": "Unread and mention counts for every channel the caller can read",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/latest": {
+      "get": {
+        "operationId": "ChatController_getLatestMessages_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChannelLatestMessageDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The latest message in every channel the caller can read, for the channel list previews",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/mention-roles": {
+      "get": {
+        "operationId": "ChatController_getMentionRoles_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MentionRoleDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The chapter roles the caller’s @-mention picker offers, with whether the caller may ping each",
         "tags": [
           "Chat"
         ]
@@ -9299,7 +9403,7 @@
             "name": "q",
             "required": false,
             "in": "query",
-            "description": "Search query (org name, letters, designation)",
+            "description": "Search query. Every word must start a word of the organization (name, letters or nickname), chapter, or school (name, short name or nickname); a longer word may be a close misspelling. With no query and no university, finds nothing.",
             "schema": {
               "type": "string"
             }
@@ -9308,7 +9412,7 @@
             "name": "university",
             "required": false,
             "in": "query",
-            "description": "Filter by university short name",
+            "description": "Narrow to chapters where a word of the school name, short name or a nickname starts with this (\"rens\", \"RPI\"). Without q, lists that school's chapters.",
             "schema": {
               "type": "string"
             }
@@ -11730,6 +11834,10 @@
               "#A9B4C2"
             ],
             "description": "One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color."
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it."
           }
         },
         "required": [
@@ -11770,6 +11878,10 @@
               "#A9B4C2"
             ],
             "description": "One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color."
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it."
           }
         }
       },
@@ -12037,6 +12149,71 @@
           }
         }
       },
+      "InviteStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "joined",
+          "expired",
+          "revoked"
+        ],
+        "description": "pending: still joinable. joined: someone joined with it. expired: unused past expires_at. revoked: an officer revoked it."
+      },
+      "InviteListItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string",
+            "description": "The single-use token. Clients build the join link from it; they never show it."
+          },
+          "role": {
+            "type": "string",
+            "description": "The role name joining grants"
+          },
+          "email": {
+            "type": "string",
+            "nullable": true,
+            "description": "The address the invite was emailed to, or null for a share-link invite"
+          },
+          "status": {
+            "description": "pending: still joinable. joined: someone joined with it. expired: unused past expires_at. revoked: an officer revoked it.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/InviteStatus"
+              }
+            ]
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "used_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "Set when it was used, and also when it was revoked"
+          },
+          "revoked_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "token",
+          "role",
+          "email",
+          "status",
+          "expires_at",
+          "used_at",
+          "revoked_at",
+          "created_at"
+        ]
+      },
       "BatchCreateInvitesDto": {
         "type": "object",
         "properties": {
@@ -12070,6 +12247,28 @@
         },
         "required": [
           "emails"
+        ]
+      },
+      "BulkEmailInviteResponseDto": {
+        "type": "object",
+        "properties": {
+          "invites": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InviteListItemDto"
+            }
+          },
+          "failed": {
+            "description": "Addresses whose invite was created but whose email did not send. Their invites still work as links.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "invites",
+          "failed"
         ]
       },
       "PreviewInviteDto": {
@@ -12266,6 +12465,89 @@
           "channel_id",
           "unread_count",
           "mention_count"
+        ]
+      },
+      "ChannelLatestMessageDto": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sender_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The sender's `users.id`, or null for an imported archive message, which carries `author_name` instead."
+          },
+          "author_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "content": {
+            "type": "string",
+            "description": "The message body, cut to its first 500 characters. Empty for a card or a file-only message."
+          },
+          "kind": {
+            "type": "string",
+            "description": "The message kind (`text`, `event`, `system_audit`, ...)."
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true,
+            "description": "The audit payload, set only when `kind` is `system_audit`; null for every other kind."
+          },
+          "attachment_count": {
+            "type": "number"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "channel_id",
+          "message_id",
+          "sender_id",
+          "author_name",
+          "content",
+          "kind",
+          "payload",
+          "attachment_count",
+          "created_at"
+        ]
+      },
+      "MentionRoleDto": {
+        "type": "object",
+        "properties": {
+          "role_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "The role name; the picker inserts it folded."
+          },
+          "color": {
+            "type": "string",
+            "nullable": true,
+            "description": "The role’s palette color, or null."
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether the caller may `@` this role: its own switch (`mentionable` on the role, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming a role the sender may not ping reaches nobody."
+          }
+        },
+        "required": [
+          "role_id",
+          "name",
+          "color",
+          "mentionable"
         ]
       },
       "ChannelNotificationPreferenceDto": {
@@ -12695,6 +12977,24 @@
           "byte_size": {
             "type": "number",
             "minimum": 0
+          },
+          "width": {
+            "type": "number",
+            "description": "Photo width in pixels, so readers draw the bubble at its shape before the photo loads. A size out of range (1 to 20000), or one without the other, is dropped rather than refused, so a bad size never blocks a send."
+          },
+          "height": {
+            "type": "number",
+            "description": "Photo height in pixels; see `width`."
+          },
+          "thumbhash": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "ThumbHash of the photo, base64: the blurred placeholder readers draw until it loads."
+          },
+          "preview_storage_path": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "The `preview_storage_path` the upload-url call returned, once the preview copy is uploaded."
           }
         },
         "required": [
@@ -12823,6 +13123,10 @@
           "size_bytes": {
             "type": "number",
             "description": "File size in bytes, if known. Rejected server-side against the upload size ceiling when present."
+          },
+          "with_preview": {
+            "type": "boolean",
+            "description": "Also mint an upload URL for a smaller JPEG copy of this photo, which readers draw in the timeline. Ignored unless content_type is an image."
           }
         },
         "required": [
@@ -12844,6 +13148,14 @@
           "message_id": {
             "type": "string",
             "description": "Server-allocated message id embedded in storage_path."
+          },
+          "preview_upload_url": {
+            "type": "string",
+            "description": "Only when with_preview was asked for an image: PUT the preview JPEG here, as image/jpeg."
+          },
+          "preview_storage_path": {
+            "type": "string",
+            "description": "Only with preview_upload_url: send back as the attachment preview_storage_path."
           }
         },
         "required": [
@@ -13417,10 +13729,29 @@
             "description": "Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY)"
           },
           "required_role_ids": {
+            "description": "Roles that must attend. See `others_invited` for members holding none of the listed roles.",
             "type": "array",
             "items": {
               "type": "string"
             }
+          },
+          "optional_role_ids": {
+            "description": "Roles invited but not required.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excluded_role_ids": {
+            "description": "Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "others_invited": {
+            "type": "boolean",
+            "description": "Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted on create, it is stored as null, which reads as true unless `required_role_ids` is non-empty: the older \"only these roles\" meaning, for a caller that predates this field. Omitted on update, it is left as stored."
           },
           "notes": {
             "type": "string"
@@ -13438,11 +13769,11 @@
           },
           "channel_id": {
             "type": "string",
-            "description": "When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when `required_role_ids` is non-empty, on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both target roles and post one. (`PATCH` can still add targeting to an event whose card already posted; that card is left as-is.)"
+            "description": "When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when the event keeps anyone out (`others_invited` false, including its default when `required_role_ids` is non-empty, or a non-empty `excluded_role_ids`), on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both limit its audience and post one. (`PATCH` can still limit the audience of an event whose card already posted; that card is left as-is.)"
           },
           "client_message_id": {
             "type": "string",
-            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when `required_role_ids` is non-empty, even without `channel_id` — see that field."
+            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when the event keeps anyone out, even without `channel_id` — see that field."
           }
         },
         "required": [
@@ -13503,6 +13834,25 @@
               "type": "string"
             }
           },
+          "optional_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excluded_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "others_invited": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`)."
+          },
           "notes": {
             "type": "string",
             "nullable": true
@@ -13541,6 +13891,9 @@
           "recurrence_rule",
           "parent_event_id",
           "required_role_ids",
+          "optional_role_ids",
+          "excluded_role_ids",
+          "others_invited",
           "notes",
           "check_in_zone",
           "check_in_zone_name",
@@ -13576,10 +13929,29 @@
             "description": "Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY)"
           },
           "required_role_ids": {
+            "description": "Roles that must attend. See `others_invited` for members holding none of the listed roles.",
             "type": "array",
             "items": {
               "type": "string"
             }
+          },
+          "optional_role_ids": {
+            "description": "Roles invited but not required.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excluded_role_ids": {
+            "description": "Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "others_invited": {
+            "type": "boolean",
+            "description": "Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored. A stored null reads as true unless `required_role_ids` is non-empty, the older \"only these roles\" meaning."
           },
           "notes": {
             "type": "string"

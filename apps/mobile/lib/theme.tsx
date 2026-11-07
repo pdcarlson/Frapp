@@ -112,6 +112,27 @@ export function typeRole(role: SignetTypeRole): TextStyle {
 }
 
 /**
+ * `typeRole` for the text inside a single-line `TextInput`: the same size and
+ * family, with NO `lineHeight`.
+ *
+ * iOS lays a single-line field's glyphs at the bottom of whatever line box
+ * `lineHeight` makes, so `body`'s 25 on a 16pt font pushed every typed value
+ * and placeholder about 4pt below the field's center (Paul, iOS 0.10.0,
+ * 2026-11-06: "text is not centered in the box"). Without it the field's
+ * symmetric padding centers the text on both platforms. A multiline field
+ * keeps `typeRole` (its lines need the leading) with `textAlignVertical:
+ * "top"`. Rule: `spec/ui/design-system/components.md` § Text input.
+ */
+export function fieldTypeRole(
+  role: SignetTypeRole,
+): Pick<TextStyle, "fontSize" | "fontFamily"> {
+  return {
+    fontSize: role.size,
+    fontFamily: FIGTREE_FAMILY[role.weight],
+  };
+}
+
+/**
  * A semantic hue as a translucent fill. On dark surfaces Signet status colors
  * paint as tints, not solids: ~13% opacity of the hue as background, with the
  * hue itself (or a lightened step) as text (foundations.md §5). Border tints
@@ -129,7 +150,11 @@ export function avatarRadius(size: number): number {
   return size / 2;
 }
 
-export function FrappThemeProvider({ children }: { children: React.ReactNode }) {
+export function FrappThemeProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const value = useMemo(() => ({ tokens: getSignetTokens("dark") }), []);
 
   return (

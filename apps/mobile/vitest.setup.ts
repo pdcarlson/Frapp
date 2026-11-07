@@ -32,6 +32,10 @@ vi.mock("expo-file-system/legacy", () => ({
     BINARY_CONTENT: 0,
     MULTIPART: 1,
   },
+  FileSystemSessionType: {
+    BACKGROUND: 0,
+    FOREGROUND: 1,
+  },
   EncodingType: {
     UTF8: "utf8",
   },
@@ -81,13 +85,21 @@ vi.mock("expo-haptics", () => ({
   },
 }));
 
+// expo-image is native. A host element named "ExpoImage" stands in, so a
+// spec reads the props a photo was drawn with (source, cacheKey, placeholder).
+vi.mock("expo-image", () => ({ Image: "ExpoImage" }));
+
 vi.mock("expo-image-manipulator", () => ({
   ImageManipulator: {
-    manipulate: vi.fn(() => ({
-      renderAsync: vi.fn().mockResolvedValue({
-        saveAsync: vi.fn().mockResolvedValue({ uri: "file:///out.jpg" }),
-      }),
-    })),
+    manipulate: vi.fn(() => {
+      const context = {
+        resize: vi.fn(() => context),
+        renderAsync: vi.fn().mockResolvedValue({
+          saveAsync: vi.fn().mockResolvedValue({ uri: "file:///out.jpg" }),
+        }),
+      };
+      return context;
+    }),
   },
   SaveFormat: { JPEG: "jpeg", PNG: "png", WEBP: "webp" },
 }));
@@ -121,13 +133,15 @@ vi.mock("expo-router", () => {
     push: vi.fn(),
     replace: vi.fn(),
     navigate: vi.fn(),
+    dismissTo: vi.fn(),
     back: vi.fn(),
     // Nothing behind the screen unless a spec says otherwise
     // (`mockReturnValue(true)`, as the chapter picker's does).
     canGoBack: vi.fn(() => false),
   };
   // Every mounted focus effect, re-runnable as one "the member came back"
-  // event. A tab screen is never unmounted, so state that must not outlive a
+  // event. A tab screen is never unmounted (a pushed one unmounts on back, which
+  // a spec models as a remount), so state that must not outlive a
   // visit (a subscription refusal, #2297) is cleared on refocus, and a spec
   // can only prove that by refocusing: `act(() => __refocus())`. `__blur` is
   // the half before it, for a screen that must go quiet while another screen
@@ -190,10 +204,11 @@ vi.mock("expo-router", () => {
     usePathname: vi.fn(() => "/"),
     Link: "Link",
     Redirect: "Redirect",
-    // A host string cannot carry `.Screen`, and `app/(tabs)/_layout.tsx`
-    // registers every route with `<Tabs.Screen … />` (`lib/tab-layout.spec.tsx`
-    // renders it). Both render as host nodes named for what they stand in for,
-    // so a spec can find them and read `screenOptions` and `options`.
+    // A host string cannot carry `.Screen`, and the tab and app layouts
+    // register their routes with `<Tabs.Screen … />` and `<Stack.Screen … />`
+    // (`lib/tab-layout.spec.tsx` renders both). Each renders as a host node
+    // named for what it stands in for, so a spec can find them and read
+    // `screenOptions` and `options`.
     Tabs: Object.assign(
       (props: Record<string, unknown>) => React.createElement("Tabs", props),
       {
@@ -201,7 +216,13 @@ vi.mock("expo-router", () => {
           React.createElement("Tabs.Screen", props),
       },
     ),
-    Stack: "Stack",
+    Stack: Object.assign(
+      (props: Record<string, unknown>) => React.createElement("Stack", props),
+      {
+        Screen: (props: Record<string, unknown>) =>
+          React.createElement("Stack.Screen", props),
+      },
+    ),
   };
 });
 
@@ -391,10 +412,12 @@ vi.mock("expo-web-browser", () => ({
 // `expo-router/react-navigation`: Metro refuses an app import of
 // `@react-navigation/*` since SDK 56. Its real module graph doesn't parse here,
 // for the reason the `expo-router` mock above gives. Only the screen's
-// navigation context is stood in. Unprovided it reads `undefined`, as it does
-// in a sheet on a device, and a spec that needs a screen provides one.
+// navigation and route contexts are stood in. Unprovided they read
+// `undefined`, as they do in a sheet on a device, and a spec that needs a
+// screen provides them.
 vi.mock("expo-router/react-navigation", () => ({
   NavigationContext: React.createContext(undefined),
+  NavigationRouteContext: React.createContext(undefined),
 }));
 
 vi.mock("expo-font", () => ({
@@ -509,6 +532,8 @@ vi.mock("@sentry/react-native", () => ({
   setUser: vi.fn(),
   // Both QueryClients report failures through it (`lib/sentry/query-errors.ts`).
   captureException: vi.fn(),
+  // Chat home's refused-channels warning (`lib/chat/channels-error.ts`).
+  captureMessage: vi.fn(),
   mobileReplayIntegration: vi.fn(),
 }));
 

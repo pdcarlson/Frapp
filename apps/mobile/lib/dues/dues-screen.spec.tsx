@@ -14,7 +14,7 @@ import { drawnText, screenText } from "@/test/screen-text";
  * s11 rendered: the open bills it lists, the shape it loads in, and where a
  * payment's outcome is drawn.
  *
- * It renders `app/(tabs)/dues.tsx` but lives here: a spec under `app/` ships
+ * It renders `app/(app)/dues.tsx` but lives here: a spec under `app/` ships
  * as a route module (`lib/routes.spec.ts`).
  */
 
@@ -138,7 +138,8 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844", chapterName: "Tau Nu" }),
 }));
 
-import DuesScreen from "@/app/(tabs)/dues";
+import DuesScreen from "@/app/(app)/dues";
+import { forgetDuesMemory } from "@/lib/dues/visit-memory";
 import {
   BalanceCard,
   BalanceCardSkeleton,
@@ -247,6 +248,8 @@ const line = (tree: ReactTestRenderer, text: string) =>
 const DESTRUCTIVE = signetDarkTokens.color.semantic.destructive;
 
 beforeEach(() => {
+  // Captured payments outlive the screen by design; each test starts clean.
+  forgetDuesMemory();
   chapterId = "ch-tau-nu";
   invoices = [FALL];
   invoicesPending = false;
@@ -741,7 +744,7 @@ describe("Dues after a captured payment", () => {
 
     invoices = [];
     rerender(tree);
-    expect(screenText(tree)).toContain("No dues yet");
+    expect(screenText(tree)).toContain("You have no invoices.");
     expect(screenText(tree)).toContain(droppedCopy("Fall dues"));
   });
 
@@ -755,10 +758,29 @@ describe("Dues after a captured payment", () => {
     expect(card(tree)).toContain(PENDING_COPY);
   });
 
+  it("keeps the hold when the member swipes back out of Dues and opens it again", async () => {
+    // Dues is pushed on the stack, so going back unmounts it. The hold must
+    // outlive that, or Pay would be live on an invoice just paid.
+    const first = mount();
+    await tapPay(first);
+    expect(card(first)).toContain(PENDING_COPY);
+    act(() => blur());
+    act(() => first.unmount());
+    await refocus();
+
+    const again = mount();
+    expect(card(again)).toContain("Pending");
+    expect(card(again)).toContain(PENDING_COPY);
+
+    invoices = [paid(FALL)];
+    rerender(again);
+    expect(card(again)).toContain(paidCopy("Fall dues"));
+  });
+
   it("keeps the hold when the member leaves and comes back, re-reading the list", async () => {
     // billing.md: the pending line stands until the server reports PAID.
-    // The tab stays mounted, so the hold is still there on return, and the
-    // return asks whether the webhook landed meanwhile.
+    // The hold is still there on return, and the return asks whether the
+    // webhook landed meanwhile.
     const tree = mount();
     await tapPay(tree);
 
@@ -1014,7 +1036,7 @@ describe("Dues after a captured payment", () => {
   });
 
   it("ends the hold when the chapter changes", async () => {
-    // The tab stays mounted through a chapter switch. Until the next
+    // The screen can stay mounted through a chapter switch. Until the next
     // chapter's list loads, nothing says the paid invoice left OPEN, so the
     // pending line would stand on that chapter's skeleton.
     const tree = mount();

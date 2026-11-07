@@ -284,6 +284,18 @@ export interface ChatMessageAttachment {
   width: number | null;
   height: number | null;
   /**
+   * A ThumbHash of a photo, base64, from the sending client: the blurred
+   * placeholder a reader draws until the photo loads. Null for files that are
+   * not photos and for rows sent before 2026-11-07.
+   */
+  thumbhash: string | null;
+  /**
+   * The smaller JPEG copy of a photo the sender uploaded next to it, always
+   * `chatPreviewPathFor` of `storage_path` when set. Null when there is
+   * none: not a photo, a photo already small enough, or an older row.
+   */
+  preview_storage_path: string | null;
+  /**
    * Source-system URL, reserved and **never populated by the Discord importer**.
    *
    * The idea was a retry handle for a partial media fetch. The importer does not
@@ -312,6 +324,11 @@ export interface ChatMessageAttachment {
  */
 export interface ChatMessageAttachmentWithUrl extends ChatMessageAttachment {
   download_url: string;
+  /**
+   * Signed URL for the preview copy, which is what a timeline draws. Null when
+   * the row has no preview or it could not be signed; draw `download_url`.
+   */
+  preview_url: string | null;
 }
 
 /**
@@ -326,6 +343,26 @@ export interface ChannelUnreadCount {
   channel_id: string;
   unread_count: number;
   mention_count: number;
+}
+
+/**
+ * One channel's latest message, for Chat home's row preview (2026-11-06).
+ *
+ * A projection, not a `ChatMessage`: just what a one-line preview and its
+ * time need. Read by `get_channel_latest_messages`, which skips deleted rows
+ * and members the viewer blocked. `content` is cut to 500 characters, and
+ * `payload` is set only on an audit line (`kind: 'system_audit'`).
+ */
+export interface ChannelLatestMessage {
+  channel_id: string;
+  message_id: string;
+  sender_id: string | null;
+  author_name: string | null;
+  content: string;
+  kind: string;
+  payload: Record<string, unknown> | null;
+  attachment_count: number;
+  created_at: string;
 }
 
 /**

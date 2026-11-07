@@ -8,6 +8,7 @@ import { AccessibilityInfo, Platform } from "react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { createFrappClient } from "@repo/api-sdk";
 import { FrappThemeProvider } from "@/lib/theme";
+import { stackScreen } from "@/test/stack-screen";
 import { drawnText, screenText, textHeadings } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
@@ -28,7 +29,8 @@ import { requireForegroundFix } from "@/lib/location";
  * A subscription refusal is the one check-in failure that must not re-arm
  * anything: the chapter stays refused until an officer sorts out billing, so
  * a live scanner or manual field only invites a retry that cannot win. Every
- * other failure keeps both armed. And because a tab screen is never unmounted,
+ * other failure keeps both armed. And because the screen can stay mounted (under
+ * another screen, in the background, or handed new params by a link),
  * the refusal has to clear when the member comes back, or the scanner stays
  * dead at the next event until a force-quit.
  *
@@ -36,7 +38,7 @@ import { requireForegroundFix } from "@/lib/location";
  * that the scanner was off. Reverting the catch to a plain `error` status
  * kept those green; it turns this suite red.
  *
- * It renders `app/(tabs)/check-in.tsx` but lives here: a spec under `app/`
+ * It renders `app/(app)/check-in.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -56,6 +58,8 @@ const FAILED = {
   message: "Check-in service is unavailable.",
   requestId: "req_failed",
 };
+/** What a member reads for {@link FAILED}: never the server's own text. */
+const FAILED_SHOWN = "Couldn't check you in.";
 
 const EVENT = {
   id: "evt-1",
@@ -151,7 +155,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
 }));
 
-import CheckInScreen from "@/app/(tabs)/check-in";
+import CheckInScreen from "@/app/(app)/check-in";
 
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
 const refocus = (expoRouter as unknown as { __refocus: () => void })
@@ -330,7 +334,7 @@ describe("Check-in on a subscription refusal (#2297)", () => {
     const tree = render();
     await submitManualCode(tree);
 
-    expect(screenText(tree)).toContain(FAILED.message);
+    expect(screenText(tree)).toContain(FAILED_SHOWN);
     expect(camera(tree).props.onBarcodeScanned).toEqual(expect.any(Function));
     expect(manualSubmit(tree).props.disabled).toBe(false);
     act(() => tree.unmount());
@@ -462,10 +466,10 @@ describe("Check-in's success moment", () => {
       "You're checked in. +10 pts",
     );
 
-    // To the event it confirmed, not `back()`: a hidden tab's history lands
-    // on Chat home.
+    // Nothing is under the screen in this spec (no stack), so it opens the
+    // event it confirmed; over the event's detail it pops instead.
     act(() => pressableDrawing(tree, "Back to event").props.onPress());
-    expect(router().navigate).toHaveBeenCalledWith({
+    expect(router().dismissTo).toHaveBeenCalledWith({
       pathname: "/event-details",
       params: { id: "evt-1" },
     });
@@ -584,10 +588,10 @@ describe("Check-in's success moment", () => {
     moveTo(tree, OTHER_EVENT.id);
     await act(async () => answer.refuse(FAILED));
 
-    expect(screenText(tree)).not.toContain(FAILED.message);
+    expect(screenText(tree)).not.toContain(FAILED_SHOWN);
     expect(
       drawnText(tree.root.findByType("BottomSheetModal" as never)),
-    ).not.toContain(FAILED.message);
+    ).not.toContain(FAILED_SHOWN);
     act(() => tree.unmount());
   });
 
@@ -861,6 +865,7 @@ describe("Check-in before its event has loaded", () => {
 describe("Check-in's way out", () => {
   beforeEach(() => {
     vi.mocked(router().navigate).mockClear();
+    vi.mocked(router().dismissTo).mockClear();
   });
 
   const close = (tree: ReactTestRenderer) =>
@@ -876,7 +881,7 @@ describe("Check-in's way out", () => {
     });
     const tree = render();
     act(() => close(tree).props.onPress());
-    expect(router().navigate).toHaveBeenCalledWith({
+    expect(router().dismissTo).toHaveBeenCalledWith({
       pathname: "/event-details",
       params: { id: "evt-1" },
     });
@@ -884,11 +889,34 @@ describe("Check-in's way out", () => {
     act(() => tree.unmount());
   });
 
+  it("pops back to the event detail it was opened from, as the swipe does", () => {
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      eventId: "evt-1",
+    });
+    const { element, navigation } = stackScreen(
+      [{ name: "(tabs)" }, { name: "event-details" }],
+      <FrappThemeProvider>
+        <CheckInScreen />
+      </FrappThemeProvider>,
+    );
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(element, {
+        createNodeMock: (node) =>
+          node.type === "BottomSheetModal" ? sheetHandle : null,
+      });
+    });
+    act(() => close(tree).props.onPress());
+    expect(navigation.goBack).toHaveBeenCalledTimes(1);
+    expect(router().dismissTo).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
   it("goes to Events when there is no event to go back to", () => {
     vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
     const tree = render();
     act(() => close(tree).props.onPress());
-    expect(router().navigate).toHaveBeenCalledWith("/events");
+    expect(router().dismissTo).toHaveBeenCalledWith("/events");
     act(() => tree.unmount());
   });
 });
@@ -935,33 +963,39 @@ describe("Check-in's manual code", () => {
     await submitManualCode(tree);
 
     const sheet = tree.root.findByType("BottomSheetModal" as never);
-    expect(drawnText(sheet)).toContain(FAILED.message);
+    expect(drawnText(sheet)).toContain(FAILED_SHOWN);
     act(() => tree.unmount());
   });
 
   it("keeps a scan's refusal when the sheet opens: it is still true of a typed code", async () => {
-    for (const refusal of [
-      {
-        statusCode: 400,
-        error: "Bad Request",
-        message: "You're outside the check-in zone.",
-      },
+    for (const [refusal, shown] of [
+      [
+        {
+          statusCode: 400,
+          error: "Bad Request",
+          message: "Location is outside the geofence",
+        },
+        "You're outside the zone. Move inside it and try again.",
+      ],
       // No signing secret here: a typed code is refused the same way.
-      {
-        statusCode: 503,
-        error: "Service Unavailable",
-        message: CHECK_IN_CODES_UNCONFIGURED_MESSAGE,
-      },
-    ]) {
+      [
+        {
+          statusCode: 503,
+          error: "Service Unavailable",
+          message: CHECK_IN_CODES_UNCONFIGURED_MESSAGE,
+        },
+        FAILED_SHOWN,
+      ],
+    ] as const) {
       checkIn.mockRejectedValue(refusal);
       const tree = render();
       try {
         await scan(tree, qrFor("evt-1"));
-        expect(screenText(tree)).toContain(refusal.message);
+        expect(screenText(tree)).toContain(shown);
 
         openSheet(tree);
         const sheet = tree.root.findByType("BottomSheetModal" as never);
-        expect(drawnText(sheet)).toContain(refusal.message);
+        expect(drawnText(sheet)).toContain(shown);
       } finally {
         act(() => tree.unmount());
       }
@@ -987,11 +1021,14 @@ describe("Check-in's manual code", () => {
     for (const [refusal, shown] of [
       [
         { statusCode: 403, message: CHECK_IN_CODE_REFUSED_MESSAGE },
-        CHECK_IN_CODE_REFUSED_MESSAGE,
+        "That code is wrong or has expired. Ask the host for the current one.",
       ],
-      [{ statusCode: 400, message: [TOKEN_TOO_LONG] }, TOKEN_TOO_LONG],
-      [new TypeError("Network request failed"), "Network request failed"],
-      [{ statusCode: 408, message: "Request Timeout" }, "Request Timeout"],
+      [{ statusCode: 400, message: [TOKEN_TOO_LONG] }, FAILED_SHOWN],
+      [
+        new TypeError("Network request failed"),
+        "Couldn't reach Frapp. Check your connection and try again.",
+      ],
+      [{ statusCode: 408, message: "Request Timeout" }, FAILED_SHOWN],
     ] as const) {
       checkIn.mockRejectedValue(refusal);
       const tree = render();
@@ -1109,7 +1146,7 @@ describe("Check-in after a failed attempt", () => {
       const tree = render();
       try {
         await attempt(tree);
-        expect(screenText(tree)).toContain(FAILED.message);
+        expect(screenText(tree)).toContain(FAILED_SHOWN);
 
         await attempt(tree);
         expect(checkIn).toHaveBeenCalledTimes(2);
@@ -1243,7 +1280,7 @@ describe("Check-in's camera and torch", () => {
   });
 
   it("lets the camera, and the torch, go when the member leaves", () => {
-    // The tab screen stays mounted after the member leaves; a camera left
+    // The screen stays mounted under anything pushed over it; a camera left
     // mounted would keep running, torch and all, behind the next screen.
     const tree = render();
     act(() => torch(tree).props.onPress());

@@ -191,6 +191,39 @@ export interface Database {
         }[];
       };
       /**
+       * `20261106210000`. Each channel's latest message that is not deleted
+       * and not from a member the caller blocked, for Chat home's previews.
+       * Rows for every channel in the chapter: the service filters by access.
+       * `payload` is set only on an audit line; `content` is cut to 500.
+       */
+      get_channel_latest_messages: {
+        Args: { p_chapter_id: string; p_user_id: string };
+        Returns: {
+          channel_id: string;
+          message_id: string;
+          sender_id: string | null;
+          author_name: string | null;
+          content: string;
+          kind: string;
+          payload: Record<string, unknown> | null;
+          attachment_count: number;
+          created_at: string;
+        }[];
+      };
+      /**
+       * `20261107043000`. Onboarding chapter search: word prefixes over
+       * organization, letters, chapter, school and aliases, with trigram typo
+       * tolerance. Global reference data, no chapter scope; at most 50 rows.
+       */
+      search_chapter_directory: {
+        Args: {
+          p_query: string;
+          p_university?: string | null;
+          p_limit?: number;
+        };
+        Returns: ChapterDirectoryEntry[];
+      };
+      /**
        * `20261106190000` (#585). Backwork search over title, course,
        * department, professor and tags, with trigram typo tolerance, ranked
        * word matches first. One chapter only; at most 50 rows.

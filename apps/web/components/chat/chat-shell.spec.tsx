@@ -359,6 +359,7 @@ vi.mock("@repo/hooks", async () => ({
           refetch: vi.fn(),
         },
   useChapterRoster: () => ({ data: [] }),
+  useMentionRoles: () => ({ data: [] }),
   useMyPermissions: () => mockUseMyPermissions(),
   // Read by `OpsSetupNudge`, which the shell renders above the timeline
   // (#492). Left deliberately inert: `useOrgConfig` above returns no
@@ -1172,7 +1173,7 @@ describe("ChatShell deep-link targets", () => {
   it("shows an explicit empty state for a channel id that matches nothing, instead of silently falling back", () => {
     render(<ChatShell initialChannelId="does-not-exist" />);
 
-    expect(screen.getByText("Channel not found")).toBeTruthy();
+    expect(screen.getByText(/channel you can.t reach/)).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Browse channels" }),
     ).toBeTruthy();
@@ -2780,6 +2781,35 @@ describe("ChatShell greenfield grammar (#2142)", () => {
       screen.getByRole("region", { name: "Channels" }),
     ).toBeInTheDocument();
   });
+
+  it("says a refusal by role is about the member's role, not access in general", () => {
+    channelsQueryState.value = {
+      isError: true,
+      data: undefined,
+      error: Object.assign(new Error("Forbidden"), { status: 403 }),
+    };
+    render(<ChatShell />);
+
+    expect(screen.getByText("Chat isn't open to you yet")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Ask an officer to give you the Member role/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Couldn't load channels")).toBeNull();
+  });
+
+  it("keeps the generic copy for the chapter guard's 403", () => {
+    channelsQueryState.value = {
+      isError: true,
+      data: undefined,
+      error: Object.assign(new Error("Forbidden"), {
+        status: 403,
+        code: "chapter.context.mismatch",
+      }),
+    };
+    render(<ChatShell />);
+
+    expect(screen.getByText("Couldn't load channels")).toBeInTheDocument();
+  });
 });
 
 /**
@@ -2887,7 +2917,7 @@ describe("ChatShell with no chapter and no channels (#2145)", () => {
 
     // Phrased as an instruction, not a claim about the account —
     // `profile-panel.tsx` owns that reasoning for the same window.
-    expect(screen.getByText("No chapter selected")).toBeInTheDocument();
+    expect(screen.getByText("Pick an active chapter to load its channels.")).toBeInTheDocument();
     expect(
       screen.getByRole("region", { name: "Channels" }),
     ).toBeInTheDocument();

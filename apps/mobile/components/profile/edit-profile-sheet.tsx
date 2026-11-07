@@ -415,6 +415,8 @@ function createStyles(tokens: SignetTokens, accent: string) {
     },
     field: fieldStyles.field,
     fieldMultiline: {
+      // Body's leading back, which the single-line `field` drops for iOS.
+      ...fieldStyles.fieldMultilineText,
       minHeight:
         (tokens.typography.role.body.lineHeight ??
           tokens.typography.role.body.size) *

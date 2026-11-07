@@ -37,6 +37,11 @@ import {
   resolveRoleNames,
   selectMemberDetail,
 } from "@/lib/directory/member-detail";
+import { parseRoleOptions } from "@/lib/directory/role-editor";
+import {
+  MemberRolesSheet,
+  type MemberRolesSession,
+} from "@/components/directory/member-roles-sheet";
 import {
   dmChannelIdOf,
   messageRowDescription,
@@ -48,8 +53,8 @@ import {
 
 /**
  * s13 member profile detail — a sheet, not a route, per the issue's own scope
- * note: `app/(tabs)/_layout.tsx` is frozen and a new `Tabs.Screen` needs a
- * backing file, so this reaches the fields `spec/behavior/members.md`'s
+ * note: the route layouts are frozen (`spec/ui/mobile/navigation.md`
+ * § Hotspot freeze), so this reaches the fields `spec/behavior/members.md`'s
  * detail view specifies (name, email, role, joined date) without one.
  *
  * **No point balance.** `GET /v1/points/members/{userId}` requires the
@@ -64,6 +69,11 @@ import {
  * thing a member most often opens a profile to do. Who it is offered for is
  * `spec/ui/mobile/screens.md` s13's rule, implemented in
  * `lib/directory/start-dm.ts`.
+ *
+ * **Roles** opens {@link MemberRolesSheet} for a viewer holding `roles:manage`
+ * (the gate on `PATCH /v1/members/{id}/roles`). It is the one place on mobile
+ * where roles are edited (Paul, 2026-11-07); for everyone else the row is a
+ * read-only fact.
  *
  * **Block / Unblock** (#2257) sits at the foot of another member's profile,
  * because the directory is where a member you have blocked is still listed and
@@ -140,6 +150,16 @@ export const MemberDetailSheet = forwardRef<
     [canViewCustomRoles, customRolesQuery.data, detail?.customRoleIds],
   );
   const allRoleNames = [...roleNames, ...customRoleNames];
+
+  const canEditRoles = can("roles:manage", permissions);
+  const roleOptions = useMemo(
+    () => parseRoleOptions(rolesQuery.data),
+    [rolesQuery.data],
+  );
+  const rolesSheetRef = useRef<BottomSheetModal>(null);
+  const [rolesSession, setRolesSession] = useState<MemberRolesSession | null>(
+    null,
+  );
   // Distinct from "no role" (`[]` once both reads have settled): while either
   // read is still in flight, an empty list would otherwise flash a wrong
   // "—" that then flips to the real value a moment later.
@@ -206,173 +226,200 @@ export const MemberDetailSheet = forwardRef<
   }
 
   return (
-    <BottomSheetModal
-      ref={ref}
-      {...tallSheet}
-      backgroundStyle={backgroundStyle}
-      handleComponent={SheetGrabber}
-      backdropComponent={SheetScrim}
-      onDismiss={onDismiss}
-    >
-      <SheetBackToClose onClose={closeSheet} />
-      <BottomSheetScrollView
-        onAccessibilityEscape={closeSheet}
-        style={styles.scroll}
-        contentContainerStyle={styles.body}
-        // The X stays pinned while a long profile scrolls under it: at full
-        // height there is no scrim to tap, and the grabber scrolls away too.
-        stickyHeaderIndices={[0]}
+    <>
+      <BottomSheetModal
+        ref={ref}
+        {...tallSheet}
+        backgroundStyle={backgroundStyle}
+        handleComponent={SheetGrabber}
+        backdropComponent={SheetScrim}
+        onDismiss={onDismiss}
       >
-        <View style={styles.stickyHeader}>
-          <TallSheetHeader onClose={closeSheet} />
-        </View>
+        <SheetBackToClose onClose={closeSheet} />
+        <BottomSheetScrollView
+          onAccessibilityEscape={closeSheet}
+          style={styles.scroll}
+          contentContainerStyle={styles.body}
+          // The X stays pinned while a long profile scrolls under it: at full
+          // height there is no scrim to tap, and the grabber scrolls away too.
+          stickyHeaderIndices={[0]}
+        >
+          <View style={styles.stickyHeader}>
+            <TallSheetHeader onClose={closeSheet} />
+          </View>
 
-        {memberQuery.isPending ? (
-          <SkeletonLines lines={4} showTile tone="list" />
-        ) : null}
+          {memberQuery.isPending ? (
+            <SkeletonLines lines={4} showTile tone="list" />
+          ) : null}
 
-        {/* A cached member still renders through a background-refetch
+          {/* A cached member still renders through a background-refetch
             failure (TanStack keeps `data` on an errored refetch) — the error
             only takes over when there is nothing else to show, so a stale
             card is never buried under a contradictory "couldn't load"
             banner. */}
-        {memberQuery.isError && !detail ? (
-          <ErrorState
-            title="Couldn't load this member"
-            body="Their profile couldn't reach the server."
-            onRetry={() => void memberQuery.refetch()}
-            isRetrying={memberQuery.isFetching}
-          />
-        ) : null}
+          {memberQuery.isError && !detail ? (
+            <ErrorState
+              title="Couldn't load this member"
+              body="Their profile couldn't reach the server."
+              onRetry={() => void memberQuery.refetch()}
+              isRetrying={memberQuery.isFetching}
+            />
+          ) : null}
 
-        {!detail && memberQuery.isSuccess ? (
-          <ErrorState
-            title="Couldn't read this member"
-            body="Their profile came back in a shape this app doesn't recognize."
-            onRetry={() => void memberQuery.refetch()}
-            isRetrying={memberQuery.isFetching}
-          />
-        ) : null}
+          {!detail && memberQuery.isSuccess ? (
+            <ErrorState
+              title="Couldn't read this member"
+              body="Their profile came back in a shape this app doesn't recognize."
+              onRetry={() => void memberQuery.refetch()}
+              isRetrying={memberQuery.isFetching}
+            />
+          ) : null}
 
-        {detail ? (
-          <>
-            <View style={styles.identity}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{detail.initials}</Text>
+          {detail ? (
+            <>
+              <View style={styles.identity}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{detail.initials}</Text>
+                </View>
+                <Text style={styles.name}>{detail.displayName}</Text>
+                {detail.meta ? (
+                  <Text style={styles.meta}>{detail.meta}</Text>
+                ) : null}
               </View>
-              <Text style={styles.name}>{detail.displayName}</Text>
-              {detail.meta ? (
-                <Text style={styles.meta}>{detail.meta}</Text>
-              ) : null}
-            </View>
 
-            {messageRow.kind !== "hidden" ? (
+              {messageRow.kind !== "hidden" ? (
+                <ListSection>
+                  <ListRow
+                    label="Message"
+                    description={messageRowDescription(messageRow)}
+                    // Busy while the DM opens, so the row keeps its look and
+                    // shows a spinner; disabled only while the block list
+                    // can't vouch for a DM yet, which is the row being
+                    // unavailable rather than working.
+                    busy={
+                      messageRow.kind === "ready" &&
+                      dmPending.has(detail.userId)
+                    }
+                    disabled={
+                      messageRow.kind !== "ready" && messageRow.kind !== "retry"
+                    }
+                    onPress={() => {
+                      if (messageRow.kind === "retry") blockList.retry();
+                      else void startDm(detail.userId, detail.displayName);
+                    }}
+                  />
+                </ListSection>
+              ) : null}
+
               <ListSection>
                 <ListRow
-                  label="Message"
-                  description={messageRowDescription(messageRow)}
-                  // Busy while the DM opens, so the row keeps its look and
-                  // shows a spinner; disabled only while the block list
-                  // can't vouch for a DM yet, which is the row being
-                  // unavailable rather than working.
-                  busy={
-                    messageRow.kind === "ready" && dmPending.has(detail.userId)
+                  variant="detail"
+                  label="Email"
+                  value={detail.email ?? "Not set"}
+                />
+                <ListRow
+                  variant="detail"
+                  label="Roles"
+                  value={
+                    rolesStillLoading
+                      ? "Loading…"
+                      : allRoleNames.length > 0
+                        ? allRoleNames.join(", ")
+                        : "—"
                   }
-                  disabled={
-                    messageRow.kind !== "ready" && messageRow.kind !== "retry"
+                  onPress={
+                    canEditRoles && rolesQuery.isSuccess
+                      ? () => {
+                          setRolesSession({
+                            memberId: member?.memberId ?? "",
+                            name: detail.displayName,
+                            heldIds: detail.roleIds,
+                            customRoleNames,
+                            fetchedAt: memberQuery.dataUpdatedAt,
+                          });
+                          rolesSheetRef.current?.present();
+                        }
+                      : undefined
                   }
-                  onPress={() => {
-                    if (messageRow.kind === "retry") blockList.retry();
-                    else void startDm(detail.userId, detail.displayName);
-                  }}
+                  accessibilityHint={
+                    canEditRoles ? "Opens their roles to edit" : undefined
+                  }
+                />
+                <ListRow
+                  variant="detail"
+                  label="Joined"
+                  value={detail.joinedLabel ?? "—"}
                 />
               </ListSection>
-            ) : null}
 
-            <ListSection>
-              <ListRow
-                variant="detail"
-                label="Email"
-                value={detail.email ?? "Not set"}
-              />
-              <ListRow
-                variant="detail"
-                label="Role"
-                value={
-                  rolesStillLoading
-                    ? "Loading…"
-                    : allRoleNames.length > 0
-                      ? allRoleNames.join(", ")
-                      : "—"
-                }
-              />
-              <ListRow
-                variant="detail"
-                label="Joined"
-                value={detail.joinedLabel ?? "—"}
-              />
-            </ListSection>
+              {detail.customFields.length > 0 ? (
+                <>
+                  <SectionHeader>Custom fields</SectionHeader>
+                  <ListSection>
+                    {detail.customFields.map((field) => (
+                      <ListRow
+                        key={field.fieldId}
+                        variant="detail"
+                        label={field.label}
+                        value={field.value}
+                      />
+                    ))}
+                  </ListSection>
+                </>
+              ) : null}
 
-            {detail.customFields.length > 0 ? (
-              <>
-                <SectionHeader>Custom fields</SectionHeader>
+              {detail.bio ? (
+                <View style={styles.bioCard}>
+                  <Text style={styles.bioText}>{detail.bio}</Text>
+                </View>
+              ) : null}
+
+              {blockTarget ? (
                 <ListSection>
-                  {detail.customFields.map((field) => (
+                  {isBlocked ? (
                     <ListRow
-                      key={field.fieldId}
-                      variant="detail"
-                      label={field.label}
-                      value={field.value}
+                      label={`Unblock ${blockTarget.displayName}`}
+                      description={UNBLOCK_ROW_DESCRIPTION}
+                      action
+                      disabled={blockActions.isPending}
+                      onPress={() =>
+                        confirmUnblockMember({
+                          name: blockTarget.displayName,
+                          run: () => blockActions.unblock(blockTarget.userId),
+                        })
+                      }
                     />
-                  ))}
+                  ) : (
+                    <ListRow
+                      label={`Block ${blockTarget.displayName}`}
+                      description={BLOCK_ROW_DESCRIPTION}
+                      action
+                      destructive
+                      disabled={blockActions.isPending}
+                      onPress={() =>
+                        confirmBlockMember({
+                          name: blockTarget.displayName,
+                          // Listed in the directory: that is where this is.
+                          inDirectory: true,
+                          run: () => blockActions.block(blockTarget.userId),
+                        })
+                      }
+                    />
+                  )}
                 </ListSection>
-              </>
-            ) : null}
-
-            {detail.bio ? (
-              <View style={styles.bioCard}>
-                <Text style={styles.bioText}>{detail.bio}</Text>
-              </View>
-            ) : null}
-
-            {blockTarget ? (
-              <ListSection>
-                {isBlocked ? (
-                  <ListRow
-                    label={`Unblock ${blockTarget.displayName}`}
-                    description={UNBLOCK_ROW_DESCRIPTION}
-                    action
-                    disabled={blockActions.isPending}
-                    onPress={() =>
-                      confirmUnblockMember({
-                        name: blockTarget.displayName,
-                        run: () => blockActions.unblock(blockTarget.userId),
-                      })
-                    }
-                  />
-                ) : (
-                  <ListRow
-                    label={`Block ${blockTarget.displayName}`}
-                    description={BLOCK_ROW_DESCRIPTION}
-                    action
-                    destructive
-                    disabled={blockActions.isPending}
-                    onPress={() =>
-                      confirmBlockMember({
-                        name: blockTarget.displayName,
-                        // Listed in the directory: that is where this is.
-                        inDirectory: true,
-                        run: () => blockActions.block(blockTarget.userId),
-                      })
-                    }
-                  />
-                )}
-              </ListSection>
-            ) : null}
-          </>
-        ) : null}
-      </BottomSheetScrollView>
-    </BottomSheetModal>
+              ) : null}
+            </>
+          ) : null}
+        </BottomSheetScrollView>
+      </BottomSheetModal>
+      {/* Stacked over the profile, a sibling as `new-task-sheet.tsx` stacks
+        its picker. */}
+      <MemberRolesSheet
+        ref={rolesSheetRef}
+        session={rolesSession}
+        options={roleOptions}
+      />
+    </>
   );
 });
 

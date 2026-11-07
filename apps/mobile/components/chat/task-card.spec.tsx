@@ -155,7 +155,7 @@ function render(
 
 /** The card's own action buttons, by label: reactions and delivery excluded. */
 function actions(tree: ReactTestRenderer): string[] {
-  const labels = ["Start", "Mark complete", "Confirm", "Confirmed", "Reject"];
+  const labels = ["Start", "Mark done", "Confirm", "Confirmed", "Reject"];
   return tree.root
     .findAll(
       (node) =>
@@ -246,7 +246,7 @@ describe("TaskCard — the live status", () => {
     });
     const text = screenText(render(ASSIGNEE));
     expect(text).toContain("Confirmed");
-    expect(text).not.toContain("Awaiting confirmation");
+    expect(text).not.toContain("Waiting on an officer");
   });
 });
 
@@ -265,8 +265,8 @@ describe("TaskCard — actions", () => {
     state.live = liveTask({ status: "OVERDUE", stored_status: "IN_PROGRESS" });
     const tree = render(ASSIGNEE);
     expect(screenText(tree)).toContain("Overdue");
-    expect(actions(tree)).toEqual(["Mark complete"]);
-    await press(tree, "Mark complete");
+    expect(actions(tree)).toEqual(["Mark done"]);
+    await press(tree, "Mark done");
     expect(updateStatus).toHaveBeenCalledWith({
       id: "task-1",
       body: { status: "COMPLETED" },
@@ -379,13 +379,15 @@ describe("TaskCard — actions", () => {
   it("relays any other refusal", async () => {
     confirmTask.mockRejectedValue({
       statusCode: 400,
-      message: "Task has already been confirmed",
+      message: "Points have already been awarded for this task",
     });
     state.permissions = ["tasks:manage"];
     state.live = liveTask({ status: "COMPLETED", stored_status: "COMPLETED" });
     const tree = render("admin-2");
     await press(tree, "Confirm");
-    expect(screenText(tree)).toContain("Task has already been confirmed");
+    expect(screenText(tree)).toContain(
+      "Points were already given for this task.",
+    );
     // Not a gate's refusal, so the member can try again.
     expect(button(tree, "Confirm").props.disabled).toBe(false);
   });

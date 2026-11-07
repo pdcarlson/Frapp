@@ -12,7 +12,7 @@ Frapp publishes a **system permissions catalog** — these are the strings the A
 | `events:create`       | Create events                                          |
 | `events:update`       | Edit events                                            |
 | `events:delete`       | Delete events                                          |
-| `members:invite`      | Generate invite tokens                                 |
+| `members:invite`      | Invite members by email or link, and revoke invites    |
 | `members:remove`      | Remove members from the chapter                        |
 | `members:view`        | View the full member directory                         |
 | `points:adjust`       | Manually add/remove points                             |
@@ -88,6 +88,7 @@ The only lifecycle rule today is the **Alumni** role (see [`alumni.md`](alumni.m
   - A member's name in chat takes the color of their highest-ranked colored role: the lowest `display_order` among their roles that has one. A member with no colored role reads in the plain foreground, and the viewer's own name keeps the chapter accent. `GET /v1/members/roster` carries it per member as `role_color`, so no client needs `role_ids` to paint a name. Clients paint only palette values, so an older stored hex paints nothing.
   - Seeded roles get palette defaults from `DEFAULT_SYSTEM_ROLES` (`apps/api/src/domain/constants/permissions.ts`), which owns the per-role values. The rule is that the officer and Alumni roles are colored and Member and New Member are not, so officers stand out.
   - Custom roles from `chapter_custom_roles` carry no color.
+- Roles have a **mentionable** switch (2026-11-06, owner direction: "anyone can ping any role by default. officers can change defaults"): on by default for every row of `roles`, seeded, created on the Roles page or imported. Capability roles in `chapter_custom_roles` are not mentionable and have no switch: mention resolution and the picker read only `roles` and `members.role_ids` (#3638). A `roles:manage` holder turns it off on the web Roles page; while it is off, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can `@` the role in chat. The mention rules are in [`chat/README.md`](chat/README.md#role-mentions) § Role mentions.
 - A user with no assigned roles has zero permissions (fail-safe closed).
 
 ## Default Invite Role

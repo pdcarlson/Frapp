@@ -24,7 +24,7 @@ import { useOnboardingRedirect } from "@/lib/onboarding/use-onboarding-redirect"
  * per-screen hook because configuring the realtime manager is a chat concern
  * with per-screen refcounting, not an app-wide one.
  *
- * **Onboarding** is the third runtime for the same freeze: `(tabs)/_layout.tsx`
+ * **Onboarding** is the third runtime for the same freeze: `(app)/_layout.tsx`
  * cannot learn about join/welcome without becoming an integrator PR, so walking
  * a member out of the tabs onto s02/s03 lives here.
  *

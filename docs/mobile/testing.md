@@ -134,10 +134,16 @@ under Vitest. `expo-constants` is mocked for the whole suite as Expo Go
 default. A spec that tests a store-build path re-mocks it with another
 `executionEnvironment`, as `lib/keyboard-avoiding-area.spec.tsx` does.
 
-A tab screen renders under test like any component: `lib/events/check-in-screen.spec.tsx`
+A screen renders under test like any component: `lib/events/check-in-screen.spec.tsx`
 and `lib/study/study-screen.spec.tsx` show how, and the spec lives under `lib/`
-(see [§ Gotchas](#gotchas)). A tab screen is never unmounted, so state that
-must clear when the member comes back is tested with `__refocus()`, inside
+(see [§ Gotchas](#gotchas)). A tab screen is never unmounted, but a screen
+pushed over the tabs unmounts when the member goes back
+([`navigation.md` § Going back](../../spec/ui/mobile/navigation.md#going-back)), so
+"they came back" is two tests there: a remount (`tree.unmount()`, then a new
+render, as `lib/dues/dues-screen.spec.tsx` does for a held payment) for coming
+back by navigation, and `__refocus()` for coming back to a screen that stayed up
+under another one or in the background. State that must clear on a return is
+tested with `__refocus()`, inside
 `act`, which re-runs every mounted `useFocusEffect`. Its other half is
 `__blur()`, which runs only the cleanups, for a screen that must go quiet while
 another is pushed over it (`lib/onboarding/join-screen.spec.tsx` holds Android

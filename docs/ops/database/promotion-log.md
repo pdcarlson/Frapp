@@ -38,6 +38,93 @@ date — is welcome; inventing a date to turn the gate green is not.
 - **Promoter notes**: No API change rides it. The grants touch no RLS policy and no RPC the API calls (the API runs as `service_role`, which keeps its grants), and the custom access token hook keeps its `supabase_auth_admin` grant. Re-applying is idempotent: a revoke that already happened is a no-op, and the search_path sweep skips functions that pin one. Hosted projects are not applied from a cloud-agent session.
 
 **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-function-grants-and-search_path-20261107160000) § Rollback function grants and search_path.
+## 2026-11-07: Chat photos carry a blur and a preview copy
+
+### 20261107130000_chat_attachment_previews.sql
+
+- **Purpose**: Adds two nullable columns to `chat_message_attachments`: `thumbhash` (base64 ThumbHash of a photo; no CHECK, the API stores only a well-formed one of at most 36 characters) and `preview_storage_path` (the 1280 px JPEG copy the sender uploaded beside the original, always `<original folder>/preview/preview.jpg`). Chat sends now fill the existing `width` and `height` too. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md) § Messages, "Photo previews". No backfill: older photos have neither and draw as before.
+- **Checks**: After `db push`, `select column_name, is_nullable from information_schema.columns where table_name = 'chat_message_attachments' and column_name in ('thumbhash', 'preview_storage_path');` returns both, `YES`. A photo sent from a current client then carries both.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API never names the columns, so it is unaffected. The newer API names both on every attachment insert, so against an unmigrated database every send with a file fails; don't deploy the API first. Then the clients: web and a mobile OTA from this PR send `width`, `height`, `thumbhash` and `preview_storage_path` on a send and `with_preview` on upload-url, which an older API's validation (`forbidNonWhitelisted`) refuses with a 400, so they ship after the API, never before. Adding nullable columns with no default is a catalog update; `if not exists` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chat-attachment-previews-20261107130000) § Rollback chat attachment previews.
+
+## 2026-11-07: Invites remember their address and their revoke
+
+### 20261107090000_invites_email_and_revoked_at.sql
+
+- **Purpose**: Adds two nullable columns to `invites`: `email` (the address `POST /v1/invites/email` sent the invite to; null for a share link) and `revoked_at` (set by `DELETE /v1/invites/:id` together with `used_at`). `GET /v1/invites` derives each row's `status` from them, and the web Invite members panel lists invites by address instead of by token. The rule is in [`spec/behavior/members.md`](../../../spec/behavior/members.md#invite-flow) § Invite Flow. No backfill: older rows read as share links, and an older revoke reads as Joined until it ages off the list.
+- **Checks**: After `db push`, `select column_name, is_nullable from information_schema.columns where table_name = 'invites' and column_name in ('email', 'revoked_at');` returns both, `YES`. An emailed invite's row then carries its address.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API never names the columns, so it is unaffected. The newer API against an unmigrated database fails every invite create (share links included, since every insert names `email`) and every revoke on the unknown column, so don't deploy the API first. `add column if not exists` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-invite-email-and-revoked_at-20261107090000) § Rollback invite email and revoked_at.
+
+## 2026-11-07: Attendance by role
+
+### 20261107070000_event_attendance_by_role.sql
+
+- **Purpose**: Adds three nullable columns to `events`: `optional_role_ids text[]`, `excluded_role_ids text[]`, `others_invited boolean` (no default). With `is_mandatory` and `required_role_ids` they say, per role and for everyone else, whether a member is required, optional or not invited. The rule is in [`spec/behavior/events.md`](../../../spec/behavior/events.md#event-creation) § Event Creation, "Attendance by role". No backfill; no row is rewritten. A null `others_invited` reads as "invited unless `required_role_ids` is non-empty", the old meaning, so every existing row and every row an older API writes keeps meaning what it meant.
+- **Checks**: After `db push`, `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'events' and column_name in ('optional_role_ids','excluded_role_ids','others_invited');` returns three rows, all `YES` with no default. `select count(*) from events where others_invited is not null;` returns 0 until the new API writes.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first, and the older API reads `select('*')` rows with three extra columns it ignores. The newer API against an unmigrated database fails event creates and reads that name the new columns, so don't deploy the API first. Mobile builds from this PR send `others_invited` or a role list only when an officer sets roles apart, so a plain event still creates against the older API if an OTA reaches phones first. `add column if not exists` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-attendance-by-role-20261107070000) § Rollback attendance by role.
+
+## 2026-11-07: Whether anyone can @ a role
+
+### 20261107061000_roles_mentionable.sql
+
+- **Purpose**: Adds `roles.mentionable boolean not null default true`: whether any member may `@` the role in chat. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it; anyone else's `@Role` reaches nobody. Edited on web's Roles page through `PATCH /v1/roles/:id` and read by `GET /v1/channels/mention-roles` and send-time mention resolution. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#role-mentions) § Role mentions. A constant default, so no row is rewritten and every existing role reads `true`.
+- **Checks**: After `db push`, `select count(*) filter (where mentionable) = count(*) from public.roles;` returns `true`, and `select column_default, is_nullable from information_schema.columns where table_name = 'roles' and column_name = 'mentionable';` returns `true | NO`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never reads or writes the column, and `GET /v1/roles` returns the raw row, so it gains `mentionable: true` that shipped clients ignore. The newer API against an unmigrated database fails a role `PATCH` carrying `mentionable` (PostgREST refuses the unknown column), and reads every role as mentionable, so don't deploy the API first. `add column if not exists` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-roles-mentionable-20261107061000) § Rollback roles mentionable.
+
+## 2026-11-07: Chapter directory with real chapters, and search that finds them
+
+### 20261107043000_chapter_directory_search.sql
+
+- **Purpose**: Adds `chapter_directory.aliases text[]` and `org_aliases text[]` (other names a search should find a school or an organization by: "RPI", "Rensselaer"; "FIJI"), replaces the generated `search_vector` tsvector and its GIN index with generated `search_text` and `search_org_names` / `search_chapter_names` / `search_school_names` (normalized: case, accents, apostrophes and "&" aside), and adds `search_chapter_directory(p_query, p_university, p_limit)`, a read-only SQL function (security invoker) that `GET /chapter-directory/search` now calls, with three immutable helpers the generated columns use. All four are EXECUTE for `service_role` only. Every query word must start a word of the row, or be a close spelling of one (`pg_trgm` word similarity). The rule is in [`spec/behavior/onboarding.md`](../../../spec/behavior/onboarding.md#chapter-directory-search) § Chapter Directory Search. Rewrites `chapter_directory` once for the generated columns (50 rows on a hosted project today).
+- **Checks**: After `db push`, `select has_function_privilege('authenticated', 'public.search_chapter_directory(text, text, integer)', 'execute');` returns `false`, and once the next migration has loaded the rows, `select org_name, chapter_designation, university from public.search_chapter_directory('fiji rpi', null, 5);` returns Phi Gamma Delta, Tau Nu, Rensselaer Polytechnic Institute first.
+- **Promoter notes**: Ship it with the API from the same PR. A deploy applies migrations first. The older API reads `search_vector`, which this drops, so between the migration and the API deploy every directory search fails with a 500 and the wizard shows "We couldn't reach the directory." with its manual path; the window is the length of the API deploy. The newer API against an unmigrated database fails the same way. Needs `pg_trgm` in `extensions`: checked 2026-11-06 with the Supabase connector, frapp-staging has it there (from 20261106190000) and frapp-prod doesn't have it yet, which `create extension if not exists ... with schema extensions` installs. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chapter-directory-search-20261107043000) § Rollback chapter directory search.
+
+### 20261107043100_chapter_directory_wikipedia_rows.sql
+
+- **Purpose**: Loads 13,327 active chapters of 116 organizations from Wikipedia (#232): each organization's chapter list, or the chapter tables of its own article where it has no list. Generated by `node scripts/load-chapter-directory.mjs --migration` from `supabase/seed/chapter_directory.csv`, which `scripts/chapter-directory/build-from-wikipedia.mjs` built; `supabase/seed/chapter_directory.sources.json` names each article revision. Removes the hand-written 50-row seed's rows (they named chapters that don't exist, such as Phi Gamma Delta "Pi Tau" at RPI): deleted, except one a chapter links to, which is retired (`source = 'retired'`, kept for the link, never offered by search).
+- **Checks**: After `db push`, `select count(*) from chapter_directory where source = 'wikipedia';` returns 13327, `select count(*) from chapter_directory where source = 'seed';` returns 0, `select count(*) from chapter_directory where source = 'retired';` returns the number of old rows a chapter linked (0 on frapp-prod on 2026-11-06, 1 on frapp-staging), and `select count(*) from chapters where directory_id is not null` is unchanged from before the push.
+- **Promoter notes**: Needs `20261107043000_chapter_directory_search.sql` first (the alias columns). A 2.5 MB migration of inserts into a table nothing else writes; it touches no chapter. Idempotent: re-running changes nothing. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chapter-directory-wikipedia-rows-20261107043100) § Rollback chapter directory Wikipedia rows.
+
+## 2026-11-07: Members keep the Member role beside custom roles
+
+### 20261107020000_members_keep_base_role.sql
+
+- **Purpose**: A data repair, no DDL. Appends the chapter's Member role (`system_key = 'MEMBER'`) to `members.role_ids` for a member who holds at least one role that exists in their own chapter, none of them seeded (`is_system`), and none granting `members:view` or `*`. Such members were refused on every screen. The redeem change in the same PR stops new invites from creating them ([`spec/behavior/onboarding.md`](../../../spec/behavior/onboarding.md)); an officer removing Member by hand still can. Members with no roles, members whose role ids all point at deleted roles, and chapters with no Member role are untouched. When written (2026-11-07) the two production members it targeted had already been repaired by hand with Paul's approval, so a production run matched 0 rows (checked with the Supabase connector against `frapp-prod` and `frapp-staging`). Its predicate is exercised by the pglite tier `scripts/pglite/tiers/members-keep-base-role.mjs`.
+- **Checks**: After `db push`, re-run the migration's `locked_out` CTE as a `select count(*)`: it returns `0`, or only members of chapters with no Member role.
+- **Promoter notes**: Order-independent with the API. Idempotent: a repaired member holds a seeded role and no longer matches. It writes no audit row. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-members-keep-the-member-role-20261107020000) § Rollback members keep the Member role.
+
+## 2026-11-06: Each member's time zone, for push text
+
+### 20261106230000_user_settings_time_zone.sql
+
+- **Purpose**: Adds a nullable `user_settings.time_zone text` (at most 100 characters, by check constraint), the zone the member's device last reported. Both clients send it on every request as `x-time-zone`; the API records it when it changes (`TimeZoneSyncService`), and event pushes name times in it. The behaviour is in [`spec/behavior/notifications.md`](../../../spec/behavior/notifications.md#what-a-push-says) § What a push says. No backfill; account deletion's existing `delete from user_settings` clears it.
+- **Checks**: After `db push`, `select column_name, is_nullable from information_schema.columns where table_name = 'user_settings' and column_name = 'time_zone';` returns one row with `YES`. A few minutes after the API deploys, `select count(*) from user_settings where time_zone is not null;` grows as members open the app.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The newer API against an unmigrated database fails every zone write (PostgREST refuses the unknown column), which is logged per request and retried, so don't deploy the API first. The older API never reads or writes the column. `add column if not exists` and `drop constraint if exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-user-settings-time-zone-20261106230000) § Rollback user settings time zone.
+
+## 2026-11-06: Chat home previews
+
+### 20261106210000_chat_channel_latest_messages.sql
+
+- **Purpose**: Adds `get_channel_latest_messages(p_chapter_id, p_user_id)`, a read-only SQL function (security definer, `search_path = public, pg_temp`, EXECUTE for `service_role` only) that `GET /v1/channels/latest` uses for mobile Chat home's row previews. One row per channel in the chapter that has a live message: the latest one, skipping deleted rows and senders the caller blocked, with `content` cut to 500 characters, `payload` only on an audit line, and a guarded `attachment_count`. The service filters it to the channels the caller can read. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#channel-list-previews) § Channel list previews. No data changes.
+- **Checks**: After `db push`, `select proname, prosecdef, proconfig from pg_proc where proname = 'get_channel_latest_messages';` returns one row, `true | {"search_path=public, pg_temp"}`, and `select has_function_privilege('authenticated', 'public.get_channel_latest_messages(uuid, uuid)', 'execute');` returns `false`. `GET /v1/channels/latest` then returns a row per readable channel with a message.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API doesn't call the function. The newer API against an unmigrated database answers `GET /v1/channels/latest` with a 500, which costs only the previews: the mobile list draws without them. The mobile update that reads the endpoint must go out after the API. `create or replace` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chat-home-previews-20261106210000) § Rollback Chat home previews.
 
 ## 2026-11-06: A member's major
 

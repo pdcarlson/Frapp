@@ -1,0 +1,65 @@
+import type { ReactNode } from "react";
+import { StyleSheet, Text } from "react-native";
+import { SignetTokens } from "@repo/theme/signet";
+import { useChapterBranding } from "@/lib/chapter-branding";
+import { typeRole, useFrappTheme } from "@/lib/theme";
+
+/**
+ * The one line a list shows where its rows would be when there are none to
+ * show: nothing scheduled, nothing on your plate, a search that matched
+ * nothing. It replaces the centered empty card for those cases, so the screen
+ * keeps its layout (the points card above Tasks stays put) and says the fact
+ * in a sentence. Mobile's half of web's `components/shared/inline-note.tsx`;
+ * `components.md` §10 records the one-line state.
+ *
+ * `action` is the one way out the line offers, drawn as an accent link at the
+ * end of the sentence: Clear search, Clear filters, Search all files. It
+ * never creates anything; creating lives on the tab bar's + and the screen's
+ * floating button, which the sentence can point to instead.
+ *
+ * Errors and offline keep their cards (`state-block.tsx`), because there the
+ * list really can't show anything.
+ */
+export function InlineNote({
+  children,
+  action,
+}: {
+  children: ReactNode;
+  action?: { label: string; onPress: () => void };
+}) {
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens);
+  return (
+    <Text style={styles.note}>
+      {children}
+      {action ? (
+        <>
+          {" "}
+          <Text
+            accessibilityRole="link"
+            accessibilityLabel={action.label}
+            onPress={action.onPress}
+            suppressHighlighting={false}
+            style={[styles.action, { color: accent }]}
+          >
+            {action.label}
+          </Text>
+        </>
+      ) : null}
+    </Text>
+  );
+}
+
+function createStyles(tokens: SignetTokens) {
+  return StyleSheet.create({
+    note: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
+      paddingVertical: tokens.spacing.xs,
+    },
+    action: {
+      textDecorationLine: "underline",
+    },
+  });
+}

@@ -16,32 +16,41 @@ import { hydrateRoot } from "react-dom/client";
 const {
   capturedExtensions,
   editorDouble,
+  mockDescribePhoto,
   mockRequestUploadUrl,
   mockUploadSignedUrl,
   mockToast,
 } = vi.hoisted(() => ({
-    capturedExtensions: [] as unknown[][],
-    // What the stubbed `useEditor` hands back. `null` everywhere except the
-    // send suite (#1728), which installs a `fakeEditor` so `submit()` can run.
-    editorDouble: { current: null as unknown },
-    mockToast: vi.fn(),
-    // Resolves a real response shape. Returning bare `vi.fn()` (undefined) made
-    // `handleAttach` throw and toast instead of staging a chip, so no test
-    // could ever reach the attachment branch. The wire names are snake_case
-    // (#2130) — `readSignedUpload` rejects a camelCase-only ticket, which is
-    // the whole point of the shared helper.
-    // Typed `unknown` on purpose: `readSignedUpload` takes `unknown` and the
-    // contract tests below feed it malformed tickets (a camelCase-only body,
-    // a body with no upload_url) to prove it rejects them.
-    mockRequestUploadUrl: vi.fn(
-      async (): Promise<unknown> => ({
-        upload_url: "https://example.test/upload",
-        storage_path: "chapters/c/chat/ch/m/notes.pdf",
-        message_id: "m",
-      }),
-    ),
-    mockUploadSignedUrl: vi.fn(async () => undefined),
-  }));
+  capturedExtensions: [] as unknown[][],
+  // jsdom cannot decode an image, so the real one describes nothing; a test
+  // that needs a preview copy says so.
+  mockDescribePhoto: vi.fn(
+    async (): Promise<{
+      width: number | null;
+      height: number | null;
+      thumbhash: string | null;
+      preview: Blob | null;
+    }> => ({ width: null, height: null, thumbhash: null, preview: null }),
+  ),
+  // What the stubbed `useEditor` hands back. `null` everywhere except the
+  // send suite (#1728), which installs a `fakeEditor` so `submit()` can run.
+  editorDouble: { current: null as unknown },
+  mockToast: vi.fn(),
+  // Resolves a real response shape. Returning bare `vi.fn()` (undefined) made
+  // `handleAttach` throw and toast instead of staging a chip, so no test
+  // could ever reach the attachment branch. The wire names are snake_case
+  // (#2130) — `readSignedUpload` rejects a camelCase-only ticket, which is
+  // the whole point of the shared helper.
+  // Typed `unknown` on purpose: `readSignedUpload` takes `unknown` and the
+  // contract tests below feed it malformed tickets (a camelCase-only body,
+  // a body with no upload_url) to prove it rejects them.
+  mockRequestUploadUrl: vi.fn(async (): Promise<unknown> => ({
+    upload_url: "https://example.test/upload",
+    storage_path: "chapters/c/chat/ch/m/notes.pdf",
+    message_id: "m",
+  })),
+  mockUploadSignedUrl: vi.fn(async () => undefined),
+}));
 
 vi.mock("@tiptap/react", async () => {
   const actual =
@@ -60,8 +69,14 @@ vi.mock("@repo/hooks", () => ({
   useRequestChatUploadUrl: () => ({ mutateAsync: mockRequestUploadUrl }),
   useUploadSignedUrl: () => ({ mutateAsync: mockUploadSignedUrl }),
   useChapterRoster: () => ({ data: [] }),
+  useMentionRoles: () => ({ data: [] }),
 }));
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
+vi.mock("@/lib/chat/photo-preview", () => ({
+  describeChatPhoto: mockDescribePhoto,
+}));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: mockToast }),
+}));
 
 const { captureException } = vi.hoisted(() => ({
   captureException: vi.fn(),
@@ -73,6 +88,7 @@ import {
   COMPOSER_INPUT_CLASS,
   COMPOSER_TOOLBAR_CLASS,
   COMPOSER_WELL_CLASS,
+  CHAT_FILE_LIMIT,
   Composer,
   ComposerShell,
   composerPlaceholder,
@@ -122,9 +138,7 @@ function placeholderTextFrom(extensions: unknown[]) {
 
 describe("composerPlaceholder", () => {
   it("takes the channel sigil for a real channel", () => {
-    expect(composerPlaceholder("announcements")).toBe(
-      "Message #announcements",
-    );
+    expect(composerPlaceholder("announcements")).toBe("Message #announcements");
   });
 
   it("drops the sigil for a DM — the name is a person's, not a channel's", () => {
@@ -194,11 +208,13 @@ describe("Composer mention wiring", () => {
   it("registers the @-mention extension with a suggestion.items callback", () => {
     capturedExtensions.length = 0;
     render(<Composer {...baseProps()} />);
-    const mention = capturedExtensions.at(-1)!.find(
-      (extension) => (extension as { name?: string } | null)?.name === "mention",
-    ) as
-      | { options: { suggestion: { char: string; items: unknown } } }
-      | undefined;
+    const mention = capturedExtensions
+      .at(-1)!
+      .find(
+        (extension) =>
+          (extension as { name?: string } | null)?.name === "mention",
+      ) as
+      { options: { suggestion: { char: string; items: unknown } } } | undefined;
     expect(mention).toBeDefined();
     expect(mention!.options.suggestion.char).toBe("@");
     expect(typeof mention!.options.suggestion.items).toBe("function");
@@ -215,7 +231,11 @@ describe("Composer mention wiring", () => {
  * carries `replyToId` into `channel.send` is pinned in `chat-shell.spec.tsx`.
  */
 describe("Composer staged reply (#489)", () => {
-  const REPLY_TO = { id: "msg-1", author: "Alice Chen", preview: "the original" };
+  const REPLY_TO = {
+    id: "msg-1",
+    author: "Alice Chen",
+    preview: "the original",
+  };
 
   it("renders nothing when no reply is staged", () => {
     render(<Composer {...baseProps()} />);
@@ -321,7 +341,9 @@ describe("Composer slash refusals cover the palette path too (#489)", () => {
     const user = userEvent.setup();
     const onSlashDispatch = vi.fn(async () => ({ ok: true }));
     render(<Composer {...baseProps({ onSlashDispatch, ...props })} />);
-    await user.click(screen.getByRole("button", { name: /open slash commands/i }));
+    await user.click(
+      screen.getByRole("button", { name: /open slash commands/i }),
+    );
     return { user, onSlashDispatch };
   }
 
@@ -340,7 +362,9 @@ describe("Composer slash refusals cover the palette path too (#489)", () => {
   });
 
   it("refuses while offline, as the typed path does", async () => {
-    const { user, onSlashDispatch } = await pickFromPalette({ isOffline: true });
+    const { user, onSlashDispatch } = await pickFromPalette({
+      isOffline: true,
+    });
 
     await user.click(await screen.findByRole("option", { name: /poll/i }));
 
@@ -358,9 +382,8 @@ describe("Composer slash refusals cover the palette path too (#489)", () => {
     );
 
     const file = new File(["x"], "notes.pdf", { type: "application/pdf" });
-    const input = container.querySelector<HTMLInputElement>(
-      'input[type="file"]',
-    )!;
+    const input =
+      container.querySelector<HTMLInputElement>('input[type="file"]')!;
     await user.upload(input, file);
     await screen.findByRole("button", { name: /remove notes\.pdf/i });
 
@@ -632,6 +655,8 @@ describe("Composer send failure (#1728)", () => {
 
   const chip = (name = "notes.pdf") =>
     screen.queryByRole("button", { name: `Remove ${name}` });
+  const stageFileChip = (name: string) =>
+    screen.findByRole("button", { name: `Remove ${name}` });
 
   const toastSaying = (description: RegExp) =>
     expect(mockToast).toHaveBeenCalledWith(
@@ -691,7 +716,12 @@ describe("Composer send failure (#1728)", () => {
       throw refused();
     });
     const onRestoreReply = vi.fn();
-    renderComposer({ onSend, replyTo: REPLY, onCancelReply: vi.fn(), onRestoreReply });
+    renderComposer({
+      onSend,
+      replyTo: REPLY,
+      onCancelReply: vi.fn(),
+      onRestoreReply,
+    });
 
     fireEvent.click(sendButton());
 
@@ -822,12 +852,18 @@ describe("Composer send failure (#1728)", () => {
     expect(editor.getText()).toBe("");
   });
 
-  it("still restores over an upload already under way at Send", async () => {
-    // That file was headed for this message; it lands beside the restored
-    // text, as it would have beside the text had the send never happened.
-    const { onSend, refuse } = deferredSend();
+  it("holds Send while an upload is still running", async () => {
+    // A file still uploading at Send would land after the message and ride
+    // the member's NEXT one, so Send waits for it instead.
+    const onSend = vi.fn(async () => undefined);
     const { container } = renderComposer({ onSend });
-    mockUploadSignedUrl.mockImplementationOnce(() => new Promise(() => {}));
+    let finish: () => void = () => {};
+    mockUploadSignedUrl.mockImplementationOnce(
+      () =>
+        new Promise<undefined>(
+          (resolve) => (finish = () => resolve(undefined)),
+        ),
+    );
     fireEvent.change(
       container.querySelector('input[type="file"]') as HTMLInputElement,
       {
@@ -838,13 +874,46 @@ describe("Composer send failure (#1728)", () => {
         },
       },
     );
-    await waitFor(() => expect(mockUploadSignedUrl).toHaveBeenCalled());
+    await screen.findByRole("button", { name: "Cancel upload of photo.pdf" });
 
+    expect(sendButton()).toBeDisabled();
+    pressEnter();
+    expect(onSend).not.toHaveBeenCalled();
+
+    await act(async () => finish());
+    expect(await stageFileChip("photo.pdf")).toBeInTheDocument();
     fireEvent.click(sendButton());
-    await refuse();
+    expect(onSend).toHaveBeenCalledWith("hello", [
+      expect.objectContaining({ filename: "photo.pdf" }),
+    ]);
+  });
 
-    toastSaying(BACK);
-    expect(editor.getText()).toBe("hello");
+  it("never stages an upload cancelled before it finished", async () => {
+    const { container } = renderComposer();
+    let finish: () => void = () => {};
+    mockUploadSignedUrl.mockImplementationOnce(
+      () =>
+        new Promise<undefined>(
+          (resolve) => (finish = () => resolve(undefined)),
+        ),
+    );
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [
+            new File(["%PDF-1.4"], "photo.pdf", { type: "application/pdf" }),
+          ],
+        },
+      },
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Cancel upload of photo.pdf" }),
+    );
+    await act(async () => finish());
+
+    expect(chip("photo.pdf")).not.toBeInTheDocument();
+    expect(sendButton()).not.toBeDisabled();
   });
 
   it("restores none of it over a different reply staged since", async () => {
@@ -973,7 +1042,10 @@ describe("notifyDispatchOutcome (#544)", () => {
   // still matters for the seconds before the officer looks at the row.
   it("makes the partial-success toast sticky, not a 5-second one", () => {
     const toast = vi.fn();
-    notifyDispatchOutcome(toast, cmd, { ok: true, warning: "Points recorded." });
+    notifyDispatchOutcome(toast, cmd, {
+      ok: true,
+      warning: "Points recorded.",
+    });
 
     expect(toast).toHaveBeenCalledWith(
       expect.objectContaining({ duration: Infinity }),
@@ -1093,7 +1165,10 @@ describe("notifyDispatchOutcome — unconfirmed (#1733)", () => {
 
   it("reports a resolved retry rather than staying silent", () => {
     const toast = vi.fn();
-    notifyDispatchOutcome(toast, cmd, { ok: true, resolved: "Points recorded." });
+    notifyDispatchOutcome(toast, cmd, {
+      ok: true,
+      resolved: "Points recorded.",
+    });
 
     expect(toast).toHaveBeenCalledTimes(1);
     expect(toast.mock.calls[0]![0].title).toMatch(/recorded/i);
@@ -1135,7 +1210,6 @@ describe("Composer help and controls (#2142)", () => {
   });
 });
 
-
 /**
  * #2130 — the chat mint used to return a camelCase ticket through an
  * undocumented 201, and the composer read it with an `as unknown as` cast, so
@@ -1159,6 +1233,163 @@ describe("Composer attachment ticket contract", () => {
     mockToast.mockClear();
     mockUploadSignedUrl.mockClear();
     mockRequestUploadUrl.mockClear();
+  });
+  afterEach(() => {
+    editorDouble.current = null;
+    mockUploadSignedUrl.mockImplementation(async () => undefined);
+  });
+
+  const pickPhotoWithPreview = (onSend = vi.fn(async () => undefined)) => {
+    editorDouble.current = fakeEditor("look");
+    mockDescribePhoto.mockResolvedValueOnce({
+      width: 4032,
+      height: 3024,
+      thumbhash: "3OcRJYB4d3h/iIeHeEh3eIhw+j3A",
+      preview: new Blob(["jpeg"], { type: "image/jpeg" }),
+    });
+    mockRequestUploadUrl.mockResolvedValueOnce({
+      upload_url: "https://example.test/upload",
+      storage_path: "chapters/c/chat/ch/m/beach.jpg",
+      message_id: "m",
+      preview_upload_url: "https://example.test/upload-preview",
+      preview_storage_path: "chapters/c/chat/ch/m/preview/preview.jpg",
+    });
+    Object.assign(URL, {
+      createObjectURL: vi.fn(() => "blob:preview"),
+      revokeObjectURL: vi.fn(),
+    });
+    const { container } = render(
+      <Composer {...baseProps({ draft: "look", onSend })} />,
+    );
+    fireEvent.change(fileInputOf(container), {
+      target: { files: [new File(["x"], "beach.jpg", { type: "image/jpeg" })] },
+    });
+    return onSend;
+  };
+
+  const sendOnceUploaded = async () => {
+    const send = screen.getByRole("button", { name: "Send message" });
+    await waitFor(() => expect(send).not.toBeDisabled());
+    fireEvent.click(send);
+  };
+
+  it("uploads a photo's preview copy beside it and sends its size, blur and preview with it", async () => {
+    const onSend = pickPhotoWithPreview();
+
+    expect(
+      await screen.findByRole("button", { name: "Remove beach.jpg" }),
+    ).toBeInTheDocument();
+    expect(mockRequestUploadUrl).toHaveBeenCalledWith({
+      id: expect.any(String),
+      body: expect.objectContaining({ with_preview: true }),
+    });
+    expect(mockUploadSignedUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        signedUrl: "https://example.test/upload-preview",
+        contentType: "image/jpeg",
+      }),
+    );
+
+    await sendOnceUploaded();
+
+    await waitFor(() =>
+      expect(onSend).toHaveBeenCalledWith("look", [
+        expect.objectContaining({
+          storagePath: "chapters/c/chat/ch/m/beach.jpg",
+          width: 4032,
+          height: 3024,
+          thumbhash: "3OcRJYB4d3h/iIeHeEh3eIhw+j3A",
+          previewStoragePath: "chapters/c/chat/ch/m/preview/preview.jpg",
+        }),
+      ]),
+    );
+  });
+
+  it("still sends the photo, claiming no preview, when only the preview upload fails", async () => {
+    mockUploadSignedUrl.mockImplementation((async ({
+      signedUrl,
+    }: {
+      signedUrl: string;
+    }) => {
+      if (signedUrl.endsWith("upload-preview")) throw new Error("dropped");
+    }) as never);
+    const onSend = pickPhotoWithPreview();
+
+    await screen.findByRole("button", { name: "Remove beach.jpg" });
+    await sendOnceUploaded();
+
+    await waitFor(() => expect(onSend).toHaveBeenCalled());
+    const [, staged] = onSend.mock.calls[0] as unknown as [
+      string,
+      Record<string, unknown>[],
+    ];
+    expect(staged[0]).toMatchObject({ width: 4032, height: 3024 });
+    expect(staged[0]?.previewStoragePath ?? null).toBeNull();
+    expect(mockToast).not.toHaveBeenCalled();
+  });
+
+  it("uploads every file picked at once and draws an image as itself", async () => {
+    const createObjectURL = vi.fn(() => "blob:preview");
+    const revokeObjectURL = vi.fn();
+    Object.assign(URL, { createObjectURL, revokeObjectURL });
+    let n = 0;
+    mockRequestUploadUrl.mockImplementation(async () => ({
+      upload_url: "https://example.test/upload",
+      storage_path: `chapters/c/chat/ch/m/${++n}`,
+      message_id: "m",
+    }));
+    const { container, unmount } = render(<Composer {...baseProps()} />);
+    fireEvent.change(fileInputOf(container), {
+      target: {
+        files: [
+          new File(["x"], "beach.jpg", { type: "image/jpeg" }),
+          new File(["%PDF-1.4"], "notes.pdf", { type: "application/pdf" }),
+        ],
+      },
+    });
+
+    expect(
+      await screen.findByRole("button", { name: "Remove beach.jpg" }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Remove notes.pdf" }),
+    ).toBeInTheDocument();
+    expect(mockUploadSignedUrl).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("img", { name: "beach.jpg" })).toHaveAttribute(
+      "src",
+      "blob:preview",
+    );
+    expect(
+      screen.getByRole("list", { name: "2 files attached" }),
+    ).toBeInTheDocument();
+
+    unmount();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:preview");
+    mockRequestUploadUrl.mockReset();
+    mockRequestUploadUrl.mockImplementation(async () => ({
+      upload_url: "https://example.test/upload",
+      storage_path: "chapters/c/chat/ch/m/notes.pdf",
+      message_id: "m",
+    }));
+  });
+
+  it(`attaches at most ${CHAT_FILE_LIMIT} files to one message`, async () => {
+    const { container } = render(<Composer {...baseProps()} />);
+    const files = Array.from(
+      { length: CHAT_FILE_LIMIT + 2 },
+      (_, i) =>
+        new File(["%PDF-1.4"], `f${i}.pdf`, { type: "application/pdf" }),
+    );
+    fireEvent.change(fileInputOf(container), { target: { files } });
+
+    await waitFor(() =>
+      expect(mockUploadSignedUrl).toHaveBeenCalledTimes(CHAT_FILE_LIMIT),
+    );
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: `Up to ${CHAT_FILE_LIMIT} files per message`,
+      }),
+    );
   });
 
   it("PUTs the bytes to the snake_case upload_url", async () => {
@@ -1222,8 +1453,7 @@ describe("Composer attachment ticket contract", () => {
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Couldn't upload file",
-          description:
-            "Upload URL response missing signed URL or storage path.",
+          description: "Retry in a moment.",
         }),
       ),
     );
@@ -1243,8 +1473,7 @@ describe("Composer attachment ticket contract", () => {
     await waitFor(() =>
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
-          description:
-            "Upload URL response missing signed URL or storage path.",
+          description: "Retry in a moment.",
         }),
       ),
     );
@@ -1254,7 +1483,7 @@ describe("Composer attachment ticket contract", () => {
   // #2199: the mint rethrows the API's parsed body, a plain object. Read as
   // "not an Error", every refusal used to say "Retry in a moment.", including
   // a member who had lost posting rights and could never succeed.
-  it("shows a mint refusal's own reason, not retry advice", async () => {
+  it("shows a mint refusal's reason in member words, not retry advice", async () => {
     mockRequestUploadUrl.mockRejectedValueOnce({
       statusCode: 403,
       error: "Forbidden",
@@ -1268,7 +1497,7 @@ describe("Composer attachment ticket contract", () => {
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Couldn't upload file",
-          description: "You do not have access to this channel",
+          description: "You don't have access to this channel.",
         }),
       ),
     );
@@ -1294,14 +1523,14 @@ describe("Composer attachment ticket contract", () => {
 });
 
 describe("uploadFailureDescription (#2199)", () => {
-  it("gives a definitive 4xx body's message", () => {
+  it("gives a definitive 4xx refusal in the member's words", () => {
     expect(
       uploadFailureDescription({
         statusCode: 400,
         error: "Bad Request",
         message: "File exceeds the 25 MB upload limit",
       }),
-    ).toBe("File exceeds the 25 MB upload limit");
+    ).toBe("That file is over the 25 MB limit.");
   });
 
   it("tells a member to wait a minute after a 429, not a moment", () => {
@@ -1324,9 +1553,12 @@ describe("uploadFailureDescription (#2199)", () => {
     expect(uploadFailureDescription(undefined)).toBe("Retry in a moment.");
   });
 
-  it("keeps a thrown Error's message, as before", () => {
+  it("words a thrown Error through the shared map, never its raw text", () => {
     expect(uploadFailureDescription(new Error("Upload failed (413)"))).toBe(
-      "Upload failed (413)",
+      "Retry in a moment.",
+    );
+    expect(uploadFailureDescription(new TypeError("Failed to fetch"))).toMatch(
+      /Check your connection/,
     );
   });
 });

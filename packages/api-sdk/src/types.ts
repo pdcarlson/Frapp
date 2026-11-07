@@ -655,7 +655,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List chapter invites */
+        /** List chapter invites, newest first */
         get: operations["InviteController_list_v1"];
         put?: never;
         /** Generate an invite token */
@@ -882,6 +882,40 @@ export interface paths {
         };
         /** Unread and mention counts for every channel the caller can read */
         get: operations["ChatController_getUnreadCounts_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The latest message in every channel the caller can read, for the channel list previews */
+        get: operations["ChatController_getLatestMessages_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/mention-roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The chapter roles the caller’s @-mention picker offers, with whether the caller may ping each */
+        get: operations["ChatController_getMentionRoles_v1"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3662,6 +3696,8 @@ export interface components {
              * @enum {string|null}
              */
             color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
+            /** @description Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it. */
+            mentionable?: boolean;
         };
         UpdateRoleDto: {
             name?: string;
@@ -3672,6 +3708,8 @@ export interface components {
              * @enum {string|null}
              */
             color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
+            /** @description Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it. */
+            mentionable?: boolean;
         };
         TransferPresidencyDto: {
             /** Format: uuid */
@@ -3745,6 +3783,27 @@ export interface components {
             /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
             role?: string;
         };
+        /**
+         * @description pending: still joinable. joined: someone joined with it. expired: unused past expires_at. revoked: an officer revoked it.
+         * @enum {string}
+         */
+        InviteStatus: "pending" | "joined" | "expired" | "revoked";
+        InviteListItemDto: {
+            id: string;
+            /** @description The single-use token. Clients build the join link from it; they never show it. */
+            token: string;
+            /** @description The role name joining grants */
+            role: string;
+            /** @description The address the invite was emailed to, or null for a share-link invite */
+            email: string | null;
+            /** @description pending: still joinable. joined: someone joined with it. expired: unused past expires_at. revoked: an officer revoked it. */
+            status: components["schemas"]["InviteStatus"];
+            expires_at: string;
+            /** @description Set when it was used, and also when it was revoked */
+            used_at: string | null;
+            revoked_at: string | null;
+            created_at: string;
+        };
         BatchCreateInvitesDto: {
             /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
             role?: string;
@@ -3756,6 +3815,11 @@ export interface components {
             role?: string;
             /** @description Email addresses to invite, one invite token per address */
             emails: string[];
+        };
+        BulkEmailInviteResponseDto: {
+            invites: components["schemas"]["InviteListItemDto"][];
+            /** @description Addresses whose invite was created but whose email did not send. Their invites still work as links. */
+            failed: string[];
         };
         PreviewInviteDto: {
             /** @description The invite token, as the join link carries it */
@@ -3834,6 +3898,39 @@ export interface components {
             unread_count: number;
             /** @description Subset of unread_count that mentions the caller. Mentions are resolved server-side at send time. */
             mention_count: number;
+        };
+        ChannelLatestMessageDto: {
+            /** Format: uuid */
+            channel_id: string;
+            /** Format: uuid */
+            message_id: string;
+            /**
+             * Format: uuid
+             * @description The sender's `users.id`, or null for an imported archive message, which carries `author_name` instead.
+             */
+            sender_id: string | null;
+            author_name: string | null;
+            /** @description The message body, cut to its first 500 characters. Empty for a card or a file-only message. */
+            content: string;
+            /** @description The message kind (`text`, `event`, `system_audit`, ...). */
+            kind: string;
+            /** @description The audit payload, set only when `kind` is `system_audit`; null for every other kind. */
+            payload: {
+                [key: string]: unknown;
+            } | null;
+            attachment_count: number;
+            /** Format: date-time */
+            created_at: string;
+        };
+        MentionRoleDto: {
+            /** Format: uuid */
+            role_id: string;
+            /** @description The role name; the picker inserts it folded. */
+            name: string;
+            /** @description The role’s palette color, or null. */
+            color: string | null;
+            /** @description Whether the caller may `@` this role: its own switch (`mentionable` on the role, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming a role the sender may not ping reaches nobody. */
+            mentionable: boolean;
         };
         ChannelNotificationPreferenceDto: {
             /** Format: uuid */
@@ -3978,6 +4075,14 @@ export interface components {
             filename: string;
             content_type: string;
             byte_size?: number;
+            /** @description Photo width in pixels, so readers draw the bubble at its shape before the photo loads. A size out of range (1 to 20000), or one without the other, is dropped rather than refused, so a bad size never blocks a send. */
+            width?: number;
+            /** @description Photo height in pixels; see `width`. */
+            height?: number;
+            /** @description ThumbHash of the photo, base64: the blurred placeholder readers draw until it loads. */
+            thumbhash?: string;
+            /** @description The `preview_storage_path` the upload-url call returned, once the preview copy is uploaded. */
+            preview_storage_path?: string;
         };
         SendMessageDto: {
             /** Format: uuid */
@@ -4013,6 +4118,8 @@ export interface components {
             content_type: string;
             /** @description File size in bytes, if known. Rejected server-side against the upload size ceiling when present. */
             size_bytes?: number;
+            /** @description Also mint an upload URL for a smaller JPEG copy of this photo, which readers draw in the timeline. Ignored unless content_type is an image. */
+            with_preview?: boolean;
         };
         ChatUploadUrlResponseDto: {
             /** @description Short-lived signed URL; PUT the bytes to it. */
@@ -4021,6 +4128,10 @@ export interface components {
             storage_path: string;
             /** @description Server-allocated message id embedded in storage_path. */
             message_id: string;
+            /** @description Only when with_preview was asked for an image: PUT the preview JPEG here, as image/jpeg. */
+            preview_upload_url?: string;
+            /** @description Only with preview_upload_url: send back as the attachment preview_storage_path. */
+            preview_storage_path?: string;
         };
         SetChannelNotificationLevelDto: {
             /**
@@ -4215,15 +4326,22 @@ export interface components {
             is_mandatory: boolean;
             /** @description Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY) */
             recurrence_rule?: string;
+            /** @description Roles that must attend. See `others_invited` for members holding none of the listed roles. */
             required_role_ids?: string[];
+            /** @description Roles invited but not required. */
+            optional_role_ids?: string[];
+            /** @description Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional. */
+            excluded_role_ids?: string[];
+            /** @description Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted on create, it is stored as null, which reads as true unless `required_role_ids` is non-empty: the older "only these roles" meaning, for a caller that predates this field. Omitted on update, it is left as stored. */
+            others_invited?: boolean;
             notes?: string;
             /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. */
             check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
             /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
             check_in_zone_name?: string;
-            /** @description When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when `required_role_ids` is non-empty, on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both target roles and post one. (`PATCH` can still add targeting to an event whose card already posted; that card is left as-is.) */
+            /** @description When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when the event keeps anyone out (`others_invited` false, including its default when `required_role_ids` is non-empty, or a non-empty `excluded_role_ids`), on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both limit its audience and post one. (`PATCH` can still limit the audience of an event whose card already posted; that card is left as-is.) */
             channel_id?: string;
-            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when `required_role_ids` is non-empty, even without `channel_id` — see that field. */
+            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when the event keeps anyone out, even without `channel_id` — see that field. */
             client_message_id?: string;
         };
         CreateEventResponseDto: {
@@ -4244,6 +4362,10 @@ export interface components {
             /** Format: uuid */
             parent_event_id: string | null;
             required_role_ids: string[] | null;
+            optional_role_ids: string[] | null;
+            excluded_role_ids: string[] | null;
+            /** @description Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`). */
+            others_invited: boolean | null;
             notes: string | null;
             /** @description Optional check-in geofence. `null` means the event has no zone. */
             check_in_zone: components["schemas"]["GeofenceCoordinateDto"][] | null;
@@ -4263,7 +4385,14 @@ export interface components {
             is_mandatory?: boolean;
             /** @description Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY) */
             recurrence_rule?: string;
+            /** @description Roles that must attend. See `others_invited` for members holding none of the listed roles. */
             required_role_ids?: string[];
+            /** @description Roles invited but not required. */
+            optional_role_ids?: string[];
+            /** @description Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional. */
+            excluded_role_ids?: string[];
+            /** @description Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored. A stored null reads as true unless `required_role_ids` is non-empty, the older "only these roles" meaning. */
+            others_invited?: boolean;
             notes?: string;
             /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone. */
             check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
@@ -6656,7 +6785,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["InviteListItemDto"][];
+                };
             };
             /** @description Error */
             default: {
@@ -6686,7 +6817,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["InviteListItemDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -6746,7 +6879,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["BulkEmailInviteResponseDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -7154,6 +7289,62 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChannelUnreadCountDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_getLatestMessages_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelLatestMessageDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_getMentionRoles_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MentionRoleDto"][];
                 };
             };
             /** @description Error */
@@ -11499,9 +11690,9 @@ export interface operations {
     ChapterDirectoryController_search_v1: {
         parameters: {
             query?: {
-                /** @description Search query (org name, letters, designation) */
+                /** @description Search query. Every word must start a word of the organization (name, letters or nickname), chapter, or school (name, short name or nickname); a longer word may be a close misspelling. With no query and no university, finds nothing. */
                 q?: string;
-                /** @description Filter by university short name */
+                /** @description Narrow to chapters where a word of the school name, short name or a nickname starts with this ("rens", "RPI"). Without q, lists that school's chapters. */
                 university?: string;
             };
             header?: never;

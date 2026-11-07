@@ -23,27 +23,34 @@ describe("labelled", () => {
 });
 
 /**
- * Dashboard toasts use this helper so openapi-fetch's thrown body (a plain
- * object with `message`, not an `Error`) surfaces the server string. Five
- * local copies used `instanceof Error` and always showed the fallback; this
- * spec is the regression lock for that shape.
+ * Dashboard toasts use this helper, which goes through the shared error map
+ * (`@repo/hooks` `errorCopy`, specced there): a refusal the map knows reads in
+ * the member's words, anything else falls back, and no raw server text or
+ * `Error` message reaches the toast (principles.md P2.3).
  */
 describe("getErrorMessage", () => {
   const fallback = "Something went wrong. Please retry.";
 
-  it("reads a string message on a plain object (openapi-fetch body)", () => {
+  it("rewrites a known refusal on a plain object (openapi-fetch body)", () => {
     expect(
       getErrorMessage(
-        { message: "Role is already assigned.", statusCode: 409 },
+        {
+          message: "Role name already exists in this chapter",
+          statusCode: 409,
+        },
         fallback,
       ),
-    ).toBe("Role is already assigned.");
+    ).toBe("A role with that name already exists. Pick another name.");
   });
 
-  it("still reads Error instances", () => {
-    expect(getErrorMessage(new Error("network down"), fallback)).toBe(
-      "network down",
-    );
+  it("never shows an unmapped server sentence or a plain Error's message", () => {
+    expect(
+      getErrorMessage(
+        { message: "Forbidden resource", statusCode: 500 },
+        fallback,
+      ),
+    ).toBe(fallback);
+    expect(getErrorMessage(new Error("network down"), fallback)).toBe(fallback);
   });
 
   it("uses the caller fallback when message is missing, empty, or not a string", () => {

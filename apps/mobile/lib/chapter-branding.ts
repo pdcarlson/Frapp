@@ -84,7 +84,7 @@ function readString(
  * The role this value plays is `accent-text` — "accent-colored text and icons
  * on neutral or subtle-bg surfaces" (`accent-engine.md` §2). Almost every
  * consumer treats it as a foreground: the active tab tint
- * (`app/(tabs)/_layout.tsx`), the state-block glyph, chip labels.
+ * (`app/(app)/(tabs)/_layout.tsx`), the state-block glyph, chip labels.
  *
  * `accent-primary` (step 9) is the *solid fill* role, and §8 holds it only to
  * the 3:1 non-text floor, not the 4.5:1 text floor. Painting it as a
@@ -94,7 +94,8 @@ function readString(
  * palette stored before then paints its older, darker fill until the
  * stale-palette sweep recomputes it; `accent-engine.md` §4). Step 11 measures
  * 7.5–8.6:1 on `--card` for each of the five colours the chapter directory
- * seed holds today, and reads equally well as a chip fill under the fixed
+ * seed held when it was measured (`#BF0A30`, `#C0C0C0`, `#C9A56F`, `#FF69B4`,
+ * `#FFFFFF`; the seed now carries `#C9A56F` alone), and reads equally well as a chip fill under the fixed
  * `gold.onHouse` label (7.2:1+).
  *
  * So the generated scale removes the problem rather than compensating for it —

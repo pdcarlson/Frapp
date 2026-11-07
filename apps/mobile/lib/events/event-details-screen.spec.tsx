@@ -24,7 +24,7 @@ import { screenText } from "@/test/screen-text";
  * of the things it works out from "now": the check-in card and the header's
  * "Tonight / Tomorrow" line.
  *
- * It renders `app/(tabs)/event-details.tsx` but lives here: a spec under
+ * It renders `app/(app)/event-details.tsx` but lives here: a spec under
  * `app/` ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -49,10 +49,18 @@ let event = EVENT;
 let eventPending = false;
 let routeId: string | undefined = EVENT.id as string;
 let chapterId: string | null = "chapter-1";
+// The viewer's grants: a plain member by default.
+let permissions: string[] = ["members:view"];
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => chapterId,
+  usePermissionList: () => permissions,
+  useRoles: () => ({ data: [], isPending: false, isError: false }),
+  useCreateEvent: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateEvent: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteEvent: () => ({ mutate: vi.fn(), isPending: false }),
+  useListChapters: () => ({ data: [{ chapter_id: "chapter-1", role_ids: [] }] }),
   useEvent: () => ({
     isPending: eventPending,
     isError: false,
@@ -82,7 +90,7 @@ vi.mocked(expoRouter.useLocalSearchParams).mockImplementation(
   (): Record<string, string> => (routeId === undefined ? {} : { id: routeId }),
 );
 
-import EventDetailsScreen from "@/app/(tabs)/event-details";
+import EventDetailsScreen from "@/app/(app)/event-details";
 
 /**
  * Unmounted in `afterEach`, not at the end of each test: the shared clock is
@@ -194,7 +202,7 @@ describe("Event details back row (#3022)", () => {
     routeId = undefined;
 
     const tree = render();
-    expect(screenText(tree)).toContain("Nothing to show");
+    expect(screenText(tree)).toContain("Open an event from the Events tab.");
     expectBackRow(tree, "Events", "/events");
   });
 
@@ -380,5 +388,39 @@ describe("Event details layout", () => {
     expect(screenText(tree)).toContain("Check-in is closed");
     expect(screenText(tree)).not.toContain("window has ended");
     expect(textNode(tree, "Scan QR to check in")).toBeUndefined();
+  });
+});
+
+describe("Event details editing", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    permissions = ["members:view"];
+    event = EVENT;
+  });
+
+  function editButton(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) =>
+        node.props.accessibilityLabel === "Edit event" &&
+        node.props.accessibilityRole === "button",
+    );
+  }
+
+  it("gives a plain member no edit control", () => {
+    expect(editButton(render())).toHaveLength(0);
+  });
+
+  it("gives anyone who may update events a pencil, on any event", () => {
+    // Not the creator: the event carries someone else's id.
+    event = { ...EVENT, created_by: "someone-else" };
+    permissions = ["members:view", "events:update"];
+    expect(editButton(render()).length).toBeGreaterThan(0);
+  });
+
+  it("gives an owner's wildcard the pencil too", () => {
+    permissions = ["*"];
+    expect(editButton(render()).length).toBeGreaterThan(0);
   });
 });

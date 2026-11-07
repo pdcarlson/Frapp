@@ -33,6 +33,9 @@ export const baseEvent: Event = {
   recurrence_rule: null,
   parent_event_id: null,
   required_role_ids: null,
+  optional_role_ids: null,
+  excluded_role_ids: null,
+  others_invited: true,
   notes: null,
   check_in_zone: null,
   check_in_zone_name: null,
@@ -56,10 +59,15 @@ export async function createEventServiceFixture() {
   };
 
   const mockNotificationService: jest.Mocked<
-    Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
+    Pick<
+      NotificationService,
+      'notifyUser' | 'notifyChapter' | 'notifyMembers' | 'timeZoneFor'
+    >
   > = {
     notifyUser: jest.fn().mockResolvedValue(undefined),
     notifyChapter: jest.fn().mockResolvedValue(undefined),
+    notifyMembers: jest.fn().mockResolvedValue(undefined),
+    timeZoneFor: jest.fn().mockResolvedValue(null),
   };
 
   const mockUserRepo: { findByIds: jest.Mock } = {
@@ -75,8 +83,12 @@ export async function createEventServiceFixture() {
   const mockChatService: { sendMessage: jest.Mock } = {
     sendMessage: jest.fn().mockResolvedValue(undefined),
   };
-  const mockRbacService: { memberHasAnyPermission: jest.Mock } = {
+  const mockRbacService: {
+    memberHasAnyPermission: jest.Mock;
+    getAlumniRoleId: jest.Mock;
+  } = {
     memberHasAnyPermission: jest.fn().mockResolvedValue(false),
+    getAlumniRoleId: jest.fn().mockResolvedValue(null),
   };
 
   const module: TestingModule = await Test.createTestingModule({

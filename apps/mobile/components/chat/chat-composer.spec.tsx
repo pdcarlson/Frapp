@@ -27,6 +27,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 import { FrappThemeProvider } from "@/lib/theme";
 import { ChatComposer, type ChatComposerProps } from "./chat-composer";
+import type { StagedPhoto } from "@/lib/chat/use-chat-channel";
 
 /**
  * The composer's attachment half, pinned where review alone would not catch a
@@ -71,12 +72,20 @@ function byLabel(tree: ReactTestRenderer, label: string) {
   )[0];
 }
 
-function attachment(overrides: Record<string, unknown> = {}) {
+function photo(overrides: Partial<StagedPhoto> = {}): StagedPhoto {
   return {
-    storagePath: "chapters/c/chat/m/photo.jpg",
-    filename: "photo.jpg",
-    contentType: "image/jpeg",
-    byteSize: 2048,
+    key: "p1",
+    previewUri: "file:///a.jpg",
+    width: 3024,
+    height: 4032,
+    status: "ready",
+    attachment: {
+      storagePath: "chapters/c/chat/m/photo.jpg",
+      filename: "photo.jpg",
+      contentType: "image/jpeg",
+      byteSize: 2048,
+    },
+    reason: null,
     ...overrides,
   };
 }
@@ -95,16 +104,29 @@ describe("ChatComposer attach affordance", () => {
     expect(byLabel(tree, "Attach photo").props.disabled).toBe(false);
   });
 
-  it("disables attach while an upload is in flight, and marks it busy", () => {
-    // The picker half runs before any mutation starts, and a live button
-    // through it invites a second picker stacked on the first.
-    const { tree } = renderComposer({ onAttach: vi.fn(), isUploading: true });
+  it("disables attach while the photo picker is up, and marks it busy", () => {
+    // A live button through the system sheet invites a second picker stacked
+    // on the first.
+    const { tree } = renderComposer({ onAttach: vi.fn(), isPicking: true });
     const button = byLabel(tree, "Attach photo");
     expect(button.props.disabled).toBe(true);
     expect(button.props.accessibilityState).toEqual({
       disabled: true,
       busy: true,
     });
+  });
+
+  it("keeps attach live while photos upload: uploads never lock the tray", () => {
+    const { tree } = renderComposer({
+      onAttach: vi.fn(),
+      photos: [photo({ status: "uploading" })],
+    });
+    expect(byLabel(tree, "Attach photo").props.disabled).toBe(false);
+  });
+
+  it("disables attach, still visible, once the tray is full", () => {
+    const { tree } = renderComposer({ onAttach: vi.fn(), attachFull: true });
+    expect(byLabel(tree, "Attach photo").props.disabled).toBe(true);
   });
 
   it("disables attach — but keeps it visible — when a reason is given", () => {
@@ -121,59 +143,81 @@ describe("ChatComposer attach affordance", () => {
   });
 });
 
-describe("ChatComposer staged attachments", () => {
-  it("sends with attachments and no text — an attachment-only message is real", () => {
+describe("ChatComposer staged photos", () => {
+  it("sends with photos and no text — a photo-only message is real", () => {
     // Web shipped this bug once: `!body` returned early, so the send silently
-    // no-opped with the chips still on screen and no error.
+    // no-opped with the photos still on screen and no error.
     const { tree } = renderComposer({
       value: "   ",
-      attachments: [attachment()],
+      photos: [photo()],
       onAttach: vi.fn(),
     });
     expect(byLabel(tree, "Send message").props.disabled).toBe(false);
   });
 
-  it("still refuses a send with neither text nor attachments", () => {
-    const { tree } = renderComposer({ value: "   ", attachments: [] });
+  it("lets Send go while a photo is still uploading", () => {
+    const { tree } = renderComposer({
+      value: "",
+      photos: [photo({ status: "uploading" })],
+    });
+    expect(byLabel(tree, "Send message").props.disabled).toBe(false);
+  });
+
+  it("still refuses a send with neither text nor photos", () => {
+    const { tree } = renderComposer({ value: "   ", photos: [] });
     expect(byLabel(tree, "Send message").props.disabled).toBe(true);
   });
 
-  it("keeps send disabled while the runtime has no identity, attachments or not", () => {
+  it("keeps send disabled while the runtime has no identity, photos or not", () => {
     const { tree } = renderComposer({
       value: "hello",
       canSend: false,
-      attachments: [attachment()],
+      photos: [photo()],
     });
     expect(byLabel(tree, "Send message").props.disabled).toBe(true);
   });
 
-  it("names each staged file and offers a labelled remove", () => {
-    const onRemoveAttachment = vi.fn();
+  it("draws each photo as a picture from the phone, never a filename", () => {
     const { tree } = renderComposer({
-      attachments: [attachment(), attachment({
-        storagePath: "chapters/c/chat/m/second.png",
-        filename: "second.png",
-      })],
-      onRemoveAttachment,
+      photos: [photo(), photo({ key: "p2", previewUri: "file:///b.heic" })],
     });
-
-    const remove = byLabel(tree, "Remove second.png");
-    expect(remove).toBeDefined();
-    act(() => {
-      remove.props.onPress();
-    });
-    // Keyed on the storage path, not the index or the filename: two files can
-    // share a name, and the path is what the send actually claims.
-    expect(onRemoveAttachment).toHaveBeenCalledWith(
-      "chapters/c/chat/m/second.png",
-    );
+    const uris = tree.root
+      .findAll((node) => node.props?.source?.uri !== undefined)
+      .map((node) => node.props.source.uri);
+    expect(uris).toEqual(expect.arrayContaining(["file:///a.jpg", "file:///b.heic"]));
+    expect(byLabel(tree, "Photo 2 of 2")).toBeDefined();
   });
 
-  it("renders a chip without a size when the byte count is unknown", () => {
+  it("names an uploading photo as uploading, without a spinner", () => {
+    const { tree } = renderComposer({ photos: [photo({ status: "uploading" })] });
+    expect(byLabel(tree, "Photo 1 of 1, uploading")).toBeDefined();
+    expect(byLabel(tree, "Uploading photo")).toBeUndefined();
+  });
+
+  it("removes a photo by its key", () => {
+    const onRemovePhoto = vi.fn();
     const { tree } = renderComposer({
-      attachments: [attachment({ byteSize: null })],
+      photos: [photo(), photo({ key: "p2" })],
+      onRemovePhoto,
     });
-    expect(byLabel(tree, "Remove photo.jpg")).toBeDefined();
+    act(() => {
+      byLabel(tree, "Remove photo 2 of 2").props.onPress();
+    });
+    expect(onRemovePhoto).toHaveBeenCalledWith("p2");
+  });
+
+  it("offers a failed photo as a try-again button", () => {
+    const onRetryPhoto = vi.fn();
+    const { tree } = renderComposer({
+      photos: [photo({ status: "failed", reason: "Couldn't upload." })],
+      onRetryPhoto,
+    });
+    const retry = byLabel(tree, "Photo 1 of 1, didn't upload. Try again");
+    expect(retry.props.disabled).toBe(false);
+    act(() => {
+      retry.props.onPress();
+    });
+    expect(onRetryPhoto).toHaveBeenCalledWith("p1");
   });
 });
 
@@ -326,6 +370,30 @@ describe("ChatComposer @-mention picker", () => {
       "Mention Pat O'Brien",
     ]);
     expect(offered(typed("hey @sa").tree)).toEqual(["Mention Sam (VP)"]);
+  });
+
+  it("offers the roles this member may ping after the members", () => {
+    const roles = [
+      { role_id: "r-off", name: "Officers", mentionable: true },
+      { role_id: "r-mem", name: "Member", mentionable: false },
+    ];
+    expect(offered(typed("@", 1, { mentionRoles: roles }).tree)).toEqual([
+      "Mention Paul Carlson",
+      "Mention Pat O'Brien",
+      "Mention Sam (VP)",
+      "Mention everyone in the Officers role",
+    ]);
+    // Picking a role writes its folded name, which the server resolves.
+    const onChangeText = vi.fn();
+    const { tree } = typed("cc @off", 7, { mentionRoles: roles, onChangeText });
+    const row = tree.root.find(
+      (node) =>
+        node.props?.accessibilityLabel ===
+          "Mention everyone in the Officers role" &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => row.props.onPress());
+    expect(onChangeText).toHaveBeenCalledWith("cc @Officers ");
   });
 
   it("offers everyone on a bare `@`", () => {

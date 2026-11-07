@@ -5,7 +5,7 @@ import { Frame, paint } from "@/components/more/more-glyphs";
 /**
  * The verbs an icon-only control draws (`spec/ui/design-system/components.md`
  * § Icon-only actions, `iconography.md` §6.1.5): close or dismiss, edit, mark
- * all read, share, and back. Share also leads a labelled button (setup's
+ * all read, try again, share, and back. Share also leads a labelled button (setup's
  * `Share invite`), and the invite link's own mark, `LinkGlyph`, lives here
  * beside it. Control furniture, so they draw only the §1 stroke recipe's
  * detail strokes, with no silhouette fill, from `more-glyphs.tsx`'s `Frame`
@@ -33,6 +33,17 @@ export function CloseGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   return (
     <Frame size={size}>
       <Path d="M6 6l12 12M18 6L6 18" {...detail} />
+    </Frame>
+  );
+}
+
+/** Try again: web draws Lucide's `RotateCw` for the same intent. */
+export function RetryGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M20 12a8 8 0 11-2.34-5.66" {...detail} />
+      <Path d="M20 4v5h-5" {...detail} />
     </Frame>
   );
 }
@@ -107,6 +118,29 @@ export function LinkGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
         d="M14 10a4.5 4.5 0 00-6.4 0l-3 3a4.5 4.5 0 006.4 6.4l1-1"
         {...detail}
       />
+    </Frame>
+  );
+}
+
+/**
+ * A disclosure chevron: down while what it opens is shown, right while it is
+ * hidden, as a "More options" row or a row that opens a picker draws it.
+ */
+export function DisclosureGlyph({
+  color,
+  size = DEFAULT_SIZE,
+  direction,
+}: ControlGlyphProps & { direction: "right" | "down" | "up" }) {
+  const { detail } = paint({ color });
+  const d =
+    direction === "right"
+      ? "M9.5 6l6 6-6 6"
+      : direction === "down"
+        ? "M6 9.5l6 6 6-6"
+        : "M6 14.5l6-6 6 6";
+  return (
+    <Frame size={size}>
+      <Path d={d} {...detail} />
     </Frame>
   );
 }

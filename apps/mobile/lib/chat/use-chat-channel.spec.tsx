@@ -122,6 +122,7 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock("@repo/chat-core/chat-client", () => ({
+  AttachmentsNotReadyError: class AttachmentsNotReadyError extends Error {},
   sendMessage: mocks.sendMessage,
   flushOutbox: mocks.flushOutbox,
   hydrateOutboxIntoCache: mocks.hydrateOutboxIntoCache,
@@ -322,7 +323,9 @@ describe("send() failure", () => {
     });
 
     expect(result.current.draft).toBe("unsent text");
-    expect(result.current.sendError).toBe("storage full");
+    expect(result.current.sendError).toBe(
+      "Couldn't queue that message. Try again.",
+    );
   });
 
   it("does not clear the persisted draft when the send never landed", async () => {
@@ -358,7 +361,9 @@ describe("send() failure", () => {
     await act(async () => {
       await result.current.send("delivered");
     });
-    expect(result.current.sendError).toBe("first attempt failed");
+    expect(result.current.sendError).toBe(
+      "Couldn't queue that message. Try again.",
+    );
     expect(result.current.draft).toBe("delivered");
 
     await act(async () => {
@@ -390,7 +395,9 @@ describe("send() failure", () => {
     await act(async () => {
       await result.current.send("unsent text");
     });
-    expect(result.current.sendError).toBe("offline");
+    expect(result.current.sendError).toBe(
+      "Couldn't queue that message. Try again.",
+    );
 
     rerender({ channelId: "channel-2" });
 
@@ -1415,5 +1422,327 @@ describe("reload after a failed first read", () => {
     await waitFor(() => expect(result.current.loadError).toBeNull());
     expect(result.current.messages.map((m) => m.id)).toEqual(["server-1"]);
     expect(GET).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("staged photos", () => {
+  const claim = (name: string) => ({
+    storagePath: `chapters/c/chat/m/${name}`,
+    filename: name,
+    contentType: "image/jpeg",
+    byteSize: 1000,
+  });
+  const newPhoto = (name: string, upload: () => Promise<unknown>) => ({
+    previewUri: `file:///${name}`,
+    width: 3,
+    height: 4,
+    upload: upload as never,
+  });
+
+  it("stages each photo at once as uploading, then ready with its claim", async () => {
+    const gate = deferred<unknown>();
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    act(() => {
+      result.current.addPhotos([newPhoto("a.jpg", () => gate.promise)]);
+    });
+    expect(result.current.photos).toMatchObject([
+      { previewUri: "file:///a.jpg", status: "uploading" },
+    ]);
+
+    await act(async () => {
+      gate.resolve({ status: "attached", attachment: claim("a.jpg") });
+    });
+    expect(result.current.photos).toMatchObject([
+      { status: "ready", attachment: claim("a.jpg") },
+    ]);
+  });
+
+  it("runs at most three uploads at once", async () => {
+    const gates = Array.from({ length: 5 }, () => deferred<unknown>());
+    const started: number[] = [];
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    act(() => {
+      result.current.addPhotos(
+        gates.map((gate, index) =>
+          newPhoto(`${index}.jpg`, () => {
+            started.push(index);
+            return gate.promise;
+          }),
+        ),
+      );
+    });
+    expect(started).toEqual([0, 1, 2]);
+    await act(async () => {
+      gates[0]!.resolve({ status: "attached", attachment: claim("0.jpg") });
+    });
+    expect(started).toEqual([0, 1, 2, 3]);
+  });
+
+  it("sends while a photo still uploads, handing chat-core the pending claims", async () => {
+    const gate = deferred<unknown>();
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    act(() => {
+      result.current.addPhotos([newPhoto("a.jpg", () => gate.promise)]);
+    });
+
+    let sent!: Promise<boolean>;
+    act(() => {
+      sent = result.current.send("formal pics");
+    });
+    // The tray empties and the message goes up at once.
+    expect(result.current.photos).toEqual([]);
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+    const [, args] = mocks.sendMessage.mock.calls[0] as unknown as [
+      unknown,
+      {
+        attachments?: unknown;
+        attachmentsReady: Promise<unknown>;
+        attachmentCount: number;
+        clientMessageId: string;
+      },
+    ];
+    expect(args.attachments).toBeUndefined();
+    expect(args.attachmentCount).toBe(1);
+    expect(typeof args.clientMessageId).toBe("string");
+
+    await act(async () => {
+      gate.resolve({ status: "attached", attachment: claim("a.jpg") });
+    });
+    await expect(args.attachmentsReady).resolves.toEqual([claim("a.jpg")]);
+    await act(async () => {
+      await sent;
+    });
+  });
+
+  it("sends ready photos as plain claims", async () => {
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    await act(async () => {
+      result.current.addPhotos([
+        newPhoto("a.jpg", async () => ({
+          status: "attached",
+          attachment: claim("a.jpg"),
+        })),
+      ]);
+    });
+    await act(async () => {
+      await result.current.send("");
+    });
+    const [, args] = mocks.sendMessage.mock.calls[0] as unknown as [
+      unknown,
+      { attachments: unknown; attachmentsReady: unknown },
+    ];
+    expect(args.attachments).toEqual([claim("a.jpg")]);
+    expect(args.attachmentsReady).toBeUndefined();
+  });
+
+  it("holds the send while a photo is marked failed, and names it", async () => {
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    await act(async () => {
+      result.current.addPhotos([
+        newPhoto("a.jpg", async () => ({ status: "refused", reason: "nope" })),
+      ]);
+    });
+    expect(result.current.photos[0]).toMatchObject({
+      status: "failed",
+      reason: "nope",
+    });
+    let queued = true;
+    await act(async () => {
+      queued = await result.current.send("hi");
+    });
+    expect(queued).toBe(false);
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(result.current.sendError).toMatch(/didn't upload/);
+  });
+
+  it("retries a failed photo with the same upload", async () => {
+    let attempts = 0;
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    await act(async () => {
+      result.current.addPhotos([
+        newPhoto("a.jpg", async () =>
+          ++attempts === 1
+            ? { status: "refused", reason: "nope" }
+            : { status: "attached", attachment: claim("a.jpg") },
+        ),
+      ]);
+    });
+    const key = result.current.photos[0]!.key;
+    await act(async () => {
+      result.current.retryPhoto(key);
+    });
+    expect(attempts).toBe(2);
+    expect(result.current.photos[0]).toMatchObject({ status: "ready" });
+  });
+
+  it("keeps the composer free while photos upload: a second send goes at once", async () => {
+    const gate = deferred<unknown>();
+    mocks.sendMessage.mockImplementation(
+      async (_ctx: unknown, args: unknown) => {
+        const ready = (args as { attachmentsReady?: Promise<unknown> })
+          .attachmentsReady;
+        if (ready) await ready;
+      },
+    );
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    act(() => {
+      result.current.addPhotos([newPhoto("a.jpg", () => gate.promise)]);
+    });
+    let first = false;
+    await act(async () => {
+      first = await result.current.send("formal pics");
+    });
+    expect(first).toBe(true);
+    expect(result.current.sendInFlight()).toBe(false);
+
+    let second = false;
+    await act(async () => {
+      second = await result.current.send("these are from saturday");
+    });
+    expect(second).toBe(true);
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      gate.resolve({ status: "attached", attachment: claim("a.jpg") });
+    });
+  });
+
+  it("leaves a failed upload as a failed row, never touching the composer", async () => {
+    const gate = deferred<unknown>();
+    const { AttachmentsNotReadyError } =
+      await import("@repo/chat-core/chat-client");
+    mocks.sendMessage.mockImplementation(
+      async (_ctx: unknown, args: unknown) => {
+        try {
+          await (args as { attachmentsReady: Promise<unknown> })
+            .attachmentsReady;
+        } catch (error) {
+          throw new AttachmentsNotReadyError((error as Error).message);
+        }
+      },
+    );
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    act(() => {
+      result.current.addPhotos([newPhoto("a.jpg", () => gate.promise)]);
+    });
+    await act(async () => {
+      await result.current.send("formal pics");
+    });
+    act(() => {
+      result.current.setDraft("typed since");
+    });
+    await act(async () => {
+      gate.resolve({
+        status: "refused",
+        reason: "Couldn't upload that photo.",
+      });
+    });
+    expect(result.current.draft).toBe("typed since");
+    expect(result.current.photos).toEqual([]);
+    expect(result.current.sendError).toBeNull();
+  });
+
+  it("retries a failed send: uploads the failed photo again, then sends under the same id", async () => {
+    let attempts = 0;
+    const { AttachmentsNotReadyError } =
+      await import("@repo/chat-core/chat-client");
+    mocks.sendMessage.mockImplementation(
+      async (_ctx: unknown, args: unknown) => {
+        try {
+          await (args as { attachmentsReady: Promise<unknown> })
+            .attachmentsReady;
+        } catch (error) {
+          throw new AttachmentsNotReadyError((error as Error).message);
+        }
+      },
+    );
+    const gate = deferred<unknown>();
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    act(() => {
+      result.current.addPhotos([
+        newPhoto("a.jpg", () =>
+          ++attempts === 1
+            ? gate.promise
+            : Promise.resolve({
+                status: "attached",
+                attachment: claim("a.jpg"),
+              }),
+        ),
+      ]);
+    });
+    await act(async () => {
+      await result.current.send("formal pics");
+    });
+    await act(async () => {
+      gate.resolve({ status: "refused", reason: "nope" });
+    });
+    const [, firstArgs] = mocks.sendMessage.mock.calls[0] as unknown as [
+      unknown,
+      { clientMessageId: string },
+    ];
+
+    await act(async () => {
+      await result.current.retry(firstArgs.clientMessageId);
+    });
+    expect(attempts).toBe(2);
+    const [, retryArgs] = mocks.sendMessage.mock.calls[1] as unknown as [
+      unknown,
+      { clientMessageId: string; attachmentsReady: Promise<unknown> },
+    ];
+    expect(retryArgs.clientMessageId).toBe(firstArgs.clientMessageId);
+    await expect(retryArgs.attachmentsReady).resolves.toEqual([claim("a.jpg")]);
+  });
+
+  it("never starts the upload of a photo removed while it waited its turn", async () => {
+    const gates = Array.from({ length: 4 }, () => deferred<unknown>());
+    const started: number[] = [];
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    act(() => {
+      result.current.addPhotos(
+        gates.map((gate, index) =>
+          newPhoto(`${index}.jpg`, () => {
+            started.push(index);
+            return gate.promise;
+          }),
+        ),
+      );
+    });
+    act(() => {
+      result.current.removePhoto(result.current.photos[3]!.key);
+    });
+    await act(async () => {
+      gates[0]!.resolve({ status: "attached", attachment: claim("0.jpg") });
+    });
+    expect(started).toEqual([0, 1, 2]);
+  });
+
+  it("empties the tray on a channel switch", async () => {
+    const { result, rerender } = renderHook(
+      ({ channelId }: { channelId: string }) => useChatChannel(channelId),
+      {
+        initialProps: { channelId: CHANNEL },
+        wrapper: createWrapper(createClient(), newQueryClient()),
+      },
+    );
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    act(() => {
+      result.current.addPhotos([
+        newPhoto("a.jpg", () => new Promise(() => undefined)),
+      ]);
+    });
+    expect(result.current.photos).toHaveLength(1);
+    rerender({ channelId: "channel-2" });
+    expect(result.current.photos).toEqual([]);
   });
 });

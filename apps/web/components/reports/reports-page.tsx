@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useRef, useState } from "react";
 import { Download, Loader2 } from "lucide-react";
 import {
@@ -29,11 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedLoading,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedLoading } from "@/components/shared/nested-states";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import {
   DocumentsGlyph,
@@ -57,6 +54,7 @@ import {
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, downloadCsv, getErrorMessage } from "@/lib/utils";
 import { ReportsFormSkeleton } from "@/components/reports/reports-skeleton";
+import { InlineNote } from "@/components/shared/inline-note";
 
 type ReportKind = "attendance" | "points" | "roster" | "service";
 
@@ -149,20 +147,12 @@ type PickerFieldProps = {
   allLabel: string;
   /** Plural noun used in the empty/error copy, e.g. "events". */
   noun: string;
-  /** Singular noun used in the manual-entry disclosure, e.g. "event". */
-  singularNoun: string;
 };
 
 /**
- * A named-entity filter: a picker `<select>` backed by a live list, plus a
- * collapsed manual-ID fallback.
- *
- * The fallback exists because the picker can only offer what its list query
- * returns, and that query is scoped by `members:view` (and, for events, the
- * `events` module) — permissions `reports:export` does not imply. A caller
- * who knows an id the list omits (a departed member, a role-targeted event,
- * or a custom role without `members:view`) can still reach it directly,
- * matching what the raw-UUID input this replaces already allowed.
+ * A named-entity filter: a picker `<select>` backed by a live list. Blank is a
+ * chapter-wide report. There is no typed-id fallback: an officer picks a
+ * name, never an id (principles.md P2.2).
  */
 function PickerField({
   idPrefix,
@@ -173,9 +163,7 @@ function PickerField({
   query,
   allLabel,
   noun,
-  singularNoun,
 }: PickerFieldProps) {
-  const matchesOption = options.some((option) => option.id === value);
   const selectId = `${idPrefix}-select`;
 
   return (
@@ -183,11 +171,7 @@ function PickerField({
       <Label htmlFor={selectId}>{label}</Label>
       <select
         id={selectId}
-        // Falls back to the "chapter-wide" option rather than letting the
-        // browser show nothing selected whenever `value` is a manually-entered
-        // id the list doesn't contain — the manual field below is the one
-        // source of truth for that case.
-        value={matchesOption ? value : ""}
+        value={value}
         onChange={(event) => onValueChange(event.target.value)}
         disabled={query.isPending}
         className={`${dashboardFormSelectClassName} w-full`}
@@ -201,8 +185,8 @@ function PickerField({
       </select>
       {query.isError ? (
         <p className="text-xs text-destructive">
-          Couldn&apos;t load {noun}. Enter an id manually below, or leave both
-          blank for a chapter-wide report, or{" "}
+          Couldn&apos;t load {noun}. Leave it blank for a chapter-wide report,
+          or{" "}
           <button
             type="button"
             onClick={() => query.refetch()}
@@ -217,22 +201,6 @@ function PickerField({
           No {noun} yet. Every report will be chapter-wide.
         </p>
       ) : null}
-      <details className="text-xs text-muted-foreground">
-        <summary className="cursor-pointer select-none">
-          Can&apos;t find the {singularNoun}? Enter its id directly
-        </summary>
-        <Input
-          className="mt-1"
-          value={value}
-          onChange={(event) => onValueChange(event.target.value)}
-          placeholder={`${singularNoun} id`}
-        />
-        {value && !matchesOption ? (
-          <p className="mt-1">
-            Not in the list above. The report will still scope to this id.
-          </p>
-        ) : null}
-      </details>
     </div>
   );
 }
@@ -499,10 +467,7 @@ export function ReportsPage() {
       if (token !== runToken.current) return;
       // The report hooks throw openapi-fetch's error body, a plain object,
       // so an `instanceof Error` check never reached the server's message.
-      const description = getErrorMessage(
-        error,
-        "Confirm your chapter access and retry.",
-      );
+      const description = getErrorMessage(error, describeLoadFailure(error));
       // Both, deliberately: the toast reports the moment, and the panel keeps
       // saying so after the toast dismisses. A failed run that leaves the idle
       // copy on screen is a failure reported as "nothing has happened yet".
@@ -582,10 +547,7 @@ export function ReportsPage() {
     } catch (error) {
       toast({
         title: `Couldn't export ${reportLabel[kind].toLowerCase()} PDF`,
-        description: getErrorMessage(
-          error,
-          "Confirm your chapter access and retry.",
-        ),
+        description: getErrorMessage(error, describeLoadFailure(error)),
         variant: "destructive",
       });
     } finally {
@@ -693,7 +655,6 @@ export function ReportsPage() {
                     query={eventsQuery}
                     allLabel="Chapter-wide (all events)"
                     noun="events"
-                    singularNoun="event"
                   />
                   <div className="grid gap-1">
                     <Label htmlFor="report-start">Start date</Label>
@@ -731,7 +692,6 @@ export function ReportsPage() {
                     query={membersQuery}
                     allLabel="Chapter-wide (all members)"
                     noun="members"
-                    singularNoun="member"
                   />
                   <div className="grid gap-1">
                     <Label htmlFor="report-window">Time window</Label>
@@ -769,7 +729,6 @@ export function ReportsPage() {
                     query={membersQuery}
                     allLabel="Chapter-wide (all members)"
                     noun="members"
-                    singularNoun="member"
                   />
                   <div className="grid gap-1">
                     <Label htmlFor="service-report-start">Start date</Label>
@@ -798,8 +757,7 @@ export function ReportsPage() {
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-muted-foreground">
-                PDF export is generated server-side; its download link is valid
-                for one hour.
+                A PDF download link works for one hour.
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 {/*
@@ -869,7 +827,7 @@ export function ReportsPage() {
             <p className="text-sm text-muted-foreground">
               {truncation?.truncated
                 ? `${truncationSummary(truncation)} This preview and the CSV built from it are not a complete record of the chapter.`
-                : "First 25 rows of the generated report. The CSV download contains every returned row."}
+                : "First 25 rows of the generated report. The CSV has every row."}
             </p>
             <div>
               {/*
@@ -910,17 +868,11 @@ export function ReportsPage() {
                   )}
                 />
               ) : preview === null ? (
-                <NestedEmpty
-                  sole
-                  title="No report generated yet"
-                  description="Generate a report to see a preview here."
-                />
+                <InlineNote>Generate a report to preview it here.</InlineNote>
               ) : preview.length === 0 ? (
-                <NestedEmpty
-                  sole
-                  title="Report returned no rows"
-                  description="The filters matched nothing in the active chapter."
-                />
+                <InlineNote>
+                  Nothing in this chapter matches these filters.
+                </InlineNote>
               ) : (
                 /*
                   The shared primitive rather than a hand-rolled `<table>`. It

@@ -1,7 +1,11 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { act } from "react";
-import { create, type ReactTestRenderer } from "react-test-renderer";
+import {
+  create,
+  type ReactTestInstance,
+  type ReactTestRenderer,
+} from "react-test-renderer";
 import { Alert } from "react-native";
 import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
@@ -35,6 +39,7 @@ const {
   categoriesData,
   unreadData,
   levelsData,
+  latestData,
   sidebarPrefs,
   leaveMutateAsync,
   reopenMutate,
@@ -72,6 +77,21 @@ const {
     }[],
   },
   levelsData: { value: [] as { channel_id: string; level: string }[] },
+  // `GET /v1/channels/latest` (2026-11-06): each channel's latest message.
+  latestData: {
+    answered: true,
+    value: [] as {
+      channel_id: string;
+      message_id: string;
+      sender_id: string | null;
+      author_name: string | null;
+      content: string;
+      kind: string;
+      payload: Record<string, unknown> | null;
+      attachment_count: number;
+      created_at: string;
+    }[],
+  },
   sidebarPrefs: {
     value: {
       pinnedIds: new Set<string>(),
@@ -108,6 +128,7 @@ const {
       isError: boolean;
       isFetching: boolean;
       isSuccess?: boolean;
+      error?: unknown;
       refetch: ReturnType<typeof vi.fn>;
     },
   },
@@ -124,6 +145,7 @@ const {
     roster: vi.fn(),
     viewer: vi.fn(),
     inbox: vi.fn(),
+    latest: vi.fn(),
   },
 }));
 
@@ -216,6 +238,16 @@ vi.mock("@repo/hooks", async () => {
     useViewerUserId: () => VIEWER,
     useMemberDisplayNames: () => ({
       byId: { [ALICE]: "Alice Chen", [BOB]: "Bob Diaz" },
+      nameFor: (id: string) =>
+        ({ [ALICE]: "Alice Chen", [BOB]: "Bob Diaz" })[id] ?? null,
+    }),
+    resolveAuthorLabel: actual.resolveAuthorLabel,
+    resolveAuthorName: actual.resolveAuthorName,
+    FILTER_CHANNELS_LABEL: actual.FILTER_CHANNELS_LABEL,
+    FILTER_CHANNELS_ON_LABEL: actual.FILTER_CHANNELS_ON_LABEL,
+    useChannelLatestMessages: () => ({
+      ...query(latestData.value, refetches.latest),
+      isSuccess: latestData.answered,
     }),
     useLeaveChannel: () => ({ mutateAsync: leaveMutateAsync }),
     useGetOrCreateDm: () => ({ mutate: reopenMutate }),
@@ -256,22 +288,22 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => branding.current,
 }));
 
-import ChatHomeScreen from "@/app/(tabs)/index";
+import ChatHomeScreen from "@/app/(app)/(tabs)/index";
+import * as Sentry from "@sentry/react-native";
+import { resetChannelsRefusedReport } from "@/lib/chat/channels-error";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   resetChatLaunchForTests,
   settleChatLaunch,
 } from "@/lib/chat/last-channel";
 import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
-import { SearchGlyph } from "@/components/search-glyph";
+import { ChannelFilterMenu } from "@/components/chat/channel-filter-menu";
+import { Toggle } from "@/components/toggle";
 import { SetupChecklistView } from "@/components/chat/setup-checklist";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
-import { ScreenShell } from "@/components/screen-shell";
-import {
-  EmptyState,
-  EmptyStateAction,
-  ErrorState,
-} from "@/components/state-block";
+import { ScreenShell, StickyHeader } from "@/components/screen-shell";
+import { ErrorState } from "@/components/state-block";
+import { InlineNote } from "@/components/inline-note";
 
 const general = { id: "c-general", name: "general", type: "PUBLIC" };
 const dmAlice = {
@@ -346,6 +378,8 @@ function hiddenToggle(tree: ReactTestRenderer) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  latestData.value = [];
+  latestData.answered = true;
   setupChecklist.value = null;
   channelsData.value = [general, dmAlice, dmBobHidden, group];
   categoriesData.value = [];
@@ -455,18 +489,33 @@ describe("Chat home hide conversation (#2303)", () => {
  * header would pass on a list rendered backwards.
  */
 function layout(tree: ReactTestRenderer): [string, string[]][] {
-  return tree.root
-    .findAllByType(PressableRow)
-    .filter((header) => header.props.accessibilityRole === "header")
-    .map((header) => [
-      // Since #2877 the header is a fold control: a chevron, then the label.
-      String(
-        header.findAll((node) => (node.type as unknown) === "Text")[1]!.props
-          .children,
-      ),
-      // The rows are the fold control's siblings in the section.
-      header.parent!.findAllByType(ChannelRow).map((row) => row.props.name),
-    ]);
+  return tree.root.findAllByType(StickyHeader).flatMap((sticky) => {
+    const header = sticky
+      .findAllByType(PressableRow)
+      .find((node) => node.props.accessibilityRole === "header");
+    if (!header) return [];
+    // The heading pins (owner 2026-11-07), so it is the shell's own child and
+    // its rows are the next one, unless the next one is another heading
+    // (a folded section).
+    const siblings = sticky.parent!.children.filter(
+      (child): child is ReactTestInstance => typeof child !== "string",
+    );
+    const next = siblings[siblings.indexOf(sticky) + 1];
+    const rows =
+      next && next.type !== StickyHeader
+        ? next.findAllByType(ChannelRow).map((row) => row.props.name)
+        : [];
+    return [
+      [
+        // Since #2877 the header is a fold control: a chevron, then the label.
+        String(
+          header.findAll((node) => (node.type as unknown) === "Text")[1]!.props
+            .children,
+        ),
+        rows,
+      ] as [string, string[]],
+    ];
+  });
 }
 
 describe("Chat home channel categories (#1684)", () => {
@@ -642,14 +691,59 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     });
   });
 
-  it("switches each filter from its chip", () => {
+  it("keeps the filters behind the first heading's button, and switches each from its menu", () => {
     const tree = render();
+    // No chips above the list any more (2026-11-06 redesign).
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityLabel === "Unread only",
+      ),
+    ).toHaveLength(0);
 
-    act(() => pressableLabelled(tree, "Unread only").props.onPress());
-    act(() => pressableLabelled(tree, "Hide muted").props.onPress());
+    act(() => pressableLabelled(tree, "Filter channels").props.onPress());
+    const toggle = (label: string) =>
+      tree.root
+        .findByType(ChannelFilterMenu)
+        .findAllByType(Toggle)
+        .find((node) => node.props.accessibilityLabel === label)!;
+    act(() => toggle("Unread only").props.onValueChange(true));
+    act(() => toggle("Hide muted").props.onValueChange(true));
 
     expect(setFilter).toHaveBeenNthCalledWith(1, { unread_only: true });
     expect(setFilter).toHaveBeenNthCalledWith(2, { hide_muted: true });
+  });
+
+  it("says a filter is on, on the button and under the heading, and Show all clears both", () => {
+    sidebarPrefs.value = {
+      ...sidebarPrefs.value,
+      filters: { unreadOnly: true, hideMuted: false },
+    };
+    unreadData.value = [
+      { channel_id: general.id, unread_count: 2, mention_count: 0 },
+    ];
+    const tree = render();
+
+    pressableLabelled(tree, "Filter channels, filters on");
+    expect(screenText(tree)).toContain("Showing unread only.");
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            (node.type as unknown) === "Pressable" &&
+            node.findAll(
+              (child) =>
+                (child.type as unknown) === "Text" &&
+                child.props.children === "Show all",
+            ).length > 0,
+        )
+        .props.onPress(),
+    );
+    expect(setFilter).toHaveBeenCalledWith({
+      unread_only: false,
+      hide_muted: false,
+    });
   });
 
   it("hides muted rows but keeps one that mentions the member", () => {
@@ -681,31 +775,11 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     };
     const tree = render();
 
-    // The state family's empty card, with its CTA, not a hand-rolled block.
-    const empty = tree.root.findByType(EmptyState);
-    expect(empty.findAllByType(EmptyStateAction)).toHaveLength(1);
-    // writing.md § Arrange the channel list gives this state no title, and
-    // every string it shows lives in `@repo/hooks`; web shows none either.
-    expect(empty.props.title).toBeUndefined();
-    // The search glyph, not the "⌕" character Figtree doesn't carry.
-    expect(empty.props.glyph).toBe(SearchGlyph);
-    expect(
-      tree.root.findAll(
-        (node) =>
-          (node.type as unknown) === "Text" &&
-          node.props.children === "No channels match your filters.",
-      ),
-    ).toHaveLength(1);
-    const clear = tree.root.find(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        node.findAll(
-          (inner) =>
-            (inner.type as unknown) === "Text" &&
-            inner.props.children === "Show all channels",
-        ).length > 0,
-    );
-    act(() => clear.props.onPress());
+    // One line where the rows go, with Show all channels as its way out.
+    const empty = tree.root.findByType(InlineNote);
+    expect(empty.props.children).toBe("No channels match your filters.");
+    expect(empty.props.action?.label).toBe("Show all channels");
+    act(() => empty.props.action?.onPress());
     expect(setFilter).toHaveBeenCalledWith({
       unread_only: false,
       hide_muted: false,
@@ -1163,6 +1237,38 @@ describe("Chat home loading and error states", () => {
     expect(refetch).toHaveBeenCalledTimes(1);
   });
 
+  it("says a refused list is about the member's role, not the network", () => {
+    channelsState.value = {
+      ...channelsState.value,
+      isError: true,
+      error: Object.assign(new Error("Forbidden"), { status: 403 }),
+    };
+    const tree = render();
+
+    const error = tree.root.findByType(ErrorState);
+    expect(error.props.title).toBe("Chat isn't open to you yet");
+    expect(error.props.body).toContain(
+      "Ask an officer to give you the Member role",
+    );
+    expect(error.props.body).not.toContain("reach the server");
+  });
+
+  it("reports a refusal by role to Sentry", () => {
+    resetChannelsRefusedReport();
+    vi.mocked(Sentry.captureMessage).mockClear();
+    channelsState.value = {
+      ...channelsState.value,
+      isError: true,
+      error: Object.assign(new Error("Forbidden"), { status: 403 }),
+    };
+    render();
+
+    expect(Sentry.captureMessage).toHaveBeenCalledWith(
+      "Chat home: channel list refused by role (403)",
+      expect.objectContaining({ level: "warning" }),
+    );
+  });
+
   it("says Retrying… and holds the control while a retry is in flight", () => {
     channelsState.value = {
       ...channelsState.value,
@@ -1182,9 +1288,8 @@ describe("Chat home loading and error states", () => {
     channelsData.value = [];
     const tree = render();
 
-    const empty = tree.root.findByType(EmptyState);
-    expect(empty.props.title).toBe("No channels yet");
-    expect(empty.props.body).toBe("Ask an admin to add one.");
+    const empty = tree.root.findByType(InlineNote);
+    expect(empty.props.children).toBe("No channels yet. Ask an admin to add one.");
   });
 });
 
@@ -1321,6 +1426,27 @@ describe("Chat home opens the last channel on launch", () => {
     expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
   });
 
+  it("does not jump over a screen a link launched onto", async () => {
+    // A cold `frapp://dues` mounts chat home under Dues, never focused: the
+    // list answering there must not push a channel over the linked screen,
+    // nor later, when the member swipes back to chat home.
+    const { __blur, __refocus } = expoRouter as unknown as {
+      __blur: () => void;
+      __refocus: () => void;
+    };
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue("c-general");
+    act(() => __blur());
+    // Earlier tests' screens are still mounted, and blurring them settled the
+    // launch; start it afresh so only this screen's focus decides.
+    resetChatLaunchForTests();
+    answered();
+    render();
+    await settle();
+    act(() => __refocus());
+    await settle();
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+
   it("does not jump once the member has left chat home", async () => {
     vi.mocked(AsyncStorage.getItem).mockResolvedValue("c-general");
     render();
@@ -1385,5 +1511,136 @@ describe("Chat home setup checklist (spec/product/modules.md § Setup checklist)
     setupChecklist.value = ONE_LINE;
     channelsState.value = { ...channelsState.value, isError: true };
     expect(render().root.findAllByType(SetupChecklistView)).toHaveLength(0);
+  });
+});
+
+describe("Chat home previews (2026-11-06 redesign)", () => {
+  const social = { id: "c-social", name: "social", type: "PUBLIC" };
+  const latest = (
+    channelId: string,
+    createdAt: string,
+    over: Partial<(typeof latestData.value)[number]> = {},
+  ) => ({
+    channel_id: channelId,
+    message_id: `m-${channelId}`,
+    sender_id: ALICE,
+    author_name: null,
+    content: "see you at 6",
+    kind: "text",
+    payload: null,
+    attachment_count: 0,
+    created_at: createdAt,
+    ...over,
+  });
+
+  it("keeps the sections, A to Z, whatever spoke last", () => {
+    channelsData.value = [general, social, dmAlice];
+    latestData.value = [
+      latest(social.id, "2026-09-25T17:00:00Z"),
+      latest(general.id, "2026-09-25T16:00:00Z"),
+    ];
+    const tree = render();
+
+    expect(rows(tree).map((row) => row.props.name)).toEqual([
+      "general",
+      "social",
+      "Alice Chen",
+    ]);
+    expect(screenText(tree)).toContain("CHANNELS");
+    expect(screenText(tree)).toContain("DIRECT");
+  });
+
+  it("previews each row with the sender, You, or nothing in a DM, and its time", () => {
+    channelsData.value = [general, social, dmAlice, group];
+    latestData.value = [
+      latest(general.id, "2026-09-25T17:00:00Z", {
+        content: "**van** has 3 seats",
+      }),
+      latest(social.id, "2026-09-25T16:00:00Z", { sender_id: VIEWER }),
+      latest(dmAlice.id, "2026-09-25T15:00:00Z", {
+        content: "minutes doc is up",
+      }),
+    ];
+    const tree = render();
+    const byName = Object.fromEntries(
+      rows(tree).map((row) => [row.props.name, row.props]),
+    );
+
+    expect(byName.general.preview).toBe("Alice: van has 3 seats");
+    expect(byName.social.preview).toBe("You: see you at 6");
+    expect(byName["Alice Chen"].preview).toBe("minutes doc is up");
+    expect(byName.general.timestamp).toEqual(expect.any(String));
+    // No message yet: still two lines, so every row is the same height.
+    const quiet = rows(tree).find(
+      (row) => !["general", "social", "Alice Chen"].includes(row.props.name),
+    )!;
+    expect(quiet.props.preview).toBe("No messages yet");
+    expect(quiet.props.timestamp).toBeNull();
+  });
+
+  it("names the sender in a group DM, whose row names several people", () => {
+    channelsData.value = [group];
+    latestData.value = [latest(group.id, "2026-09-25T17:00:00Z")];
+    expect(rows(render())[0]!.props.preview).toBe("Alice: see you at 6");
+  });
+
+  it("names an unnamed sender by the thread's whole fallback label", () => {
+    channelsData.value = [general];
+    latestData.value = [
+      latest(general.id, "2026-09-25T17:00:00Z", {
+        sender_id: "99999999-9999-4999-8999-999999999999",
+      }),
+    ];
+    expect(rows(render())[0]!.props.preview).toMatch(
+      /^Member \S+: see you at 6$/,
+    );
+  });
+
+  it("holds each preview line blank until the previews answer, so no row grows", () => {
+    channelsData.value = [general, dmAlice];
+    latestData.answered = false;
+    expect(
+      rows(render()).map((row) => [row.props.preview, row.props.timestamp]),
+    ).toEqual([
+      ["", null],
+      ["", null],
+    ]);
+  });
+
+  it("draws a muted row quiet, in place", () => {
+    channelsData.value = [general, social];
+    levelsData.value = [{ channel_id: social.id, level: "off" }];
+    const tree = render();
+
+    expect(
+      rows(tree).map((row) => [row.props.name, row.props.isMuted]),
+    ).toEqual([
+      ["general", false],
+      ["social", true],
+    ]);
+  });
+});
+
+describe("Chat home pinned section headings (owner 2026-11-07)", () => {
+  it("pins every section heading, so the one in view names the rows under it", () => {
+    const tree = render();
+    const scroll = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "ScrollView" &&
+        node.props.refreshControl !== undefined,
+    );
+    const children = scroll.children.filter(
+      (child): child is ReactTestInstance => typeof child !== "string",
+    );
+    const pinned = (scroll.props.stickyHeaderIndices as number[]).map(
+      (index) => children[index]!.type,
+    );
+
+    expect(layout(tree).length).toBeGreaterThan(1);
+    // Every heading, the Hidden conversations toggle's too when there is one,
+    // so the last section's heading never sits over the hidden rows.
+    expect(pinned).toHaveLength(tree.root.findAllByType(StickyHeader).length);
+    expect(pinned.length).toBeGreaterThanOrEqual(layout(tree).length);
+    expect(pinned.every((type) => type === StickyHeader)).toBe(true);
   });
 });

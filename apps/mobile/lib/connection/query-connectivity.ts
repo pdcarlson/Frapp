@@ -11,7 +11,7 @@
  * - `components/state-block.tsx` — "`ErrorState` takes an explicit `onRetry`
  *   because … nothing wires `onlineManager`. Without a retry control a blip at
  *   launch leaves a screen dead until a force-quit."
- * - `app/(tabs)/index.tsx` and `app/(tabs)/events.tsx` — the same reasoning, in
+ * - `app/(app)/(tabs)/index.tsx` and `app/(app)/(tabs)/events.tsx` — the same reasoning, in
  *   full, above their retry buttons.
  *
  * With both managers wired, `refetchOnReconnect` (a TanStack default) starts
@@ -52,7 +52,7 @@ export function bindQueryConnectivity(
       // `inactive` is iOS Control Center and the app switcher, not a
       // background — treating it as unfocused drops focus on every
       // notification-shade pull, which would stop a host's 10s attendance poll
-      // mid-check-in. `app/(tabs)/study.tsx` draws the same line for its
+      // mid-check-in. `app/(app)/study.tsx` draws the same line for its
       // session heartbeat: "Backgrounded means `background` — **not** 'anything
       // but active'."
       focusManager.setFocused(next !== "background");

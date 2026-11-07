@@ -21,8 +21,14 @@ export interface SweepUpcomingEventRow {
   chapter_id: string;
   name: string;
   start_time: string;
+  /** Named in the reminder's body. Optional so older fixtures type-check. */
+  location?: string | null;
   is_mandatory: boolean;
+  /** Attendance by role (`eventAttendanceFor`): who the reminder reaches. */
   required_role_ids: string[] | null;
+  optional_role_ids: string[] | null;
+  excluded_role_ids: string[] | null;
+  others_invited: boolean | null;
 }
 
 export interface SweepInvoiceRow {

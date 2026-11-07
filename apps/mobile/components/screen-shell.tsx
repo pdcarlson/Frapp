@@ -1,4 +1,11 @@
-import { ReactNode } from "react";
+import {
+  Children,
+  Fragment,
+  type ReactElement,
+  type ReactNode,
+  cloneElement,
+  isValidElement,
+} from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
@@ -72,6 +79,14 @@ type ScreenShellProps = {
    * remounts everything under the scroll view.
    */
   refresh?: ScreenRefresh;
+  /**
+   * A menu that opens from a control in the body (Chat home's channel
+   * filters), drawn as `spec/ui/mobile/patterns.md` § Overlays requires: last,
+   * over the whole screen and outside the scroll view, so it is on top in
+   * paint order and hit-testing, and, while `open`, with the screen under it
+   * hidden from screen readers. `content` renders nothing while closed.
+   */
+  overlay?: { open: boolean; content: ReactNode };
   children: ReactNode;
 };
 
@@ -109,6 +124,7 @@ export function ScreenShell({
   subtitle,
   headerAction,
   refresh,
+  overlay,
   children,
 }: ScreenShellProps) {
   const { tokens } = useFrappTheme();
@@ -118,50 +134,134 @@ export function ScreenShell({
   const clearance =
     useTabBarClearance() +
     (createAction ? CREATE_BUTTON_SIZE + FLOATING_TAB_BAR.gap : 0);
+  // The scroll view's own children, so a `StickyHeader` anywhere in the body's
+  // top level (fragments and arrays included) can be pinned. Index 0 is the
+  // title block, which scrolls away.
+  const body = flattenChildren(children);
+  const stickyHeaderIndices = body.flatMap((child, index) =>
+    child.type === StickyHeader ? [index + 1] : [],
+  );
 
   return (
     <View style={styles.frame}>
       {/* First in the tree so a screen reader reaches the screen's one create
           action without swiping past every row; drawn over them by zIndex. */}
       {createAction ? <FloatingCreateButton {...createAction} /> : null}
-      <SafeAreaView
-        style={styles.safeArea}
-        edges={["top", "left", "right", "bottom"]}
-      >
-        {/* Unpadded, so the pinned row sits where the content starts. */}
-        <View style={styles.safeArea}>
-          {back ? <PinnedBackRow back={back} trailing={backAction} /> : null}
-          <ScrollView
-            contentContainerStyle={[
-              styles.content,
-              back ? { paddingTop: pinnedBackClearance(tokens) } : null,
-              { paddingBottom: tokens.spacing.lg + clearance },
-            ]}
-            refreshControl={
-              refresh ? <ThemedRefreshControl refresh={refresh} /> : undefined
-            }
-          >
-            <View style={styles.header}>
-              <View style={styles.headerRow}>
-                {titleMark}
-                <Text accessibilityRole="header" style={styles.title}>
-                  {title}
-                </Text>
-                {headerAction ? (
-                  <View style={styles.headerAction}>{headerAction}</View>
+      <CoveredByOverlay covered={overlay?.open}>
+        <SafeAreaView
+          style={styles.safeArea}
+          edges={["top", "left", "right", "bottom"]}
+        >
+          {/* Unpadded, so the pinned row sits where the content starts. */}
+          <View style={styles.safeArea}>
+            {back ? <PinnedBackRow back={back} trailing={backAction} /> : null}
+            <ScrollView
+              stickyHeaderIndices={
+                stickyHeaderIndices.length > 0 ? stickyHeaderIndices : undefined
+              }
+              contentContainerStyle={[
+                styles.content,
+                back ? { paddingTop: pinnedBackClearance(tokens) } : null,
+                { paddingBottom: tokens.spacing.lg + clearance },
+              ]}
+              refreshControl={
+                refresh ? <ThemedRefreshControl refresh={refresh} /> : undefined
+              }
+            >
+              <View style={styles.header}>
+                <View style={styles.headerRow}>
+                  {titleMark}
+                  <Text accessibilityRole="header" style={styles.title}>
+                    {title}
+                  </Text>
+                  {headerAction ? (
+                    <View style={styles.headerAction}>{headerAction}</View>
+                  ) : null}
+                </View>
+                {subtitle ? (
+                  <Text style={styles.subtitle}>{subtitle}</Text>
                 ) : null}
               </View>
-              {subtitle ? (
-                <Text style={styles.subtitle}>{subtitle}</Text>
-              ) : null}
-            </View>
-            {children}
-          </ScrollView>
-        </View>
-      </SafeAreaView>
+              {body}
+            </ScrollView>
+          </View>
+        </SafeAreaView>
+      </CoveredByOverlay>
+      {overlay?.content}
     </View>
   );
 }
+
+/**
+ * A heading that pins to the top of the screen while its part of the body
+ * scrolls under it, until the next one pushes it off (Chat home's section
+ * headings, owner 2026-11-07; `spec/behavior/chat/README.md` § Sidebar
+ * arrangement). It paints the screen's background edge to edge, so the rows
+ * passing beneath never show through. Only a top-level child of `ScreenShell`
+ * pins (a fragment or an array there counts as top level): React Native pins
+ * direct children of the scroll view, so one nested inside a `View` stays put.
+ */
+export function StickyHeader({ children }: { children: ReactNode }) {
+  const { tokens } = useFrappTheme();
+  return (
+    <View
+      style={{
+        backgroundColor: tokens.color.surface.background,
+        marginHorizontal: -tokens.spacing.lg,
+        paddingHorizontal: tokens.spacing.lg,
+      }}
+    >
+      {children}
+    </View>
+  );
+}
+
+/**
+ * The body's top-level elements with fragments opened, keyed by their path so
+ * a row keeps its identity, and its state, when a sibling comes or goes.
+ */
+function flattenChildren(children: ReactNode, prefix = ""): ReactElement[] {
+  return Children.toArray(children).flatMap((child) => {
+    if (!isValidElement(child)) return [];
+    const key = `${prefix}${String(child.key)}`;
+    if (child.type === Fragment) {
+      return flattenChildren(
+        (child.props as { children?: ReactNode }).children,
+        `${key}/`,
+      );
+    }
+    return [cloneElement(child, { key })];
+  });
+}
+
+/**
+ * The screen under an open overlay, out of the accessibility tree
+ * (`patterns.md` § Overlays): `accessibilityViewIsModal` is iOS-only, so
+ * TalkBack would otherwise reach the rows under the menu. Only a screen that
+ * has an overlay gets the wrapper, and `collapsable={false}` keeps it a real
+ * native view, so toggling `covered` never moves the screen between parents.
+ */
+function CoveredByOverlay({
+  covered,
+  children,
+}: {
+  covered: boolean | undefined;
+  children: ReactNode;
+}) {
+  if (covered === undefined) return <>{children}</>;
+  return (
+    <View
+      collapsable={false}
+      style={coveredStyle}
+      accessibilityElementsHidden={covered}
+      importantForAccessibility={covered ? "no-hide-descendants" : "auto"}
+    >
+      {children}
+    </View>
+  );
+}
+
+const coveredStyle = { flex: 1 } as const;
 
 export function InfoCard({
   title,

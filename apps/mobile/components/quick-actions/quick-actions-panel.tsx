@@ -32,6 +32,7 @@ import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 const GLYPHS: Record<QuickActionKey, DuotoneGlyphPaths> = {
   newEvent: NAV_GLYPHS.events,
   newTask: NAV_GLYPHS.tasks,
+  invite: NAV_GLYPHS.invite,
   message: NAV_GLYPHS.chat,
   checkIn: NAV_GLYPHS.checkIn,
   hostCheckIn: NAV_GLYPHS.hostCheckIn,

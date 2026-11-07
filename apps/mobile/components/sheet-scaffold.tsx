@@ -1,5 +1,17 @@
-import { useCallback, useRef, type ForwardedRef, type RefObject } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  useCallback,
+  useRef,
+  type ForwardedRef,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import {
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
@@ -8,7 +20,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
 import { useBackToClose } from "@/lib/overlay";
-import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { fieldTypeRole, tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { CloseGlyph } from "@/components/control-glyphs";
 import { IconButton } from "@/components/icon-button";
 
@@ -201,7 +213,6 @@ export function useTallSheetProps() {
   } as const;
 }
 
-
 /**
  * The close control a tall sheet's header carries: the app-wide `CloseGlyph`
  * in the shared `IconButton` (`components.md` § Icon-only actions), muted,
@@ -263,6 +274,14 @@ export function SheetPrimaryButton({
    * sentence before it.
    */
   accessibilityHint,
+  /**
+   * A glyph before the label, in the label's ink, for a verb with a mark
+   * people know (Invite members' `Share invite`, the platform share mark), as
+   * `OnboardingPrimaryButton` draws it in setup.
+   */
+  icon,
+  /** Swaps the label for a spinner while a press waits on the server. */
+  busy = false,
 }: {
   label: string;
   onPress: () => void;
@@ -270,6 +289,8 @@ export function SheetPrimaryButton({
   accent: string;
   onAccent: string;
   accessibilityHint?: string;
+  icon?: (color: string) => ReactNode;
+  busy?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -277,7 +298,8 @@ export function SheetPrimaryButton({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ disabled }}
+      accessibilityLabel={busy ? label : undefined}
+      accessibilityState={{ disabled, busy }}
       accessibilityHint={accessibilityHint}
       disabled={disabled}
       onPress={onPress}
@@ -288,7 +310,16 @@ export function SheetPrimaryButton({
         pressed && !disabled ? styles.primaryButtonPressed : null,
       ]}
     >
-      <Text style={[styles.primaryLabel, { color: onAccent }]}>{label}</Text>
+      {busy ? (
+        <ActivityIndicator color={onAccent} />
+      ) : (
+        <View style={styles.primaryRow}>
+          {icon ? icon(onAccent) : null}
+          <Text style={[styles.primaryLabel, { color: onAccent }]}>
+            {label}
+          </Text>
+        </View>
+      )}
     </Pressable>
   );
 }
@@ -369,8 +400,15 @@ export function sheetFieldStyles(tokens: SignetTokens, accent: string) {
       paddingHorizontal: tokens.spacing.md,
       paddingVertical: tokens.spacing.sm,
       minHeight: tokens.touch.minimum,
-      ...typeRole(tokens.typography.role.body),
+      // Single-line: no lineHeight, or iOS sits the text low (`fieldTypeRole`).
+      // A multiline field adds `fieldMultilineText`.
+      ...fieldTypeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
+    },
+    /** What a multiline field adds to `field`: body's leading, text from the top. */
+    fieldMultilineText: {
+      ...typeRole(tokens.typography.role.body),
+      textAlignVertical: "top" as const,
     },
     fieldFocused: {
       borderColor: accent,
@@ -440,6 +478,11 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
       alignItems: "center",
       justifyContent: "center",
+    },
+    primaryRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
     },
     primaryButtonDisabled: {
       opacity: 0.5,

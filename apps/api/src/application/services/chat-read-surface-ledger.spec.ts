@@ -159,6 +159,22 @@ const HTTP_LEDGER: Record<string, Entry> = {
         "a blocker's unread and mention counts skip the blocked member's messages in that chapter (#2521)",
     },
   },
+  // Role names and whether the caller may ping each; no message content and
+  // no membership (2026-11-06, role mentions).
+  ChatController_getMentionRoles_v1: {
+    status: 'no-foreign-content',
+    why: "The chapter's role names and the caller's own permission to ping each, with no message content and no role membership.",
+  },
+  // Chat home's previews: other members' latest message text.
+  // `get_channel_latest_messages` skips a sender the caller blocked, falling
+  // back to the message before, as the timeline mask does.
+  ChatController_getLatestMessages_v1: {
+    status: 'masked',
+    proof: {
+      pglite:
+        "a blocker's previews skip the blocked member's messages in that chapter",
+    },
+  },
   ChatController_markRead_v1: {
     status: 'no-foreign-content',
     why: "Stamps the caller's own read cursor.",
@@ -515,15 +531,26 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     entries: [
       {
         status: 'not-hidden',
-        why: 'Fixed text, and a system DM naming the member who accepted. A system message that merely names a member is not hidden.',
+        why: 'A push naming the member who joined, and a system DM naming the member who accepted. A system message that merely names a member is not hidden.',
       },
     ],
   },
   // The event-name pushes, split three ways with the service (#3270): the
   // emitters themselves, and the two callers that hand them a written row.
   'application/services/event-announcement.service.ts': {
-    calls: 4,
+    calls: 3,
     entries: [MEMBER_TEXT],
+  },
+  // `notifyChapter` is `notifyMembers` over the whole roster: the one call is
+  // that hand-off, and it carries whatever its callers listed here pass it.
+  'application/services/notification.service.ts': {
+    calls: 1,
+    entries: [
+      {
+        status: 'no-foreign-content',
+        why: 'The chapter-wide primitive delegating to `notifyMembers`. Writes no text of its own; its callers are listed in this ledger.',
+      },
+    ],
   },
   'application/services/event-series.service.ts': {
     calls: 2,

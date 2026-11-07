@@ -29,15 +29,15 @@ import {
   floatingTabBarBottom,
   floatingTabBarTop,
 } from "@/lib/floating-chrome";
-import { hidesTabBar } from "@/components/route-error";
 import { selectionHaptic } from "@/lib/haptics";
 import type { QuickActionKey } from "@/lib/quick-actions";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * The four tabs, in the locked order (`spec/ui/mobile/navigation.md` § Tab
- * bar). Every other route the navigator holds is reached by navigation and
- * never drawn here.
+ * bar). The navigator holds only these (`app/(app)/(tabs)/_layout.tsx`); every
+ * other screen is pushed on the stack above it and covers the bar
+ * (`spec/ui/mobile/navigation.md` § Going back).
  */
 export const TAB_ROUTES = ["index", "events", "tasks", "more"] as const;
 
@@ -71,19 +71,14 @@ export function GlassTabBar({
   });
 
   const focusedRoute = state.routes[state.index];
-  const focusedOptions = descriptors[focusedRoute.key]?.options ?? {};
-  const hidden = hidesTabBar(focusedOptions.tabBarStyle);
-  // On a tab screen. A pushed screen that still sits over the tabs (until
-  // they all move onto the stack) keeps its own create button instead.
-  const onTab = (TAB_ROUTES as readonly string[]).includes(focusedRoute.name);
 
-  // Open on the screen it was opened from: moving to another screen, or the
-  // bar going away, closes it. The close is kept, so coming back to the
-  // screen doesn't open it again (state adjusted during render, as React's
-  // "storing information from previous renders" does it, not in an effect).
+  // Open on the tab it was opened from: moving to another tab closes it. The
+  // close is kept, so coming back to the tab doesn't open it again (state
+  // adjusted during render, as React's "storing information from previous
+  // renders" does it, not in an effect).
   const [openOn, setOpenOn] = useState<string | null>(null);
   if (openOn !== null && openOn !== focusedRoute.key) setOpenOn(null);
-  const open = openOn === focusedRoute.key && !hidden && onTab;
+  const open = openOn === focusedRoute.key;
   const [editing, setEditing] = useState(false);
 
   // The + turns into an X as the panel opens.
@@ -143,184 +138,176 @@ export function GlassTabBar({
   return (
     <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
       {sheets}
-      {hidden ? null : (
-        <>
-          {open ? (
-            <Animated.View
-              entering={FadeIn.duration(200)}
-              exiting={FadeOut.duration(150)}
-              style={StyleSheet.absoluteFill}
-            >
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Close quick actions"
-                onPress={closePanel}
-                style={[StyleSheet.absoluteFill, styles.scrim]}
-              />
-            </Animated.View>
-          ) : null}
+      {open ? (
+        <Animated.View
+          entering={FadeIn.duration(200)}
+          exiting={FadeOut.duration(150)}
+          style={StyleSheet.absoluteFill}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close quick actions"
+            onPress={closePanel}
+            style={[StyleSheet.absoluteFill, styles.scrim]}
+          />
+        </Animated.View>
+      ) : null}
 
-          {open ? (
-            <Animated.View
-              entering={panelEntering}
-              exiting={FadeOut.duration(150)}
-              style={[
-                styles.panel,
-                { left: FLOATING_TAB_BAR.side, bottom: aboveBar },
-              ]}
-              // Not accessibilityViewIsModal: that would hide the X and the
-              // scrim from VoiceOver, its siblings. The escape gesture leaves
-              // editing, then closes, as Android's back does.
-              onAccessibilityEscape={() =>
-                editing ? setEditing(false) : closePanel()
-              }
-            >
-              <QuickActionsPanel
-                shown={shown}
-                available={available}
-                width={panelWidth}
-                editing={editing}
-                canEdit={ready}
-                onEditingChange={setEditing}
-                onRun={runAction}
-                onSave={save}
-              />
-            </Animated.View>
-          ) : null}
+      {open ? (
+        <Animated.View
+          entering={panelEntering}
+          exiting={FadeOut.duration(150)}
+          style={[
+            styles.panel,
+            { left: FLOATING_TAB_BAR.side, bottom: aboveBar },
+          ]}
+          // Not accessibilityViewIsModal: that would hide the X and the
+          // scrim from VoiceOver, its siblings. The escape gesture leaves
+          // editing, then closes, as Android's back does.
+          onAccessibilityEscape={() =>
+            editing ? setEditing(false) : closePanel()
+          }
+        >
+          <QuickActionsPanel
+            shown={shown}
+            available={available}
+            width={panelWidth}
+            editing={editing}
+            canEdit={ready}
+            onEditingChange={setEditing}
+            onRun={runAction}
+            onSave={save}
+          />
+        </Animated.View>
+      ) : null}
 
-          {notice && !open ? (
-            <Animated.View
-              entering={FadeIn.duration(150)}
-              exiting={FadeOut.duration(200)}
-              pointerEvents="none"
-              style={[styles.noticeRow, { bottom: aboveBar }]}
-            >
-              <GlassSurface style={styles.notice}>
-                {/* Read out by the host's announceForAccessibility, on both
+      {notice && !open ? (
+        <Animated.View
+          entering={FadeIn.duration(150)}
+          exiting={FadeOut.duration(200)}
+          pointerEvents="none"
+          style={[styles.noticeRow, { bottom: aboveBar }]}
+        >
+          <GlassSurface style={styles.notice}>
+            {/* Read out by the host's announceForAccessibility, on both
                     platforms, so no live region to say it twice. */}
-                <Text
-                  style={[
-                    typeRole(tokens.typography.role.caption),
-                    { color: tokens.color.text.foreground },
-                  ]}
-                >
-                  {notice}
-                </Text>
-              </GlassSurface>
-            </Animated.View>
-          ) : null}
+            <Text
+              style={[
+                typeRole(tokens.typography.role.caption),
+                { color: tokens.color.text.foreground },
+              ]}
+            >
+              {notice}
+            </Text>
+          </GlassSurface>
+        </Animated.View>
+      ) : null}
 
-          <View
-            accessibilityRole="tablist"
-            style={[
-              styles.pillFrame,
-              {
-                left: FLOATING_TAB_BAR.side,
-                right: onTab ? pillRight : FLOATING_TAB_BAR.side,
-                bottom: barBottom,
-              },
-            ]}
-          >
-            {/* GlassSurface clips to its own radius, so the pill's goes on it
+      <View
+        accessibilityRole="tablist"
+        style={[
+          styles.pillFrame,
+          {
+            left: FLOATING_TAB_BAR.side,
+            right: pillRight,
+            bottom: barBottom,
+          },
+        ]}
+      >
+        {/* GlassSurface clips to its own radius, so the pill's goes on it
                 too, not only on the frame. */}
-            <GlassSurface
-              style={[StyleSheet.absoluteFill, { borderRadius: PILL_RADIUS }]}
-            />
-            <View style={styles.tabs}>
-              {TAB_ROUTES.map((name) => {
-                const route = state.routes.find(
-                  (candidate) => candidate.name === name,
-                );
-                if (!route) return null;
-                const options = descriptors[route.key]?.options ?? {};
-                const focused = focusedRoute.key === route.key;
-                const color = focused ? accent : tokens.color.text.muted;
-                const label = options.title ?? route.name;
-                return (
-                  <Pressable
-                    key={route.key}
-                    accessibilityRole="tab"
-                    accessibilityState={{ selected: focused }}
-                    accessibilityLabel={label}
-                    testID={`tab-${route.name}`}
-                    onPress={() => {
-                      const event = navigation.emit({
-                        type: "tabPress",
-                        target: route.key,
-                        canPreventDefault: true,
-                      });
-                      if (!focused && !event.defaultPrevented) {
-                        navigation.navigate(route.name, route.params);
-                      }
-                    }}
-                    onLongPress={() =>
-                      navigation.emit({
-                        type: "tabLongPress",
-                        target: route.key,
-                      })
-                    }
-                    style={styles.tab}
-                  >
-                    {/* The active tab sits on a soft capsule, as iOS 26's own
+        <GlassSurface
+          style={[StyleSheet.absoluteFill, { borderRadius: PILL_RADIUS }]}
+        />
+        <View style={styles.tabs}>
+          {TAB_ROUTES.map((name) => {
+            const route = state.routes.find(
+              (candidate) => candidate.name === name,
+            );
+            if (!route) return null;
+            const options = descriptors[route.key]?.options ?? {};
+            const focused = focusedRoute.key === route.key;
+            const color = focused ? accent : tokens.color.text.muted;
+            const label = options.title ?? route.name;
+            return (
+              <Pressable
+                key={route.key}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: focused }}
+                accessibilityLabel={label}
+                testID={`tab-${route.name}`}
+                onPress={() => {
+                  const event = navigation.emit({
+                    type: "tabPress",
+                    target: route.key,
+                    canPreventDefault: true,
+                  });
+                  if (!focused && !event.defaultPrevented) {
+                    navigation.navigate(route.name, route.params);
+                  }
+                }}
+                onLongPress={() =>
+                  navigation.emit({
+                    type: "tabLongPress",
+                    target: route.key,
+                  })
+                }
+                style={styles.tab}
+              >
+                {/* The active tab sits on a soft capsule, as iOS 26's own
                         bars draw it, under the accent glyph and bold label
                         (iconography.md §1 rule 2). */}
-                    {focused ? <View style={styles.activeCapsule} /> : null}
-                    {options.tabBarIcon?.({ focused, color, size: 24 })}
-                    <TabLabel focused={focused} color={color}>
-                      {label}
-                    </TabLabel>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-
-          {onTab ? (
-            <GlassSurface
-              style={[
-                styles.plus,
-                { right: FLOATING_TAB_BAR.side, bottom: barBottom },
-              ]}
-            >
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={
-                  open ? "Close quick actions" : "Quick actions"
-                }
-                accessibilityHint={
-                  open ? undefined : "Opens shortcuts to create and log things."
-                }
-                accessibilityState={{ expanded: open }}
-                onPress={open ? closePanel : () => openPanel()}
-                // Holding the + goes straight to editing the panel, once the
-                // member's role is in hand (`useQuickActions().ready`).
-                onLongPress={() =>
-                  open ? ready && setEditing(true) : openPanel(ready)
-                }
-                delayLongPress={400}
-                style={({ pressed }) => [
-                  styles.plusPress,
-                  pressed && styles.plusPressed,
-                ]}
-              >
-                <Animated.View style={plusStyle}>
-                  <Svg
-                    width={26}
-                    height={26}
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke={tokens.color.text.foreground}
-                    strokeWidth={2.2}
-                    strokeLinecap="round"
-                  >
-                    <Path d="M12 5v14M5 12h14" />
-                  </Svg>
-                </Animated.View>
+                {focused ? <View style={styles.activeCapsule} /> : null}
+                {options.tabBarIcon?.({ focused, color, size: 24 })}
+                <TabLabel focused={focused} color={color}>
+                  {label}
+                </TabLabel>
               </Pressable>
-            </GlassSurface>
-          ) : null}
-        </>
-      )}
+            );
+          })}
+        </View>
+      </View>
+
+      <GlassSurface
+        style={[
+          styles.plus,
+          { right: FLOATING_TAB_BAR.side, bottom: barBottom },
+        ]}
+      >
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={open ? "Close quick actions" : "Quick actions"}
+          accessibilityHint={
+            open ? undefined : "Opens shortcuts to create and log things."
+          }
+          accessibilityState={{ expanded: open }}
+          onPress={open ? closePanel : () => openPanel()}
+          // Holding the + goes straight to editing the panel, once the
+          // member's role is in hand (`useQuickActions().ready`).
+          onLongPress={() =>
+            open ? ready && setEditing(true) : openPanel(ready)
+          }
+          delayLongPress={400}
+          style={({ pressed }) => [
+            styles.plusPress,
+            pressed && styles.plusPressed,
+          ]}
+        >
+          <Animated.View style={plusStyle}>
+            <Svg
+              width={26}
+              height={26}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={tokens.color.text.foreground}
+              strokeWidth={2.2}
+              strokeLinecap="round"
+            >
+              <Path d="M12 5v14M5 12h14" />
+            </Svg>
+          </Animated.View>
+        </Pressable>
+      </GlassSurface>
     </View>
   );
 }

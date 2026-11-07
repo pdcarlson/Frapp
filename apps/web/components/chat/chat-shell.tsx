@@ -1,6 +1,12 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  CHANNELS_ROLE_REFUSAL_TITLE,
+  channelsRoleRefusalBody,
+  isRoleRefusal,
+} from "@repo/chat-core/channels-refused-copy";
 import { createPortal } from "react-dom";
 import { MembersGlyph } from "./chat-glyphs";
 import { ChannelMemberList } from "./channel-member-list";
@@ -8,7 +14,7 @@ import { channelDescription } from "@repo/hooks/channel-start";
 import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { ChannelHeaderTitle } from "./channel-header-title";
 import { ChannelStart } from "./channel-start";
-import { EmptyState, ErrorState } from "@/components/shared/async-states";
+import { ErrorState } from "@/components/shared/async-states";
 import {
   canHideConversation,
   directChannelDisplayName,
@@ -133,6 +139,7 @@ import {
 } from "@/components/layout/nav-face";
 import type { SlashCommand } from "@repo/chat-core/integrations";
 import type { ChatNotificationLevel } from "@repo/hooks";
+import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 
 interface DirectoryMember {
   user_id: string;
@@ -2074,44 +2081,55 @@ export function ChatShell({
               chapter, so "Pick an active chapter" is true in both where "you
               have no chapter" would be a confident falsehood in one.
             */}
-            <EmptyState
-              title="No chapter selected"
-              description="Pick an active chapter to load its channels."
-            />
+            <InlineNote>
+              Pick an active chapter to load its channels.
+            </InlineNote>
           </div>
         ) : null}
         {channelsPaneState === "error" ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            {/*
+              A refusal by role is not a load failure (2026-11-07: testers
+              invited as a Discord-imported role with only a channel
+              permission). The words are shared with mobile Chat home.
+            */}
             <ErrorState
-              title="Couldn't load channels"
-              description="Check your chapter access."
+              title={
+                isRoleRefusal(channelsQuery.error)
+                  ? CHANNELS_ROLE_REFUSAL_TITLE
+                  : "Couldn't load channels"
+              }
+              description={
+                isRoleRefusal(channelsQuery.error)
+                  ? channelsRoleRefusalBody(null)
+                  : describeLoadFailure(channelsQuery.error)
+              }
               onRetry={() => void channelsQuery.refetch()}
             />
           </div>
         ) : null}
         {channelsPaneState === "empty" ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            <EmptyState
-              title="No channels yet"
-              description="Onboarding seeds them. Ask an admin."
-            />
+            <InlineNote>No channels yet. Ask an admin to add one.</InlineNote>
           </div>
         ) : null}
         {channelsPaneState === "ready" && requestedChannelMissing ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            <EmptyState
-              title="Channel not found"
-              description="That link points somewhere you can't reach."
-              actionLabel="Browse channels"
-              onAction={() => {
-                setChannelTargetDismissed(true);
-                // Below `lg` the list is a separate pane, so a control named
-                // "Browse channels" has to actually show it. Dismissing alone
-                // resolved the #general fallback and painted a timeline, which
-                // is a different channel rather than a list.
-                setNarrowPane("channels");
-              }}
-            />
+            <InlineNote>
+              {"That link points to a channel you can't reach. "}
+              <InlineNoteAction
+                onClick={() => {
+                  setChannelTargetDismissed(true);
+                  // Below `lg` the list is a separate pane, so a control named
+                  // "Browse channels" has to actually show it. Dismissing alone
+                  // resolved the #general fallback and painted a timeline, which
+                  // is a different channel rather than a list.
+                  setNarrowPane("channels");
+                }}
+              >
+                Browse channels
+              </InlineNoteAction>
+            </InlineNote>
           </div>
         ) : null}
         {channelsPaneState === "loading" ? (

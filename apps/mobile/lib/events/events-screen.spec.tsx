@@ -8,10 +8,11 @@ import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { formatEventDateBlock } from "@/lib/events/format";
 import { expectRoundedRipple } from "@/test/pressable-row";
+import { InlineNote } from "@/components/inline-note";
 import { screenText } from "@/test/screen-text";
 
 /**
- * s06, rendered. It renders `app/(tabs)/events.tsx` but lives here: a spec
+ * s06, rendered. It renders `app/(app)/(tabs)/events.tsx` but lives here: a spec
  * under `app/` ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -38,6 +39,7 @@ const refetch = vi.fn();
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => chapterId,
+  useListChapters: () => ({ data: [{ chapter_id: "chapter-1", role_ids: [] }] }),
   useEvents: () => ({ ...query, data: events, refetch }),
   usePermissionList: () => permissions,
 }));
@@ -52,7 +54,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 vi.mock("@/lib/ask/flag", () => ({ isAskAvailable: () => false }));
 
-import EventsScreen from "@/app/(tabs)/events";
+import EventsScreen from "@/app/(app)/(tabs)/events";
 
 const mounted: ReactTestRenderer[] = [];
 
@@ -206,7 +208,7 @@ describe("Events list states", () => {
     query = { isPending: true, isError: false, isFetching: false };
     const tree = render();
 
-    expect(screenText(tree)).toContain("No chapter selected");
+    expect(screenText(tree)).toContain("Choose a chapter from More");
     expect(skeletons(tree)).toHaveLength(0);
   });
 
@@ -274,7 +276,9 @@ describe("Events list states", () => {
     events = [];
     const tree = render();
 
-    expect(screenText(tree)).toContain("Tap + to add an event.");
+    expect(screenText(tree)).toContain(
+      "Nothing scheduled yet. Tap + to add the first event.",
+    );
     // New event lives in the quick actions now, so the screen draws no + of
     // its own beside the tab bar's.
     expect(createButton(tree)).toBeUndefined();
@@ -304,8 +308,15 @@ describe("Events list states", () => {
     events = [];
     const tree = render();
 
-    expect(screenText(tree)).toContain("Nothing scheduled");
+    expect(screenText(tree)).toContain("Nothing scheduled yet.");
     expect(screenText(tree)).not.toContain("will appear here");
+  });
+
+  it("says it in one line where the rows go, not a card", () => {
+    events = [];
+    const tree = render();
+
+    expect(tree.root.findAllByType(InlineNote)).toHaveLength(1);
   });
 });
 

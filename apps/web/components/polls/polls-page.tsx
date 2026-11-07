@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 import {
@@ -25,11 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedOffline,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { dashboardToolbarHeightClassName } from "@/components/shared/table-controls";
 import { PageActions } from "@/components/layout/page-actions";
 import { Can } from "@/components/shared/can";
@@ -45,6 +42,7 @@ import {
   PollCardsSkeleton,
   PollsPageSkeleton,
 } from "@/components/polls/polls-skeleton";
+import { InlineNote } from "@/components/shared/inline-note";
 
 type PollResult = {
   optionIndex: number;
@@ -477,15 +475,11 @@ export function PollsPage() {
           <NestedError
             sole
             title="Couldn't load polls"
-            description="Confirm your chapter access and retry."
+            description={describeLoadFailure(pollsQuery.error)}
             onRetry={() => void pollsQuery.refetch()}
           />
         ) : polls.length === 0 ? (
-          <NestedEmpty
-            sole
-            title="No polls match this view"
-            description="Create a poll inside a chat channel and it will appear here. Loosen the filters if you're expecting results."
-          />
+          <InlineNote>No polls here. Start one in a chat channel.</InlineNote>
         ) : (
           <ul aria-label="Polls" className="grid gap-4 md:grid-cols-2">
             {polls.map((poll) => (

@@ -23,7 +23,7 @@ import { TaskRow } from "@/components/tasks/task-row";
  * why and stops offering a toggle that cannot win, and that an ordinary
  * failure keeps its quiet revert and retap.
  *
- * It renders `app/(tabs)/tasks.tsx` but lives here: a spec under `app/` ships
+ * It renders `app/(app)/(tabs)/tasks.tsx` but lives here: a spec under `app/` ships
  * as a route module (`lib/routes.spec.ts`).
  */
 
@@ -97,6 +97,13 @@ const mutateAsync = vi.fn(async () => {
 });
 
 let chapterId: string | null = "chapter-1";
+/** The board's rows, the viewer's grants and the chapter, per spec. */
+let tasks: unknown[] = TASKS;
+let permissions: string[] = [];
+let enabledModules: Record<string, boolean> | undefined = undefined;
+let events: unknown[] | undefined = [];
+/** Each `useEvents` call's `enabled`, so a spec can see whether it read. */
+const eventsEnabled: (boolean | undefined)[] = [];
 
 /** Each query's `refetch`, kept across renders so a pull can be asserted on. */
 const refetch = vi.hoisted(() => ({
@@ -112,7 +119,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useViewerUserId: () => "user-1",
   useCurrentUser: () => ({ isError: false, refetch: refetch.viewer }),
   useTasks: () => ({
-    data: TASKS,
+    data: tasks,
+    isSuccess: true,
     isPending: false,
     isError: false,
     isFetching: false,
@@ -120,8 +128,17 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useMyPoints: () => ({ data: undefined, refetch: refetch.points }),
   useLeaderboard: () => ({ data: undefined, refetch: refetch.leaderboard }),
-  usePermissionList: () => [],
+  usePermissionList: () => permissions,
+  useCurrentChapter: () => ({
+    isSuccess: true,
+    data: { enabled_modules: enabledModules },
+  }),
+  useEvents: (options?: { enabled?: boolean }) => {
+    eventsEnabled.push(options?.enabled);
+    return { data: options?.enabled ? events : undefined };
+  },
   useUpdateTaskStatus: () => ({ mutateAsync }),
+  useChapterRoster: () => ({ data: [] }),
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
@@ -133,7 +150,8 @@ vi.mock("@/lib/haptics", () => ({
   successHaptic: () => successHaptic(),
 }));
 
-import TasksScreen from "@/app/(tabs)/tasks";
+import TasksScreen from "@/app/(app)/(tabs)/tasks";
+import { UndoBar } from "@/components/tasks/undo-bar";
 
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */
 const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
@@ -189,17 +207,23 @@ describe("A task in flight", () => {
     const tree = render();
     await tapRow(tree);
 
-    // The host row: the screen drops `onToggle` while the sequence runs, so
-    // this is the plain branch, and it must still look and read in progress.
+    // The host row. The screen drops `onToggle` while the sequence runs; the
+    // row stays openable, and must still look and read in progress.
     const host = () =>
       row(tree).find(
         (node) =>
           typeof node.type === "string" &&
-          node.props.accessibilityRole === "checkbox",
+          node.props.accessibilityRole === "button",
       );
+    const hostStyle = () => {
+      const style = host().props.style;
+      return StyleSheet.flatten(
+        typeof style === "function" ? style({ pressed: false }) : style,
+      );
+    };
     expect(row(tree).props.onToggle).toBeUndefined();
     expect(host().props.accessibilityState).toMatchObject({ busy: true });
-    expect(StyleSheet.flatten(host().props.style).opacity).toBe(0.8);
+    expect(hostStyle().opacity).toBe(0.8);
     // The other row is untouched.
     expect(rows(tree)[1]!.props.isPending).toBe(false);
 
@@ -207,9 +231,7 @@ describe("A task in flight", () => {
 
     expect(row(tree).props.onToggle).toBeDefined();
     expect(host().props.accessibilityState).toMatchObject({ busy: false });
-    expect(StyleSheet.flatten(host().props.style)).not.toHaveProperty(
-      "opacity",
-    );
+    expect(hostStyle()).not.toHaveProperty("opacity");
     act(() => tree.unmount());
   });
 });
@@ -426,6 +448,130 @@ describe("Tasks board pull-to-refresh", () => {
 
     expect(refetch.tasks).not.toHaveBeenCalled();
     expect(refetch.viewer).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+});
+
+/**
+ * Rule 7 of the empty-states plan: a member with nothing assigned reads one
+ * line under the points card, the same line web's board writes, rather than a
+ * card. The + lives in the tab bar, so only an officer hears about it.
+ */
+describe("Tasks with nothing assigned", () => {
+  const soon = (hours: number) =>
+    new Date(Date.now() + hours * 3_600_000).toISOString();
+  const text = (tree: ReactTestRenderer) => screenText(tree);
+
+  afterEach(() => {
+    tasks = TASKS;
+    permissions = [];
+    enabledModules = undefined;
+    events = [];
+    eventsEnabled.length = 0;
+  });
+
+  it("says the plate is clear and names the next event", () => {
+    tasks = [];
+    events = [
+      { name: "Formal", start_time: soon(72) },
+      { name: "Chapter meeting", start_time: soon(2) },
+    ];
+    const tree = render();
+
+    expect(text(tree)).toMatch(/Nothing on your plate\. Next up: Chapter meeting, /);
+    expect(text(tree)).not.toContain("all clear");
+    expect(text(tree)).not.toContain("Tap +");
+    act(() => tree.unmount());
+  });
+
+  it("tells an officer the + assigns a task", () => {
+    tasks = [];
+    permissions = ["tasks:manage"];
+    const tree = render();
+
+    expect(text(tree)).toContain("Nothing on your plate. Tap + to assign a task.");
+    act(() => tree.unmount());
+  });
+
+  it("leaves the events read off when Events is off", () => {
+    tasks = [];
+    enabledModules = { events: false };
+    events = [{ name: "Chapter meeting", start_time: soon(2) }];
+    const tree = render();
+
+    expect(eventsEnabled.every((enabled) => !enabled)).toBe(true);
+    expect(text(tree)).toContain("Nothing on your plate.");
+    expect(text(tree)).not.toContain("Next up");
+    act(() => tree.unmount());
+  });
+
+  it("reads no events while the board has rows", () => {
+    const tree = render();
+
+    expect(eventsEnabled.every((enabled) => !enabled)).toBe(true);
+    act(() => tree.unmount());
+  });
+});
+
+describe("Undo after the checkbox completes a task (P6.1)", () => {
+  it("offers Undo, and Undo moves the task back to in progress", async () => {
+    mutateAsync.mockImplementation(async () => undefined as never);
+    const tree = render();
+    expect(tree.root.findAllByType(UndoBar)).toHaveLength(0);
+
+    await tapRow(tree);
+    expect(
+      mutateAsync.mock.calls.map((call) => (call as unknown[])[0]),
+    ).toEqual([
+      { id: "task-1", body: { status: "IN_PROGRESS" } },
+      { id: "task-1", body: { status: "COMPLETED" } },
+    ]);
+    const bar = tree.root.findByType(UndoBar);
+    expect(bar.props.message).toBe("Marked done");
+
+    mutateAsync.mockClear();
+    await act(async () => bar.props.onUndo());
+    expect(mutateAsync).toHaveBeenCalledWith({
+      id: "task-1",
+      body: { status: "IN_PROGRESS" },
+    });
+    expect(tree.root.findAllByType(UndoBar)).toHaveLength(0);
+    mutateAsync.mockReset();
+    mutateAsync.mockImplementation(async () => {
+      throw failure;
+    });
+    act(() => tree.unmount());
+  });
+
+  it("says so when Undo is refused, since the bar has already gone", async () => {
+    mutateAsync.mockImplementation(async () => undefined as never);
+    const tree = render();
+    await tapRow(tree);
+    const bar = tree.root.findByType(UndoBar);
+
+    mutateAsync.mockImplementation(async () => {
+      throw FAILED;
+    });
+    await act(async () => bar.props.onUndo());
+    const all = tree.root
+      .findAllByType("Text" as never)
+      .flatMap((node) => React.Children.toArray(node.props.children))
+      .filter((child) => typeof child === "string");
+    expect(all).toContain(
+      "Couldn't mark that task not done. An officer may have confirmed it already.",
+    );
+    mutateAsync.mockReset();
+    mutateAsync.mockImplementation(async () => {
+      throw failure;
+    });
+    act(() => tree.unmount());
+  });
+
+  it("offers no Undo when the completion fails", async () => {
+    failure = FAILED;
+    const tree = render();
+    await tapRow(tree);
+    expect(tree.root.findAllByType(UndoBar)).toHaveLength(0);
     act(() => tree.unmount());
   });
 });

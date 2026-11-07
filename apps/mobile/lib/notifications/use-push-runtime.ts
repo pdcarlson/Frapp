@@ -7,7 +7,7 @@
  *
  * ## Why this is a hook, and why `components/app-runtime.tsx` mounts it high
  *
- * `app/_layout.tsx` is one of the seven frozen hotspot files
+ * `app/_layout.tsx` is one of the eight frozen hotspot files
  * (`spec/ui/mobile/navigation.md` § Hotspot freeze), so the shape here follows
  * `lib/chat/use-chat-runtime.ts`: module singletons plus a once-per-process
  * boot, called from a hook rather than a provider.
@@ -16,9 +16,9 @@
  * from how chat wires itself, for two reasons that are specific to push:
  *
  * - **Tab screens mount lazily.** A tap that deep-links straight to
- *   `/chat-thread` need never mount `(tabs)/index.tsx`, so a runtime hosted
+ *   `/chat-thread` need never mount `(app)/(tabs)/index.tsx`, so a runtime hosted
  *   there would miss the very cold-start read it exists to perform.
- * - `(tabs)/index.tsx` deliberately does *not* call `useChatRuntime()`, because
+ * - `(app)/(tabs)/index.tsx` deliberately does *not* call `useChatRuntime()`, because
  *   that would reconfigure the realtime manager from a list screen. Hanging a
  *   second app-wide runtime off it would repeat exactly that mistake.
  *
@@ -63,7 +63,7 @@ import {
 } from "@repo/hooks";
 import { useAuthSession } from "../auth-session";
 import { useIsApiAuthenticated } from "../use-is-api-authenticated";
-import { asRoute } from "../href";
+import { asRoute, openHref } from "../href";
 import {
   addNotificationResponseListener,
   addPushTokenListener,
@@ -152,9 +152,9 @@ export function usePushRuntime(): void {
     handlerConfigured = true;
     configureForegroundPresentation();
     // The Android channel is created here, not only inside
-    // `requestPushPermission()`. Its other callers are the primer's "Turn on"
-    // (`PushPrimerCard`, hosted on the welcome screen since #958) and
-    // Settings' push switch, which a member may never tap — so relying on that alone would leave the
+    // `requestPushPermission()`. Its other callers are onboarding's "Turn on
+    // notifications" (`components/notifications/push-ask.tsx`), the chat
+    // home's reminder, and Settings' push switch, which a member may never tap — so relying on that alone would leave the
     // `"default"` channel uncreated for them, while `app.json`'s plugin
     // config points FCM's `default_notification_channel_id` at it. The
     // study-pause notice (#1065) is a **local** notification that needs no
@@ -208,11 +208,11 @@ export function usePushRuntime(): void {
     const { target, notificationId } = pendingTap;
     setPendingTap(null);
     if (notificationId) markReadRef.current.mutate(notificationId);
-    // The same fallback check `app/(tabs)/notifications.tsx` makes: an
+    // The same fallback check `app/(app)/notifications.tsx` makes: an
     // unrecognized payload resolves to the notification list, and pushing that
     // from a tap that arrived *as* a notification stacks the list on itself.
     if (target.pathname !== NOTIFICATION_FALLBACK_PATHNAME || target.params) {
-      router.push(asRoute(notificationHref(target)));
+      openHref(router, asRoute(notificationHref(target)));
     }
   }, [pendingTap, status, isChapterResolving, isAuthenticated, router]);
 

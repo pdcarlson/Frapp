@@ -24,7 +24,9 @@ export {
   formatDayTime,
   formatDayTimeRange,
   formatDueLabel,
+  formatListStamp,
   formatRelativeDayTime,
   formatTimestampFull,
   formatWeekdayDay,
 } from "./display";
+export { nextUpLine } from "./next-up";

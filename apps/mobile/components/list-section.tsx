@@ -290,6 +290,20 @@ function splitRowStyle(style: StyleProp<ViewStyle>): {
   for (const [key, value] of Object.entries(StyleSheet.flatten(style) ?? {})) {
     if (key.startsWith("margin")) {
       clip[key] = value;
+    } else if (
+      key.startsWith("flex") &&
+      key !== "flexDirection" &&
+      key !== "flexWrap"
+    ) {
+      // How the row sizes against its siblings (`flex`, `flexGrow`,
+      // `flexShrink`, `flexBasis`) belongs to the clip, the parent's actual
+      // child. Left on the inner row, a `flex: 1` row in a horizontal parent
+      // shrank to its content and squeezed a flexing label to zero width: the
+      // chat home's section names vanished (2026-11-07). The clip is a
+      // column, so the row only grows to fill it; a basis would size it
+      // vertically.
+      clip[key] = value;
+      row.flexGrow = 1;
     } else {
       if (key.startsWith("border") && key.endsWith("Radius")) clip[key] = value;
       row[key] = value;
@@ -309,6 +323,12 @@ export type ListRowProps = {
   value?: string | null;
   /** A second line under the label. */
   description?: string | null;
+  /**
+   * `destructive` draws the second line in the destructive hue, for a row
+   * whose state is a failure (an upload that didn't go through). The label
+   * keeps its colour, so the row reads as the same thing, now stuck.
+   */
+  descriptionTone?: "default" | "destructive";
   /** Trailing control (a switch, a swatch) instead of, or beside, `value`. */
   trailing?: ReactNode;
   onPress?: () => void;
@@ -356,6 +376,7 @@ export function ListRow({
   leading,
   value,
   description,
+  descriptionTone = "default",
   trailing,
   onPress,
   accessibilityHint,
@@ -386,7 +407,16 @@ export function ListRow({
           {label}
         </Text>
         {description ? (
-          <Text style={styles.rowDescription}>{description}</Text>
+          <Text
+            style={[
+              styles.rowDescription,
+              descriptionTone === "destructive"
+                ? styles.rowDescriptionDestructive
+                : null,
+            ]}
+          >
+            {description}
+          </Text>
         ) : null}
       </View>
       {value ? (
@@ -517,6 +547,9 @@ function createStyles(tokens: SignetTokens) {
     rowDescription: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+    },
+    rowDescriptionDestructive: {
+      color: tokens.color.semantic.destructive,
     },
     rowValue: {
       ...typeRole(tokens.typography.role.caption),

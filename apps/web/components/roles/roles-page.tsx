@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { Loader2, Trash2 } from "lucide-react";
@@ -35,7 +36,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  EmptyState,
   ErrorState,
   anyReadUncached,
   OfflineState,
@@ -57,8 +57,10 @@ import {
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { roleColorOrNull, type RoleColorHex } from "@repo/validation";
 import { RoleColorSwatches } from "@/components/roles/role-color-swatches";
+import { Switch } from "@/components/ui/switch";
 import { SectionSkeleton } from "@/components/shared/page-skeletons";
 import { SettingsListCard } from "@/components/settings/settings-skeleton";
+import { InlineNote } from "@/components/shared/inline-note";
 
 type Role = {
   id: string;
@@ -68,6 +70,8 @@ type Role = {
   is_system: boolean;
   display_order: number;
   color: string | null;
+  /** Whether any member may `@` the role in chat; on unless turned off. */
+  mentionable?: boolean;
   created_at: string;
 };
 
@@ -200,6 +204,7 @@ export function RolesAndPermissionsPage() {
   // tell "left alone" from "cleared on purpose".
   const [colorTouched, setColorTouched] = useState(false);
   const [displayOrderDraft, setDisplayOrderDraft] = useState("");
+  const [mentionableDraft, setMentionableDraft] = useState(true);
 
   // Draft state for creating a new role.
   const [createName, setCreateName] = useState("");
@@ -217,6 +222,7 @@ export function RolesAndPermissionsPage() {
     setColorDraft(roleColorOrNull(role.color));
     setColorTouched(false);
     setDisplayOrderDraft(String(role.display_order ?? 0));
+    setMentionableDraft(role.mentionable !== false);
   }
 
   async function handleSaveRole() {
@@ -235,6 +241,12 @@ export function RolesAndPermissionsPage() {
               ? colorDraft
               : undefined,
           display_order: parseGuardedInt(displayOrderDraft),
+          // Sent only when changed, like the color, so re-saving an untouched
+          // role writes no audit row for it.
+          mentionable:
+            mentionableDraft !== (activeRole.mentionable !== false)
+              ? mentionableDraft
+              : undefined,
           // **No `permissions` key.** This form no longer edits them, and
           // sending the draft anyway would post whatever the role held when it
           // was selected — so renaming a role after flipping its cells in the
@@ -251,7 +263,7 @@ export function RolesAndPermissionsPage() {
         title: "Couldn't save role",
         description: getErrorMessage(
           error,
-          "Retry in a moment. The API rejected the update.",
+          "Your change wasn't saved. Try again in a moment.",
         ),
         variant: "destructive",
       });
@@ -407,7 +419,7 @@ export function RolesAndPermissionsPage() {
     body = (
       <ErrorState
         title="Couldn't load roles"
-        description="Confirm your chapter access and retry."
+        description={describeLoadFailure(rolesQuery.error)}
         onRetry={retryQueries}
       />
     );
@@ -437,10 +449,7 @@ export function RolesAndPermissionsPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               {roles.length === 0 ? (
-                <EmptyState
-                  title="No roles yet"
-                  description="Chapters always start with default system roles. Refresh to reload or create a new custom role."
-                />
+                <InlineNote>No roles yet. Refresh to reload them.</InlineNote>
               ) : (
                 <ul className="divide-y divide-border/70">
                   {[...roles]
@@ -554,6 +563,32 @@ export function RolesAndPermissionsPage() {
                       }}
                     />
                   </div>
+                  {/*
+                    Owner, 2026-11-06: "anyone can ping any role by default.
+                    officers can change defaults." Off, only a member who can
+                    manage channels or roles can @ it (spec/behavior/chat/
+                    README.md § Role mentions).
+                  */}
+                  <div className="flex items-start justify-between gap-4 sm:col-span-2">
+                    <div className="grid gap-1">
+                      <Label htmlFor="role-mentionable">
+                        Anyone can @mention this role
+                      </Label>
+                      <p
+                        id="role-mentionable-description"
+                        className="text-sm text-muted-foreground"
+                      >
+                        When off, only officers who manage channels or roles can
+                        ping everyone in it.
+                      </p>
+                    </div>
+                    <Switch
+                      id="role-mentionable"
+                      aria-describedby="role-mentionable-description"
+                      checked={mentionableDraft}
+                      onCheckedChange={setMentionableDraft}
+                    />
+                  </div>
                 </div>
                 {/*
                   The permission checklist moved to the board `4e` matrix
@@ -663,8 +698,8 @@ export function RolesAndPermissionsPage() {
               Transfer presidency
             </CardTitle>
             <CardDescription>
-              Move the President role to another member. Only the current
-              president can initiate this. The API rejects anyone else.
+              Hand the President role to another member. Only the current
+              president can do this.
             </CardDescription>
           </CardHeader>
           <CardContent>

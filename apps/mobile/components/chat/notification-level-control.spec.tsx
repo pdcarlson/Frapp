@@ -64,7 +64,7 @@ const View = "View" as unknown as React.ComponentType<{
 const onTriggerLayout = vi.fn();
 
 /**
- * The trigger and the menu as `app/(tabs)/chat-thread.tsx` lays them out: the
+ * The trigger and the menu as `app/(app)/chat-thread.tsx` lays them out: the
  * trigger inside a header, the menu a later sibling, one shared
  * `useNotificationLevelMenu`. The thread's accessibility wrapper is not
  * mirrored here; `lib/chat/chat-thread-screen.spec.tsx` renders the screen

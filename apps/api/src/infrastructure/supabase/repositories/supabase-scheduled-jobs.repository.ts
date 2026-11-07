@@ -16,6 +16,7 @@ import {
 } from '#domain/entities';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { eventRequiresAnyone } from '@repo/validation';
 import type {
   IScheduledJobsRepository,
   StalePaletteRow,
@@ -57,6 +58,7 @@ interface EventCandidateRow {
   end_time: string;
   is_mandatory: boolean;
   required_role_ids: string[] | null;
+  others_invited: boolean | null;
 }
 
 interface PollCandidateRow {
@@ -117,7 +119,9 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
       (from, to) =>
         this.supabase
           .from('events')
-          .select('id, chapter_id, end_time, is_mandatory, required_role_ids')
+          .select(
+            'id, chapter_id, end_time, is_mandatory, required_role_ids, others_invited',
+          )
           .gte('end_time', endedAfter.toISOString())
           .lte('end_time', endedBefore.toISOString())
           .or('is_mandatory.eq.true,required_role_ids.not.is.null')
@@ -131,9 +135,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
     );
 
     return rows
-      .filter(
-        (row) => row.is_mandatory || (row.required_role_ids?.length ?? 0) > 0,
-      )
+      .filter(eventRequiresAnyone)
       .map(({ id, chapter_id, end_time }) => ({ id, chapter_id, end_time }));
   }
 
@@ -161,7 +163,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
         this.supabase
           .from('events')
           .select(
-            'id, chapter_id, name, start_time, is_mandatory, required_role_ids',
+            'id, chapter_id, name, start_time, location, is_mandatory, required_role_ids, optional_role_ids, excluded_role_ids, others_invited',
           )
           .gt('start_time', startAfter.toISOString())
           .lte('start_time', startOnOrBefore.toISOString())
@@ -175,9 +177,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
           .range(from, to),
     );
 
-    return rows.filter(
-      (row) => row.is_mandatory || (row.required_role_ids?.length ?? 0) > 0,
-    );
+    return rows.filter(eventRequiresAnyone);
   }
 
   /**

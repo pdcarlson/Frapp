@@ -5,7 +5,9 @@ import {
   useDeleteDocument,
   useDocumentFolders,
   useDocuments,
+  useMyPermissions,
 } from "@repo/hooks";
+import { can } from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import { PageActions } from "@/components/layout/page-actions";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -25,14 +27,27 @@ import {
 } from "@/components/documents/folder-management";
 import { FolderRail } from "@/components/documents/folder-rail";
 import {
-  UploadDocumentDialog,
+  DocumentsPageDropTarget,
+  UploadDocumentPanel,
   useDocumentUpload,
-} from "@/components/documents/upload-document-dialog";
+} from "@/components/documents/upload-document-panel";
+import { documentTypeOptions } from "@/lib/documents/upload-defaults";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
+/*
+  Keyed by chapter, so switching chapters starts the page over: the upload
+  draft (file, folder, guesses) and the folder on screen belong to the chapter
+  they were made in and must never be offered to the next one.
+*/
 export function DocumentsPage() {
+  const chapterId = useChapterStore((state) => state.activeChapterId);
+  return <ChapterDocumentsPage key={chapterId ?? "none"} />;
+}
+
+function ChapterDocumentsPage() {
   const { toast } = useToast();
   // Every write route on `ChapterDocumentController` (upload URL, confirm,
   // delete) carries no `@FreeTier`, so they are all paid-ops behind the same
@@ -120,6 +135,11 @@ export function DocumentsPage() {
   }, [folders, foldersQuery.isError, deferredSearch, documents]);
 
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
+  const { data: permissionsPayload } = useMyPermissions();
+  const canUpload = can(
+    "chapter_docs:upload",
+    permissionsPayload?.permissions ?? [],
+  );
 
   /*
     Folder filtering stays client-side while search goes to the server. The
@@ -140,7 +160,37 @@ export function DocumentsPage() {
     );
   }, [activeFolder, documents]);
 
-  const upload = useDocumentUpload(gate);
+  /*
+    The upload panel's type chips: the common types plus every type this
+    chapter has already filed under, read off the documents in hand. Free text
+    on the wire until #3642, so this keeps new uploads on the spellings the
+    library already uses.
+  */
+  /*
+    Read from the unsearched list, never the search results: a search for
+    "rush" must not drop the chapter's "Contract" chip or change where the
+    folder guess files a document. Same query key as the page's own list with
+    no search, so it is normally a cache hit, not a second request.
+  */
+  const libraryQuery = useDocuments();
+  const library = useMemo(
+    () => asArray<ChapterDocument>(libraryQuery.data),
+    [libraryQuery.data],
+  );
+  const typeOptions = useMemo(
+    () => documentTypeOptions(library.map((doc) => doc.document_type)),
+    [library],
+  );
+  const folderNames = useMemo(
+    () => folders.map((folder) => folder.name),
+    [folders],
+  );
+  const upload = useDocumentUpload(gate, {
+    activeFolder,
+    typeOptions,
+    folders: folderNames,
+    documents: library,
+  });
   /*
     Which rows' deletes are in flight — a set, not a scalar. `useDeleteDocument` is pessimistic —
     the row only disappears once the DELETE round-trips — so without this
@@ -250,7 +300,17 @@ export function DocumentsPage() {
     <div className="space-y-6">
       <PageActions>
         <Can permission="chapter_docs:upload">
-          <UploadDocumentDialog gate={gate} upload={upload} />
+          <UploadDocumentPanel
+            gate={gate}
+            upload={upload}
+            folders={folderNames}
+            typeOptions={typeOptions}
+          />
+          <DocumentsPageDropTarget
+            gate={gate}
+            upload={upload}
+            activeFolder={activeFolder}
+          />
         </Can>
       </PageActions>
       {/*
@@ -321,6 +381,7 @@ export function DocumentsPage() {
 
         <DocumentList
           listState={listState}
+          loadError={documentsQuery.error}
           visible={visible}
           activeFolder={activeFolder}
           search={search}
@@ -330,6 +391,8 @@ export function DocumentsPage() {
           gate={gate}
           deletingIds={deletingIds}
           onDelete={(doc) => void handleDelete(doc)}
+          onShowAllFiles={() => setActiveFolder(null)}
+          onUpload={canUpload ? () => upload.openPanel() : undefined}
         />
       </div>
       {/*

@@ -12,7 +12,10 @@ import { AccessibilityInfo, AppState } from "react-native";
 import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useActiveChapterId, useDocumentFolders, useEvents } from "@repo/hooks";
-import { UploadDocumentSheet } from "@/components/documents/upload-document-sheet";
+import {
+  UploadDocumentSheet,
+  type PendingDocumentUpload,
+} from "@/components/documents/upload-document-sheet";
 import { NewEventSheet } from "@/components/events/new-event-sheet";
 import { reportRouteError } from "@/components/route-error";
 import { LogHoursSheet } from "@/components/service-hours/log-hours-sheet";
@@ -154,6 +157,10 @@ export function useQuickActionsHost({
         case "upload":
           openSheet(key);
           return;
+        case "invite":
+          // The Invite members screen, whose one button shares a fresh link.
+          router.push("/invite");
+          return;
         case "message":
           // Pick who to write to; their card's Message opens the thread.
           router.push("/directory");
@@ -251,6 +258,16 @@ export function useQuickActionsHost({
           <QuickUploadSheet
             sheetRef={uploadRef}
             onUploaded={(title) => confirm(`“${title}” is in the library.`)}
+            // Upload closes the sheet at once, so the notice carries the
+            // upload until it lands, and says so if it didn't.
+            onPending={(pending) => {
+              if (!pending) return;
+              confirm(
+                pending.failed
+                  ? `“${pending.title}” didn't upload. Tap + then Upload to try again.`
+                  : `Uploading “${pending.title}”…`,
+              );
+            }}
           />
         </SheetBoundary>
       ) : null}
@@ -285,9 +302,11 @@ class SheetBoundary extends Component<
 function QuickUploadSheet({
   sheetRef,
   onUploaded,
+  onPending,
 }: {
   sheetRef: RefObject<BottomSheetModal | null>;
   onUploaded: (title: string) => void;
+  onPending: (pending: PendingDocumentUpload | null) => void;
 }) {
   const foldersQuery = useDocumentFolders();
   const folders = useMemo(
@@ -300,6 +319,7 @@ function QuickUploadSheet({
       folders={folders}
       initialFolder={null}
       onUploaded={onUploaded}
+      onPending={onPending}
     />
   );
 }

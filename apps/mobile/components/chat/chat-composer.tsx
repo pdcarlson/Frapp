@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -8,17 +9,19 @@ import {
   TextInput,
   View,
 } from "react-native";
-import type { OutboxAttachment } from "@repo/chat-core/adapters";
-import { formatBytes } from "@repo/formatting";
+import type { StagedPhoto } from "@/lib/chat/use-chat-channel";
 import {
   activeMentionQuery,
-  mentionSuggestions,
+  mentionPickerEntries,
   type MentionCandidate,
+  type MentionPickerEntry,
 } from "@repo/validation";
 import { initialsFor } from "@/lib/more/narrow";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
-import { CloseGlyph } from "@/components/control-glyphs";
+import { CloseGlyph, RetryGlyph } from "@/components/control-glyphs";
+import { NavGlyph } from "@/components/nav-glyph";
+import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 
 /**
@@ -42,9 +45,17 @@ import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding
  * progress and failure states were their own surface, and a disabled button
  * that never becomes enabled reads as a bug. That surface is now built
  * (`lib/chat/attachment-upload.ts`), so the button is real, and the three
- * states it needed are the ones handled below: in-flight (spinner in place of
- * the glyph), refused (the hint line, in the error tone), and staged (chips
- * above the input).
+ * states it needed are the ones handled below: picking (spinner in place of
+ * the glyph while the system sheet is up), refused (the hint line, in the
+ * error tone), and staged.
+ *
+ * **Staged photos are pictures, not filenames.** The tray above the input
+ * draws each photo the member picked as a square thumbnail from the file on
+ * the phone, the moment the picker closes. Its upload runs in the background:
+ * an uploading photo draws faded (the pending rule, components.md §10: gray
+ * until sent, no spinner, nothing moves), a ready one at full strength, and a
+ * failed one dimmed under a try-again glyph the member taps. Send never waits
+ * on the tray (`send` in `use-chat-channel.ts`).
  *
  * **Reply and Edit stage above the input** (#2775) as one strip, `context`:
  * "Replying to <name>" with the parent's preview, or "Editing message". The
@@ -54,7 +65,8 @@ import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding
  * attach control, since an edit changes text only.
  *
  * **`@` opens a member picker** above the input, as web's composer does: the
- * members whose name holds what follows the `@`, from `mentionCandidates`.
+ * members whose name holds what follows the `@`, from `mentionCandidates`,
+ * then the roles this member may ping, from `mentionRoles` (2026-11-06).
  * Picking one writes `@` and their label (`mentionLabelFor` in
  * `@repo/validation`) in place of what was typed, so the body is the plain text
  * a typed handle would be and the server resolves it as one. A space, or moving
@@ -93,17 +105,16 @@ export interface ChatComposerProps {
   disabledHint?: string | null;
   /** `error` paints the hint in `semantic.destructive`. Defaults to muted. */
   hintTone?: "muted" | "error";
-  /**
-   * Uploaded and waiting to be claimed by the next send. The bytes are already
-   * in the bucket by the time a chip appears, so removing one drops the claim,
-   * not the object.
-   */
-  attachments?: OutboxAttachment[];
+  /** Photos staged for the next send, each uploading, ready or failed. */
+  photos?: StagedPhoto[];
   /** Omit to render no attach affordance at all, rather than an inert one. */
   onAttach?: () => void;
-  onRemoveAttachment?: (storagePath: string) => void;
-  /** An upload is in flight; the attach control shows a spinner and locks. */
-  isUploading?: boolean;
+  onRemovePhoto?: (key: string) => void;
+  onRetryPhoto?: (key: string) => void;
+  /** The system photo sheet is up; the attach control shows a spinner and locks. */
+  isPicking?: boolean;
+  /** No room for another photo; the attach control stays, disabled. */
+  attachFull?: boolean;
   /**
    * Set when attaching is unavailable right now — offline, or no post
    * permission. It **gates the control and nothing else**: the member-facing
@@ -122,7 +133,22 @@ export interface ChatComposerProps {
    * while it loads, which offers nothing rather than "No matching members".
    */
   mentionCandidates?: readonly MentionCandidate[];
+  /**
+   * The roles `@` offers after the members (`GET /v1/channels/mention-roles`),
+   * each saying whether this member may ping it. `undefined` while it loads,
+   * which offers members only.
+   */
+  mentionRoles?: readonly MentionRoleRow[];
 }
+
+/** A role as the picker offers it: a subset of `MentionRoleDto`. */
+export interface MentionRoleRow {
+  role_id: string;
+  name: string;
+  mentionable: boolean;
+}
+
+type PickerEntry = MentionPickerEntry<MentionCandidate, MentionRoleRow>;
 
 export function ChatComposer({
   value,
@@ -132,13 +158,16 @@ export function ChatComposer({
   placeholder,
   disabledHint,
   hintTone = "muted",
-  attachments = [],
+  photos = [],
   onAttach,
-  onRemoveAttachment,
-  isUploading = false,
+  onRemovePhoto,
+  onRetryPhoto,
+  isPicking = false,
+  attachFull = false,
   attachDisabledReason,
   context = null,
   mentionCandidates,
+  mentionRoles,
 }: ChatComposerProps) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
@@ -149,17 +178,18 @@ export function ChatComposer({
     value,
     onChangeText,
     mentionCandidates,
+    mentionRoles,
   );
 
-  // An empty or whitespace-only body is not a send — unless something is
-  // attached. An attachment-only message is a real message, and gating it on
-  // the text alone would strand a photo that is already in the bucket with the
-  // send button greyed out and no way to explain why.
+  // An empty or whitespace-only body is not a send — unless a photo is
+  // staged. A photo-only message is a real message, uploaded or still
+  // uploading, and gating it on the text alone would strand it with the send
+  // button greyed out and no way to explain why.
   const isSendable =
-    canSend && (value.trim().length > 0 || attachments.length > 0);
+    canSend && (value.trim().length > 0 || photos.length > 0);
 
   const canAttach =
-    !!onAttach && !isUploading && !attachDisabledReason && canSend;
+    !!onAttach && !isPicking && !attachFull && !attachDisabledReason && canSend;
 
   return (
     <View style={styles.wrapper}>
@@ -202,33 +232,65 @@ export function ChatComposer({
         </View>
       ) : null}
 
-      {attachments.length > 0 ? (
-        <View style={styles.chips}>
-          {attachments.map((attachment) => (
-            <View key={attachment.storagePath} style={styles.chip}>
-              <Text numberOfLines={1} style={styles.chipName}>
-                {attachment.filename}
-              </Text>
-              {typeof attachment.byteSize === "number" ? (
-                <Text style={styles.chipSize}>
-                  {formatBytes(attachment.byteSize)}
-                </Text>
-              ) : null}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Remove ${attachment.filename}`}
-                hitSlop={14}
-                onPress={() => onRemoveAttachment?.(attachment.storagePath)}
-                style={({ pressed }) => [
-                  styles.chipRemove,
-                  pressed ? styles.pressed : null,
-                ]}
-              >
-                <CloseGlyph color={tokens.color.text.muted} size={16} />
-              </Pressable>
-            </View>
-          ))}
-        </View>
+      {photos.length > 0 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.tray}
+        >
+          {photos.map((photo, index) => {
+            const label = `Photo ${index + 1} of ${photos.length}`;
+            return (
+              <View key={photo.key} style={styles.thumb}>
+                <Pressable
+                  accessibilityRole={photo.status === "failed" ? "button" : "image"}
+                  accessibilityLabel={
+                    photo.status === "failed"
+                      ? `${label}, didn't upload. Try again`
+                      : photo.status === "uploading"
+                        ? `${label}, uploading`
+                        : label
+                  }
+                  disabled={photo.status !== "failed"}
+                  onPress={() => onRetryPhoto?.(photo.key)}
+                  style={styles.thumbFill}
+                >
+                  <Image
+                    source={{ uri: photo.previewUri }}
+                    resizeMode="cover"
+                    style={[
+                      styles.thumbFill,
+                      photo.status !== "ready" ? styles.thumbPending : null,
+                    ]}
+                  />
+                  {photo.status === "failed" ? (
+                    <View style={styles.thumbFailed}>
+                      <RetryGlyph
+                        color={tokens.color.semantic.destructive}
+                        size={22}
+                      />
+                    </View>
+                  ) : null}
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${label.toLowerCase()}`}
+                  // 24 + 10 each side reaches the 44pt floor (§2), all of it
+                  // inside the thumb, where Android delivers touches.
+                  hitSlop={10}
+                  onPress={() => onRemovePhoto?.(photo.key)}
+                  style={({ pressed }) => [
+                    styles.thumbRemove,
+                    pressed ? styles.pressed : null,
+                  ]}
+                >
+                  <CloseGlyph color={THUMB_REMOVE_INK} size={14} />
+                </Pressable>
+              </View>
+            );
+          })}
+        </ScrollView>
       ) : null}
 
       {mention.open ? (
@@ -244,7 +306,7 @@ export function ChatComposer({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Attach photo"
-            accessibilityState={{ disabled: !canAttach, busy: isUploading }}
+            accessibilityState={{ disabled: !canAttach, busy: isPicking }}
             disabled={!canAttach}
             onPress={onAttach}
             style={({ pressed }) => [
@@ -253,9 +315,9 @@ export function ChatComposer({
               pressed ? styles.pressed : null,
             ]}
           >
-            {isUploading ? (
+            {isPicking ? (
               <ActivityIndicator
-                accessibilityLabel="Uploading photo"
+                accessibilityLabel="Choosing photos"
                 color={tokens.color.text.muted}
                 size="small"
               />
@@ -314,6 +376,7 @@ function useMentionPicker(
   value: string,
   onChangeText: (next: string) => void,
   candidates: readonly MentionCandidate[] | undefined,
+  roles: readonly MentionRoleRow[] | undefined,
 ) {
   const [focused, setFocused] = useState(false);
   const [caret, setCaret] = useState<number | null>(null);
@@ -332,8 +395,10 @@ function useMentionPicker(
   const at = Math.min(caret ?? value.length, value.length);
   const active = focused && candidates ? activeMentionQuery(value, at) : null;
   // A filter over one chapter's roster, cheap enough to run every render.
-  const suggestions =
-    active && candidates ? mentionSuggestions(candidates, active.query) : [];
+  const suggestions: PickerEntry[] =
+    active && candidates
+      ? mentionPickerEntries(candidates, roles ?? [], active.query)
+      : [];
 
   const pick = (label: string) => {
     if (!active) return;
@@ -385,7 +450,7 @@ function MentionPicker({
   onPick,
   styles,
 }: {
-  suggestions: ReturnType<typeof mentionSuggestions<MentionCandidate>>;
+  suggestions: readonly PickerEntry[];
   onPick: (label: string) => void;
   styles: ReturnType<typeof createStyles>;
 }) {
@@ -398,36 +463,62 @@ function MentionPicker({
   }
   return (
     <ScrollView
-      accessibilityLabel="Members to mention"
+      accessibilityLabel="Members and roles to mention"
       keyboardShouldPersistTaps="always"
       style={[styles.mentionList, styles.mentionListScroll]}
     >
-      {suggestions.map(({ member, label }) => (
-        <Pressable
-          key={member.user_id}
-          accessibilityRole="button"
-          accessibilityLabel={`Mention ${member.display_name}`}
-          onPress={() => onPick(label)}
-          style={({ pressed }) => [
-            styles.mentionRow,
-            pressed ? styles.mentionRowPressed : null,
-          ]}
-        >
-          <View style={styles.mentionAvatar}>
-            <Text style={styles.mentionAvatarText}>
-              {initialsFor(member.display_name)}
+      {suggestions.map((entry) => {
+        const name =
+          entry.kind === "member" ? entry.member.display_name : entry.role.name;
+        return (
+          <Pressable
+            key={
+              entry.kind === "member"
+                ? entry.member.user_id
+                : `role:${entry.role.role_id}`
+            }
+            accessibilityRole="button"
+            accessibilityLabel={
+              entry.kind === "member"
+                ? `Mention ${name}`
+                : `Mention everyone in the ${name} role`
+            }
+            onPress={() => onPick(entry.label)}
+            style={({ pressed }) => [
+              styles.mentionRow,
+              pressed ? styles.mentionRowPressed : null,
+            ]}
+          >
+            <View style={styles.mentionAvatar}>
+              {entry.kind === "member" ? (
+                <Text style={styles.mentionAvatarText}>
+                  {initialsFor(name)}
+                </Text>
+              ) : (
+                // A role has no face: the Roles nav glyph, as web's row and
+                // the web sidebar draw it, neutral (foundations.md §6).
+                <NavGlyph
+                  paths={NAV_GLYPHS.roles}
+                  color={styles.mentionAvatarText.color}
+                  size={MENTION_ROLE_GLYPH_SIZE}
+                />
+              )}
+            </View>
+            <Text numberOfLines={1} style={styles.mentionName}>
+              {name}
             </Text>
-          </View>
-          <Text numberOfLines={1} style={styles.mentionName}>
-            {member.display_name}
-          </Text>
-        </Pressable>
-      ))}
+            {entry.kind === "role" ? (
+              <Text style={styles.mentionKind}>Role</Text>
+            ) : null}
+          </Pressable>
+        );
+      })}
     </ScrollView>
   );
 }
 
 const MENTION_AVATAR_SIZE = 24;
+const MENTION_ROLE_GLYPH_SIZE = 14;
 const MENTION_ROWS_SHOWN = 4;
 
 /**
@@ -440,6 +531,14 @@ const MENTION_ROWS_SHOWN = 4;
  */
 const INPUT_LINE_HEIGHT = 20;
 const INPUT_BORDER = 1;
+
+/** A staged photo's square: two lines of text tall, like iMessage's tray. */
+const THUMB_SIZE = 64;
+/** How far a thumb's remove badge sits in from its corner. */
+const THUMB_BADGE_INSET = 4;
+/** Photo-overlay ink, fixed in both themes: it sits on the picture, not the surface. */
+const THUMB_REMOVE_DISC = "rgba(0,0,0,0.72)";
+const THUMB_REMOVE_INK = "#FFFFFF";
 
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   // What is left of the 44pt floor once one line and the border are drawn,
@@ -464,8 +563,44 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
     },
-    chips: {
+    tray: {
       gap: tokens.spacing.xs,
+    },
+    thumb: {
+      width: THUMB_SIZE,
+      height: THUMB_SIZE,
+    },
+    thumbFill: {
+      width: THUMB_SIZE,
+      height: THUMB_SIZE,
+      borderRadius: tokens.radius.control,
+      overflow: "hidden",
+      backgroundColor: tokens.color.surface.popover,
+    },
+    // Gray until sent (components.md §10): faded in place, nothing added.
+    thumbPending: {
+      opacity: 0.45,
+    },
+    thumbFailed: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    // A dark disc so the × reads over any photo, light or dark.
+    thumbRemove: {
+      position: "absolute",
+      top: THUMB_BADGE_INSET,
+      right: THUMB_BADGE_INSET,
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      backgroundColor: THUMB_REMOVE_DISC,
+      alignItems: "center",
+      justifyContent: "center",
     },
     // The quote rule a sent reply carries (`reply-quote.tsx`), so the staged
     // strip reads as the quote the message is about to show.
@@ -492,31 +627,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
     },
-    // Same surface recipe as a rendered file attachment
-    // (`message-attachments.tsx`), so a staged photo and a sent one read as
-    // the same object rather than two different chrome languages.
-    chip: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.xs,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingLeft: tokens.spacing.sm,
-      paddingRight: tokens.spacing.xs,
-      paddingVertical: tokens.spacing.xs,
-    },
-    chipName: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.foreground,
-      flexShrink: 1,
-    },
-    chipSize: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      flexShrink: 0,
-    },
     // A 16pt × with 14pt of slop on each side reaches the 44pt floor (§2)
     // without making the chip taller.
     chipRemove: {
@@ -530,7 +640,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       alignItems: "flex-end",
       gap: tokens.spacing.sm,
     },
-    // The staged-chip surface, so the list reads as part of the composer
+    // The composer's surface recipe, so the list reads as part of the composer
     // rather than a floating card over the thread.
     mentionList: {
       borderRadius: tokens.radius.control,
@@ -568,6 +678,12 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
       flexShrink: 1,
+    },
+    // "Role" at the end of a role row, as web's says it.
+    mentionKind: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      marginLeft: "auto",
     },
     mentionEmpty: {
       ...typeRole(tokens.typography.role.caption),

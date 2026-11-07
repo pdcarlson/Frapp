@@ -240,6 +240,24 @@ export function safeObjectFilename(filename: string): string {
 }
 
 /**
+ * Where a chat photo's preview copy lives: `preview/preview.jpg` inside the
+ * folder the original's upload URL minted (`chapters/…/chat/<channel>/<id>/`).
+ *
+ * One function for the mint, the claim check and the purge, so a preview is
+ * bound to exactly one original. A key the mint builds is that folder plus one
+ * segment (`safeObjectFilename` strips every `/`), so it never lands here. A
+ * claim's `storage_path` is checked only against the channel prefix, though,
+ * so a row can still name this path as its original; that is why the purge
+ * asks `findSharedObjects` (which checks both columns) before deleting one.
+ */
+export function chatPreviewPathFor(storagePath: string): string {
+  return `${posix.dirname(storagePath)}/preview/preview.jpg`;
+}
+
+/** The one content type a chat preview copy is uploaded as. */
+export const CHAT_PREVIEW_CONTENT_TYPE = 'image/jpeg';
+
+/**
  * Short, stable, filename-safe digest of an original relative path.
  *
  * Disambiguates two source paths that flatten to the same segment

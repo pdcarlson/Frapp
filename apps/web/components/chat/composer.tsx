@@ -10,6 +10,7 @@ import {
   type ChangeEvent,
 } from "react";
 import dynamic from "next/dynamic";
+import { errorCopy } from "@repo/hooks/error-copy";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -34,11 +35,13 @@ import { compactControlClassName } from "@/components/shared/table-controls";
 import { MENTION_CHIP } from "./chip";
 import {
   useChapterRoster,
+  useMentionRoles,
   useRequestChatUploadUrl,
   useUploadSignedUrl,
 } from "@repo/hooks";
 import * as Sentry from "@sentry/nextjs";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
+import { describeChatPhoto } from "@/lib/chat/photo-preview";
 import { definitiveRefusalMessage } from "@repo/chat-core/chat-client";
 // Imported, never restated. A structural copy of this shape is assignable even
 // when it is missing a field, so a hand-written `{ ok, error? }` silently erases
@@ -58,12 +61,14 @@ import {
   acceptAttribute,
   inspectUploadFile,
   isBetaOffModule,
+  readPreviewUpload,
   readSignedUpload,
 } from "@repo/validation";
 import { EmojiPicker } from "./emoji-picker";
 import { QuotedMessage } from "./reply-quote";
 import {
   createMentionSuggestion,
+  type MentionRoleEntry,
   type MentionRosterEntry,
 } from "./mention-suggestion";
 import {
@@ -746,6 +751,115 @@ export function notifyDispatchOutcome(
   }
 }
 
+/** Files one message can carry; the mobile composer's limit too. */
+export const CHAT_FILE_LIMIT = 10;
+
+type UploadingFile = {
+  key: string;
+  filename: string;
+  previewUrl: string | null;
+};
+
+/** An object URL for a picked image, or null where the browser has none. */
+function localPreviewUrl(file: File): string | null {
+  if (typeof URL.createObjectURL !== "function") return null;
+  try {
+    return URL.createObjectURL(file);
+  } catch {
+    return null;
+  }
+}
+
+/*
+ * A staged image draws as itself (components.md § Chat photos): a 64px square
+ * from the picked file, a dark × disc inset on its corner. Faded while its
+ * upload runs (the pending rule, §10), no spinner and no caption.
+ */
+function StagedThumbnail({
+  src,
+  filename,
+  uploading = false,
+  removeLabel,
+  onRemove,
+}: {
+  src: string;
+  filename: string;
+  uploading?: boolean;
+  removeLabel: string;
+  onRemove: () => void;
+}) {
+  return (
+    <li
+      className={cn(
+        "relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-border bg-popover transition-opacity",
+        uploading && "opacity-45",
+      )}
+      aria-busy={uploading || undefined}
+    >
+      {/* A plain <img>: the src is a blob: URL, which next/image can't load. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={uploading ? `${filename}, uploading` : filename}
+        className="h-full w-full object-cover"
+      />
+      <button
+        type="button"
+        aria-label={removeLabel}
+        title={removeLabel}
+        onClick={onRemove}
+        className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/55 text-caption leading-none text-white hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-6 pointer-coarse:w-6"
+      >
+        <span aria-hidden="true">×</span>
+      </button>
+    </li>
+  );
+}
+
+function StagedFileChip({
+  filename,
+  uploading = false,
+  removeLabel,
+  onRemove,
+}: {
+  filename: string;
+  uploading?: boolean;
+  removeLabel: string;
+  onRemove: () => void;
+}) {
+  return (
+    <li
+      /*
+       * `bg-popover`, not `bg-card`. This chip is seated in the composer
+       * well, which is `bg-surface-1` (`COMPOSER_WELL_CLASS`), and `--card` on
+       * `--surface-1` measures 1.0486:1 — under the contrast fixture's
+       * `INDISTINGUISHABLE` (`apps/web/tests/signet-contrast.ts`, the one place
+       * that bound is written), so the chip would read as no fill at all.
+       * `--popover` on `--surface-1` is 1.1583:1. Same skip, for the same
+       * reason, as the chapter picker row in `layout/chapter-nav-header.tsx`.
+       */
+      className={cn(
+        "flex max-w-full items-center gap-1.5 rounded-md border border-border bg-popover py-1 pl-2 pr-1 text-caption transition-opacity",
+        uploading && "opacity-45",
+      )}
+      aria-busy={uploading || undefined}
+    >
+      <AttachGlyph className="h-4 w-4 shrink-0" aria-hidden="true" />
+      <span className="truncate">{filename}</span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-5 w-5 shrink-0"
+        aria-label={removeLabel}
+        onClick={onRemove}
+      >
+        <span aria-hidden="true">×</span>
+      </Button>
+    </li>
+  );
+}
+
 /**
  * The description on the "Couldn't upload file" toast (#2199).
  *
@@ -758,11 +872,11 @@ export function notifyDispatchOutcome(
  * retry could fix (a 5xx, no status) gets retry advice.
  *
  * A thrown `Error` is not an API body (`readSignedUpload`'s contract error, the
- * storage PUT's `SignedUploadError`, a network failure) and keeps the message
- * it has always shown.
+ * storage PUT's `SignedUploadError`, a network failure) and goes through the
+ * shared `errorCopy`, which never shows a storage status or `Failed to fetch`.
  */
 export function uploadFailureDescription(err: unknown): string {
-  if (err instanceof Error) return err.message;
+  if (err instanceof Error) return errorCopy(err, "Retry in a moment.");
   return definitiveRefusalMessage(err) ?? "Retry in a moment.";
 }
 
@@ -855,6 +969,12 @@ export function Composer({
   useEffect(() => {
     rosterRef.current = chapterRoster.data ?? [];
   }, [chapterRoster.data]);
+  // The roles this member may `@`, read through a ref for the same reason.
+  const mentionRoles = useMentionRoles();
+  const rolesRef = useRef<MentionRoleEntry[]>([]);
+  useEffect(() => {
+    rolesRef.current = mentionRoles.data ?? [];
+  }, [mentionRoles.data]);
   /**
    * Files uploaded and waiting to be claimed by the next send.
    *
@@ -867,6 +987,32 @@ export function Composer({
    * edit away.
    */
   const [pending, setPending] = useState<OutboxAttachment[]>([]);
+  /*
+    Files picked whose upload hasn't finished. Each draws in the tray the
+    moment it's picked (an image as its own thumbnail, faded), so the member
+    sees what they attached before the bucket has it. It joins `pending` when
+    the upload lands. Send waits while any is here: a file still uploading at
+    Send would otherwise land after it and ride the member's NEXT message.
+  */
+  const [uploading, setUploading] = useState<UploadingFile[]>([]);
+  /*
+    Local previews of staged images, by storage path: an object URL of the
+    picked file, so a staged photo is a picture and never a filename. Kept
+    past a send, because a refused send hands the chips back; every URL is
+    revoked when the composer unmounts (a channel switch remounts it).
+  */
+  const [previews, setPreviews] = useState<ReadonlyMap<string, string>>(
+    () => new Map(),
+  );
+  const objectUrlsRef = useRef(new Set<string>());
+  const cancelledUploadsRef = useRef(new Set<string>());
+  useEffect(() => {
+    const urls = objectUrlsRef.current;
+    return () => {
+      for (const url of urls) URL.revokeObjectURL(url);
+      urls.clear();
+    };
+  }, []);
 
   const [palette, setPalette] = useState<{ open: boolean; query: string }>({
     open: false,
@@ -912,7 +1058,7 @@ export function Composer({
         // only reads `rosterRef.current` later, inside `items()` callbacks
         // invoked from keystroke events — never synchronously during render.
         // eslint-disable-next-line react-hooks/refs -- suggestion.items() reads the ref from a keystroke callback, not render
-        suggestion: createMentionSuggestion(rosterRef),
+        suggestion: createMentionSuggestion(rosterRef, rolesRef),
       }),
       // Tiptap registers this shortcut while constructing the editor. The
       // closure reads `sendRef.current` only on Enter, not during render.
@@ -1134,6 +1280,7 @@ export function Composer({
     // text would have been correct while the filename WAS the text; now that a
     // file travels beside the body it would silently swallow the send.
     if (text.length === 0 && pending.length === 0) return;
+    if (uploading.length > 0) return;
     // If the message begins with an implemented slash command and a dispatch
     // is wired, route through dispatch instead of sending as plain text — so
     // Enter on `/poll "Q?" A B` posts a poll card, not a text message.
@@ -1242,6 +1389,7 @@ export function Composer({
     replyTo,
     slashRefusal,
     toast,
+    uploading.length,
   ]);
   useLayoutEffect(() => {
     sendRef.current = submit;
@@ -1258,38 +1406,59 @@ export function Composer({
     [editor],
   );
 
-  const handleAttach = useCallback(
-    async (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      event.target.value = "";
-      if (!file) return;
-      const inspected = inspectUploadFile("document", file);
-      if (!inspected.ok) {
-        toast({
-          title:
-            inspected.reason === "size"
-              ? "File too large"
-              : "File type not allowed",
-          description:
-            inspected.reason === "size"
-              ? `Attachments can be up to ${MAX_UPLOAD_LABEL}.`
-              : "Chat accepts PDFs, Office files, text, CSV, and common images (no SVG).",
-          variant: "destructive",
-        });
-        return;
-      }
+  const uploadOne = useCallback(
+    async (file: File, contentType: string) => {
+      const key = `${file.name}:${file.size}:${Math.random().toString(36).slice(2)}`;
+      const previewUrl = contentType.startsWith("image/")
+        ? localPreviewUrl(file)
+        : null;
+      if (previewUrl) objectUrlsRef.current.add(previewUrl);
       uploadsStartedRef.current += 1;
+      setUploading((current) => [
+        ...current,
+        { key, filename: file.name, previewUrl },
+      ]);
       try {
+        // Size, blur and preview copy for readers (`lib/chat/photo-preview`).
+        // Never throws; whatever it could not make is not sent.
+        const described = await describeChatPhoto(file, contentType);
         const signed = await requestUploadUrl.mutateAsync({
           id: channelId,
-          body: { filename: file.name, content_type: inspected.contentType },
+          body: {
+            filename: file.name,
+            content_type: contentType,
+            ...(described.preview ? { with_preview: true } : {}),
+          },
         });
         const { signedUrl, storagePath } = readSignedUpload(signed);
-        await uploadSignedUrl.mutateAsync({
-          signedUrl,
-          file,
-          contentType: inspected.contentType,
-        });
+        const previewTicket = described.preview
+          ? readPreviewUpload(signed)
+          : null;
+        // Both PUTs at once; a preview that fails is left out of the claim,
+        // and readers draw the original.
+        const [, previewStoragePath] = await Promise.all([
+          uploadSignedUrl.mutateAsync({ signedUrl, file, contentType }),
+          previewTicket && described.preview
+            ? uploadSignedUrl
+                .mutateAsync({
+                  signedUrl: previewTicket.signedUrl,
+                  file: new File([described.preview], "preview.jpg", {
+                    type: "image/jpeg",
+                  }),
+                  contentType: "image/jpeg",
+                })
+                .then(
+                  () => previewTicket.storagePath,
+                  () => null,
+                )
+            : null,
+        ]);
+        if (cancelledUploadsRef.current.has(key)) return;
+        if (previewUrl) {
+          setPreviews((current) =>
+            new Map(current).set(storagePath, previewUrl),
+          );
+        }
         // A pending chip, not text spliced into the body. The old behaviour
         // appended `📎 <name> (<storagePath>)` into the Tiptap document, which
         // made the message body the ONLY record that the object existed: nothing
@@ -1302,20 +1471,97 @@ export function Composer({
           {
             storagePath,
             filename: file.name,
-            contentType: inspected.contentType,
+            contentType,
             byteSize: file.size,
+            width: described.width,
+            height: described.height,
+            thumbhash: described.thumbhash,
+            ...(previewStoragePath ? { previewStoragePath } : {}),
           },
         ]);
       } catch (err) {
+        if (cancelledUploadsRef.current.has(key)) return;
         toast({
           title: "Couldn't upload file",
           description: uploadFailureDescription(err),
           variant: "destructive",
         });
+      } finally {
+        cancelledUploadsRef.current.delete(key);
+        setUploading((current) => current.filter((row) => row.key !== key));
       }
     },
     [channelId, requestUploadUrl, toast, uploadSignedUrl],
   );
+
+  const stagedCount = pending.length + uploading.length;
+  const handleAttach = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files ?? []);
+      event.target.value = "";
+      if (files.length === 0) return;
+      const room = Math.max(0, CHAT_FILE_LIMIT - stagedCount);
+      let refused: "size" | "type" | null = null;
+      let taken = 0;
+      for (const file of files) {
+        const inspected = inspectUploadFile("document", file);
+        if (!inspected.ok) {
+          refused ??= inspected.reason === "size" ? "size" : "type";
+          continue;
+        }
+        if (taken >= room) continue;
+        taken += 1;
+        void uploadOne(file, inspected.contentType);
+      }
+      if (refused) {
+        toast({
+          title:
+            refused === "size" ? "File too large" : "File type not allowed",
+          description:
+            refused === "size"
+              ? `Attachments can be up to ${MAX_UPLOAD_LABEL}.`
+              : "Chat accepts PDFs, Office files, text, CSV, and common images (no SVG).",
+          variant: "destructive",
+        });
+      } else if (files.length > room) {
+        toast({
+          title: `Up to ${CHAT_FILE_LIMIT} files per message`,
+          description:
+            room === 0
+              ? "Send these first, then attach the rest."
+              : `The first ${room} ${room === 1 ? "was" : "were"} attached.`,
+        });
+      }
+    },
+    [stagedCount, toast, uploadOne],
+  );
+
+  const removePending = useCallback((storagePath: string) => {
+    setPending((current) =>
+      current.filter((row) => row.storagePath !== storagePath),
+    );
+    setPreviews((current) => {
+      const url = current.get(storagePath);
+      if (!url) return current;
+      URL.revokeObjectURL(url);
+      objectUrlsRef.current.delete(url);
+      const next = new Map(current);
+      next.delete(storagePath);
+      return next;
+    });
+  }, []);
+
+  const cancelUpload = useCallback((key: string) => {
+    cancelledUploadsRef.current.add(key);
+    setUploading((current) => {
+      const row = current.find((entry) => entry.key === key);
+      if (row?.previewUrl) {
+        URL.revokeObjectURL(row.previewUrl);
+        objectUrlsRef.current.delete(row.previewUrl);
+      }
+      return current.filter((entry) => entry.key !== key);
+    });
+  }, []);
 
   /*
    * Staging a reply moves focus to the editor, so the member can type
@@ -1453,8 +1699,6 @@ export function Composer({
     );
   }
 
-  const attachPending = requestUploadUrl.isPending || uploadSignedUrl.isPending;
-
   return (
     <div className={COMPOSER_BOX_CLASS} onKeyDown={handleHostKey}>
       {/*
@@ -1497,48 +1741,50 @@ export function Composer({
             </Button>
           </div>
         ) : null}
-        {pending.length > 0 ? (
+        {stagedCount > 0 ? (
           <ul
-            className="mb-2 flex flex-wrap gap-1.5"
-            aria-label={`${pending.length} file${pending.length === 1 ? "" : "s"} attached`}
+            className="mb-2 flex flex-wrap items-end gap-1.5"
+            aria-label={`${stagedCount} file${stagedCount === 1 ? "" : "s"} attached`}
           >
-            {pending.map((attachment) => (
-              <li
-                key={attachment.storagePath}
-                /*
-                 * `bg-popover`, not `bg-card`. This chip is seated in the
-                 * composer well, which is `bg-surface-1`
-                 * (`COMPOSER_WELL_CLASS`), and `--card` on `--surface-1`
-                 * measures 1.0486:1 — under the contrast fixture's
-                 * `INDISTINGUISHABLE` (`apps/web/tests/signet-contrast.ts`, the
-                 * one place that bound is written), so the chip would read as
-                 * no fill at all. `--popover` on `--surface-1` is 1.1583:1.
-                 * Same skip, for the same reason, as the chapter picker row in
-                 * `layout/chapter-nav-header.tsx`. This was `bg-surface-2`,
-                 * which no config or stylesheet has ever defined (#1423).
-                 */
-                className="flex max-w-full items-center gap-1.5 rounded-md border border-border bg-popover py-1 pl-2 pr-1 text-caption"
-              >
-                <AttachGlyph className="h-4 w-4 shrink-0" aria-hidden="true" />
-                <span className="truncate">{attachment.filename}</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5 shrink-0"
-                  aria-label={`Remove ${attachment.filename}`}
-                  onClick={() =>
-                    setPending((current) =>
-                      current.filter(
-                        (row) => row.storagePath !== attachment.storagePath,
-                      ),
-                    )
-                  }
-                >
-                  <span aria-hidden="true">×</span>
-                </Button>
-              </li>
-            ))}
+            {pending.map((attachment) => {
+              const preview = previews.get(attachment.storagePath);
+              return preview ? (
+                <StagedThumbnail
+                  key={attachment.storagePath}
+                  src={preview}
+                  filename={attachment.filename}
+                  removeLabel={`Remove ${attachment.filename}`}
+                  onRemove={() => removePending(attachment.storagePath)}
+                />
+              ) : (
+                <StagedFileChip
+                  key={attachment.storagePath}
+                  filename={attachment.filename}
+                  removeLabel={`Remove ${attachment.filename}`}
+                  onRemove={() => removePending(attachment.storagePath)}
+                />
+              );
+            })}
+            {uploading.map((file) =>
+              file.previewUrl ? (
+                <StagedThumbnail
+                  key={file.key}
+                  src={file.previewUrl}
+                  filename={file.filename}
+                  uploading
+                  removeLabel={`Cancel upload of ${file.filename}`}
+                  onRemove={() => cancelUpload(file.key)}
+                />
+              ) : (
+                <StagedFileChip
+                  key={file.key}
+                  filename={file.filename}
+                  uploading
+                  removeLabel={`Cancel upload of ${file.filename}`}
+                  onRemove={() => cancelUpload(file.key)}
+                />
+              ),
+            )}
           </ul>
         ) : null}
         <EditorContent editor={editor} />
@@ -1575,7 +1821,7 @@ export function Composer({
               className={compactControlClassName}
               aria-label="Attach file"
               onClick={() => fileInput.current?.click()}
-              disabled={attachPending}
+              disabled={stagedCount >= CHAT_FILE_LIMIT}
             >
               <AttachGlyph className="h-5 w-5" />
             </Button>
@@ -1583,6 +1829,7 @@ export function Composer({
               ref={fileInput}
               type="file"
               accept={acceptAttribute("document")}
+              multiple
               className="sr-only"
               onChange={(event) => void handleAttach(event)}
               aria-hidden="true"
@@ -1624,7 +1871,11 @@ export function Composer({
             title="Send (Enter)"
             /* An attached file is enough to send: an empty editor with a staged
                attachment is a real message, and `submit` accepts it. */
-            disabled={!editor || (editor.isEmpty && pending.length === 0)}
+            disabled={
+              !editor ||
+              uploading.length > 0 ||
+              (editor.isEmpty && pending.length === 0)
+            }
           >
             <SendArrowGlyph className="h-4 w-4" />
           </Button>

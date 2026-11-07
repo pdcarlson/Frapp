@@ -11,6 +11,10 @@ import { useClaimChapterSync } from "@/lib/auth/use-claim-chapter-sync";
 import { wipeFirstChunkCache } from "@/lib/chat/first-chunk-wipe";
 import { clearCachedAccent } from "@/lib/theme/accent-cache";
 import { endBulkSessions } from "@/lib/backwork-bulk/session";
+import {
+  handleRejectedSession,
+  leaveWhenSignedOutElsewhere,
+} from "@/lib/auth/rejected-session";
 
 /**
  * First value and same-value updates must not clear: those are hydrate /
@@ -83,6 +87,10 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
           return data.session?.access_token ?? null;
         },
         getChapterId: () => activeChapterId,
+        // A 401 means the API no longer accepts this session (an account
+        // deleted elsewhere, most often). One sign-out owns that outcome for
+        // every screen: `lib/auth/rejected-session.ts`.
+        onUnauthorized: () => void handleRejectedSession(),
       }),
     [activeChapterId],
   );
@@ -138,6 +146,10 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
     // Every batch but the new account's: the page may already have made one
     // for it in this commit, and that one stays.
     if (previous && previous !== authUserId) endBulkSessions({ except: authUserId });
+    // Signed out from somewhere else (another tab sharing this session, most
+    // often the one that just deleted the account): this tab's reads now go
+    // out with no token and every screen would fail on its own. Leave too.
+    if (previous && !authUserId) leaveWhenSignedOutElsewhere();
   }, [authUserId, queryClient]);
 
   return (

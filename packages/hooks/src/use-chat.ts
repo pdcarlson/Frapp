@@ -61,6 +61,33 @@ export function useChannelUnreadCounts(options?: { enabled?: boolean }) {
   });
 }
 
+/** The query key `useChannelLatestMessages` caches under. */
+export const CHANNEL_LATEST_MESSAGES_KEY = ["channels", "latest"] as const;
+
+/**
+ * Each readable channel's latest message, for mobile Chat home's row
+ * previews and times (`GET /v1/channels/latest`). A channel with no message
+ * has no row. Draw the line with `channelPreviewLine` in
+ * `@repo/chat-core/channel-preview`.
+ *
+ * Under the `["channels"]` prefix and on the unread counts' 15s staleness, so
+ * a preview refreshes whenever its row's badge does: the same invalidations
+ * (opening a channel marks it read) and the same refetch on focus.
+ */
+export function useChannelLatestMessages(options?: { enabled?: boolean }) {
+  const client = useFrappClient();
+  return useQuery({
+    queryKey: CHANNEL_LATEST_MESSAGES_KEY,
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/channels/latest");
+      if (error) throw error;
+      return data ?? [];
+    },
+    staleTime: 15_000,
+    enabled: options?.enabled ?? true,
+  });
+}
+
 export function useChannel(id: string) {
   const client = useFrappClient();
   return useQuery({
@@ -535,7 +562,12 @@ export function useRequestChatUploadUrl() {
       body,
     }: {
       id: string;
-      body: { filename: string; content_type: string; size_bytes?: number };
+      body: {
+        filename: string;
+        content_type: string;
+        size_bytes?: number;
+        with_preview?: boolean;
+      };
     }) => {
       const { data, error } = await client.POST(
         "/v1/channels/{id}/upload-url",
@@ -556,7 +588,14 @@ export interface MessageAttachment {
   byte_size: number | null;
   width: number | null;
   height: number | null;
+  /** ThumbHash, base64: draw it (`thumbhash` package) until the photo loads. */
+  thumbhash?: string | null;
   download_url: string;
+  /**
+   * Signed URL of the photo's smaller copy, for the timeline; open
+   * `download_url` full screen. Null or absent: draw `download_url`.
+   */
+  preview_url?: string | null;
 }
 
 /**

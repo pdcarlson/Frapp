@@ -12,7 +12,11 @@ import {
   isRecurrenceRule,
   recurrenceChildCount,
 } from '@repo/validation';
-import { EventAnnouncementService } from './event-announcement.service';
+import {
+  EventAnnouncementService,
+  eventChangeOf,
+} from './event-announcement.service';
+import type { EventChange } from './event-announcement.service';
 import { normalizeCheckInZone } from './event-input';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import type { UpdateEventInput } from './event-input';
@@ -246,6 +250,9 @@ export class EventSeriesService {
         recurrence_rule: null,
         parent_event_id: parent.id,
         required_role_ids: parent.required_role_ids,
+        optional_role_ids: parent.optional_role_ids,
+        excluded_role_ids: parent.excluded_role_ids,
+        others_invited: parent.others_invited,
         notes: parent.notes,
         // The zone is part of "where this event is", so every occurrence needs
         // it — without this a weekly meeting's check-in geofence applied only to
@@ -314,6 +321,7 @@ export class EventSeriesService {
     target: Event,
     chapterId: string,
     input: UpdateEventInput,
+    actorId?: string,
   ): Promise<Event> {
     const parent = await this.resolveSeriesParent(target, chapterId);
 
@@ -394,6 +402,9 @@ export class EventSeriesService {
       );
     }
 
+    // What members are told moved, judged against the series as it stood.
+    const change = eventChangeOf(parent, normalized);
+
     const now = Date.now();
 
     // Resolve children before any write: `parent_event_id` is
@@ -425,12 +436,13 @@ export class EventSeriesService {
         children,
         chapterId,
         normalized,
-        input,
         regenerates,
         nextRule,
         startShiftMs,
         nextDurationMs,
         now,
+        change,
+        actorId,
       });
     }
 
@@ -477,7 +489,8 @@ export class EventSeriesService {
     await this.announcements.notifyEventUpdated(
       chapterId,
       updatedParent,
-      input,
+      change,
+      actorId,
     );
 
     return updatedParent;
@@ -515,24 +528,26 @@ export class EventSeriesService {
     children: Event[];
     chapterId: string;
     normalized: UpdateEventInput;
-    input: UpdateEventInput;
     regenerates: boolean;
     nextRule: string | null;
     startShiftMs: number;
     nextDurationMs: number | null;
     now: number;
+    change: EventChange | null;
+    actorId?: string;
   }): Promise<Event> {
     const {
       parent,
       children,
       chapterId,
       normalized,
-      input,
       regenerates,
       nextRule,
       startShiftMs,
       nextDurationMs,
       now,
+      change,
+      actorId,
     } = args;
 
     const { future, past } = this.partitionByTime(children, now);
@@ -651,7 +666,12 @@ export class EventSeriesService {
       }
     }
 
-    await this.announcements.notifyEventUpdated(chapterId, newHead, input);
+    await this.announcements.notifyEventUpdated(
+      chapterId,
+      newHead,
+      change,
+      actorId,
+    );
 
     return newHead;
   }

@@ -2769,6 +2769,34 @@ alter table public.chat_message_reports
   drop column if exists reported_attachments;
 ```
 
+## Rollback invite email and revoked_at (20261107090000)
+
+* **Migration**: `20261107090000_invites_email_and_revoked_at.sql`
+
+Two nullable columns on `invites`, `email` and `revoked_at`. The API from the same PR writes both (an email invite stores its address, a revoke stamps `revoked_at`), so roll the API back first: a column dropped under the new API fails every invite create (share links included, since every insert names `email`) and every revoke.
+
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). After the API is back on the earlier version:
+
+```sql
+alter table public.invites
+  drop column if exists email,
+  drop column if exists revoked_at;
+```
+
+Dropping them loses which address each invite went to and which ones were revoked rather than used. Every invite keeps working; a revoked one still has `used_at` set, so it still can't be redeemed.
+
+## Rollback Chat home previews (20261106210000)
+
+* **Migration**: `20261106210000_chat_channel_latest_messages.sql`
+
+A new read-only function, `get_channel_latest_messages`. No data changes, and nothing else in the schema refers to it. Only `GET /v1/channels/latest` calls it.
+
+Roll the API back first, or accept that the endpoint answers 500 until it is: mobile Chat home then draws its rows without previews, and nothing else breaks. Then drop the function in a new forward migration, not by hand ([§ 3) Undo one migration](#3-undo-one-migration)), shipped through Deploy production (`scope: migrations-only` is enough):
+
+```sql
+drop function if exists public.get_channel_latest_messages(uuid, uuid);
+```
+
 ## Rollback silent audit entries in unread counts (20261106193000)
 
 * **Migration**: `20261106193000_chat_unread_skip_audit_mirror.sql`
@@ -2788,6 +2816,40 @@ Revoked EXECUTE on every `public` trigger function for PUBLIC, `anon` and `authe
 **Don't roll this back to fix a symptom elsewhere; find what broke first.** Nothing calls the trigger functions as an RPC, and a revoked grant cannot stop a trigger firing. A function that fails after this with `relation "<name>" does not exist` resolved a name outside `public` through the old path. Fix that one function forward in a new migration ([§ 3) Undo one migration](#3-undo-one-migration)) by qualifying the name (`extensions.<fn>`) or with `alter function public.<fn>(<args>) set search_path = public, extensions, pg_temp`. Don't reset its path. The PGlite gate fails on an unpinned function, so `reset search_path` cannot ship.
 
 There is no grant to restore. The only `authenticated` grants this revoked were on trigger functions, which no client calls and the PGlite gate refuses to see granted, and the `anon` grants it revoked must stay revoked. If a client turns out to need a non-trigger definer function, that is a new decision, not a rollback: follow [`authorization-model.md` § Who may call a `SECURITY DEFINER` function](../security/authorization-model.md#who-may-call-a-security-definer-function).
+## Rollback roles mentionable (20261107061000)
+
+* **Migration**: `20261107061000_roles_mentionable.sql`
+
+One column, `roles.mentionable`, default `true`. Nothing was backfilled.
+
+**Revert the API and clients forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API has no role mentions at all, so it ignores the column: an `@Officers` token falls back to member-name matching and usually reaches nobody, and the picker stops offering roles. `GET /v1/roles` still returns the column, which every client ignores.
+
+**Keep the column unless it is itself the problem.** Dropping it forgets which roles an officer switched off. To remove it anyway, do it in a later forward migration after the code revert has shipped:
+
+```sql
+alter table public.roles drop column if exists mentionable;
+```
+
+## Rollback members keep the Member role (20261107020000)
+
+* **Migration**: `20261107020000_members_keep_base_role.sql`
+* **Action**: normally none. It only appended Member to members whose in-chapter roles were all custom and carried neither `members:view` nor `*`, who were refused on every screen, so leaving it in place is safe even if the API change is reverted.
+
+It records no list of the rows it changed. To take Member back off a specific member, an officer removes it on web Members, which locks that member out of every screen again unless another role gives them `members:view`.
+
+## Rollback user settings time zone (20261106230000)
+
+* **Migration**: `20261106230000_user_settings_time_zone.sql`
+
+One nullable column, `user_settings.time_zone`, and its length check. Nothing was backfilled.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API stops writing the column and stops reading it for push text; clients keep sending `x-time-zone`, which the older API ignores.
+
+**Keep the column unless it is itself the problem.** It holds only what devices report again on their next request, so dropping it loses nothing that does not come back. To remove it, do it in a later forward migration after the code revert has shipped:
+
+```sql
+alter table public.user_settings drop column if exists time_zone;
+```
 
 ## Rollback users major (20261106200000)
 
@@ -2832,6 +2894,45 @@ drop function if exists public.set_chat_channel_default(uuid, uuid);
 drop index if exists public.chat_channels_one_default_per_chapter;
 alter table public.chat_channels drop column if exists is_default;
 ```
+
+## Rollback chapter directory search (20261107043000)
+
+* **Migration**: `20261107043000_chapter_directory_search.sql`
+
+Two columns added (`chapter_directory.aliases`, `org_aliases`), generated columns swapped (`search_vector` and its GIN index out; `search_text`, `search_org_names`, `search_chapter_names` and `search_school_names` in), four functions (`chapter_directory_normalize`, `chapter_directory_search_text`, `chapter_directory_search_names`, `search_chapter_directory`), and `pg_trgm` in `extensions` if it wasn't there. No row's data changed.
+
+**Revert the code forward and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)) only together with a forward migration that puts `search_vector` back, because the reverted API reads it:
+
+```sql
+alter table public.chapter_directory
+  add column if not exists search_vector tsvector
+  generated always as (
+    to_tsvector('english',
+      coalesce(org_name, '') || ' ' || coalesce(org_letters, '') || ' ' ||
+      coalesce(chapter_designation, '') || ' ' || coalesce(university, '') || ' ' ||
+      coalesce(university_short, ''))
+  ) stored;
+create index if not exists idx_chapter_directory_search
+  on public.chapter_directory using gin (search_vector);
+```
+
+Leave the alias and `search_*` columns and the functions in place; nothing old reads them. Leave `pg_trgm`, which backwork search also uses.
+
+## Rollback chapter directory Wikipedia rows (20261107043100)
+
+* **Migration**: `20261107043100_chapter_directory_wikipedia_rows.sql`
+
+Rows only, in `chapter_directory`, which only the onboarding wizard reads. No schema change.
+
+**Keep the migration file and fix forward.** A wrong row is fixed in the CSV (or in `scripts/chapter-directory/school-names.mjs` for a school's names) and shipped as a new load migration; the loader updates rows in place by their natural key, so ids, and any chapter's link to its row, survive. To empty the Wikipedia rows instead, in a forward migration, sparing any a chapter links to:
+
+```sql
+delete from public.chapter_directory d
+where d.source = 'wikipedia'
+  and not exists (select 1 from public.chapters c where c.directory_id = d.id);
+```
+
+The 50 hand-written rows it deleted are not worth restoring; they named chapters that don't exist. A `retired` row stays where a chapter links it; the older API would offer it again in search, which is the one visible difference after a code revert.
 
 ## Rollback backwork search wider (20261106190000)
 
@@ -2979,3 +3080,36 @@ One `COMMENT ON COLUMN public.discord_imports.role_mapping` (#2887). No column, 
 ```sql
 comment on column public.discord_imports.role_mapping is null;
 ```
+
+## Rollback attendance by role (20261107070000)
+
+* **Migration**: `20261107070000_event_attendance_by_role.sql`
+
+Three nullable columns on `events`: `optional_role_ids`, `excluded_role_ids`, `others_invited`. Nothing was backfilled.
+
+**Revert the API and clients forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). A row the new API wrote with only a null `others_invited` and `required_role_ids` reads the same to the older API. A row saved with optional or excluded roles, or with an explicit `others_invited`, does not: the older API ignores those columns, so "Optional for everyone, Pledges not invited" shows to pledges and "Required for Officers, optional for everyone" becomes officers-only. Before reverting, list them with `select id, name from events where others_invited is not null or optional_role_ids is not null or excluded_role_ids is not null;` and have an officer re-save each in the older editor, or accept the change.
+
+**Keep the columns unless they are themselves the problem.** Dropping them loses every officer's per-role choice. To remove them anyway, do it in a later forward migration after the code revert has shipped:
+
+```sql
+alter table public.events
+  drop column if exists optional_role_ids,
+  drop column if exists excluded_role_ids,
+  drop column if exists others_invited;
+```
+
+## Rollback chat attachment previews (20261107130000)
+
+* **Migration**: `20261107130000_chat_attachment_previews.sql`
+
+Two nullable columns on `chat_message_attachments`, `thumbhash` and `preview_storage_path`. The API from the same PR writes both on every attachment insert, so roll the API back first: a column dropped under the new API fails every message sent with a file. Roll web and the mobile OTA back with the API, not after it: a client from this PR sends photo fields an older API refuses, so every photo send from it fails until it is rolled back too.
+
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). After the API is back on the earlier version:
+
+```sql
+alter table public.chat_message_attachments
+  drop column if exists thumbhash,
+  drop column if exists preview_storage_path;
+```
+
+Dropping them loses each photo's blur and the link to its preview copy; photos still draw, from the original. The preview objects stay in the `chat` bucket under each original's `preview/` folder, unreferenced, until a sweep removes them (#2197).

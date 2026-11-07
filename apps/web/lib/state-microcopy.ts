@@ -13,21 +13,16 @@ export const stateMicrocopy = {
   // removed, and nothing read either key.
   members: {
     loading: "Loading chapter members...",
-    // "Actives", not "members", on both of these: it is the word the tab and
+    // "Actives", not "members", on both of these lines: it is the word the tab and
     // the section label above the list already use, and it is the string the
     // shipped mobile Directory renders for the same state
-    // (`apps/mobile/app/(tabs)/directory.tsx`). The two surfaces are meant to
+    // (`apps/mobile/app/(app)/directory.tsx`). The two surfaces are meant to
     // read as one product, and this is the cheapest place to stop them drifting.
-    emptyTitle: "No actives yet",
-    emptyDescription: "Actives appear here once they join.",
-    filteredTitle: "No actives match the filters",
-    filteredDescription: "Clear a filter to see more.",
-    // The title is built at the call site because it quotes the live query.
-    noMatchDescription: "Check the spelling, or widen the filters.",
+    empty: "No actives yet.",
+    noFilterMatches: "No actives match these filters.",
     offlineTitle: "Members unavailable offline",
     offlineDescription: "Reconnect to load the roster.",
     errorTitle: "Couldn't load members",
-    errorDescription: "Confirm your chapter access and retry.",
     supportErrorTitle: "Couldn't load roles and points",
     supportErrorDescription: "Filtering, sorting and assignment need both.",
   },
@@ -35,18 +30,22 @@ export const stateMicrocopy = {
   // not an empty chapter. The `preview*` pair had no reader left.
   events: {
     loading: "Loading chapter events...",
-    emptyTitle: "No events yet",
-    emptyDescription:
-      "Create your first chapter event to unlock attendance and point automation.",
-    filteredTitle: "No events match the filters",
-    filteredDescription: "Clear a filter to see more.",
-    // The title is built at the call site because it quotes the live query.
-    noMatchDescription: "Check the spelling, or widen the filters.",
+    // Inline lines, not card titles (`components.md` §10). A chapter with no
+    // events opens on the calendar, so `empty` is what the List tab says if
+    // someone switches to it; the calendar carries its own line.
+    empty: "No events yet.",
+    noUpcoming: "No upcoming events.",
+    noPast: "No past events.",
+    noSearchMatches: "No events match that search.",
+    noFilterMatches: "No events match these filters.",
+    // On the calendar of a chapter with no events. Officers who can create
+    // get the how; everyone else gets the fact.
+    calendarFirstEvent: "Pick a day to schedule the first event.",
+    calendarNothingYet: "Nothing on the calendar yet.",
     offlineTitle: "Events workspace unavailable offline",
     offlineDescription:
       "Reconnect to load event schedules and attendance updates.",
     errorTitle: "Couldn't load chapter events",
-    errorDescription: "Confirm your chapter access and retry.",
   },
   points: {
     loading: "Loading points ledger...",
@@ -65,13 +64,11 @@ export const stateMicrocopy = {
     emptyTransactions: "No points in this period yet.",
     noTransactionMatches: "No transactions match these filters.",
     errorTitle: "Couldn't load the points ledger",
-    errorDescription:
-      "Standings and transactions are unavailable, so none are shown. Confirm your chapter access and retry.",
   },
   billing: {
     loading: "Loading billing overview...",
-    emptyTitle: "No invoices yet",
-    emptyDescription:
-      "Create your first invoice to start chapter dues collection.",
+    empty: "No invoices yet.",
+    emptyMember: "You have no invoices.",
+    noMatches: "No invoices match these filters.",
   },
 } as const;

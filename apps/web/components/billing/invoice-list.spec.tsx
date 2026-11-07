@@ -636,3 +636,42 @@ describe("nothing is asserted from a read that has not answered", () => {
     expect(screen.getByText(/loading billing overview/i)).toBeInTheDocument();
   });
 });
+
+describe("no invoices (empty-states plan rule 7)", () => {
+  it("gives an officer one line that opens the first invoice", async () => {
+    invoicesQuery.data = [];
+    const user = userEvent.setup();
+    render(<InvoiceList />);
+
+    expect(screen.getByText(/^No invoices yet\./)).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Create the first invoice" }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: /create member invoice/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("tells a member they owe nothing, with no officer action", () => {
+    invoicesQuery.data = [];
+    mockPermissions.mockReturnValue([]);
+    render(<InvoiceList />);
+
+    expect(screen.getByText("You have no invoices.")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Create the first invoice" }),
+    ).toBeNull();
+  });
+
+  it("answers a filter miss with the way back", async () => {
+    const user = userEvent.setup();
+    render(<InvoiceList />);
+
+    await user.type(screen.getByLabelText(/search invoices/i), "zzz");
+    expect(
+      screen.getByText(/No invoices match these filters\./),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getByText("Fall 2026 dues")).toBeInTheDocument();
+  });
+});

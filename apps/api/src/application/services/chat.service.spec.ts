@@ -2440,6 +2440,8 @@ describe('ChatService', () => {
         byte_size: 2048,
         width: null,
         height: null,
+        thumbhash: null,
+        preview_storage_path: null,
         external_url: null,
         created_at: '2026-01-01T00:00:00.000Z',
       };
@@ -3321,6 +3323,67 @@ describe('ChatService', () => {
   // injects `NotificationService` at all, and `chat-read-surface-ledger.spec.ts`
   // fails if a notify call reappears in this file.
 
+  describe('getLatestMessages', () => {
+    const latest = (channelId: string) => ({
+      channel_id: channelId,
+      message_id: `m-${channelId}`,
+      sender_id: 'user-2',
+      author_name: null,
+      content: 'see you at 6',
+      kind: 'text',
+      payload: null,
+      attachment_count: 0,
+      created_at: '2026-11-06T18:00:00Z',
+    });
+
+    it('drops channels the caller cannot read, and DMs they hid', async () => {
+      // A preview says far more than a count about a conversation between two
+      // other members, so this filter carries the same weight as the unread one.
+      const theirs: ChatChannel = {
+        ...baseChannel,
+        id: 'private-not-mine',
+        type: 'PRIVATE',
+        member_ids: ['someone-else', 'another'],
+      };
+      const hiddenDm: ChatChannel = {
+        ...baseChannel,
+        id: 'ch-dm',
+        type: 'DM',
+        member_ids: ['user-1', 'user-2'],
+      };
+      mockChannelRepo.findByIds.mockResolvedValue([
+        baseChannel,
+        theirs,
+        hiddenDm,
+      ]);
+      mockMessageRepo.findLatestPerChannel.mockResolvedValue([
+        latest(baseChannel.id),
+        latest(theirs.id),
+        latest(hiddenDm.id),
+      ]);
+      mockReadReceiptRepo.findHiddenChannelIds.mockResolvedValue(
+        new Set([hiddenDm.id]),
+      );
+
+      await expect(
+        service.getLatestMessages('ch-1', 'user-1'),
+      ).resolves.toEqual([latest(baseChannel.id)]);
+      expect(mockMessageRepo.findLatestPerChannel).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+      );
+    });
+
+    it('answers an empty list without an access lookup when no channel has a message', async () => {
+      mockMessageRepo.findLatestPerChannel.mockResolvedValue([]);
+
+      await expect(
+        service.getLatestMessages('ch-1', 'user-1'),
+      ).resolves.toEqual([]);
+      expect(mockChannelRepo.findByIds).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getUnreadCounts', () => {
     const PRIVATE_OTHERS: ChatChannel = {
       ...baseChannel,
@@ -3426,14 +3489,123 @@ describe('ChatService', () => {
 
   describe('sendMessage — mention resolution', () => {
     const roster = [
-      { user_id: 'user-1', display_name: 'Sender One' },
-      { user_id: 'user-2', display_name: 'Jane Doe' },
-      { user_id: 'user-3', display_name: 'Janet Roe' },
+      { user_id: 'user-1', display_name: 'Sender One', role_ids: ['r-member'] },
+      {
+        user_id: 'user-2',
+        display_name: 'Jane Doe',
+        role_ids: ['r-member', 'r-officers'],
+      },
+      { user_id: 'user-3', display_name: 'Janet Roe', role_ids: ['r-member'] },
     ];
 
     function seedRoster() {
       mockMemberRepo.findChapterMemberIdentities.mockResolvedValue(roster);
     }
+
+    const role = (
+      id: string,
+      name: string,
+      extra: Partial<{
+        system_key: string | null;
+        display_order: number;
+        mentionable: boolean;
+      }> = {},
+    ) => ({
+      id,
+      chapter_id: 'ch-1',
+      name,
+      system_key: null,
+      permissions: [],
+      is_system: false,
+      display_order: 1,
+      color: null,
+      mentionable: true,
+      created_at: '2026-11-06T00:00:00Z',
+      ...extra,
+    });
+
+    describe('role mentions (2026-11-06)', () => {
+      beforeEach(() => {
+        seedRoster();
+        mockRbac.findByChapter.mockResolvedValue([
+          role('r-officers', 'Officers'),
+          role('r-member', 'Member', {
+            system_key: 'MEMBER',
+            display_order: 9,
+            mentionable: false,
+          }),
+        ]);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+      });
+
+      async function send(content: string, senderId = 'user-1') {
+        await service.sendMessage({
+          channel_id: 'ch-chan-1',
+          chapter_id: 'ch-1',
+          sender_id: senderId,
+          content,
+        });
+        return mockMessageRepo.create.mock.calls.at(-1)?.[0]?.mentions;
+      }
+
+      it('expands a role to everyone holding it', async () => {
+        await expect(send('@Officers meeting at 8')).resolves.toEqual([
+          'user-2',
+        ]);
+        // A role whose switch is on never needs the sender's permissions.
+        expect(mockRbac.getEffectivePermissions).not.toHaveBeenCalledWith(
+          'ch-1',
+          'user-1',
+        );
+      });
+
+      it('lets a member ping nobody through a role an officer switched off', async () => {
+        mockRbac.getEffectivePermissions.mockResolvedValue(['members:view']);
+        await expect(send('@Member read this')).resolves.toEqual([]);
+        expect(mockRbac.getEffectivePermissions).toHaveBeenCalledWith(
+          'ch-1',
+          'user-1',
+        );
+      });
+
+      it('lets an officer ping a role that is switched off', async () => {
+        mockRbac.getEffectivePermissions.mockResolvedValue(['channels:manage']);
+        await expect(send('@Member read this')).resolves.toEqual([
+          'user-1',
+          'user-2',
+          'user-3',
+        ]);
+      });
+
+      it('lets anyone ping a role whose switch is on, however big', async () => {
+        // On by default (owner, 2026-11-06): a role everyone holds included.
+        mockRbac.findByChapter.mockResolvedValue([
+          role('r-member', 'Brothers'),
+        ]);
+        await expect(send('@Brothers hi')).resolves.toEqual([
+          'user-1',
+          'user-2',
+          'user-3',
+        ]);
+        expect(mockRbac.getEffectivePermissions).not.toHaveBeenCalledWith(
+          'ch-1',
+          'user-1',
+        );
+      });
+
+      it('re-resolves a role mention on edit as the editor', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...baseMessage,
+          sender_id: 'user-1',
+        });
+        mockMessageRepo.update.mockResolvedValue(baseMessage);
+        await service.editMessage('msg-1', 'ch-1', 'user-1', 'cc @Officers');
+        expect(mockMessageRepo.update).toHaveBeenCalledWith(
+          'msg-1',
+          expect.objectContaining({ mentions: ['user-2'] }),
+        );
+      });
+    });
 
     it('resolves a mention server-side and stores users.id', async () => {
       seedRoster();

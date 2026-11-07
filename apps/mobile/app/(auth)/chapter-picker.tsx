@@ -86,7 +86,7 @@ export default function ChapterPicker() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace("/(tabs)");
+      router.replace("/");
     }
   }
 

@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 
+import { keyFromLabel } from "@/lib/key-from-label";
 import { useState } from "react";
 import { Loader2, Plus, Trash2, X } from "lucide-react";
 import type {
@@ -29,7 +30,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  EmptyState,
   ErrorState,
   anyReadUncached,
   OfflineState,
@@ -46,6 +46,7 @@ import {
   useDeleteCustomField,
 } from "@repo/hooks";
 import { SettingsListCardSkeleton } from "@/components/settings/settings-skeleton";
+import { InlineNote } from "@/components/shared/inline-note";
 
 type Props = {
   /** Whether the caller holds `chapter-config:manage`. */
@@ -144,10 +145,7 @@ export function SettingsFieldsTab({ canManage }: Props) {
           </CardHeader>
           <CardContent>
             {fields.length === 0 ? (
-              <EmptyState
-                title="No custom fields yet"
-                description="Add one below to start collecting it from members."
-              />
+              <InlineNote>No custom fields yet.</InlineNote>
             ) : (
               <ul className="space-y-3">
                 {fields.map((field) => (
@@ -163,7 +161,10 @@ export function SettingsFieldsTab({ canManage }: Props) {
           </CardContent>
         </Card>
 
-        <AddFieldForm canManage={canManage} />
+        <AddFieldForm
+          canManage={canManage}
+          existingKeys={fields.map((field) => field.key)}
+        />
       </>
     );
   }
@@ -232,8 +233,8 @@ function FieldRow({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <span className="text-sm font-medium">{field.label}</span>
-          <span className="ml-2 font-mono text-xs text-muted-foreground">
-            {field.key} · {TYPE_LABEL[field.type]}
+          <span className="ml-2 text-xs text-muted-foreground">
+            {TYPE_LABEL[field.type]}
           </span>
           {field.type === "select" && field.options?.choices?.length ? (
             <div className="mt-2 flex flex-wrap gap-1">
@@ -316,7 +317,6 @@ function FieldRow({
 }
 
 const EMPTY_DRAFT = {
-  key: "",
   label: "",
   type: "text" as CustomFieldType,
   required: false,
@@ -326,7 +326,13 @@ const EMPTY_DRAFT = {
   choices: [] as string[],
 };
 
-function AddFieldForm({ canManage }: { canManage: boolean }) {
+function AddFieldForm({
+  canManage,
+  existingKeys,
+}: {
+  canManage: boolean;
+  existingKeys: readonly string[];
+}) {
   const { toast } = useToast();
   const createField = useCreateCustomField();
   const [draft, setDraft] = useState(EMPTY_DRAFT);
@@ -366,7 +372,6 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
   const canSubmit =
     canManage &&
     !createField.isPending &&
-    !!draft.key.trim() &&
     !!draft.label.trim() &&
     !selectMissingChoices;
 
@@ -389,7 +394,7 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
 
     try {
       await createField.mutateAsync({
-        key: draft.key.trim(),
+        key: keyFromLabel(draft.label, existingKeys, "field"),
         label: draft.label.trim(),
         type: draft.type,
         required: draft.required,
@@ -406,10 +411,7 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
     } catch (error) {
       toast({
         title: "Couldn't create custom field",
-        description: getErrorMessage(
-          error,
-          "The key may already be in use. Retry with a different key.",
-        ),
+        description: getErrorMessage(error, "Check the name and try again."),
         variant: "destructive",
       });
     }
@@ -420,32 +422,19 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
       <CardHeader>
         <CardTitle>Add a field</CardTitle>
         <CardDescription>
-          The key is a lowercase slug (letters, numbers, underscores), unique
-          per chapter. A select field needs at least one option.
+          A select field needs at least one option.
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleCreate}>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
-              <Label htmlFor="custom-field-key">Key</Label>
-              <Input
-                id="custom-field-key"
-                value={draft.key}
-                disabled={!canManage}
-                placeholder="graduation_year"
-                onChange={(event) =>
-                  setDraft((prev) => ({ ...prev, key: event.target.value }))
-                }
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="custom-field-label">Label</Label>
+              <Label htmlFor="custom-field-label">Name</Label>
               <Input
                 id="custom-field-label"
                 value={draft.label}
                 disabled={!canManage}
-                placeholder="Graduation year"
+                placeholder="e.g. Hometown"
                 onChange={(event) =>
                   setDraft((prev) => ({ ...prev, label: event.target.value }))
                 }

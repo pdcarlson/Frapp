@@ -1,5 +1,4 @@
 import {
-  type ComponentType,
   createContext,
   ReactNode,
   useCallback,
@@ -30,8 +29,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { NavigationContext } from "expo-router/react-navigation";
 import { SignetTokens, type SignetTypeRole } from "@repo/theme/signet";
-import { ChapterGlyph } from "@/components/more/more-glyphs";
-import { useChapterBranding } from "@/lib/chapter-branding";
+import { InlineNote } from "@/components/inline-note";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -404,108 +402,6 @@ function useScreenInView(): boolean {
 }
 
 /**
- * Empty — "inviting, never alarming" (§10). Accent and neutral only; a semantic
- * hue here would read as a fault when nothing is wrong.
- *
- * `title` is optional because writing.md gives some empty states none: Chat
- * home's filtered-to-nothing state is a description and an action, and every
- * string it shows lives once in `@repo/hooks` for both clients. Without a
- * title the card draws no title line and no gap for one, so it reads tile,
- * body, action, in that order, to a screen reader as to the eye.
- */
-export function EmptyState({
-  title,
-  body,
-  glyph = "+",
-  action,
-}: {
-  title?: string;
-  /**
-   * A line the title can't carry: why the view is empty, or what to do next
-   * (a search names its query, a filter says how to widen it). Never one
-   * that restates what the screen is for: without one the title stands
-   * alone. A filtered-to-nothing state inside a list may instead pass this
-   * with no title (`writing.md` §4, as amended 2026-11-05).
-   */
-  body?: string;
-  /**
-   * The tile's feature glyph: a duotone glyph component, drawn in the chapter
-   * accent (§10, iconography.md), or a single character standing in for one.
-   *
-   * The More hub's glyphs (`components/more/more-glyphs.tsx`) are the
-   * transcribed per-feature set, and Documents, Directory and the no-chapter
-   * state pass theirs; a search or filter that matched nothing passes
-   * `SearchGlyph`. TODO-DESIGN: the rest of the per-feature set (tasks, dues,
-   * study, service hours and Chat home's no-channels state still pass a
-   * character). Nearest pattern used: the accent-tinted tile with a text
-   * glyph.
-   */
-  glyph?: string | ComponentType<{ color: string }>;
-  /** The optional CTA, drawn below the body: an {@link EmptyStateAction}. */
-  action?: ReactNode;
-}) {
-  const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
-  const styles = createStyles(tokens);
-  const GlyphComponent = typeof glyph === "string" ? null : glyph;
-
-  return (
-    <View style={styles.card}>
-      {/* The tile is decoration: hidden from screen readers, so VoiceOver
-          doesn't read a stand-in character ("plus") before the words. */}
-      <View
-        style={[styles.tile, { backgroundColor: tint(accent) }]}
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-      >
-        {typeof glyph === "string" ? (
-          <Text style={[styles.glyph, { color: accent }]}>{glyph}</Text>
-        ) : GlyphComponent ? (
-          <GlyphComponent color={accent} />
-        ) : null}
-      </View>
-      {title ? <Text style={styles.title}>{title}</Text> : null}
-      {body ? <Text style={styles.body}>{body}</Text> : null}
-      {action}
-    </View>
-  );
-}
-
-/**
- * The empty card's CTA: §10's Tinted button (§3), `accent-3` fill, `accent-7`
- * border and `accent-11` label at 44pt. Tinted's pressed fill is `accent-4`,
- * which `ChapterBranding` doesn't carry, so it fades while held like the error
- * card's retry.
- */
-export function EmptyStateAction({
-  label,
-  onPress,
-}: {
-  label: string;
-  onPress: () => void;
-}) {
-  const { tokens } = useFrappTheme();
-  const { accent, accentSubtle, accentBorder } = useChapterBranding();
-  const styles = createStyles(tokens);
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      hitSlop={tokens.spacing.sm}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.stateButton,
-        { backgroundColor: accentSubtle, borderColor: accentBorder },
-        pressed ? styles.pressed : null,
-      ]}
-    >
-      <Text style={[styles.actionText, { color: accent }]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-/**
  * Error — the one surface allowed a semantic border (§10). Never takes the
  * chapter accent: a chapter's colour saying "something failed" is exactly the
  * confusion the semantic palette exists to prevent.
@@ -573,12 +469,9 @@ export function ErrorState({
  */
 export function NoChapterState({ noun }: { noun: string }) {
   return (
-    <EmptyState
-      // The Switch chapter row's own glyph, since that row is the way out.
-      glyph={ChapterGlyph}
-      title="No chapter selected"
-      body={`Choose a chapter from More → Switch chapter to see ${noun}.`}
-    />
+    <InlineNote>
+      {`Choose a chapter from More → Switch chapter to see ${noun}.`}
+    </InlineNote>
   );
 }
 
@@ -604,13 +497,6 @@ function createStyles(tokens: SignetTokens) {
       // The sanctioned semantic border, and the only one in the family.
       borderColor: tint(tokens.color.semantic.destructive, 0.28),
     },
-    tile: {
-      width: tokens.touch.minimum,
-      height: tokens.touch.minimum,
-      borderRadius: tokens.radius.card,
-      alignItems: "center",
-      justifyContent: "center",
-    },
     errorTile: {
       width: tokens.touch.minimum,
       height: tokens.touch.minimum,
@@ -619,9 +505,6 @@ function createStyles(tokens: SignetTokens) {
       justifyContent: "center",
       // `tint`'s default alpha is 0.13, which is the danger fill §10 specifies.
       backgroundColor: tint(tokens.color.semantic.destructive),
-    },
-    glyph: {
-      ...typeRole(tokens.typography.role.title),
     },
     errorGlyph: {
       ...typeRole(tokens.typography.role.title),
@@ -641,7 +524,7 @@ function createStyles(tokens: SignetTokens) {
     },
     // The empty card's CTA and the error card's retry: §10 gives the two cards
     // the same anatomy, so they share this geometry and differ only in colour
-    // (`retry` here, the chapter accent inline in `EmptyStateAction`). §10
+    // (`retry` here). §10
     // sets the button 14px below the body; the card's 8pt gap plus `xs` makes
     // 12, the nearest the spacing scale reaches.
     stateButton: {
@@ -658,12 +541,6 @@ function createStyles(tokens: SignetTokens) {
     retryText: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
-    },
-    actionText: {
-      ...typeRole({
-        ...tokens.typography.role.label,
-        weight: tokens.typography.weight.bold,
-      }),
     },
     pressed: {
       opacity: 0.7,

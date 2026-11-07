@@ -3,6 +3,7 @@ import { applyAlpha } from "@repo/color";
 import {
   AA_NON_TEXT,
   AA_TEXT,
+  accentFour,
   accentRolesFor,
   DESTRUCTIVE_TEXT,
   HAIRLINE_ALPHA,
@@ -112,6 +113,48 @@ describe("chat message rows", () => {
         ratio(TEXT.mutedForeground, bg),
         `--muted-foreground over ${name}`,
       ).toBeGreaterThanOrEqual(AA_TEXT);
+    }
+  });
+});
+
+/**
+ * A row that @-mentions the viewer (`components.md` §11): the chapter's
+ * `--accent-subtle` behind the whole row, `--accent-subtle-hover` once
+ * hovered or revealed, with a 2px `--primary` bar on its leading edge. Every
+ * text the row draws must still read on that tint for every seed, the
+ * captions included, and the bar has to separate from the thread background.
+ */
+describe("a row that mentions the viewer", () => {
+  it("keeps body text and captions AA on the tint for every chapter seed", () => {
+    for (const seed of SEEDS) {
+      const roles = accentRolesFor(seed);
+      for (const [state, bg] of [
+        ["rest", roles["--accent-subtle"]!],
+        ["hovered", accentFour(roles)],
+      ] as const) {
+        expect(
+          ratio(TEXT.foreground, bg),
+          `${seed} ${state} body`,
+        ).toBeGreaterThanOrEqual(AA_TEXT);
+        expect(
+          ratio(TEXT.mutedForeground, bg),
+          `${seed} ${state} caption`,
+        ).toBeGreaterThanOrEqual(AA_TEXT);
+        expect(
+          ratio(MENTION_CHIP.text, bg),
+          `${seed} ${state} mention chip`,
+        ).toBeGreaterThanOrEqual(AA_TEXT);
+      }
+    }
+  });
+
+  it("draws the bar at non-text contrast against the thread", () => {
+    for (const seed of SEEDS) {
+      const bar = accentRolesFor(seed)["--primary"]!;
+      expect(
+        ratio(bar, SURFACE.background),
+        `${seed} bar`,
+      ).toBeGreaterThanOrEqual(AA_NON_TEXT);
     }
   });
 });

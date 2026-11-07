@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import {
   useDeferredValue,
   useEffect,
@@ -43,9 +44,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { EmptyState } from "@/components/shared/async-states";
 import {
-  NestedEmpty,
   NestedError,
   NestedOffline,
 } from "@/components/shared/nested-states";
@@ -103,6 +102,7 @@ import {
   denseListClassName,
 } from "@/components/shared/table-controls";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
+import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 
 /**
  * `/backwork`, rebuilt 2026-11-05 around the files instead of a filter form
@@ -329,7 +329,7 @@ export function BackworkPage() {
         title: "Couldn't fetch download link",
         description: getErrorMessage(
           error,
-          "Retry in a moment. Signed links expire quickly.",
+          "Try again in a moment.",
         ),
         variant: "destructive",
       });
@@ -557,10 +557,7 @@ export function BackworkPage() {
   if (!activeChapterId) {
     return (
       <div className="space-y-6">
-        <EmptyState
-          title="No chapter selected"
-          description="Pick a chapter from the switcher to browse its backwork."
-        />
+        <InlineNote>Pick a chapter to browse its backwork.</InlineNote>
       </div>
     );
   }
@@ -801,7 +798,11 @@ export function BackworkPage() {
           <NestedError
             sole
             title="Couldn't load backwork"
-            description="Confirm your chapter access and retry."
+            description={describeLoadFailure(
+              resourcesQuery.error ??
+                departmentsQuery.error ??
+                professorsQuery.error,
+            )}
             onRetry={() => {
               void resourcesQuery.refetch();
               void departmentsQuery.refetch();
@@ -809,19 +810,14 @@ export function BackworkPage() {
             }}
           />
         ) : rows.length === 0 ? (
-          <NestedEmpty
-            sole
-            title="No backwork yet"
-            description="Upload the first exam, homework or study guide to start the library."
-          />
+          <InlineNote>No backwork yet.</InlineNote>
         ) : count === 0 ? (
-          <NestedEmpty
-            sole
-            title="No files match"
-            description="Try fewer words, or clear a filter."
-            actionLabel="Clear search and filters"
-            onAction={clearAll}
-          />
+          <InlineNote>
+            No files match.{" "}
+            <InlineNoteAction onClick={clearAll}>
+              Clear search and filters
+            </InlineNoteAction>
+          </InlineNote>
         ) : (
           <>
             <div

@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useCallback, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { Loader2, Pencil, PinOff, Plus, Trash2 } from "lucide-react";
@@ -50,11 +51,7 @@ import {
   readIsOffline,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedOffline,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import {
   denseListClassName,
   compactControlClassName,
@@ -76,6 +73,7 @@ import {
   ChannelsSkeleton,
   ChatAdminBodySkeleton,
 } from "@/components/chat-admin/chat-admin-skeleton";
+import { InlineNote } from "@/components/shared/inline-note";
 
 type ChannelType = "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
 
@@ -585,7 +583,9 @@ function ChatAdminBody({
       <NestedError
         sole
         title="Couldn't load channels"
-        description="Confirm your chapter access and retry."
+        description={describeLoadFailure(
+          channelsQuery.error ?? categoriesQuery.error,
+        )}
         onRetry={retryQueries}
       />
     );
@@ -808,10 +808,7 @@ function ChatAdminBody({
         </div>
 
         {channels.length === 0 ? (
-          <NestedEmpty
-            title="No channels yet"
-            description="Create the first channel to get chapter chat structured."
-          />
+          <InlineNote>No channels yet. Create the first one above.</InlineNote>
         ) : (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
             {/*
@@ -1040,7 +1037,7 @@ function ChatAdminBody({
                       Offline first, and both ways a read goes offline
                       (`readIsOffline` in async-states.tsx): it pauses, or,
                       with the API unreachable or a page restored offline, it
-                      fails, which would otherwise blame chapter access.
+                      fails, which would otherwise read as a load error.
                     */}
                     {readIsOffline(isOffline, pinsQuery) ? (
                       <NestedOffline
@@ -1055,14 +1052,13 @@ function ChatAdminBody({
                     ) : pinsQuery.isError && pinsQuery.data === undefined ? (
                       <NestedError
                         title="Couldn't load pins"
-                        description="Confirm your chapter access and retry."
+                        description={describeLoadFailure(pinsQuery.error)}
                         onRetry={() => void pinsQuery.refetch()}
                       />
                     ) : pins.length === 0 ? (
-                      <NestedEmpty
-                        title="Nothing pinned"
-                        description="Officers can pin key messages from the channel timeline."
-                      />
+                      <InlineNote>
+                        Nothing pinned. Pin a message from the channel.
+                      </InlineNote>
                     ) : (
                       <ul
                         className={cn(
@@ -1129,10 +1125,7 @@ function ChatAdminBody({
                   </div>
                 </section>
               ) : (
-                <NestedEmpty
-                  title="No channel selected"
-                  description="Pick a channel to edit its details, notifications and pins."
-                />
+                <InlineNote>Pick a channel to edit it.</InlineNote>
               )}
             </div>
           </div>
@@ -1151,10 +1144,9 @@ function ChatAdminBody({
           Categories
         </SectionLabel>
         {categories.length === 0 ? (
-          <NestedEmpty
-            title="No categories yet"
-            description="Channels without a category show up as uncategorized."
-          />
+          <InlineNote>
+            No categories yet. Channels without one show as uncategorized.
+          </InlineNote>
         ) : (
           <ul className={denseListClassName}>
             {[...categories]

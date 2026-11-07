@@ -1,0 +1,1019 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, AppState, StyleSheet, View } from "react-native";
+import type { AppStateStatus } from "react-native";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
+import {
+  useCurrentChapter,
+  useGeofences,
+  usePermissionList,
+  usePauseStudySession,
+  useResumeStudySession,
+  useStartStudySession,
+  useStopStudySession,
+  useStudyHeartbeat,
+  useStudySessions,
+} from "@repo/hooks";
+import { can, isModuleEnabled } from "@repo/validation";
+import { SignetTokens } from "@repo/theme/signet";
+import { ScreenShell } from "@/components/screen-shell";
+import { useRefetchAll } from "@/components/pull-to-refresh";
+import { BACK_TO_MORE } from "@/components/back-row";
+import { SectionHeader } from "@/components/list-section";
+import { ErrorState } from "@/components/state-block";
+import { InlineNote } from "@/components/inline-note";
+import { CardListSkeleton } from "@/components/card-list-skeleton";
+import { CardMessages } from "@/components/card-messages";
+import { SessionCard } from "@/components/study/session-card";
+import { SessionRow } from "@/components/study/session-row";
+import { StartCard, StartCardSkeleton } from "@/components/study/start-card";
+import { WeekSummary } from "@/components/study/week-summary";
+import { ZonePickerSheet } from "@/components/study/zone-picker-sheet";
+import { LocationPrimerSheet } from "@/components/study/location-primer-sheet";
+import {
+  latLngOf,
+  readForegroundFix,
+  readForegroundPermission,
+  requestForegroundPermission,
+} from "@/lib/location";
+import { useFocusEffect } from "expo-router";
+import { statusOf } from "@repo/api-sdk";
+import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
+import {
+  clearStudyPausedNotification,
+  notifyStudyPaused,
+} from "@/lib/notifications/study-pause";
+import {
+  isActiveSessionConflict,
+  MODULE_OFF_COPY,
+  permanentRefusalCopy,
+  sessionErrorCopy,
+  startErrorCopy,
+} from "@/lib/study/errors";
+import { startOfWeek } from "@/lib/study/format";
+import {
+  locationSettingsPath,
+  turnOnLocationStep,
+} from "@/lib/study/location-settings-path";
+import {
+  creditedSeconds,
+  isReportingStale,
+  isPaused as sessionIsPaused,
+  narrowSession,
+  selectActiveSession,
+  selectSessionHistory,
+  settleIfEnded,
+  type StudySessionModel,
+} from "@/lib/study/session";
+import {
+  findZone,
+  graceWindowCopy,
+  selectActiveZones,
+  type StudyZoneModel,
+} from "@/lib/study/zones";
+import { useFrappTheme } from "@/lib/theme";
+
+/**
+ * s10 — Study hours (`canvas-screens.dc.html`, `id="s10"`).
+ *
+ * Composition only; every rule lives in `lib/study/` where it is unit-tested.
+ *
+ * ## The three rules this screen exists to obey
+ *
+ * **1. The server owns the clock.** `spec/ui/mobile/patterns.md` § Study
+ * sessions: "Credited time derives from server-recorded timestamps, never an
+ * accumulated client-side timer." Nothing here counts. The one-second tick only
+ * moves `now`; `creditedSeconds` re-derives the figure from the session's own
+ * watermark each render, so a paused or closed session simply stops changing.
+ *
+ * **2. Backgrounding pauses, it never stops.** The web screen stops the session
+ * on `pagehide` because closing a tab is final. On a phone it is not: leaving
+ * the app to read a message is the *ordinary* case, and the grace window exists
+ * precisely to make it non-terminal. `AppState` → `/pause` and `/resume`, and
+ * the mirror rolls back on failure so a dropped pause is retried rather than
+ * silently accruing background time.
+ *
+ * **3. A session ends by returning 200.** Expiry is lazy server-side, so pause,
+ * resume, heartbeat and stop can each come back terminal. Every response goes
+ * through `settleIfEnded`; nothing infers an ending from a thrown error.
+ *
+ * ## Why server state is adopted but never used to clear
+ *
+ * `useStudySessions` is a cached read with a 30-second stale window and no
+ * focus refetch. If a stale empty page could clear the live session, the moment
+ * right after `start` — before the invalidation lands — would wipe the session
+ * the member just began. So the list seeds and adopts, and only a mutation
+ * response (or a 404 from one) ends a session. That is also what
+ * `patterns.md` means by "the client never needs cleanup logic of its own".
+ */
+
+/** `spec/behavior/study-sessions.md`: the client heartbeats every 5 minutes. */
+const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
+ * How long to wait before re-sending a pause or resume the network dropped.
+ *
+ * Short, because the thing it is racing is the zone's grace window — five
+ * minutes by default. A resume that retries once a minute would lose that race
+ * more often than it won it.
+ */
+const MIRROR_RETRY_MS = 15 * 1000;
+
+/**
+ * The line for a member who said no to location. It spells out the path to the
+ * switch, since this line has no button to get them there (the primer's
+ * blocked branch does). The path is {@link locationSettingsPath}'s, the one the
+ * primer uses too: it differs by OS and by iOS version, and naming the wrong
+ * one sends the member looking for a row that isn't there. The web build has
+ * no Settings path, since location there is the site's permission in the
+ * browser, so the line says that instead.
+ */
+function locationRequiredCopy(): string {
+  const step = turnOnLocationStep(locationSettingsPath());
+  return `Frapp confirms you're in the study zone, so it needs location while you study. ${step}.`;
+}
+
+export default function StudyScreen() {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const zoneSheetRef = useRef<BottomSheetModal>(null);
+  const primerSheetRef = useRef<BottomSheetModal>(null);
+
+  const chapterQuery = useCurrentChapter();
+  const canManageZones = can("geofences:manage", usePermissionList());
+  // Fails open, and deliberately: `useCurrentChapter` is `enabled: !!chapterId`
+  // and a missing claim (no membership yet, or a hook-off incident) would hide
+  // the screen from everyone if we required it. The writes are gated
+  // server-side regardless — this only avoids offering a surface a chapter
+  // switched off.
+  const hoursEnabled = isModuleEnabled(
+    chapterQuery.data?.enabled_modules,
+    "hours",
+  );
+  const zonesQuery = useGeofences();
+  const sessionsQuery = useStudySessions();
+  // A refetched page adopts a session and never clears one (below), so a
+  // pull cannot end a live session.
+  const refresh = useRefetchAll([chapterQuery, zonesQuery, sessionsQuery]);
+
+  const startSession = useStartStudySession();
+  const heartbeat = useStudyHeartbeat();
+  const pauseSession = usePauseStudySession();
+  const resumeSession = useResumeStudySession();
+  const stopSession = useStopStudySession();
+
+  const zones = useMemo(
+    () => selectActiveZones(zonesQuery.data),
+    [zonesQuery.data],
+  );
+  const serverActive = useMemo(
+    () => selectActiveSession(sessionsQuery.data),
+    [sessionsQuery.data],
+  );
+  const history = useMemo(
+    () => selectSessionHistory(sessionsQuery.data),
+    [sessionsQuery.data],
+  );
+
+  const [session, setSession] = useState<StudySessionModel | null>(null);
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  /**
+   * The subscription gate (#2297) or the module gate (#2393) refused a session
+   * write. Tracked separately from `failure` because those are the failures
+   * that must not be retried.
+   *
+   * Its only consumer is `isBlocked` on `StartCard`. The mirror-retry timer is
+   * stopped by the local `refused` const in that effect's catch, NOT by this
+   * state — do not merge the two. Reading this state there would re-arm the
+   * timer on every tab return, and deleting the local guard on the belief that
+   * this state covers it would spin the mirror against a permanent 403.
+   */
+  const [writeRefused, setWriteRefused] = useState(false);
+  /**
+   * Clear the latch whenever the member comes back to this screen.
+   *
+   * Without this the refusal is permanent for the life of the process, and a
+   * screen can stay mounted for days (`tasks.tsx` says the same: "A tab is
+   * never unmounted and the JS context survives days of backgrounding"; Study
+   * is pushed over the tabs, but stays up as long while the app is
+   * backgrounded on it). So an
+   * officer could resolve the chapter's billing seconds later and this member
+   * would still find Start greyed out until they force-quit the app — a
+   * member-facing dead end, and the same "dead until a force-quit" defect that
+   * got the previous attempt at #2297 reverted.
+   *
+   * Leaving and returning is a deliberate act, not a retry-in-place, so this
+   * does not reintroduce the doomed retry: the next Start tap re-refuses and
+   * re-explains if nothing has actually changed.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      setWriteRefused(false);
+      // The copy goes with the latch, but ONLY the start-path copy. Clearing
+      // that one without the latch would leave an enabled Start button sitting
+      // directly over a sentence saying study sessions cannot be recorded —
+      // the screen offering and denying the same action at once.
+      //
+      // `studySession` is deliberately NOT cleared. It explains a refused
+      // pause, heartbeat or End on a session that is still running, and
+      // nothing re-renders it on return: wiping it would leave a live timer
+      // and an End button with no reason attached until the next refused
+      // write, which may be `HEARTBEAT_INTERVAL_MS` away or never. An ordinary
+      // failure's message survives a tab switch for the same reason, as it
+      // always has.
+      setFailure((current) =>
+        current === SUBSCRIPTION_REFUSAL_COPY.study ||
+        current === MODULE_OFF_COPY.start
+          ? null
+          : current,
+      );
+      return undefined;
+    }, []),
+  );
+  const [isStarting, setIsStarting] = useState(false);
+  const [isEnding, setIsEnding] = useState(false);
+  const [canAskForLocation, setCanAskForLocation] = useState(true);
+  const [now, setNow] = useState(() => new Date());
+  const [appState, setAppState] = useState<AppStateStatus>(
+    () => AppState.currentState ?? "active",
+  );
+
+  /**
+   * The session id the screen is holding, readable from callbacks that must not
+   * re-create on every heartbeat. `settleIfEnded` compares against it so a
+   * pause that lands after a *new* session started cannot wipe the new one.
+   */
+  const sessionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    sessionIdRef.current = session?.id ?? null;
+  }, [session]);
+
+  /**
+   * A monotonic ticket per outbound mutation, so responses can be applied in the
+   * order they were *sent* rather than the order they arrive.
+   *
+   * Without it the state machine is last-write-wins: a `/pause` posted as the
+   * app backgrounds can answer *after* the `/resume` that followed it three
+   * seconds later, flipping a live session back to paused — which tears down
+   * both timers with no AppState transition left to restart them.
+   */
+  const requestSeqRef = useRef(0);
+  const appliedSeqRef = useRef(0);
+
+  /** The live AppState, readable from inside an async continuation. */
+  const appStateRef = useRef(appState);
+  useEffect(() => {
+    appStateRef.current = appState;
+  }, [appState]);
+
+  /** The payload's `hours` verdict, readable from `applyResponse`. */
+  const hoursEnabledRef = useRef(hoursEnabled);
+  useEffect(() => {
+    hoursEnabledRef.current = hoursEnabled;
+  }, [hoursEnabled]);
+
+  /**
+   * `useMutation` hands back a fresh object every render, so an effect keying on
+   * `mutateAsync` would tear down and rebuild the heartbeat interval constantly.
+   * Holding the callables in a ref lets the effects key on real state instead —
+   * the pattern `apps/web/components/study/study-page.tsx` records for the same
+   * reason.
+   */
+  const apiRef = useRef({
+    start: startSession.mutateAsync,
+    heartbeat: heartbeat.mutateAsync,
+    pause: pauseSession.mutateAsync,
+    resume: resumeSession.mutateAsync,
+    stop: stopSession.mutateAsync,
+    refetchSessions: sessionsQuery.refetch,
+    refetchChapter: chapterQuery.refetch,
+  });
+  useEffect(() => {
+    apiRef.current = {
+      start: startSession.mutateAsync,
+      heartbeat: heartbeat.mutateAsync,
+      pause: pauseSession.mutateAsync,
+      resume: resumeSession.mutateAsync,
+      stop: stopSession.mutateAsync,
+      refetchSessions: sessionsQuery.refetch,
+      refetchChapter: chapterQuery.refetch,
+    };
+  });
+
+  /**
+   * A module-off refusal is the server saying `hours` is off, so a payload
+   * that still says on is stale. Refetch it so the module-off screen takes
+   * over (#2718); otherwise a foregrounded app keeps the card, its refused End
+   * and a "that didn't save" line for as long as the 5-minute cached payload
+   * goes unrefreshed, which on a screen left up in the background can be
+   * indefinitely. The
+   * reverse, a write that succeeds under a payload saying off, is
+   * `applyResponse`'s. With no payload at all (the query is disabled without
+   * an `active_chapter_id` claim, and `hoursEnabled` failed open) there is
+   * nothing stale to correct, and a manual refetch would send the read the
+   * hook deliberately withholds.
+   */
+  const hasChapterPayload = chapterQuery.data !== undefined;
+  useEffect(() => {
+    if (!hoursEnabled || !hasChapterPayload) return;
+    if (failure !== MODULE_OFF_COPY.start && failure !== MODULE_OFF_COPY.session)
+      return;
+    void apiRef.current.refetchChapter();
+  }, [failure, hoursEnabled, hasChapterPayload]);
+
+  /** Adopt the live session — on cold start, and after any invalidation. */
+  useEffect(() => {
+    if (!serverActive) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- adopt the server session without clobbering a newer local row of the same id
+    setSession((current) =>
+      current && current.id === serverActive.id ? current : serverActive,
+    );
+  }, [serverActive]);
+
+  /**
+   * Default to a zone, so Start works on arrival.
+   *
+   * The only zone if there is one; otherwise the zone of the member's most
+   * recent session, since most members study in the same place every time;
+   * otherwise the first. Waiting for a choice instead opened the screen on a
+   * "Pick a zone" card with its one action disabled, for every member of a
+   * chapter with two zones. The zone row stays tappable to change it.
+   *
+   * With several zones it waits for the history, or the first zone would win
+   * and then never give way: a valid selection is kept, which is also what
+   * keeps a member's own pick. "Loaded" means the history has arrived at
+   * least once, not that the read stopped pending: a failed read isn't
+   * pending either, and choosing then would put the first zone in place before
+   * the member's Retry brought the last one. The error state stands in for
+   * the card meanwhile, so the open choice is never seen.
+   */
+  const historyLoaded = sessionsQuery.data !== undefined;
+  const lastZoneId = history[0]?.geofenceId ?? null;
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- pick a default zone, or drop a selection that no longer exists
+    setSelectedZoneId((current) => {
+      if (current && zones.some((zone) => zone.id === current)) return current;
+      if (zones.length === 1) return zones[0]?.id ?? null;
+      if (zones.length === 0 || !historyLoaded) return null;
+      return findZone(zones, lastZoneId)?.id ?? zones[0]?.id ?? null;
+    });
+  }, [zones, historyLoaded, lastZoneId]);
+
+  /**
+   * When the session on screen ends, here or elsewhere, the Start card that
+   * replaces it offers that session's zone, which is now the member's most
+   * recent. The effect above can't see it: the history holds finished
+   * sessions only, so a session picked up on launch was never its last zone,
+   * and a still-valid earlier choice is kept. A zone gone since is left to
+   * that effect.
+   */
+  const shownZoneIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (session) {
+      shownZoneIdRef.current = session.geofenceId;
+      return;
+    }
+    const endedZoneId = shownZoneIdRef.current;
+    shownZoneIdRef.current = null;
+    if (endedZoneId && zones.some((zone) => zone.id === endedZoneId)) {
+      setSelectedZoneId(endedZoneId);
+    }
+  }, [session, zones]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", setAppState);
+    return () => subscription.remove();
+  }, []);
+
+  /**
+   * Backgrounded means `"background"` — **not** "anything but active".
+   *
+   * iOS emits `inactive` for a Control Center pull, the app-switcher peek and an
+   * incoming-call banner. None of those is the member leaving, and treating
+   * them as a pause fires a `/resume` with a fresh fix seconds later — which the
+   * server re-checks against the polygon, so an indoor GPS jitter closes the
+   * session `EXPIRED` with no points, for someone who never moved.
+   * Android never emits `inactive`, so this would not have shown up there.
+   */
+  const isForeground = appState !== "background";
+  const paused = session !== null && sessionIsPaused(session);
+  const running = session !== null && !paused;
+  const reportingStale = session !== null && isReportingStale(session, now);
+
+  /**
+   * A session write just succeeded, so nothing about the refusal still holds.
+   *
+   * Clears the latch as well as the sentence, and the pairing is the point: a
+   * successful response proves the gate is passing, so a latch left `true`
+   * here would grey out Start while the only explanation for it — the
+   * `failure` line — had just been wiped. That is the silently dead control
+   * this issue exists to remove, and it is reachable: heartbeats are refused,
+   * an officer fixes the billing, and the next heartbeat succeeds but reports
+   * the session already EXPIRED by the server's stale rule.
+   *
+   * The sentence is cleared by value so an ordinary failure's message is
+   * never swallowed. The start-path copy is not touched here; it is paired
+   * with the same latch and cleared with it on focus.
+   */
+  const clearRefusalState = useCallback(() => {
+    setWriteRefused(false);
+    setFailure((current) =>
+      current === SUBSCRIPTION_REFUSAL_COPY.studySession ||
+      current === MODULE_OFF_COPY.session
+        ? null
+        : current,
+    );
+  }, []);
+
+  const applyResponse = useCallback((response: unknown, seq: number) => {
+    // Nothing held, nothing to apply. Without this an in-flight heartbeat that
+    // answers `ACTIVE` moments after the member taps End would put the ended
+    // session back on screen, ticking, beside the notice saying it ended.
+    if (sessionIdRef.current === null) return;
+    // A response older than one already applied says nothing new and can only
+    // undo it.
+    if (seq < appliedSeqRef.current) return;
+
+    // A session write got through, so the module gate is passing whatever the
+    // cached payload says. If it still says `hours` is off, the screen is
+    // hiding a live session behind "can't be updated or ended" (#2718), and
+    // that payload can sit stale for as long as the app stays foregrounded.
+    if (!hoursEnabledRef.current) void apiRef.current.refetchChapter();
+
+    const settled = settleIfEnded(response, sessionIdRef.current);
+    if (settled.ended) {
+      appliedSeqRef.current = seq;
+      setSession(null);
+      sessionIdRef.current = null;
+      setNotice(settled.notice);
+      // The in-session refusal copy describes THIS session; once it is gone
+      // the sentence is stale, and leaving it would render "that didn't save
+      // … may not be credited" right beside a re-enabled Start button —
+      // the screen offering and denying the same action at once.
+      clearRefusalState();
+      // A session that ended while paused would otherwise leave its "return to
+      // Frapp to resume" notice in the tray, inviting the member back to a
+      // session that no longer exists (#1065).
+      void clearStudyPausedNotification();
+      // The closed session belongs in the history list below, which is served
+      // by the same query.
+      void apiRef.current.refetchSessions();
+      return;
+    }
+
+    const next = narrowSession(response);
+    if (!next) return;
+    if (next.id !== sessionIdRef.current) return;
+    appliedSeqRef.current = seq;
+    setSession(next);
+    // A write just succeeded, so a refusal message still on screen is false.
+    // Nothing else clears it: the focus reset deliberately leaves it alone
+    // (it explains a failed End on a session that is still running), so
+    // without this it survives for the life of the session.
+    clearRefusalState();
+  }, [clearRefusalState]);
+
+  /** Let go of a session the server says is gone, and say so. */
+  const releaseSession = useCallback(
+    (notice: string) => {
+      setSession(null);
+      sessionIdRef.current = null;
+      setNotice(notice);
+      // As in `applyResponse`'s ended branch: a refusal latched against this
+      // session goes with it. Left set, Start comes back greyed out with only
+      // the "already closed" notice on screen and no reason for it.
+      clearRefusalState();
+      void clearStudyPausedNotification();
+      void apiRef.current.refetchSessions();
+    },
+    [clearRefusalState],
+  );
+
+  /** One tick per second, and only while there is something to tick. */
+  useEffect(() => {
+    if (!running || !isForeground) return undefined;
+    const interval = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(interval);
+  }, [running, isForeground]);
+
+  const sendHeartbeat = useCallback(async () => {
+    const seq = ++requestSeqRef.current;
+    try {
+      const fix = await readForegroundFix();
+      applyResponse(await apiRef.current.heartbeat(fix), seq);
+    } catch (error) {
+      // A 404 is not a missed beat — it is the server saying this session no
+      // longer exists (stopped from the web dashboard, or superseded by one
+      // started on another device). Swallowing it leaves a dead timer ticking
+      // forever, which is exactly the failure this screen's rule 3 exists to
+      // prevent.
+      if (statusOf(error) === 404) {
+        releaseSession(
+          "That session has already been closed somewhere else. Your credited time is safe.",
+        );
+        return;
+      }
+      // A subscription or module refusal is the non-404 that is NOT
+      // transient, so the "stay quiet, the next tick is five minutes away"
+      // rule below would never end (#2297, #2393). Say why, once — the member
+      // otherwise watches the timer keep counting time the stale-heartbeat
+      // rule will later expire for zero, with only `isReportingStale` and no
+      // reason for it.
+      const refusal = permanentRefusalCopy(error, "session");
+      if (refusal) {
+        setWriteRefused(true);
+        setFailure(refusal);
+        return;
+      }
+      // Anything else is transient. The server's stale-heartbeat rule owns the
+      // consequence and the next tick is five minutes away, so surfacing it
+      // would cry wolf on every lift tunnel — but `isReportingStale` puts a
+      // visible warning on the card once beats have actually stopped landing.
+      if (__DEV__) console.warn("study heartbeat failed", error);
+    }
+  }, [applyResponse, releaseSession]);
+
+  useEffect(() => {
+    if (!running || !isForeground) return undefined;
+    const interval = setInterval(
+      () => void sendHeartbeat(),
+      HEARTBEAT_INTERVAL_MS,
+    );
+    return () => clearInterval(interval);
+  }, [running, isForeground, sendHeartbeat]);
+
+  /**
+   * The foreground state already reported to the server.
+   *
+   * Only real transitions are mirrored, and a failed call rolls the ref back so
+   * the next one retries. Without the rollback a single dropped `/pause` would
+   * leave the client believing the server knows it is backgrounded, and every
+   * later background would be skipped — which is exactly the silent accrual the
+   * pause exists to prevent.
+   */
+  const lastReportedForegroundRef = useRef(isForeground);
+  const sessionId = session?.id ?? null;
+  /**
+   * Bumped when a mirror call fails, purely to re-run the effect below.
+   *
+   * The previous shape rolled the ref back "so the next one retries" — but the
+   * effect keys on `isForeground` and `sessionId`, neither of which changes
+   * after a failure, so nothing re-fired. A member whose `/resume` failed once
+   * sat on a Paused card until the grace window closed the session, watching
+   * copy that promised it would resume on its own.
+   */
+  const [mirrorRetry, setMirrorRetry] = useState(0);
+
+  useEffect(() => {
+    if (sessionId === null) {
+      lastReportedForegroundRef.current = isForeground;
+      return undefined;
+    }
+    if (lastReportedForegroundRef.current === isForeground) return undefined;
+
+    const target = isForeground;
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+    void (async () => {
+      const seq = ++requestSeqRef.current;
+      try {
+        let response: unknown;
+        if (!target) {
+          response = await apiRef.current.pause();
+          // Only after the server has agreed. Posting the notice optimistically
+          // would tell a member their session paused when the request is about
+          // to fail and be retried (#1065, `spec/behavior/study-sessions.md`
+          // § Anti-Distraction). Fire-and-forget: a notification that cannot be
+          // posted must never fail the pause.
+          if (!cancelled) void notifyStudyPaused();
+        } else {
+          // Coordinates are re-checked on resume: the member may have left the
+          // zone while away, and the next heartbeat is up to five minutes out
+          // (`spec/behavior/study-sessions.md`).
+          const fix = await readForegroundFix();
+          // A cold GPS fix routinely takes seconds, and the member can leave
+          // again inside that window. Posting `/resume` from a backgrounded app
+          // clears `paused_at` and resets the credit watermark, so the next
+          // heartbeat banks the whole background gap as study time — the exact
+          // accrual the pause exists to prevent.
+          if (cancelled || appStateRef.current === "background") return;
+          // Resume DTO is lat/lng only — accuracy_meters is heartbeat-only
+          // (`forbidNonWhitelisted` 400s an undeclared key).
+          response = await apiRef.current.resume(latLngOf(fix));
+          // Cleared on the way back in, so a member who returns inside the
+          // grace window does not find a stale "paused" notice waiting.
+          void clearStudyPausedNotification();
+        }
+        if (cancelled) return;
+        // Marked only once the server has actually been told. The old code
+        // flipped this before awaiting, which let two transitions interleave.
+        lastReportedForegroundRef.current = target;
+        applyResponse(response, seq);
+      } catch (error) {
+        if (cancelled) return;
+        const refusal = permanentRefusalCopy(error, "session");
+        const refused = refusal !== null;
+        if (refused) {
+          setWriteRefused(true);
+          // Set here, not only inside `if (target)` below: a refused *pause*
+          // (target === false) would otherwise grey out Start with nothing on
+          // screen saying why. `StartCard`'s contract is that this `failure`
+          // line carries the explanation and the prop only removes the
+          // affordance — a silently dead control is the Guideline 2.1 shape
+          // this issue exists to remove, not a smaller version of it.
+          setFailure(refusal);
+        }
+        if (target) {
+          if (!refused) setFailure(sessionErrorCopy(error));
+          // A resume that keeps failing leaves the paused card on screen and
+          // the retry loop running — but the tray notice invites the member
+          // back to a session that may already be gone (an officer stopping it
+          // from the dashboard 404s every retry). Withdraw it: the in-app card
+          // is still there and is the honest surface for a failed resume.
+          void clearStudyPausedNotification();
+        }
+        // A refusal is permanent until an officer sorts out the chapter's
+        // subscription or turns `hours` back on, so re-arming here would spin
+        // the pause/resume mirror forever against a 403 nothing on this
+        // device can clear.
+        if (!refused) {
+          retryTimer = setTimeout(
+            () => setMirrorRetry((count) => count + 1),
+            MIRROR_RETRY_MS,
+          );
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
+    };
+  }, [applyResponse, isForeground, sessionId, mirrorRetry]);
+
+  const selectedZone: StudyZoneModel | null = useMemo(
+    () => findZone(zones, selectedZoneId),
+    [zones, selectedZoneId],
+  );
+  const activeZone: StudyZoneModel | null = useMemo(
+    () => findZone(zones, session?.geofenceId ?? null),
+    [zones, session],
+  );
+
+  // Keyed on the week boundary, not on `now` — `now` ticks once a second while a
+  // session runs, and this filter+reduce over the whole history has no reason to
+  // re-run until the calendar week actually changes.
+  const weekStart = startOfWeek(now).getTime();
+  const weekTotals = useMemo(() => {
+    const inWeek = history.filter(
+      (row) => Date.parse(row.startTime) >= weekStart,
+    );
+    return {
+      minutes: inWeek.reduce((sum, row) => sum + row.totalForegroundMinutes, 0),
+      count: inWeek.length,
+    };
+  }, [history, weekStart]);
+
+  const beginSession = useCallback(async () => {
+    if (!selectedZoneId) return;
+    setNotice(null);
+    setFailure(null);
+    setIsStarting(true);
+    try {
+      const fix = await readForegroundFix();
+      requestSeqRef.current += 1;
+      const response = await apiRef.current.start({
+        geofence_id: selectedZoneId,
+        ...latLngOf(fix),
+      });
+      const next = narrowSession(response);
+      if (next) {
+        sessionIdRef.current = next.id;
+        setSession(next);
+        // The session starts in the foreground by construction — the member
+        // just tapped. Seeding the mirror here stops the first AppState change
+        // from being read as a transition that never happened.
+        lastReportedForegroundRef.current = true;
+        setNow(new Date());
+      }
+    } catch (error) {
+      if (isActiveSessionConflict(error)) {
+        // The server settles a lapsed pause before it checks, so a 409 means a
+        // genuinely live session — one this screen simply had not read yet.
+        // Adopting it beats telling the member to go find it.
+        const refetched = await apiRef.current.refetchSessions();
+        const live = selectActiveSession(refetched.data);
+        if (live) {
+          sessionIdRef.current = live.id;
+          setSession(live);
+          lastReportedForegroundRef.current = true;
+          setNotice(
+            "You already had a session running, so this picked it back up.",
+          );
+        } else {
+          setFailure(startErrorCopy(error));
+        }
+      } else {
+        setFailure(startErrorCopy(error));
+      }
+      if (permanentRefusalCopy(error, "start")) setWriteRefused(true);
+    } finally {
+      setIsStarting(false);
+    }
+  }, [selectedZoneId]);
+
+  /**
+   * The primer gate.
+   *
+   * Permission is *read* first, never requested — `patterns.md` requires the
+   * primer to explain the zone check before the OS asks, and asking first would
+   * make the explanation an apology.
+   */
+  /**
+   * Both permission paths run inside their own try/catch and behind
+   * `isStarting`.
+   *
+   * A bare `void (async () => …)()` swallows a rejection into an unhandled
+   * promise — a dev-only warning under Hermes and silence in release — so a
+   * failed permission call turned the tap into a no-op with nothing on screen.
+   * The busy flag matters for the same reason: the primer's dismiss is
+   * animated, so a double tap fires two concurrent
+   * `requestForegroundPermissionsAsync` calls, the second of which rejects
+   * because one is already in flight.
+   */
+  const handleStartPress = useCallback(() => {
+    if (isStarting) return;
+    void (async () => {
+      setFailure(null);
+      try {
+        const permission = await readForegroundPermission();
+        if (permission.granted) {
+          await beginSession();
+          return;
+        }
+        setCanAskForLocation(permission.canAskAgain);
+        primerSheetRef.current?.present();
+      } catch {
+        setFailure(locationRequiredCopy());
+      }
+    })();
+  }, [beginSession, isStarting]);
+
+  const handlePrimerAllow = useCallback(() => {
+    if (isStarting) return;
+    void (async () => {
+      primerSheetRef.current?.dismiss();
+      try {
+        const permission = await requestForegroundPermission();
+        if (!permission.granted) {
+          setFailure(locationRequiredCopy());
+          return;
+        }
+        await beginSession();
+      } catch {
+        setFailure(locationRequiredCopy());
+      }
+    })();
+  }, [beginSession, isStarting]);
+
+  const endSession = useCallback(async () => {
+    setFailure(null);
+    setIsEnding(true);
+    const seq = ++requestSeqRef.current;
+    try {
+      applyResponse(await apiRef.current.stop(), seq);
+    } catch (error) {
+      // Only a 404 means the server has already closed it. **Every other error
+      // leaves the session ACTIVE server-side**, so dropping it here would tear
+      // down the heartbeat and let the stale rule close it as `EXPIRED` — which
+      // awards nothing — while the copy promised the member their time was
+      // safe. Keeping the card up leaves them an End button to try again with.
+      if (statusOf(error) === 404) {
+        releaseSession(sessionErrorCopy(error));
+      } else {
+        setFailure(sessionErrorCopy(error));
+      }
+    } finally {
+      setIsEnding(false);
+    }
+  }, [applyResponse, releaseSession]);
+
+  const confirmEnd = useCallback(() => {
+    Alert.alert(
+      "End this session?",
+      "Your credited time is already banked. Points are awarded once you pass the zone's minimum session length.",
+      [
+        { text: "Keep studying", style: "cancel" },
+        {
+          text: "End session",
+          style: "destructive",
+          onPress: () => void endSession(),
+        },
+      ],
+    );
+  }, [endSession]);
+
+  /**
+   * The notice and failure lines, for a body with no card to carry them.
+   *
+   * With a card on screen they go inside it, under its button (`StartCard`,
+   * `SessionCard`): inserted above the card, they pushed the card, the button
+   * the member had just tapped and the whole list down. A body without a card
+   * (an error, no zones) has nothing below the line to jump, and a notice
+   * that a session ended must still reach the member there.
+   */
+  const standaloneMessages = (
+    <CardMessages
+      notice={notice}
+      failure={failure}
+      align="left"
+      placement="screen"
+    />
+  );
+
+  function renderBody() {
+    // No `NoChapterState` branch. `GET /v1/study-sessions` resolves a sole
+    // membership server-side, so it works without an `active_chapter_id` claim —
+    // and `chapterId` is null whenever that claim is absent, so any such
+    // branch would swallow every genuine fetch failure into "No chapter
+    // selected", which carries no retry control.
+    //
+    // A switched-off module hides its surface (`spec/ui/design-system/README.md`
+    // § What "fail fast" means concretely, rule 4), and that includes a session
+    // still running under it: End, pause and heartbeat are all refused while
+    // the module is off, and nothing sweeps a stale session, so its card would
+    // tick a clamped timer beside an End that can't work, for as long as the
+    // module stays off. The body names the session instead. Underneath, an
+    // unpaused foregrounded session keeps heartbeating, and a paused one
+    // retries its resume on the next return to the app; the first of those
+    // to get through refetches this payload (`applyResponse`). Within
+    // `HEARTBEAT_STALE_MINUTES` (10) of an unpaused session's last banked
+    // heartbeat, or inside a paused one's grace window, that brings the card
+    // back. Past it, the write settles the session instead (EXPIRED with
+    // nothing credited, or PAUSED_EXPIRED with its pre-pause time, per
+    // `spec/behavior/study-sessions.md`), and the screen goes to Start with
+    // the ended notice.
+    if (!hoursEnabled) {
+      return (
+        <>
+          {/* The notice only. No failure line applies here: each one is about
+              a card, an End or a Start this screen has replaced, and its body
+              already says why nothing here works (#2718). */}
+          <CardMessages
+            notice={notice}
+            failure={null}
+            align="left"
+            placement="screen"
+          />
+          <InlineNote>
+            {session ? MODULE_OFF_COPY.runningSession : MODULE_OFF_COPY.start}
+          </InlineNote>
+        </>
+      );
+    }
+
+    if (sessionsQuery.isPending || zonesQuery.isPending) {
+      return (
+        <CardListSkeleton
+          label="Loading study zones"
+          card={<StartCardSkeleton />}
+          summary
+          rows={3}
+        />
+      );
+    }
+
+    if (sessionsQuery.isError) {
+      return (
+        <>
+          {standaloneMessages}
+          <ErrorState
+            title="Couldn't load study hours"
+            body="Your sessions are still recorded — this was a problem fetching them."
+            onRetry={() => void sessionsQuery.refetch()}
+            isRetrying={sessionsQuery.isFetching}
+          />
+        </>
+      );
+    }
+
+    if (zonesQuery.isError) {
+      return (
+        <>
+          {standaloneMessages}
+          <ErrorState
+            title="Couldn't load study zones"
+            body="A session has to start inside a zone, so this has to load first."
+            onRetry={() => void zonesQuery.refetch()}
+            isRetrying={zonesQuery.isFetching}
+          />
+        </>
+      );
+    }
+
+    if (!session && zones.length === 0) {
+      return (
+        <>
+          {standaloneMessages}
+          {/* Empty-states plan rule 7: one line (writing.md § Study session).
+              Zones are drawn on a map, which only web has. */}
+          <InlineNote>
+            {canManageZones
+              ? "No study zones yet. Add one from Frapp on the web."
+              : "No study zones yet. An officer adds them."}
+          </InlineNote>
+        </>
+      );
+    }
+
+    return (
+      <>
+        {session ? (
+          <SessionCard
+            seconds={creditedSeconds(session, now)}
+            zoneName={activeZone?.name ?? "Study zone"}
+            isPaused={paused}
+            isReportingStale={reportingStale}
+            graceCopy={graceWindowCopy(activeZone)}
+            isEnding={isEnding}
+            notice={notice}
+            failure={failure}
+            onEnd={confirmEnd}
+          />
+        ) : (
+          <StartCard
+            zone={selectedZone}
+            canChooseZone={zones.length > 1}
+            isStarting={isStarting}
+            isBlocked={writeRefused}
+            graceCopy={graceWindowCopy(selectedZone)}
+            notice={notice}
+            failure={failure}
+            onChooseZone={() => zoneSheetRef.current?.present()}
+            onStart={handleStartPress}
+          />
+        )}
+
+        <WeekSummary
+          minutes={weekTotals.minutes}
+          sessionCount={weekTotals.count}
+        />
+
+        {history.length > 0 ? (
+          <>
+            <SectionHeader>RECENT SESSIONS</SectionHeader>
+            <View style={styles.rows}>
+              {history.slice(0, 10).map((row, index, all) => (
+                <SessionRow
+                  key={row.id}
+                  session={row}
+                  zoneName={findZone(zones, row.geofenceId)?.name ?? null}
+                  isLast={index === all.length - 1}
+                />
+              ))}
+            </View>
+          </>
+        ) : (
+          // Rules 1 and 7: the section keeps its place and says it's empty.
+          <>
+            <SectionHeader>RECENT SESSIONS</SectionHeader>
+            <InlineNote>No sessions yet.</InlineNote>
+          </>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <ScreenShell back={BACK_TO_MORE} title="Study hours" refresh={refresh}>
+      {renderBody()}
+
+      <ZonePickerSheet
+        ref={zoneSheetRef}
+        zones={zones}
+        selectedZoneId={selectedZoneId}
+        onSelect={(zoneId) => {
+          setSelectedZoneId(zoneId);
+          zoneSheetRef.current?.dismiss();
+        }}
+      />
+
+      <LocationPrimerSheet
+        ref={primerSheetRef}
+        canAskAgain={canAskForLocation}
+        onAllow={handlePrimerAllow}
+        onDismiss={() => primerSheetRef.current?.dismiss()}
+      />
+    </ScreenShell>
+  );
+}
+
+function createStyles(tokens: SignetTokens) {
+  return StyleSheet.create({
+    rows: {
+      marginTop: tokens.spacing.xs,
+    },
+  });
+}
