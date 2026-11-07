@@ -35,6 +35,7 @@ const {
   categoriesData,
   unreadData,
   levelsData,
+  latestData,
   sidebarPrefs,
   leaveMutateAsync,
   reopenMutate,
@@ -72,6 +73,21 @@ const {
     }[],
   },
   levelsData: { value: [] as { channel_id: string; level: string }[] },
+  // `GET /v1/channels/latest` (2026-11-06): each channel's latest message.
+  latestData: {
+    answered: true,
+    value: [] as {
+      channel_id: string;
+      message_id: string;
+      sender_id: string | null;
+      author_name: string | null;
+      content: string;
+      kind: string;
+      payload: Record<string, unknown> | null;
+      attachment_count: number;
+      created_at: string;
+    }[],
+  },
   sidebarPrefs: {
     value: {
       pinnedIds: new Set<string>(),
@@ -124,6 +140,7 @@ const {
     roster: vi.fn(),
     viewer: vi.fn(),
     inbox: vi.fn(),
+    latest: vi.fn(),
   },
 }));
 
@@ -216,6 +233,16 @@ vi.mock("@repo/hooks", async () => {
     useViewerUserId: () => VIEWER,
     useMemberDisplayNames: () => ({
       byId: { [ALICE]: "Alice Chen", [BOB]: "Bob Diaz" },
+      nameFor: (id: string) =>
+        ({ [ALICE]: "Alice Chen", [BOB]: "Bob Diaz" })[id] ?? null,
+    }),
+    resolveAuthorLabel: actual.resolveAuthorLabel,
+    resolveAuthorName: actual.resolveAuthorName,
+    FILTER_CHANNELS_LABEL: actual.FILTER_CHANNELS_LABEL,
+    FILTER_CHANNELS_ON_LABEL: actual.FILTER_CHANNELS_ON_LABEL,
+    useChannelLatestMessages: () => ({
+      ...query(latestData.value, refetches.latest),
+      isSuccess: latestData.answered,
     }),
     useLeaveChannel: () => ({ mutateAsync: leaveMutateAsync }),
     useGetOrCreateDm: () => ({ mutate: reopenMutate }),
@@ -263,6 +290,8 @@ import {
   settleChatLaunch,
 } from "@/lib/chat/last-channel";
 import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
+import { ChannelFilterMenu } from "@/components/chat/channel-filter-menu";
+import { Toggle } from "@/components/toggle";
 import { SearchGlyph } from "@/components/search-glyph";
 import { SetupChecklistView } from "@/components/chat/setup-checklist";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
@@ -346,6 +375,8 @@ function hiddenToggle(tree: ReactTestRenderer) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  latestData.value = [];
+  latestData.answered = true;
   setupChecklist.value = null;
   channelsData.value = [general, dmAlice, dmBobHidden, group];
   categoriesData.value = [];
@@ -464,8 +495,11 @@ function layout(tree: ReactTestRenderer): [string, string[]][] {
         header.findAll((node) => (node.type as unknown) === "Text")[1]!.props
           .children,
       ),
-      // The rows are the fold control's siblings in the section.
-      header.parent!.findAllByType(ChannelRow).map((row) => row.props.name),
+      // The rows are siblings of the heading row (the fold control and, on
+      // the first, the filter button) in the section.
+      header
+        .parent!.parent!.findAllByType(ChannelRow)
+        .map((row) => row.props.name),
     ]);
 }
 
@@ -642,14 +676,59 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     });
   });
 
-  it("switches each filter from its chip", () => {
+  it("keeps the filters behind the first heading's button, and switches each from its menu", () => {
     const tree = render();
+    // No chips above the list any more (2026-11-06 redesign).
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityLabel === "Unread only",
+      ),
+    ).toHaveLength(0);
 
-    act(() => pressableLabelled(tree, "Unread only").props.onPress());
-    act(() => pressableLabelled(tree, "Hide muted").props.onPress());
+    act(() => pressableLabelled(tree, "Filter channels").props.onPress());
+    const toggle = (label: string) =>
+      tree.root
+        .findByType(ChannelFilterMenu)
+        .findAllByType(Toggle)
+        .find((node) => node.props.accessibilityLabel === label)!;
+    act(() => toggle("Unread only").props.onValueChange(true));
+    act(() => toggle("Hide muted").props.onValueChange(true));
 
     expect(setFilter).toHaveBeenNthCalledWith(1, { unread_only: true });
     expect(setFilter).toHaveBeenNthCalledWith(2, { hide_muted: true });
+  });
+
+  it("says a filter is on, on the button and under the heading, and Show all clears both", () => {
+    sidebarPrefs.value = {
+      ...sidebarPrefs.value,
+      filters: { unreadOnly: true, hideMuted: false },
+    };
+    unreadData.value = [
+      { channel_id: general.id, unread_count: 2, mention_count: 0 },
+    ];
+    const tree = render();
+
+    pressableLabelled(tree, "Filter channels, filters on");
+    expect(screenText(tree)).toContain("Showing unread only.");
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            (node.type as unknown) === "Pressable" &&
+            node.findAll(
+              (child) =>
+                (child.type as unknown) === "Text" &&
+                child.props.children === "Show all",
+            ).length > 0,
+        )
+        .props.onPress(),
+    );
+    expect(setFilter).toHaveBeenCalledWith({
+      unread_only: false,
+      hide_muted: false,
+    });
   });
 
   it("hides muted rows but keeps one that mentions the member", () => {
@@ -1385,5 +1464,112 @@ describe("Chat home setup checklist (spec/product/modules.md § Setup checklist)
     setupChecklist.value = ONE_LINE;
     channelsState.value = { ...channelsState.value, isError: true };
     expect(render().root.findAllByType(SetupChecklistView)).toHaveLength(0);
+  });
+});
+
+describe("Chat home previews (2026-11-06 redesign)", () => {
+  const social = { id: "c-social", name: "social", type: "PUBLIC" };
+  const latest = (
+    channelId: string,
+    createdAt: string,
+    over: Partial<(typeof latestData.value)[number]> = {},
+  ) => ({
+    channel_id: channelId,
+    message_id: `m-${channelId}`,
+    sender_id: ALICE,
+    author_name: null,
+    content: "see you at 6",
+    kind: "text",
+    payload: null,
+    attachment_count: 0,
+    created_at: createdAt,
+    ...over,
+  });
+
+  it("keeps the sections, A to Z, whatever spoke last", () => {
+    channelsData.value = [general, social, dmAlice];
+    latestData.value = [
+      latest(social.id, "2026-09-25T17:00:00Z"),
+      latest(general.id, "2026-09-25T16:00:00Z"),
+    ];
+    const tree = render();
+
+    expect(rows(tree).map((row) => row.props.name)).toEqual([
+      "general",
+      "social",
+      "Alice Chen",
+    ]);
+    expect(screenText(tree)).toContain("CHANNELS");
+    expect(screenText(tree)).toContain("DIRECT");
+  });
+
+  it("previews each row with the sender, You, or nothing in a DM, and its time", () => {
+    channelsData.value = [general, social, dmAlice, group];
+    latestData.value = [
+      latest(general.id, "2026-09-25T17:00:00Z", {
+        content: "**van** has 3 seats",
+      }),
+      latest(social.id, "2026-09-25T16:00:00Z", { sender_id: VIEWER }),
+      latest(dmAlice.id, "2026-09-25T15:00:00Z", {
+        content: "minutes doc is up",
+      }),
+    ];
+    const tree = render();
+    const byName = Object.fromEntries(
+      rows(tree).map((row) => [row.props.name, row.props]),
+    );
+
+    expect(byName.general.preview).toBe("Alice: van has 3 seats");
+    expect(byName.social.preview).toBe("You: see you at 6");
+    expect(byName["Alice Chen"].preview).toBe("minutes doc is up");
+    expect(byName.general.timestamp).toEqual(expect.any(String));
+    // No message yet: still two lines, so every row is the same height.
+    const quiet = rows(tree).find(
+      (row) => !["general", "social", "Alice Chen"].includes(row.props.name),
+    )!;
+    expect(quiet.props.preview).toBe("No messages yet");
+    expect(quiet.props.timestamp).toBeNull();
+  });
+
+  it("names the sender in a group DM, whose row names several people", () => {
+    channelsData.value = [group];
+    latestData.value = [latest(group.id, "2026-09-25T17:00:00Z")];
+    expect(rows(render())[0]!.props.preview).toBe("Alice: see you at 6");
+  });
+
+  it("names an unnamed sender by the thread's whole fallback label", () => {
+    channelsData.value = [general];
+    latestData.value = [
+      latest(general.id, "2026-09-25T17:00:00Z", {
+        sender_id: "99999999-9999-4999-8999-999999999999",
+      }),
+    ];
+    expect(rows(render())[0]!.props.preview).toMatch(
+      /^Member \S+: see you at 6$/,
+    );
+  });
+
+  it("holds each preview line blank until the previews answer, so no row grows", () => {
+    channelsData.value = [general, dmAlice];
+    latestData.answered = false;
+    expect(
+      rows(render()).map((row) => [row.props.preview, row.props.timestamp]),
+    ).toEqual([
+      ["", null],
+      ["", null],
+    ]);
+  });
+
+  it("draws a muted row quiet, in place", () => {
+    channelsData.value = [general, social];
+    levelsData.value = [{ channel_id: social.id, level: "off" }];
+    const tree = render();
+
+    expect(
+      rows(tree).map((row) => [row.props.name, row.props.isMuted]),
+    ).toEqual([
+      ["general", false],
+      ["social", true],
+    ]);
   });
 });

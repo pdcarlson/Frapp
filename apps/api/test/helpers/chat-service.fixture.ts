@@ -116,6 +116,7 @@ export async function createChatServiceFixture() {
   const mockMessageRepo: jest.Mocked<IChatMessageRepository> = {
     findById: jest.fn(),
     findByChannel: jest.fn(),
+    findLatestPerChannel: jest.fn().mockResolvedValue([]),
     findPinnedByChannel: jest.fn(),
     countPinnedByChannel: jest.fn(),
     findPollsByChapter: jest.fn(),

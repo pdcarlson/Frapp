@@ -2785,6 +2785,18 @@ alter table public.invites
 
 Dropping them loses which address each invite went to and which ones were revoked rather than used. Every invite keeps working; a revoked one still has `used_at` set, so it still can't be redeemed.
 
+## Rollback Chat home previews (20261106210000)
+
+* **Migration**: `20261106210000_chat_channel_latest_messages.sql`
+
+A new read-only function, `get_channel_latest_messages`. No data changes, and nothing else in the schema refers to it. Only `GET /v1/channels/latest` calls it.
+
+Roll the API back first, or accept that the endpoint answers 500 until it is: mobile Chat home then draws its rows without previews, and nothing else breaks. Then drop the function in a new forward migration, not by hand ([§ 3) Undo one migration](#3-undo-one-migration)), shipped through Deploy production (`scope: migrations-only` is enough):
+
+```sql
+drop function if exists public.get_channel_latest_messages(uuid, uuid);
+```
+
 ## Rollback silent audit entries in unread counts (20261106193000)
 
 * **Migration**: `20261106193000_chat_unread_skip_audit_mirror.sql`
