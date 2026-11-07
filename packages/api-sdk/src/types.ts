@@ -3953,6 +3953,13 @@ export interface components {
             user_id: string;
             /** @description The `display_order` of the member's highest role (lower ranks higher), or null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`. */
             role_rank: number | null;
+            /**
+             * Format: uuid
+             * @description The id of that highest role, which the list groups readers under, or null when they hold no role.
+             */
+            role_id: string | null;
+            /** @description That role's name, the group's heading, or null when they hold no role. */
+            role_name: string | null;
         };
         AddChannelMemberDto: {
             /** @description The `users.id` to add. Must be a member of the channel's chapter. */
