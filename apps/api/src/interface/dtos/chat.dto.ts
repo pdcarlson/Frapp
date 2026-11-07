@@ -264,6 +264,45 @@ export class MessageAttachmentDto {
   @IsInt()
   @Min(0)
   byte_size?: number;
+
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: 20000,
+    description:
+      'Photo width in pixels, so readers draw the bubble at its shape before the photo loads.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(20000)
+  width?: number;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 20000 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(20000)
+  height?: number;
+
+  @ApiPropertyOptional({
+    maxLength: 64,
+    description:
+      'ThumbHash of the photo, base64: the blurred placeholder readers draw until it loads.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  thumbhash?: string;
+
+  @ApiPropertyOptional({
+    maxLength: 1024,
+    description:
+      'The `preview_storage_path` the upload-url call returned, once the preview copy is uploaded.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1024)
+  preview_storage_path?: string;
 }
 
 export class SendMessageDto {
@@ -402,6 +441,14 @@ export class RequestChatUploadUrlDto {
   @IsInt()
   @Min(0)
   size_bytes?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Also mint an upload URL for a smaller JPEG copy of this photo, which readers draw in the timeline. Ignored unless content_type is an image.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  with_preview?: boolean;
 }
 
 export class ChatUploadUrlResponseDto {
@@ -420,6 +467,18 @@ export class ChatUploadUrlResponseDto {
     description: 'Server-allocated message id embedded in storage_path.',
   })
   message_id: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Only when with_preview was asked for an image: PUT the preview JPEG here, as image/jpeg.',
+  })
+  preview_upload_url?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Only with preview_upload_url: send back as the attachment preview_storage_path.',
+  })
+  preview_storage_path?: string;
 }
 
 /**

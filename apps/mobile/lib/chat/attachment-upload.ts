@@ -2,6 +2,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
+import { describeChatPhoto } from "./photo-preview";
 import { definitiveRefusalMessage } from "@repo/chat-core/chat-client";
 import {
   MAX_UPLOAD_LABEL,
@@ -9,6 +10,7 @@ import {
   isAllowedUploadExtension,
   isAllowedUploadMime,
   mimeForUploadFile,
+  readPreviewUpload,
   readSignedUpload,
   type UploadKind,
 } from "@repo/validation";
@@ -79,7 +81,12 @@ import {
 /** The mutation the screen already holds, narrowed to what this needs. */
 export type RequestUploadUrl = (args: {
   id: string;
-  body: { filename: string; content_type: string; size_bytes?: number };
+  body: {
+    filename: string;
+    content_type: string;
+    size_bytes?: number;
+    with_preview?: boolean;
+  };
 }) => Promise<unknown>;
 
 export type AttachmentPickResult =
@@ -286,6 +293,8 @@ export type RequestSignedUpload = (body: {
   filename: string;
   content_type: string;
   size_bytes: number;
+  /** Also mint a URL for a preview copy (chat photos only). */
+  with_preview?: boolean;
 }) => Promise<unknown>;
 
 /**
@@ -310,6 +319,8 @@ export interface UploadedImage {
   filename: string;
   contentType: string;
   byteSize: number;
+  /** Where the preview copy landed, when one was asked for and arrived. */
+  previewStoragePath?: string;
 }
 
 export type ImageUploadResult =
@@ -482,6 +493,12 @@ export async function pickImage(
 export async function uploadPickedImage(
   image: PickedImage,
   requestUploadUrl: RequestSignedUpload,
+  /**
+   * A local JPEG to upload beside the image as its preview copy (chat photos,
+   * `photo-preview.ts`). Best effort: a preview that fails to upload is left
+   * out of the result, and the image is still uploaded.
+   */
+  previewUri: string | null = null,
 ): Promise<Exclude<ImageUploadResult, { status: "cancelled" }>> {
   try {
     const ticket = await requestUploadUrl({
@@ -490,27 +507,22 @@ export async function uploadPickedImage(
       // Declared so the API's own 25 MB check runs and answers with a
       // readable 400 instead of the bucket's raw one.
       size_bytes: image.byteSize,
+      ...(previewUri ? { with_preview: true } : {}),
     });
     const { signedUrl, storagePath } = readSignedUpload(ticket);
+    const previewTicket = previewUri ? readPreviewUpload(ticket) : null;
 
-    // `useUploadSignedUrl` in `@repo/hooks` is not reachable from here: it
-    // PUTs a DOM `File`, which React Native has no equivalent of for a
-    // `file://` URI. `uploadAsync` with BINARY_CONTENT is the same request
-    // — raw bytes, one Content-Type header — made from a URI instead.
-    const response = await FileSystem.uploadAsync(signedUrl, image.uri, {
-      httpMethod: "PUT",
-      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-      headers: { "Content-Type": image.contentType },
-      // `uploadAsync` defaults to a BACKGROUND session, which on iOS hands
-      // the request to the system's background transfer daemon: it is built
-      // to survive the app being suspended, not to be quick, and it added
-      // seconds to every upload while the member watched. The trade: a
-      // foreground task stops if the app is suspended mid-PUT, and the caller
-      // reports a failure the member can retry (s12's pending row does). With
-      // photos shrunk first (`PHOTO_MAX_EDGE`) a PUT is a second or two.
-      sessionType: FileSystem.FileSystemSessionType.FOREGROUND,
-    });
-    if (response.status < 200 || response.status >= 300) {
+    // Both PUTs at once: the preview is a fraction of the original's bytes,
+    // so it adds next to nothing to the wait.
+    const [ok, previewOk] = await Promise.all([
+      putFile(signedUrl, image.uri, image.contentType),
+      previewTicket && previewUri
+        ? putFile(previewTicket.signedUrl, previewUri, "image/jpeg").catch(
+            () => false,
+          )
+        : false,
+    ]);
+    if (!ok) {
       return { status: "refused", reason: UPLOAD_FAILED };
     }
 
@@ -521,11 +533,41 @@ export async function uploadPickedImage(
         filename: image.filename,
         contentType: image.contentType,
         byteSize: image.byteSize,
+        ...(previewOk && previewTicket
+          ? { previewStoragePath: previewTicket.storagePath }
+          : {}),
       },
     };
   } catch (err) {
     return { status: "refused", reason: uploadFailureReason(err) };
   }
+}
+
+
+/** PUT the file at `uri` to a signed upload URL; true on a 2xx. */
+async function putFile(
+  signedUrl: string,
+  uri: string,
+  contentType: string,
+): Promise<boolean> {
+  // `useUploadSignedUrl` in `@repo/hooks` is not reachable from here: it
+  // PUTs a DOM `File`, which React Native has no equivalent of for a
+  // `file://` URI. `uploadAsync` with BINARY_CONTENT is the same request
+  // — raw bytes, one Content-Type header — made from a URI instead.
+  const response = await FileSystem.uploadAsync(signedUrl, uri, {
+    httpMethod: "PUT",
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    headers: { "Content-Type": contentType },
+    // `uploadAsync` defaults to a BACKGROUND session, which on iOS hands
+    // the request to the system's background transfer daemon: it is built
+    // to survive the app being suspended, not to be quick, and it added
+    // seconds to every upload while the member watched. The trade: a
+    // foreground task stops if the app is suspended mid-PUT, and the caller
+    // reports a failure the member can retry (s12's pending row does). With
+    // photos shrunk first (`PHOTO_MAX_EDGE`) a PUT is a second or two.
+    sessionType: FileSystem.FileSystemSessionType.FOREGROUND,
+  });
+  return response.status >= 200 && response.status < 300;
 }
 
 /**
@@ -654,9 +696,26 @@ export async function uploadChatPhoto(
     return { status: "refused", reason: PICK_FAILED };
   }
   if (prepared.status !== "picked") return prepared;
-  const result = await uploadPickedImage(prepared.image, (body) =>
-    requestUploadUrl({ id: channelId, body }),
+  // Size, placeholder and preview copy, from the exact bytes being uploaded
+  // (after any shrink or transcode). Never throws; anything it could not make
+  // is simply not sent, and readers fall back to the original.
+  const described = await describeChatPhoto(
+    prepared.image.uri,
+    prepared.image.contentType,
+  );
+  const result = await uploadPickedImage(
+    prepared.image,
+    (body) => requestUploadUrl({ id: channelId, body }),
+    described.previewUri,
   );
   if (result.status !== "uploaded") return result;
-  return { status: "attached", attachment: result.image };
+  return {
+    status: "attached",
+    attachment: {
+      ...result.image,
+      width: described.width,
+      height: described.height,
+      thumbhash: described.thumbhash,
+    },
+  };
 }

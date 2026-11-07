@@ -4075,6 +4075,13 @@ export interface components {
             filename: string;
             content_type: string;
             byte_size?: number;
+            /** @description Photo width in pixels, so readers draw the bubble at its shape before the photo loads. */
+            width?: number;
+            height?: number;
+            /** @description ThumbHash of the photo, base64: the blurred placeholder readers draw until it loads. */
+            thumbhash?: string;
+            /** @description The `preview_storage_path` the upload-url call returned, once the preview copy is uploaded. */
+            preview_storage_path?: string;
         };
         SendMessageDto: {
             /** Format: uuid */
@@ -4110,6 +4117,8 @@ export interface components {
             content_type: string;
             /** @description File size in bytes, if known. Rejected server-side against the upload size ceiling when present. */
             size_bytes?: number;
+            /** @description Also mint an upload URL for a smaller JPEG copy of this photo, which readers draw in the timeline. Ignored unless content_type is an image. */
+            with_preview?: boolean;
         };
         ChatUploadUrlResponseDto: {
             /** @description Short-lived signed URL; PUT the bytes to it. */
@@ -4118,6 +4127,10 @@ export interface components {
             storage_path: string;
             /** @description Server-allocated message id embedded in storage_path. */
             message_id: string;
+            /** @description Only when with_preview was asked for an image: PUT the preview JPEG here, as image/jpeg. */
+            preview_upload_url?: string;
+            /** @description Only with preview_upload_url: send back as the attachment preview_storage_path. */
+            preview_storage_path?: string;
         };
         SetChannelNotificationLevelDto: {
             /**

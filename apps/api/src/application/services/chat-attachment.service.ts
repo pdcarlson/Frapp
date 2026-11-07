@@ -36,6 +36,8 @@ import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import {
   CHAT_ARCHIVE_BUCKET,
+  CHAT_PREVIEW_CONTENT_TYPE,
+  chatPreviewPathFor,
   safeObjectFilename,
 } from '#domain/constants/storage';
 import { isUnsafeStoragePath } from '#domain/utils/storage-path';
@@ -55,6 +57,19 @@ const CHAT_BUCKET = 'chat';
  * Ten is well above what the composer's one-file-at-a-time picker produces.
  */
 const MAX_ATTACHMENTS_PER_MESSAGE = 10;
+
+/**
+ * A ThumbHash as base64: at most 25 bytes, so 36 characters. The column allows
+ * 64 (`chat_message_attachments_thumbhash_len`); this is the tighter shape.
+ */
+const THUMBHASH_BASE64 = /^[A-Za-z0-9+/]{4,36}={0,2}$/;
+
+/**
+ * Upper bound on a claimed photo edge, in pixels. Display metadata only, but a
+ * reader sizes a bubble from it, so an absurd value is refused rather than
+ * drawn.
+ */
+const MAX_PHOTO_EDGE = 20_000;
 
 /**
  * Signed-download-URL lifetime for an attachment, in seconds.
@@ -81,6 +96,13 @@ export interface SendMessageAttachmentInput {
   filename: string;
   content_type: string;
   byte_size?: number | null;
+  /** Photo pixel size, so a reader's bubble has its shape before it loads. */
+  width?: number | null;
+  height?: number | null;
+  /** ThumbHash, base64: the reader's placeholder until the photo loads. */
+  thumbhash?: string | null;
+  /** Must be `chatPreviewPathFor(storage_path)`, the path the mint handed out. */
+  preview_storage_path?: string | null;
 }
 
 /**
@@ -123,6 +145,7 @@ export class ChatAttachmentService {
     filename: string,
     contentType: string,
     sizeBytes?: number,
+    withPreview = false,
   ) {
     // Authorized as a "post", for the same reason `editMessage` is: a signed
     // URL lets the caller put bytes under this channel's storage prefix, so it
@@ -169,6 +192,27 @@ export class ChatAttachmentService {
       storagePath,
       contentType,
     );
+
+    // A photo's smaller copy, for the timeline (2026-11-07). Minted here, with
+    // the original, so its key is fixed by the original's: the claim check
+    // accepts only `chatPreviewPathFor(storage_path)`, and the purge deletes
+    // it with the original. Only for images; for any other file the flag is
+    // ignored rather than refused, since an old client never sends it.
+    if (withPreview && contentType.startsWith('image/')) {
+      const previewStoragePath = chatPreviewPathFor(storagePath);
+      const previewSignedUrl = await this.storageProvider.getSignedUploadUrl(
+        CHAT_BUCKET,
+        previewStoragePath,
+        CHAT_PREVIEW_CONTENT_TYPE,
+      );
+      return {
+        signedUrl,
+        storagePath,
+        messageId,
+        previewSignedUrl,
+        previewStoragePath,
+      };
+    }
 
     return { signedUrl, storagePath, messageId };
   }
@@ -231,9 +275,44 @@ export class ChatAttachmentService {
       ) {
         throw new BadRequestException('Invalid attachment size');
       }
+      this.validatePhotoMetadata(attachment);
     }
 
     return attachments;
+  }
+
+  /**
+   * The photo fields a claim may carry: display metadata, so the rule is only
+   * that each is well formed, and that a preview sits where the mint put it.
+   *
+   * The preview path is the one location rule here, for the same reason
+   * `storage_path` has one: it is signed for readers, and the purge deletes
+   * it. Pinned to `chatPreviewPathFor(storage_path)`, it can name no object
+   * but the one minted beside this original.
+   */
+  private validatePhotoMetadata(attachment: SendMessageAttachmentInput): void {
+    for (const edge of [attachment.width, attachment.height]) {
+      if (
+        edge != null &&
+        (!Number.isInteger(edge) || edge < 1 || edge > MAX_PHOTO_EDGE)
+      ) {
+        throw new BadRequestException('Invalid photo size');
+      }
+    }
+    if (attachment.thumbhash != null) {
+      if (!THUMBHASH_BASE64.test(attachment.thumbhash)) {
+        throw new BadRequestException('Invalid photo placeholder');
+      }
+    }
+    if (attachment.preview_storage_path != null) {
+      if (
+        !attachment.content_type.startsWith('image/') ||
+        attachment.preview_storage_path !==
+          chatPreviewPathFor(attachment.storage_path)
+      ) {
+        throw new BadRequestException('Invalid photo preview');
+      }
+    }
   }
 
   /**
@@ -272,6 +351,10 @@ export class ChatAttachmentService {
           filename: attachment.filename,
           content_type: attachment.content_type,
           byte_size: attachment.byte_size ?? null,
+          width: attachment.width ?? null,
+          height: attachment.height ?? null,
+          thumbhash: attachment.thumbhash ?? null,
+          preview_storage_path: attachment.preview_storage_path ?? null,
         })),
       );
     } catch (error) {
@@ -354,10 +437,26 @@ export class ChatAttachmentService {
     const rows = await this.attachmentRepo.findByMessage(messageId, chapterId);
     if (rows.length === 0) return [];
 
-    const urls = await this.signChatObjects(rows, { messageId, channelId });
+    // Previews sign in the same batch as the originals: one provider round
+    // trip either way. A preview that is missing (its upload failed, or it was
+    // never sent) simply fails to sign, and the reader draws the original.
+    const previews = previewObjects(rows);
+    const urls = await this.signChatObjects([...rows, ...previews], {
+      messageId,
+      channelId,
+    });
     return rows.flatMap((row) => {
       const downloadUrl = urls.get(objectKey(row));
-      return downloadUrl ? [{ ...row, download_url: downloadUrl }] : [];
+      if (!downloadUrl) return [];
+      const previewUrl = row.preview_storage_path
+        ? (urls.get(
+            objectKey({
+              bucket: row.bucket,
+              storage_path: row.preview_storage_path,
+            }),
+          ) ?? null)
+        : null;
+      return [{ ...row, download_url: downloadUrl, preview_url: previewUrl }];
     });
   }
 
@@ -621,8 +720,19 @@ export class ChatAttachmentService {
     const doomed = unshared.filter(
       (object) => !heldKeys.has(objectKey(object)),
     );
+    // A preview is deleted unless another live message still draws it. Its
+    // key is derived from the original's, so a message sharing the original
+    // shares the preview, and is kept with it. A report's hold does not keep
+    // one: the officer reviews the original, and a preview kept for a report
+    // would be one the evidence release never names, so never deleted.
+    const unsharedKeys = objectKeys(unshared);
+    const doomedPreviews = previewObjects(
+      attachments.filter((row) => unsharedKeys.has(objectKey(row))),
+    );
 
-    await this.deleteChatObjects(doomed, { messageId });
+    await this.deleteChatObjects([...doomed, ...doomedPreviews], {
+      messageId,
+    });
 
     const keptCount = sharedKeys.size + (unshared.length - doomed.length);
     if (keptCount > 0) {
@@ -845,4 +955,21 @@ function uniqueObjects(objects: readonly StoredObjectRef[]): StoredObjectRef[] {
     unique.push({ bucket, storage_path });
   }
   return unique;
+}
+
+/**
+ * The preview copies a set of attachment rows name, as stored objects. Rows
+ * without one contribute nothing.
+ */
+function previewObjects(
+  rows: readonly Pick<
+    ChatMessageAttachment,
+    'bucket' | 'preview_storage_path'
+  >[],
+): StoredObjectRef[] {
+  return rows.flatMap((row) =>
+    row.preview_storage_path
+      ? [{ bucket: row.bucket, storage_path: row.preview_storage_path }]
+      : [],
+  );
 }

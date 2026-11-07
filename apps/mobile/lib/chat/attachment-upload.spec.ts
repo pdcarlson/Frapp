@@ -13,6 +13,20 @@ import {
   safeBasename,
   uploadFailureReason,
 } from "./attachment-upload";
+import { describeChatPhoto } from "./photo-preview";
+
+// The size, placeholder and preview copy are `photo-preview.spec.ts`'s; here
+// only how the upload carries them. Nothing described unless a test says so.
+vi.mock("./photo-preview", () => ({
+  describeChatPhoto: vi.fn(),
+}));
+const describePhoto = vi.mocked(describeChatPhoto);
+const NOT_DESCRIBED = {
+  width: null,
+  height: null,
+  thumbhash: null,
+  previewUri: null,
+};
 
 /**
  * These pin the two decisions that are easy to get wrong and expensive to get
@@ -38,6 +52,11 @@ async function pickAndUploadPhoto(
 const picker = vi.mocked(ImagePicker);
 const fs = vi.mocked(FileSystem);
 const manipulator = vi.mocked(ImageManipulator);
+
+beforeEach(() => {
+  describePhoto.mockReset();
+  describePhoto.mockResolvedValue(NOT_DESCRIBED);
+});
 
 const TICKET = {
   upload_url: "https://storage.example/put",
@@ -488,6 +507,9 @@ describe("pickAndUploadPhoto", () => {
         filename: "Café.jpg",
         contentType: "image/jpeg",
         byteSize: 2048,
+        width: null,
+        height: null,
+        thumbhash: null,
       },
     });
   });
@@ -523,8 +545,103 @@ describe("pickAndUploadPhoto", () => {
         filename: "photo.jpg",
         contentType: "image/jpeg",
         byteSize: 2048,
+        width: null,
+        height: null,
+        thumbhash: null,
       },
     });
+  });
+
+  it("uploads the preview copy beside the photo and claims it with the size and placeholder", async () => {
+    grantedLibrary();
+    picked({
+      uri: "file:///photo.jpg",
+      fileName: "photo.jpg",
+      mimeType: "image/jpeg",
+      fileSize: 2048,
+    });
+    describePhoto.mockResolvedValue({
+      width: 2560,
+      height: 1920,
+      thumbhash: "3OcRJYB4d3h/iIeHeEh3eIhw+j3A",
+      previewUri: "file:///preview.jpg",
+    });
+    const requestUploadUrl = vi.fn().mockResolvedValue({
+      ...TICKET,
+      preview_upload_url: "https://storage.example/put-preview",
+      preview_storage_path: "chapters/c/chat/m/preview/preview.jpg",
+    });
+
+    const result = await pickAndUploadPhoto("channel-1", requestUploadUrl);
+
+    expect(requestUploadUrl).toHaveBeenCalledWith({
+      id: "channel-1",
+      body: expect.objectContaining({ with_preview: true }),
+    });
+    expect(fs.uploadAsync).toHaveBeenCalledWith(
+      "https://storage.example/put-preview",
+      "file:///preview.jpg",
+      expect.objectContaining({ headers: { "Content-Type": "image/jpeg" } }),
+    );
+    expect(result).toEqual({
+      status: "attached",
+      attachment: expect.objectContaining({
+        storagePath: "chapters/c/chat/m/photo.jpg",
+        previewStoragePath: "chapters/c/chat/m/preview/preview.jpg",
+        width: 2560,
+        height: 1920,
+        thumbhash: "3OcRJYB4d3h/iIeHeEh3eIhw+j3A",
+      }),
+    });
+  });
+
+  it("still sends the photo, without a preview, when only the preview PUT fails", async () => {
+    grantedLibrary();
+    picked({
+      uri: "file:///photo.jpg",
+      fileName: "photo.jpg",
+      mimeType: "image/jpeg",
+      fileSize: 2048,
+    });
+    describePhoto.mockResolvedValue({
+      ...NOT_DESCRIBED,
+      previewUri: "file:///preview.jpg",
+    });
+    fs.uploadAsync.mockImplementation((async (url: string) => ({
+      status: url.endsWith("put-preview") ? 500 : 200,
+    })) as never);
+
+    const result = await pickAndUploadPhoto(
+      "channel-1",
+      vi.fn().mockResolvedValue({
+        ...TICKET,
+        preview_upload_url: "https://storage.example/put-preview",
+        preview_storage_path: "chapters/c/chat/m/preview/preview.jpg",
+      }),
+    );
+
+    expect(result).toMatchObject({ status: "attached" });
+    expect(
+      result.status === "attached" && result.attachment.previewStoragePath,
+    ).toBeUndefined();
+  });
+
+  it("asks for no preview upload when the photo needs none", async () => {
+    grantedLibrary();
+    picked({
+      uri: "file:///photo.jpg",
+      fileName: "photo.jpg",
+      mimeType: "image/jpeg",
+      fileSize: 2048,
+    });
+    const requestUploadUrl = vi.fn().mockResolvedValue(TICKET);
+
+    await pickAndUploadPhoto("channel-1", requestUploadUrl);
+
+    expect(requestUploadUrl.mock.calls[0]![0].body).not.toHaveProperty(
+      "with_preview",
+    );
+    expect(fs.uploadAsync).toHaveBeenCalledTimes(1);
   });
 
   it("refuses rather than staging a chip when the PUT fails", async () => {

@@ -46,6 +46,8 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
         byte_size: row.byte_size,
         width: row.width ?? null,
         height: row.height ?? null,
+        thumbhash: row.thumbhash ?? null,
+        preview_storage_path: row.preview_storage_path ?? null,
         external_url: row.external_url ?? null,
       }),
     );

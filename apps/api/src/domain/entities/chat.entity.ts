@@ -284,6 +284,18 @@ export interface ChatMessageAttachment {
   width: number | null;
   height: number | null;
   /**
+   * A ThumbHash of a photo, base64, from the sending client: the blurred
+   * placeholder a reader draws until the photo loads. Null for files that are
+   * not photos and for rows sent before 2026-11-07.
+   */
+  thumbhash: string | null;
+  /**
+   * The smaller JPEG copy of a photo the sender uploaded next to it, always
+   * `chatPreviewPathFor` of `storage_path` when set. Null when there is
+   * none: not a photo, a photo already small enough, or an older row.
+   */
+  preview_storage_path: string | null;
+  /**
    * Source-system URL, reserved and **never populated by the Discord importer**.
    *
    * The idea was a retry handle for a partial media fetch. The importer does not
@@ -312,6 +324,11 @@ export interface ChatMessageAttachment {
  */
 export interface ChatMessageAttachmentWithUrl extends ChatMessageAttachment {
   download_url: string;
+  /**
+   * Signed URL for the preview copy, which is what a timeline draws. Null when
+   * the row has no preview or it could not be signed; draw `download_url`.
+   */
+  preview_url: string | null;
 }
 
 /**

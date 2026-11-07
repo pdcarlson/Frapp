@@ -416,6 +416,8 @@ export interface NewChatMessageAttachment {
   byte_size: number | null;
   width?: number | null;
   height?: number | null;
+  thumbhash?: string | null;
+  preview_storage_path?: string | null;
   external_url?: string | null;
 }
 

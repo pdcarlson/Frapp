@@ -12977,6 +12977,27 @@
           "byte_size": {
             "type": "number",
             "minimum": 0
+          },
+          "width": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 20000,
+            "description": "Photo width in pixels, so readers draw the bubble at its shape before the photo loads."
+          },
+          "height": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 20000
+          },
+          "thumbhash": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "ThumbHash of the photo, base64: the blurred placeholder readers draw until it loads."
+          },
+          "preview_storage_path": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "The `preview_storage_path` the upload-url call returned, once the preview copy is uploaded."
           }
         },
         "required": [
@@ -13105,6 +13126,10 @@
           "size_bytes": {
             "type": "number",
             "description": "File size in bytes, if known. Rejected server-side against the upload size ceiling when present."
+          },
+          "with_preview": {
+            "type": "boolean",
+            "description": "Also mint an upload URL for a smaller JPEG copy of this photo, which readers draw in the timeline. Ignored unless content_type is an image."
           }
         },
         "required": [
@@ -13126,6 +13151,14 @@
           "message_id": {
             "type": "string",
             "description": "Server-allocated message id embedded in storage_path."
+          },
+          "preview_upload_url": {
+            "type": "string",
+            "description": "Only when with_preview was asked for an image: PUT the preview JPEG here, as image/jpeg."
+          },
+          "preview_storage_path": {
+            "type": "string",
+            "description": "Only with preview_upload_url: send back as the attachment preview_storage_path."
           }
         },
         "required": [

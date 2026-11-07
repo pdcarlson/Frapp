@@ -16,11 +16,22 @@ import { hydrateRoot } from "react-dom/client";
 const {
   capturedExtensions,
   editorDouble,
+  mockDescribePhoto,
   mockRequestUploadUrl,
   mockUploadSignedUrl,
   mockToast,
 } = vi.hoisted(() => ({
   capturedExtensions: [] as unknown[][],
+  // jsdom cannot decode an image, so the real one describes nothing; a test
+  // that needs a preview copy says so.
+  mockDescribePhoto: vi.fn(
+    async (): Promise<{
+      width: number | null;
+      height: number | null;
+      thumbhash: string | null;
+      preview: Blob | null;
+    }> => ({ width: null, height: null, thumbhash: null, preview: null }),
+  ),
   // What the stubbed `useEditor` hands back. `null` everywhere except the
   // send suite (#1728), which installs a `fakeEditor` so `submit()` can run.
   editorDouble: { current: null as unknown },
@@ -59,6 +70,9 @@ vi.mock("@repo/hooks", () => ({
   useUploadSignedUrl: () => ({ mutateAsync: mockUploadSignedUrl }),
   useChapterRoster: () => ({ data: [] }),
   useMentionRoles: () => ({ data: [] }),
+}));
+vi.mock("@/lib/chat/photo-preview", () => ({
+  describeChatPhoto: mockDescribePhoto,
 }));
 vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
@@ -1219,6 +1233,44 @@ describe("Composer attachment ticket contract", () => {
     mockToast.mockClear();
     mockUploadSignedUrl.mockClear();
     mockRequestUploadUrl.mockClear();
+  });
+
+  it("uploads a photo's preview copy beside it, at the URL minted for it", async () => {
+    mockDescribePhoto.mockResolvedValueOnce({
+      width: 4032,
+      height: 3024,
+      thumbhash: "3OcRJYB4d3h/iIeHeEh3eIhw+j3A",
+      preview: new Blob(["jpeg"], { type: "image/jpeg" }),
+    });
+    mockRequestUploadUrl.mockResolvedValueOnce({
+      upload_url: "https://example.test/upload",
+      storage_path: "chapters/c/chat/ch/m/beach.jpg",
+      message_id: "m",
+      preview_upload_url: "https://example.test/upload-preview",
+      preview_storage_path: "chapters/c/chat/ch/m/preview/preview.jpg",
+    });
+    Object.assign(URL, {
+      createObjectURL: vi.fn(() => "blob:preview"),
+      revokeObjectURL: vi.fn(),
+    });
+    const { container } = render(<Composer {...baseProps()} />);
+    fireEvent.change(fileInputOf(container), {
+      target: { files: [new File(["x"], "beach.jpg", { type: "image/jpeg" })] },
+    });
+
+    expect(
+      await screen.findByRole("button", { name: "Remove beach.jpg" }),
+    ).toBeInTheDocument();
+    expect(mockRequestUploadUrl).toHaveBeenCalledWith({
+      id: expect.any(String),
+      body: expect.objectContaining({ with_preview: true }),
+    });
+    expect(mockUploadSignedUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        signedUrl: "https://example.test/upload-preview",
+        contentType: "image/jpeg",
+      }),
+    );
   });
 
   it("uploads every file picked at once and draws an image as itself", async () => {

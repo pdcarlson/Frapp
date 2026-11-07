@@ -576,4 +576,73 @@ describe("several photos and the sender's own", () => {
     const tree = render({ count: 1, clientMessageId: "c-1" }, vi.fn());
     expect(uris(tree)).toEqual(["file:///a.jpg"]);
   });
+
+  describe("previews (2026-11-07)", () => {
+    const THUMBHASH = "3OcRJYB4d3h/iIeHeEh3eIhw+j3A";
+    const photoRow = attachment({
+      filename: "IMG_1.jpg",
+      content_type: "image/jpeg",
+      width: 2560,
+      height: 1920,
+      thumbhash: THUMBHASH,
+      download_url: "https://example.test/signed/IMG_1.jpg",
+      preview_url: "https://example.test/signed/preview.jpg",
+    });
+    const images = (tree: ReactTestRenderer) =>
+      tree.root.findAllByType("Image" as unknown as React.ElementType);
+
+    it("draws the preview copy, not the original, under a blur of the photo", () => {
+      hookState.result = { isPending: false, isError: false, data: [photoRow] };
+
+      const tree = render();
+      const [placeholder, picture] = images(tree);
+
+      expect(placeholder!.props.testID).toBe("photo-placeholder");
+      expect(placeholder!.props.source.uri).toMatch(/^data:image\/png;base64,/);
+      expect(picture!.props.source).toEqual({
+        uri: "https://example.test/signed/preview.jpg",
+      });
+    });
+
+    it("drops the blur once the photo has loaded", () => {
+      hookState.result = { isPending: false, isError: false, data: [photoRow] };
+      const tree = render();
+
+      act(() => images(tree).at(-1)!.props.onLoad());
+
+      expect(images(tree)).toHaveLength(1);
+    });
+
+    it("falls back to the original when the preview fails to load", () => {
+      hookState.result = { isPending: false, isError: false, data: [photoRow] };
+      const tree = render();
+
+      act(() => images(tree).at(-1)!.props.onError());
+
+      expect(images(tree).at(-1)!.props.source).toEqual({
+        uri: "https://example.test/signed/IMG_1.jpg",
+      });
+    });
+
+    it("draws an older photo, with no preview or hash, from the original with no blur", () => {
+      hookState.result = {
+        isPending: false,
+        isError: false,
+        data: [
+          attachment({
+            filename: "old.jpg",
+            content_type: "image/jpeg",
+            download_url: "https://example.test/signed/old.jpg",
+          }),
+        ],
+      };
+
+      const tree = render();
+
+      expect(images(tree)).toHaveLength(1);
+      expect(images(tree)[0]!.props.source).toEqual({
+        uri: "https://example.test/signed/old.jpg",
+      });
+    });
+  });
 });

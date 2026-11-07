@@ -373,11 +373,48 @@ describe('ChatController', () => {
         dto.filename,
         dto.content_type,
         undefined,
+        false,
       );
       expect(result).toEqual({
         upload_url: 'https://storage.example/put',
         storage_path: 'chapters/ch-1/chat/chan-1/msg-1/photo.png',
         message_id: 'msg-1',
+      });
+    });
+
+    it("passes the preview flag through and maps a photo's preview upload onto the wire", async () => {
+      (attachments.requestChatUploadUrl as jest.Mock).mockResolvedValue({
+        signedUrl: 'https://storage.example/put',
+        storagePath: 'chapters/ch-1/chat/chan-1/msg-1/photo.png',
+        messageId: 'msg-1',
+        previewSignedUrl: 'https://storage.example/put-preview',
+        previewStoragePath:
+          'chapters/ch-1/chat/chan-1/msg-1/preview/preview.jpg',
+      });
+
+      const result = await controller.requestUploadUrl(
+        'chan-1',
+        'ch-1',
+        'user-1',
+        { ...dto, with_preview: true },
+      );
+
+      expect(attachments.requestChatUploadUrl).toHaveBeenCalledWith(
+        'chan-1',
+        'ch-1',
+        'user-1',
+        dto.filename,
+        dto.content_type,
+        undefined,
+        true,
+      );
+      expect(result).toEqual({
+        upload_url: 'https://storage.example/put',
+        storage_path: 'chapters/ch-1/chat/chan-1/msg-1/photo.png',
+        message_id: 'msg-1',
+        preview_upload_url: 'https://storage.example/put-preview',
+        preview_storage_path:
+          'chapters/ch-1/chat/chan-1/msg-1/preview/preview.jpg',
       });
     });
 

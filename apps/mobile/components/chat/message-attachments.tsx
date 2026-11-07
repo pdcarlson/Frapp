@@ -11,6 +11,7 @@ import {
   localPhotosFor,
   type LocalPhoto,
 } from "@/lib/chat/local-photos";
+import { thumbhashPlaceholderUri } from "@/lib/chat/photo-preview";
 
 /**
  * Files attached to one message, in the s05 thread.
@@ -64,6 +65,13 @@ import {
  * confirmed, each server row that matches a local photo still draws the local
  * file in the thread, so the sender's thread never downloads back what they
  * just uploaded (the full-screen viewer still reads the server copy).
+ *
+ * **Everyone else's photos load small, behind a blur** (2026-11-07). A photo
+ * sent since then carries its size, a ThumbHash and a 1280 px preview copy
+ * (`lib/chat/photo-preview.ts`): the bubble takes the photo's shape at once,
+ * the hash fills it with a soft blur of the photo's colours, and the preview,
+ * a fraction of the original's bytes, fades over it. The viewer opens the
+ * original. An older photo has none of the three and draws as it always did.
  */
 export interface MessageAttachmentsProps {
   channelId: string;
@@ -200,10 +208,18 @@ export function MessageAttachments({
       const mine = localByMatch.get(
         attachmentMatchKey(attachment.filename, attachment.byte_size),
       );
+      // The timeline draws the preview copy when there is one; the original
+      // is the fallback for a preview that fails, and what the viewer opens.
+      const serverUri = attachment.preview_url ?? attachment.download_url;
+      const uri = mine?.uri ?? serverUri;
       return {
         key: attachment.id,
-        uri: mine?.uri ?? attachment.download_url,
-        fallbackUri: mine ? attachment.download_url : undefined,
+        uri,
+        fallbackUri:
+          uri !== attachment.download_url ? attachment.download_url : undefined,
+        placeholderUri: mine
+          ? null
+          : thumbhashPlaceholderUri(attachment.thumbhash),
         width: mine?.width ?? attachment.width ?? null,
         height: mine?.height ?? attachment.height ?? null,
         label: attachment.filename,
@@ -262,8 +278,13 @@ export function MessageAttachments({
 interface GridPhoto {
   key: string;
   uri: string;
-  /** The server copy, tried when a local file is gone (the OS cleaned it up). */
+  /**
+   * The original on the server, tried when `uri` fails: a local file the OS
+   * cleaned up, or a preview copy that did not upload.
+   */
   fallbackUri?: string;
+  /** A ThumbHash blur, drawn under the photo until it has loaded. */
+  placeholderUri?: string | null;
   width: number | null;
   height: number | null;
   label: string;
@@ -370,7 +391,10 @@ function PhotoLayout({
   );
 }
 
-/** An image that falls back to the server copy when the local file is gone. */
+/**
+ * One photo: its blur until it loads, then the photo, falling back to the
+ * original on the server when its first source fails.
+ */
 function PhotoImage({
   photo,
   style,
@@ -380,18 +404,33 @@ function PhotoImage({
   style: ComponentProps<typeof Image>["style"];
   resizeMode: "contain" | "cover";
 }) {
-  const [failedLocal, setFailedLocal] = useState(false);
-  const uri = failedLocal && photo.fallbackUri ? photo.fallbackUri : photo.uri;
+  const [failedFirst, setFailedFirst] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const uri = failedFirst && photo.fallbackUri ? photo.fallbackUri : photo.uri;
   return (
-    <Image
-      source={{ uri }}
-      accessibilityIgnoresInvertColors
-      resizeMode={resizeMode}
-      onError={() => {
-        if (photo.fallbackUri) setFailedLocal(true);
-      }}
-      style={style}
-    />
+    <>
+      {photo.placeholderUri && !loaded ? (
+        <Image
+          testID="photo-placeholder"
+          source={{ uri: photo.placeholderUri }}
+          accessibilityIgnoresInvertColors
+          // Stretched, not contained: the hash was taken from this photo, so
+          // it already has its shape, and the row is sized to that shape.
+          resizeMode="stretch"
+          style={[style, StyleSheet.absoluteFill]}
+        />
+      ) : null}
+      <Image
+        source={{ uri }}
+        accessibilityIgnoresInvertColors
+        resizeMode={resizeMode}
+        onLoad={() => setLoaded(true)}
+        onError={() => {
+          if (photo.fallbackUri) setFailedFirst(true);
+        }}
+        style={style}
+      />
+    </>
   );
 }
 

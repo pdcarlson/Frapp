@@ -182,7 +182,11 @@ describe("unreact", () => {
       onError,
     });
 
-    await unreact(ctx, { channelId: "chan-1", messageId: "msg-1", emoji: "👍" });
+    await unreact(ctx, {
+      channelId: "chan-1",
+      messageId: "msg-1",
+      emoji: "👍",
+    });
 
     expect(toast).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
@@ -197,12 +201,17 @@ describe("unreact", () => {
       onError,
     });
 
-    await unreact(ctx, { channelId: "chan-1", messageId: "msg-1", emoji: "👍" });
+    await unreact(ctx, {
+      channelId: "chan-1",
+      messageId: "msg-1",
+      emoji: "👍",
+    });
 
     expect(toast).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Couldn't remove reaction",
-        description: "Couldn't reach Frapp. Check your connection and try again.",
+        description:
+          "Couldn't reach Frapp. Check your connection and try again.",
       }),
     );
     expect(onError).toHaveBeenCalledWith({
@@ -219,7 +228,11 @@ describe("unreact", () => {
       onError,
     });
 
-    await unreact(ctx, { channelId: "chan-1", messageId: "msg-1", emoji: "👍" });
+    await unreact(ctx, {
+      channelId: "chan-1",
+      messageId: "msg-1",
+      emoji: "👍",
+    });
 
     expect(onError).toHaveBeenCalledTimes(1);
   });
@@ -286,8 +299,7 @@ describe("editMessage", () => {
       }),
     );
     const cache = queryClient.getQueryData(chatMessagesKey("chan-1")) as
-      | ReturnType<typeof emptyCache>
-      | undefined;
+      ReturnType<typeof emptyCache> | undefined;
     expect(cache?.byId["msg-1"]?.content).toBe("edited body");
     expect(cache?.byId["msg-1"]?.edited_at).toBe("2026-01-01T00:01:00.000Z");
   });
@@ -519,8 +531,7 @@ describe("deleteMessage", () => {
       expect.objectContaining({ params: { path: { messageId: "msg-1" } } }),
     );
     const cache = queryClient.getQueryData(chatMessagesKey("chan-1")) as
-      | ReturnType<typeof emptyCache>
-      | undefined;
+      ReturnType<typeof emptyCache> | undefined;
     expect(cache?.byId["msg-1"]?.is_deleted).toBe(true);
     expect(cache?.byId["msg-1"]?.content).toBe("[message deleted]");
   });
@@ -883,9 +894,9 @@ describe("outbox analytics", () => {
       const cache = ctx.queryClient.getQueryData<ChannelCache>(
         chatMessagesKey("chan-1"),
       );
-      expect(
-        selectMessages(cache!).map((m) => [m._status, m._error]),
-      ).toEqual([["failed", RATE_LIMITED_COPY]]);
+      expect(selectMessages(cache!).map((m) => [m._status, m._error])).toEqual([
+        ["failed", RATE_LIMITED_COPY],
+      ]);
     },
   );
 
@@ -1017,8 +1028,10 @@ describe("outbox analytics", () => {
     // gate the API enforces server-side (`assertContentFreeProperties`), so
     // a future property added at a call site is caught locally rather than
     // discovered as a 400 from `POST /v1/analytics/events`.
-    const events: Array<{ name: string; properties?: Record<string, unknown> }> =
-      [];
+    const events: Array<{
+      name: string;
+      properties?: Record<string, unknown>;
+    }> = [];
     const track = (name: string, properties?: Record<string, unknown>) => {
       events.push({ name, properties });
     };
@@ -1320,7 +1333,8 @@ describe("markLocalRecorded (#1789)", () => {
 });
 
 describe("markLocalUnconfirmed (#1909)", () => {
-  const NOTE = "Not confirmed — these points may or may not have been recorded.";
+  const NOTE =
+    "Not confirmed — these points may or may not have been recorded.";
 
   function placeholder(ctx: ChatActionContext): void {
     insertLocalPlaceholder(ctx, {
@@ -1529,9 +1543,7 @@ describe("sendMessage — outbox faults (#1718)", () => {
 
     expect(apiClient.POST).not.toHaveBeenCalled();
     expect(
-      selectMessages(
-        ctx.queryClient.getQueryData(chatMessagesKey("chan-1")),
-      ),
+      selectMessages(ctx.queryClient.getQueryData(chatMessagesKey("chan-1"))),
     ).toHaveLength(0);
   });
 
@@ -1575,26 +1587,28 @@ describe("sendMessage — outbox faults (#1718)", () => {
 
   it("resolves with a warning, not a failed row, when POST succeeded and dequeue rejects", async () => {
     const apiClient = {
-      POST: vi.fn().mockImplementation(
-        async (
-          _path: string,
-          init: { body: { client_message_id: string; content: string } },
-        ) => ({
-          data: {
-            message: {
-              id: "msg-1",
-              channel_id: "chan-1",
-              sender_id: "user-1",
-              content: init.body.content,
-              kind: "text",
-              client_message_id: init.body.client_message_id,
-              created_at: new Date().toISOString(),
+      POST: vi
+        .fn()
+        .mockImplementation(
+          async (
+            _path: string,
+            init: { body: { client_message_id: string; content: string } },
+          ) => ({
+            data: {
+              message: {
+                id: "msg-1",
+                channel_id: "chan-1",
+                sender_id: "user-1",
+                content: init.body.content,
+                kind: "text",
+                client_message_id: init.body.client_message_id,
+                created_at: new Date().toISOString(),
+              },
             },
-          },
-          error: null,
-          response: { status: 201 },
-        }),
-      ),
+            error: null,
+            response: { status: 201 },
+          }),
+        ),
     };
     const outbox = stubOutbox({
       dequeue: vi.fn().mockRejectedValue(new Error("DatabaseClosedError")),
@@ -1863,20 +1877,29 @@ describe("definitiveRefusalMessage", () => {
   });
 
   it.each([
-    ["the throttler's sentence", "Too many requests in a short time. Wait a minute, then try again."],
+    [
+      "the throttler's sentence",
+      "Too many requests in a short time. Wait a minute, then try again.",
+    ],
     ["an intermediary's text", "Too Many Requests"],
-  ])("reads a 429 carrying %s as the rate-limit sentence", (_label, message) => {
-    expect(definitiveRefusalMessage({ statusCode: 429, message })).toBe(
-      RATE_LIMITED_COPY,
-    );
-  });
+  ])(
+    "reads a 429 carrying %s as the rate-limit sentence",
+    (_label, message) => {
+      expect(definitiveRefusalMessage({ statusCode: 429, message })).toBe(
+        RATE_LIMITED_COPY,
+      );
+    },
+  );
 
   it.each([
     ["a 5xx", { statusCode: 500, message: "Internal server error" }],
     ["a proxy 408", { statusCode: 408, message: "Request Timeout" }],
     ["a body with no status", { message: "something" }],
     ["a refusal with no message", { statusCode: 400, message: "" }],
-    ["a thrown Error, even with a status", Object.assign(new Error("Upload failed (413)"), { status: 413 })],
+    [
+      "a thrown Error, even with a status",
+      Object.assign(new Error("Upload failed (413)"), { status: 413 }),
+    ],
     ["a text body openapi-fetch couldn't parse", "<html>Bad Gateway</html>"],
     ["nothing", undefined],
   ])("is null for %s", (_label, err) => {
@@ -1971,6 +1994,51 @@ describe("sendMessage with attachments still uploading", () => {
     );
   });
 
+  it("carries a photo's size, ThumbHash and preview path on the wire", async () => {
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: { message: { id: "msg-1", client_message_id: "c-2" } },
+        error: null,
+        response: { status: 201 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      outbox: stubOutbox(),
+    });
+
+    await sendMessage(ctx, {
+      channelId: "chan-1",
+      content: "",
+      clientMessageId: "c-2",
+      attachments: [
+        {
+          ...claim,
+          width: 2560,
+          height: 1920,
+          thumbhash: "3OcRJYB4d3h/iIeHeEh3eIhw+j3A",
+          previewStoragePath: "chapters/c/chat/m/preview/preview.jpg",
+        },
+      ],
+    });
+
+    expect(apiClient.POST).toHaveBeenCalledWith(
+      "/v1/channels/{id}/messages",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          attachments: [
+            expect.objectContaining({
+              width: 2560,
+              height: 1920,
+              thumbhash: "3OcRJYB4d3h/iIeHeEh3eIhw+j3A",
+              preview_storage_path: "chapters/c/chat/m/preview/preview.jpg",
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
   it("keeps the row, failed with the reason, when an upload fails, queueing nothing", async () => {
     const outbox = stubOutbox();
     const ctx = buildCtx({ outbox });
@@ -1989,7 +2057,11 @@ describe("sendMessage with attachments still uploading", () => {
       chatMessagesKey("chan-1"),
     );
     expect(selectMessages(cache!)).toMatchObject([
-      { client_message_id: "c-1", _status: "failed", _error: "Couldn't upload" },
+      {
+        client_message_id: "c-1",
+        _status: "failed",
+        _error: "Couldn't upload",
+      },
     ]);
     expect(outbox.enqueue).not.toHaveBeenCalled();
   });
