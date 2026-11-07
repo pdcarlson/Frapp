@@ -318,6 +318,28 @@ describe('NotificationService', () => {
       );
     });
 
+    it('forwards threadId to the push and keeps it off the in-app row', async () => {
+      mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(null);
+      mockSettingsRepo.findByUser.mockResolvedValue(null);
+      mockNotificationRepo.create.mockResolvedValue(baseNotification);
+      mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+
+      await service.notifyUser('u-1', 'ch-1', {
+        title: 'Shawn in #academics',
+        body: 'hi',
+        category: 'chat',
+        threadId: 'chat:channel-1',
+      });
+
+      expect(mockNotificationRepo.create).toHaveBeenCalledWith(
+        expect.not.objectContaining({ threadId: expect.anything() }),
+      );
+      expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
+        [basePushToken.token],
+        expect.objectContaining({ threadId: 'chat:channel-1' }),
+      );
+    });
+
     // The exemption is implemented by gating the lookup rather than reordering
     // it, so an URGENT payload never reads the preference at all. Pinned
     // because a later refactor back to "read, then check priority" would be
