@@ -12,7 +12,10 @@ import type { IMemberRepository } from '#domain/repositories/member.repository.i
 import { Event } from '#domain/entities/event.entity';
 import { RbacService } from './rbac.service';
 import { EventSeriesService } from './event-series.service';
-import { EventAnnouncementService } from './event-announcement.service';
+import {
+  EventAnnouncementService,
+  eventChangeOf,
+} from './event-announcement.service';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { toRRuleLine } from '@repo/validation';
 import { hasRequiredRole } from './event-role-targeting';
@@ -240,7 +243,11 @@ export class EventService {
       }
     }
 
-    await this.announcements.notifyEventCreated(input.chapter_id, parent);
+    await this.announcements.notifyEventCreated(
+      input.chapter_id,
+      parent,
+      input.created_by,
+    );
 
     // The `/event` slash command asks us to surface an interactive event card
     // in chat. The card is server-originated (a client cannot forge
@@ -263,6 +270,7 @@ export class EventService {
     chapterId: string,
     input: UpdateEventInput,
     scope: EventMutationScope = 'instance',
+    actorId?: string,
   ): Promise<Event> {
     let existing: Event | null = null;
     if (input.start_time || input.end_time) {
@@ -285,8 +293,16 @@ export class EventService {
     if (scope === 'series') {
       // Hand on the row already read rather than reading it twice.
       const target = existing ?? (await this.findById(id, chapterId));
-      return this.series.updateSeries(target, chapterId, input);
+      return this.series.updateSeries(target, chapterId, input, actorId);
     }
+
+    // The row as it was, to tell a real move from a round-tripped save
+    // (`eventChangeOf`). Only an edit that names a time or place needs it.
+    const before =
+      existing ??
+      (input.location !== undefined || input.recurrence_rule !== undefined
+        ? await this.findById(id, chapterId)
+        : null);
 
     const updated = await this.eventRepo.update(id, chapterId, {
       ...input,
@@ -298,7 +314,12 @@ export class EventService {
         : {}),
     });
 
-    await this.announcements.notifyEventUpdated(chapterId, updated, input);
+    await this.announcements.notifyEventUpdated(
+      chapterId,
+      updated,
+      before ? eventChangeOf(before, input) : null,
+      actorId,
+    );
 
     return updated;
   }

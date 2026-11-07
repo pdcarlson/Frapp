@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-06: Each member's time zone, for push text
+
+### 20261106230000_user_settings_time_zone.sql
+
+- **Purpose**: Adds a nullable `user_settings.time_zone text` (at most 100 characters, by check constraint), the zone the member's device last reported. Both clients send it on every request as `x-time-zone`; the API records it when it changes (`TimeZoneSyncService`), and event pushes name times in it. The behaviour is in [`spec/behavior/notifications.md`](../../../spec/behavior/notifications.md#what-a-push-says) § What a push says. No backfill; account deletion's existing `delete from user_settings` clears it.
+- **Checks**: After `db push`, `select column_name, is_nullable from information_schema.columns where table_name = 'user_settings' and column_name = 'time_zone';` returns one row with `YES`. A few minutes after the API deploys, `select count(*) from user_settings where time_zone is not null;` grows as members open the app.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The newer API against an unmigrated database fails every zone write (PostgREST refuses the unknown column), which is logged per request and retried, so don't deploy the API first. The older API never reads or writes the column. `add column if not exists` and `drop constraint if exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-user-settings-time-zone-20261106230000) § Rollback user settings time zone.
+
 ## 2026-11-06: Whether anyone can @ a role
 
 ### 20261106220000_roles_mentionable.sql

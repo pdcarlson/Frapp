@@ -4,6 +4,7 @@ import request from 'supertest';
 import { NotificationController } from '../src/interface/controllers/notification.controller';
 import { NotificationService } from '../src/application/services/notification.service';
 import { AuthService } from '../src/application/services/auth.service';
+import { TimeZoneSyncService } from '../src/application/services/time-zone-sync.service';
 import { ChatBlockService } from '../src/application/services/chat-block.service';
 import { SupabaseAuthGuard } from '../src/interface/guards/supabase-auth.guard';
 import { ChapterGuard } from '../src/interface/guards/chapter.guard';
@@ -69,6 +70,7 @@ describe('GET /v1/settings — a member with no settings row (#2885)', () => {
           provide: AuthService,
           useValue: { syncUser: jest.fn().mockResolvedValue({ id: 'user-1' }) },
         },
+        { provide: TimeZoneSyncService, useValue: { record: jest.fn() } },
       ],
     })
       .overrideGuard(SupabaseAuthGuard)
