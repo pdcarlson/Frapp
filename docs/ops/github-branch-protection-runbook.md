@@ -225,7 +225,7 @@ Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requireme
 | `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                |
 | `api-tests`          | API Jest unit tests                                                                             |
 | `api-contract-check` | openapi.json + api-sdk freshness, and compatibility with every shipped mobile build ([`quality-gates.md` § Two comparisons, two postures](../ci-cd/quality-gates.md#two-comparisons-two-postures)) |
-| `migration-safety`   | Migration filename + docs validation                                                            |
+| `migration-safety`   | Migration filenames, promotion-doc ledger, and no edit to an applied migration's SQL (#2751)     |
 | `mobile-validate`    | Expo SDK-line check (`check:expo-sdk-line`) + mobile iOS production bundle (`expo export`, no prebuilt packages) + lint + typecheck + Vitest unit tests + native declarations over the introspected config (`check:mobile-native-declarations`) + native changes carry an `expo.version` bump (`check:mobile-native-version`) + `expo prebuild` |
 | `ci-scripts-tests`   | `node --test` over `scripts/ci/__tests__/` (`npm run test:ci-scripts`), covering the gate and deploy scripts under both `scripts/` and `scripts/ci/`, plus every `*.test.sh` shell suite (`shell-suites.test.mjs`) |
 | `secret-scan`        | gitleaks over the PR/push commit range (ADR-13 push-protection replacement)                     |
