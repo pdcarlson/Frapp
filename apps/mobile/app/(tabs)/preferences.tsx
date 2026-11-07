@@ -19,16 +19,19 @@ import {
   shownNotificationCategories,
 } from "@repo/validation";
 import { BLOCKED_MEMBERS_TITLE } from "@repo/chat-core/block-copy";
+import { chatDensityLabel } from "@repo/chat-core/density";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { AccentSheet } from "@/components/settings/accent-sheet";
 import { BlockedMembersSheet } from "@/components/settings/blocked-members-sheet";
+import { ChatDensitySheet } from "@/components/settings/chat-density-sheet";
 import { QuietHoursSection } from "@/components/settings/quiet-hours-section";
 import { Toggle } from "@/components/toggle";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { useChatDensity } from "@/lib/chat/chat-density";
 import { shouldShowDonationCta } from "@/lib/more/donation";
 import { LEGAL_LINKS } from "@/lib/more/legal";
 import { acceptPrimer } from "@/lib/notifications/primer";
@@ -53,7 +56,8 @@ import {
  * s16 — Settings (`canvas-screens.dc.html:527`). The route file keeps the name
  * `preferences.tsx`; the drawn title is "Settings" (`spec/ui/mobile/screens.md`).
  *
- * Three sections, as drawn: NOTIFICATIONS, CHAPTER · ADMIN, ACCOUNT.
+ * Four sections: NOTIFICATIONS, CHAT, CHAPTER · ADMIN, ACCOUNT. All but CHAT
+ * are drawn.
  *
  * ## Deviations from the drawing, each deliberate
  *
@@ -64,6 +68,10 @@ import {
  *   under the drawn NOTIFICATIONS heading rather than in a section of its own.
  *   It is a grouped list like the rows around it: one switch while off, and
  *   time rows with native pickers only while on (`QuietHoursSection` says why).
+ * - **CHAT is here and is not drawn.** It holds one row, Chat density, which
+ *   opens a sheet of the two densities (`components.md` §11 § Density, owner
+ *   request 2026-11-06, #2252). A section of its own because it is a display
+ *   preference for this phone, not a notification or an account setting.
  * - **No Chat switch.** Chat is tuned per channel and per DM, from the
  *   conversation itself, so a switch that silenced every message at once was
  *   dropped (owner's iOS testing, 2026-11-06). Why in full: the catalog's
@@ -242,6 +250,8 @@ export default function PreferencesScreen() {
   // nobody is blocked.
   const blockedMembersSheetRef = useRef<BottomSheetModal>(null);
   const accentSheetRef = useRef<BottomSheetModal>(null);
+  const chatDensitySheetRef = useRef<BottomSheetModal>(null);
+  const chatDensity = useChatDensity();
   const blockList = useBlockedUserIds();
   const blockedMembersValue =
     blockList.status !== "ready"
@@ -475,6 +485,18 @@ export default function PreferencesScreen() {
         </Text>
       ) : null}
 
+      <SectionHeader>Chat</SectionHeader>
+      <ListSection>
+        {/* One row, a tap from the picker: the sheet draws both densities so
+            the choice is made by looking (components.md §11 § Density). */}
+        <ListRow
+          label="Chat density"
+          value={chatDensityLabel(chatDensity)}
+          accessibilityHint="Choose how tightly messages are drawn in chat."
+          onPress={() => chatDensitySheetRef.current?.present()}
+        />
+      </ListSection>
+
       {canSeeChapterAdmin ? (
         <>
           <SectionHeader>Chapter · Admin</SectionHeader>
@@ -575,6 +597,7 @@ export default function PreferencesScreen() {
       ) : null}
       <BlockedMembersSheet ref={blockedMembersSheetRef} />
       <AccentSheet ref={accentSheetRef} />
+      <ChatDensitySheet ref={chatDensitySheetRef} />
     </ScreenShell>
   );
 }
