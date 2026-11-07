@@ -65,6 +65,9 @@ const COMPLETE_USER = {
 };
 let currentUser: Record<string, unknown> | undefined = COMPLETE_USER;
 
+const track = vi.fn();
+vi.mock("@/lib/use-latest-track", () => ({ useLatestTrack: () => track }));
+
 /** The photo control has its own spec; here it only has to be there. */
 vi.mock("@/components/profile/profile-photo", () => ({
   ProfilePhoto: (props: { initials: string }) =>
@@ -455,8 +458,14 @@ describe("s03 welcome, profile beat", () => {
     currentUser = COMPLETE_USER;
     completeOnboarding.mockClear();
     updateUser.mockClear().mockResolvedValue({});
+    track.mockClear();
     vi.mocked(vi.mocked(useRouter)().replace).mockClear();
   });
+
+  const profileEvents = () =>
+    track.mock.calls.filter(
+      ([event]) => event === "onboarding-profile-answered",
+    );
 
   it("is skipped for a member with a name and a photo", async () => {
     const { root } = await render();
@@ -482,6 +491,9 @@ describe("s03 welcome, profile beat", () => {
     await press(button(root, "Go to chat"));
     expect(updateUser).not.toHaveBeenCalled();
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+    expect(profileEvents()).toEqual([
+      ["onboarding-profile-answered", { photo: "none", name_step: "kept" }],
+    ]);
   });
 
   it("never pre-fills the Member stand-in, and needs a name before moving on", async () => {
@@ -504,6 +516,10 @@ describe("s03 welcome, profile beat", () => {
     await press(button(root, "Go to chat"));
 
     expect(updateUser).toHaveBeenCalledWith({ display_name: "Grace Hopper" });
+    // Shape only: never the name itself.
+    expect(profileEvents()).toEqual([
+      ["onboarding-profile-answered", { photo: "had", name_step: "added" }],
+    ]);
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
   });
 
@@ -521,6 +537,7 @@ describe("s03 welcome, profile beat", () => {
     );
     expect(completeOnboarding).not.toHaveBeenCalled();
     expect(field(root)?.props.value).toBe("Grace Hopper");
+    expect(profileEvents()).toEqual([]);
   });
 
   it("comes before the notifications beat, and Android back walks back through it", async () => {

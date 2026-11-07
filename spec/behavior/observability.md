@@ -443,6 +443,37 @@ Mobile asks for notification permission only after the member taps "Turn on", on
 
 Neither property is content. The allow rate is a Trends insight: events with `answer = allowed` over all `push-prompt-answered` events, broken down by `surface`.
 
+## Member Onboarding Funnel
+
+The activation funnel follows a chapter. This one follows a member, from the
+invite to their first message, so a drop between joining and talking shows up
+per sign-in method and per app. Every step is an event recorded elsewhere in
+this file; this section only names the steps and the two properties added for
+it (2026-11-07).
+
+| Step | Event | Recorded by |
+| --- | --- | --- |
+| 1 | `invite-redeemed` | API ([§ Feature Events](#feature-events)) |
+| 2 | `onboarding-profile-answered` (mobile only, and only for a member s03 asked for a photo or name) | Mobile client |
+| 3 | `push-prompt-answered` with `surface = primer` (mobile only, and only when the build can push and push was off) | Mobile client ([§ Push Prompt Telemetry](#push-prompt-telemetry)) |
+| 4 | `member-onboarding-completed` | API |
+| 5 | `message-sent` | API |
+
+- **`sign_in_method`** on `invite-redeemed` and `chapter-onboarded`: `apple`,
+  `google`, `email` (password or magic link) or `other`, read from the
+  session user's `app_metadata.provider` (`signInMethodOf`,
+  `apps/api/src/interface/http/sign-in-method.ts`); `null` when the request
+  carried no Supabase user. A closed set the server derives, never the email.
+- **`onboarding-profile-answered`** is sent once when the member leaves s03's
+  profile beat (`apps/mobile/lib/onboarding/profile-step.ts`), through
+  `AnalyticsContext` `track`. `photo` is `had` (a photo before the beat),
+  `added` (chosen on it) or `none`; `name_step` is `added` (there was no real
+  name, the `Member` stand-in or empty), `edited` (a real one was changed) or
+  `kept`. Never the name itself. A save that fails sends nothing, since the
+  member stays on the beat.
+- Steps 2 and 3 are optional, so the funnel in PostHog marks them optional.
+  Break it down by `sign_in_method` (on step 1) and `app`.
+
 ## Feature Events
 
 The activation funnel says where a chapter stalls on its way to paying. Feature events say which features members use and how often. Each feature's main action is recorded **by the API** when the request that performs it succeeds ([#593](https://github.com/pdcarlson/Frapp/issues/593)), so web and mobile are counted from one place, with no client code, and an ad blocker or a closed tab can't drop one.
@@ -556,10 +587,10 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 | Event | Recorded when | Properties |
 | --- | --- | --- |
 | `invite-created` | An officer creates invites. `invite_method` is `link`, `batch` or `email`; `count` is the invites created, never the addresses | `invite_method`, `count` |
-| `invite-redeemed` | Someone joins by redeeming an invite | — |
+| `invite-redeemed` | Someone joins by redeeming an invite. `sign_in_method` is how they signed in ([§ Member Onboarding Funnel](#member-onboarding-funnel)) | `sign_in_method` |
 | `member-onboarding-completed` | A member finishes onboarding. Counts requests that set it, not first completions | — |
 | `profile-photo-updated` | A member confirms a new profile photo upload (`POST /users/me/avatar`). Removing a photo records nothing, since that route has no chapter | — |
-| `chapter-onboarded` | The onboarding wizard creates a chapter (feature `chapter-settings`). `archetype` is the stored archetype key | `archetype`, `from_directory` |
+| `chapter-onboarded` | The onboarding wizard creates a chapter (feature `chapter-settings`). `archetype` is the stored archetype key; `sign_in_method` is how the founder signed in | `archetype`, `from_directory`, `sign_in_method` |
 | `semester-rolled-over` | An officer rolls the chapter into a new semester (`chapter-settings`) | `promote_new_members` |
 | `chapter-config-updated` | An officer saves a chapter setting (`chapter-settings`). `section` is the field the save changed (`enabled_modules`, `branding`, `dues`, and so on), or `multiple`; never the values. An empty save records nothing | `section` |
 | `checkout-started` | Stripe issues a checkout session (`billing`) | — |

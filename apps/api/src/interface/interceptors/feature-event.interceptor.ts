@@ -16,6 +16,7 @@ import {
   type FeatureEventMetadata,
 } from '../decorators/feature-event.decorator';
 import { requestApp } from '../http/request-app';
+import { signInMethodOf } from '../http/sign-in-method';
 import type { RequestContext } from '../types/request-context.types';
 
 /**
@@ -82,6 +83,7 @@ export class FeatureEventInterceptor implements NestInterceptor {
         params: request.params ?? {},
         query: request.query ?? {},
         result,
+        signInMethod: signInMethodOf(request.supabaseUser),
       };
       const described = metadata.describe ? metadata.describe(input) : {};
       if (described === null) return;
