@@ -39,6 +39,16 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-attendance-by-role-20261106230000) § Rollback attendance by role.
 
+## 2026-11-06: Chat home previews
+
+### 20261106210000_chat_channel_latest_messages.sql
+
+- **Purpose**: Adds `get_channel_latest_messages(p_chapter_id, p_user_id)`, a read-only SQL function (security definer, `search_path = public, pg_temp`, EXECUTE for `service_role` only) that `GET /v1/channels/latest` uses for mobile Chat home's row previews. One row per channel in the chapter that has a live message: the latest one, skipping deleted rows and senders the caller blocked, with `content` cut to 500 characters, `payload` only on an audit line, and a guarded `attachment_count`. The service filters it to the channels the caller can read. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#channel-list-previews) § Channel list previews. No data changes.
+- **Checks**: After `db push`, `select proname, prosecdef, proconfig from pg_proc where proname = 'get_channel_latest_messages';` returns one row, `true | {"search_path=public, pg_temp"}`, and `select has_function_privilege('authenticated', 'public.get_channel_latest_messages(uuid, uuid)', 'execute');` returns `false`. `GET /v1/channels/latest` then returns a row per readable channel with a message.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API doesn't call the function. The newer API against an unmigrated database answers `GET /v1/channels/latest` with a 500, which costs only the previews: the mobile list draws without them. The mobile update that reads the endpoint must go out after the API. `create or replace` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-chat-home-previews-20261106210000) § Rollback Chat home previews.
+
 ## 2026-11-06: A member's major
 
 ### 20261106200000_users_major.sql
