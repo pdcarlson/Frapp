@@ -140,6 +140,14 @@ The CSV is a placeholder subset, not the full dataset; growing it is tracked in 
   `20260602210000_add_confirm_task_completion_rpc.sql`) confirms a task and inserts its point-ledger
   row together, with a `WHERE points_awarded = false` compare-and-set so concurrent confirms cannot
   double-award. See also the read-side `get_points_report`. Canonical behavior: `spec/behavior/points.md`.
+- **Every new function pins `search_path`:** declare `set search_path = public, pg_temp` on any
+  function you add to `public`. A `security definer` one also revokes EXECUTE `from public`,
+  `from anon` **and** `from authenticated`, then grants `service_role`: Supabase's default
+  privileges grant every client role directly, and a definer function bypasses RLS, so a grant
+  left in place lets any caller read across chapters. Only a function an RLS policy or Realtime
+  check calls as the signed-in user keeps `authenticated`, and that is a recorded decision, not a
+  default. The `pglite-migrations` job fails each of these misses. The rule and the accepted list:
+  [`authorization-model.md` § Who may call a `SECURITY DEFINER` function](../security/authorization-model.md#who-may-call-a-security-definer-function).
 
 Examples:
 

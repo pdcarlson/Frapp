@@ -238,13 +238,10 @@ console.log("\n=== Functional: a deleted import takes its emptied channels (#290
     const again = await q(`select * from delete_empty_discord_import_channels('${PURGING}', '${A}')`);
     check("a second call deletes nothing more", again.length === 0, { again });
 
-    // Both client roles exist here, so each is checked directly. That catches
-    // a revoke from PUBLIC going missing and an explicit grant to either role.
-    // It cannot catch a forgotten `revoke ... from anon` or `from
-    // authenticated`: hosted grants both through ALTER DEFAULT PRIVILEGES,
-    // which is not replayed here (see the can_read_chat_message() EXECUTE
-    // assertion). docs/ops/database/promotion-log.md checks `authenticated` for these two
-    // functions at promotion, but not `anon` (#3052).
+    // Both client roles exist here, so each is checked directly. `run.mjs`
+    // installs hosted's default privileges before the migrations (#3052,
+    // #830), so this catches a forgotten `revoke ... from anon` or `from
+    // authenticated` as well as an explicit grant to either role.
     const guard = await q(`
       select has_function_privilege('authenticated', 'public.delete_empty_discord_import_channels(uuid, uuid)', 'execute') as authed,
              has_function_privilege('authenticated', 'public.discord_import_channel_holds_anything(uuid, uuid)', 'execute') as authed_check,

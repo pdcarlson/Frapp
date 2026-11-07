@@ -57,7 +57,10 @@ const MIGRATIONS_DIR = join(__dirname, "../../../../supabase/migrations");
  * before the migrations run, because most of them grant, revoke or create
  * policies only `if exists (select 1 from pg_roles where rolname = …)`, and a
  * statement skipped here is one this test can't see. Attributes follow the
- * local Supabase image, as in the other harness.
+ * local Supabase image, as in the other harness. So do the default
+ * privileges: hosted grants every table, sequence and function a migration
+ * creates in `public` straight to the three client roles, and a migration
+ * revokes what it does not want them to have (#3052).
  * `scripts/pglite/` builds its own, different substrate
  * (`auth.*` stubbed per scenario, its own probe roles) for its own tiers: a
  * migration that needs a new extension or role has to be registered in both.
@@ -74,6 +77,12 @@ const SUBSTRATE = `
   create role anon nologin;
   create role service_role nologin bypassrls;
   create role supabase_auth_admin nologin noinherit createrole;
+  alter default privileges in schema public
+    grant all on tables to anon, authenticated, service_role;
+  alter default privileges in schema public
+    grant usage, select, update on sequences to anon, authenticated, service_role;
+  alter default privileges in schema public
+    grant execute on functions to anon, authenticated, service_role;
 
   create schema realtime;
   create table realtime.messages (
