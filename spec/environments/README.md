@@ -389,7 +389,7 @@ Remote projects are migrated by `scripts/run-migration.mjs --env <staging|produc
 
 Migrations run automatically as part of the deploy pipeline, after CI passes and before app deployments:
 
-1. **Pre-flight validation** (CI): `check:migration-safety` validates filenames and promotion docs; `scripts/ci/check-migration-order.mjs` validates ordering.
+1. **Pre-flight validation** (CI): `check:migration-safety` validates filenames and promotion docs, and refuses an edit to a migration already on `main`; `scripts/ci/check-migration-order.mjs` validates ordering.
 2. **Dry run** (CD): `supabase db push --dry-run` shows what will change before applying.
 3. **Apply** (CD): `supabase db push` applies pending migrations.
 4. **Failure handling**: If migration fails, the pipeline stops — no app deploy happens.
