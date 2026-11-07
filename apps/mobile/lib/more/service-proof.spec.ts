@@ -84,9 +84,11 @@ describe("pickProofPhoto", () => {
       canceled: false,
       assets: [
         {
-          uri: "file:///huge.jpg",
-          fileName: "huge.jpg",
-          mimeType: "image/jpeg",
+          // A PNG: a JPEG this size is shrunk under the cap rather than
+          // refused (`attachment-upload.ts` § "Camera photos are shrunk").
+          uri: "file:///huge.png",
+          fileName: "huge.png",
+          mimeType: "image/png",
           fileSize: 26 * 1024 * 1024,
         },
       ],
@@ -168,7 +170,9 @@ describe("receiptRequiredOf", () => {
     expect(
       receiptRequiredOf(receiptMissing(400, "service_entry.receipt_required")),
     ).toBe(true);
-    expect(SERVICE_RECEIPT_REQUIRED_CODE).toBe("service_entry.receipt_required");
+    expect(SERVICE_RECEIPT_REQUIRED_CODE).toBe(
+      "service_entry.receipt_required",
+    );
   });
 
   it("recognises it whatever the message says", () => {
