@@ -907,6 +907,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/mention-roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The chapter roles the caller’s @-mention picker offers, with whether the caller may ping each */
+        get: operations["ChatController_getMentionRoles_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/notification-preferences": {
         parameters: {
             query?: never;
@@ -3679,6 +3696,8 @@ export interface components {
              * @enum {string|null}
              */
             color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
+            /** @description Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it. */
+            mentionable?: boolean;
         };
         UpdateRoleDto: {
             name?: string;
@@ -3689,6 +3708,8 @@ export interface components {
              * @enum {string|null}
              */
             color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
+            /** @description Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it. */
+            mentionable?: boolean;
         };
         TransferPresidencyDto: {
             /** Format: uuid */
@@ -3874,6 +3895,16 @@ export interface components {
             attachment_count: number;
             /** Format: date-time */
             created_at: string;
+        };
+        MentionRoleDto: {
+            /** Format: uuid */
+            role_id: string;
+            /** @description The role name; the picker inserts it folded. */
+            name: string;
+            /** @description The role’s palette color, or null. */
+            color: string | null;
+            /** @description Whether the caller may `@` this role: its own switch (`mentionable` on the role, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming a role the sender may not ping reaches nobody. */
+            mentionable: boolean;
         };
         ChannelNotificationPreferenceDto: {
             /** Format: uuid */
@@ -7240,6 +7271,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChannelLatestMessageDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_getMentionRoles_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MentionRoleDto"][];
                 };
             };
             /** @description Error */

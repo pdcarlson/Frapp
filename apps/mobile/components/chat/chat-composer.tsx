@@ -12,13 +12,16 @@ import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { formatBytes } from "@repo/formatting";
 import {
   activeMentionQuery,
-  mentionSuggestions,
+  mentionPickerEntries,
   type MentionCandidate,
+  type MentionPickerEntry,
 } from "@repo/validation";
 import { initialsFor } from "@/lib/more/narrow";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { CloseGlyph } from "@/components/control-glyphs";
+import { NavGlyph } from "@/components/nav-glyph";
+import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
 
 /**
@@ -54,7 +57,8 @@ import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding
  * attach control, since an edit changes text only.
  *
  * **`@` opens a member picker** above the input, as web's composer does: the
- * members whose name holds what follows the `@`, from `mentionCandidates`.
+ * members whose name holds what follows the `@`, from `mentionCandidates`,
+ * then the roles this member may ping, from `mentionRoles` (2026-11-06).
  * Picking one writes `@` and their label (`mentionLabelFor` in
  * `@repo/validation`) in place of what was typed, so the body is the plain text
  * a typed handle would be and the server resolves it as one. A space, or moving
@@ -122,7 +126,22 @@ export interface ChatComposerProps {
    * while it loads, which offers nothing rather than "No matching members".
    */
   mentionCandidates?: readonly MentionCandidate[];
+  /**
+   * The roles `@` offers after the members (`GET /v1/channels/mention-roles`),
+   * each saying whether this member may ping it. `undefined` while it loads,
+   * which offers members only.
+   */
+  mentionRoles?: readonly MentionRoleRow[];
 }
+
+/** A role as the picker offers it: a subset of `MentionRoleDto`. */
+export interface MentionRoleRow {
+  role_id: string;
+  name: string;
+  mentionable: boolean;
+}
+
+type PickerEntry = MentionPickerEntry<MentionCandidate, MentionRoleRow>;
 
 export function ChatComposer({
   value,
@@ -139,6 +158,7 @@ export function ChatComposer({
   attachDisabledReason,
   context = null,
   mentionCandidates,
+  mentionRoles,
 }: ChatComposerProps) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
@@ -149,6 +169,7 @@ export function ChatComposer({
     value,
     onChangeText,
     mentionCandidates,
+    mentionRoles,
   );
 
   // An empty or whitespace-only body is not a send — unless something is
@@ -314,6 +335,7 @@ function useMentionPicker(
   value: string,
   onChangeText: (next: string) => void,
   candidates: readonly MentionCandidate[] | undefined,
+  roles: readonly MentionRoleRow[] | undefined,
 ) {
   const [focused, setFocused] = useState(false);
   const [caret, setCaret] = useState<number | null>(null);
@@ -332,8 +354,10 @@ function useMentionPicker(
   const at = Math.min(caret ?? value.length, value.length);
   const active = focused && candidates ? activeMentionQuery(value, at) : null;
   // A filter over one chapter's roster, cheap enough to run every render.
-  const suggestions =
-    active && candidates ? mentionSuggestions(candidates, active.query) : [];
+  const suggestions: PickerEntry[] =
+    active && candidates
+      ? mentionPickerEntries(candidates, roles ?? [], active.query)
+      : [];
 
   const pick = (label: string) => {
     if (!active) return;
@@ -385,7 +409,7 @@ function MentionPicker({
   onPick,
   styles,
 }: {
-  suggestions: ReturnType<typeof mentionSuggestions<MentionCandidate>>;
+  suggestions: readonly PickerEntry[];
   onPick: (label: string) => void;
   styles: ReturnType<typeof createStyles>;
 }) {
@@ -398,36 +422,62 @@ function MentionPicker({
   }
   return (
     <ScrollView
-      accessibilityLabel="Members to mention"
+      accessibilityLabel="Members and roles to mention"
       keyboardShouldPersistTaps="always"
       style={[styles.mentionList, styles.mentionListScroll]}
     >
-      {suggestions.map(({ member, label }) => (
-        <Pressable
-          key={member.user_id}
-          accessibilityRole="button"
-          accessibilityLabel={`Mention ${member.display_name}`}
-          onPress={() => onPick(label)}
-          style={({ pressed }) => [
-            styles.mentionRow,
-            pressed ? styles.mentionRowPressed : null,
-          ]}
-        >
-          <View style={styles.mentionAvatar}>
-            <Text style={styles.mentionAvatarText}>
-              {initialsFor(member.display_name)}
+      {suggestions.map((entry) => {
+        const name =
+          entry.kind === "member" ? entry.member.display_name : entry.role.name;
+        return (
+          <Pressable
+            key={
+              entry.kind === "member"
+                ? entry.member.user_id
+                : `role:${entry.role.role_id}`
+            }
+            accessibilityRole="button"
+            accessibilityLabel={
+              entry.kind === "member"
+                ? `Mention ${name}`
+                : `Mention everyone in the ${name} role`
+            }
+            onPress={() => onPick(entry.label)}
+            style={({ pressed }) => [
+              styles.mentionRow,
+              pressed ? styles.mentionRowPressed : null,
+            ]}
+          >
+            <View style={styles.mentionAvatar}>
+              {entry.kind === "member" ? (
+                <Text style={styles.mentionAvatarText}>
+                  {initialsFor(name)}
+                </Text>
+              ) : (
+                // A role has no face: the Roles nav glyph, as web's row and
+                // the web sidebar draw it, neutral (foundations.md §6).
+                <NavGlyph
+                  paths={NAV_GLYPHS.roles}
+                  color={styles.mentionAvatarText.color}
+                  size={MENTION_ROLE_GLYPH_SIZE}
+                />
+              )}
+            </View>
+            <Text numberOfLines={1} style={styles.mentionName}>
+              {name}
             </Text>
-          </View>
-          <Text numberOfLines={1} style={styles.mentionName}>
-            {member.display_name}
-          </Text>
-        </Pressable>
-      ))}
+            {entry.kind === "role" ? (
+              <Text style={styles.mentionKind}>Role</Text>
+            ) : null}
+          </Pressable>
+        );
+      })}
     </ScrollView>
   );
 }
 
 const MENTION_AVATAR_SIZE = 24;
+const MENTION_ROLE_GLYPH_SIZE = 14;
 const MENTION_ROWS_SHOWN = 4;
 
 /**
@@ -568,6 +618,12 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
       flexShrink: 1,
+    },
+    // "Role" at the end of a role row, as web's says it.
+    mentionKind: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      marginLeft: "auto",
     },
     mentionEmpty: {
       ...typeRole(tokens.typography.role.caption),

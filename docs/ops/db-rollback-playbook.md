@@ -2791,6 +2791,20 @@ A function body. It re-creates `get_channel_unread_counts` with one more join pr
 
 Afterwards every settings change lights the `#chapter-audit` badge again, for every member.
 
+## Rollback roles mentionable (20261107061000)
+
+* **Migration**: `20261107061000_roles_mentionable.sql`
+
+One column, `roles.mentionable`, default `true`. Nothing was backfilled.
+
+**Revert the API and clients forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API has no role mentions at all, so it ignores the column: an `@Officers` token falls back to member-name matching and usually reaches nobody, and the picker stops offering roles. `GET /v1/roles` still returns the column, which every client ignores.
+
+**Keep the column unless it is itself the problem.** Dropping it forgets which roles an officer switched off. To remove it anyway, do it in a later forward migration after the code revert has shipped:
+
+```sql
+alter table public.roles drop column if exists mentionable;
+```
+
 ## Rollback members keep the Member role (20261107020000)
 
 * **Migration**: `20261107020000_members_keep_base_role.sql`
@@ -3042,9 +3056,9 @@ One `COMMENT ON COLUMN public.discord_imports.role_mapping` (#2887). No column, 
 comment on column public.discord_imports.role_mapping is null;
 ```
 
-## Rollback attendance by role (20261107050000)
+## Rollback attendance by role (20261107070000)
 
-* **Migration**: `20261107050000_event_attendance_by_role.sql`
+* **Migration**: `20261107070000_event_attendance_by_role.sql`
 
 Three nullable columns on `events`: `optional_role_ids`, `excluded_role_ids`, `others_invited`. Nothing was backfilled.
 

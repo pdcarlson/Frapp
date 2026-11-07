@@ -8,11 +8,15 @@ import {
   useState,
 } from "react";
 import type { SuggestionKeyDownProps } from "@tiptap/suggestion";
+import { RolesGlyph } from "@/components/layout/nav-glyphs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn, initials } from "@/lib/utils";
 
-/** One roster member as offered to the `@`-mention suggestion popup. */
+/** One roster member, or one role, as offered to the `@`-mention popup. */
 export interface MentionSuggestionItem {
+  /** A role row reaches everyone holding it once the server resolves it. */
+  kind: "member" | "role";
+  /** `users.id`, or the role's id. */
   id: string;
   /**
    * The mention node's serialized text label — the display name reduced to
@@ -130,7 +134,7 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(
       return (
         <div
           role="listbox"
-          aria-label="Matching members"
+          aria-label="Matching members and roles"
           className="w-64 rounded-md border border-border bg-popover p-2 text-caption text-muted-foreground"
         >
           No matching members.
@@ -142,7 +146,7 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(
       <div
         ref={listRef}
         role="listbox"
-        aria-label="Matching members"
+        aria-label="Matching members and roles"
         className="max-h-64 w-64 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground"
       >
         {displayItems.map((item, index) => (
@@ -172,15 +176,33 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(
             onMouseEnter={() => setSelectedIndex(index)}
             onClick={() => selectItem(index)}
           >
-            <Avatar className="h-6 w-6 shrink-0" aria-hidden="true">
-              {item.avatarUrl ? (
-                <AvatarImage src={item.avatarUrl} alt="" />
-              ) : null}
-              <AvatarFallback className="text-[10px]">
-                {initials(item.displayName)}
-              </AvatarFallback>
-            </Avatar>
-            <span className="truncate">{item.displayName}</span>
+            {item.kind === "role" ? (
+              // A role has no face, so its 24px slot holds the Roles nav glyph
+              // (the same silhouette as the sidebar's Roles and mobile's row)
+              // on the fill an initials avatar takes, and the row says "Role"
+              // at its end. Neutral, never the role's color or the accent
+              // (foundations.md §6).
+              <span
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-popover"
+                aria-hidden="true"
+                data-mention-role-glyph
+              >
+                <RolesGlyph className="h-3.5 w-3.5 text-muted-foreground" />
+              </span>
+            ) : (
+              <Avatar className="h-6 w-6 shrink-0" aria-hidden="true">
+                {item.avatarUrl ? (
+                  <AvatarImage src={item.avatarUrl} alt="" />
+                ) : null}
+                <AvatarFallback className="text-[10px]">
+                  {initials(item.displayName)}
+                </AvatarFallback>
+              </Avatar>
+            )}
+            <span className="min-w-0 flex-1 truncate">{item.displayName}</span>
+            {item.kind === "role" ? (
+              <span className="shrink-0 text-muted-foreground">Role</span>
+            ) : null}
           </button>
         ))}
       </div>
