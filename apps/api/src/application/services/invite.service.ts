@@ -21,7 +21,11 @@ import type { IChapterRepository } from '#domain/repositories/chapter.repository
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { Invite } from '#domain/entities/invite.entity';
-import { SystemRoleKeys } from '#domain/constants/permissions';
+import {
+  SystemPermissions,
+  SystemRoleKeys,
+  WILDCARD,
+} from '#domain/constants/permissions';
 import { isSubscriptionHardLocked } from '#domain/constants/subscription-grace';
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
@@ -63,7 +67,8 @@ export interface InvitePreview {
   /** The inviter's display name, or null when their profile is gone. */
   invited_by: string | null;
   /**
-   * The role name the redeem will grant (`resolveRedeemRole`), or null when
+   * The invite's own role, which the redeem grants (`resolveRedeemRole`);
+   * the redeem may add Member beside it (`resolveRedeemRoles`). Null when
    * it would grant none: the invite's role is gone and the chapter has no
    * seeded Member role to fall back to.
    */
@@ -423,17 +428,39 @@ export class InviteService {
   }
 
   /**
-   * The role a redeem grants. `invite.role` is the display name chosen when
+   * The invite's own role, as the redeem resolves it. `invite.role` is the display name chosen when
    * the invite was issued, so it is matched by name by design. The fallback is
    * the seeded Member role, which resolves by `system_key`: a chapter that
    * relabelled it would otherwise leave redeemers with no role at all.
    */
   private async resolveRedeemRole(invite: Invite) {
+    const { role } = await this.resolveRedeemRoles(invite);
+    return role;
+  }
+
+  /**
+   * The role a redeem grants, plus every role id the new membership starts
+   * with. A role a chapter made itself, or one a Discord import brought over,
+   * often carries nothing but a `channels:read:<slug>` permission. Granted
+   * alone it leaves the new member refused on every screen, because the
+   * access every member needs (`members:view`) lives on the seeded roles
+   * (2026-11-07: two testers invited as "Cabinet"). So a role that is not
+   * seeded (`is_system` false, which also covers seeded roles renamed before
+   * `system_key` existed) and grants neither `members:view` nor `*` comes with
+   * the chapter's Member role. Member goes after the invited role, because
+   * web's Members list labels a member by their first role. Every other role
+   * is granted alone, as before.
+   */
+  private async resolveRedeemRoles(invite: Invite) {
     const roles = await this.roleRepo.findByChapter(invite.chapter_id);
-    return (
-      roles.find((r) => r.name === invite.role) ??
-      roles.find((r) => r.system_key === SystemRoleKeys.MEMBER)
-    );
+    const member = roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
+    const role = roles.find((r) => r.name === invite.role) ?? member;
+    if (!role) return { role, roleIds: [] as string[] };
+    const roleIds = [role.id];
+    if (member && member.id !== role.id && lacksBaseAccess(role)) {
+      roleIds.push(member.id);
+    }
+    return { role, roleIds };
   }
 
   /**
@@ -532,7 +559,7 @@ export class InviteService {
     await this.legalAcceptance.requireOrAccept(userId, acceptTerms);
 
     // Before the claim, so a roles outage does not consume the token (#1863).
-    const targetRole = await this.resolveRedeemRole(invite);
+    const { roleIds } = await this.resolveRedeemRoles(invite);
 
     const claimedAt = await this.inviteRepo.markUsedAtomically(invite.id);
     if (!claimedAt) throw new GoneException('Invite already used');
@@ -542,7 +569,7 @@ export class InviteService {
       member = await this.memberRepo.create({
         user_id: userId,
         chapter_id: invite.chapter_id,
-        role_ids: targetRole ? [targetRole.id] : [],
+        role_ids: roleIds,
       });
     } catch (error) {
       // The claim is not redemption yet: spec/behavior/onboarding.md sets
@@ -712,4 +739,20 @@ export class InviteService {
     // wins the token either way, so a failed redeem can't reopen it.
     await this.inviteRepo.markRevoked(id);
   }
+}
+
+/**
+ * A role that is not seeded and gives none of the access every member needs.
+ * See `InviteService.resolveRedeemRoles`.
+ */
+function lacksBaseAccess(role: {
+  is_system: boolean;
+  permissions: string[] | null;
+}): boolean {
+  if (role.is_system) return false;
+  const permissions = role.permissions ?? [];
+  return (
+    !permissions.includes(WILDCARD) &&
+    !permissions.includes(SystemPermissions.MEMBERS_VIEW)
+  );
 }
