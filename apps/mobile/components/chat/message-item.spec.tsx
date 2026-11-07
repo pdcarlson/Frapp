@@ -6,8 +6,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { reactionActionType } from "@repo/chat-core/types";
 import { FrappThemeProvider } from "@/lib/theme";
-import { Keyboard } from "react-native";
-import { drawnText } from "@/test/screen-text";
+import { Keyboard, StyleSheet } from "react-native";
+import { drawnText, screenText } from "@/test/screen-text";
+import {
+  resetChatDensityForTests,
+  setChatDensity,
+} from "@/lib/chat/chat-density";
 
 const attachmentHook = vi.hoisted(() => ({
   calls: [] as Array<{ enabled: boolean }>,
@@ -406,9 +410,9 @@ describe("the viewer's own reaction takes the chapter accent", () => {
     const mine = JSON.stringify(chip("👍").props.style);
     expect(mine).toContain('"backgroundColor":"#251A33"');
     expect(mine).toContain('"borderColor":"#5C3E8A"');
-    expect(JSON.stringify(chip("👍").findByType("Text" as never).props.style)).toContain(
-      '"color":"#C49A3A"',
-    );
+    expect(
+      JSON.stringify(chip("👍").findByType("Text" as never).props.style),
+    ).toContain('"color":"#C49A3A"');
     expect(JSON.stringify(chip("🔥").props.style)).not.toContain("#251A33");
   });
 });
@@ -440,7 +444,9 @@ describe("the reaction row", () => {
     expect(add).toBeDefined();
     expect(drawnText(add!)).toBe("+");
     // After the reaction chips, as the board draws `5` then `+`.
-    const labels = pressables(tree).map((node) => node.props.accessibilityLabel);
+    const labels = pressables(tree).map(
+      (node) => node.props.accessibilityLabel,
+    );
     expect(labels.indexOf(ADD_REACTION_A11Y_LABEL)).toBeGreaterThan(
       labels.indexOf("🔥, 1"),
     );
@@ -449,7 +455,9 @@ describe("the reaction row", () => {
     // Reach grows up and down only (components.md §11): chips sit 6pt apart,
     // so a sideways overhang would hand the + the reaction chip's right edge.
     const chips = pressables(tree).filter((node) =>
-      ["🔥, 1", ADD_REACTION_A11Y_LABEL].includes(node.props.accessibilityLabel),
+      ["🔥, 1", ADD_REACTION_A11Y_LABEL].includes(
+        node.props.accessibilityLabel,
+      ),
     );
     expect(chips).toHaveLength(2);
     for (const node of chips) {
@@ -910,9 +918,8 @@ describe("delivery status (#1910)", () => {
     expect(drawn).toHaveLength(0);
     expect(JSON.stringify(tree.toJSON())).not.toContain("Discard this message");
     expect(
-      tree.root.findAll(
-        (node) => node.props.accessibilityHint === "Sending",
-      ).length,
+      tree.root.findAll((node) => node.props.accessibilityHint === "Sending")
+        .length,
     ).toBeGreaterThan(0);
   });
 });
@@ -1057,5 +1064,86 @@ describe("edited marker (#2775)", () => {
         ).toJSON(),
       ),
     ).not.toContain(EDITED_MARKER);
+  });
+});
+
+// Compact density (`components.md` §11 § Density, #2252): no avatar, and the
+// first row of a run leads its text with the time and the name.
+describe("compact density", () => {
+  beforeEach(() => {
+    resetChatDensityForTests();
+  });
+
+  const texts = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map((node) => node.props.children);
+
+  it("draws cozy until the member picks compact", () => {
+    const tree = renderItem(message({ content: "hello" }));
+    // The avatar's initials are cozy's tell.
+    expect(texts(tree)).toContain("CA");
+  });
+
+  it("leads the body with the time and name, with no avatar", () => {
+    act(() => setChatDensity("compact"));
+    const tree = renderItem(
+      message({ content: "hello", created_at: "2026-11-06T20:29:00.000Z" }),
+    );
+    expect(texts(tree)).not.toContain("CA");
+    const body = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" && drawnText(node).includes("hello"),
+    );
+    expect(drawnText(body)).toMatch(/^\d{1,2}:\d{2}\s?[AP]M Casey hello$/);
+  });
+
+  it("starts a run 4 below the row above, against cozy's 16", () => {
+    const paddingTops = (tree: ReactTestRenderer) =>
+      tree.root
+        .findAll((node) => typeof node.props.style !== "function")
+        .map((node) => StyleSheet.flatten(node.props.style)?.paddingTop);
+    const cozy = renderItem(message({ content: "hello" }));
+    expect(paddingTops(cozy)).toContain(16);
+    act(() => setChatDensity("compact"));
+    const compact = renderItem(message({ content: "hello" }));
+    expect(paddingTops(compact)).toContain(4);
+    expect(paddingTops(compact)).not.toContain(16);
+  });
+
+  it("gives a leading code block its own line under the time and name", () => {
+    act(() => setChatDensity("compact"));
+    const tree = renderItem(
+      message({
+        content: "```\nlet x = 1\n```",
+        created_at: "2026-11-06T20:29:00.000Z",
+      }),
+    );
+    const lead = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Text" && drawnText(node).includes("Casey"),
+    );
+    expect(drawnText(lead)).toMatch(/Casey \n/);
+  });
+
+  it("puts the name on its own line when there is no text to lead", () => {
+    act(() => setChatDensity("compact"));
+    const tree = renderItem(message({ content: "", attachment_count: 1 }));
+    expect(texts(tree)).toContain("Casey");
+    expect(texts(tree)).not.toContain("CA");
+  });
+
+  it("draws a follow-on as its body alone, still naming it for a screen reader", () => {
+    act(() => setChatDensity("compact"));
+    const tree = renderItem(message({ content: "again" }), undefined, {
+      startsRun: false,
+    });
+    expect(screenText(tree)).not.toContain("Casey");
+    const handle = tree.root.find(
+      (node) =>
+        typeof node.props.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.startsWith("Casey, "),
+    );
+    expect(handle).toBeTruthy();
   });
 });
