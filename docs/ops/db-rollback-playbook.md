@@ -2798,6 +2798,20 @@ Afterwards every settings change lights the `#chapter-audit` badge again, for ev
 
 It records no list of the rows it changed. To take Member back off a specific member, an officer removes it on web Members, which locks that member out of every screen again unless another role gives them `members:view`.
 
+## Rollback user settings time zone (20261106230000)
+
+* **Migration**: `20261106230000_user_settings_time_zone.sql`
+
+One nullable column, `user_settings.time_zone`, and its length check. Nothing was backfilled.
+
+**Revert the API forward, and keep the migration file** ([§ 3) Undo one migration](#3-undo-one-migration)). The reverted API stops writing the column and stops reading it for push text; clients keep sending `x-time-zone`, which the older API ignores.
+
+**Keep the column unless it is itself the problem.** It holds only what devices report again on their next request, so dropping it loses nothing that does not come back. To remove it, do it in a later forward migration after the code revert has shipped:
+
+```sql
+alter table public.user_settings drop column if exists time_zone;
+```
+
 ## Rollback users major (20261106200000)
 
 * **Migration**: `20261106200000_users_major.sql`

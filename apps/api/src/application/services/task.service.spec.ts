@@ -16,7 +16,7 @@ import type { Member } from '#domain/entities/member.entity';
 import type { User } from '#domain/entities/user.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
-import { memberFixture } from '#test/helpers/entity-fixtures';
+import { memberFixture, userFixture } from '#test/helpers/entity-fixtures';
 
 describe('TaskService', () => {
   let service: TaskService;
@@ -886,6 +886,9 @@ describe('TaskService', () => {
     it('should notify assignee when task is created', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
       mockTaskRepo.create.mockResolvedValue(baseTask);
+      mockUserRepo.findByIds.mockResolvedValue([
+        userFixture({ id: 'admin-1', display_name: 'Paul Carlson' }),
+      ]);
 
       await service.create({
         chapter_id: 'ch-1',
@@ -900,11 +903,30 @@ describe('TaskService', () => {
         'user-1',
         'ch-1',
         expect.objectContaining({
-          title: 'Task Assigned',
+          title: 'Test Task',
+          body: 'From Paul Carlson · due Sun, Mar 15, 2099 · 10 points',
           priority: 'NORMAL',
           category: 'tasks',
         }),
       );
+    });
+
+    it('does not push a task someone assigns to themselves', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+      mockTaskRepo.create.mockResolvedValue({
+        ...baseTask,
+        assignee_id: 'admin-1',
+      });
+
+      await service.create({
+        chapter_id: 'ch-1',
+        title: 'Test Task',
+        assignee_id: 'admin-1',
+        created_by: 'admin-1',
+        due_date: '2099-03-15',
+      });
+
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
     });
 
     it('should notify assignee when task completion is confirmed', async () => {
@@ -927,7 +949,8 @@ describe('TaskService', () => {
         'user-1',
         'ch-1',
         expect.objectContaining({
-          title: 'Task Confirmed',
+          title: 'Test Task',
+          body: 'Confirmed · +10 points',
           priority: 'NORMAL',
           category: 'tasks',
         }),
@@ -973,7 +996,8 @@ describe('TaskService', () => {
           'admin-1',
           'ch-1',
           expect.objectContaining({
-            title: 'Task Completed',
+            title: 'Test Task',
+            body: 'The assignee marked it done. Confirm it to award the points.',
             priority: 'NORMAL',
             category: 'tasks',
             data: { target: { screen: 'tasks', taskId: 'task-1' } },
@@ -1000,7 +1024,7 @@ describe('TaskService', () => {
         expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
           'admin-1',
           'ch-1',
-          expect.objectContaining({ title: 'Task Completed' }),
+          expect.objectContaining({ title: 'Test Task' }),
         );
       });
 
