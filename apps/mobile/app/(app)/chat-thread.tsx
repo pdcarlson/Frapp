@@ -11,6 +11,7 @@ import { goBackTo } from "@/lib/href";
 import {
   Alert,
   FlatList,
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -111,6 +112,7 @@ import {
   ChannelMemberSheet,
   ChannelMembersButton,
 } from "@/components/chat/channel-member-sheet";
+import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useComposerStaging } from "@/lib/chat/use-composer-staging";
 import {
@@ -676,6 +678,24 @@ export default function ChatThreadScreen() {
   useEffect(() => {
     if (!showMemberList) memberSheetRef.current?.dismiss();
   }, [showMemberList]);
+  // A member's profile, opened by tapping their name, photo or an `@` chip:
+  // the directory's sheet, so a profile reads the same from every door. It
+  // closes on blur for the same reason the member list does.
+  const profileSheetRef = useRef<BottomSheetModal>(null);
+  const [profileTarget, setProfileTarget] = useState<{ userId: string } | null>(
+    null,
+  );
+  const openProfile = useCallback((userId: string) => {
+    Keyboard.dismiss();
+    setProfileTarget({ userId });
+    profileSheetRef.current?.present();
+  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      if (!channelId) return;
+      return () => profileSheetRef.current?.dismiss();
+    }, [channelId]),
+  );
   const [actionTarget, setActionTarget] = useState<Omit<
     MessageActionsTarget,
     "reactedWith"
@@ -798,6 +818,7 @@ export default function ChatThreadScreen() {
           onUnreact={handleUnreact}
           onOpenActions={openActions}
           onJumpToMessage={jumpToMessage}
+          onOpenProfile={openProfile}
           onUnblock={handleUnblock}
           maskedRefresh={maskedRefresh}
           onReload={handleReload}
@@ -820,6 +841,7 @@ export default function ChatThreadScreen() {
       layout,
       blockState,
       openActions,
+      openProfile,
       jumpToMessage,
       handleUnblock,
       maskedRefresh,
@@ -1282,7 +1304,19 @@ export default function ChatThreadScreen() {
           }}
         />
       </KeyboardAvoidingArea>
-      <ChannelMemberSheet ref={memberSheetRef} channelId={channelId ?? null} />
+      <ChannelMemberSheet
+        ref={memberSheetRef}
+        channelId={channelId ?? null}
+        onOpenProfile={openProfile}
+      />
+      <MemberDetailSheet
+        ref={profileSheetRef}
+        member={profileTarget}
+        // Cleared on close, which is what tells a DM request still in flight
+        // that the member backed out (the sheet's stale-DM guard).
+        onDismiss={() => setProfileTarget(null)}
+        openChannelId={channelId ?? null}
+      />
       <MessageActionsSheet
         ref={actionsSheetRef}
         target={sheetTarget}

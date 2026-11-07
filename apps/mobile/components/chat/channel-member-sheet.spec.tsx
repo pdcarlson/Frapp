@@ -76,10 +76,16 @@ function render(element: React.ReactElement): ReactTestRenderer {
   return tree;
 }
 
-/** The member rows, by the accessible name each row carries. */
+/** The member rows (or the skeleton), by the accessible name each carries. */
 const rowNames = (tree: ReactTestRenderer) =>
   tree.root
-    .findAll((node) => node.type === ("View" as never) && node.props.accessible)
+    .findAll(
+      (node) =>
+        (node.type === ("View" as never) && node.props.accessible) ||
+        // A row is a Pressable, which opens that member's profile.
+        (typeof node.props.accessibilityLabel === "string" &&
+          typeof node.props.onPress === "function"),
+    )
     .map((node) => node.props.accessibilityLabel as string);
 
 const text = (tree: ReactTestRenderer) =>
