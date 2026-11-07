@@ -107,6 +107,12 @@ export interface RawChatMessage {
   deleted_at?: string | null;
   client_message_id?: string | null;
   /**
+   * `users.id` of everyone the body mentions, resolved by the API at send and
+   * edit time (`spec/behavior/chat/README.md` § Mentions). `null` on a masked
+   * row, whose mentions the server withholds with its body.
+   */
+  mentions?: string[] | null;
+  /**
    * Whether the server evaluated the viewer's block list and found this row's
    * sender on it (#2257, `spec/behavior/chat/README.md` § The masking contract).
    *
@@ -189,6 +195,13 @@ export interface ChatMessage {
    * stamps at send time.
    */
   attachment_count: number;
+  /**
+   * Who the body mentions, as the API resolved it (`users.id`). The one
+   * per-message answer to "was I addressed": the in-body chip marks any
+   * `@handle`, this marks only the members the server notified (#1192). Empty
+   * until the server's row arrives, so an optimistic send highlights nobody.
+   */
+  mentions: string[];
   /**
    * Whether the **server** masked this row for the viewer, set on every row
    * rather than only the masked ones (#2257).
@@ -356,6 +369,7 @@ export function normalizeRow(row: RawChatMessage): ChatMessage {
     created_at: row.created_at,
     client_message_id: clientId,
     attachment_count: attachmentCount(row.metadata),
+    mentions: mentionIds(row.mentions),
     // Absent means the row reached us by a path with no viewer to mask against
     // (the Postgres Changes echo), never "the sender is fine" — see
     // `RawChatMessage.sender_blocked`.
@@ -413,6 +427,7 @@ export function toRawRow(message: ChatMessage): RawChatMessage {
     edited_at: message.edited_at,
     is_deleted: message.is_deleted,
     client_message_id: message.client_message_id,
+    mentions: message.mentions,
     ...(message._blockEvaluated
       ? { sender_blocked: message.sender_blocked }
       : {}),
@@ -433,6 +448,15 @@ function attachmentCount(metadata: unknown): number {
   const raw = (metadata as Record<string, unknown>)["attachment_count"];
   if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) return 0;
   return Math.floor(raw);
+}
+
+/**
+ * `mentions` defensively: only an array of strings counts. A missing column
+ * (an older cached row, a masked one) is no mentions, not an error.
+ */
+function mentionIds(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((id): id is string => typeof id === "string");
 }
 
 /** Builds the optimistic message inserted by `sendMessage` before the server replies. */
@@ -463,6 +487,7 @@ export function optimisticMessage(args: {
     // reconnect — so a zero here renders an attachment-only message as a
     // completely blank bubble to its own sender, for as long as it is queued.
     attachment_count: args.attachmentCount ?? 0,
+    mentions: [],
     kind: args.kind ?? "text",
     payload: args.payload ?? null,
     reply_to_id: args.replyToId ?? null,

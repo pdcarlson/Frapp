@@ -35,6 +35,7 @@ import { compactControlClassName } from "@/components/shared/table-controls";
 import { MENTION_CHIP } from "./chip";
 import {
   useChapterRoster,
+  useMentionRoles,
   useRequestChatUploadUrl,
   useUploadSignedUrl,
 } from "@repo/hooks";
@@ -65,6 +66,7 @@ import { EmojiPicker } from "./emoji-picker";
 import { QuotedMessage } from "./reply-quote";
 import {
   createMentionSuggestion,
+  type MentionRoleEntry,
   type MentionRosterEntry,
 } from "./mention-suggestion";
 import {
@@ -856,6 +858,12 @@ export function Composer({
   useEffect(() => {
     rosterRef.current = chapterRoster.data ?? [];
   }, [chapterRoster.data]);
+  // The roles this member may `@`, read through a ref for the same reason.
+  const mentionRoles = useMentionRoles();
+  const rolesRef = useRef<MentionRoleEntry[]>([]);
+  useEffect(() => {
+    rolesRef.current = mentionRoles.data ?? [];
+  }, [mentionRoles.data]);
   /**
    * Files uploaded and waiting to be claimed by the next send.
    *
@@ -913,7 +921,7 @@ export function Composer({
         // only reads `rosterRef.current` later, inside `items()` callbacks
         // invoked from keystroke events — never synchronously during render.
         // eslint-disable-next-line react-hooks/refs -- suggestion.items() reads the ref from a keystroke callback, not render
-        suggestion: createMentionSuggestion(rosterRef),
+        suggestion: createMentionSuggestion(rosterRef, rolesRef),
       }),
       // Tiptap registers this shortcut while constructing the editor. The
       // closure reads `sendRef.current` only on Enter, not during render.

@@ -5,9 +5,11 @@ import {
   findMentionSpans,
   matchMentionCandidate,
   mentionLabelFor,
+  mentionPickerEntries,
   mentionSuggestions,
   resolveMentions,
   type MentionCandidate,
+  type MentionRole,
 } from "./mentions";
 
 const JANE: MentionCandidate = {
@@ -216,9 +218,9 @@ describe("matchMentionCandidate", () => {
       { user_id: "u-aa", display_name: "Aaron Webb" },
     ];
     expect(matchMentionCandidate(list, "\u00C1ngela")?.user_id).toBe("u-an");
-    expect(
-      matchMentionCandidate(list, "\u0041\u0301ngela")?.user_id,
-    ).toBe("u-an");
+    expect(matchMentionCandidate(list, "\u0041\u0301ngela")?.user_id).toBe(
+      "u-an",
+    );
   });
 
   it("refuses to guess from a single-character prefix", () => {
@@ -274,6 +276,180 @@ describe("resolveMentions", () => {
 
   it("returns nothing for a message with no mentions", () => {
     expect(resolveMentions("no mentions here", all)).toEqual([]);
+  });
+});
+
+describe("resolveMentions with roles", () => {
+  const OFFICERS: MentionRole = {
+    role_id: "role-officers",
+    name: "Officers",
+    member_ids: [JANE.user_id, BOB.user_id],
+    mentionable: true,
+  };
+  const VP: MentionRole = {
+    role_id: "role-vp",
+    name: "Vice President",
+    member_ids: [JANET.user_id],
+    mentionable: true,
+  };
+  const MEMBERS: MentionRole = {
+    role_id: "role-member",
+    name: "Member",
+    member_ids: [JANE.user_id, JANET.user_id, BOB.user_id],
+    mentionable: false,
+  };
+  const roster = [JANE, JANET, BOB];
+  const roles = [OFFICERS, VP, MEMBERS];
+
+  it("reaches every member holding a role", () => {
+    expect(resolveMentions("ping @Officers", roster, roles)).toEqual([
+      JANE.user_id,
+      BOB.user_id,
+    ]);
+  });
+
+  it("matches the role's whole name folded, as the picker inserts it", () => {
+    expect(resolveMentions("@VicePresident", roster, roles)).toEqual([
+      JANET.user_id,
+    ]);
+    expect(resolveMentions("@vice-president", roster, roles)).toEqual([
+      JANET.user_id,
+    ]);
+  });
+
+  it("never matches a role by prefix", () => {
+    // Prefix is a member tier only, and nobody's name starts with "off".
+    expect(resolveMentions("@Off", roster, roles)).toEqual([]);
+  });
+
+  it("consumes a role the sender may not ping, reaching nobody", () => {
+    expect(resolveMentions("@Member hi", roster, roles)).toEqual([]);
+  });
+
+  it("collapses a member named twice, once by role", () => {
+    expect(resolveMentions("@Jane and @Officers", roster, roles)).toEqual([
+      JANE.user_id,
+      BOB.user_id,
+    ]);
+  });
+
+  it("outranks a member's shorthand", () => {
+    // "Rush Week" would win `@Rush` on the first-word tier without roles.
+    const rushee = {
+      user_id: "44444444-4444-4444-4444-444444444444",
+      display_name: "Rush Week",
+    };
+    const rush: MentionRole = {
+      role_id: "role-rush",
+      name: "Rush",
+      member_ids: [BOB.user_id],
+      mentionable: true,
+    };
+    expect(resolveMentions("@Rush", [...roster, rushee], [rush])).toEqual([
+      BOB.user_id,
+    ]);
+  });
+
+  it("reaches nobody when a member's exact name is also a role's", () => {
+    const rushee = {
+      user_id: "44444444-4444-4444-4444-444444444444",
+      display_name: "Rush",
+    };
+    const rush: MentionRole = {
+      role_id: "role-rush",
+      name: "Rush",
+      member_ids: [BOB.user_id],
+      mentionable: true,
+    };
+    expect(resolveMentions("@Rush", [...roster, rushee], [rush])).toEqual([]);
+  });
+
+  it("reaches nobody when two members and a role share the name", () => {
+    const one = {
+      user_id: "44444444-4444-4444-4444-444444444444",
+      display_name: "Rush",
+    };
+    const two = {
+      user_id: "55555555-5555-5555-5555-555555555555",
+      display_name: "Rush",
+    };
+    const rush: MentionRole = {
+      role_id: "role-rush",
+      name: "Rush",
+      member_ids: [BOB.user_id],
+      mentionable: true,
+    };
+    expect(resolveMentions("@Rush", [...roster, one, two], [rush])).toEqual([]);
+  });
+
+  it("leaves a member their name when the matching role has no holders", () => {
+    const moose = {
+      user_id: "44444444-4444-4444-4444-444444444444",
+      display_name: "Moose",
+    };
+    const empty: MentionRole = {
+      role_id: "role-moose",
+      name: "Moose",
+      member_ids: [],
+      mentionable: true,
+    };
+    expect(resolveMentions("@Moose", [...roster, moose], [empty])).toEqual([
+      moose.user_id,
+    ]);
+  });
+
+  it("reaches nobody when two roles fold to the same name", () => {
+    const twin = { ...VP, role_id: "role-vp-2", name: "Vice-President" };
+    expect(resolveMentions("@VicePresident", roster, [VP, twin])).toEqual([]);
+  });
+
+  it("never reaches a role holder outside the roster it was given", () => {
+    const stranger: MentionRole = {
+      ...OFFICERS,
+      member_ids: ["99999999-9999-9999-9999-999999999999"],
+    };
+    expect(resolveMentions("@Officers", roster, [stranger])).toEqual([]);
+  });
+});
+
+describe("mentionPickerEntries", () => {
+  it("never offers a role whose label the tokenizer would drop", () => {
+    const long = { name: "A".repeat(65), mentionable: true };
+    expect(mentionPickerEntries([], [long], "")).toEqual([]);
+  });
+
+  const roster = [JANE, JANET, BOB];
+  const roles = [
+    { name: "Officers", mentionable: true },
+    { name: "Member", mentionable: false },
+    { name: "123 Club", mentionable: true },
+  ];
+
+  it("offers members first, then the roles the viewer may ping", () => {
+    expect(
+      mentionPickerEntries(roster, roles, "").map((entry) => entry.label),
+    ).toEqual(["JaneDoe", "JanetRoe", "BobStone", "Officers"]);
+  });
+
+  it("filters roles by the query as it does members", () => {
+    const entries = mentionPickerEntries(roster, roles, "off");
+    expect(entries).toEqual([
+      { kind: "role", role: roles[0], label: "Officers" },
+    ]);
+  });
+
+  it("keeps at most three role rows, and fills the rest with members", () => {
+    const many = Array.from({ length: 5 }, (_, i) => ({
+      name: `Role${String.fromCharCode(65 + i)}`,
+      mentionable: true,
+    }));
+    const lots = Array.from({ length: 10 }, (_, i) => ({
+      user_id: `user-${i}`,
+      display_name: `Member${String.fromCharCode(65 + i)}`,
+    }));
+    const entries = mentionPickerEntries(lots, many, "");
+    expect(entries).toHaveLength(8);
+    expect(entries.filter((entry) => entry.kind === "role")).toHaveLength(3);
   });
 });
 
@@ -339,11 +515,9 @@ describe("mentionSuggestions", () => {
   ];
 
   it("offers every reachable member in roster order for an empty query", () => {
-    expect(mentionSuggestions(roster, "").map((s) => s.member.user_id)).toEqual([
-      JANE.user_id,
-      JANET.user_id,
-      BOB.user_id,
-    ]);
+    expect(mentionSuggestions(roster, "").map((s) => s.member.user_id)).toEqual(
+      [JANE.user_id, JANET.user_id, BOB.user_id],
+    );
   });
 
   it("matches anywhere in the display name, ignoring case", () => {
@@ -370,9 +544,9 @@ describe("mentionSuggestions", () => {
       })),
       { user_id: "zoe", display_name: "Zoe Park" },
     ];
-    expect(mentionSuggestions(roster, "zoe").map((s) => s.member.user_id)).toEqual([
-      "zoe",
-    ]);
+    expect(
+      mentionSuggestions(roster, "zoe").map((s) => s.member.user_id),
+    ).toEqual(["zoe"]);
   });
 
   it("reads iOS's curly apostrophe as the straight one, both ways", () => {
@@ -380,12 +554,12 @@ describe("mentionSuggestions", () => {
       { user_id: "straight", display_name: "Sean O'Brien" },
       { user_id: "curly", display_name: "Pat O’Neil" },
     ];
-    expect(mentionSuggestions(roster, "o’br").map((s) => s.member.user_id)).toEqual([
-      "straight",
-    ]);
-    expect(mentionSuggestions(roster, "o'ne").map((s) => s.member.user_id)).toEqual([
-      "curly",
-    ]);
+    expect(
+      mentionSuggestions(roster, "o’br").map((s) => s.member.user_id),
+    ).toEqual(["straight"]);
+    expect(
+      mentionSuggestions(roster, "o'ne").map((s) => s.member.user_id),
+    ).toEqual(["curly"]);
   });
 
   it("caps the list", () => {
@@ -407,11 +581,19 @@ describe("mentionSuggestions", () => {
 describe("activeMentionQuery", () => {
   it("opens on a bare `@` at the caret", () => {
     expect(activeMentionQuery("@", 1)).toEqual({ start: 0, query: "", end: 1 });
-    expect(activeMentionQuery("hi @", 4)).toEqual({ start: 3, query: "", end: 4 });
+    expect(activeMentionQuery("hi @", 4)).toEqual({
+      start: 3,
+      query: "",
+      end: 4,
+    });
   });
 
   it("reads the text between the `@` and the caret", () => {
-    expect(activeMentionQuery("hi @pa", 6)).toEqual({ start: 3, query: "pa", end: 6 });
+    expect(activeMentionQuery("hi @pa", 6)).toEqual({
+      start: 3,
+      query: "pa",
+      end: 6,
+    });
     // Caret mid-word: only what is before it is the query, but the handle
     // runs on to its end, so a pick replaces all of it.
     expect(activeMentionQuery("hi @paul now", 6)).toEqual({
