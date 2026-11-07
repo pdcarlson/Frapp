@@ -12,7 +12,7 @@ Frapp publishes a **system permissions catalog** — these are the strings the A
 | `events:create`       | Create events                                          |
 | `events:update`       | Edit events                                            |
 | `events:delete`       | Delete events                                          |
-| `members:invite`      | Generate invite tokens                                 |
+| `members:invite`      | Invite members by email or link, and revoke invites    |
 | `members:remove`      | Remove members from the chapter                        |
 | `members:view`        | View the full member directory                         |
 | `points:adjust`       | Manually add/remove points                             |
