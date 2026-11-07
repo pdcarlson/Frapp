@@ -93,6 +93,9 @@ export class SupabaseArchiveMediaCopier implements IArchiveMediaCopier {
       if (!failure.retryable || !fits) {
         throw new ArchiveMediaCopyError(
           `Could not copy attachments into the archive: the copy service ${failure.detail}. The import stopped rather than skip the files; start it again to resume where it left off.`,
+          // Out of time for this call, not out of hope: the worker tries the
+          // slice again after a pause.
+          { retryable: failure.retryable },
         );
       }
       this.logger.warn(
