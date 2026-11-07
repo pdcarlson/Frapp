@@ -1,14 +1,17 @@
 "use client";
 
 import { STATUS_LABELS } from "@repo/validation";
-import { useMemo, useState } from "react";
-import { CheckCircle2, Loader2, Plus, Trash2, Undo2 } from "lucide-react";
+import { useMemo } from "react";
+import { CheckCircle2, Trash2, Undo2 } from "lucide-react";
 import {
   useConfirmTask,
   useCreateTask,
   useCurrentUser,
   useDeleteTask,
+  useEvents,
   useMembers,
+  useMyPermissions,
+  useNow,
   useRejectTask,
   useTasks,
   useUpdateTaskStatus,
@@ -16,52 +19,28 @@ import {
 import type { TaskStatus } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import { formatWeekdayDay } from "@repo/formatting";
+import { can } from "@repo/validation";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedOffline,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedOffline } from "@/components/shared/nested-states";
+import { InlineNote } from "@/components/shared/inline-note";
 import { SectionLabel } from "@/components/shared/section-label";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
-import { PageActions } from "@/components/layout/page-actions";
 import {
   SubscriptionNotice,
   type SubscriptionGate,
-  useGatedDialog,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { actionStatus } from "@repo/hooks";
-import {
-  asArray,
-  getErrorMessage,
-  guardIntDraft,
-  parseGuardedInt,
-} from "@/lib/utils";
+import { asArray, getErrorMessage } from "@/lib/utils";
 import { taskDueClause } from "./task-due";
+import { AddTaskRow, type TaskDraft } from "./add-task-row";
+import { nextUpLine } from "./next-up";
 import { TasksPageSkeleton } from "@/components/tasks/tasks-skeleton";
 
 type Task = {
@@ -127,7 +106,6 @@ export function TasksBoard() {
   // for GET, and it remains the enforcement either way.
   const gate = useSubscriptionGate();
   const { confirm, confirmDialog } = useConfirmDialog();
-  const createDialog = useGatedDialog(gate);
   const tasksQuery = useTasks();
   const membersQuery = useMembers();
   const currentUser = useCurrentUser();
@@ -136,6 +114,32 @@ export function TasksBoard() {
   const confirmTask = useConfirmTask();
   const rejectTask = useRejectTask();
   const deleteTask = useDeleteTask();
+  const permissionsQuery = useMyPermissions();
+  const permissionsPayload = permissionsQuery.data;
+  // `GET /v1/tasks` returns the whole chapter's board to `tasks:manage` and
+  // only your own tasks to everyone else (`TaskController.list`).
+  const canManage = can("tasks:manage", permissionsPayload?.permissions);
+  const permissionsKnown = permissionsPayload !== undefined;
+  // In flight with no answer yet: the one window where an empty board can't
+  // tell an officer's columns from a member's line, so it draws neither for
+  // that moment. A read that failed or can't run (offline) is not this: the
+  // board draws its columns and the `<Can>` in To do says why the add row
+  // isn't there, and retries after the outage.
+  const permissionsLoading =
+    !permissionsKnown && permissionsQuery.fetchStatus === "fetching";
+  const moduleGate = useChapterModuleGateState();
+  const nowTick = useNow();
+  // A member with nothing assigned sees one line instead of the board, and
+  // the line names the next event, so the read runs only for that member and
+  // only when Events is on (the module guard would refuse it otherwise).
+  const plateIsClear =
+    permissionsKnown &&
+    !canManage &&
+    tasksQuery.data !== undefined &&
+    asArray<Task>(tasksQuery.data).length === 0;
+  const eventsOn =
+    moduleGate.status === "ready" && moduleGate.isModuleEnabled("events");
+  const eventsQuery = useEvents({ enabled: plateIsClear && eventsOn });
 
   const tasks = useMemo(
     () => asArray<Task>(tasksQuery.data),
@@ -160,14 +164,6 @@ export function TasksBoard() {
   const lifecycleWritePending =
     updateStatus.isPending || confirmTask.isPending || rejectTask.isPending;
 
-  const [draft, setDraft] = useState({
-    title: "",
-    description: "",
-    assignee_id: "",
-    due_date: "",
-    point_reward: "",
-  });
-
   const columns = useMemo(() => {
     const grouped = new Map<TaskStatus, Task[]>();
     for (const column of COLUMNS) {
@@ -187,28 +183,15 @@ export function TasksBoard() {
     return grouped;
   }, [tasks]);
 
-  async function submitDraft(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  // Resolves whether the task was created, so the add row knows to clear.
+  async function createFromDraft(draft: TaskDraft): Promise<boolean> {
     try {
-      await createTask.mutateAsync({
-        title: draft.title.trim(),
-        description: draft.description.trim() || undefined,
-        assignee_id: draft.assignee_id,
-        due_date: draft.due_date,
-        point_reward: parseGuardedInt(draft.point_reward),
-      });
+      await createTask.mutateAsync(draft);
       toast({
         title: "Task created",
         description: `${draft.title} is now assigned.`,
       });
-      createDialog.setOpen(false);
-      setDraft({
-        title: "",
-        description: "",
-        assignee_id: "",
-        due_date: "",
-        point_reward: "",
-      });
+      return true;
     } catch (error) {
       toast({
         title: "Couldn't create task",
@@ -218,6 +201,7 @@ export function TasksBoard() {
         ),
         variant: "destructive",
       });
+      return false;
     }
   }
 
@@ -381,157 +365,24 @@ export function TasksBoard() {
 
   return (
     <div className="space-y-6">
-      <PageActions>
-        <Can permission="tasks:manage">
-          <Dialog {...createDialog.dialogProps}>
-            <DialogTrigger asChild>
-              <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
-                <Plus className="h-4 w-4" /> New task
-              </Button>
-            </DialogTrigger>
-            {/*
-              No description: the old one restated the fields below it, and
-              the one fact it carried (points are optional) now sits on the
-              Points label. `aria-describedby={undefined}` tells Radix the
-              omission is deliberate, so it does not warn.
-            */}
-            <DialogContent
-              className="sm:max-w-lg"
-              aria-describedby={undefined}
-              {...createDialog.contentProps}
-            >
-              <DialogHeader>
-                <DialogTitle>Create a task</DialogTitle>
-              </DialogHeader>
-              <form
-                onSubmit={submitDraft}
-                className="space-y-4"
-                id="tasks-create-form"
-              >
-                <div className="grid gap-1">
-                  <Label htmlFor="task-title">Title</Label>
-                  <Input
-                    id="task-title"
-                    value={draft.title}
-                    onChange={(event) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        title: event.target.value,
-                      }))
-                    }
-                    required
-                  />
-                </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="task-description">Description</Label>
-                  <Textarea
-                    id="task-description"
-                    rows={3}
-                    value={draft.description}
-                    onChange={(event) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        description: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="grid gap-1">
-                    <Label htmlFor="task-assignee">Assignee</Label>
-                    <Select
-                      value={draft.assignee_id}
-                      onValueChange={(value) =>
-                        setDraft((prev) => ({ ...prev, assignee_id: value }))
-                      }
-                    >
-                      <SelectTrigger id="task-assignee">
-                        <SelectValue placeholder="Select a member" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {members.map((member) => (
-                          <SelectItem
-                            key={member.user_id ?? "unknown"}
-                            value={String(member.user_id ?? "")}
-                          >
-                            {memberLabel(member.display_name, member.user_id)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="task-due-date">Due date</Label>
-                    <Input
-                      id="task-due-date"
-                      type="date"
-                      value={draft.due_date}
-                      onChange={(event) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          due_date: event.target.value,
-                        }))
-                      }
-                      required
-                    />
-                  </div>
-                </div>
-                <div className="grid gap-1 sm:max-w-xs">
-                  <Label htmlFor="task-points">Points (optional)</Label>
-                  <Input
-                    id="task-points"
-                    type="number"
-                    min={0}
-                    value={draft.point_reward}
-                    onChange={(event) => {
-                      const next = guardIntDraft(event.target.value);
-                      if (next === undefined) return;
-                      setDraft((prev) => ({ ...prev, point_reward: next }));
-                    }}
-                  />
-                </div>
-              </form>
-              <DialogFooter>
-                {/*
-                  Cancel is not gated: it only closes the dialog, and a lapsed
-                  chapter still needs a way out of a form it can't submit.
-                */}
-                <Button
-                  variant="secondary"
-                  onClick={() => createDialog.setOpen(false)}
-                  disabled={createTask.isPending}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  form="tasks-create-form"
-                  type="submit"
-                  {...gate.controlProps(createTask.isPending)}
-                >
-                  {createTask.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : null}
-                  Create task
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </Can>
-      </PageActions>
       {/*
-        Outside the `tasks:manage` <Can>: the assignee-facing Start / Mark
-        complete controls are gated too, so a member with no manage permission
-        still needs the explanation for why their own board went read-only.
+        For every viewer, not only `tasks:manage`: the assignee-facing Start /
+        Mark complete controls are gated too, so a member with no manage
+        permission still needs the explanation for why their own board went
+        read-only.
       */}
       <SubscriptionNotice gate={gate} feature="managing tasks" />
 
-      {tasks.length === 0 ? (
-        <NestedEmpty
-          sole
-          title="No tasks yet"
-          description="Admins can create the first chapter task to assign ownership and award points."
-        />
-      ) : (
+      {plateIsClear ? (
+        /*
+          Done is one line (rule 7): a member's board with nothing on it is
+          four empty columns, so the line takes its place, and says what's
+          next rather than only what isn't there.
+        */
+        <InlineNote>
+          {nextUpLine(eventsOn ? eventsQuery.data : undefined, nowTick)}
+        </InlineNote>
+      ) : permissionsLoading && tasks.length === 0 ? null : (
         /*
           Flush, not carded. Each column used to be a `<Card>` with a title,
           a description and (under Awaiting confirmation) a footer explaining
@@ -552,10 +403,28 @@ export function TasksBoard() {
                 <SectionLabel id={labelId} count={list.length}>
                   {column.label}
                 </SectionLabel>
+                {/*
+                  Rule 2: the first action sits where the first item goes.
+                  The add row is the board's only way to create a task, so
+                  it stays at the top of To do once the column fills up.
+                */}
+                {column.status === "TODO" &&
+                (canManage || !permissionsKnown) ? (
+                  <Can permission="tasks:manage">
+                    <AddTaskRow
+                      members={members}
+                      gate={gate}
+                      pending={createTask.isPending}
+                      onCreate={createFromDraft}
+                    />
+                  </Can>
+                ) : null}
                 {list.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    {column.empty}
-                  </p>
+                  column.status === "TODO" && canManage ? null : (
+                    <p className="text-sm text-muted-foreground">
+                      {column.empty}
+                    </p>
+                  )
                 ) : (
                   <ul className="space-y-2">
                     {list.map((task) => (

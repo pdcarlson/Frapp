@@ -414,6 +414,7 @@ const CONSUMERS: readonly string[] = [
   "components/documents/documents-page.tsx",
   "components/documents/folder-rail.tsx",
   "components/events/attendance-panel.tsx",
+  "components/events/events-page.tsx",
   "components/geofences/geofences-admin-page.tsx",
   "components/points/points-audit-card.tsx",
   "components/polls/polls-page.tsx",

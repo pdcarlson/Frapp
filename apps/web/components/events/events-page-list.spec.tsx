@@ -36,6 +36,9 @@ const EVENTS = [
 ];
 
 const eventsQuery: { data: unknown } = { data: EVENTS };
+const permissionsRef: { current: string[] } = {
+  current: ["events:create", "events:update"],
+};
 
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => ({
@@ -53,7 +56,10 @@ vi.mock("@repo/hooks", () => ({
     refetch: vi.fn(),
   }),
   useAutoAbsent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useMyPermissions: () => ({ data: { permissions: ["events:update"] } }),
+  useMyPermissions: () => ({
+    data: { permissions: permissionsRef.current },
+    isLoading: false,
+  }),
   useNow: () => Date.now(),
 }));
 
@@ -96,6 +102,7 @@ const row = (name: RegExp) => {
 beforeEach(() => {
   vi.clearAllMocks();
   eventsQuery.data = EVENTS;
+  permissionsRef.current = ["events:create", "events:update"];
 });
 
 describe("EventsPage list", () => {
@@ -229,7 +236,7 @@ describe("EventsPage list", () => {
 });
 
 describe("EventsPage empty states", () => {
-  it("tells a filtered list apart from an empty chapter", async () => {
+  it("says the time window is empty, not the chapter, and widens it", async () => {
     const user = userEvent.setup();
     render(<EventsPage />);
 
@@ -238,37 +245,123 @@ describe("EventsPage empty states", () => {
       "past",
     );
 
-    expect(
-      screen.getByRole("heading", { name: "No events match the filters" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("No events yet")).toBeNull();
+    // The section and its count stay; one line sits where the rows were.
+    expect(screen.getByRole("region", { name: "Past" })).toBeInTheDocument();
+    expect(screen.getByText("0 events")).toBeInTheDocument();
+    expect(screen.getByText(/^No past events\./)).toBeInTheDocument();
+    expect(screen.queryByText(/no events yet/i)).toBeNull();
+    expect(screen.queryByRole("heading", { level: 3 })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Show all events" }));
+    expect(screen.getByText("2 events")).toBeInTheDocument();
   });
 
-  it("names the search that matched nothing", async () => {
+  it("clears the kind filters from their own miss", async () => {
     const user = userEvent.setup();
     render(<EventsPage />);
 
-    await user.type(
-      screen.getByRole("searchbox", { name: /search events/i }),
-      "gala",
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: /attendance policy/i }),
+      "mandatory",
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: /cadence/i }),
+      "one-time",
     );
 
     expect(
-      screen.getByRole("heading", { name: "No match for “gala”" }),
+      screen.getByText(/^No events match these filters\./),
     ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getByText("2 events")).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: /attendance policy/i }),
+    ).toHaveValue("all");
   });
 
-  it("keeps the first-event CTA for a chapter with no events, on no card", () => {
+  it("names a search miss and clears it", async () => {
+    const user = userEvent.setup();
+    render(<EventsPage />);
+
+    const search = screen.getByRole("searchbox", { name: /search events/i });
+    await user.type(search, "gala");
+
+    expect(
+      screen.getByText(/^No events match that search\./),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(search).toHaveValue("");
+    expect(screen.getByText("2 events")).toBeInTheDocument();
+  });
+
+  it("opens a chapter with no events on the calendar, on no card", () => {
     eventsQuery.data = [];
     const { container } = render(<EventsPage />);
 
+    expect(screen.getByRole("tab", { name: "Calendar" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     expect(
-      screen.getByRole("heading", { name: "No events yet" }),
+      screen.getByText("Pick a day to schedule the first event."),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /create first event/i }),
-    ).toBeInTheDocument();
+      screen.queryByRole("heading", { name: /no events yet/i }),
+    ).toBeNull();
     expect(cardFilledContainers(container)).toEqual([]);
+  });
+
+  it("waits for the events read before picking a tab", () => {
+    // Picked on the loading render, `events` would be [] and every chapter,
+    // events or not, would open on the calendar and stay there.
+    eventsQuery.data = undefined;
+    const { rerender } = render(<EventsPage />);
+
+    eventsQuery.data = EVENTS;
+    rerender(<EventsPage />);
+
+    expect(screen.getByRole("tab", { name: "List" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
+  it("stays on the calendar once the first event arrives", () => {
+    eventsQuery.data = [];
+    const { rerender } = render(<EventsPage />);
+
+    eventsQuery.data = EVENTS;
+    rerender(<EventsPage />);
+
+    expect(screen.getByRole("tab", { name: "Calendar" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
+  it("says so in one line if the list is opened anyway", async () => {
+    const user = userEvent.setup();
+    eventsQuery.data = [];
+    render(<EventsPage />);
+
+    await user.click(screen.getByRole("tab", { name: "List" }));
+
+    expect(screen.getByText("No events yet.")).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /select all/i })).toBeNull();
+  });
+
+  it("gives a member the calendar without a create control", () => {
+    permissionsRef.current = ["members:view"];
+    eventsQuery.data = [];
+    render(<EventsPage />);
+
+    expect(
+      screen.getByText("Nothing on the calendar yet."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /new event/i })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /^create event on/i }),
+    ).toBeNull();
   });
 });
 
