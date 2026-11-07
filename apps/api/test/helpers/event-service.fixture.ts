@@ -45,6 +45,10 @@ export async function createEventServiceFixture() {
     findByChapter: jest.fn(),
     findChildren: jest.fn().mockResolvedValue([]),
     create: jest.fn(),
+    // Echoes the rows back with ids, as the real insert's `select()` does.
+    createMany: jest.fn(async (rows: Partial<Event>[]) =>
+      rows.map((row, i) => ({ ...baseEvent, ...row, id: `occ-${i + 1}` })),
+    ),
     update: jest.fn(),
     updateMany: jest.fn().mockResolvedValue([]),
     delete: jest.fn(),
@@ -112,3 +116,14 @@ export async function createEventServiceFixture() {
 export type EventServiceFixture = Awaited<
   ReturnType<typeof createEventServiceFixture>
 >;
+
+/**
+ * Every occurrence row the series code asked to insert, in order, across all
+ * `createMany` calls. Occurrences go out as one array insert (#3235), so a
+ * spec that used to count `create` calls counts these rows instead.
+ */
+export function occurrenceRows(
+  repo: jest.Mocked<IEventRepository>,
+): Partial<Event>[] {
+  return repo.createMany.mock.calls.flatMap(([rows]) => rows);
+}
