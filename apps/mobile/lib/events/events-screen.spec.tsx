@@ -8,6 +8,8 @@ import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { formatEventDateBlock } from "@/lib/events/format";
 import { expectRoundedRipple } from "@/test/pressable-row";
+import { EmptyState } from "@/components/state-block";
+import { InlineNote } from "@/components/inline-note";
 import { screenText } from "@/test/screen-text";
 
 /**
@@ -274,7 +276,9 @@ describe("Events list states", () => {
     events = [];
     const tree = render();
 
-    expect(screenText(tree)).toContain("Tap + to add an event.");
+    expect(screenText(tree)).toContain(
+      "Nothing scheduled yet. Tap + to add the first event.",
+    );
     // New event lives in the quick actions now, so the screen draws no + of
     // its own beside the tab bar's.
     expect(createButton(tree)).toBeUndefined();
@@ -304,8 +308,16 @@ describe("Events list states", () => {
     events = [];
     const tree = render();
 
-    expect(screenText(tree)).toContain("Nothing scheduled");
+    expect(screenText(tree)).toContain("Nothing scheduled yet.");
     expect(screenText(tree)).not.toContain("will appear here");
+  });
+
+  it("says it in one line where the rows go, not a card", () => {
+    events = [];
+    const tree = render();
+
+    expect(tree.root.findAllByType(EmptyState)).toHaveLength(0);
+    expect(tree.root.findAllByType(InlineNote)).toHaveLength(1);
   });
 });
 
