@@ -211,6 +211,19 @@ export interface Database {
         }[];
       };
       /**
+       * `20261107043000`. Onboarding chapter search: word prefixes over
+       * organization, letters, chapter, school and aliases, with trigram typo
+       * tolerance. Global reference data, no chapter scope; at most 50 rows.
+       */
+      search_chapter_directory: {
+        Args: {
+          p_query: string;
+          p_university?: string | null;
+          p_limit?: number;
+        };
+        Returns: ChapterDirectoryEntry[];
+      };
+      /**
        * `20261106190000` (#585). Backwork search over title, course,
        * department, professor and tags, with trigram typo tolerance, ranked
        * word matches first. One chapter only; at most 50 rows.

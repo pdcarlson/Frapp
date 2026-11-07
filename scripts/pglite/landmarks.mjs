@@ -307,11 +307,18 @@ export const LANDMARKS = [
       rows.length === 1 && rows[0].display_name === "Frapp System",
   },
   {
-    name: "chapter_directory has GENERATED search_vector column",
-    sql: `select attgenerated from pg_attribute
-           where attrelid = 'chapter_directory'::regclass and attname = 'search_vector'`,
-    ok: (rows) =>
-      rows.length === 1 && rows[0].attgenerated && rows[0].attgenerated !== "",
+    // 20261107043000_chapter_directory_search.sql replaced the tsvector with a
+    // generated `search_text` that search_chapter_directory matches word
+    // prefixes against. Losing the generation would freeze it.
+    name: "chapter_directory has GENERATED search_text, no search_vector",
+    sql: `select
+            (select count(*) from pg_attribute
+              where attrelid = 'chapter_directory'::regclass
+                and attname = 'search_text' and attgenerated <> '')::int as gen,
+            (select count(*) from pg_attribute
+              where attrelid = 'chapter_directory'::regclass
+                and attname = 'search_vector' and not attisdropped)::int as old`,
+    ok: (rows) => rows.length === 1 && rows[0].gen === 1 && rows[0].old === 0,
   },
   {
     // The other three `GET /v1/search` sources (#284). `chat_messages` got its

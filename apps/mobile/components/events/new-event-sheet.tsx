@@ -19,7 +19,7 @@ import { formatWeekdayDay } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { useCreateEvent, usePermissionList } from "@repo/hooks";
 import { canAll } from "@repo/validation";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { fieldTypeRole, typeRole, useFrappTheme } from "@/lib/theme";
 import {
   useChapterBranding,
   type ChapterBranding,
@@ -557,9 +557,11 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     pointsSign: {
       ...typeRole(tokens.typography.role.label),
     },
+    // Single-line: no line height, or iOS draws the value below center
+    // (components.md § Text input).
     pointsInput: {
       flex: 1,
-      ...typeRole(tokens.typography.role.body),
+      ...fieldTypeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },
     error: {

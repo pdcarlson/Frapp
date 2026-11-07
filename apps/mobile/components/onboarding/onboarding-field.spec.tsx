@@ -40,4 +40,18 @@ describe("OnboardingTextInput", () => {
       signetDarkTokens.touch.minimum,
     );
   });
+
+  it("sets no lineHeight, so iOS centers the typed text in the box", () => {
+    // body's 25 leading on a 16pt single-line field put the text ~4pt low
+    // (Paul, iOS 0.10.0, 2026-11-06). components.md § Text input.
+    expect(flatStyle(renderField().props.style)).not.toHaveProperty("lineHeight");
+    const sheet = sheetFieldStyles(
+      signetDarkTokens,
+      signetDarkTokens.color.gold.askText,
+    );
+    expect(sheet.field).not.toHaveProperty("lineHeight");
+    expect(sheet.fieldMultilineText.lineHeight).toBe(
+      signetDarkTokens.typography.role.body.lineHeight,
+    );
+  });
 });
