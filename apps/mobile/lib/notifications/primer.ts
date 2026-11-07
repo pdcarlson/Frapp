@@ -27,6 +27,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { requestPushPermission } from "@/lib/notifications/push";
+import { notifyPushPermissionGranted } from "./push-token-lifecycle";
 
 export const PUSH_PRIMER_STORAGE_KEY = "frapp.mobile.push-primer";
 
@@ -74,11 +75,17 @@ export async function recordPrimerDecision(
  * ignore (`shouldOfferPrimer` reads the decision, not whether the OS will
  * still ask). `onRecorded` runs between the two, which is where the card's
  * host hides it.
+ *
+ * A grant also asks the push runtime to register the token again
+ * (`onPushPermissionGranted`, #2617), because the sign-in register ran before
+ * this prompt existed.
  */
 export async function acceptPrimer(onRecorded?: () => void): Promise<boolean> {
   await recordPrimerDecision("accepted");
   onRecorded?.();
-  return requestPushPermission().catch(() => false);
+  const granted = await requestPushPermission().catch(() => false);
+  if (granted) notifyPushPermissionGranted();
+  return granted;
 }
 
 export interface PrimerVisibilityInput {
