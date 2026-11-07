@@ -7,7 +7,8 @@
     "./display-names": "./src/display-names.ts",
     "./chapter-identity": "./src/chapter-identity.ts",
     "./channel-start": "./src/channel-start.ts",
-    "./field-reveal": "./src/field-reveal.ts"
+    "./field-reveal": "./src/field-reveal.ts",
+    "./open-chat-transport": "./src/open-chat-transport.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",
