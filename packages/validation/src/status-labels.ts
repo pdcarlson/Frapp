@@ -16,7 +16,7 @@ export const STATUS_LABELS = {
   task: {
     TODO: "To do",
     IN_PROGRESS: "In progress",
-    COMPLETED: "Awaiting confirmation",
+    COMPLETED: "Waiting on an officer",
     OVERDUE: "Overdue",
   },
   /** `service_entries.status`. */
