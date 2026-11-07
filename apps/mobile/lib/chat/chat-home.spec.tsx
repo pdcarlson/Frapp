@@ -1,7 +1,11 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { act } from "react";
-import { create, type ReactTestRenderer } from "react-test-renderer";
+import {
+  create,
+  type ReactTestInstance,
+  type ReactTestRenderer,
+} from "react-test-renderer";
 import { Alert } from "react-native";
 import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
@@ -295,7 +299,7 @@ import { Toggle } from "@/components/toggle";
 import { SearchGlyph } from "@/components/search-glyph";
 import { SetupChecklistView } from "@/components/chat/setup-checklist";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
-import { ScreenShell } from "@/components/screen-shell";
+import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import {
   EmptyState,
   EmptyStateAction,
@@ -486,21 +490,33 @@ describe("Chat home hide conversation (#2303)", () => {
  * header would pass on a list rendered backwards.
  */
 function layout(tree: ReactTestRenderer): [string, string[]][] {
-  return tree.root
-    .findAllByType(PressableRow)
-    .filter((header) => header.props.accessibilityRole === "header")
-    .map((header) => [
-      // Since #2877 the header is a fold control: a chevron, then the label.
-      String(
-        header.findAll((node) => (node.type as unknown) === "Text")[1]!.props
-          .children,
-      ),
-      // The rows are siblings of the heading row (the fold control and, on
-      // the first, the filter button) in the section.
-      header
-        .parent!.parent!.findAllByType(ChannelRow)
-        .map((row) => row.props.name),
-    ]);
+  return tree.root.findAllByType(StickyHeader).flatMap((sticky) => {
+    const header = sticky
+      .findAllByType(PressableRow)
+      .find((node) => node.props.accessibilityRole === "header");
+    if (!header) return [];
+    // The heading pins (owner 2026-11-07), so it is the shell's own child and
+    // its rows are the next one, unless the next one is another heading
+    // (a folded section).
+    const siblings = sticky.parent!.children.filter(
+      (child): child is ReactTestInstance => typeof child !== "string",
+    );
+    const next = siblings[siblings.indexOf(sticky) + 1];
+    const rows =
+      next && next.type !== StickyHeader
+        ? next.findAllByType(ChannelRow).map((row) => row.props.name)
+        : [];
+    return [
+      [
+        // Since #2877 the header is a fold control: a chevron, then the label.
+        String(
+          header.findAll((node) => (node.type as unknown) === "Text")[1]!.props
+            .children,
+        ),
+        rows,
+      ] as [string, string[]],
+    ];
+  });
 }
 
 describe("Chat home channel categories (#1684)", () => {
@@ -1592,5 +1608,29 @@ describe("Chat home previews (2026-11-06 redesign)", () => {
       ["general", false],
       ["social", true],
     ]);
+  });
+});
+
+describe("Chat home pinned section headings (owner 2026-11-07)", () => {
+  it("pins every section heading, so the one in view names the rows under it", () => {
+    const tree = render();
+    const scroll = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "ScrollView" &&
+        node.props.refreshControl !== undefined,
+    );
+    const children = scroll.children.filter(
+      (child): child is ReactTestInstance => typeof child !== "string",
+    );
+    const pinned = (scroll.props.stickyHeaderIndices as number[]).map(
+      (index) => children[index]!.type,
+    );
+
+    expect(layout(tree).length).toBeGreaterThan(1);
+    // Every heading, the Hidden conversations toggle's too when there is one,
+    // so the last section's heading never sits over the hidden rows.
+    expect(pinned).toHaveLength(tree.root.findAllByType(StickyHeader).length);
+    expect(pinned.length).toBeGreaterThanOrEqual(layout(tree).length);
+    expect(pinned.every((type) => type === StickyHeader)).toBe(true);
   });
 });
