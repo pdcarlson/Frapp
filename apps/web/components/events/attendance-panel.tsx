@@ -1,6 +1,6 @@
 "use client";
 
-import { describeLoadFailure } from "@repo/api-sdk";
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useState } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { DirectoryGlyph } from "@/components/events/chapter-ops-glyphs";

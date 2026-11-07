@@ -280,7 +280,7 @@ describe("DiscordImportPage — reads", () => {
       screen.getByRole("heading", { name: "Couldn't load the import" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("Check your connection and retry."),
+      screen.getByText("Couldn't reach Frapp. Check your connection and try again."),
     ).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });

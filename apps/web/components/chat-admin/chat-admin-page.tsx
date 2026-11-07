@@ -1,6 +1,6 @@
 "use client";
 
-import { describeLoadFailure } from "@repo/api-sdk";
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useCallback, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { Loader2, Pencil, PinOff, Plus, Trash2 } from "lucide-react";

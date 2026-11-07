@@ -1,6 +1,6 @@
 "use client";
 
-import { describeLoadFailure } from "@repo/api-sdk";
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useState, type ReactNode } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { FlaggedGlyph } from "@/components/points/points-glyphs";

@@ -1,6 +1,6 @@
 "use client";
 
-import { describeLoadFailure } from "@repo/api-sdk";
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Pencil, Plus, Power, PowerOff, Trash2 } from "lucide-react";
 import { StudyZonesGlyph } from "@/components/events/chapter-ops-glyphs";

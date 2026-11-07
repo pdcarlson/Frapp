@@ -251,7 +251,7 @@ describe("ReportsPage preview states", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      screen.queryByText("Check your connection and retry."),
+      screen.queryByText("Couldn't reach Frapp. Check your connection and try again."),
     ).not.toBeInTheDocument();
   });
 

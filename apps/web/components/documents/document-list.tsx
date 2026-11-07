@@ -1,6 +1,6 @@
 "use client";
 
-import { describeLoadFailure } from "@repo/api-sdk";
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {

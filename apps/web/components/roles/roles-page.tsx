@@ -1,6 +1,6 @@
 "use client";
 
-import { describeLoadFailure } from "@repo/api-sdk";
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { Loader2, Trash2 } from "lucide-react";
