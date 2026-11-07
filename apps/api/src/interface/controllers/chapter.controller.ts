@@ -92,7 +92,11 @@ export class ChapterController {
   })
   @FeatureEvent(
     'chapter-onboarded',
-    ({ body, result }: FeatureEventInput<ChapterOnboardingDto, Chapter>) => ({
+    ({
+      body,
+      result,
+      signInMethod,
+    }: FeatureEventInput<ChapterOnboardingDto, Chapter>) => ({
       // The stored key, not the body's unvalidated string: onboarding resolves
       // it through `getArchetype`, which falls back to `ifc`.
       archetype:
@@ -101,6 +105,7 @@ export class ChapterController {
           ? result.org_archetype
           : null,
       from_directory: !!body.directory_id,
+      sign_in_method: signInMethod ?? null,
     }),
     {
       chapterId: ({

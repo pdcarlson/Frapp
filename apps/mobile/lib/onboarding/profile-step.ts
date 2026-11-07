@@ -45,3 +45,30 @@ export function shouldOfferProfileStep(
 export function initialNameField(displayName: string | null): string {
   return needsName(displayName) ? "" : (displayName ?? "").trim();
 }
+
+/**
+ * The profile beat's one client event (`spec/behavior/observability.md`
+ * § Member Onboarding Funnel), sent once when the member moves on from it.
+ * Shape only: whether a photo and a name came out of the beat, never the name.
+ */
+export const ONBOARDING_PROFILE_ANSWERED_EVENT = "onboarding-profile-answered";
+
+/**
+ * - `photo`: `had` (one before the beat), `added` (chosen on it), `none`.
+ * - `name_step`: `added` (there was no real name), `edited` (a real one was
+ *   changed), `kept`.
+ */
+export function onboardingProfileAnsweredProperties(input: {
+  hadPhoto: boolean;
+  hasPhoto: boolean;
+  hadName: boolean;
+  nameChanged: boolean;
+}): {
+  photo: "had" | "added" | "none";
+  name_step: "added" | "edited" | "kept";
+} {
+  return {
+    photo: input.hadPhoto ? "had" : input.hasPhoto ? "added" : "none",
+    name_step: !input.hadName ? "added" : input.nameChanged ? "edited" : "kept",
+  };
+}
