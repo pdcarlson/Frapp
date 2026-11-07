@@ -158,7 +158,7 @@ describe("s03 welcome, notifications step", () => {
     expect(button(root, "Continue")).toBeUndefined();
     await press(button(root, "Go to chat"));
     expect(requestPushPermission).not.toHaveBeenCalled();
-    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
   });
 
   it("has no notifications step when push is already on", async () => {
@@ -206,7 +206,7 @@ describe("s03 welcome, notifications step", () => {
     expect(completeOnboarding).toHaveBeenCalledWith({
       has_completed_onboarding: true,
     });
-    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
   });
 
   it("goes to chat after a Don't Allow too", async () => {
@@ -218,7 +218,7 @@ describe("s03 welcome, notifications step", () => {
 
     await press(button(root, "Turn on notifications"));
 
-    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
   });
 
   it("goes to chat on Not now, with no OS prompt, and keeps when it was said", async () => {
@@ -238,7 +238,7 @@ describe("s03 welcome, notifications step", () => {
       PUSH_PRIMER_DECLINED_AT_KEY,
       expect.any(String),
     );
-    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
   });
 
   // iOS after an earlier Don't Allow, or Android after
@@ -254,7 +254,7 @@ describe("s03 welcome, notifications step", () => {
 
     expect(requestPushPermission).not.toHaveBeenCalled();
     expect(openSettings).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
   });
 
   it("takes Android 13+ granted-but-blocked as off", async () => {
@@ -289,7 +289,7 @@ describe("s03 welcome, notifications step", () => {
     await act(async () => {
       finishPatch();
     });
-    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
   });
 
   it("goes back to You're in on Android back", async () => {
@@ -354,7 +354,7 @@ describe("s03 welcome, screen rules (#3352)", () => {
     expect(completeOnboarding).toHaveBeenCalledWith({
       has_completed_onboarding: true,
     });
-    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
   });
 });
 

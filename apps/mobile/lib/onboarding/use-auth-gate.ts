@@ -11,7 +11,7 @@ import { useAuthSession } from "@/lib/auth-session";
  * and `AppRuntime` cannot drift. The mapping from query state to gate input is
  * `toAuthGateInput`, which is pure and tested in `lib/auth-gate.spec.ts`.
  *
- * `(tabs)/_layout.tsx` is frozen and still calls `resolveAuthGate` with only
+ * `(app)/_layout.tsx` is frozen and still calls `resolveAuthGate` with only
  * the session — it does not have to know about join/welcome. Walking a member
  * *out* of the tabs onto those screens is `AppRuntime`'s job.
  */

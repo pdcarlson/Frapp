@@ -11,6 +11,7 @@ import {
   FrappClientProvider,
 } from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
+import { stackScreen } from "@/test/stack-screen";
 import { screenText, textHeadings } from "@/test/screen-text";
 
 /**
@@ -19,7 +20,7 @@ import { screenText, textHeadings } from "@/test/screen-text";
  * The tab navigator's header used to name this screen, and its title was the
  * heading a screen reader found. No screen has that header now, so the title
  * the screen draws itself has to be the heading. It renders
- * `app/(tabs)/host-check-in.tsx` but lives here: a spec under `app/` ships as
+ * `app/(app)/host-check-in.tsx` but lives here: a spec under `app/` ships as
  * a route module (`lib/routes.spec.ts`).
  */
 
@@ -72,7 +73,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 vi.mock("react-native-qrcode-svg", () => ({ default: "QRCode" }));
 
-import HostCheckInScreen from "@/app/(tabs)/host-check-in";
+import HostCheckInScreen from "@/app/(app)/host-check-in";
 
 const { __refocus: refocus, __blur: blur } = expoRouter as unknown as {
   __refocus: () => void;
@@ -222,7 +223,8 @@ describe("Host check-in while the room fills", () => {
     ]);
     expect(lastCall(hooks.mintCalls)).toEqual(["evt-1", true]);
 
-    // The tab stays mounted once the officer leaves; nothing should poll.
+    // The screen can stay mounted while the officer is elsewhere; nothing
+    // should poll.
     act(() => blur());
     expect(lastCall(hooks.attendanceCalls)).toEqual([
       "evt-1",
@@ -472,7 +474,7 @@ describe("Host check-in while the room fills", () => {
   });
 
   it("ends to More, where its one row opened it", () => {
-    vi.mocked(vi.mocked(expoRouter.useRouter)().navigate).mockClear();
+    vi.mocked(vi.mocked(expoRouter.useRouter)().dismissTo).mockClear();
     const tree = render();
     const end = tree.root.find(
       (node) =>
@@ -480,10 +482,34 @@ describe("Host check-in while the room fills", () => {
         node.props.accessibilityLabel === "End hosting and go back",
     );
     act(() => end.props.onPress());
-    // Not `back()`: a hidden tab's history lands on Chat home.
-    expect(vi.mocked(expoRouter.useRouter)().navigate).toHaveBeenCalledWith(
+    // Nothing is under the screen in this spec (no stack), so it falls back
+    // to More; on a device it pops to where the officer started.
+    expect(vi.mocked(expoRouter.useRouter)().dismissTo).toHaveBeenCalledWith(
       "/more",
     );
+    act(() => tree.unmount());
+  });
+
+  it("ends by popping to the screen it was opened from, as the swipe does", () => {
+    vi.mocked(vi.mocked(expoRouter.useRouter)().dismissTo).mockClear();
+    const { element, navigation } = stackScreen(
+      [{ name: "(tabs)" }, { name: "event-details" }],
+      <FrappThemeProvider>
+        <HostCheckInScreen />
+      </FrappThemeProvider>,
+    );
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(element);
+    });
+    const end = tree.root.find(
+      (node) =>
+        node.type === ("Pressable" as never) &&
+        node.props.accessibilityLabel === "End hosting and go back",
+    );
+    act(() => end.props.onPress());
+    expect(navigation.goBack).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(expoRouter.useRouter)().dismissTo).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
 

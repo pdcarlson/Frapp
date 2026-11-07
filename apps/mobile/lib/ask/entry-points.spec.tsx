@@ -5,6 +5,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { ASK_FLAG_ENV_KEY } from "@/lib/ask/flag";
+import { useRouter } from "expo-router";
 
 /**
  * #2259 — every Ask entry point hangs off `isAskAvailable()`.
@@ -100,9 +101,9 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import ChatHomeScreen from "@/app/(tabs)/index";
-import EventsScreen from "@/app/(tabs)/events";
-import AskScreen from "@/app/(tabs)/ask";
+import ChatHomeScreen from "@/app/(app)/(tabs)/index";
+import EventsScreen from "@/app/(app)/(tabs)/events";
+import AskScreen from "@/app/(app)/ask";
 
 type Node = ReactTestRenderer["root"];
 
@@ -139,13 +140,11 @@ function sheets(root: Node): Node[] {
   return root.findAll((node) => (node.type as unknown) === "BottomSheetModal");
 }
 
-function redirects(root: Node): Node[] {
-  return root.findAll((node) => (node.type as unknown) === "Redirect");
-}
 
 beforeEach(() => {
   delete process.env[ASK_FLAG_ENV_KEY];
   present.mockClear();
+  vi.mocked(vi.mocked(useRouter)().dismissTo).mockClear();
 });
 
 afterEach(() => {
@@ -213,9 +212,9 @@ describe("the ask route (frapp://ask)", () => {
   it("redirects to Chat home in a build without Ask", () => {
     const tree = render(<AskScreen />);
 
-    const found = redirects(tree.root);
-    expect(found).toHaveLength(1);
-    expect(found[0].props.href).toBe("/");
+    // Popped down to, not replaced: a replace would stack a second tab
+    // navigator over the first.
+    expect(vi.mocked(useRouter)().dismissTo).toHaveBeenCalledWith("/");
     // No Ask shell behind the redirect, and nothing presented.
     expect(askPills(tree.root)).toHaveLength(0);
     expect(sheets(tree.root)).toHaveLength(0);
@@ -226,7 +225,7 @@ describe("the ask route (frapp://ask)", () => {
     process.env[ASK_FLAG_ENV_KEY] = "true";
     const tree = render(<AskScreen />);
 
-    expect(redirects(tree.root)).toHaveLength(0);
+    expect(vi.mocked(useRouter)().dismissTo).not.toHaveBeenCalled();
     expect(askPills(tree.root)).toHaveLength(1);
     expect(sheets(tree.root)).toHaveLength(1);
     expect(present).toHaveBeenCalledTimes(1);

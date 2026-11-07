@@ -21,7 +21,7 @@ import { expectViewerScopedReads } from "@/test/service-entry-reads";
  * viewer's entries, and must wait for the viewer's id rather than firing
  * once unscoped. `service-hours-screen.spec.tsx` pins the same for s20.
  *
- * It renders `app/(tabs)/profile.tsx` but lives here: a spec under `app/`
+ * It renders `app/(app)/profile.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -64,7 +64,7 @@ vi.mock("@/components/profile/profile-photo", () => ({
   ProfilePhoto: "ProfilePhoto",
 }));
 
-import ProfileScreen from "@/app/(tabs)/profile";
+import ProfileScreen from "@/app/(app)/profile";
 
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;

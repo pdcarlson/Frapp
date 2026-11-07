@@ -298,6 +298,7 @@ beforeEach(() => {
   successHaptic.mockReset();
   requestPushPermission.mockReset().mockResolvedValue(true);
   vi.mocked(useRouter().replace).mockClear();
+  vi.mocked(useRouter().dismissTo).mockClear();
 });
 
 afterEach(() => {
@@ -341,7 +342,7 @@ describe("chapter setup — step order", () => {
     );
 
     await press(root, "Go to chat");
-    expect(useRouter().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(useRouter().dismissTo).toHaveBeenCalledWith("/");
   });
 
   it("draws its ‹ Back row in house gold, not the chapter's accent", async () => {
@@ -776,7 +777,7 @@ describe("chapter setup — new chapter not active", () => {
 
     await press(root, "Continue");
     expect(control(root, "Share invite")).toBeUndefined();
-    expect(useRouter().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(useRouter().dismissTo).toHaveBeenCalledWith("/");
     expect(createInvite).not.toHaveBeenCalled();
   });
 });
@@ -803,7 +804,7 @@ describe("chapter setup — push primer for the founder", () => {
     await press(root, "Continue");
     expect(title(root)).toBe(SETUP_TITLES.primer);
     await press(root, "Not now");
-    expect(useRouter().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(useRouter().dismissTo).toHaveBeenCalledWith("/");
     expect(control(root, "Share invite")).toBeUndefined();
   });
 
@@ -889,7 +890,7 @@ describe("chapter setup — invite", () => {
     expect(text).not.toContain("Create another link");
 
     await press(root, "Skip for now");
-    expect(useRouter().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(useRouter().dismissTo).toHaveBeenCalledWith("/");
     // Skipping leaves no invite behind.
     expect(createInvite).not.toHaveBeenCalled();
   });

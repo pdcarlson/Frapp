@@ -13,7 +13,7 @@ import { screenText } from "@/test/screen-text";
  * holds `chapter_docs:upload`, the permission both upload routes
  * carry, so a member never meets a control the server would refuse.
  *
- * It renders `app/(tabs)/documents.tsx` but lives here: a spec under `app/`
+ * It renders `app/(app)/documents.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -55,7 +55,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#7A3FC2" }),
 }));
 
-import DocumentsScreen from "@/app/(tabs)/documents";
+import DocumentsScreen from "@/app/(app)/documents";
 import { FilterChips } from "@/components/filter-chips";
 import { ListRow } from "@/components/list-section";
 import { InlineNote } from "@/components/inline-note";

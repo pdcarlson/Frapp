@@ -35,7 +35,7 @@ describe("floatingTabBarBottom", () => {
  * 12 + 62 off the edge, and the gap adds 14.
  */
 describe("useTabBarClearance", () => {
-  function clearanceUnder(options: { tabBarStyle?: unknown }): number {
+  function clearanceOnATab(): number {
     let seen = -1;
     function Probe() {
       seen = useTabBarClearance();
@@ -46,7 +46,6 @@ describe("useTabBarClearance", () => {
         floatingScreenLayout({
           route: { name: "tasks" },
           navigation: { addListener: () => () => {} },
-          options,
           children: <Probe />,
         }),
       );
@@ -54,15 +53,11 @@ describe("useTabBarClearance", () => {
     return seen;
   }
 
-  it("clears the bar's top plus the gap on a screen the bar floats over", () => {
-    expect(clearanceUnder({})).toBe(12 + 62 + 14);
+  it("clears the bar's top plus the gap on a tab, which the bar floats over", () => {
+    expect(clearanceOnATab()).toBe(12 + 62 + 14);
   });
 
-  it("is 0 on a full-window screen, where no bar floats", () => {
-    expect(clearanceUnder({ tabBarStyle: { display: "none" } })).toBe(0);
-  });
-
-  it("is 0 outside the tab layout", () => {
+  it("is 0 outside the tab layout, as on a screen pushed over it", () => {
     let seen = -1;
     function Probe() {
       seen = useTabBarClearance();

@@ -325,7 +325,7 @@ Two API-side values matter for the check-in screens:
 - The demo seed marks exactly one event (`Chapter Meeting`) with a
   `check_in_zone`, which is what makes the scanner's geofence line render. The
   other events deliberately have none, so both branches of
-  [`apps/mobile/app/(tabs)/check-in.tsx`](<../../apps/mobile/app/(tabs)/check-in.tsx>)
+  [`apps/mobile/app/(app)/check-in.tsx`](<../../apps/mobile/app/(app)/check-in.tsx>)
   stay reachable.
 
 ### Sandbox Chromium

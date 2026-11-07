@@ -1,5 +1,5 @@
 import { Component, useEffect, type ReactElement, type ReactNode } from "react";
-import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import { StyleSheet, View } from "react-native";
 import * as Sentry from "@sentry/react-native";
 import { usePathname, type ErrorBoundaryProps } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,19 +17,21 @@ import { FrappThemeProvider, useFrappTheme } from "@/lib/theme";
  *
  * ## Three boundaries, one surface
  *
- * - **Each tab screen** sits in a `RouteErrorBoundary`, applied by the tab
- *   navigator's `screenLayout` in `app/(tabs)/_layout.tsx`. The tab bar and
- *   every other tab keep working, so this is `writing.md`'s screen row: what
- *   failed is this screen.
- * - **The tab group's layout** and **the root layout** export expo-router's
- *   `ErrorBoundary`, which expo-router renders in place of the layout. They
- *   catch what the screen boundaries can't: a failure in the navigator, the tab
- *   bar, a provider, or a sign-in screen. The app around the screen is gone,
- *   so they use the app row.
+ * - **Each screen** sits in a `RouteErrorBoundary`, applied by its
+ *   navigator's `screenLayout`: the tab navigator's in
+ *   `app/(app)/(tabs)/_layout.tsx` for the four tabs, the stack's in
+ *   `app/(app)/_layout.tsx` for every screen pushed over them. The rest of the
+ *   app keeps working, so this is `writing.md`'s screen row: what failed is
+ *   this screen.
+ * - **The app group's and tab group's layouts** and **the root layout** export
+ *   expo-router's `ErrorBoundary`, which expo-router renders in place of the
+ *   layout. They catch what the screen boundaries can't: a failure in a
+ *   navigator, the tab bar, a provider, or a sign-in screen. The app around
+ *   the screen is gone, so they use the app row.
  *
  * Both rows are `components.md` §10's Error card, which carries one button:
- * Retry. Where a screen hides the tab bar, its way out is a `‹ Chat` back row
- * above the card, not a second action on it; elsewhere the tab bar is the way
+ * Retry. A pushed screen covers the tab bar, so its way out is a back row
+ * above the card, not a second action on it; on a tab the tab bar is the way
  * out (`spec/ui/mobile/navigation.md` § Back rows).
  *
  * ## Why the root's surface can't use the theme it was given
@@ -61,7 +63,8 @@ import { FrappThemeProvider, useFrappTheme } from "@/lib/theme";
  */
 
 /** Which boundary caught the error, as the `error_boundary` tag. */
-export type RouteErrorBoundaryKind = "root" | "tabs" | "screen" | "sheet";
+export type RouteErrorBoundaryKind =
+  "root" | "app" | "tabs" | "screen" | "sheet";
 
 /** Reports a caught render error, once per error object. */
 export const reportRouteError = createReportOnce<{
@@ -124,20 +127,23 @@ export function AppErrorScreen({
   );
 }
 
-/** The tab route that is Chat home (`app/(tabs)/index.tsx`). */
+/** The tab route that is Chat home (`app/(app)/(tabs)/index.tsx`). */
 const CHAT_HOME_ROUTE = "index";
 
-/** A tab route's name as the path `usePathname` reports for it. */
+/**
+ * A screen's route name as the path `usePathname` reports for it. Groups
+ * don't show in a path, so a pushed screen's is its name like a tab's.
+ */
 function tabRoutePath(route: string): string {
   return route === CHAT_HOME_ROUTE ? "/" : `/${route}`;
 }
 
 /**
  * One screen's fallback, filling the screen rather than the window. A screen
- * that hides the tab bar (`FULL_WINDOW` in `app/(tabs)/_layout.tsx`, listed in
- * `spec/ui/mobile/navigation.md` § Tab bar) draws the `‹ Chat` back row: on
- * iOS a member there would otherwise have only a Retry that keeps failing.
- * Every other screen keeps the tab bar, which is its way out.
+ * pushed over the tabs draws a back row, which pops it to whatever is under
+ * it and names that (`lib/back-target.ts`), or goes to Chat home when nothing
+ * is: on iOS a member there would otherwise have only the swipe and a Retry
+ * that keeps failing. A tab draws none; the tab bar is its way out.
  */
 export function ScreenErrorScreen({
   showBack,
@@ -175,40 +181,44 @@ type ScreenEvents = {
 };
 
 /**
- * Whether a screen's options hide the tab bar, as `FULL_WINDOW` does. The tab
- * navigator types `tabBarStyle` as an animated style; `display` is never
- * animated, so flattening it as a plain style reads it correctly.
- */
-export function hidesTabBar(tabBarStyle: unknown): boolean {
-  return (
-    StyleSheet.flatten(tabBarStyle as StyleProp<ViewStyle>)?.display === "none"
-  );
-}
-
-/**
  * The tab navigator's `screenLayout`: every tab screen in its own boundary.
+ * A tab's fallback draws no back row: the tab bar under it is the way out.
  *
  * A module-level function on purpose. React Navigation caches each screen's
  * descriptor on its deps, the layout function among them, so an inline arrow
  * would be a new layout on every render of the tab layout and rebuild every
  * mounted screen's element each time.
  */
-export function screenErrorLayout({
-  route,
-  navigation,
-  options,
-  children,
-}: {
+export function screenErrorLayout(props: ScreenLayoutProps): ReactElement {
+  return boundaryFor(props, false);
+}
+
+/**
+ * The stack's `screenLayout` (`app/(app)/_layout.tsx`): every pushed screen
+ * in its own boundary. A pushed screen covers the tab bar, so its fallback
+ * draws the back row: on iOS a member there would otherwise have only the
+ * swipe and a Retry that keeps failing. Module-level for the reason
+ * `screenErrorLayout` gives.
+ */
+export function stackScreenLayout(props: ScreenLayoutProps): ReactElement {
+  return boundaryFor(props, true);
+}
+
+type ScreenLayoutProps = {
   route: { name: string; params?: object };
   navigation: ScreenEvents;
-  options: { tabBarStyle?: unknown };
   children: ReactNode;
-}): ReactElement {
+};
+
+function boundaryFor(
+  { route, navigation, children }: ScreenLayoutProps,
+  showBack: boolean,
+): ReactElement {
   return (
     <RouteErrorBoundary
       route={route.name}
       resetKey={paramsKey(route.params)}
-      showBack={hidesTabBar(options.tabBarStyle)}
+      showBack={showBack}
       navigation={navigation}
     >
       {children}
@@ -229,11 +239,12 @@ function paramsKey(params: object | undefined): string {
 type ScreenBoundaryProps = {
   /** The route's name, for the route tag. */
   route: string;
-  /** Whether the fallback draws the `‹ Chat` back row: the tab bar is hidden. */
+  /** Whether the fallback draws a back row: the screen covers the tab bar. */
   showBack?: boolean;
   /**
    * Changes when the screen is opened for something else. Tab screens stay
-   * mounted, so without this an event that failed would keep its fallback
+   * mounted (and a pushed one gets new params when a link opens it again), so
+   * without this an event that failed would keep its fallback
    * when the member opens a different event on the same screen.
    */
   resetKey: string;

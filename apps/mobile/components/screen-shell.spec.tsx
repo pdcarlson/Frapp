@@ -258,7 +258,6 @@ describe("ScreenShell over the floating tab bar", () => {
       floatingScreenLayout({
         route: { name: "tasks" },
         navigation: { addListener: () => () => {} },
-        options: {},
         children: element,
       }),
     );
