@@ -525,15 +525,26 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     entries: [
       {
         status: 'not-hidden',
-        why: 'Fixed text, and a system DM naming the member who accepted. A system message that merely names a member is not hidden.',
+        why: 'A push naming the member who joined, and a system DM naming the member who accepted. A system message that merely names a member is not hidden.',
       },
     ],
   },
   // The event-name pushes, split three ways with the service (#3270): the
   // emitters themselves, and the two callers that hand them a written row.
   'application/services/event-announcement.service.ts': {
-    calls: 4,
+    calls: 3,
     entries: [MEMBER_TEXT],
+  },
+  // `notifyChapter` is `notifyMembers` over the whole roster: the one call is
+  // that hand-off, and it carries whatever its callers listed here pass it.
+  'application/services/notification.service.ts': {
+    calls: 1,
+    entries: [
+      {
+        status: 'no-foreign-content',
+        why: 'The chapter-wide primitive delegating to `notifyMembers`. Writes no text of its own; its callers are listed in this ledger.',
+      },
+    ],
   },
   'application/services/event-series.service.ts': {
     calls: 2,
