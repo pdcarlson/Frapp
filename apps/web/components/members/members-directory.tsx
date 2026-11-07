@@ -25,7 +25,7 @@ import { SectionLabel } from "@/components/shared/section-label";
 import { anyReadUncached } from "@/components/shared/async-states";
 /*
   The **nested** state family, not the whole-screen one, and on a page with no
-  cards left that is the point rather than a technicality. `EmptyState` and its
+  cards left that is the point rather than a technicality. `ErrorState` and its
   siblings paint `--card`; this lane just deleted the three `<Card>`s on this
   route, so rendering one would put the card back through the door the lane
   closed. `elevation-contrast.spec.ts` argues the same side from the other end —
