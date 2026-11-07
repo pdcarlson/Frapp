@@ -15,6 +15,7 @@ import {
   PushAskActions,
   PushAskBody,
 } from "@/components/notifications/push-ask";
+import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { JoinedChannelsCard } from "@/components/onboarding/joined-channels-card";
 import {
   OnboardingFieldLabel,
@@ -188,114 +189,118 @@ export default function Welcome() {
       style={styles.container}
       edges={["top", "right", "bottom", "left"]}
     >
-      <ScrollView
-        style={styles.flex}
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
-      >
-        {asking ? (
-          <>
-            <Text accessibilityRole="header" style={styles.title}>
-              {PUSH_ASK_TITLE}
-            </Text>
-            <View style={styles.channels}>
-              <PushAskBody />
-            </View>
-          </>
-        ) : step === "profile" ? (
-          <>
-            <Text accessibilityRole="header" style={styles.title}>
-              {PROFILE_STEP_TITLE}
-            </Text>
-            <Text style={styles.subtitle}>{PROFILE_STEP_SUBTITLE}</Text>
-            <View style={styles.photo}>
-              <ProfilePhoto
-                photoUrl={profile?.photoUrl ?? null}
-                fetchedAt={userQuery.dataUpdatedAt}
-                initials={initialsFor(nameValue.trim() || null)}
-              />
-            </View>
-            <View style={styles.nameField}>
-              <OnboardingFieldLabel>Your name</OnboardingFieldLabel>
-              <OnboardingTextInput
-                value={nameValue}
-                onChangeText={(value) => {
-                  setNameDraft(value);
-                  setNameError(null);
-                }}
-                placeholder="First and last name"
-                autoCapitalize="words"
-                autoCorrect={false}
-                autoComplete="name"
-                textContentType="name"
-                accessibilityLabel="Your name"
-                editable={!savingName && !leaving}
-                returnKeyType="done"
-                onSubmitEditing={() => void leaveProfile()}
-              />
-              {nameError ? (
-                <Text style={styles.error} accessibilityLiveRegion="polite">
-                  {nameError}
-                </Text>
-              ) : null}
-            </View>
-          </>
-        ) : (
-          <>
-            <Text accessibilityRole="header" style={styles.title}>
-              You&apos;re in.
-            </Text>
-            <Text style={styles.subtitle}>
-              {university ? `${chapterName} · ${university}` : chapterName}
-            </Text>
+      {/* The profile beat's name field opens the keyboard, which must not
+          cover it or the pinned Continue (#3354). */}
+      <KeyboardAvoidingArea style={styles.flex}>
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+        >
+          {asking ? (
+            <>
+              <Text accessibilityRole="header" style={styles.title}>
+                {PUSH_ASK_TITLE}
+              </Text>
+              <View style={styles.channels}>
+                <PushAskBody />
+              </View>
+            </>
+          ) : step === "profile" ? (
+            <>
+              <Text accessibilityRole="header" style={styles.title}>
+                {PROFILE_STEP_TITLE}
+              </Text>
+              <Text style={styles.subtitle}>{PROFILE_STEP_SUBTITLE}</Text>
+              <View style={styles.photo}>
+                <ProfilePhoto
+                  photoUrl={profile?.photoUrl ?? null}
+                  fetchedAt={userQuery.dataUpdatedAt}
+                  initials={initialsFor(nameValue.trim() || null)}
+                />
+              </View>
+              <View style={styles.nameField}>
+                <OnboardingFieldLabel>Your name</OnboardingFieldLabel>
+                <OnboardingTextInput
+                  value={nameValue}
+                  onChangeText={(value) => {
+                    setNameDraft(value);
+                    setNameError(null);
+                  }}
+                  placeholder="First and last name"
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  autoComplete="name"
+                  textContentType="name"
+                  accessibilityLabel="Your name"
+                  editable={!savingName && !leaving}
+                  returnKeyType="done"
+                  onSubmitEditing={() => void leaveProfile()}
+                />
+                {nameError ? (
+                  <Text style={styles.error} accessibilityLiveRegion="polite">
+                    {nameError}
+                  </Text>
+                ) : null}
+              </View>
+            </>
+          ) : (
+            <>
+              <Text accessibilityRole="header" style={styles.title}>
+                You&apos;re in.
+              </Text>
+              <Text style={styles.subtitle}>
+                {university ? `${chapterName} · ${university}` : chapterName}
+              </Text>
 
-            <View style={styles.channels}>
-              <JoinedChannelsCard />
-            </View>
-          </>
-        )}
-      </ScrollView>
+              <View style={styles.channels}>
+                <JoinedChannelsCard />
+              </View>
+            </>
+          )}
+        </ScrollView>
 
-      {/*
+        {/*
         One gold button per beat. On the first two it moves on: to the next
         beat when there is one to show, else to chat. On the notifications
         beat it asks, and Not now is the quiet line under it; either answer
         leaves for chat, after the OS dialog closes.
       */}
-      <View style={styles.footer}>
-        {asking ? (
-          <PushAskActions
-            action={primer.action}
-            busy={answering}
-            onTurnOn={() => {
-              void primer.turnOn().then((outcome) => {
-                if (outcome !== null) void finish();
-              });
-            }}
-            onNotNow={() => {
-              void primer.notNow().then((answered) => {
-                if (answered) void finish();
-              });
-            }}
-          />
-        ) : step === "profile" ? (
-          <OnboardingPrimaryButton
-            label={primer.showPrimer ? "Continue" : "Go to chat"}
-            disabled={answering}
-            busy={answering}
-            onPress={() => void leaveProfile()}
-          />
-        ) : (
-          <OnboardingPrimaryButton
-            label={
-              offerProfile || primer.showPrimer ? "Continue" : "Go to chat"
-            }
-            disabled={leaving}
-            busy={leaving}
-            onPress={leaveWelcome}
-          />
-        )}
-      </View>
+        <View style={styles.footer}>
+          {asking ? (
+            <PushAskActions
+              action={primer.action}
+              busy={answering}
+              onTurnOn={() => {
+                void primer.turnOn().then((outcome) => {
+                  if (outcome !== null) void finish();
+                });
+              }}
+              onNotNow={() => {
+                void primer.notNow().then((answered) => {
+                  if (answered) void finish();
+                });
+              }}
+            />
+          ) : step === "profile" ? (
+            <OnboardingPrimaryButton
+              label={primer.showPrimer ? "Continue" : "Go to chat"}
+              disabled={answering}
+              busy={answering}
+              onPress={() => void leaveProfile()}
+            />
+          ) : (
+            <OnboardingPrimaryButton
+              label={
+                offerProfile || primer.showPrimer ? "Continue" : "Go to chat"
+              }
+              disabled={leaving}
+              busy={leaving}
+              onPress={leaveWelcome}
+            />
+          )}
+        </View>
+      </KeyboardAvoidingArea>
     </SafeAreaView>
   );
 }
