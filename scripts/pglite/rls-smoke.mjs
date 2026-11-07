@@ -184,15 +184,10 @@ export const RLS_SMOKE = [
     // exposing it as an RPC hands out a membership oracle. A later `drop function;
     // create function` silently restores the default PUBLIC grant, so pin it.
     //
-    // `anon` is checked directly too, now that the role exists here (#1557):
-    // that catches an explicit `grant execute ... to anon` in a migration.
-    // LIMITATION: hosted Supabase also grants `anon` EXECUTE through ALTER
-    // DEFAULT PRIVILEGES, and this harness does not replay those defaults. So a
-    // drop/recreate that restores anon's grant on hosted (by forgetting the
-    // `revoke ... from anon`) still leaves this green. For this function the
-    // promotion-time `has_function_privilege('anon', ...)` check in
-    // docs/ops/database/promotion-log.md covers that case. Not every function has such an
-    // entry, so in general nothing does (#3052).
+    // `anon` is checked directly too, now that the role exists here (#1557).
+    // `run.mjs` installs hosted's default privileges before the migrations
+    // (#3052, #830), so a drop/recreate that forgets its `revoke ... from anon`
+    // keeps anon's direct grant here as on hosted, and fails this.
     sql: `select has_function_privilege('public', p.oid, 'EXECUTE') as public_exec,
                  has_function_privilege('anon', p.oid, 'EXECUTE') as anon_exec
             from pg_proc p join pg_namespace n on n.oid = p.pronamespace
