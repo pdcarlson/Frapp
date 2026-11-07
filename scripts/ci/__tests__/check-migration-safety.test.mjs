@@ -9,6 +9,7 @@ const REPO_ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..",
 // `test:ci-scripts` glob (scripts/ci/__tests__/*.test.mjs) runs it — hence the
 // ../../ reach up.
 import { execFileSync, spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,7 +23,11 @@ import {
 } from "node:fs";
 
 import {
+  EDITED_MIGRATION_EXCEPTIONS,
   LEDGER_ENTRY_PATTERNS,
+  executableEdits,
+  executableSql,
+  executableSqlHash,
   MIGRATION_DOCS,
   RATCHET_VERSION_CEILING,
   UNLEDGERED,
@@ -532,4 +537,93 @@ test("ratchetViolations rejects an entry newer than the ceiling", () => {
 
 test("ratchetViolations accepts the shipped allowlists", () => {
   assert.deepEqual(ratchetViolations(), []);
+});
+
+// ── Applied migrations are never edited (#2751) ─────────────────────────────
+
+test("executableSql drops comments and whitespace, and keeps literals and quoted names", () => {
+  const sql = [
+    "-- header",
+    "create policy p on t   for select",
+    "  using (a = 'x -- not a comment' and \"b--c\" = 'it''s /* not */ either'); /* block /* nested */ still */",
+    "create function f() returns int language plpgsql as $$",
+    "begin -- a body comment",
+    "  return 1;",
+    "end $$;",
+  ].join("\n");
+  assert.equal(
+    executableSql(sql),
+    "create policy p on t for select using (a = 'x -- not a comment' and \"b--c\" = 'it''s /* not */ either'); " +
+      "create function f() returns int language plpgsql as $$ begin return 1; end $$;",
+  );
+});
+
+test("executableEdits passes a comment-only edit and flags an executable one", () => {
+  const before = "-- Old note.\ncreate table t (id int);\n";
+  const commentOnly = { file: "supabase/migrations/20260101000000_a.sql", before, after: "-- New, longer note\n-- over two lines.\ncreate table t (id  int);\n" };
+  const executable = { file: "supabase/migrations/20260101000001_b.sql", before, after: "-- Old note.\ncreate table t (id bigint);\n" };
+  assert.deepEqual(executableEdits([commentOnly]), []);
+  assert.deepEqual(executableEdits([commentOnly, executable]), [
+    { file: executable.file, hash: executableSqlHash(executable.after) },
+  ]);
+});
+
+test("an exception covers exactly the edited content it records, not a later edit", () => {
+  const edit = { file: "supabase/migrations/20260101000001_b.sql", before: "select 1;", after: "select 2;" };
+  const exception = { file: edit.file, sha256: executableSqlHash(edit.after), reason: "test" };
+  assert.deepEqual(executableEdits([edit], [exception]), []);
+  assert.equal(executableEdits([{ ...edit, after: "select 3;" }], [exception]).length, 1);
+  assert.equal(executableEdits([{ ...edit, file: "supabase/migrations/20260101000002_c.sql" }], [exception]).length, 1);
+  for (const entry of EDITED_MIGRATION_EXCEPTIONS) {
+    assert.match(entry.file, /^supabase\/migrations\/\d{14}_[a-z0-9_]+\.sql$/);
+    assert.match(entry.sha256, /^[0-9a-f]{64}$/);
+    assert.ok(typeof entry.reason === "string" && entry.reason.trim().length > 20, `${entry.file} needs a reason`);
+  }
+});
+
+/**
+ * A commit on top of HEAD with `changes` applied (`{ path: text }`), built in
+ * the object store through a throwaway index, so neither the worktree nor any
+ * ref moves. The gate then diffs HEAD against it, as CI diffs a PR.
+ */
+function syntheticCommit(changes) {
+  const index = join(tmpdir(), `migration-safety-index-${process.pid}-${Math.random().toString(36).slice(2)}`);
+  const env = { ...process.env, GIT_INDEX_FILE: index };
+  const run = (args, input) => execFileSync("git", args, { cwd: REPO_ROOT, encoding: "utf8", env, input }).trim();
+  try {
+    run(["read-tree", "HEAD"]);
+    for (const [path, text] of Object.entries(changes)) {
+      const blob = run(["hash-object", "-w", "--stdin"], text);
+      run(["update-index", "--add", "--cacheinfo", `100644,${blob},${path}`]);
+    }
+    const tree = run(["write-tree"]);
+    return run(["commit-tree", tree, "-p", "HEAD", "-m", "migration-safety probe"]);
+  } finally {
+    rmSync(index, { force: true });
+  }
+}
+
+test("the gate refuses an executable edit to an applied migration, and passes a comment-only edit and a new file", () => {
+  const migrations = readdirSync(join(REPO_ROOT, "supabase", "migrations")).filter((f) => f.endsWith(".sql")).sort();
+  const applied = `supabase/migrations/${migrations[migrations.length - 1]}`;
+  const text = readFileSync(join(REPO_ROOT, applied), "utf8");
+  // The promotion docs are touched too, so only the new check can fail.
+  const docs = { [PROMOTION]: `${readFileSync(join(REPO_ROOT, PROMOTION), "utf8")}\n` };
+  const gate = (changes) => {
+    const head = syntheticCommit({ ...docs, ...changes });
+    const result = spawnSync(process.execPath, [GATE, "--base", "HEAD", "--head", head], { cwd: REPO_ROOT, encoding: "utf8" });
+    return { status: result.status, out: `${result.stdout}${result.stderr}` };
+  };
+
+  const executable = gate({ [applied]: `${text}\nselect 1;\n` });
+  assert.equal(executable.status, 1, executable.out);
+  assert.match(executable.out, /an applied migration's SQL was edited/);
+  assert.match(executable.out, new RegExp(`- ${applied} \\(executable SQL sha256 [0-9a-f]{64}\\)`));
+
+  const commentOnly = gate({ [applied]: `-- A note added after it shipped.\n${text}` });
+  assert.equal(commentOnly.status, 0, commentOnly.out);
+
+  // A new file is not an edit. It still owes its ledger lines, which is the other check's job.
+  const added = gate({ [applied]: text, "supabase/migrations/29991231000000_probe.sql": "select 1;\n" });
+  assert.doesNotMatch(added.out, /applied migration's SQL was edited/, added.out);
 });

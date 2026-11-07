@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { basename, join } from "node:path";
@@ -636,6 +637,138 @@ function validateLedgerCoverage(migrations) {
   process.exit(1);
 }
 
+/**
+ * Applied migrations are never edited (#2751).
+ *
+ * `supabase db push` skips a version a hosted database already applied, so an
+ * edit to the SQL of a migration already on `main` never reaches staging or
+ * production. Everything in CI replays the files (PGlite, the change-topics
+ * spec, a fresh `db reset`), so the edit goes green while the hosted
+ * databases keep the old SQL: a renamed topic or a changed policy fails
+ * silently there. The fix is always a NEW migration.
+ *
+ * What counts is the executable SQL: `executableSql` drops `--` and `/* … *\/`
+ * comments (outside string literals and quoted identifiers) and collapses
+ * whitespace, so a comment fix to a shipped file passes (#1703, #1409). Only a
+ * file that exists on both sides of the range and changed (`M`) is judged. A
+ * rename or delete is left to `check-migration-replay.mjs`, which fails a
+ * version a hosted database holds that the tree no longer names.
+ *
+ * A reviewed exception goes in EDITED_MIGRATION_EXCEPTIONS: the file, the
+ * sha256 of its executable SQL as edited, and why replaying it is safe. It
+ * matches that exact content only, so a later edit to the same file is judged
+ * again.
+ */
+export const EDITED_MIGRATION_EXCEPTIONS = Object.freeze([]);
+
+/**
+ * `text` with SQL comments removed and whitespace collapsed. String literals
+ * (`'…'`, with `''` escapes) and quoted identifiers (`"…"`) are kept as they
+ * are, so a `--` inside one is not a comment. Block comments nest, as in
+ * Postgres. Dollar-quoted bodies are scanned as code, which is what a function
+ * body is: a `--` comment inside one is still a comment.
+ */
+export function executableSql(text) {
+  let out = "";
+  let i = 0;
+  const n = text.length;
+  while (i < n) {
+    const c = text[i];
+    const next = text[i + 1];
+    if (c === "-" && next === "-") {
+      while (i < n && text[i] !== "\n") i += 1;
+      out += " ";
+      continue;
+    }
+    if (c === "/" && next === "*") {
+      let depth = 1;
+      i += 2;
+      while (i < n && depth > 0) {
+        if (text[i] === "/" && text[i + 1] === "*") {
+          depth += 1;
+          i += 2;
+        } else if (text[i] === "*" && text[i + 1] === "/") {
+          depth -= 1;
+          i += 2;
+        } else {
+          i += 1;
+        }
+      }
+      out += " ";
+      continue;
+    }
+    if (c === "'" || c === '"') {
+      let j = i + 1;
+      while (j < n) {
+        if (text[j] === c && text[j + 1] === c) j += 2;
+        else if (text[j] === c) break;
+        else j += 1;
+      }
+      out += text.slice(i, j + 1);
+      i = j + 1;
+      continue;
+    }
+    out += c;
+    i += 1;
+  }
+  return out.replace(/\s+/g, " ").trim();
+}
+
+/** sha256 of a file's executable SQL, as EDITED_MIGRATION_EXCEPTIONS records it. */
+export function executableSqlHash(text) {
+  return createHash("sha256").update(executableSql(text)).digest("hex");
+}
+
+/**
+ * The applied migrations a change set edits. `edits` is `[{ file, before,
+ * after }]`, one per migration file modified in the range. Returns the ones
+ * whose executable SQL changed and that no exception covers, each `{ file,
+ * hash }`.
+ */
+export function executableEdits(edits, exceptions = EDITED_MIGRATION_EXCEPTIONS) {
+  return edits
+    .filter(({ before, after }) => executableSql(before) !== executableSql(after))
+    .map(({ file, after }) => ({ file, hash: executableSqlHash(after) }))
+    .filter(({ file, hash }) => !exceptions.some((e) => e.file === file && e.sha256 === hash));
+}
+
+/** `git` with argv, never a shell: paths and refs reach it unquoted. */
+function git(args) {
+  return execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+}
+
+/** Migration files modified (not added, renamed or deleted) between the merge base of `base` and `head`, and `head`. */
+function modifiedMigrations(base, head) {
+  // getChangedFiles has already fetched the refs when they were missing.
+  const mergeBase = git(["merge-base", base, head]).trim();
+  return git(["diff", "--name-status", "--no-renames", "--diff-filter=M", mergeBase, head, "--", "supabase/migrations"])
+    .split("\n")
+    .map((line) => line.split("\t")[1])
+    .filter((file) => file && MIGRATION_FILENAME.test(basename(file)) && file === `supabase/migrations/${basename(file)}`)
+    .map((file) => ({
+      file,
+      before: git(["show", `${mergeBase}:${file}`]),
+      after: git(["show", `${head}:${file}`]),
+    }));
+}
+
+function validateNoAppliedEdits(base, head) {
+  if (!base || !head) return;
+  const edits = executableEdits(modifiedMigrations(base, head));
+  if (edits.length === 0) return;
+  console.error("Migration safety check failed: an applied migration's SQL was edited.");
+  for (const { file, hash } of edits) console.error(`- ${file} (executable SQL sha256 ${hash})`);
+  console.error(
+    "\n`supabase db push` skips a version a hosted database already applied, so this edit\n" +
+      "would never reach staging or production, while every replay in CI runs it.\n" +
+      "Put the change in a NEW migration instead, and restore this file. A comment-only\n" +
+      "edit passes. If replaying the edit is safe and you mean it (say, a fix to a file no\n" +
+      "hosted database has applied), add the file, the sha256 above and the reason to\n" +
+      "EDITED_MIGRATION_EXCEPTIONS in scripts/check-migration-safety.mjs (#2751).",
+  );
+  process.exit(1);
+}
+
 function validatePromotionDocs(base, head) {
   if (!base || !head) {
     const missing = [!base && "--base", !head && "--head"].filter(Boolean).join(" and ");
@@ -676,6 +809,7 @@ function main() {
     validateLedgerManifest();
     validateLedgerCoverage(migrations);
     validatePromotionDocs(getArg("--base"), getArg("--head"));
+    validateNoAppliedEdits(getArg("--base"), getArg("--head"));
     console.log("Migration safety check passed.");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

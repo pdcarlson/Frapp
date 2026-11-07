@@ -140,6 +140,11 @@ The CSV is a placeholder subset, not the full dataset; growing it is tracked in 
   `20260602210000_add_confirm_task_completion_rpc.sql`) confirms a task and inserts its point-ledger
   row together, with a `WHERE points_awarded = false` compare-and-set so concurrent confirms cannot
   double-award. See also the read-side `get_points_report`. Canonical behavior: `spec/behavior/points.md`.
+- **A migration on `main` is never edited:** change what it did with a new migration.
+  `supabase db push` skips a version a hosted database already applied, so the edit would reach
+  no hosted database while every replay in CI runs it. `migration-safety` refuses a change to an
+  applied file's executable SQL; a comment-only edit passes
+  ([`quality-gates.md`](../ci-cd/quality-gates.md), #2751).
 - **Every new function pins `search_path`:** declare `set search_path = public, pg_temp` on any
   function you add to `public`. A `security definer` one also revokes EXECUTE `from public`,
   `from anon` **and** `from authenticated`, then grants `service_role`: Supabase's default
