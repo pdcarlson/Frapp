@@ -23,7 +23,7 @@ The admin console (`apps/web`). Next.js App Router, Tailwind, ShadCN UI. A Verce
 - **Roles & Permissions** — View/create/edit roles with open-ended permissions; assign display order and color; manage system role permissions. Presidency transfer UI.
 - **Billing** — Subscription status, invoices, payment history (Stripe Customer Portal link).
 - **Financial Invoices** — Create/send invoices to members (dues); track payment status; overdue alerts.
-- **Events** — Create/edit events with configurable point values, mandatory flags, location, and recurrence rules. View attendance per event. Calendar view.
+- **Events** — Create/edit events with configurable point values, mandatory flags, location, and recurrence rules. View attendance per event. Calendar view, which a chapter with no events opens on (2026-11-06).
 - **Backwork Admin** — Browse uploaded resources with rich filters (department, course, professor, semester, year, assignment type, document variant). Manage departments and professors. View redacted vs. original indicators.
 - **Points Ledger** — Leaderboard (all-time, semester, month). Full transaction log with audit trail (who adjusted, reason). Manual point adjustments. Anomaly flagging and audit tab (chapter-wide list via `GET /v1/points/transactions`, gated by `points:view_all`; see [`spec/behavior/points.md`](../behavior/points.md)).
 - **Study Geofences** — Draw/manage geofence polygons for study locations. Configure reward rates and minimum session lengths.
