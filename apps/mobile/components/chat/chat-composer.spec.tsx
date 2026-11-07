@@ -372,6 +372,30 @@ describe("ChatComposer @-mention picker", () => {
     expect(offered(typed("hey @sa").tree)).toEqual(["Mention Sam (VP)"]);
   });
 
+  it("offers the roles this member may ping after the members", () => {
+    const roles = [
+      { role_id: "r-off", name: "Officers", mentionable: true },
+      { role_id: "r-mem", name: "Member", mentionable: false },
+    ];
+    expect(offered(typed("@", 1, { mentionRoles: roles }).tree)).toEqual([
+      "Mention Paul Carlson",
+      "Mention Pat O'Brien",
+      "Mention Sam (VP)",
+      "Mention everyone in the Officers role",
+    ]);
+    // Picking a role writes its folded name, which the server resolves.
+    const onChangeText = vi.fn();
+    const { tree } = typed("cc @off", 7, { mentionRoles: roles, onChangeText });
+    const row = tree.root.find(
+      (node) =>
+        node.props?.accessibilityLabel ===
+          "Mention everyone in the Officers role" &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => row.props.onPress());
+    expect(onChangeText).toHaveBeenCalledWith("cc @Officers ");
+  });
+
   it("offers everyone on a bare `@`", () => {
     expect(offered(typed("@").tree)).toHaveLength(3);
   });

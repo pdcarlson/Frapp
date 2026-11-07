@@ -13,5 +13,10 @@ export interface Role {
   is_system: boolean;
   display_order: number;
   color: string | null;
+  /**
+   * Whether any member may `@` this role in chat. On by default; while off,
+   * only a member who can manage channels or roles can ping it (2026-11-06).
+   */
+  mentionable: boolean;
   created_at: string;
 }

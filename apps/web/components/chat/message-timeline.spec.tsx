@@ -154,6 +154,7 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
     created_at: new Date(2026, 7, 16, 17, 9).toISOString(),
     client_message_id: "client-1",
     attachment_count: 0,
+    mentions: [],
     reactions: {},
     actions: [],
     _status: "confirmed",

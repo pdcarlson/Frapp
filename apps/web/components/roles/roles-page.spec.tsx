@@ -298,6 +298,36 @@ describe("permissions are not edited here any more", () => {
   });
 });
 
+describe("whether anyone can @ the role", () => {
+  it("is on for a role that never set it, and saves nothing untouched", async () => {
+    const user = userEvent.setup();
+    render(<RolesAndPermissionsPage />);
+    await user.click(screen.getByRole("button", { name: /president/i }));
+    expect(
+      screen.getByRole("switch", { name: /anyone can @mention this role/i }),
+    ).toBeChecked();
+    await user.click(screen.getByRole("button", { name: /save role/i }));
+    await waitFor(() => expect(updateRole.mutateAsync).toHaveBeenCalled());
+    expect(updateRole.mutateAsync.mock.calls[0]![0].body.mentionable).toBe(
+      undefined,
+    );
+  });
+
+  it("saves it off once an officer turns it off", async () => {
+    const user = userEvent.setup();
+    render(<RolesAndPermissionsPage />);
+    await user.click(screen.getByRole("button", { name: /president/i }));
+    await user.click(
+      screen.getByRole("switch", { name: /anyone can @mention this role/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /save role/i }));
+    await waitFor(() => expect(updateRole.mutateAsync).toHaveBeenCalled());
+    expect(updateRole.mutateAsync.mock.calls[0]![0].body.mentionable).toBe(
+      false,
+    );
+  });
+});
+
 describe("an open confirmation survives a state change", () => {
   it("is not unmounted when a background refetch fails mid-dialog", async () => {
     /*

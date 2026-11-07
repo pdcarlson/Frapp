@@ -158,3 +158,47 @@ describe('SupabaseMemberRepository — tenant scope', () => {
     });
   });
 });
+
+/**
+ * Role mentions expand through `role_ids` on this read (2026-11-06). Every
+ * service test mocks the repository with `role_ids` already filled, so this is
+ * the one place a select that drops the column, which would silently send
+ * every role mention to nobody, turns red.
+ */
+describe('SupabaseMemberRepository.findChapterMemberIdentities', () => {
+  function clientReturning(rows: unknown[]) {
+    const select = jest.fn().mockReturnValue({
+      eq: jest.fn().mockResolvedValue({ data: rows, error: null }),
+    });
+    const client = { from: jest.fn().mockReturnValue({ select }) };
+    return { client, select };
+  }
+
+  it('selects role_ids and carries them on each identity', async () => {
+    const { client, select } = clientReturning([
+      {
+        user_id: 'user-1',
+        role_ids: ['role-officers', 7],
+        users: { id: 'user-1', display_name: 'Jane Doe' },
+      },
+      {
+        user_id: 'user-2',
+        role_ids: null,
+        users: [{ id: 'user-2', display_name: 'Bob' }],
+      },
+    ]);
+    const repo = new SupabaseMemberRepository(client as never);
+
+    const identities = await repo.findChapterMemberIdentities('chapter-1');
+
+    expect(select.mock.calls[0][0]).toContain('role_ids');
+    expect(identities).toEqual([
+      {
+        user_id: 'user-1',
+        display_name: 'Jane Doe',
+        role_ids: ['role-officers'],
+      },
+      { user_id: 'user-2', display_name: 'Bob', role_ids: [] },
+    ]);
+  });
+});

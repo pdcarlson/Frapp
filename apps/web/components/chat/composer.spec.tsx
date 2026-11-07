@@ -58,6 +58,7 @@ vi.mock("@repo/hooks", () => ({
   useRequestChatUploadUrl: () => ({ mutateAsync: mockRequestUploadUrl }),
   useUploadSignedUrl: () => ({ mutateAsync: mockUploadSignedUrl }),
   useChapterRoster: () => ({ data: [] }),
+  useMentionRoles: () => ({ data: [] }),
 }));
 vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
