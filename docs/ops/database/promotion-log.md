@@ -31,13 +31,23 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ## 2026-11-07: Attendance by role
 
-### 20261107000000_event_attendance_by_role.sql
+### 20261107030000_event_attendance_by_role.sql
 
 - **Purpose**: Adds three nullable columns to `events`: `optional_role_ids text[]`, `excluded_role_ids text[]`, `others_invited boolean` (no default). With `is_mandatory` and `required_role_ids` they say, per role and for everyone else, whether a member is required, optional or not invited. The rule is in [`spec/behavior/events.md`](../../../spec/behavior/events.md#event-creation) § Event Creation, "Attendance by role". No backfill; no row is rewritten. A null `others_invited` reads as "invited unless `required_role_ids` is non-empty", the old meaning, so every existing row and every row an older API writes keeps meaning what it meant.
 - **Checks**: After `db push`, `select column_name, data_type, is_nullable, column_default from information_schema.columns where table_name = 'events' and column_name in ('optional_role_ids','excluded_role_ids','others_invited');` returns three rows, all `YES` with no default. `select count(*) from events where others_invited is not null;` returns 0 until the new API writes.
 - **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first, and the older API reads `select('*')` rows with three extra columns it ignores. The newer API against an unmigrated database fails event creates and reads that name the new columns, so don't deploy the API first. Mobile builds from this PR send `others_invited` or a role list only when an officer sets roles apart, so a plain event still creates against the older API if an OTA reaches phones first. `add column if not exists` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-attendance-by-role-20261107000000) § Rollback attendance by role.
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-attendance-by-role-20261107030000) § Rollback attendance by role.
+
+## 2026-11-07: Members keep the Member role beside custom roles
+
+### 20261107020000_members_keep_base_role.sql
+
+- **Purpose**: A data repair, no DDL. Appends the chapter's Member role (`system_key = 'MEMBER'`) to `members.role_ids` for a member who holds at least one role that exists in their own chapter, none of them seeded (`is_system`), and none granting `members:view` or `*`. Such members were refused on every screen. The redeem change in the same PR stops new invites from creating them ([`spec/behavior/onboarding.md`](../../../spec/behavior/onboarding.md)); an officer removing Member by hand still can. Members with no roles, members whose role ids all point at deleted roles, and chapters with no Member role are untouched. When written (2026-11-07) the two production members it targeted had already been repaired by hand with Paul's approval, so a production run matched 0 rows (checked with the Supabase connector against `frapp-prod` and `frapp-staging`). Its predicate is exercised by the pglite tier `scripts/pglite/tiers/members-keep-base-role.mjs`.
+- **Checks**: After `db push`, re-run the migration's `locked_out` CTE as a `select count(*)`: it returns `0`, or only members of chapters with no Member role.
+- **Promoter notes**: Order-independent with the API. Idempotent: a repaired member holds a seeded role and no longer matches. It writes no audit row. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-members-keep-the-member-role-20261107020000) § Rollback members keep the Member role.
 
 ## 2026-11-06: Each member's time zone, for push text
 

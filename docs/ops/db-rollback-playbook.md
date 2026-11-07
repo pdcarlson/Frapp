@@ -2791,6 +2791,13 @@ A function body. It re-creates `get_channel_unread_counts` with one more join pr
 
 Afterwards every settings change lights the `#chapter-audit` badge again, for every member.
 
+## Rollback members keep the Member role (20261107020000)
+
+* **Migration**: `20261107020000_members_keep_base_role.sql`
+* **Action**: normally none. It only appended Member to members whose in-chapter roles were all custom and carried neither `members:view` nor `*`, who were refused on every screen, so leaving it in place is safe even if the API change is reverted.
+
+It records no list of the rows it changed. To take Member back off a specific member, an officer removes it on web Members, which locks that member out of every screen again unless another role gives them `members:view`.
+
 ## Rollback user settings time zone (20261106230000)
 
 * **Migration**: `20261106230000_user_settings_time_zone.sql`
@@ -2996,9 +3003,9 @@ One `COMMENT ON COLUMN public.discord_imports.role_mapping` (#2887). No column, 
 comment on column public.discord_imports.role_mapping is null;
 ```
 
-## Rollback attendance by role (20261107000000)
+## Rollback attendance by role (20261107030000)
 
-* **Migration**: `20261107000000_event_attendance_by_role.sql`
+* **Migration**: `20261107030000_event_attendance_by_role.sql`
 
 Three nullable columns on `events`: `optional_role_ids`, `excluded_role_ids`, `others_invited`. Nothing was backfilled.
 
