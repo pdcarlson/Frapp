@@ -41,6 +41,7 @@ function photo(
 ) {
   const resizes: Resize[] = [];
   const saves: Record<string, unknown>[] = [];
+  const release = vi.fn();
   manipulator.manipulate.mockImplementation((() => {
     let size = { width, height };
     const context = {
@@ -61,6 +62,7 @@ function photo(
         return {
           width: rendered.width,
           height: rendered.height,
+          release,
           saveAsync: vi.fn(async (options: Record<string, unknown>) => {
             saves.push(options);
             return options.base64
@@ -75,7 +77,7 @@ function photo(
     };
     return context;
   }) as never);
-  return { resizes, saves };
+  return { resizes, saves, release };
 }
 
 describe("describeChatPhoto", () => {
@@ -112,6 +114,15 @@ describe("describeChatPhoto", () => {
     const ratio = thumbHashToApproximateAspectRatio(bytes);
     expect(ratio).toBeGreaterThan(1.2);
     expect(ratio).toBeLessThan(1.5);
+  });
+
+  it("releases every decoded image once it is done with it", async () => {
+    const { release } = photo(2560, 1920);
+
+    await describeChatPhoto("file:///photo.jpg", "image/jpeg");
+
+    // The full-size decode, the preview and the ThumbHash source.
+    expect(release).toHaveBeenCalledTimes(3);
   });
 
   it("fits a portrait photo by its height", async () => {

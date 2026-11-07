@@ -143,15 +143,29 @@ export function thumbhashPlaceholderUrl(
   thumbhash: string | null | undefined,
 ): string | null {
   if (!thumbhash) return null;
+  const cached = placeholders.get(thumbhash);
+  if (cached !== undefined) return cached;
+  let url: string | null;
   try {
     const binary = atob(thumbhash);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-    return thumbHashToDataURL(bytes);
+    url = thumbHashToDataURL(bytes);
   } catch {
-    return null;
+    url = null;
   }
+  // Every render of every photo asks; the decode and PNG encode run once per
+  // hash instead (mobile keeps the same cache).
+  if (placeholders.size >= PLACEHOLDER_CACHE_SIZE) {
+    const oldest = placeholders.keys().next().value;
+    if (oldest !== undefined) placeholders.delete(oldest);
+  }
+  placeholders.set(thumbhash, url);
+  return url;
 }
+
+const PLACEHOLDER_CACHE_SIZE = 200;
+const placeholders = new Map<string, string | null>();
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";

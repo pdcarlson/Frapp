@@ -4075,8 +4075,9 @@ export interface components {
             filename: string;
             content_type: string;
             byte_size?: number;
-            /** @description Photo width in pixels, so readers draw the bubble at its shape before the photo loads. */
+            /** @description Photo width in pixels, so readers draw the bubble at its shape before the photo loads. A size out of range (1 to 20000), or one without the other, is dropped rather than refused, so a bad size never blocks a send. */
             width?: number;
+            /** @description Photo height in pixels; see `width`. */
             height?: number;
             /** @description ThumbHash of the photo, base64: the blurred placeholder readers draw until it loads. */
             thumbhash?: string;

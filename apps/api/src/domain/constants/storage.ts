@@ -244,9 +244,11 @@ export function safeObjectFilename(filename: string): string {
  * folder the original's upload URL minted (`chapters/…/chat/<channel>/<id>/`).
  *
  * One function for the mint, the claim check and the purge, so a preview is
- * bound to exactly one original. The original's key is that folder plus one
- * segment (`safeObjectFilename` strips every `/`), so no original can land on
- * this path, whatever the member named the file.
+ * bound to exactly one original. A key the mint builds is that folder plus one
+ * segment (`safeObjectFilename` strips every `/`), so it never lands here. A
+ * claim's `storage_path` is checked only against the channel prefix, though,
+ * so a row can still name this path as its original; that is why the purge
+ * asks `findSharedObjects` (which checks both columns) before deleting one.
  */
 export function chatPreviewPathFor(storagePath: string): string {
   return `${posix.dirname(storagePath)}/preview/preview.jpg`;

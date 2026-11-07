@@ -116,6 +116,10 @@ describe('DTO constraint coverage (#849)', () => {
       'bigint column; the service refuses one past MAX_ARCHIVE_UPLOAD_BYTES',
     'ConfirmDocumentUploadDto.byte_size': 'bigint column',
     'MessageAttachmentDto.byte_size': 'bigint column',
+    'MessageAttachmentDto.width':
+      'display metadata; the service drops one outside 1–MAX_PHOTO_EDGE rather than fail the send',
+    'MessageAttachmentDto.height':
+      'display metadata; the service drops one outside 1–MAX_PHOTO_EDGE rather than fail the send',
     'ListChapterAuditLogQueryDto.limit': 'a page size, clamped to 1–200',
     'ListPointTransactionsQueryDto.limit': 'a page size, clamped to 1–200',
     'ListPollsQueryDto.limit': 'a page size, clamped to 1–200',

@@ -77,14 +77,33 @@ export async function describeChatPhoto(
   } catch {
     return NOTHING;
   }
-  const width = source.width > 0 ? Math.round(source.width) : null;
-  const height = source.height > 0 ? Math.round(source.height) : null;
+  try {
+    const width = source.width > 0 ? Math.round(source.width) : null;
+    const height = source.height > 0 ? Math.round(source.height) : null;
 
-  const [thumbhash, previewUri] = await Promise.all([
-    thumbhashOf(source, width, height),
-    contentType === "image/jpeg" ? previewOf(source, width, height) : null,
-  ]);
-  return { width, height, thumbhash, previewUri };
+    const [thumbhash, previewUri] = await Promise.all([
+      thumbhashOf(source, width, height),
+      contentType === "image/jpeg" ? previewOf(source, width, height) : null,
+    ]);
+    return { width, height, thumbhash, previewUri };
+  } finally {
+    // The decoded photo is a native bitmap of a full camera frame (tens of
+    // MB); a send of ten would hold them all until the collector got round
+    // to it. Released as soon as both copies are written.
+    release(source);
+  }
+}
+
+/**
+ * Free a native image now rather than at the next garbage collection. Best
+ * effort: an older native module without `release` simply waits for the GC.
+ */
+function release(ref: { release?: () => void } | null | undefined): void {
+  try {
+    ref?.release?.();
+  } catch {
+    // Already released, or the module cannot; either way nothing to do.
+  }
 }
 
 /** Scale `width` x `height` so the longest edge is at most `edge`. */
@@ -108,8 +127,9 @@ async function previewOf(
   if (!width || !height || Math.max(width, height) <= PREVIEW_MAX_EDGE) {
     return null;
   }
+  let rendered: ImageRef | null = null;
   try {
-    const rendered = await ImageManipulator.manipulate(source)
+    rendered = await ImageManipulator.manipulate(source)
       .resize(fit(width, height, PREVIEW_MAX_EDGE))
       .renderAsync();
     const saved = await rendered.saveAsync({
@@ -119,6 +139,8 @@ async function previewOf(
     return saved.uri;
   } catch {
     return null;
+  } finally {
+    release(rendered);
   }
 }
 
@@ -128,8 +150,9 @@ async function thumbhashOf(
   height: number | null,
 ): Promise<string | null> {
   if (!width || !height) return null;
+  let rendered: ImageRef | null = null;
   try {
-    const rendered = await ImageManipulator.manipulate(source)
+    rendered = await ImageManipulator.manipulate(source)
       .resize(fit(width, height, THUMBHASH_SOURCE_EDGE))
       .renderAsync();
     // A tiny JPEG, decoded here in JS: the manipulator hands back files, not
@@ -157,6 +180,8 @@ async function thumbhashOf(
     );
   } catch {
     return null;
+  } finally {
+    release(rendered);
   }
 }
 
@@ -169,12 +194,27 @@ export function thumbhashPlaceholderUri(
   thumbhash: string | null | undefined,
 ): string | null {
   if (!thumbhash) return null;
+  const cached = placeholders.get(thumbhash);
+  if (cached !== undefined) return cached;
+  let uri: string | null;
   try {
-    return thumbHashToDataURL(base64ToBytes(thumbhash));
+    uri = thumbHashToDataURL(base64ToBytes(thumbhash));
   } catch {
-    return null;
+    uri = null;
   }
+  // Each bubble asks on every render, and a scroll back up re-mounts it; the
+  // decode and PNG encode run once per hash instead.
+  if (placeholders.size >= PLACEHOLDER_CACHE_SIZE) {
+    const oldest = placeholders.keys().next().value;
+    if (oldest !== undefined) placeholders.delete(oldest);
+  }
+  placeholders.set(thumbhash, uri);
+  return uri;
 }
+
+/** A few screens of photos; each entry is a data URI of a few KB. */
+const PLACEHOLDER_CACHE_SIZE = 200;
+const placeholders = new Map<string, string | null>();
 
 function base64ToBytes(value: string): Uint8Array {
   const binary = atob(value);

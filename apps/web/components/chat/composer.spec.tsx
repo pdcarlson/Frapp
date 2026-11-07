@@ -1234,8 +1234,13 @@ describe("Composer attachment ticket contract", () => {
     mockUploadSignedUrl.mockClear();
     mockRequestUploadUrl.mockClear();
   });
+  afterEach(() => {
+    editorDouble.current = null;
+    mockUploadSignedUrl.mockImplementation(async () => undefined);
+  });
 
-  it("uploads a photo's preview copy beside it, at the URL minted for it", async () => {
+  const pickPhotoWithPreview = (onSend = vi.fn(async () => undefined)) => {
+    editorDouble.current = fakeEditor("look");
     mockDescribePhoto.mockResolvedValueOnce({
       width: 4032,
       height: 3024,
@@ -1253,10 +1258,23 @@ describe("Composer attachment ticket contract", () => {
       createObjectURL: vi.fn(() => "blob:preview"),
       revokeObjectURL: vi.fn(),
     });
-    const { container } = render(<Composer {...baseProps()} />);
+    const { container } = render(
+      <Composer {...baseProps({ draft: "look", onSend })} />,
+    );
     fireEvent.change(fileInputOf(container), {
       target: { files: [new File(["x"], "beach.jpg", { type: "image/jpeg" })] },
     });
+    return onSend;
+  };
+
+  const sendOnceUploaded = async () => {
+    const send = screen.getByRole("button", { name: "Send message" });
+    await waitFor(() => expect(send).not.toBeDisabled());
+    fireEvent.click(send);
+  };
+
+  it("uploads a photo's preview copy beside it and sends its size, blur and preview with it", async () => {
+    const onSend = pickPhotoWithPreview();
 
     expect(
       await screen.findByRole("button", { name: "Remove beach.jpg" }),
@@ -1271,6 +1289,43 @@ describe("Composer attachment ticket contract", () => {
         contentType: "image/jpeg",
       }),
     );
+
+    await sendOnceUploaded();
+
+    await waitFor(() =>
+      expect(onSend).toHaveBeenCalledWith("look", [
+        expect.objectContaining({
+          storagePath: "chapters/c/chat/ch/m/beach.jpg",
+          width: 4032,
+          height: 3024,
+          thumbhash: "3OcRJYB4d3h/iIeHeEh3eIhw+j3A",
+          previewStoragePath: "chapters/c/chat/ch/m/preview/preview.jpg",
+        }),
+      ]),
+    );
+  });
+
+  it("still sends the photo, claiming no preview, when only the preview upload fails", async () => {
+    mockUploadSignedUrl.mockImplementation((async ({
+      signedUrl,
+    }: {
+      signedUrl: string;
+    }) => {
+      if (signedUrl.endsWith("upload-preview")) throw new Error("dropped");
+    }) as never);
+    const onSend = pickPhotoWithPreview();
+
+    await screen.findByRole("button", { name: "Remove beach.jpg" });
+    await sendOnceUploaded();
+
+    await waitFor(() => expect(onSend).toHaveBeenCalled());
+    const [, staged] = onSend.mock.calls[0] as unknown as [
+      string,
+      Record<string, unknown>[],
+    ];
+    expect(staged[0]).toMatchObject({ width: 4032, height: 3024 });
+    expect(staged[0]?.previewStoragePath ?? null).toBeNull();
+    expect(mockToast).not.toHaveBeenCalled();
   });
 
   it("uploads every file picked at once and draws an image as itself", async () => {

@@ -200,18 +200,29 @@ export class ChatAttachmentService {
     // ignored rather than refused, since an old client never sends it.
     if (withPreview && contentType.startsWith('image/')) {
       const previewStoragePath = chatPreviewPathFor(storagePath);
-      const previewSignedUrl = await this.storageProvider.getSignedUploadUrl(
-        CHAT_BUCKET,
-        previewStoragePath,
-        CHAT_PREVIEW_CONTENT_TYPE,
-      );
-      return {
-        signedUrl,
-        storagePath,
-        messageId,
-        previewSignedUrl,
-        previewStoragePath,
-      };
+      try {
+        const previewSignedUrl = await this.storageProvider.getSignedUploadUrl(
+          CHAT_BUCKET,
+          previewStoragePath,
+          CHAT_PREVIEW_CONTENT_TYPE,
+        );
+        return {
+          signedUrl,
+          storagePath,
+          messageId,
+          previewSignedUrl,
+          previewStoragePath,
+        };
+      } catch (error) {
+        // Best effort, like every other part of a preview: the photo still
+        // uploads and sends, and readers draw the original.
+        logThrowable(
+          this.logger,
+          'warn',
+          `Could not mint a chat photo preview upload ${JSON.stringify({ channelId })}; sending without one`,
+          error,
+        );
+      }
     }
 
     return { signedUrl, storagePath, messageId };
@@ -275,44 +286,58 @@ export class ChatAttachmentService {
       ) {
         throw new BadRequestException('Invalid attachment size');
       }
-      this.validatePhotoMetadata(attachment);
     }
 
-    return attachments;
+    return attachments.map((attachment) => this.photoMetadataOf(attachment));
   }
 
   /**
-   * The photo fields a claim may carry: display metadata, so the rule is only
-   * that each is well formed, and that a preview sits where the mint put it.
+   * The photo fields a claim may carry, kept only when well formed.
    *
-   * The preview path is the one location rule here, for the same reason
+   * Display metadata, so a bad field is **dropped, never refused**: a photo
+   * whose size, hash or preview the API will not store is still sent, and
+   * readers draw it the way they draw a photo from before previews. A 400
+   * here would fail the whole message over a blur. (A 30000 px panorama is a
+   * real photo; its size is simply not recorded.)
+   *
+   * The preview path is the one location rule, for the same reason
    * `storage_path` has one: it is signed for readers, and the purge deletes
-   * it. Pinned to `chatPreviewPathFor(storage_path)`, it can name no object
-   * but the one minted beside this original.
+   * it. Only `chatPreviewPathFor(storage_path)` is kept, the path the mint
+   * handed out beside this original.
    */
-  private validatePhotoMetadata(attachment: SendMessageAttachmentInput): void {
-    for (const edge of [attachment.width, attachment.height]) {
-      if (
-        edge != null &&
-        (!Number.isInteger(edge) || edge < 1 || edge > MAX_PHOTO_EDGE)
-      ) {
-        throw new BadRequestException('Invalid photo size');
-      }
-    }
-    if (attachment.thumbhash != null) {
-      if (!THUMBHASH_BASE64.test(attachment.thumbhash)) {
-        throw new BadRequestException('Invalid photo placeholder');
-      }
-    }
-    if (attachment.preview_storage_path != null) {
-      if (
-        !attachment.content_type.startsWith('image/') ||
-        attachment.preview_storage_path !==
-          chatPreviewPathFor(attachment.storage_path)
-      ) {
-        throw new BadRequestException('Invalid photo preview');
-      }
-    }
+  private photoMetadataOf(
+    attachment: SendMessageAttachmentInput,
+  ): SendMessageAttachmentInput {
+    const edge = (value: number | null | undefined) =>
+      value != null &&
+      Number.isInteger(value) &&
+      value >= 1 &&
+      value <= MAX_PHOTO_EDGE
+        ? value
+        : null;
+    const width = edge(attachment.width);
+    const height = edge(attachment.height);
+    const sized = width !== null && height !== null;
+    const thumbhash =
+      attachment.thumbhash != null &&
+      THUMBHASH_BASE64.test(attachment.thumbhash)
+        ? attachment.thumbhash
+        : null;
+    const preview =
+      attachment.preview_storage_path != null &&
+      attachment.content_type.startsWith('image/') &&
+      attachment.preview_storage_path ===
+        chatPreviewPathFor(attachment.storage_path)
+        ? attachment.preview_storage_path
+        : null;
+    return {
+      ...attachment,
+      // A lone width or height says nothing about the shape; keep both or none.
+      width: sized ? width : null,
+      height: sized ? height : null,
+      thumbhash,
+      preview_storage_path: preview,
+    };
   }
 
   /**
@@ -720,15 +745,50 @@ export class ChatAttachmentService {
     const doomed = unshared.filter(
       (object) => !heldKeys.has(objectKey(object)),
     );
-    // A preview is deleted unless another live message still draws it. Its
-    // key is derived from the original's, so a message sharing the original
-    // shares the preview, and is kept with it. A report's hold does not keep
-    // one: the officer reviews the original, and a preview kept for a report
-    // would be one the evidence release never names, so never deleted.
+    // Each unshared photo's preview goes too, unless another live message
+    // still names that object (as its preview, or as its own original: a
+    // claim's path is checked only against the channel prefix). The candidate
+    // is derived from the original's path, not read off this row, so a row
+    // that shares an original without naming its preview still takes the
+    // preview with it once the last one is gone; deleting a path that does
+    // not exist is a no-op. A report's hold does not keep a preview: the
+    // officer reviews the original, and a preview kept for a report would be
+    // one the evidence release never names, so never deleted.
     const unsharedKeys = objectKeys(unshared);
-    const doomedPreviews = previewObjects(
-      attachments.filter((row) => unsharedKeys.has(objectKey(row))),
+    const previewCandidates = uniqueObjects(
+      attachments
+        .filter(
+          (row) =>
+            row.content_type?.startsWith('image/') &&
+            unsharedKeys.has(objectKey(row)),
+        )
+        .map((row) => ({
+          bucket: row.bucket,
+          storage_path: chatPreviewPathFor(row.storage_path),
+        })),
     );
+    let doomedPreviews: StoredObjectRef[] = [];
+    if (previewCandidates.length > 0) {
+      try {
+        const sharedPreviews = objectKeys(
+          await this.attachmentRepo.findSharedObjects(
+            previewCandidates,
+            messageId,
+          ),
+        );
+        doomedPreviews = previewCandidates.filter(
+          (object) => !sharedPreviews.has(objectKey(object)),
+        );
+      } catch (error) {
+        // Fail closed, as above: keep the previews, still delete the rest.
+        logThrowable(
+          this.logger,
+          'warn',
+          `Could not check shared photo previews for message ${messageId}; keeping them`,
+          error,
+        );
+      }
+    }
 
     await this.deleteChatObjects([...doomed, ...doomedPreviews], {
       messageId,

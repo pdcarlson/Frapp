@@ -626,6 +626,38 @@ describe("pickAndUploadPhoto", () => {
     ).toBeUndefined();
   });
 
+  it("still sends the photo when the preview PUT throws (a dropped connection)", async () => {
+    grantedLibrary();
+    picked({
+      uri: "file:///photo.jpg",
+      fileName: "photo.jpg",
+      mimeType: "image/jpeg",
+      fileSize: 2048,
+    });
+    describePhoto.mockResolvedValue({
+      ...NOT_DESCRIBED,
+      previewUri: "file:///preview.jpg",
+    });
+    fs.uploadAsync.mockImplementation((async (url: string) => {
+      if (url.endsWith("put-preview")) throw new Error("network lost");
+      return { status: 200 };
+    }) as never);
+
+    const result = await pickAndUploadPhoto(
+      "channel-1",
+      vi.fn().mockResolvedValue({
+        ...TICKET,
+        preview_upload_url: "https://storage.example/put-preview",
+        preview_storage_path: "chapters/c/chat/m/preview/preview.jpg",
+      }),
+    );
+
+    expect(result).toMatchObject({ status: "attached" });
+    expect(
+      result.status === "attached" && result.attachment.previewStoragePath,
+    ).toBeUndefined();
+  });
+
   it("asks for no preview upload when the photo needs none", async () => {
     grantedLibrary();
     picked({

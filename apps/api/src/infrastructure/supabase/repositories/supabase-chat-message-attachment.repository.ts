@@ -134,19 +134,32 @@ export class SupabaseChatMessageAttachmentRepository implements IChatMessageAtta
       // an *already deleted* message hold an object alive forever: delete both
       // messages sharing one and each is spared by the other's surviving row,
       // and nothing ever purges it.
-      let probe = this.supabase
-        .from('chat_message_attachments')
-        .select('id, chat_messages!inner(is_deleted)')
-        .eq('bucket', candidate.bucket)
-        .eq('storage_path', candidate.storage_path)
-        .eq('chat_messages.is_deleted', false);
-      if (excludingMessageId !== null) {
-        probe = probe.neq('message_id', excludingMessageId);
-      }
-      const { data, error } = await probe.limit(1);
-      if (error) throw new SupabaseQueryError(error);
+      //
+      // Two probes, one per column that can name an object: a row's original
+      // (`storage_path`) and its photo preview (`preview_storage_path`,
+      // 2026-11-07). A claim's `storage_path` is checked only against the
+      // channel prefix, so one message's original can be another's preview
+      // path; asking only the first column would read that as unreferenced.
+      // Separate `.eq()` probes rather than one `.or()`, for the quoting
+      // reason above.
+      for (const column of ['storage_path', 'preview_storage_path'] as const) {
+        let probe = this.supabase
+          .from('chat_message_attachments')
+          .select('id, chat_messages!inner(is_deleted)')
+          .eq('bucket', candidate.bucket)
+          .eq(column, candidate.storage_path)
+          .eq('chat_messages.is_deleted', false);
+        if (excludingMessageId !== null) {
+          probe = probe.neq('message_id', excludingMessageId);
+        }
+        const { data, error } = await probe.limit(1);
+        if (error) throw new SupabaseQueryError(error);
 
-      if ((data ?? []).length > 0) shared.push(candidate);
+        if ((data ?? []).length > 0) {
+          shared.push(candidate);
+          break;
+        }
+      }
     }
 
     return shared;

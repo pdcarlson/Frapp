@@ -414,9 +414,10 @@ function PhotoImage({
           testID="photo-placeholder"
           source={{ uri: photo.placeholderUri }}
           accessibilityIgnoresInvertColors
-          // Stretched, not contained: the hash was taken from this photo, so
-          // it already has its shape, and the row is sized to that shape.
-          resizeMode="stretch"
+          // A lone photo's box is sized to the photo, so its blur is
+          // stretched to fill it (the hash keeps the shape only roughly). A
+          // grid tile crops, so its blur crops the same way the photo will.
+          resizeMode={resizeMode === "cover" ? "cover" : "stretch"}
           style={[style, StyleSheet.absoluteFill]}
         />
       ) : null}

@@ -462,6 +462,9 @@ export interface IChatMessageAttachmentRepository {
    * export file onto the *same* object (`domain/utils/discord-export.ts`), so
    * two messages sharing one object is a supported state, not a corruption.
    *
+   * A row points at an object through either column that names one: its
+   * `storage_path` or its photo `preview_storage_path` (2026-11-07).
+   *
    * Only **undeleted** messages count. Soft delete leaves these rows in place,
    * so counting them would let two deleted messages spare each other's shared
    * object forever — a leak dressed as a guard.

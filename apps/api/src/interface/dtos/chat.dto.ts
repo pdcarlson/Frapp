@@ -266,22 +266,16 @@ export class MessageAttachmentDto {
   byte_size?: number;
 
   @ApiPropertyOptional({
-    minimum: 1,
-    maximum: 20000,
     description:
-      'Photo width in pixels, so readers draw the bubble at its shape before the photo loads.',
+      'Photo width in pixels, so readers draw the bubble at its shape before the photo loads. A size out of range (1 to 20000), or one without the other, is dropped rather than refused, so a bad size never blocks a send.',
   })
   @IsOptional()
   @IsInt()
-  @Min(1)
-  @Max(20000)
   width?: number;
 
-  @ApiPropertyOptional({ minimum: 1, maximum: 20000 })
+  @ApiPropertyOptional({ description: 'Photo height in pixels; see `width`.' })
   @IsOptional()
   @IsInt()
-  @Min(1)
-  @Max(20000)
   height?: number;
 
   @ApiPropertyOptional({

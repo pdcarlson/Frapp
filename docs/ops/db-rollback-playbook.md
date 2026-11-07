@@ -3093,13 +3093,12 @@ alter table public.events
 
 * **Migration**: `20261107130000_chat_attachment_previews.sql`
 
-Two nullable columns on `chat_message_attachments`, `thumbhash` and `preview_storage_path`, and the `chat_message_attachments_thumbhash_len` check. The API from the same PR writes both on every attachment insert, so roll the API back first: a column dropped under the new API fails every message sent with a file.
+Two nullable columns on `chat_message_attachments`, `thumbhash` and `preview_storage_path`. The API from the same PR writes both on every attachment insert, so roll the API back first: a column dropped under the new API fails every message sent with a file. Roll web and the mobile OTA back with the API, not after it: a client from this PR sends photo fields an older API refuses, so every photo send from it fails until it is rolled back too.
 
 **Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). After the API is back on the earlier version:
 
 ```sql
 alter table public.chat_message_attachments
-  drop constraint if exists chat_message_attachments_thumbhash_len,
   drop column if exists thumbhash,
   drop column if exists preview_storage_path;
 ```
