@@ -8,6 +8,7 @@ import request from 'supertest';
 import { NotificationController } from '../src/interface/controllers/notification.controller';
 import { NotificationService } from '../src/application/services/notification.service';
 import { AuthService } from '../src/application/services/auth.service';
+import { TimeZoneSyncService } from '../src/application/services/time-zone-sync.service';
 import { SupabaseAuthGuard } from '../src/interface/guards/supabase-auth.guard';
 import { ChapterGuard } from '../src/interface/guards/chapter.guard';
 import { PermissionsGuard } from '../src/interface/guards/permissions.guard';
@@ -73,6 +74,7 @@ describe('PATCH /v1/settings — quiet_hours_tz validation (#687)', () => {
           provide: AuthService,
           useValue: { syncUser: jest.fn().mockResolvedValue({ id: 'user-1' }) },
         },
+        { provide: TimeZoneSyncService, useValue: { record: jest.fn() } },
       ],
     })
       .overrideGuard(SupabaseAuthGuard)
