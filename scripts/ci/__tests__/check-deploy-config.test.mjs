@@ -11,7 +11,7 @@
 
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -22,17 +22,20 @@ import {
   BOOT_CHECK_SOURCE,
   OWN_INPUTS,
   checkDeployConfig,
+  checkMinimumVersions,
   formatSummary,
   redact,
   runBootCheck,
   splitByBaseline,
   thrownSummary,
 } from "../check-deploy-config.mjs";
+import { APP_JSON, SHIPPED_BUILDS } from "../smoke-deployed-api.mjs";
 import { workflowSteps } from "./helpers/workflow-yaml.mjs";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const SCRIPT = join(REPO, "scripts", "ci", "check-deploy-config.mjs");
 const DEPLOY = join(REPO, ".github", "workflows", "_deploy.yml");
+const HEAD = execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPO, encoding: "utf8" }).trim();
 
 const CANARY = "leak-canary";
 // Staging's real ref (`.github/environments.json`, copied into each tree):
@@ -50,6 +53,28 @@ const STORE = Object.freeze({
 });
 
 const CHILD_ENV = Object.freeze({ PATH: process.env.PATH });
+
+/**
+ * A trusted ref's mobile files, as `gitFileReader` would return them: the
+ * recorded builds (`[platform, version, build]`) and `expo.version`. A file
+ * given as an Error is one that can't be read.
+ */
+function trustedFiles({ builds = [], version = "0.9.0" } = {}) {
+  const files = {
+    [SHIPPED_BUILDS]:
+      builds instanceof Error
+        ? builds
+        : JSON.stringify({ builds: builds.map(([platform, v, build]) => ({ platform, version: v, build })) }),
+    [APP_JSON]: version instanceof Error ? version : JSON.stringify({ expo: { version } }),
+  };
+  return (path) => {
+    const file = files[path];
+    if (file instanceof Error) throw file;
+    if (file === undefined) throw new Error(`no ${path} in this stand-in`);
+    return file;
+  };
+}
+const NO_MINIMUM_FILES = trustedFiles();
 
 // Stand-in boot checks, as CommonJS like the API's build output.
 const BOOT = {
@@ -287,15 +312,100 @@ describe("check-deploy-config: the secrets later steps read", () => {
       root: tree({ boot: BOOT.echoesValue }),
       baselineNames: new Set(["PATH"]),
       functions: ["attachment-copy"],
+      readTrustedFile: NO_MINIMUM_FILES,
     });
     assert.equal(problems.length, 3);
     assert.doesNotMatch(problems.join("\n"), new RegExp(CANARY));
   });
 
   it("summarises what passed, what it didn't check, and what failed", () => {
-    const summary = formatSummary({ passed: ["A is set."], warnings: ["no boot check here."], problems: ["B is not set."] });
+    const summary = formatSummary({ passed: ["A is set."], warnings: ["Not checked: no boot check here."], problems: ["B is not set."] });
     assert.equal(summary, "### Config check, before anything is written\n\n- ✅ A is set.\n- ⚠️ Not checked: no boot check here.\n- ❌ B is not set.\n\n");
     assert.match(formatSummary({ passed: [], warnings: [], problems: [] }), /Nothing to check/);
+  });
+});
+
+describe("check-deploy-config: the minimum app version, before the API deploys (#3123)", () => {
+  const MIN = { ios: "MOBILE_MIN_VERSION_IOS", android: "MOBILE_MIN_VERSION_ANDROID" };
+  const BUILDS = [
+    ["ios", "0.9.0", "12"],
+    ["ios", "0.9.0", "14"],
+    ["android", "0.9.0", "7"],
+  ];
+  const check = (environment, minimums, files = trustedFiles({ builds: BUILDS })) =>
+    checkMinimumVersions({ env: { TARGET_ENVIRONMENT: environment, ...minimums }, readTrustedFile: files });
+
+  it("refuses on production a minimum above the newest recorded build, naming the variable and the probe", () => {
+    const { problems, warnings, passed } = check("production", { [MIN.ios]: "0.9.1" });
+    assert.equal(problems.length, 1);
+    assert.deepEqual(warnings, []);
+    assert.match(
+      problems[0],
+      /^MOBILE_MIN_VERSION_IOS is above ios\/0\.9\.0\+14, the newest ios build recorded in apps\/mobile\/store\/shipped-builds\.json, so once this API deploys every ios install opens on the blocking "Update Frapp" screen\./,
+    );
+    assert.match(problems[0], /record it in apps\/mobile\/store\/shipped-builds\.json/);
+    assert.deepEqual(passed, ["MOBILE_MIN_VERSION_ANDROID still serves android/0.9.0+7, the newest android build recorded in apps/mobile/store/shipped-builds.json."]);
+  });
+
+  it("refuses a build-number minimum above every build of the version, and lets one that retires earlier builds through", () => {
+    assert.equal(check("production", { [MIN.ios]: "0.9.0+15" }).problems.length, 1);
+    assert.equal(check("production", { [MIN.android]: "0.9.0+999" }).problems.length, 1);
+    for (const minimum of ["0.9.0+14", "0.9.0+13", "0.9.0", "0.8", " 0.9.0+14 "]) {
+      assert.deepEqual(check("production", { [MIN.ios]: minimum }).problems, [], minimum);
+    }
+  });
+
+  it("only warns on staging, where a minimum above the current version tests the update gate", () => {
+    const { problems, warnings } = check("staging", { [MIN.ios]: "1.0.0", [MIN.android]: "0.9.1" });
+    assert.deepEqual(problems, []);
+    assert.equal(warnings.length, 2);
+    for (const line of warnings) assert.match(line, /A warning on staging only: .*ENV_REFERENCE\.md § API-Only Settings/);
+  });
+
+  it("probes expo.version with no build while nothing is recorded for a platform, as the client check does", () => {
+    const files = trustedFiles({ builds: [["ios", "0.9.0", "14"]], version: "0.9.0" });
+    const above = check("production", { [MIN.android]: "0.9.1" }, files);
+    assert.equal(above.problems.length, 1);
+    assert.match(
+      above.problems[0],
+      /^MOBILE_MIN_VERSION_ANDROID is above android\/0\.9\.0, expo\.version in apps\/mobile\/app\.json \(no android build is recorded/,
+    );
+    // No build is known, so the API lets an equal version through, as the client check's known limit says.
+    assert.deepEqual(check("production", { [MIN.android]: "0.9.0+999" }, files).problems, []);
+  });
+
+  it("passes an unset or blank minimum, and leaves a malformed one to the boot check", () => {
+    for (const minimum of [undefined, "", "  ", "v0.9.1", "0.09.1", "0.9.1-beta.1"]) {
+      const { problems, warnings, passed } = check("production", { [MIN.ios]: minimum, [MIN.android]: minimum });
+      assert.deepEqual([problems, warnings], [[], []], String(minimum));
+      assert.equal(passed.length, 2);
+    }
+  });
+
+  it("fails, in both environments, when the builds to probe can't be read", () => {
+    for (const environment of ["staging", "production"]) {
+      const registry = check(environment, {}, trustedFiles({ builds: new Error("fatal: path not in tree") }));
+      assert.equal(registry.problems.length, 1);
+      assert.match(registry.problems[0], /^Could not read which mobile builds to check the minimum app versions against: fatal: path not in tree/);
+      // Only the platform that needed app.json fails.
+      const app = check(environment, {}, trustedFiles({ builds: [["ios", "0.9.0", "14"]], version: new Error("no app.json") }));
+      assert.deepEqual(app.problems, ["Could not read which android build to check MOBILE_MIN_VERSION_ANDROID against: no app.json"]);
+      assert.equal(app.passed.length, 1);
+    }
+  });
+
+  it("runs only when this run deploys the API, and reads the probes from TRUSTED_SHA", () => {
+    const env = { ...STORE, TARGET_ENVIRONMENT: "production", [MIN.ios]: "9.9.9", CHECK_API_BOOT: "false", DEPLOYS_FUNCTIONS: "false", VERIFIES_API: "false" };
+    const base = { root: tree({ source: false }), baselineNames: new Set(["PATH"]), functions: [] };
+    const skipped = checkDeployConfig({ ...base, env, readTrustedFile: () => assert.fail("read the probes without deploying the API") });
+    assert.deepEqual(skipped.problems, []);
+    const deploying = checkDeployConfig({ ...base, env: { ...env, CHECK_API_BOOT: "true" }, readTrustedFile: trustedFiles({ builds: BUILDS }) });
+    assert.equal(deploying.problems.length, 1);
+    assert.match(deploying.problems[0], /^MOBILE_MIN_VERSION_IOS is above ios\/0\.9\.0\+14/);
+    // Without a trusted SHA the default reader refuses, and that is a problem, never a pass.
+    const unread = checkDeployConfig({ ...base, env: { ...env, CHECK_API_BOOT: "true" } });
+    assert.match(unread.problems.join("\n"), /TRUSTED_SHA must be the trusted ref's full commit SHA/);
+    assert.ok(OWN_INPUTS.includes("TRUSTED_SHA"), "TRUSTED_SHA is this step's input, not part of the store");
   });
 });
 
@@ -308,11 +418,20 @@ describe("check-deploy-config: as the job runs it", () => {
   function run(root, env) {
     const baseline = join(root, "baseline.json");
     const summary = join(root, "summary.md");
-    writeFileSync(baseline, `${JSON.stringify(["GITHUB_STEP_SUMMARY", "PATH"])}\n`);
+    writeFileSync(baseline, `${JSON.stringify(["GIT_DIR", "GITHUB_STEP_SUMMARY", "PATH"])}\n`);
     writeFileSync(summary, "");
     const result = spawnSync(process.execPath, [SCRIPT], {
       cwd: root,
-      env: { PATH: process.env.PATH, ENV_BASELINE: baseline, GITHUB_STEP_SUMMARY: summary, TARGET_ENVIRONMENT: "staging", ...env },
+      // The probes are read from this repository's HEAD, as the job reads `github.sha`'s.
+      env: {
+        PATH: process.env.PATH,
+        GIT_DIR: join(REPO, ".git"),
+        TRUSTED_SHA: HEAD,
+        ENV_BASELINE: baseline,
+        GITHUB_STEP_SUMMARY: summary,
+        TARGET_ENVIRONMENT: "staging",
+        ...env,
+      },
       encoding: "utf8",
     });
     return { status: result.status, output: `${result.stdout}${result.stderr}`, summary: readFileSync(summary, "utf8") };
@@ -365,9 +484,28 @@ describe("check-deploy-config: as the job runs it", () => {
   it("warns and passes on a rollback to a commit with no boot check, and says so in the summary", () => {
     const { status, output, summary } = run(tree({ source: false }), { ...STORE, CHECK_API_BOOT: "true", DEPLOYS_FUNCTIONS: "false", VERIFIES_API: "true" });
     assert.equal(status, 0, output);
-    assert.match(output, /^::warning::This commit has no apps\/api\/src\/config\/env\.validation\.ts/m);
+    assert.match(output, /^::warning::Not checked: This commit has no apps\/api\/src\/config\/env\.validation\.ts/m);
     assert.match(summary, /^- ⚠️ Not checked: This commit has no apps\/api\/src\/config\/env\.validation\.ts/m);
     assert.doesNotMatch(summary, /boot check .* accepts/);
+  });
+
+  it("prints the minimum check's probe and words unmasked, while still masking every secret (#3123)", () => {
+    // HEAD's own mobile files name the probe; a minimum far above any build trips it.
+    const { status, output, summary } = run(tree({ boot: BOOT.accepts }), {
+      ...STORE,
+      NODE_ENV: "staging",
+      MOBILE_MIN_VERSION_IOS: "999.0.0",
+      MOBILE_MIN_VERSION_ANDROID: "0.0",
+      CHECK_API_BOOT: "true",
+      DEPLOYS_FUNCTIONS: "false",
+      VERIFIES_API: "false",
+    });
+    assert.equal(status, 0, output);
+    assert.match(output, /^::warning::MOBILE_MIN_VERSION_IOS is above ios\/\d+\.\d+\.\d+(\+\d+)?, .*A warning on staging only: a staging minimum/m);
+    assert.match(output, /✓ MOBILE_MIN_VERSION_ANDROID still serves android\/\d/);
+    assert.match(summary, /^- ⚠️ MOBILE_MIN_VERSION_IOS is above ios\//m);
+    assert.doesNotMatch(output, /\*\*\*/, output);
+    assert.doesNotMatch(output, new RegExp(CANARY), output);
   });
 
   it("refuses to check anything without the env baseline", () => {
@@ -423,6 +561,13 @@ describe("_deploy.yml: the config check's place and wiring (#3112)", () => {
       assert.ok(at(name) > at("Plan the deploy"), `${name} runs before the plan it reads`);
       assert.ok(at(name) < firstWrite, `${name} runs after a step that writes`);
       assert.doesNotMatch(check.body, /continue-on-error/);
+    }
+  });
+
+  it("reads the minimum version's probes from the trusted ref, as the client check after the deploy does (#3123)", () => {
+    for (const name of CHECKS) assert.equal(step(name).env.get("TRUSTED_SHA"), "${{ github.sha }}", name);
+    for (const name of ["Check the API answers its clients (staging)", "Check the API answers its clients (production)"]) {
+      assert.equal(step(name).env.get("TRUSTED_SHA"), "${{ github.sha }}", name);
     }
   });
 

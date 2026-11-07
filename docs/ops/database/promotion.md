@@ -340,7 +340,11 @@ when the API would refuse to boot: a missing or blank required name (`validateEn
 rejects an empty string as it does an absent key), a client key or an unresolved
 `${…}` reference in `SUPABASE_SERVICE_ROLE_KEY`, a staging or localhost `APP_URL`
 beside the production `SUPABASE_URL`, and a malformed `MOBILE_MIN_VERSION_*` /
-`MOBILE_UPDATE_URL_*`. The same step requires `SUPABASE_FUNCTIONS_DEPLOY_TOKEN` when the
+`MOBILE_UPDATE_URL_*`. On the same runs it refuses a well-formed
+`MOBILE_MIN_VERSION_*` that would put every install of a platform on the update screen:
+one above the newest build recorded in `apps/mobile/store/shipped-builds.json`, or, before
+any is recorded, `expo.version` in `apps/mobile/app.json` ([#3123](https://github.com/pdcarlson/Frapp/issues/3123)).
+The client check after the deploy asks the live API the same question. The same step requires `SUPABASE_FUNCTIONS_DEPLOY_TOKEN` when the
 run deploys an Edge Function, and on every run what the verify and client checks read:
 `API_HEALTHCHECK_URL` as the API's `/health` URL, `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. A `migrations-only`
 run deploys no API, so it skips the boot check. Before #3112 each of these failed only

@@ -90,6 +90,7 @@
 
 import { execFileSync } from "node:child_process";
 
+import { CLIENT_PLATFORMS } from "./lib/client-version.mjs";
 import { fetchWithRetry } from "./lib/http.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
@@ -112,7 +113,8 @@ export const APP_JSON = "apps/mobile/app.json";
 /** Every build uploaded to TestFlight or a Play track (apps/mobile/store/README.md). */
 export const SHIPPED_BUILDS = "apps/mobile/store/shipped-builds.json";
 
-export const PLATFORMS = ["ios", "android"];
+/** The API's platforms, from the copy of its rule the parity test pins (`lib/client-version.mjs`). */
+export const PLATFORMS = CLIENT_PLATFORMS;
 
 /** The variable each platform's minimum is read from (`client-policy.service.ts`). */
 export const MINIMUM_VERSION_VARIABLES = {
