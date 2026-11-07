@@ -7,6 +7,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { cardFilledContainers } from "@/tests/card-surfaces";
 import { networkMock } from "@/tests/network";
 
@@ -185,8 +186,13 @@ import { SourceStep } from "./source-step";
 import { ConnectStep } from "./connect-step";
 import { DISCORD_NOTICE } from "./consent-step";
 import { ChannelMappingStep } from "./channel-mapping-step";
-import { defaultChoices, mappingIssues } from "./mapping-issues";
+import {
+  defaultChoices,
+  mappingIssues,
+  type ChannelChoice,
+} from "./mapping-issues";
 import { RoleMappingStep } from "./role-mapping-step";
+import { ReviewStep } from "./review-step";
 import { parseExportPreamble, toExportRelativePath } from "./export-preamble";
 
 /**
@@ -199,6 +205,26 @@ import { parseExportPreamble, toExportRelativePath } from "./export-preamble";
 function chooseUploadPath() {
   fireEvent.click(screen.getByRole("button", { name: /Upload an export/ }));
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+}
+
+/** Picks an option from one of the app's dropdowns (a Radix select). */
+async function choose(trigger: HTMLElement, option: string) {
+  const user = userEvent.setup();
+  await user.click(trigger);
+  await user.click(await screen.findByRole("option", { name: option }));
+}
+
+/** Opens every folded pile on the role step, so each row is on screen. */
+function openRolePiles() {
+  for (const pile of screen.queryAllByRole("button", { expanded: false })) {
+    if (
+      /^(Open private channels|Match your roles|Open no private channel)/.test(
+        pile.textContent ?? "",
+      )
+    ) {
+      fireEvent.click(pile);
+    }
+  }
 }
 
 describe("ImportWizard — choosing a path", () => {
@@ -518,6 +544,43 @@ describe("ImportWizard — the bot path", () => {
     ).toBeInTheDocument();
   });
 
+  it("says once, on the channel step's own card, which channels Frapp cannot read", async () => {
+    discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          discord_channel_id: "c1",
+          discord_channel_name: "general",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: true,
+        },
+        {
+          discord_channel_id: "c2",
+          discord_channel_name: "vault",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: false,
+        },
+      ],
+      roles: [],
+      warnings: [
+        "Frapp cannot read 1 channel(s) (#vault): Discord hides them from the bot.",
+        "Private archived threads in #general could not be read",
+      ],
+    });
+
+    await renderAtChannels();
+
+    expect(
+      await screen.findByText("Frapp can't read these (1)"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Frapp cannot read 1 channel/)).toBeNull();
+    // Every other warning still shows.
+    expect(
+      screen.getByText(/Private archived threads in #general/),
+    ).toBeInTheDocument();
+  });
+
   it("saves the mapping through the discovered-channels route", async () => {
     // A different endpoint from the upload path on purpose: this one answers a
     // set the server already discovered and refuses a channel that was not in
@@ -606,9 +669,7 @@ describe("ImportWizard — the bot path", () => {
     expect(
       screen.queryByRole("checkbox", { name: /as a category/ }),
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/Every member can see category names/),
-    ).toBeVisible();
+    expect(screen.getByText(/Every member sees category names/)).toBeVisible();
 
     // The preview lists the new channels; the merge stays where it is.
     const preview = () =>
@@ -652,10 +713,10 @@ describe("ImportWizard — the bot path", () => {
       ["c2", undefined],
       ["c3", undefined],
     ]);
-    expect(await screen.findByText("Categories:")).toBeInTheDocument();
-    expect(
-      screen.getByText(/^Generic\. Where your chapter/),
-    ).toBeInTheDocument();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^1 sidebar category/ }),
+    );
+    expect(screen.getByText("Generic")).toBeInTheDocument();
   });
 
   it("asks about like-named channels once keeping categories would send them to different ones", async () => {
@@ -708,9 +769,7 @@ describe("ImportWizard — the bot path", () => {
     const continueButton = screen.getByRole("button", { name: "Continue" });
     expect((continueButton as HTMLButtonElement).disabled).toBe(true);
 
-    fireEvent.change(screen.getByLabelText("Who can read it"), {
-      target: { value: "restricted" },
-    });
+    await choose(screen.getByLabelText("Who can read it"), "Restricted");
     fireEvent.click(screen.getByLabelText(/Change chapter settings/));
     await waitFor(() =>
       expect((continueButton as HTMLButtonElement).disabled).toBe(false),
@@ -1040,11 +1099,13 @@ describe("ImportWizard — the bot path", () => {
     // #officers does not clash with it.
     await screen.findByText(/Nothing needs attention/);
     fireEvent.click(screen.getByRole("button", { name: /^No category/ }));
-    const picker = screen.getByLabelText("Merge into") as HTMLSelectElement;
-    expect([...picker.options].map((option) => option.textContent)).toEqual([
-      "Pick a channel…",
-      "#general",
-    ]);
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText("Merge into"));
+    expect(
+      (await screen.findAllByRole("option")).map(
+        (option) => option.textContent,
+      ),
+    ).toEqual(["#general"]);
   });
 
   it("keeps a private like-named channel as a new one and asks about the clash (#2856)", async () => {
@@ -1230,28 +1291,35 @@ describe("ImportWizard — the bot path", () => {
         ],
         warnings: [],
       });
-    const becomes = (roleName: string) =>
-      screen
-        .getByText(roleName, { selector: "span" })
-        .closest("div.rounded-md")
-        ?.querySelector("select") as HTMLSelectElement;
+    // What a role's dropdown reads, its piles opened first.
+    const becomes = (roleName: string) => {
+      openRolePiles();
+      return screen.getByRole("combobox", { name: `${roleName} becomes` });
+    };
 
     it("asks about roles before channels, defaulting by name, then a close match, then a new role", async () => {
       scanWithRoles();
       renderAtConsent();
       await screen.findByRole("heading", { name: "Map the roles" });
 
-      expect(becomes("treasurer").value).toBe("role-treasurer");
-      expect(becomes("Recording Secretary").value).toBe("role-secretary");
+      // The roles that open private channels come first, and open; the
+      // matched and the rest are folded.
+      expect(
+        screen.getByRole("button", { name: /^Open private channels/ }),
+      ).toHaveAttribute("aria-expanded", "true");
+      expect(
+        screen.getByRole("button", { name: /^Match your roles/ }),
+      ).toHaveAttribute("aria-expanded", "false");
+      expect(
+        screen.getByRole("button", { name: /^Open no private channel/ }),
+      ).toHaveAttribute("aria-expanded", "false");
+
+      expect(becomes("treasurer")).toHaveTextContent("Treasurer");
+      expect(becomes("Recording Secretary")).toHaveTextContent("Secretary");
       // Matches nothing: a new role, whether or not it read a private
       // channel (#2855), because a role classifies people either way.
-      expect(becomes("Rush Chair").value).toBe("__new__");
-      expect(becomes("Gamers").value).toBe("__new__");
-      expect(
-        screen
-          .getAllByLabelText("New role name")
-          .map((input) => (input as HTMLInputElement).value),
-      ).toEqual(["Rush Chair", "Gamers"]);
+      expect(becomes("Rush Chair")).toHaveTextContent("New role");
+      expect(becomes("Gamers")).toHaveTextContent("New role");
 
       fireEvent.click(screen.getByRole("button", { name: "Continue" }));
       await waitFor(() =>
@@ -1314,7 +1382,9 @@ describe("ImportWizard — the bot path", () => {
         new_channel_required_permissions: undefined,
       });
       // Review says what starting will do to roles.
-      expect(await screen.findByText(/New roles:/)).toBeInTheDocument();
+      expect(
+        await screen.findByRole("button", { name: /^Creating 2 roles/ }),
+      ).toBeInTheDocument();
     });
 
     it("saves the roles again just before the channels, which are resolved through them", async () => {
@@ -1334,9 +1404,7 @@ describe("ImportWizard — the bot path", () => {
       scanWithRoles();
       renderAtConsent();
       await screen.findByRole("heading", { name: "Map the roles" });
-      fireEvent.change(becomes("Rush Chair"), {
-        target: { value: "__ignore__" },
-      });
+      await choose(becomes("Rush Chair"), "Skip");
       fireEvent.click(screen.getByRole("button", { name: "Continue" }));
       await screen.findByRole("heading", { name: "Map the channels" });
 
@@ -1345,7 +1413,7 @@ describe("ImportWizard — the bot path", () => {
       // and needs a choice. (Its group is open already: it has an issue.)
       expect(
         await screen.findByText(
-          "Readable by Treasurer. Left out, because they are set to Ignore: Rush Chair.",
+          "Readable by Treasurer. Left out, because they are set to Skip: Rush Chair.",
         ),
       ).toBeInTheDocument();
       expect(
@@ -1362,9 +1430,9 @@ describe("ImportWizard — the bot path", () => {
       ).toBe(true);
     });
 
-    it("still lets the import go on, every role on Ignore, when the chapter's roles cannot be loaded", async () => {
+    it("still lets the import go on, every role on Skip, when the chapter's roles cannot be loaded", async () => {
       // GET /v1/roles needs members:view, which channels:manage does not
-      // imply; an all-Ignore mapping needs no roles to map to.
+      // imply; an all-Skip mapping needs no roles to map to.
       rolesFail.value = true;
       scanWithRoles();
       renderAtConsent();
@@ -1380,7 +1448,7 @@ describe("ImportWizard — the bot path", () => {
       expect(roles.every((role) => role.action === "ignore")).toBe(true);
     });
 
-    it("holds every role on Ignore, and saves exactly that, when the viewer's permissions cannot be loaded", async () => {
+    it("holds every role on Skip, and saves exactly that, when the viewer's permissions cannot be loaded", async () => {
       permissionsFail.value = "error";
       scanWithRoles();
       renderAtConsent();
@@ -1404,10 +1472,10 @@ describe("ImportWizard — the bot path", () => {
       expect(
         screen.queryByText(/could not load your chapter.s roles/),
       ).not.toBeInTheDocument();
-      expect(becomes("treasurer").value).toBe("role-treasurer");
+      expect(becomes("treasurer")).toHaveTextContent("Treasurer");
     });
 
-    it("keeps every role on Ignore for a viewer who cannot manage roles", async () => {
+    it("keeps every role on Skip for a viewer who cannot manage roles", async () => {
       myPermissions.value = ["channels:manage"];
       scanWithRoles();
       renderAtConsent();
@@ -1599,7 +1667,7 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
     expect(screen.getByText("#cabinet")).toBeInTheDocument();
   });
 
-  it("collapses the groups a bulk answer settles, so an answered export is not left fully expanded", () => {
+  it("collapses the groups a bulk answer settles, so an answered export is not left fully expanded", async () => {
     // An export says nothing about privacy, so every row starts with a
     // question and every group opens itself.
     const exported = channels
@@ -1623,14 +1691,15 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
     }
     render(<Harness />);
     expect(screen.getByText("#announcements")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Who can read every new channel"), {
-      target: { value: "chapter" },
-    });
+    await choose(
+      screen.getByLabelText("Who can read every new channel"),
+      "Whole chapter",
+    );
     expect(screen.getByText(/Nothing needs attention/)).toBeInTheDocument();
     expect(screen.queryByText("#announcements")).not.toBeInTheDocument();
   });
 
-  it("ticks a bulk permission only while every new channel in scope holds it, on the same open panel", () => {
+  it("ticks a bulk permission only while every new channel in scope holds it, and shows what they hold", () => {
     const restricted = {
       ...defaultChoices(channels),
       "3": {
@@ -1652,32 +1721,61 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
       />
     );
     const { rerender } = render(step(restricted));
-    fireEvent.change(
-      screen.getByLabelText("Who can read the new channels in Exec"),
-      { target: { value: "restricted" } },
+    const exec = () =>
+      screen.getByLabelText("Who can read the new channels in Exec");
+    // Every new channel in Exec is restricted, so the control says so; its
+    // grid opens on picking Restricted, with the shared permission ticked.
+    expect(exec()).toHaveTextContent("Restricted");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Permissions for the new channels in Exec",
+      }),
     );
-    const box = () =>
-      screen.getByLabelText(/Change chapter settings/) as HTMLInputElement;
-    expect(box().checked).toBe(true);
+    expect(
+      (screen.getByLabelText(/Change chapter settings/) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
 
     // Another control (the server-level one, or a row) makes the channel
-    // whole-chapter while this panel stays open: the tick must go with it.
+    // whole-chapter: the control follows, and no grid claims a restriction.
     rerender(
       step({
         ...restricted,
         "3": { ...restricted["3"], visibility: "chapter" as const },
       }),
     );
-    expect(box().checked).toBe(false);
+    expect(exec()).toHaveTextContent("Whole chapter");
+    expect(screen.queryByLabelText(/Change chapter settings/)).toBeNull();
   });
 
-  it("restricts every new channel in a category at once, and nothing outside it", () => {
-    const { onChange } = renderStep();
-    fireEvent.change(
+  it("restricts every new channel in a category at once, and nothing outside it", async () => {
+    function Harness() {
+      const [choices, setChoices] = useState(() => defaultChoices(channels));
+      return (
+        <ChannelMappingStep
+          channels={channels}
+          choices={choices}
+          onChange={(next) => {
+            onChange(next);
+            setChoices(next);
+          }}
+          issues={mappingIssues(channels, choices, [])}
+          knowsPrivacy
+        />
+      );
+    }
+    const onChange = vi.fn();
+    render(<Harness />);
+    await choose(
       screen.getByLabelText("Who can read the new channels in Exec"),
-      { target: { value: "restricted" } },
+      "Restricted",
     );
-    fireEvent.click(screen.getByLabelText(/Change chapter settings/));
+    // It sticks, and the grid opens to say who. The category's grid comes
+    // first; #cabinet's own opens below it, since it now needs an answer.
+    expect(
+      screen.getByLabelText("Who can read the new channels in Exec"),
+    ).toHaveTextContent("Restricted");
+    fireEvent.click(screen.getAllByLabelText(/Change chapter settings/)[0]!);
     const next = onChange.mock.calls.at(-1)![0] as Record<
       string,
       { action: string; visibility?: string; requiredPermissions?: string[] }
@@ -1690,11 +1788,17 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
     expect(next["1"]!.visibility).toBe("chapter");
   });
 
-  it("sets who can read every new channel in the server at once", () => {
+  it("sets who can read every new channel in the server at once", async () => {
     const { onChange } = renderStep();
-    fireEvent.change(screen.getByLabelText("Who can read every new channel"), {
-      target: { value: "chapter" },
-    });
+    // #cabinet's readers are unknown, so it has no answer yet and the
+    // channels do not all agree.
+    expect(
+      screen.getByLabelText("Who can read every new channel"),
+    ).toHaveTextContent("Mixed");
+    await choose(
+      screen.getByLabelText("Who can read every new channel"),
+      "Whole chapter",
+    );
     const next = onChange.mock.calls.at(-1)![0] as Record<
       string,
       { action: string; visibility?: string }
@@ -1705,6 +1809,140 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
     });
     expect(next["4"]).toEqual({ action: "skip" });
     expect(mappingIssues(channels, next as never, [])).toEqual([]);
+  });
+
+  it("reads Same as Discord on the defaults, and Mixed once one channel differs", () => {
+    const known = channels.map((channel) =>
+      channel.channelId === "3"
+        ? { ...channel, readerRoleIds: ["r-exec"] }
+        : channel,
+    );
+    const readersOf = (channel: { channelId: string }) =>
+      channel.channelId === "3" ? { roles: ["Cabinet"], ignored: [] } : null;
+    const choices = defaultChoices(known);
+    choices["3"] = { ...choices["3"]!, visibility: "discord" };
+    const props = {
+      channels: known,
+      onChange: vi.fn(),
+      knowsPrivacy: true,
+      readersOf,
+    };
+    const { rerender } = render(
+      <ChannelMappingStep
+        {...props}
+        choices={choices}
+        issues={mappingIssues(known, choices, [], readersOf)}
+      />,
+    );
+    const server = () =>
+      screen.getByLabelText("Who can read every new channel");
+    expect(server()).toHaveTextContent("Same as Discord");
+
+    const restricted = {
+      ...choices,
+      "1": {
+        ...choices["1"]!,
+        visibility: "restricted" as const,
+        requiredPermissions: ["members:view"],
+      },
+    };
+    rerender(
+      <ChannelMappingStep
+        {...props}
+        choices={restricted}
+        issues={mappingIssues(known, restricted, [], readersOf)}
+      />,
+    );
+    expect(server()).toHaveTextContent("Mixed");
+  });
+
+  it("goes back to Mixed after a pick made from Mixed, once a channel differs", async () => {
+    const onChange = vi.fn();
+    const props = {
+      channels,
+      onChange,
+      knowsPrivacy: true,
+      readersOf: () => null,
+    };
+    const restrictOne = (choices: Record<string, ChannelChoice>) => ({
+      ...choices,
+      "1": {
+        ...choices["1"]!,
+        visibility: "restricted" as const,
+        requiredPermissions: ["members:view"],
+      },
+    });
+    const mixed = restrictOne(defaultChoices(channels));
+    const { rerender } = render(
+      <ChannelMappingStep
+        {...props}
+        choices={mixed}
+        issues={mappingIssues(channels, mixed, [], () => null)}
+      />,
+    );
+    const server = () =>
+      screen.getByLabelText("Who can read every new channel");
+    expect(server()).toHaveTextContent("Mixed");
+
+    await choose(server(), "Whole chapter");
+    const picked = onChange.mock.calls.at(-1)![0] as Record<
+      string,
+      ChannelChoice
+    >;
+    rerender(
+      <ChannelMappingStep
+        {...props}
+        choices={picked}
+        issues={mappingIssues(channels, picked, [], () => null)}
+      />,
+    );
+    expect(server()).toHaveTextContent("Whole chapter");
+
+    const again = restrictOne(picked);
+    rerender(
+      <ChannelMappingStep
+        {...props}
+        choices={again}
+        issues={mappingIssues(channels, again, [], () => null)}
+      />,
+    );
+    expect(server()).toHaveTextContent("Mixed");
+  });
+
+  it("keeps a channel's own permissions when the server picks Restricted", async () => {
+    const onChange = vi.fn();
+    const choices = {
+      ...defaultChoices(channels),
+      "1": {
+        ...defaultChoices(channels)["1"]!,
+        visibility: "restricted" as const,
+        requiredPermissions: ["billing:manage"],
+      },
+    };
+    render(
+      <ChannelMappingStep
+        channels={channels}
+        onChange={onChange}
+        knowsPrivacy
+        readersOf={() => null}
+        choices={choices}
+        issues={mappingIssues(channels, choices, [], () => null)}
+      />,
+    );
+    await choose(
+      screen.getByLabelText("Who can read every new channel"),
+      "Restricted",
+    );
+    const next = onChange.mock.calls.at(-1)![0] as Record<
+      string,
+      ChannelChoice
+    >;
+    expect(next["1"]!.requiredPermissions).toEqual(["billing:manage"]);
+    for (const [id, choice] of Object.entries(next)) {
+      if (choice.action === "create_new") {
+        expect([id, choice.visibility]).toEqual([id, "restricted"]);
+      }
+    }
   });
 
   it("skips a whole category in one click, and nothing outside it", () => {
@@ -1776,7 +2014,7 @@ describe("ChannelMappingStep — defaults, groups, and what still needs deciding
   it("warns on the upload path that an export does not say what was private", () => {
     renderStep({ knowsPrivacy: false, onRescan: undefined });
     expect(
-      screen.getByText(/An export does not say which channels were private/),
+      screen.getByText(/An export doesn.t say which channels were private/),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Scan again" }),
@@ -1811,7 +2049,8 @@ describe("RoleMappingStep — Discord roles become Frapp roles (#2818)", () => {
         onChange={() => {}}
       />,
     );
-    expect(screen.getByText(/Nobody is put into a role/)).toBeInTheDocument();
+    expect(screen.getByText(/Nobody is added to a role/)).toBeInTheDocument();
+    openRolePiles();
     // A guess is labelled as one, so the admin gives it a second look.
     expect(screen.getByText("Close match")).toBeInTheDocument();
     expect(
@@ -1835,10 +2074,11 @@ describe("RoleMappingStep — Discord roles become Frapp roles (#2818)", () => {
         onChange={onChange}
       />,
     );
+    // The name is a problem, so its pile and its name box open by themselves.
     expect(
       screen.getByText("Name the new role for Rush Chair."),
     ).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("New role name"), {
+    fireEvent.change(screen.getByLabelText("New role name for Rush Chair"), {
       target: { value: "Rush" },
     });
     expect(onChange).toHaveBeenCalledWith("r1", {
@@ -1847,7 +2087,180 @@ describe("RoleMappingStep — Discord roles become Frapp roles (#2818)", () => {
     });
   });
 
-  it("locks every role on Ignore, and says why, for a viewer who cannot manage roles", () => {
+  it("sorts roles into piles by what they do, opening only the ones that open channels", () => {
+    render(
+      <RoleMappingStep
+        roles={[
+          { roleId: "r1", roleName: "Gym" },
+          { roleId: "r2", roleName: "Cabinet" },
+          { roleId: "r3", roleName: "Recording Secretary" },
+          { roleId: "r4", roleName: "Mod Assist" },
+        ]}
+        choices={{
+          r1: { action: "new", name: "Gym" },
+          r2: { action: "new", name: "Cabinet" },
+          r3: { action: "existing", roleId: "role-secretary" },
+          r4: { action: "new", name: "Mod Assist" },
+        }}
+        matches={{ r3: "close" }}
+        privateReads={
+          new Map([
+            ["r2", 14],
+            ["r3", 8],
+            ["r4", 31],
+          ])
+        }
+        frappRoles={frappRoles}
+        issues={[]}
+        lock={null}
+        onChange={() => {}}
+      />,
+    );
+    // Most channels first, in the open pile; the others are folded.
+    const open = screen.getByRole("list");
+    expect(
+      within(open)
+        .getAllByRole("combobox")
+        .map((box) => box.getAttribute("aria-label")),
+    ).toEqual(["Mod Assist becomes", "Cabinet becomes"]);
+    expect(
+      screen.getByRole("button", { name: /^Match your roles/ }),
+    ).toHaveTextContent("1 close match to check");
+    expect(
+      screen.queryByRole("combobox", { name: "Gym becomes" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps a role in its pile while it is changed", () => {
+    render(
+      <RoleMappingStep
+        roles={[
+          { roleId: "r1", roleName: "Treasurer" },
+          { roleId: "r2", roleName: "Cabinet" },
+        ]}
+        choices={{
+          // Was matched to Treasurer; the admin has just set it to Skip.
+          r1: { action: "ignore" },
+          r2: { action: "new", name: "Cabinet" },
+        }}
+        matches={{}}
+        startingMatches={{ r1: "same-name" }}
+        privateReads={new Map([["r2", 3]])}
+        frappRoles={frappRoles}
+        issues={[]}
+        lock={null}
+        onChange={() => {}}
+      />,
+    );
+    const pile = screen.getByRole("button", { name: /^Match your roles/ });
+    fireEvent.click(pile);
+    const body = document.getElementById(pile.getAttribute("aria-controls")!)!;
+    expect(
+      within(body).getByRole("combobox", { name: "Treasurer becomes" }),
+    ).toHaveTextContent("Skip");
+  });
+
+  it("opens a pile on a problem and shows its row, past the limit too", () => {
+    const many = Array.from({ length: 20 }, (_, index) => ({
+      roleId: `r${index}`,
+      roleName: `Role ${index}`,
+    }));
+    render(
+      <RoleMappingStep
+        roles={many}
+        choices={Object.fromEntries(
+          many.map((role) => [
+            role.roleId,
+            { action: "new" as const, name: role.roleName },
+          ]),
+        )}
+        matches={{}}
+        privateReads={new Map()}
+        frappRoles={frappRoles}
+        issues={[
+          { roleId: "r19", message: "A role named Role 19 already exists." },
+        ]}
+        lock={null}
+        onChange={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /^Open no private channel/ }),
+    ).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.getByRole("combobox", { name: "Role 19 becomes" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("A role named Role 19 already exists."),
+    ).toBeInTheDocument();
+    // The rest of the overflow stays folded.
+    expect(
+      screen.queryByRole("combobox", { name: "Role 18 becomes" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Show 4 more" }),
+    ).toBeInTheDocument();
+  });
+
+  it("acts on every ticked role at once, and on a whole pile", () => {
+    const onChange = vi.fn();
+    render(
+      <RoleMappingStep
+        roles={[
+          { roleId: "r1", roleName: "Monkey Tree" },
+          { roleId: "r2", roleName: "Stonk Trader" },
+          { roleId: "r3", roleName: "Cabinet" },
+          { roleId: "r4", roleName: "Muted" },
+          { roleId: "r5", roleName: "Minecraft" },
+        ]}
+        choices={{
+          r1: { action: "new", name: "Monkey Tree" },
+          r2: { action: "new", name: "Stonk Trader" },
+          r3: { action: "new", name: "Cabinet" },
+          r4: { action: "new", name: "Muted" },
+          r5: { action: "new", name: "Minecraft" },
+        }}
+        matches={{}}
+        privateReads={
+          new Map([
+            ["r1", 1],
+            ["r2", 1],
+            ["r3", 14],
+          ])
+        }
+        frappRoles={frappRoles}
+        issues={[]}
+        lock={null}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("Select Monkey Tree"));
+    fireEvent.click(screen.getByLabelText("Select Stonk Trader"));
+    const bar = screen.getByRole("region", { name: "Selected roles" });
+    expect(bar).toHaveTextContent("2 selected");
+    fireEvent.click(within(bar).getByRole("button", { name: "Skip" }));
+    expect(onChange.mock.calls).toEqual([
+      ["r1", { action: "ignore" }],
+      ["r2", { action: "ignore" }],
+    ]);
+    // The selection clears, so the bar goes.
+    expect(
+      screen.queryByRole("region", { name: "Selected roles" }),
+    ).not.toBeInTheDocument();
+
+    onChange.mockClear();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Skip every role in Open no private channel",
+      }),
+    );
+    expect(onChange.mock.calls).toEqual([
+      ["r4", { action: "ignore" }],
+      ["r5", { action: "ignore" }],
+    ]);
+  });
+
+  it("locks every role on Skip, and says why, for a viewer who cannot manage roles", () => {
     render(
       <RoleMappingStep
         roles={[{ roleId: "r1", roleName: "Exec" }]}
@@ -1860,7 +2273,10 @@ describe("RoleMappingStep — Discord roles become Frapp roles (#2818)", () => {
         onChange={() => {}}
       />,
     );
-    expect(screen.getByLabelText("Becomes")).toBeDisabled();
+    openRolePiles();
+    expect(
+      screen.getByRole("combobox", { name: "Exec becomes" }),
+    ).toBeDisabled();
     expect(
       screen.getByText(/needs permission to manage roles/),
     ).toBeInTheDocument();
@@ -1868,7 +2284,7 @@ describe("RoleMappingStep — Discord roles become Frapp roles (#2818)", () => {
 });
 
 describe("RoleMappingStep — when roles cannot be loaded (#2818)", () => {
-  it("holds every role on Ignore, says why, and offers a retry", () => {
+  it("holds every role on Skip, says why, and offers a retry", () => {
     const retry = vi.fn();
     render(
       <RoleMappingStep
@@ -1882,12 +2298,122 @@ describe("RoleMappingStep — when roles cannot be loaded (#2818)", () => {
         onChange={() => {}}
       />,
     );
-    expect(screen.getByLabelText("Becomes")).toBeDisabled();
+    openRolePiles();
+    expect(
+      screen.getByRole("combobox", { name: "Exec becomes" }),
+    ).toBeDisabled();
     expect(
       screen.getByText(/could not load your chapter.s roles/),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(retry).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ReviewStep — a summary you can scan", () => {
+  const channels = [
+    { channelId: "1", channelName: "general", category: null },
+    {
+      channelId: "2",
+      channelName: "cabinet",
+      category: null,
+      privateInDiscord: true,
+    },
+    { channelId: "3", channelName: "memes", category: null },
+    { channelId: "4", channelName: "links", category: null },
+    { channelId: "5", channelName: "vault", category: null, readable: false },
+    { channelId: "6", channelName: "old-news", category: null },
+    {
+      channelId: "7",
+      channelName: "exec",
+      category: null,
+      privateInDiscord: true,
+    },
+  ];
+  const roles = Array.from({ length: 30 }, (_, index) => ({
+    roleId: `r${index}`,
+    roleName: `Role ${index}`,
+  }));
+
+  it("leads with counts, folds the lists, and notes only what differs", () => {
+    render(
+      <ReviewStep
+        staged={
+          {
+            channels,
+            roles,
+            guildName: null,
+            exportCount: 0,
+            mediaCount: 0,
+            resumedCount: 0,
+          } as never
+        }
+        serverName="Phi Gamma Delta"
+        source="bot"
+        channelChoices={{
+          "1": { action: "use_existing", targetChannelId: "ch-1" },
+          "2": {
+            action: "create_new",
+            newName: "cabinet",
+            visibility: "discord",
+          },
+          "3": {
+            action: "create_new",
+            newName: "memes",
+            visibility: "chapter",
+          },
+          "4": {
+            action: "create_new",
+            newName: "resources",
+            visibility: "chapter",
+          },
+          "5": { action: "skip" },
+          "6": { action: "skip" },
+          // Private in Discord, opened to everyone: the one note that warns.
+          "7": {
+            action: "create_new",
+            newName: "exec",
+            visibility: "chapter",
+          },
+        }}
+        roles={roles}
+        roleChoices={Object.fromEntries(
+          roles.map((role) => [
+            role.roleId,
+            { action: "new" as const, name: role.roleName },
+          ]),
+        )}
+        readersOf={() => null}
+      />,
+    );
+    expect(
+      screen.getByText(/Phi Gamma Delta, read by the Frapp bot/),
+    ).toBeInTheDocument();
+
+    // Importing is open, one line per channel, a note only where it differs.
+    const importing = screen.getByRole("button", {
+      name: /^Importing 5 channels/,
+    });
+    expect(importing).toHaveAttribute("aria-expanded", "true");
+    expect(importing).toHaveTextContent("1 private · 1 merged");
+    expect(screen.getByText("into #general")).toBeInTheDocument();
+    expect(screen.getByText("from #links")).toBeInTheDocument();
+    expect(screen.getByText("whole chapter")).toBeInTheDocument();
+    expect(screen.queryByText(/same as Discord/)).toBeNull();
+
+    // Skipped and roles are counts until opened.
+    expect(
+      screen.getByRole("button", { name: /^Skipping 2/ }),
+    ).toHaveTextContent("1 Frapp can\u2019t read");
+    expect(screen.queryByText("#old-news")).toBeNull();
+    const created = screen.getByRole("button", { name: /^Creating 30 roles/ });
+    expect(screen.queryByText("Role 0")).toBeNull();
+    fireEvent.click(created);
+    expect(screen.getByText("Role 0")).toBeInTheDocument();
+    // A long list shows its first two dozen, and the rest on request.
+    expect(screen.queryByText("Role 29")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show all 30" }));
+    expect(screen.getByText("Role 29")).toBeInTheDocument();
   });
 });
 
