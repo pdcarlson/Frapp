@@ -3,6 +3,8 @@ import { ImageManipulator } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  PHOTO_JPEG_QUALITY,
+  PHOTO_MAX_EDGE,
   pickAndUploadPhoto,
   resolveUploadable,
   safeBasename,
@@ -121,7 +123,9 @@ describe("resolveUploadable", () => {
       mimeType: "image/heic",
     });
 
-    expect(manipulator.manipulate).toHaveBeenCalledWith("file:///IMG_0001.HEIC");
+    expect(manipulator.manipulate).toHaveBeenCalledWith(
+      "file:///IMG_0001.HEIC",
+    );
     expect(result.contentType).toBe("image/jpeg");
     expect(result.filename).toBe("IMG_0001.jpg");
     expect(result.uri).toBe("file:///out.jpg");
@@ -195,6 +199,91 @@ describe("resolveUploadable", () => {
   });
 });
 
+describe("resolveUploadable — camera photos are shrunk", () => {
+  function lastContext() {
+    return manipulator.manipulate.mock.results.at(-1)?.value as {
+      resize: ReturnType<typeof vi.fn>;
+      renderAsync: ReturnType<typeof vi.fn>;
+    };
+  }
+
+  it("shrinks a full-size camera JPEG to the long-edge cap", async () => {
+    const result = await resolveUploadable({
+      uri: "file:///IMG_0002.jpg",
+      fileName: "IMG_0002.jpg",
+      mimeType: "image/jpeg",
+      width: 4032,
+      height: 3024,
+      fileSize: 4.1 * 1024 * 1024,
+    });
+
+    expect(manipulator.manipulate).toHaveBeenCalledWith("file:///IMG_0002.jpg");
+    expect(lastContext().resize).toHaveBeenCalledWith({
+      width: PHOTO_MAX_EDGE,
+    });
+    const rendered = await lastContext().renderAsync.mock.results[0]?.value;
+    expect(rendered.saveAsync).toHaveBeenCalledWith({
+      format: "jpeg",
+      compress: PHOTO_JPEG_QUALITY,
+    });
+    expect(result).toEqual({
+      uri: "file:///out.jpg",
+      filename: "IMG_0002.jpg",
+      contentType: "image/jpeg",
+    });
+  });
+
+  it("caps the height of a portrait photo", async () => {
+    await resolveUploadable({
+      uri: "file:///IMG_0003.HEIC",
+      fileName: "IMG_0003.HEIC",
+      mimeType: "image/heic",
+      width: 3024,
+      height: 4032,
+    });
+
+    expect(lastContext().resize).toHaveBeenCalledWith({
+      height: PHOTO_MAX_EDGE,
+    });
+  });
+
+  it("re-encodes a large JPEG of unknown size, but leaves a small one alone", async () => {
+    await resolveUploadable({
+      uri: "file:///big.jpg",
+      fileName: "big.jpg",
+      mimeType: "image/jpeg",
+      fileSize: 3 * 1024 * 1024,
+    });
+    expect(manipulator.manipulate).toHaveBeenCalledTimes(1);
+    expect(lastContext().resize).not.toHaveBeenCalled();
+
+    const small = await resolveUploadable({
+      uri: "file:///small.jpg",
+      fileName: "small.jpg",
+      mimeType: "image/jpeg",
+      width: 1200,
+      height: 900,
+      fileSize: 300 * 1024,
+    });
+    expect(manipulator.manipulate).toHaveBeenCalledTimes(1);
+    expect(small.uri).toBe("file:///small.jpg");
+  });
+
+  it("never shrinks a PNG, whatever its size", async () => {
+    const result = await resolveUploadable({
+      uri: "file:///scan.png",
+      fileName: "scan.png",
+      mimeType: "image/png",
+      width: 5000,
+      height: 7000,
+      fileSize: 20 * 1024 * 1024,
+    });
+
+    expect(manipulator.manipulate).not.toHaveBeenCalled();
+    expect(result.uri).toBe("file:///scan.png");
+  });
+});
+
 describe("pickAndUploadPhoto — size accounting", () => {
   it("measures the TRANSCODED file, not the picked one", async () => {
     // The decisive case: a quality-1.0 JPEG re-encode of a large HEIC is
@@ -244,7 +333,11 @@ describe("pickAndUploadPhoto — size accounting", () => {
     // getInfoAsync reject. Escaping here would become an unhandled rejection:
     // no chip, no hint, a spinner that just stops.
     grantedLibrary();
-    picked({ uri: "file:///gone.jpg", fileName: "gone.jpg", mimeType: "image/jpeg" });
+    picked({
+      uri: "file:///gone.jpg",
+      fileName: "gone.jpg",
+      mimeType: "image/jpeg",
+    });
     fs.getInfoAsync.mockRejectedValue(new Error("ENOENT") as never);
 
     const result = await pickAndUploadPhoto("channel-1", vi.fn());
@@ -290,7 +383,9 @@ describe("pickAndUploadPhoto", () => {
 
   it("reports a cancel as a cancel, not a failure", async () => {
     grantedLibrary();
-    picker.launchImageLibraryAsync.mockResolvedValue({ canceled: true } as never);
+    picker.launchImageLibraryAsync.mockResolvedValue({
+      canceled: true,
+    } as never);
 
     const result = await pickAndUploadPhoto("channel-1", vi.fn());
 
@@ -301,7 +396,11 @@ describe("pickAndUploadPhoto", () => {
     // Gate before minting: a 40 MB pick should cost no round trip and read as
     // a sentence, not as the bucket's raw non-JSON 400.
     grantedLibrary();
-    picked({ uri: "file:///big.jpg", fileName: "big.jpg", mimeType: "image/jpeg" });
+    picked({
+      uri: "file:///big.jpg",
+      fileName: "big.jpg",
+      mimeType: "image/jpeg",
+    });
     fs.getInfoAsync.mockResolvedValue({
       exists: true,
       size: 40 * 1024 * 1024,
@@ -397,6 +496,8 @@ describe("pickAndUploadPhoto", () => {
       expect.objectContaining({
         httpMethod: "PUT",
         headers: { "Content-Type": "image/jpeg" },
+        // Not the default background session, which iOS runs slowly.
+        sessionType: FileSystem.FileSystemSessionType.FOREGROUND,
       }),
     );
     expect(result).toEqual({
@@ -472,9 +573,15 @@ describe("uploadFailureReason", () => {
   });
 
   it.each([
-    ["a 500's framework text", { statusCode: 500, message: "Internal server error" }],
+    [
+      "a 500's framework text",
+      { statusCode: 500, message: "Internal server error" },
+    ],
     ["a body with no status", { message: "something" }],
-    ["a native Error, which is platform jargon", new Error("NSURLErrorDomain -1009")],
+    [
+      "a native Error, which is platform jargon",
+      new Error("NSURLErrorDomain -1009"),
+    ],
     ["nothing at all", undefined],
   ])("shows the generic sentence for %s", (_label, err) => {
     expect(uploadFailureReason(err)).toBe(
@@ -483,19 +590,23 @@ describe("uploadFailureReason", () => {
   });
 
   it("tells a member to wait a minute after a 429, whatever its body says", () => {
-    expect(uploadFailureReason({ statusCode: 429, message: "Too Many Requests" })).toBe(
-      "Too many requests in a short time. Wait a minute, then try again.",
-    );
+    expect(
+      uploadFailureReason({ statusCode: 429, message: "Too Many Requests" }),
+    ).toBe("Too many requests in a short time. Wait a minute, then try again.");
   });
 
   it("reaches the chat composer too: a refused mint reads as the API's reason", async () => {
-    vi.mocked(ImagePicker).requestMediaLibraryPermissionsAsync.mockResolvedValue({
+    vi.mocked(
+      ImagePicker,
+    ).requestMediaLibraryPermissionsAsync.mockResolvedValue({
       granted: true,
       canAskAgain: true,
     } as never);
     vi.mocked(ImagePicker).launchImageLibraryAsync.mockResolvedValue({
       canceled: false,
-      assets: [{ uri: "file:///p.png", fileName: "p.png", mimeType: "image/png" }],
+      assets: [
+        { uri: "file:///p.png", fileName: "p.png", mimeType: "image/png" },
+      ],
     } as never);
 
     const result = await pickAndUploadPhoto(
@@ -513,7 +624,9 @@ describe("uploadFailureReason", () => {
   });
 
   it("never crops a chat attachment: that re-encodes and drops GIF frames", async () => {
-    vi.mocked(ImagePicker).requestMediaLibraryPermissionsAsync.mockResolvedValue({
+    vi.mocked(
+      ImagePicker,
+    ).requestMediaLibraryPermissionsAsync.mockResolvedValue({
       granted: true,
       canAskAgain: true,
     } as never);
