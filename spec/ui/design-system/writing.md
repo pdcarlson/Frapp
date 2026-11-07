@@ -215,7 +215,7 @@ The API's throttler sets this sentence (`THROTTLED_MESSAGE`, `custom-throttler.g
 
 - **Empty and no-results were one row doing two jobs.** `No members match this view` / `Try a broader search or invite your first members to populate this directory.` had to cover a chapter with no roster *and* a search that matched nothing, so it asserted neither and instructed the reader in both. The split is the one the Points table below already makes between an empty leaderboard and a search that matched nothing, for the same reason: a filtered view that matches nothing is not a claim about the data.
 - **The descriptions state a fact instead of giving an instruction**, except in the no-results hint slot, where the board's own drawn hint is an instruction (`Check the spelling`).
-- **`actives`, not `members`,** in the two titles about the list itself: it is the word the tab and the section label above the list already use, and the shipped mobile Directory's empty title is the same `No actives yet` (`apps/mobile/app/(tabs)/directory.tsx`). Mobile draws that title alone, without this row's description, under §4 as amended 2026-11-05 *(corrected 2026-11-05: this said mobile renders the same state, which stopped being true of the description)*. Mobile's Actives tab has no filters, so the filters row has no mobile twin. The error and offline rows keep `members`, because those are about the *records*, not about the tab.
+- **`actives`, not `members`,** in the two titles about the list itself: it is the word the tab and the section label above the list already use, and the shipped mobile Directory's empty title is the same `No actives yet` (`apps/mobile/app/(app)/directory.tsx`). Mobile draws that title alone, without this row's description, under §4 as amended 2026-11-05 *(corrected 2026-11-05: this said mobile renders the same state, which stopped being true of the description)*. Mobile's Actives tab has no filters, so the filters row has no mobile twin. The error and offline rows keep `members`, because those are about the *records*, not about the tab.
 - **The old error string named a concept that no longer exists.** "The members workflow no longer falls back to preview data" described the removal of a preview mode to a member who never saw one; `stateMicrocopy.members.preview*` had already lost both its readers.
 
 Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assembled at the call site because it quotes the live query.
@@ -576,7 +576,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Alumni-restricted channel | — | `Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.` |
 | Archived conversation (mobile only: a Group DM everyone else left, #348; web's channel list leaves archived channels out) | — | `This conversation is archived because everyone else left. You can still read it.` |
 | No chapter selected | `No chapter selected` | `Pick an active chapter to load its channels and messages.` |
-| Composer placeholder (mobile; `app/(tabs)/chat-thread.tsx`) | — | `Message <title>`, the header's title (`Message #general`, `Message Casey`); plain `Message` while the title is blank or falls back to `Thread`. The input's accessible name is the same string |
+| Composer placeholder (mobile; `app/(app)/chat-thread.tsx`) | — | `Message <title>`, the header's title (`Message #general`, `Message Casey`); plain `Message` while the title is blank or falls back to `Thread`. The input's accessible name is the same string |
 | Composer mounted before the channels resolve (#2176); visible after Enter, announced from the first render | — | `Still opening your channels. You can keep typing.` |
 | Send refused by the outbox, message put back (toast, #1728) | `Message not sent` | `It couldn't be queued for delivery. It's back in the composer.` |
 | Send refused by the outbox, composer changed since (toast, #1728) | `Message not sent` | `It couldn't be queued for delivery and was discarded. Re-enter it to try again.` |
@@ -804,7 +804,7 @@ is unavailable ([#2299](https://github.com/pdcarlson/Frapp/issues/2299)).
 ### Notification preferences (mobile, s16)
 
 The status footnote under Settings' notification switches (`notificationsMeta` in
-`apps/mobile/app/(tabs)/preferences.tsx`). It shows the first row that applies,
+`apps/mobile/app/(app)/preferences.tsx`). It shows the first row that applies,
 in this order, so a write in flight reads as saving even while the first read is
 still out. Once synced it shows nothing: the steady state needs no line.
 
@@ -1122,7 +1122,7 @@ Mobile's first-officer setup, `(auth)/create-chapter.tsx` (#3351). Titles are `S
 
 ### Invite members (mobile)
 
-`(tabs)/invite.tsx`, setup's invite step inside the chapter (2026-11-06; [`navigation.md` § Inviting members](../mobile/navigation.md#inviting-members)). The body, the card, the `Shared` list and both failure sentences are the setup Invite rows' above, word for word; the share message reads `Join <chapter name> on Frapp`, and Share waits until the chapter's name has loaded rather than send a placeholder.
+`(app)/invite.tsx`, setup's invite step inside the chapter (2026-11-06; [`navigation.md` § Inviting members](../mobile/navigation.md#inviting-members)). The body, the card, the `Shared` list and both failure sentences are the setup Invite rows' above, word for word; the share message reads `Join <chapter name> on Frapp`, and Share waits until the chapter's name has loaded rather than send a placeholder.
 
 | State | Title | Copy |
 |---|---|---|
@@ -1235,14 +1235,14 @@ failed.
 
 | State | Title | Description | Action |
 |---|---|---|---|
-| A tab screen failed (screen row) | `Couldn't load this screen` | `The error has been reported. Retrying usually clears it.` | `Retry`, with a `‹ Chat` back row above the card on a screen that hides the tab bar |
+| A screen failed (screen row) | `Couldn't load this screen` | `The error has been reported. Retrying usually clears it.` | `Retry`, with a back row above the card on a screen pushed over the tabs |
 | The app failed: the root layout or the tab group's (app row) | `Something broke on our side.` | `The error has been reported. Retrying usually clears it.` | `Retry` |
 
 - **The screen row is web's degraded segment, on a phone.** Each tab screen has its own boundary, so
   the tab bar and the other tabs still work and the title names the screen, as web's names the page.
-  Where the screen hides the tab bar, the way out is a `‹ Chat` back row above the card, not a second
-  action on it, because on iOS a member there would otherwise have only a Retry that keeps failing.
-  Elsewhere the tab bar is the way out. Which screens get the row is
+  On a screen pushed over the tabs, the way out is a back row above the card (naming the screen it
+  pops to, `‹ Chat` with nothing under it), not a second action on it, because a member there would
+  otherwise have only the swipe and a Retry that keeps failing. On a tab the tab bar is the way out. Which screens get the row is
   [`../mobile/navigation.md` § Back rows](../mobile/navigation.md#back-rows)'s to say.
 - **The app row is web's route error (`500`), on a phone.** It replaces a layout, so there is nothing
   left to go back to, and Retry, which mounts the layout again, is the only action.

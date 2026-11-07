@@ -294,7 +294,7 @@ it lands with the surface it measures, not before.
    all three carries all three); DM the officer sections to permission-holders; or accept a
    two-signal pulse. This decision should be made before #821 is promoted.
 2. **Cadence.** Weekly is proposed. Daily is too noisy for a digest; monthly is too slow to act on.
-3. **Surface parity.** The mobile chat surface exists — `(tabs)/chat-thread.tsx` is a live thread over
+3. **Surface parity.** The mobile chat surface exists — `(app)/chat-thread.tsx` is a live thread over
    `useChatChannel` — so mobile pulse parity is a renderer question, not a blocked one. Ship web-only
    first, or hold?
 4. **Is a dismissal private?** `chat_message_actions` makes every dismissal readable by the whole

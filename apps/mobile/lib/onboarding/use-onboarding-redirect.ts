@@ -3,10 +3,10 @@ import { usePathname, useRouter } from "expo-router";
 import { useAuthGateDestination } from "./use-auth-gate";
 
 /**
- * Walks a member who is already inside `(tabs)` onto s02/s03, or onto the
+ * Walks a member who is already inside `(app)` onto s02/s03, or onto the
  * Terms prompt.
  *
- * `(tabs)/_layout.tsx` is frozen and only redirects to sign-in. Without this,
+ * `(app)/_layout.tsx` is frozen and only redirects to sign-in. Without this,
  * `has_completed_onboarding === false` would paint the tabs — the exact
  * unreachability #958's review called out for s03 — and a member who hasn't
  * accepted the current Terms could keep posting (#2302).

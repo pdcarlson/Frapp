@@ -15,6 +15,7 @@ import {
 } from "@/components/events/new-event-sheet";
 import { seriesRuleOf, type EventEditTarget } from "@/lib/events/edit-event";
 import { BACK_TO_EVENTS } from "@/components/back-row";
+import { goBackTo } from "@/lib/href";
 import { PressableRow } from "@/components/list-section";
 import { SheetPrimaryButton } from "@/components/sheet-scaffold";
 import {
@@ -287,9 +288,9 @@ export default function EventDetailsScreen() {
           onSaved={({ leave }) => {
             // A series save can replace the occurrence on screen with a new
             // one; the Events list shows where it went.
-            if (leave) router.navigate(BACK_TO_EVENTS.href);
+            if (leave) goBackTo(router, BACK_TO_EVENTS.href);
           }}
-          onDeleted={() => router.navigate(BACK_TO_EVENTS.href)}
+          onDeleted={() => goBackTo(router, BACK_TO_EVENTS.href)}
         />
       ) : null}
     </>

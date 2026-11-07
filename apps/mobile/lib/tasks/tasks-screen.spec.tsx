@@ -23,7 +23,7 @@ import { TaskRow } from "@/components/tasks/task-row";
  * why and stops offering a toggle that cannot win, and that an ordinary
  * failure keeps its quiet revert and retap.
  *
- * It renders `app/(tabs)/tasks.tsx` but lives here: a spec under `app/` ships
+ * It renders `app/(app)/(tabs)/tasks.tsx` but lives here: a spec under `app/` ships
  * as a route module (`lib/routes.spec.ts`).
  */
 
@@ -150,7 +150,7 @@ vi.mock("@/lib/haptics", () => ({
   successHaptic: () => successHaptic(),
 }));
 
-import TasksScreen from "@/app/(tabs)/tasks";
+import TasksScreen from "@/app/(app)/(tabs)/tasks";
 import { UndoBar } from "@/components/tasks/undo-bar";
 
 /** "The member came back to this screen": an export of the mocked `expo-router` (vitest.setup.ts). */

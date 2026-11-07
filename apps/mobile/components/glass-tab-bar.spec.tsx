@@ -58,8 +58,6 @@ const ROUTES: Route[] = [
   { key: "events-1", name: "events" },
   { key: "tasks-1", name: "tasks" },
   { key: "more-1", name: "more" },
-  { key: "event-1", name: "event" },
-  { key: "check-in-1", name: "check-in" },
 ];
 const TITLES: Record<string, string> = {
   index: "Chat",
@@ -102,9 +100,6 @@ function element(focused: string) {
         options: {
           title: TITLES[route.name],
           tabBarIcon: () => null,
-          ...(route.name === "check-in"
-            ? { tabBarStyle: { display: "none" } }
-            : {}),
         },
       },
     ]),
@@ -205,18 +200,6 @@ describe("the bar (#3344)", () => {
     navigation.navigate.mockClear();
     act(() => byLabel(tree.root, "Chat")!.props.onPress());
     expect(navigation.navigate).not.toHaveBeenCalled();
-  });
-
-  it("widens the pill and drops the + on a pushed screen", () => {
-    const root = render("event").root;
-    expect(flat(pill(root).props.style).right).toBe(14);
-    expect(plus(root)).toBeUndefined();
-  });
-
-  it("draws nothing on a full-window screen", () => {
-    const root = render("check-in").root;
-    expect(pill(root)).toBeUndefined();
-    expect(plus(root)).toBeUndefined();
   });
 });
 

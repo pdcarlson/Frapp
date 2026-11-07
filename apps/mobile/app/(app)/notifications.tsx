@@ -39,7 +39,7 @@ import {
   selectUnreadIds,
 } from "@/lib/more/notifications";
 import { NOTIFICATION_FALLBACK_PATHNAME } from "@/lib/notifications/targets";
-import { asRoute } from "@/lib/href";
+import { asRoute, openHref } from "@/lib/href";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import {
   type ChapterBranding,
@@ -101,7 +101,7 @@ export default function NotificationsScreen() {
   // Query's structural sharing keeps the data reference stable when a refetch
   // returns identical rows, so a `new Date()` read inside the memo would
   // freeze the TODAY/EARLIER split at mount — a row from 11:47 PM would still
-  // sit under TODAY at 12:10 AM on a tab screen that never unmounts.
+  // sit under TODAY at 12:10 AM on a screen left up overnight.
   const now = useNowDate();
 
   const groups = useMemo(
@@ -169,7 +169,7 @@ export default function NotificationsScreen() {
               // the tap marks the row read and stays put rather than pushing
               // the notification list on top of itself.
               if (row.href !== NOTIFICATION_FALLBACK_PATHNAME) {
-                router.push(asRoute(row.href));
+                openHref(router, asRoute(row.href));
               }
             }}
           />

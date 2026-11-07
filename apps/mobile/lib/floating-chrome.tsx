@@ -1,11 +1,10 @@
 import {
   createContext,
   type ReactElement,
-  type ReactNode,
   useContext,
 } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { hidesTabBar, screenErrorLayout } from "@/components/route-error";
+import { screenErrorLayout } from "@/components/route-error";
 
 /**
  * Where the floating glass chrome sits (owner pick 2026-11-05, "Floating bar,
@@ -64,8 +63,8 @@ export function useFloatingChrome(): FloatingChrome {
 
 /**
  * Bottom padding a scrolling screen adds inside its safe area so its last row
- * clears the floating bar. 0 where no bar floats (a full-window screen, or
- * anything outside the tabs).
+ * clears the floating bar. 0 where no bar floats: any screen pushed over the
+ * tabs, or anything outside them.
  */
 export function useTabBarClearance(): number {
   const { tabBar } = useFloatingChrome();
@@ -74,22 +73,22 @@ export function useTabBarClearance(): number {
   return Math.max(floatingTabBarTop(bottom) - bottom, 0) + FLOATING_TAB_BAR.gap;
 }
 
+/** What a tab screen is told: the floating bar sits over all four. */
+const UNDER_TAB_BAR: FloatingChrome = { tabBar: true };
+
 /**
  * The tab navigator's `screenLayout`: the error boundary every screen already
- * gets (`screenErrorLayout`), plus whether a bar floats over it. Module-level
- * for the same reason `screenErrorLayout` is: an inline arrow would remount
- * every screen on each render of the layout.
+ * gets (`screenErrorLayout`), plus that the bar floats over it. Only the four
+ * tabs sit under the bar; a screen pushed over them (`app/(app)/_layout.tsx`)
+ * covers it and reads the default, no bar. Module-level for the same reason
+ * `screenErrorLayout` is: an inline arrow would remount every screen on each
+ * render of the layout.
  */
-export function floatingScreenLayout(props: {
-  route: { name: string; params?: object };
-  navigation: Parameters<typeof screenErrorLayout>[0]["navigation"];
-  options: { tabBarStyle?: unknown };
-  children: ReactNode;
-}): ReactElement {
+export function floatingScreenLayout(
+  props: Parameters<typeof screenErrorLayout>[0],
+): ReactElement {
   return (
-    <FloatingChromeContext.Provider
-      value={{ tabBar: !hidesTabBar(props.options.tabBarStyle) }}
-    >
+    <FloatingChromeContext.Provider value={UNDER_TAB_BAR}>
       {screenErrorLayout(props)}
     </FloatingChromeContext.Provider>
   );

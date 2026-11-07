@@ -439,7 +439,7 @@ Mobile asks for notification permission only after the member taps "Turn on", on
 | Property | Meaning |
 | --- | --- |
 | `answer` | `allowed` or `denied`, what the OS prompt returned after "Turn on" (a prompt the OS didn't show, as on iOS after one answer, reads as `denied`); or `not_now`, onboarding's "Not now" or the reminder closed, where no OS prompt was shown. A tap that opened the phone's settings instead (no prompt could appear) sends no event, since the answer happens outside the app |
-| `surface` | `primer` (onboarding's step, `use-push-primer.ts`), `reminder` (the chat home's reminder, same file) or `settings` (the push row, `app/(tabs)/preferences.tsx`) |
+| `surface` | `primer` (onboarding's step, `use-push-primer.ts`), `reminder` (the chat home's reminder, same file) or `settings` (the push row, `app/(app)/preferences.tsx`) |
 
 Neither property is content. The allow rate is a Trends insight: events with `answer = allowed` over all `push-prompt-answered` events, broken down by `surface`.
 

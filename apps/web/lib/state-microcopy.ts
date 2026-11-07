@@ -16,7 +16,7 @@ export const stateMicrocopy = {
     // "Actives", not "members", on both of these: it is the word the tab and
     // the section label above the list already use, and it is the string the
     // shipped mobile Directory renders for the same state
-    // (`apps/mobile/app/(tabs)/directory.tsx`). The two surfaces are meant to
+    // (`apps/mobile/app/(app)/directory.tsx`). The two surfaces are meant to
     // read as one product, and this is the cheapest place to stop them drifting.
     emptyTitle: "No actives yet",
     emptyDescription: "Actives appear here once they join.",

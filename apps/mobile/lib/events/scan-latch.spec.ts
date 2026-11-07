@@ -71,7 +71,7 @@ describe("createScanLatch", () => {
 });
 
 /**
- * The foreign-code path in `app/(tabs)/check-in.tsx` deliberately does *not*
+ * The foreign-code path in `app/(app)/check-in.tsx` deliberately does *not*
  * use this latch — it keeps its own "last reported" ref instead. These cases
  * pin why: borrowing the latch there would leave it closed on a code that never
  * submits, starving the real one.

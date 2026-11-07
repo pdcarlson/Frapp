@@ -5,16 +5,19 @@ import type {
   ReactTestInstance,
   ReactTestRenderer,
 } from "react-test-renderer";
+import { isTabHref } from "@/lib/href";
 import { drawnText } from "@/test/screen-text";
 
 /**
  * #3022. Asserts a rendered screen draws exactly one back row, that it reads
  * `<label>` beside the drawn `‹`, naming its destination, and that pressing it goes
  * to `href` rather than back through history. Shared by the screen specs so
- * each one checks the same three things.
+ * each one checks the same three things. These specs render with nothing under
+ * the screen, so the row takes its fixed destination: a tab is popped down to
+ * (`dismissTo`) and any other screen navigated to (`goBackTo` in `lib/href.ts`).
  *
  * The router is the suite-wide `vi.fn()` object (`vitest.setup.ts`), which
- * keeps its calls across tests, so this clears `navigate` before pressing.
+ * keeps its calls across tests, so this clears both before pressing.
  */
 export function expectBackRow(
   tree: ReactTestRenderer,
@@ -35,10 +38,12 @@ export function expectBackRow(
 
   const router = vi.mocked(useRouter)();
   vi.mocked(router.navigate).mockClear();
+  vi.mocked(router.dismissTo).mockClear();
   act(() => {
     row!.props.onPress();
   });
-  expect(router.navigate).toHaveBeenCalledWith(href);
+  const way = isTabHref(href as never) ? router.dismissTo : router.navigate;
+  expect(way).toHaveBeenCalledWith(href);
   expect(router.back).not.toHaveBeenCalled();
 }
 
