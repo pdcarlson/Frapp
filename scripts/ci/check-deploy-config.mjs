@@ -73,9 +73,10 @@
 // (AGENTS.md § Credentials and secrets), so a bad minimum usually goes live
 // with the next API deploy. Not always: a restart outside a deploy run (a
 // crash, a manual one, a sync set to redeploy) turns it on with no run to stop
-// it, and only the next run's client check sees it. When this run deploys the API, each platform's minimum is put to the
-// same probe that check sends (`clientProbes`, from the TRUSTED ref, as there)
-// and judged by a copy of the API's own rule (`lib/client-version.mjs`). A
+// it, and only the next run's client check sees it. When this run deploys the
+// API, each platform's minimum is put to the same probe that check sends
+// (`clientProbes`, from the TRUSTED ref, as there) and judged by a copy of the
+// API's own rule (`lib/client-version.mjs`). A
 // minimum that would answer that probe `update_required: true` fails a
 // production run and warns on staging, where a minimum above the current
 // version is how the update gate is tested. The client check stays, as the
