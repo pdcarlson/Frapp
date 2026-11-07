@@ -340,6 +340,22 @@ export interface SendMessageArgs {
    * claim, not an instruction.
    */
   attachments?: OutboxAttachment[] | null;
+  /**
+   * Claims still uploading when the member pressed Send (mobile's photo tray).
+   * The optimistic row goes up at once, carrying `attachmentCount`; the
+   * outbox write and the POST wait for this to resolve, and the claims it
+   * resolves to are sent in place of `attachments`. A rejection leaves the
+   * row in place, failed with the rejection's message, and rejects with
+   * {@link AttachmentsNotReadyError}. Nothing is in the outbox yet, so the
+   * caller owns Retry and Discard for that row: it sends again under the same
+   * `clientMessageId`, or removes the row.
+   *
+   * Until it resolves the message lives only in memory: an app killed while
+   * photos upload loses it. The window is the upload time of shrunk photos.
+   */
+  attachmentsReady?: Promise<OutboxAttachment[]> | null;
+  /** How many files the optimistic row shows while `attachmentsReady` runs. */
+  attachmentCount?: number;
   /** Reuse a previously-generated id (outbox flush, idempotent retry). */
   clientMessageId?: string;
   /**
@@ -351,6 +367,17 @@ export interface SendMessageArgs {
    * value. Omitted (a first-time compose send) reads as `0`.
    */
   priorAttempts?: number;
+}
+
+/**
+ * `sendMessage`'s `attachmentsReady` rejected. The optimistic row is still in
+ * the cache, marked failed with this message; nothing was queued.
+ */
+export class AttachmentsNotReadyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AttachmentsNotReadyError";
+  }
 }
 
 /**
@@ -423,29 +450,49 @@ export async function sendMessage(
     kind: args.kind,
     payload: args.payload,
     replyToId: args.replyToId ?? null,
-    attachmentCount: args.attachments?.length ?? 0,
+    attachmentCount: args.attachmentCount ?? args.attachments?.length ?? 0,
   });
 
   patchCache(ctx.queryClient, args.channelId, (cache) =>
     upsertOptimistic(cache, optimistic),
   );
 
-  const intent = {
-    kind: args.kind ?? "text",
-    payload: args.payload ?? null,
-    replyToId: args.replyToId ?? null,
-    attachments: args.attachments ?? null,
-  } as const;
-
   // Draft clear is a Dexie drafts-table op that happens to sit on this
   // path. Failing it must not fail a send that can still enqueue — a flush
   // of an already-queued row would otherwise abandon a message that was
-  // never this attempt's to drop.
+  // never this attempt's to drop. Before any wait for uploads below, so a
+  // draft the member types meanwhile is never the one cleared.
   try {
     await ctx.outbox.clearDraft(args.channelId);
   } catch {
     // Best-effort.
   }
+
+  let attachments = args.attachments ?? null;
+  if (args.attachmentsReady) {
+    try {
+      attachments = await args.attachmentsReady;
+    } catch (err) {
+      // The row stays, failed, with the reason: the caller holds what a
+      // retry needs (no outbox row exists yet) and the member sees which
+      // message didn't go, in whatever channel it was sent from.
+      const reason =
+        err instanceof Error && err.message
+          ? err.message
+          : "A photo didn't upload.";
+      patchCache(ctx.queryClient, args.channelId, (cache) =>
+        markFailed(cache, clientId, reason),
+      );
+      throw new AttachmentsNotReadyError(reason);
+    }
+  }
+
+  const intent = {
+    kind: args.kind ?? "text",
+    payload: args.payload ?? null,
+    replyToId: args.replyToId ?? null,
+    attachments,
+  } as const;
 
   let enqueued: OutboxRow;
   try {
@@ -486,8 +533,8 @@ export async function sendMessage(
           kind: args.kind ?? "text",
           payload: (args.payload ?? undefined) as unknown as undefined,
           reply_to_id: args.replyToId ?? undefined,
-          attachments: args.attachments?.length
-            ? args.attachments.map((attachment) => ({
+          attachments: attachments?.length
+            ? attachments.map((attachment) => ({
                 storage_path: attachment.storagePath,
                 filename: attachment.filename,
                 content_type: attachment.contentType,
