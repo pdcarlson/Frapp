@@ -169,7 +169,10 @@ app's current `expo.version` is recorded in `apps/mobile/store/shipped-builds.js
 update would then reach that build and crash it. Dependabot can't bump `expo.version` itself: push
 the bump (`apps/mobile/app.json`) to the PR's branch, or land it first and rebase. The rule:
 [`spec/environments/README.md` § Mobile (EAS)](../../spec/environments/README.md#mobile-eas),
-**Native changes**.
+**Native changes**. A `@sentry/react-native` bump also fails `apps/mobile/lib/sentry/options.spec.ts`
+until its native breadcrumbs are re-read, because they never pass a JS hook
+([`observability.md`](../../spec/behavior/observability.md), the bullet that locks those versions,
+#3342).
 
 **For the `expo-*` client packages, apply (b) mechanically, not as a judgement:** *every* `expo-*`
 entry in `apps/mobile/package.json` belongs in the list, whatever the package looks like from the
