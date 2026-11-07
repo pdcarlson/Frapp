@@ -57,7 +57,6 @@ import {
   type MessageActionsSheetHandle,
   type MessageActionsTarget,
 } from "./message-actions-sheet";
-import { BLOCK_ROW_DESCRIPTION } from "@/lib/chat/block-actions";
 import {
   BLOCK_NOT_A_MEMBER_BODY,
   blockConfirmBody,
@@ -88,6 +87,7 @@ function render(
     onReply?: (messageId: string) => void;
     onEdit?: (messageId: string) => void;
     onDelete?: (messageId: string) => void;
+    onMention?: (messageId: string) => void;
   } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -206,7 +206,7 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     ).toHaveLength(0);
   });
 
-  it("draws no chevron on a row that acts in place", () => {
+  it("draws no chevron on any menu row, as Discord's menu draws none", () => {
     const chevrons = (tree: ReactTestRenderer) =>
       tree.root.findAll(
         (node) =>
@@ -214,7 +214,7 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
       ).length;
     // Reply, Edit and Delete all act here.
     expect(chevrons(render(OWN))).toBe(0);
-    // Block acts here too; only Report opens a sheet of its own.
+    // Report opens the form, but a menu row is a verb, not a link.
     const blockable = render({
       ...SOMEONE_ELSES,
       messageId: "m1",
@@ -226,11 +226,10 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
       sentAt: SENT_AT,
       reactedWith: [],
     });
-    expect(text(blockable)).toContain("Block Blake");
-    expect(chevrons(blockable)).toBe(1);
+    expect(chevrons(blockable)).toBe(0);
   });
 
-  it("offers Copy text first, copies the body as written, then says Copied in place", async () => {
+  it("offers Copy text after Reply, copies the body as written, then says Copied in place", async () => {
     vi.useFakeTimers();
     try {
       const tree = render({ ...OWN, copyText: "see you at **8**" });
@@ -241,7 +240,7 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
             typeof node.props.onPress === "function",
         )
         .map((node) => node.props.accessibilityLabel as string);
-      expect(labels.indexOf("Copy text")).toBeLessThan(labels.indexOf("Reply"));
+      expect(labels.indexOf("Reply")).toBeLessThan(labels.indexOf("Copy text"));
 
       pressByLabel(tree, "Copy text");
       await flush();
@@ -441,6 +440,42 @@ describe("MessageActionsSheet — quick reactions", () => {
     expect(onReact).not.toHaveBeenCalled();
   });
 
+  it("opens every emoji from the last cell, and reacts with the one picked", () => {
+    const onReact = vi.fn();
+    const onUnreact = vi.fn();
+    const present = vi.fn();
+    const dismiss = vi.fn();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MessageActionsSheet
+            ref={createRef<MessageActionsSheetHandle>()}
+            target={TARGET}
+            onReact={onReact}
+            onUnreact={onUnreact}
+          />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) =>
+            element.type === "BottomSheetModal" ? { present, dismiss } : null,
+        },
+      );
+    });
+    pressByLabel(tree, "Add a reaction");
+    expect(present).toHaveBeenCalled();
+    const picker = tree.root.find(
+      (node) =>
+        typeof node.props.onPick === "function" &&
+        Array.isArray(node.props.selected),
+    );
+    expect(picker.props.selected).toEqual(["🔥"]);
+    act(() => picker.props.onPick("🎉", false));
+    expect(onReact).toHaveBeenCalledWith("m4", "🎉");
+    act(() => picker.props.onPick("🔥", true));
+    expect(onUnreact).toHaveBeenCalledWith("m4", "🔥");
+  });
+
   it("draws no picks when the thread wires no reaction handlers", () => {
     const tree = renderWith(TARGET, {});
     expect(text(tree)).not.toContain("🙏");
@@ -508,7 +543,7 @@ describe("MessageActionsSheet — menu", () => {
     expect(blockActions.block).toHaveBeenCalledWith(BLOCKED);
   });
 
-  it("describes Block the way every other surface does", () => {
+  it("keeps Block off the menu: it is one step in, on the report form", () => {
     const tree = render({
       ...SOMEONE_ELSES,
       messageId: "m1",
@@ -520,7 +555,103 @@ describe("MessageActionsSheet — menu", () => {
       sentAt: SENT_AT,
       reactedWith: [],
     });
-    expect(text(tree)).toContain(BLOCK_ROW_DESCRIPTION);
+    const menu = tree.root.find(
+      (node) =>
+        typeof node.props.onDismiss === "function" &&
+        node.props.enableDynamicSizing === true,
+    );
+    const report = tree.root.find(
+      (node) => node.props.snapPoints?.[0] === "85%",
+    );
+    const labels = (node: typeof menu) =>
+      node
+        .findAll((n) => typeof n.props.accessibilityLabel === "string")
+        .map((n) => n.props.accessibilityLabel as string);
+    expect(labels(menu)).not.toContain("Block Blake");
+    expect(labels(report)).toContain("Block Blake");
+  });
+
+  it("draws bare labels, with no sentence explaining a row", () => {
+    const tree = render({
+      ...SOMEONE_ELSES,
+      canReply: true,
+      canDelete: true,
+      canMention: true,
+      messageId: "m1",
+      copyText: "hi",
+      blockUserId: BLOCKED,
+      senderName: "Blake",
+      senderInDirectory: true,
+      senderLabel: "Blake",
+      sentAt: SENT_AT,
+      reactedWith: [],
+    });
+    expect(text(tree)).not.toContain("officers will be able to see it");
+    expect(text(tree)).not.toContain("Hides their messages");
+  });
+
+  it("orders the rows the way Discord does: Reply, Copy text, Mention, Report, Delete", () => {
+    const tree = render(
+      {
+        ...SOMEONE_ELSES,
+        canReply: true,
+        canDelete: true,
+        canMention: true,
+        messageId: "m1",
+        copyText: "hi",
+        blockUserId: BLOCKED,
+        senderName: "Blake",
+        senderInDirectory: true,
+        senderLabel: "Blake",
+        sentAt: SENT_AT,
+        reactedWith: [],
+      },
+      undefined,
+      { onMention: vi.fn() },
+    );
+    const menu = tree.root.find(
+      (node) =>
+        typeof node.props.onDismiss === "function" &&
+        node.props.enableDynamicSizing === true,
+    );
+    const order = menu
+      .findAll(
+        (n) =>
+          typeof n.props.accessibilityLabel === "string" &&
+          typeof n.props.onPress === "function",
+      )
+      .map((n) => n.props.accessibilityLabel as string)
+      .filter((label, i, all) => all.indexOf(label) === i);
+    expect(order).toEqual([
+      "Reply",
+      "Copy text",
+      "Mention",
+      "Report message",
+      "Delete message",
+    ]);
+  });
+
+  it("hands Mention's message to the thread, and offers it only when allowed", () => {
+    const onMention = vi.fn();
+    const base = {
+      ...SOMEONE_ELSES,
+      messageId: "m1",
+      copyText: null,
+      blockUserId: BLOCKED,
+      senderName: "Blake",
+      senderInDirectory: true,
+      senderLabel: "Blake",
+      sentAt: SENT_AT,
+      reactedWith: [],
+    };
+    expect(hasRow(render(base, undefined, { onMention }), "Mention")).toBe(
+      false,
+    );
+    const tree = render({ ...base, canMention: true }, undefined, {
+      onMention,
+    });
+    pressByLabel(tree, "Mention");
+    expect(onMention).toHaveBeenCalledWith("m1");
   });
 
   it("tells the caller when the API says the sender left, so Block stops being offered for them", async () => {
