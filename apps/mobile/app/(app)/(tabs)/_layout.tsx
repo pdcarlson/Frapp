@@ -9,6 +9,7 @@ import {
 } from "@/components/tab-glyphs";
 import { AppErrorScreen } from "@/components/route-error";
 import { GlassTabBar } from "@/components/glass-tab-bar";
+import { TourHost } from "@/components/onboarding/tour";
 import { SCREEN_TITLES } from "@/lib/back-target";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { floatingScreenLayout } from "@/lib/floating-chrome";
@@ -58,57 +59,65 @@ export default function TabLayout() {
   });
 
   return (
-    <Tabs
-      // On a tab, Android's back button returns to the tab the member came
-      // from rather than straight to Chat (the default, "firstRoute").
-      // Pushed screens sit on the stack above and pop first.
-      // `spec/ui/mobile/navigation.md` § Going back.
-      backBehavior="history"
-      // Each screen in its own error boundary, so one that fails to render
-      // leaves the tab bar and the other tabs working (#3378).
-      // It also tells each screen whether the floating bar sits over it, so
-      // its content can scroll clear of it (`lib/floating-chrome.tsx`).
-      screenLayout={floatingScreenLayout}
-      // The glass pill and the round + beside it (owner pick 2026-11-06;
-      // `spec/ui/mobile/navigation.md` § Tab bar, § Quick actions). It floats
-      // over the content, so it takes no room of its own; screens scroll clear
-      // of it through `useTabBarClearance`. Android's swipe bar and the iPhone
-      // home indicator are cleared by its own `bottom` offset (#3344).
-      tabBar={renderTabBar}
-      screenOptions={{
-        headerShown: false,
-      }}
-    >
-      {/* ── The four locked tabs ─────────────────────────────────────────── */}
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: SCREEN_TITLES.index,
-          tabBarIcon: ({ focused }) => <ChatGlyph {...glyphPaint(focused)} />,
+    // The first-run tour's host wraps the navigator, so its dim covers the
+    // screens and the floating bar both (`components/onboarding/tour.tsx`).
+    <TourHost>
+      <Tabs
+        // On a tab, Android's back button returns to the tab the member came
+        // from rather than straight to Chat (the default, "firstRoute").
+        // Pushed screens sit on the stack above and pop first.
+        // `spec/ui/mobile/navigation.md` § Going back.
+        backBehavior="history"
+        // Each screen in its own error boundary, so one that fails to render
+        // leaves the tab bar and the other tabs working (#3378).
+        // It also tells each screen whether the floating bar sits over it, so
+        // its content can scroll clear of it (`lib/floating-chrome.tsx`).
+        screenLayout={floatingScreenLayout}
+        // The glass pill and the round + beside it (owner pick 2026-11-06;
+        // `spec/ui/mobile/navigation.md` § Tab bar, § Quick actions). It floats
+        // over the content, so it takes no room of its own; screens scroll clear
+        // of it through `useTabBarClearance`. Android's swipe bar and the iPhone
+        // home indicator are cleared by its own `bottom` offset (#3344).
+        tabBar={renderTabBar}
+        screenOptions={{
+          headerShown: false,
         }}
-      />
-      <Tabs.Screen
-        name="events"
-        options={{
-          title: SCREEN_TITLES.events,
-          tabBarIcon: ({ focused }) => <EventsGlyph {...glyphPaint(focused)} />,
-        }}
-      />
-      <Tabs.Screen
-        name="tasks"
-        options={{
-          title: SCREEN_TITLES.tasks,
-          tabBarIcon: ({ focused }) => <TasksGlyph {...glyphPaint(focused)} />,
-        }}
-      />
-      <Tabs.Screen
-        name="more"
-        options={{
-          title: SCREEN_TITLES.more,
-          tabBarIcon: ({ focused }) => <MoreGlyph {...glyphPaint(focused)} />,
-        }}
-      />
-    </Tabs>
+      >
+        {/* ── The four locked tabs ─────────────────────────────────────────── */}
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: SCREEN_TITLES.index,
+            tabBarIcon: ({ focused }) => <ChatGlyph {...glyphPaint(focused)} />,
+          }}
+        />
+        <Tabs.Screen
+          name="events"
+          options={{
+            title: SCREEN_TITLES.events,
+            tabBarIcon: ({ focused }) => (
+              <EventsGlyph {...glyphPaint(focused)} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="tasks"
+          options={{
+            title: SCREEN_TITLES.tasks,
+            tabBarIcon: ({ focused }) => (
+              <TasksGlyph {...glyphPaint(focused)} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="more"
+          options={{
+            title: SCREEN_TITLES.more,
+            tabBarIcon: ({ focused }) => <MoreGlyph {...glyphPaint(focused)} />,
+          }}
+        />
+      </Tabs>
+    </TourHost>
   );
 }
 
