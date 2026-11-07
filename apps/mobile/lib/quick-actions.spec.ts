@@ -37,6 +37,7 @@ describe("which actions a member can use", () => {
     ).toEqual([
       "newEvent",
       "newTask",
+      "invite",
       "message",
       "checkIn",
       "hostCheckIn",
@@ -81,7 +82,8 @@ describe("which actions a member can use", () => {
       permissions: OFFICER,
       enabledModules: { events: false, hours: false, documents: false },
     });
-    expect(keys).toEqual(["newTask", "message"]);
+    // Invites have no module switch.
+    expect(keys).toEqual(["newTask", "invite", "message"]);
     expect(
       availableQuickActions({
         permissions: OFFICER,
@@ -101,6 +103,16 @@ describe("which actions a member can use", () => {
     expect(keys({})).toContain("study");
   });
 
+  it("offers Invite only to a role that can invite", () => {
+    const keys = (permissions: string[]) =>
+      availableQuickActions({
+        permissions,
+        enabledModules: undefined,
+      });
+    expect(keys(["members:view", "service:log"])).not.toContain("invite");
+    expect(keys(["members:invite"])).toContain("invite");
+  });
+
   it("offers New event only with the sheet's own permissions", () => {
     const keys = (permissions: string[]) =>
       availableQuickActions({
@@ -118,14 +130,14 @@ describe("what the panel shows", () => {
     enabledModules: undefined,
   });
 
-  it("starts an officer on the first six", () => {
+  it("starts an officer on the first six, Invite among them", () => {
     expect(resolveQuickActions(null, officer)).toEqual([
       "newEvent",
       "newTask",
+      "invite",
       "message",
       "checkIn",
       "hostCheckIn",
-      "logHours",
     ]);
   });
 
