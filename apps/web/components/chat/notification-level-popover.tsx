@@ -37,7 +37,8 @@ import type { ChatNotificationLevel } from "@repo/hooks";
  * overwritten by a stray click.
  */
 
-const OPTIONS: {
+/** The three levels and their words, shared with the rail's right-click menu. */
+export const NOTIFICATION_LEVEL_OPTIONS: {
   level: ChatNotificationLevel;
   label: string;
   description: string;
@@ -103,7 +104,7 @@ export function NotificationLevelPanel({
         </p>
       </div>
       <ul className="divide-y divide-border">
-        {OPTIONS.map((option) => {
+        {NOTIFICATION_LEVEL_OPTIONS.map((option) => {
           const selected = option.level === level;
           return (
             <li key={option.level}>
@@ -135,9 +136,7 @@ export function NotificationLevelPanel({
                     : "text-foreground hover:bg-card",
                 )}
               >
-                <span className="text-label font-semibold">
-                  {option.label}
-                </span>
+                <span className="text-label font-semibold">{option.label}</span>
                 <span
                   className={cn(
                     "text-caption",

@@ -60,6 +60,8 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
 import { asArray, cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
+import { chatDeepLink } from "@/lib/chat/chat-links";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import {
   useMaskedRefresh,
@@ -72,6 +74,7 @@ import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { vocab } from "@repo/org-archetypes";
 import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { useDeleteChannelFlow } from "./use-delete-channel-flow";
 import {
   classifyMessage,
   hiddenQuoteText,
@@ -112,6 +115,7 @@ import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
 import { SetupChecklistSection } from "./setup-checklist";
 import { ChannelMenu } from "./channel-menu";
+import type { ChannelRowActions } from "./channel-row-menu";
 import type { ChatSearchHit } from "./chat-search-popover";
 import type { BookmarkEntry } from "./bookmarks-popover";
 import { BlockListNotice } from "./block-list-notice";
@@ -1023,8 +1027,9 @@ export function ChatShell({
   const reopenDm = useGetOrCreateDm();
 
   // Opening a channel stamps the read cursor, and so does hiding a DM (#2303:
-  // a hidden row must leave no badge). Those are the only things that move
-  // it, and the only things that clear the badges above. Without it the rail lights up
+  // a hidden row must leave no badge), and so does the rail's right-click
+  // Mark as read. Those are the only things that move it, and the only things
+  // that clear the badges above. Without it the rail lights up
   // on first load and never goes out, which is worse than the dead badge this
   // slice replaced: it would show every channel as permanently unread.
   // `spec/behavior/chat/README.md` § Read Receipts: opening stamps to server
@@ -1038,6 +1043,73 @@ export function ChatShell({
     // was open do not resurface as unread. Mobile does the same on blur.
     return () => markReadMutate(activeChannelId);
   }, [activeChannelId, markReadMutate]);
+
+  // The rail row's right-click menu (owner, 2026-11-06). Which rows a channel
+  // offers is `channelRowActions`' call in `@repo/hooks`, scoped to the
+  // member's permissions; these are what each one does.
+  const router = useRouter();
+  const deleteChannelFlow = useDeleteChannelFlow(confirm);
+  // Its own mutation instance, not the header's: sharing one moved the
+  // header's `isError`/`variables` to whichever channel the rail last changed
+  // (clearing the open channel's "not saved" alert) and locked the header
+  // while a rail write was pending.
+  const setRailNotificationLevelAsync =
+    useSetChannelNotificationLevel().mutateAsync;
+  const rowActions = useMemo<ChannelRowActions>(
+    () => ({
+      permissions: permissionsPayload?.permissions,
+      onMarkRead: (channelId) => markReadMutate(channelId),
+      notificationLevelFor: (channelId) => levelByChannelId.get(channelId),
+      // The header's alert only shows on the open channel, and a rail change
+      // is usually to one that isn't, so a failure toasts. Per call, because
+      // `mutate`'s per-call `onError` runs only for the latest call.
+      onSetNotificationLevel: (channelId, level) =>
+        void setRailNotificationLevelAsync({ channelId, level }).catch(() =>
+          toast({
+            variant: "destructive",
+            description: "Couldn't change notifications. Try again.",
+          }),
+        ),
+      onCopyLink: (channelId) => {
+        const url = `${window.location.origin}${chatDeepLink({ channelId })}`;
+        void (async () => {
+          try {
+            // Inside the try: without a secure context `navigator.clipboard`
+            // is undefined and the call throws before any promise exists.
+            await navigator.clipboard.writeText(url);
+            toast({ description: "Link copied" });
+          } catch {
+            toast({
+              variant: "destructive",
+              title: "Copy failed",
+              description: "Open the channel and copy the address bar.",
+            });
+          }
+        })();
+      },
+      onEdit: (channelId) =>
+        router.push(`/chat-admin?channel=${encodeURIComponent(channelId)}`),
+      onDelete: (channelId) => {
+        const name =
+          channels.find((c) => c.id === channelId)?.name ?? "this channel";
+        void deleteChannelFlow({ id: channelId, name }, () =>
+          setSelectedChannelId((current) =>
+            current === channelId ? null : current,
+          ),
+        );
+      },
+    }),
+    [
+      permissionsPayload?.permissions,
+      markReadMutate,
+      levelByChannelId,
+      setRailNotificationLevelAsync,
+      toast,
+      router,
+      channels,
+      deleteChannelFlow,
+    ],
+  );
 
   // Unread and mention counts come from `GET /v1/channels/unread`, never from a
   // local re-derivation: the server excludes the viewer's own and deleted
@@ -1669,6 +1741,7 @@ export function ChatShell({
             unreadByChannelId={unreadByChannelId}
             activeChannelId={activeChannelId}
             onHide={hideFromRail}
+            rowActions={rowActions}
             sidebar={sidebarControls}
             onPick={(ch) => {
               if (ch.hidden) {
