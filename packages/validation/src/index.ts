@@ -726,9 +726,15 @@ export {
   CONFIRM_RETRY_MS,
   DEGRADED_THRESHOLD,
   deriveConnectionState,
+  connectionIndicator,
   healthProbeIsReachable,
 } from "./connection-state";
-export type { ConnectionInput, ConnectionState } from "./connection-state";
+export type {
+  ConnectionIndicator,
+  ConnectionInput,
+  ConnectionState,
+  RealtimeTransportStatus,
+} from "./connection-state";
 export type {
   SubscriptionBlockCode,
   SubscriptionRefusal,
