@@ -65,6 +65,14 @@ import {
  * storage-api). Declaring `image/jpeg` over HEIC bytes would therefore be
  * accepted, stored, and served — and then render as a broken image in
  * `message-attachments.tsx`. Re-encoding means the header is true.
+ *
+ * ## Camera photos are shrunk
+ *
+ * The one re-encode that is not about the type: a camera photo (a JPEG, or the
+ * HEIC transcode) larger than `PHOTO_MAX_EDGE` is brought down to it at
+ * `PHOTO_JPEG_QUALITY`. A full-size phone photo is 4 MB and up, and sending it
+ * was most of a slow upload. PNG, GIF and WebP are never touched, for the
+ * reasons above.
  */
 
 /** The mutation the screen already holds, narrowed to what this needs. */
@@ -128,6 +136,10 @@ export async function resolveUploadable(
     uri: string;
     fileName?: string | null;
     mimeType?: string;
+    /** The picked photo's pixel size and bytes, when the picker reports them. */
+    width?: number;
+    height?: number;
+    fileSize?: number;
   },
   /**
    * The allowlist the upload is checked against. Chat attachments are
@@ -158,19 +170,79 @@ export async function resolveUploadable(
   // no `fileName` at all both land here; iOS returns a null `fileName` for a
   // limited-permission library pick, which is not a rare path.
   if (declared && isAllowedUploadExtension(kind, filename)) {
+    // A camera JPEG is the one allowlisted type worth shrinking: no
+    // transparency or animation to lose, and a phone's 12-48 MP original is
+    // most of what made an upload slow (see `PHOTO_MAX_EDGE`).
+    if (declared === "image/jpeg" && isOversizedPhoto(asset)) {
+      const shrunk = await encodeJpeg(asset);
+      return { uri: shrunk, filename, contentType: "image/jpeg" };
+    }
     return { uri: asset.uri, filename, contentType: declared };
   }
 
   // Nothing allowlisted matched — HEIC from the iOS library is the case this
-  // exists for. Re-encode so the bytes match what we are about to declare.
-  const rendered = await ImageManipulator.manipulate(asset.uri).renderAsync();
-  const jpeg = await rendered.saveAsync({ format: SaveFormat.JPEG });
+  // exists for. Re-encode so the bytes match what we are about to declare,
+  // shrunk on the way like any other camera photo.
+  const jpeg = await encodeJpeg(asset);
   const base = filename.replace(/\.[^.]*$/, "");
   return {
-    uri: jpeg.uri,
+    uri: jpeg,
     filename: `${base.length > 0 ? base : "photo"}.jpg`,
     contentType: "image/jpeg",
   };
+}
+
+/**
+ * The longest edge, in pixels, a picked camera photo is uploaded at.
+ *
+ * A phone photo is 12 to 48 MP. Re-encoded at full size and quality 1.0, as
+ * the HEIC transcode used to, it came to 4 MB and more, every byte of it sent
+ * before the member saw anything happen. 2560 px is sharper than any screen
+ * Frapp draws it on and keeps a photographed page of minutes legible when
+ * zoomed, at a few hundred KB. Chat apps send smaller still.
+ */
+export const PHOTO_MAX_EDGE = 2560;
+
+/** JPEG quality for a re-encoded photo: no visible loss at this size. */
+export const PHOTO_JPEG_QUALITY = 0.8;
+
+/** A JPEG this many bytes or more is re-encoded even when its size is unknown. */
+const PHOTO_MAX_BYTES = 1.5 * 1024 * 1024;
+
+function isOversizedPhoto(asset: {
+  width?: number;
+  height?: number;
+  fileSize?: number;
+}): boolean {
+  const edge = Math.max(asset.width ?? 0, asset.height ?? 0);
+  return edge > PHOTO_MAX_EDGE || (asset.fileSize ?? 0) > PHOTO_MAX_BYTES;
+}
+
+/**
+ * Re-encode a photo as JPEG, its longest edge brought down to
+ * {@link PHOTO_MAX_EDGE} when it is larger, at {@link PHOTO_JPEG_QUALITY}.
+ * Returns the new file's URI.
+ */
+async function encodeJpeg(asset: {
+  uri: string;
+  width?: number;
+  height?: number;
+}): Promise<string> {
+  const width = asset.width ?? 0;
+  const height = asset.height ?? 0;
+  const context = ImageManipulator.manipulate(asset.uri);
+  // One side is enough: the manipulator keeps the aspect ratio.
+  if (Math.max(width, height) > PHOTO_MAX_EDGE) {
+    context.resize(
+      width >= height ? { width: PHOTO_MAX_EDGE } : { height: PHOTO_MAX_EDGE },
+    );
+  }
+  const rendered = await context.renderAsync();
+  const saved = await rendered.saveAsync({
+    format: SaveFormat.JPEG,
+    compress: PHOTO_JPEG_QUALITY,
+  });
+  return saved.uri;
 }
 
 /** The byte size of `uri`: `hinted` when the caller has one for these exact bytes, else read from disk. */
@@ -299,9 +371,9 @@ async function pickImageUnguarded(
   }
 
   // `asset.fileSize` describes what the member picked. If `resolveUploadable`
-  // transcoded, the bytes about to be PUT are a *different file* — a
-  // quality-1.0 JPEG re-encode of a 48MP HEIC is routinely larger than the
-  // HEIC — so trusting the hint there would gate on the wrong number, declare
+  // transcoded or shrank it, the bytes about to be PUT are a *different file*
+  // (a re-encode can come out larger than the original as well as smaller),
+  // so trusting the hint there would gate on the wrong number, declare
   // the wrong `size_bytes`, and record the wrong `byteSize` on every iOS photo.
   const size = await byteSizeOf(
     uploadable.uri,
@@ -388,6 +460,14 @@ export async function uploadPickedImage(
       httpMethod: "PUT",
       uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
       headers: { "Content-Type": image.contentType },
+      // `uploadAsync` defaults to a BACKGROUND session, which on iOS hands
+      // the request to the system's background transfer daemon: it is built
+      // to survive the app being suspended, not to be quick, and it added
+      // seconds to every upload while the member watched. The trade: a
+      // foreground task stops if the app is suspended mid-PUT, and the caller
+      // reports a failure the member can retry (s12's pending row does). With
+      // photos shrunk first (`PHOTO_MAX_EDGE`) a PUT is a second or two.
+      sessionType: FileSystem.FileSystemSessionType.FOREGROUND,
     });
     if (response.status < 200 || response.status >= 300) {
       return { status: "refused", reason: UPLOAD_FAILED };
