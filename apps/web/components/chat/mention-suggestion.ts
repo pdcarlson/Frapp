@@ -1,6 +1,6 @@
 import { ReactRenderer } from "@tiptap/react";
 import type { SuggestionOptions } from "@tiptap/suggestion";
-import { mentionSuggestions } from "@repo/validation";
+import { mentionPickerEntries } from "@repo/validation";
 import {
   MentionList,
   type MentionListHandle,
@@ -14,29 +14,49 @@ export interface MentionRosterEntry {
   avatar_url: string | null;
 }
 
+/** Role shape this module needs — a subset of `MentionRoleDto`. */
+export interface MentionRoleEntry {
+  role_id: string;
+  name: string;
+  mentionable: boolean;
+}
+
 /**
- * The roster as this popup offers it. Which members, in what order, and the
- * label each inserts are `mentionSuggestions`'s (`@repo/validation`), shared
- * with mobile's composer so a member picked on either client sends the same
- * body; `mentionLabelFor` there says why the label is the display name reduced
- * to letters, digits and marks.
+ * The roster and the roles as this popup offers them. Which rows, in what
+ * order, and the label each inserts are `mentionPickerEntries`'s
+ * (`@repo/validation`), shared with mobile's composer so a pick on either
+ * client sends the same body; `mentionLabelFor` there says why the label is
+ * the name reduced to letters, digits and marks. Roles come after members,
+ * at most three, and only the ones the viewer may ping (2026-11-06).
  */
-function filterRoster(
+export function filterMentionEntries(
   roster: readonly MentionRosterEntry[],
+  roles: readonly MentionRoleEntry[],
   query: string,
 ): MentionSuggestionItem[] {
-  return mentionSuggestions(roster, query).map(({ member, label }) => ({
-    id: member.user_id,
-    label,
-    displayName: member.display_name,
-    avatarUrl: member.avatar_url,
-  }));
+  return mentionPickerEntries(roster, roles, query).map((entry) =>
+    entry.kind === "member"
+      ? {
+          kind: "member",
+          id: entry.member.user_id,
+          label: entry.label,
+          displayName: entry.member.display_name,
+          avatarUrl: entry.member.avatar_url,
+        }
+      : {
+          kind: "role",
+          id: entry.role.role_id,
+          label: entry.label,
+          displayName: entry.role.name,
+          avatarUrl: null,
+        },
+  );
 }
 
 /**
  * Builds the `@`-mention `suggestion` config for `@tiptap/extension-mention`.
  *
- * `rosterRef` rather than a plain array: `useEditor`'s extensions are built
+ * `rosterRef` (and `rolesRef`, the same way) rather than a plain array: `useEditor`'s extensions are built
  * once at mount (this composer passes no deps array), so a value closed over
  * directly here would be whatever the roster query returned on the first
  * render — `[]`, before the query has ever resolved. Reading through a ref
@@ -45,6 +65,7 @@ function filterRoster(
  */
 export function createMentionSuggestion(
   rosterRef: { current: readonly MentionRosterEntry[] },
+  rolesRef: { current: readonly MentionRoleEntry[] } = { current: [] },
 ): Omit<SuggestionOptions<MentionSuggestionItem>, "editor"> {
   return {
     char: "@",
@@ -55,7 +76,8 @@ export function createMentionSuggestion(
     // object over its own defaults (`{ ...defaults, ...this }`), and an
     // absent key leaves the default in place while an explicit `undefined`
     // would overwrite it — silently turning "pick a mention" into a no-op.
-    items: ({ query }) => filterRoster(rosterRef.current, query),
+    items: ({ query }) =>
+      filterMentionEntries(rosterRef.current, rolesRef.current, query),
     render: () => {
       let component: ReactRenderer<MentionListHandle> | null = null;
       let unmount: (() => void) | null = null;

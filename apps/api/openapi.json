@@ -2841,6 +2841,46 @@
         ]
       }
     },
+    "/v1/channels/mention-roles": {
+      "get": {
+        "operationId": "ChatController_getMentionRoles_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MentionRoleDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The chapter roles the caller’s @-mention picker offers, with whether the caller may ping each",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/notification-preferences": {
       "get": {
         "operationId": "ChatController_getChannelNotificationPreferences_v1",
@@ -11770,6 +11810,10 @@
               "#A9B4C2"
             ],
             "description": "One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color."
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it."
           }
         },
         "required": [
@@ -11810,6 +11854,10 @@
               "#A9B4C2"
             ],
             "description": "One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color."
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it."
           }
         }
       },
@@ -12361,6 +12409,34 @@
           "payload",
           "attachment_count",
           "created_at"
+        ]
+      },
+      "MentionRoleDto": {
+        "type": "object",
+        "properties": {
+          "role_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "The role name; the picker inserts it folded."
+          },
+          "color": {
+            "type": "string",
+            "nullable": true,
+            "description": "The role’s palette color, or null."
+          },
+          "mentionable": {
+            "type": "boolean",
+            "description": "Whether the caller may `@` this role: its own switch (`mentionable` on the role, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming a role the sender may not ping reaches nobody."
+          }
+        },
+        "required": [
+          "role_id",
+          "name",
+          "color",
+          "mentionable"
         ]
       },
       "ChannelNotificationPreferenceDto": {

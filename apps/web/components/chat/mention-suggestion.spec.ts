@@ -98,3 +98,42 @@ describe("createMentionSuggestion — items()", () => {
     expect(result).toHaveLength(8);
   });
 });
+
+describe("createMentionSuggestion — roles", () => {
+  const roster = [{ user_id: "u1", display_name: "Jane Doe", avatar_url: null }];
+  const roles = [
+    { role_id: "r1", name: "Officers", mentionable: true },
+    { role_id: "r2", name: "Member", mentionable: false },
+  ];
+
+  function itemsFor(query: string): MentionSuggestionItem[] {
+    const suggestion = createMentionSuggestion(
+      { current: roster },
+      { current: roles },
+    );
+    return suggestion.items!({
+      query,
+      editor: {} as never,
+      signal: new AbortController().signal,
+    }) as MentionSuggestionItem[];
+  }
+
+  it("offers the roles the viewer may ping after the members", () => {
+    expect(itemsFor("").map((item) => [item.kind, item.id])).toEqual([
+      ["member", "u1"],
+      ["role", "r1"],
+    ]);
+  });
+
+  it("inserts a role's folded name, which the server resolves", () => {
+    expect(itemsFor("off")).toEqual([
+      {
+        kind: "role",
+        id: "r1",
+        label: "Officers",
+        displayName: "Officers",
+        avatarUrl: null,
+      },
+    ]);
+  });
+});
