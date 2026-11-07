@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   resolveCustomRoleNames,
-  resolveRoleNames,
+  resolveRoleChips,
   selectMemberDetail,
 } from "./member-detail";
 
@@ -34,14 +34,15 @@ describe("selectMemberDetail", () => {
   it("maps the full profile", () => {
     const detail = selectMemberDetail(profile());
     expect(detail).toEqual({
+      memberId: "m-1",
       userId: "u-1",
+      avatarUrl: null,
       displayName: "Ada Lovelace",
       initials: "AL",
-      avatarUrl: null,
       email: "ada@example.edu",
       bio: "Loves a good algorithm.",
       meta: "Acme Inc. · Chicago · '27",
-      joinedLabel: "Aug 21, 2026",
+      joinedLabel: "August 21, 2026",
       roleIds: ["r-1", "r-2"],
       customRoleIds: ["cr-1"],
       customFields: [
@@ -113,36 +114,39 @@ describe("selectMemberDetail", () => {
   });
 });
 
-describe("resolveRoleNames", () => {
+describe("resolveRoleChips", () => {
   const roles = [
-    { id: "r-1", name: "President" },
-    { id: "r-2", name: "Treasurer" },
+    { id: "r-1", name: "President", color: "#F2994A", display_order: 1 },
+    { id: "r-2", name: "Treasurer", color: null, display_order: 3 },
+    { id: "r-3", name: "Brothers", color: "#123456", display_order: 9 },
   ];
 
-  it("resolves ids to names in the given order", () => {
-    expect(resolveRoleNames(roles, ["r-2", "r-1"])).toEqual([
-      "Treasurer",
+  it("orders chips by the chapter's role rank, not by the member's list", () => {
+    expect(resolveRoleChips(roles, ["r-2", "r-1"]).map((c) => c.name)).toEqual([
       "President",
+      "Treasurer",
+    ]);
+  });
+
+  it("keeps a palette color and drops one the palette doesn't hold", () => {
+    expect(resolveRoleChips(roles, ["r-1", "r-3"])).toEqual([
+      { id: "r-1", name: "President", color: "#F2994A" },
+      { id: "r-3", name: "Brothers", color: null },
     ]);
   });
 
   it("drops an id with no match rather than rendering a raw id", () => {
-    expect(resolveRoleNames(roles, ["r-1", "r-deleted"])).toEqual(["President"]);
-  });
-
-  it("returns nothing for an empty role list without reading rolesData", () => {
-    expect(resolveRoleNames(undefined, [])).toEqual([]);
+    expect(resolveRoleChips(roles, ["r-1", "r-deleted"]).map((c) => c.id)).toEqual([
+      "r-1",
+    ]);
   });
 
   it("returns nothing while the roles list hasn't loaded", () => {
-    expect(resolveRoleNames(undefined, ["r-1"])).toEqual([]);
+    expect(resolveRoleChips(undefined, ["r-1"])).toEqual([]);
   });
 
-  it("contributes a duplicated role id's name only once", () => {
-    expect(resolveRoleNames(roles, ["r-1", "r-1", "r-2"])).toEqual([
-      "President",
-      "Treasurer",
-    ]);
+  it("draws a duplicated role id once", () => {
+    expect(resolveRoleChips(roles, ["r-1", "r-1"])).toHaveLength(1);
   });
 });
 

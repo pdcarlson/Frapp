@@ -51,8 +51,10 @@ import {
  * no dot, and no member is called Offline on the strength of a join this app
  * never made.
  *
- * Read-only rows, as on web: nothing here is a control yet, so a row is 32pt
- * rather than the 44pt touch floor (`components.md` § Chat member list).
+ * A row opens that member's profile (the directory's sheet, stacked over
+ * this one), the same as tapping their name in the thread. As a control it
+ * takes the Small step's 44pt touch height (`components.md` § Chat member
+ * list).
  *
  * The reads live in {@link MemberRows}, a child of the modal, because gorhom
  * mounts a modal's children only while it is presented: the list is fetched
@@ -60,12 +62,14 @@ import {
  */
 export interface ChannelMemberSheetProps {
   channelId: string | null;
+  /** Opens a member's profile by `users.id`; without it rows are read-only. */
+  onOpenProfile?: (userId: string) => void;
 }
 
 export const ChannelMemberSheet = forwardRef<
   BottomSheetModal,
   ChannelMemberSheetProps
->(function ChannelMemberSheet({ channelId }, ref) {
+>(function ChannelMemberSheet({ channelId, onOpenProfile }, ref) {
   const closeSheet = useSheetClose(ref);
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -90,7 +94,7 @@ export const ChannelMemberSheet = forwardRef<
         <View style={styles.stickyHeader}>
           <TallSheetHeader title="Members" onClose={closeSheet} />
         </View>
-        <MemberRows channelId={channelId} />
+        <MemberRows channelId={channelId} onOpenProfile={onOpenProfile} />
       </BottomSheetScrollView>
     </BottomSheetModal>
   );
@@ -134,7 +138,13 @@ export interface ChannelMemberSheetRow {
   roleName: string | null;
 }
 
-export function MemberRows({ channelId }: { channelId: string | null }) {
+export function MemberRows({
+  channelId,
+  onOpenProfile,
+}: {
+  channelId: string | null;
+  onOpenProfile?: (userId: string) => void;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const membersQuery = useChannelMembers(channelId);
@@ -218,11 +228,19 @@ export function MemberRows({ channelId }: { channelId: string | null }) {
           <View key={group.key}>
             <SectionHeader>{`${group.label} ${group.rows.length}`}</SectionHeader>
             {group.rows.map((row) => (
-              <View
+              <Pressable
                 key={row.userId}
-                style={styles.row}
-                accessible
+                style={({ pressed }) => [
+                  styles.row,
+                  pressed && onOpenProfile ? styles.rowPressed : null,
+                ]}
+                accessibilityRole={onOpenProfile ? "button" : undefined}
                 accessibilityLabel={row.name}
+                accessibilityHint={
+                  onOpenProfile ? "Opens their profile" : undefined
+                }
+                disabled={!onOpenProfile}
+                onPress={() => onOpenProfile?.(row.userId)}
               >
                 <MemberAvatar
                   uri={row.avatarUrl}
@@ -240,7 +258,7 @@ export function MemberRows({ channelId }: { channelId: string | null }) {
                 >
                   {row.name}
                 </Text>
-              </View>
+              </Pressable>
             ))}
           </View>
         ))
@@ -284,7 +302,8 @@ function MemberRowsSkeleton() {
 }
 
 /** 32pt rows with a 24pt avatar: web's numbers, Paul's for this list. */
-const ROW_HEIGHT = 32;
+/** `--touch-min`: a row that opens a profile is a control (foundations.md §9). */
+const TOUCH_ROW_HEIGHT = 44;
 const AVATAR_SIZE = 24;
 
 function createStyles(tokens: SignetTokens) {
@@ -310,10 +329,14 @@ function createStyles(tokens: SignetTokens) {
       paddingBottom: tokens.spacing.xl,
     },
     row: {
-      height: ROW_HEIGHT,
+      // A control now: the touch floor, not web's 32pt read-only row.
+      minHeight: TOUCH_ROW_HEIGHT,
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.sm,
+    },
+    rowPressed: {
+      opacity: 0.6,
     },
     avatar: {
       width: AVATAR_SIZE,
