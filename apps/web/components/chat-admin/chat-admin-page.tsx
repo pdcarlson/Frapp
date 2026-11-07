@@ -10,7 +10,6 @@ import {
   useCreateCategory,
   useCreateChannel,
   useDeleteCategory,
-  useDeleteChannel,
   useMemberDisplayNames,
   usePermissionsCatalog,
   usePinnedMessages,
@@ -63,6 +62,7 @@ import {
 } from "@/components/shared/table-controls";
 import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { useDeleteChannelFlow } from "@/components/chat/use-delete-channel-flow";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
@@ -158,7 +158,8 @@ function useToggleSet(
 
 /**
  * `initialChannelId` is `?channel=<id>`: the channel start's Edit channel
- * shortcut (`components/chat/channel-start.tsx`) opens this page with that
+ * shortcut (`components/chat/channel-start.tsx`) and the chat rail's
+ * right-click Edit channel (`chat-shell.tsx`) open this page with that
  * channel selected and its description field focused.
  */
 export function ChatAdminPage({
@@ -219,7 +220,7 @@ function ChatAdminBody({
 
   const createChannel = useCreateChannel();
   const updateChannel = useUpdateChannel();
-  const deleteChannel = useDeleteChannel();
+  const deleteChannelFlow = useDeleteChannelFlow(confirm);
   const createCategory = useCreateCategory();
   const updateCategory = useUpdateCategory();
   const deleteCategory = useDeleteCategory();
@@ -446,23 +447,9 @@ function ChatAdminBody({
   }
 
   async function handleDeleteChannel(channel: AdminChannel) {
-    const confirmed = await confirm({
-      title: `Delete #${channel.name}?`,
-      description:
-        "Every message, attachment, and pin in this channel is removed. This cannot be undone.",
-      confirmLabel: "Delete channel",
-    });
-    if (!confirmed) return;
-    try {
-      await deleteChannel.mutateAsync(channel.id);
-      toast({ description: `#${channel.name} deleted.` });
+    await deleteChannelFlow(channel, () => {
       if (selectedChannelId === channel.id) setSelectedChannelId(null);
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        description: getErrorMessage(error, "Couldn't delete the channel."),
-      });
-    }
+    });
   }
 
   // ── Create-channel panel ────────────────────────────────────────────────
