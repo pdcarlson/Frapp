@@ -3,7 +3,8 @@ import {
   canReadCardTask,
   readLiveTask,
   taskCardControls,
-  taskCardStatusLabel,
+  TASK_ACTION_LABELS,
+  taskStatusLabel,
   useConfirmTask,
   useCurrentChapter,
   useNowDate,
@@ -44,10 +45,10 @@ import { useCardWrite } from "./use-card-write";
  * through its life without the message row ever changing.
  *
  * **The rules are web's.** Who may read the task, which status badge to draw
- * and which controls to offer are `canReadCardTask`, `taskCardStatusLabel` and
+ * and which controls to offer are `canReadCardTask`, `taskStatusLabel` and
  * `taskCardControls` in `@repo/hooks`, the copy both cards apply
  * (`spec/behavior/tasks.md` § Chat Integration). In short: no control until
- * the live task is read (#2065), the assignee walks Start then Mark complete
+ * the live task is read (#2065), the assignee walks Start then Mark done
  * off the stored status (#1051), and a `tasks:manage` holder confirms or
  * rejects a completion, never their own (#1056). The writes are the shared
  * hooks, which update the cache optimistically and roll back on refusal.
@@ -111,7 +112,7 @@ export function TaskCard({
             trailing={
               live ? (
                 <StatusChip
-                  label={taskCardStatusLabel(live)}
+                  label={taskStatusLabel(live)}
                   hue={statusHue(live, tokens)}
                 />
               ) : null
@@ -136,7 +137,7 @@ export function TaskCard({
         <CardActions>
           {controls.includes("start") ? (
             <CardButton
-              label="Start"
+              label={TASK_ACTION_LABELS.start}
               disabled={disabled}
               accessibilityHint={hint}
               onPress={() =>
@@ -153,7 +154,7 @@ export function TaskCard({
           ) : null}
           {controls.includes("complete") ? (
             <CardButton
-              label="Mark complete"
+              label={TASK_ACTION_LABELS.complete}
               disabled={disabled}
               accessibilityHint={hint}
               onPress={() =>
@@ -170,7 +171,7 @@ export function TaskCard({
           ) : null}
           {controls.includes("confirm") ? (
             <CardButton
-              label="Confirm"
+              label={TASK_ACTION_LABELS.confirm}
               variant="primary"
               disabled={disabled}
               accessibilityHint={hint}
@@ -186,7 +187,7 @@ export function TaskCard({
           {controls.includes("confirmed") ? (
             // An indicator, not an action: the completion was confirmed.
             <CardButton
-              label="Confirmed"
+              label={TASK_ACTION_LABELS.confirmed}
               disabled
               onPress={() => undefined}
               icon={(color) => <CheckGlyph color={color} />}
@@ -194,7 +195,7 @@ export function TaskCard({
           ) : null}
           {controls.includes("reject") ? (
             <CardButton
-              label="Reject"
+              label={TASK_ACTION_LABELS.reject}
               disabled={disabled}
               accessibilityHint={hint}
               onPress={() =>

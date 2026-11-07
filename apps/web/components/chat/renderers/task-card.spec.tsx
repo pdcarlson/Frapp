@@ -189,7 +189,7 @@ describe("TaskCard", () => {
       <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
     );
     expect(screen.getByText("Confirmed")).toBeInTheDocument();
-    expect(screen.queryByText("Awaiting confirmation")).not.toBeInTheDocument();
+    expect(screen.queryByText("Waiting on an officer")).not.toBeInTheDocument();
   });
 
   it("badges the live status for a viewer who can read it", () => {
@@ -200,7 +200,7 @@ describe("TaskCard", () => {
     expect(screen.getByText("To do")).toBeInTheDocument();
   });
 
-  it("reflects the live status over the snapshot (IN_PROGRESS → Mark complete)", () => {
+  it("reflects the live status over the snapshot (IN_PROGRESS → Mark done)", () => {
     mockUseTask.mockReturnValue({
       data: { id: "task-1", status: "IN_PROGRESS", points_awarded: false },
     });
@@ -208,7 +208,7 @@ describe("TaskCard", () => {
       <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
     );
     expect(
-      screen.getByRole("button", { name: /mark complete/i }),
+      screen.getByRole("button", { name: /mark done/i }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /start/i }),
@@ -233,11 +233,11 @@ describe("TaskCard", () => {
     expect(screen.getByText("Overdue")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /start/i })).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /mark complete/i }),
+      screen.queryByRole("button", { name: /mark done/i }),
     ).not.toBeInTheDocument();
   });
 
-  it("offers Mark complete on an overdue task whose stored status is IN_PROGRESS", () => {
+  it("offers Mark done on an overdue task whose stored status is IN_PROGRESS", () => {
     mockUseTask.mockReturnValue({
       data: {
         id: "task-1",
@@ -251,7 +251,7 @@ describe("TaskCard", () => {
     );
     expect(screen.getByText("Overdue")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /mark complete/i }),
+      screen.getByRole("button", { name: /mark done/i }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /start/i }),

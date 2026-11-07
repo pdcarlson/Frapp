@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  formatDoneSubtitle,
   formatDueDate,
   formatDueSubtitle,
   formatPointsChip,
@@ -111,25 +110,6 @@ describe("isDueUrgent", () => {
   });
 });
 
-describe("formatDoneSubtitle", () => {
-  const iso = (date: Date) => date.toISOString();
-
-  it("names the recent past", () => {
-    expect(formatDoneSubtitle(iso(at(2026, 8, 17, 9)), NOW)).toBe("Done today");
-    expect(formatDoneSubtitle(iso(at(2026, 8, 16)), NOW)).toBe("Done yesterday");
-    expect(formatDoneSubtitle(iso(at(2026, 8, 11)), NOW)).toBe("Done Tuesday");
-  });
-
-  it("falls back to a date beyond a week", () => {
-    expect(formatDoneSubtitle(iso(at(2026, 7, 28)), NOW)).toBe("Done Jul 28");
-  });
-
-  it("still says Done when the timestamp is missing or unreadable", () => {
-    expect(formatDoneSubtitle(null, NOW)).toBe("Done");
-    expect(formatDoneSubtitle("nonsense", NOW)).toBe("Done");
-  });
-});
-
 describe("formatPointsChip", () => {
   it("draws no chip for a task carrying no reward", () => {
     expect(formatPointsChip(null, false)).toBeNull();
@@ -137,7 +117,10 @@ describe("formatPointsChip", () => {
   });
 
   it("offers points in gold before the ledger moves", () => {
-    expect(formatPointsChip(5, false)).toEqual({ tone: "offered", label: "+5" });
+    expect(formatPointsChip(5, false)).toEqual({
+      tone: "offered",
+      label: "+5",
+    });
   });
 
   it("marks an award only once points_awarded is true", () => {

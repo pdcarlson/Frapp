@@ -66,6 +66,7 @@ describe('TaskService', () => {
       create: jest.fn(),
       update: jest.fn(),
       confirmCompletionAtomic: jest.fn(),
+      reopenCompletion: jest.fn(),
       delete: jest.fn(),
     };
 
@@ -398,6 +399,88 @@ describe('TaskService', () => {
       expect(result.status).toBe(TaskStatus.COMPLETED);
     });
 
+    describe('the assignee taking back their own completion', () => {
+      const completed: Task = {
+        ...baseTask,
+        status: TaskStatus.COMPLETED,
+        completed_at: '2026-02-26T18:30:00.000Z',
+      };
+
+      it('moves an unconfirmed completion back to IN_PROGRESS through the compare-and-set', async () => {
+        mockTaskRepo.findById.mockResolvedValue(completed);
+        mockTaskRepo.reopenCompletion.mockResolvedValue({
+          ...completed,
+          status: TaskStatus.IN_PROGRESS,
+          completed_at: null,
+        });
+
+        const result = await service.updateStatus(
+          'task-1',
+          'ch-1',
+          'user-1',
+          false,
+          TaskStatus.IN_PROGRESS,
+        );
+
+        expect(mockTaskRepo.reopenCompletion).toHaveBeenCalledWith(
+          'task-1',
+          'ch-1',
+        );
+        expect(mockTaskRepo.update).not.toHaveBeenCalled();
+        expect(result.status).toBe(TaskStatus.IN_PROGRESS);
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      });
+
+      it('refuses once an officer has confirmed it', async () => {
+        mockTaskRepo.findById.mockResolvedValue({
+          ...completed,
+          points_awarded: true,
+          confirmed_at: '2026-02-26T19:00:00.000Z',
+        });
+
+        await expect(
+          service.updateStatus(
+            'task-1',
+            'ch-1',
+            'user-1',
+            false,
+            TaskStatus.IN_PROGRESS,
+          ),
+        ).rejects.toThrow('An officer already confirmed this task');
+        expect(mockTaskRepo.reopenCompletion).not.toHaveBeenCalled();
+      });
+
+      it('refuses when a confirm wins the race to the row', async () => {
+        mockTaskRepo.findById.mockResolvedValue(completed);
+        mockTaskRepo.reopenCompletion.mockResolvedValue(null);
+
+        await expect(
+          service.updateStatus(
+            'task-1',
+            'ch-1',
+            'user-1',
+            false,
+            TaskStatus.IN_PROGRESS,
+          ),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it("still sends an officer moving someone else's completion to the reject endpoint", async () => {
+        mockTaskRepo.findById.mockResolvedValue(completed);
+
+        await expect(
+          service.updateStatus(
+            'task-1',
+            'ch-1',
+            'officer-1',
+            true,
+            TaskStatus.IN_PROGRESS,
+          ),
+        ).rejects.toThrow('Use the reject completion endpoint');
+        expect(mockTaskRepo.reopenCompletion).not.toHaveBeenCalled();
+      });
+    });
+
     it('should reject invalid transition TODO → COMPLETED', async () => {
       mockTaskRepo.findById.mockResolvedValue(baseTask);
 
@@ -681,7 +764,7 @@ describe('TaskService', () => {
         completed_at: null,
       };
       mockTaskRepo.findById.mockResolvedValue(completed);
-      mockTaskRepo.update.mockResolvedValue(reverted);
+      mockTaskRepo.reopenCompletion.mockResolvedValue(reverted);
 
       const result = await service.rejectCompletion(
         'task-1',
@@ -689,11 +772,25 @@ describe('TaskService', () => {
         'Needs more work',
       );
 
-      expect(mockTaskRepo.update).toHaveBeenCalledWith('task-1', 'ch-1', {
-        status: TaskStatus.IN_PROGRESS,
-        completed_at: null,
-      });
+      expect(mockTaskRepo.reopenCompletion).toHaveBeenCalledWith(
+        'task-1',
+        'ch-1',
+      );
       expect(result.status).toBe(TaskStatus.IN_PROGRESS);
+    });
+
+    it('refuses when a confirm lands between the guard and the write', async () => {
+      mockTaskRepo.findById.mockResolvedValue({
+        ...baseTask,
+        status: TaskStatus.COMPLETED,
+        completed_at: '2026-02-26T18:30:00.000Z',
+      });
+      mockTaskRepo.reopenCompletion.mockResolvedValue(null);
+
+      await expect(service.rejectCompletion('task-1', 'ch-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
     });
 
     it('should reject when task already has points awarded', async () => {
