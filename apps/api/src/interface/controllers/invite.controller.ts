@@ -148,12 +148,18 @@ export class InviteController {
   @Post('redeem')
   @ThrottleFanOutWrite()
   @ApiOperation({ summary: 'Redeem an invite token to join a chapter' })
-  @FeatureEvent('invite-redeemed', undefined, {
-    chapterId: ({
-      result,
-    }: FeatureEventInput<RedeemInviteDto, { chapterId: string }>) =>
-      result.chapterId,
-  })
+  @FeatureEvent(
+    'invite-redeemed',
+    ({ signInMethod }: FeatureEventInput) => ({
+      sign_in_method: signInMethod ?? null,
+    }),
+    {
+      chapterId: ({
+        result,
+      }: FeatureEventInput<RedeemInviteDto, { chapterId: string }>) =>
+        result.chapterId,
+    },
+  )
   async redeem(
     @CurrentUser('id') userId: string,
     @Body() dto: RedeemInviteDto,

@@ -35,11 +35,14 @@ import {
   PROFILE_NAME_SAVE_FAILED,
   PROFILE_STEP_SUBTITLE,
   PROFILE_STEP_TITLE,
+  ONBOARDING_PROFILE_ANSWERED_EVENT,
   initialNameField,
   needsName,
+  onboardingProfileAnsweredProperties,
   shouldOfferProfileStep,
 } from "@/lib/onboarding/profile-step";
 import { usePushPrimer } from "@/lib/notifications/use-push-primer";
+import { useLatestTrack } from "@/lib/use-latest-track";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -92,6 +95,10 @@ export default function Welcome() {
   // returns to the profile beat only when it was shown. A photo chosen on it
   // must not make it vanish under the member.
   const [profileShown, setProfileShown] = useState(false);
+  // Whether there was a photo when the beat opened, so its event can tell a
+  // photo chosen on it from one the member already had.
+  const hadPhotoRef = useRef(false);
+  const track = useLatestTrack();
   // `null` until typed in: the field shows the loaded name until then.
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -127,6 +134,7 @@ export default function Welcome() {
 
   function leaveWelcome() {
     if (offerProfile) {
+      hadPhotoRef.current = !!profile?.photoUrl;
       setProfileShown(true);
       setStep("profile");
     } else if (primer.showPrimer) {
@@ -146,7 +154,8 @@ export default function Welcome() {
       setNameError(PROFILE_NAME_REQUIRED);
       return;
     }
-    if (name !== (profile?.displayName ?? "").trim()) {
+    const nameChanged = name !== (profile?.displayName ?? "").trim();
+    if (nameChanged) {
       setSavingName(true);
       try {
         await updateUser.mutateAsync({ display_name: name });
@@ -157,6 +166,15 @@ export default function Welcome() {
         setSavingName(false);
       }
     }
+    track(
+      ONBOARDING_PROFILE_ANSWERED_EVENT,
+      onboardingProfileAnsweredProperties({
+        hadPhoto: hadPhotoRef.current,
+        hasPhoto: !!profile?.photoUrl,
+        hadName: !needsName(profile?.displayName),
+        nameChanged,
+      }),
+    );
     if (primer.showPrimer) {
       setStep("notifications");
     } else {
