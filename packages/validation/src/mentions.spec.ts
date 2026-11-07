@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  draftWithMention,
   activeMentionQuery,
   extractMentionTokens,
   findMentionSpans,
@@ -623,5 +624,20 @@ describe("activeMentionQuery", () => {
   it("closes on a query longer than any token the resolver reads", () => {
     const long = "a".repeat(65);
     expect(activeMentionQuery(`@${long}`, long.length + 1)).toBeNull();
+  });
+});
+
+describe("draftWithMention", () => {
+  it("writes the picker's label with a trailing space into an empty draft", () => {
+    expect(draftWithMention("", "Shawn Klein")).toBe("@ShawnKlein ");
+  });
+
+  it("separates it from text already typed", () => {
+    expect(draftWithMention("hey", "Shawn Klein")).toBe("hey @ShawnKlein ");
+    expect(draftWithMention("hey ", "Shawn Klein")).toBe("hey @ShawnKlein ");
+  });
+
+  it("writes nothing for a name with no label", () => {
+    expect(draftWithMention("hey", "!!")).toBeNull();
   });
 });
