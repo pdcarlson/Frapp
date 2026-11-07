@@ -11,7 +11,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { PressableRow } from "@/components/list-section";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { fieldTypeRole, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * The chip row and search field s12 and s13 both draw.
@@ -313,7 +313,7 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: tokens.spacing.md,
       minHeight: tokens.touch.minimum,
-      ...typeRole(tokens.typography.role.body),
+      ...fieldTypeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },
   });
