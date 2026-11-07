@@ -25,7 +25,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
-import { InviteService } from './invite.service';
+import { InviteService, inviteStatus } from './invite.service';
 import { INVITE_REPOSITORY } from '#domain/repositories/invite.repository.interface';
 import type { IInviteRepository } from '#domain/repositories/invite.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
@@ -91,7 +91,8 @@ describe('InviteService', () => {
       findByChapter: jest.fn(),
       create: jest.fn(),
       createMany: jest.fn(),
-      markUsed: jest.fn(),
+      markRevoked: jest.fn().mockResolvedValue(undefined),
+      revokePending: jest.fn().mockResolvedValue(undefined),
       markUsedAtomically: jest.fn(),
       releaseClaim: jest.fn().mockResolvedValue(true),
     };
@@ -133,7 +134,7 @@ describe('InviteService', () => {
     mockConfig = { get: jest.fn().mockReturnValue(undefined) };
 
     mockUserRepo = {
-      findById: jest.fn(),
+      findById: jest.fn().mockResolvedValue(null),
       findByIds: jest.fn().mockResolvedValue([]),
       findDisplayIdentitiesByIds: jest.fn(),
       findContactsByIds: jest.fn(),
@@ -214,6 +215,8 @@ describe('InviteService', () => {
         created_by: data.created_by!,
         used_at: null,
         created_at: '2024-01-01',
+        email: null,
+        revoked_at: null,
       }),
     );
 
@@ -250,6 +253,8 @@ describe('InviteService', () => {
           created_by: d.created_by!,
           used_at: null,
           created_at: '2024-01-01',
+          email: null,
+          revoked_at: null,
         })),
       ),
     );
@@ -295,12 +300,22 @@ describe('InviteService', () => {
             created_by: d.created_by!,
             used_at: null,
             created_at: '2024-01-01',
+            email: null,
+            revoked_at: null,
           })),
         ),
       );
     });
 
     it('creates one invite per unique email and sends each a join link', async () => {
+      mockChapterRepo.findById.mockResolvedValue({
+        id: 'ch-1',
+        name: 'Phi Gamma Delta Tau Nu',
+      } as never);
+      mockUserRepo.findById.mockResolvedValue({
+        id: 'user-1',
+        display_name: 'Paul Carlson',
+      } as never);
       const result = await service.createWithEmails(
         'ch-1',
         'user-1',
@@ -316,18 +331,84 @@ describe('InviteService', () => {
       const inviteData = mockInviteRepo.createMany.mock.calls[0][0];
       expect(inviteData).toHaveLength(2);
       expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledTimes(2);
+      // Each row remembers its address, for the inviter's list.
+      expect(inviteData.map((d) => d.email)).toEqual([
+        'a@example.com',
+        'b@example.com',
+      ]);
+      expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledTimes(2);
       expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith({
         to: 'a@example.com',
         joinUrl: `https://app.frapp.live/join?token=${inviteData[0].token}`,
         role: 'Member',
+        chapterName: 'Phi Gamma Delta Tau Nu',
+        inviterName: 'Paul Carlson',
       });
       expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith({
         to: 'b@example.com',
         joinUrl: `https://app.frapp.live/join?token=${inviteData[1].token}`,
         role: 'Member',
+        chapterName: 'Phi Gamma Delta Tau Nu',
+        inviterName: 'Paul Carlson',
       });
       expect(result.invites).toHaveLength(2);
+      expect(result.invites[0]).toEqual(
+        expect.objectContaining({ status: 'pending' }),
+      );
+      expect(result.invites[0]).not.toHaveProperty('created_by');
       expect(result.failed).toEqual([]);
+    });
+
+    it('still sends when the chapter or inviter read fails, without their names', async () => {
+      mockChapterRepo.findById.mockRejectedValue(new Error('timeout'));
+      mockUserRepo.findById.mockRejectedValue(new Error('timeout'));
+
+      const result = await service.createWithEmails(
+        'ch-1',
+        'user-1',
+        'Member',
+        ['a@example.com'],
+      );
+
+      expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ chapterName: null, inviterName: null }),
+      );
+      expect(result.failed).toEqual([]);
+    });
+
+    it("replaces an address's older pending invite once the new one reaches it", async () => {
+      const older = (
+        id: string,
+        email: string,
+        used_at: string | null = null,
+      ) => ({
+        id,
+        token: `tok-${id}`,
+        chapter_id: 'ch-1',
+        role: 'Member',
+        expires_at: '2099-01-01',
+        created_by: 'user-1',
+        used_at,
+        created_at: '2023-12-31',
+        email,
+        revoked_at: null,
+      });
+      mockInviteRepo.findByChapter.mockResolvedValue([
+        older('old-a', 'A@example.com'),
+        older('old-b', 'b@example.com'),
+        older('joined-a', 'a@example.com', '2024-01-01'),
+      ]);
+      // a@ is delivered; b@ fails, so b@'s older invite stays live.
+      mockEmailProvider.sendInviteEmail.mockImplementation(({ to }) =>
+        Promise.resolve(to === 'a@example.com'),
+      );
+
+      await service.createWithEmails('ch-1', 'user-1', 'Member', [
+        'a@example.com',
+        'b@example.com',
+      ]);
+
+      expect(mockInviteRepo.revokePending).toHaveBeenCalledWith(['old-a']);
     });
 
     it('correlates by token rather than array position, even if the repository returns rows out of order', async () => {
@@ -343,6 +424,8 @@ describe('InviteService', () => {
             created_by: d.created_by!,
             used_at: null,
             created_at: '2024-01-01',
+            email: null,
+            revoked_at: null,
           })),
         ),
       );
@@ -499,6 +582,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     });
 
     await service.create('ch-1', 'user-1', 'Member');
@@ -520,6 +605,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     };
     const memberRole: Role = roleFixture({
       id: 'role-member',
@@ -576,6 +663,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
       ...overrides,
     });
     const chapter = (
@@ -707,6 +796,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     });
     const lockedChapter = (overrides: Partial<Chapter>): Chapter =>
       ({
@@ -855,6 +946,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     });
     const refusal = () =>
       new ForbiddenException({
@@ -967,6 +1060,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     };
     const memberRole: Role = roleFixture({
       id: 'role-member',
@@ -1093,6 +1188,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2019-01-01',
+      email: null,
+      revoked_at: null,
     });
 
     await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow(
@@ -1111,6 +1208,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     };
     const memberRole: Role = roleFixture({
       id: 'role-member',
@@ -1153,6 +1252,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     };
     const renamedMemberRole: Role = roleFixture({
       id: 'role-member',
@@ -1219,6 +1320,8 @@ describe('InviteService', () => {
         created_by: 'user-1',
         used_at: null,
         created_at: '2024-01-01',
+        email: null,
+        revoked_at: null,
       };
     }
 
@@ -1322,6 +1425,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
 
@@ -1341,6 +1446,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: '2024-01-02',
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
 
@@ -1360,6 +1467,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     };
     const existingMember: Member = memberFixture({
       user_id: 'user-2',
@@ -1387,6 +1496,8 @@ describe('InviteService', () => {
         created_by: 'user-1',
         used_at: null,
         created_at: '2024-01-01',
+        email: null,
+        revoked_at: null,
       },
     ];
     mockInviteRepo.findByChapter.mockResolvedValue(invites);
@@ -1394,7 +1505,62 @@ describe('InviteService', () => {
     const result = await service.findByChapter('ch-1');
 
     expect(mockInviteRepo.findByChapter).toHaveBeenCalledWith('ch-1');
-    expect(result).toEqual(invites);
+    // Who sent it and the chapter stay server-side; the status is derived.
+    expect(result).toEqual([
+      {
+        id: 'inv-1',
+        token: 'token-1',
+        role: 'Member',
+        email: null,
+        status: 'expired',
+        expires_at: '2024-01-02',
+        used_at: null,
+        revoked_at: null,
+        created_at: '2024-01-01',
+      },
+    ]);
+  });
+
+  describe('inviteStatus (#3607)', () => {
+    const NOW = new Date('2026-11-06T12:00:00.000Z');
+    const base: Invite = {
+      id: 'inv-1',
+      token: 't',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: '2026-11-07T12:00:00.000Z',
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2026-11-06T11:00:00.000Z',
+      email: null,
+      revoked_at: null,
+    };
+
+    it.each([
+      ['pending', base],
+      ['joined', { ...base, used_at: '2026-11-06T11:30:00.000Z' }],
+      ['expired', { ...base, expires_at: '2026-11-06T11:59:59.000Z' }],
+      // A revoke sets used_at too; revoked_at is what tells them apart.
+      [
+        'revoked',
+        {
+          ...base,
+          used_at: '2026-11-06T11:30:00.000Z',
+          revoked_at: '2026-11-06T11:30:00.000Z',
+        },
+      ],
+      // A used invite past its expiry is still Joined, not Expired.
+      [
+        'joined',
+        {
+          ...base,
+          used_at: '2026-11-06T11:30:00.000Z',
+          expires_at: '2026-11-06T11:59:59.000Z',
+        },
+      ],
+    ] as const)('reads %s', (status, invite) => {
+      expect(inviteStatus(invite, NOW)).toBe(status);
+    });
   });
 
   it('should notify chapter when invite is redeemed', async () => {
@@ -1407,6 +1573,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     };
     const memberRole: Role = roleFixture({
       id: 'role-member',
@@ -1458,6 +1626,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     };
     const memberRole: Role = roleFixture({
       id: 'role-member',
@@ -1522,6 +1692,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
@@ -1543,6 +1715,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     };
     const insertError = new Error('members_user_id_chapter_id_key');
     mockInviteRepo.findByToken.mockResolvedValue(invite);
@@ -1573,6 +1747,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
     mockMemberRepo.findByUserAndChapter
@@ -1605,6 +1781,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     };
     const insertError = new Error('insert failed');
     mockInviteRepo.findByToken.mockResolvedValue(invite);
@@ -1633,6 +1811,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     };
     const insertError = new Error('insert failed');
     mockInviteRepo.findByToken.mockResolvedValue(invite);
@@ -1678,6 +1858,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     };
     const lookupError = new Error('roles unavailable');
     mockInviteRepo.findByToken.mockResolvedValue(invite);
@@ -1702,6 +1884,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
@@ -1730,6 +1914,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
@@ -1758,6 +1944,8 @@ describe('InviteService', () => {
       created_by: 'user-1',
       used_at: null,
       created_at: '2024-01-01',
+      email: null,
+      revoked_at: null,
     };
     const existingMember: Member = memberFixture({
       user_id: 'user-2',
@@ -1787,14 +1975,15 @@ describe('InviteService', () => {
         created_by: 'user-1',
         used_at: null,
         created_at: '2024-01-01',
+        email: null,
+        revoked_at: null,
       };
       mockInviteRepo.findById.mockResolvedValue(invite);
-      mockInviteRepo.markUsed.mockResolvedValue(undefined);
 
       await service.revoke('inv-1', 'ch-1');
 
       expect(mockInviteRepo.findById).toHaveBeenCalledWith('inv-1');
-      expect(mockInviteRepo.markUsed).toHaveBeenCalledWith('inv-1');
+      expect(mockInviteRepo.markRevoked).toHaveBeenCalledWith('inv-1');
     });
 
     it('should reject already-used invite', async () => {
@@ -1807,6 +1996,8 @@ describe('InviteService', () => {
         created_by: 'user-1',
         used_at: '2024-01-02',
         created_at: '2024-01-01',
+        email: null,
+        revoked_at: null,
       };
       mockInviteRepo.findById.mockResolvedValue(invite);
 
@@ -1816,7 +2007,7 @@ describe('InviteService', () => {
       await expect(service.revoke('inv-1', 'ch-1')).rejects.toThrow(
         'Invite has already been used',
       );
-      expect(mockInviteRepo.markUsed).not.toHaveBeenCalled();
+      expect(mockInviteRepo.markRevoked).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException when invite does not exist', async () => {
@@ -1837,6 +2028,8 @@ describe('InviteService', () => {
         created_by: 'user-1',
         used_at: null,
         created_at: '2024-01-01',
+        email: null,
+        revoked_at: null,
       };
       mockInviteRepo.findById.mockResolvedValue(invite);
 

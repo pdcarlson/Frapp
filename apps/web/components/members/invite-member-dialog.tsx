@@ -1,20 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Copy, Loader2, Trash2 } from "lucide-react";
+import { AlertTriangle, Link2, Mail, RotateCw, Trash2 } from "lucide-react";
 import {
-  useBatchCreateInvites,
-  useCreateInvite,
+  useActiveChapterId,
+  useEmailInvites,
   useInvites,
   useOrgConfig,
-  useActiveChapterId,
   useRevokeInvite,
   useRoles,
+  type InviteListItem,
 } from "@repo/hooks";
+import { formatRelativeDayTime } from "@repo/formatting";
 import { useToast } from "@/lib/hooks/use-toast";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -25,15 +24,20 @@ import {
   PanelContent,
   PanelHeader,
 } from "@/components/shared/panel";
-import { Input } from "@/components/ui/input";
-import { dashboardFormSelectClassName } from "@/components/shared/table-controls";
-import { formatDayTime } from "@repo/formatting";
 import {
-  getErrorMessage,
-  guardIntDraft,
-  labelled,
-  parseGuardedInt,
-} from "@/lib/utils";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { SectionLabel } from "@/components/shared/section-label";
+import { RowMenu, type RowMenuEntry } from "@/components/shared/row-menu";
+import {
+  InviteComposer,
+  copyWhenReady,
+} from "@/components/members/invite-composer";
+import { getErrorMessage, cn } from "@/lib/utils";
 import { normalizeRoleOptions } from "@/lib/roles";
 import { buildJoinUrl } from "@/lib/invite-link";
 
@@ -52,114 +56,77 @@ import { buildJoinUrl } from "@/lib/invite-link";
 const SEEDED_MEMBER_ROLE_NAME = "Member";
 const MEMBER_SYSTEM_KEY = "MEMBER";
 
-type InviteRow = {
-  id: string;
-  token: string;
-  role: string;
-  expires_at: string;
-  used_at: string | null;
+/** Joined and expired invites stay listed this long, then drop off. */
+const SETTLED_LIST_DAYS = 14;
+
+const STATUS_LABEL: Record<InviteListItem["status"], string> = {
+  pending: "Pending",
+  joined: "Joined",
+  expired: "Expired",
+  revoked: "Revoked",
 };
 
-function normalizeInvites(input: unknown): InviteRow[] {
-  const source = Array.isArray(input) ? input : input ? [input] : [];
-  return source.flatMap((entry) => {
-    if (!entry || typeof entry !== "object") return [];
-    const candidate = entry as Record<string, unknown>;
-    if (
-      typeof candidate.id !== "string" ||
-      typeof candidate.token !== "string" ||
-      typeof candidate.role !== "string" ||
-      typeof candidate.expires_at !== "string"
-    ) {
-      return [];
-    }
-    return [
-      {
-        id: candidate.id,
-        token: candidate.token,
-        role: candidate.role,
-        expires_at: candidate.expires_at,
-        used_at:
-          typeof candidate.used_at === "string" ? candidate.used_at : null,
-      },
-    ];
+/**
+ * The invites worth listing: every pending one, and joined or expired ones
+ * from the last two weeks. Revoked ones go: the officer chose to forget them.
+ * Pure, for the spec.
+ */
+export function listedInvites(
+  rows: readonly InviteListItem[],
+  now: Date = new Date(),
+): InviteListItem[] {
+  const cutoff = now.getTime() - SETTLED_LIST_DAYS * 24 * 60 * 60 * 1000;
+  return rows.filter((row) => {
+    if (row.status === "revoked") return false;
+    if (row.status === "pending") return true;
+    return new Date(row.created_at).getTime() >= cutoff;
   });
 }
 
-function buildInviteShareMessage(invite: InviteRow, origin: string): string {
-  const expirationText = formatDayTime(invite.expires_at);
-  return [
-    "Frapp member invite",
-    `Role: ${invite.role}`,
-    buildJoinUrl(origin, invite.token),
-    expirationText ? `Expires: ${expirationText}` : null,
-  ]
-    .filter(Boolean)
-    .join("\n");
+/** "Sent today at 4:46 PM", "Sent yesterday at …", "Sent Nov 3 at …". */
+export function sentLabel(createdAt: string, now: Date = new Date()): string {
+  const when = formatRelativeDayTime(createdAt, now);
+  if (!when) return "Sent";
+  const [day = when, clock] = when.split(" · ");
+  const spoken = /^(Today|Yesterday|Tomorrow)$/.test(day)
+    ? day.toLowerCase()
+    : day;
+  return clock ? `Sent ${spoken} at ${clock}` : `Sent ${spoken}`;
 }
 
 type InviteMemberDialogProps = {
   trigger: React.ReactNode;
 };
 
-/** The most invites one Generate creates (`POST /invites/batch`). */
-const MAX_INVITE_BATCH = 50;
-
 /**
- * How many invites Generate creates for the count field's text: an empty field
- * or a 0 means one, as it always has, and the batch caps at
- * {@link MAX_INVITE_BATCH}.
+ * Members → Invite: send invites by email, or copy a link to share, and see
+ * who was invited and who has joined. Nobody sees a token (Paul, 2026-11-06:
+ * the old panel generated and listed raw UUIDs).
  */
-function invitesToGenerate(draft: string): number {
-  return Math.min(MAX_INVITE_BATCH, Math.max(1, parseGuardedInt(draft) ?? 1));
-}
-
-/**
- * The last four characters of a token, to tell same-role invites apart in a
- * control's label. A batch mints up to 50 invites of one role with one expiry,
- * so "Revoke the Member invite" would name ten buttons the same; the row shows
- * the whole token, and its tail is the shortest part a person can match.
- */
-function tokenTail(token: string): string {
-  return token.slice(-4);
-}
-
 export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const [open, setOpen] = useState(false);
   const [roleName, setRoleName] = useState(SEEDED_MEMBER_ROLE_NAME);
   // #422: whether the admin has picked a role in this dialog session. Until
   // they do, the picker follows the chapter's configured default.
   const [hasPickedRole, setHasPickedRole] = useState(false);
-  // Held as text so a cleared field stays cleared while the admin types. A
-  // number here made React write the cleared meaning, 1, back into the field,
-  // so the next digit typed after clearing turned 3 into 13.
-  const [inviteCountDraft, setInviteCountDraft] = useState("1");
-  const inviteCount = invitesToGenerate(inviteCountDraft);
-  const [generatedInvites, setGeneratedInvites] = useState<InviteRow[]>([]);
   const activeChapterId = useActiveChapterId();
   const rolesQuery = useRoles();
   const orgConfigQuery = useOrgConfig();
   const invitesQuery = useInvites();
-  const createInviteMutation = useCreateInvite();
-  const createBatchInvitesMutation = useBatchCreateInvites();
+  const emailInvites = useEmailInvites();
   const revokeInviteMutation = useRevokeInvite();
-  // `POST /invites` and `POST /invites/batch` are the repo's only two
-  // `@FreeTier` + `@GraceBlocked` routes (`invite.controller.ts:46,60`): they
-  // keep working while `incomplete`, and are blocked *by name* only inside the
-  // `past_due` grace window. That is the one gate class the rest of this sweep
-  // never exercises, so it gets the matching writeClass rather than the default.
+  // `POST /invites` and `POST /invites/email` are `@FreeTier` +
+  // `@GraceBlocked`: they keep working while `incomplete`, and are blocked by
+  // name only inside the `past_due` grace window, so minting gets the matching
+  // writeClass rather than the default.
   //
-  // Deliberately gating the submit rather than the trigger, against §5 rule 1.
-  // Two reasons: the trigger is a caller-supplied node (`trigger` prop), and
-  // this dialog is mostly a read surface — the invite list — plus a revoke that
-  // is plain `@FreeTier` and must stay live during grace. Blocking the dialog
-  // from opening would take those away to gate one button inside it.
+  // The submit is gated rather than the trigger: the trigger is a
+  // caller-supplied node, and the panel is also the invite list plus a revoke
+  // that is plain `@FreeTier` and must stay live during grace.
   const gate = useSubscriptionGate("grace-blocked");
-  // Revoke is `DELETE /invites/:id` — the class-level `@FreeTier` WITHOUT
-  // `@GraceBlocked`. That is not "always allowed": free-tier survives
-  // `incomplete` and the grace window, then hits `write_locked` past it, and
-  // `canceled` is checked above the carve-out entirely. So it needs its own
-  // verdict rather than being left ungated.
+  // Revoke is `DELETE /invites/:id`: `@FreeTier` without `@GraceBlocked`, so
+  // it has its own verdict (free-tier and grace-blocked diverge inside the
+  // grace window).
   const revokeGate = useSubscriptionGate("free-tier");
   const { toast } = useToast();
   const hasLiveDataError = rolesQuery.isError || invitesQuery.isError;
@@ -191,10 +158,6 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     return roleOptions.find((role) => role.name === SEEDED_MEMBER_ROLE_NAME)
       ?.name;
   }, [rolesQuery.data, roleOptions]);
-
-  const inviteRows = useMemo(() => {
-    return normalizeInvites(invitesQuery.data);
-  }, [invitesQuery.data]);
 
   // #422: the chapter's configured default invite role, resolved id → name
   // against the live catalog. `undefined` while the config query is in flight
@@ -262,11 +225,9 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     }
   }, [defaultRoleName, hasPickedRole, memberRoleName, roleName, roleOptions]);
 
-  const isSubmitting =
-    createInviteMutation.isPending || createBatchInvitesMutation.isPending;
-
-  const activeInviteRows = inviteRows.filter(
-    (invite) => invite.used_at === null,
+  const rows = useMemo(
+    () => listedInvites(invitesQuery.data ?? []),
+    [invitesQuery.data],
   );
 
   /**
@@ -277,10 +238,9 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
    * `onOpenChange` for its own paths (Escape, the overlay, X, the trigger), so
    * a `setOpen` wired directly to a button would skip the reset.
    *
-   * Opening re-reads invites and roles. That is what the footer's Refresh
-   * button did by hand before the panel dropped its footer: the list is
-   * mounted with the page and cached for a minute, so an invite another
-   * officer revoked would otherwise still show here.
+   * Opening re-reads invites and roles: the list is mounted with the page and
+   * cached for a minute, so an invite another officer revoked, or someone
+   * joining, would otherwise not show here.
    */
   function refetchLiveData() {
     // `refetch()` skips the hooks' `enabled: !!chapterId`, so with no chapter
@@ -299,149 +259,165 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     setOpen(next);
   }
 
-  function handleInviteCountChange(event: React.ChangeEvent<HTMLInputElement>) {
-    // A negative or a decimal keeps the previous count. A count over the batch
-    // limit shows as the limit, so the field says what Generate will do.
-    const next = guardIntDraft(event.target.value);
-    if (next === undefined) return;
-    setInviteCountDraft(
-      next !== "" && Number(next) > MAX_INVITE_BATCH
-        ? String(MAX_INVITE_BATCH)
-        : next,
-    );
-  }
-
-  async function handleGenerateInvites() {
-    if (!roleName) return;
-
+  async function copyInviteLink(invite: InviteListItem) {
+    const link = buildJoinUrl(window.location.origin, invite.token);
     try {
-      let created: InviteRow[] = [];
-      if (inviteCount <= 1) {
-        const result = await createInviteMutation.mutateAsync({
-          role: roleName,
-        });
-        created = normalizeInvites(result);
-      } else {
-        const result = await createBatchInvitesMutation.mutateAsync({
-          role: roleName,
-          count: inviteCount,
-        });
-        created = normalizeInvites(result);
-      }
-
-      if (created.length === 0) {
-        throw new Error("Invite generated without token data.");
-      }
-
-      setGeneratedInvites(created);
-      await invitesQuery.refetch();
-      toast({
-        title: created.length > 1 ? "Invites generated" : "Invite generated",
-        description:
-          created.length > 1
-            ? `${created.length} invite links are ready to share.`
-            : "Copy the invite link and send it to a new member.",
-      });
-    } catch (error) {
-      toast({
-        title: "Could not generate invite",
-        description: getErrorMessage(
-          error,
-          "Something went wrong. Please retry.",
-        ),
-        variant: "destructive",
-      });
-    }
-  }
-
-  async function handleCopyInvite(invite: InviteRow) {
-    try {
-      await navigator.clipboard.writeText(
-        buildInviteShareMessage(invite, window.location.origin),
-      );
-      toast({
-        title: "Invite link copied",
-        description: "Share the join link through a secure channel.",
-      });
+      await copyWhenReady(Promise.resolve(link));
+      toast({ title: "Link copied" });
     } catch {
       toast({
-        title: "Clipboard unavailable",
-        description: "Copy the invite link manually from the list.",
+        title: "Couldn't copy the link",
+        description: `Your browser blocked the clipboard. Copy it from here: ${link}`,
         variant: "destructive",
       });
     }
   }
 
-  async function handleRevokeInvite(inviteId: string) {
+  async function sendAgain(invite: InviteListItem) {
+    if (!invite.email) return;
     try {
-      await revokeInviteMutation.mutateAsync(inviteId);
-      await invitesQuery.refetch();
-      toast({
-        title: "Invite revoked",
-        description: "The token can no longer be redeemed.",
+      // The server retires this address's older invite once the new one is
+      // delivered, so a failed send leaves the old link working.
+      const result = await emailInvites.mutateAsync({
+        role: invite.role,
+        emails: [invite.email],
       });
+      if (result?.failed?.length) {
+        toast({
+          title: `Couldn't email ${invite.email}`,
+          description: "Its new invite is listed, so you can copy its link.",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({ title: `Invite sent again to ${invite.email}` });
     } catch (error) {
       toast({
-        title: "Could not revoke invite",
-        description: getErrorMessage(
-          error,
-          "Something went wrong. Please retry.",
-        ),
+        title: "Couldn't send it again",
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
     }
   }
+
+  async function revoke(invite: InviteListItem) {
+    try {
+      await revokeInviteMutation.mutateAsync(invite.id);
+      toast({
+        title: "Invite revoked",
+        description: invite.email
+          ? `${invite.email} can't join with it now.`
+          : "That link can't be used to join now.",
+      });
+    } catch (error) {
+      toast({
+        title: "Couldn't revoke the invite",
+        description: getErrorMessage(error, "Try again in a moment."),
+        variant: "destructive",
+      });
+    }
+  }
+
+  function entriesFor(invite: InviteListItem): RowMenuEntry[] {
+    const entries: RowMenuEntry[] = [];
+    const mintDisabled = gate.controlProps(hasLiveDataError).disabled;
+    const revokeDisabled = revokeGate.controlProps(
+      revokeInviteMutation.isPending || hasLiveDataError,
+    ).disabled;
+    if (invite.status === "pending") {
+      entries.push({
+        type: "item",
+        key: "copy",
+        label: "Copy link",
+        icon: Link2,
+        onSelect: () => void copyInviteLink(invite),
+      });
+    }
+    if (
+      invite.email &&
+      (invite.status === "pending" || invite.status === "expired")
+    ) {
+      entries.push({
+        type: "item",
+        key: "again",
+        label: "Send again",
+        icon: RotateCw,
+        onSelect: () => void sendAgain(invite),
+        disabled: mintDisabled || emailInvites.isPending,
+      });
+    }
+    if (invite.status === "pending") {
+      entries.push(
+        { type: "separator", key: "sep" },
+        {
+          type: "item",
+          key: "revoke",
+          label: "Revoke invite",
+          icon: Trash2,
+          destructive: true,
+          onSelect: () => void revoke(invite),
+          disabled: revokeDisabled,
+        },
+      );
+    }
+    return entries;
+  }
+
+  const roleControl =
+    roleOptions.length > 0 ? (
+      <Select
+        value={roleName}
+        onValueChange={(next) => {
+          setHasPickedRole(true);
+          setRoleName(next);
+        }}
+      >
+        <SelectTrigger
+          aria-label="Role they join as"
+          // A quiet inline control, not a full-width field: the role is a
+          // setting on the send, and most sends keep the default.
+          className="h-9 w-auto gap-1.5 border-transparent bg-transparent px-2 text-sm hover:bg-card-hover pointer-coarse:h-11"
+        >
+          <span className="text-muted-foreground">Joins as</span>
+          <span className="font-semibold">
+            <SelectValue />
+          </span>
+        </SelectTrigger>
+        <SelectContent>
+          {roleOptions.map((role) => (
+            <SelectItem key={role.id} value={role.name}>
+              {role.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    ) : null;
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetTrigger asChild>{trigger}</SheetTrigger>
       {/*
-        A panel, not a dialog (`components.md` § Surface size): the generator,
-        the fresh tokens and every live invite are one list that grows with the
-        chapter, and it scrolled inside a 672px dialog capped at 88vh. It has
-        no footer: Done repeated the panel's X, and Refresh is now what opening
-        it does (`handleOpenChange`).
+        A panel, not a dialog (`components.md` § Surface size): the composer
+        and the list of everyone invited grow with the chapter. No footer:
+        Send sits with the addresses it sends to.
 
-        The instructional paragraph under the title is deleted, not restyled.
-        Board `1j` gives a sheet "no instructional paragraph" and `1t` lists
-        page-narration under gone; this one ("Generate a join link and assign a
-        default role before members join.") narrated the two controls directly
-        beneath it, which name themselves.
-
-        `aria-describedby={undefined}` for the reason `UploadSheetContent`
-        carries it: with no `SheetDescription` rendered, Radix warns on every
-        open for a `Content` pointing at a description id nothing renders.
+        `aria-describedby={undefined}`: with no `SheetDescription` rendered,
+        Radix warns on every open for a `Content` pointing at a description id
+        nothing renders.
       */}
       <PanelContent aria-describedby={undefined}>
         <PanelHeader>Invite members</PanelHeader>
-        <PanelBody>
+        <PanelBody className="gap-6">
           {hasLiveDataError ? (
             <div className="flex items-start gap-3 rounded-md border border-warning/[.28] bg-warning-tint p-3 text-caption text-warning">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              {/*
-              This banner is the **only** explanation for two disabled controls
-              — `hasLiveDataError` greys out Generate and every Revoke, and
-              `gate.controlProps` supplies a `title` only when offline and an
-              `aria-describedby` only for the subscription gate, so neither
-              disabled button carries a reason of its own. An earlier draft of
-              this lane cut it to four words on the board's "status ≤ 6 words"
-              budget; that budget is for a state *tile*, and applying it here
-              left a dimmed primary action with nothing anywhere saying why.
-              That is `design-system/README.md` §5 **rule 2** — "Say why, and
-              say what fixes it. A disabled control with no explanation is its
-              own dead end" — and not rule 4, which is the separate
-              disable-rather-than-hide rule this control already follows.
-
-              What did go is the instruction to fix the API, which is not
-              something the reader can act on from this dialog.
-            */}
+              {/* The only explanation for the paused controls below, so it
+                  stays, with the retry beside the reason. */}
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
                 <span>
-                  Invite data could not load, so issuing and revoking are
+                  Invite data could not load, so inviting and revoking are
                   paused.
                 </span>
-                {/* The retry the old footer's Refresh gave, where the failure
-                    is said, so the fix sits next to the reason. */}
                 <Button
                   type="button"
                   variant="link"
@@ -455,138 +431,84 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
             </div>
           ) : null}
 
-          <div className="grid gap-3 sm:grid-cols-[1fr_160px_auto]">
-            <label className="grid gap-1 text-sm">
-              <span className="text-muted-foreground">Role</span>
-              <select
-                value={roleName}
-                onChange={(event) => {
-                  setHasPickedRole(true);
-                  setRoleName(event.target.value);
-                }}
-                className={dashboardFormSelectClassName}
-              >
-                {roleOptions.map((role) => (
-                  <option key={role.id} value={role.name}>
-                    {role.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="grid gap-1 text-sm">
-              <span className="text-muted-foreground">Invite count</span>
-              <Input
-                type="number"
-                min={1}
-                max={MAX_INVITE_BATCH}
-                value={inviteCountDraft}
-                onChange={handleInviteCountChange}
-              />
-            </label>
-            <div className="flex items-end">
-              <Button
-                onClick={handleGenerateInvites}
-                {...gate.controlProps(
-                  hasLiveDataError || isSubmitting || roleOptions.length === 0,
-                )}
-                className="w-full"
-              >
-                {isSubmitting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : null}
-                Generate
-              </Button>
-            </div>
-          </div>
+          <InviteComposer
+            role={roleName}
+            roleControl={roleControl}
+            disabled={hasLiveDataError || roleOptions.length === 0}
+            gate={gate}
+          />
+          <SubscriptionNotice gate={gate} feature="sending invites" />
 
-          <SubscriptionNotice gate={gate} feature="issuing invites" />
-
-          {generatedInvites.length > 0 ? (
-            <div className="space-y-2 rounded-md border border-border p-3">
-              <p className="text-sm font-semibold">Freshly generated tokens</p>
-              <div className="space-y-2">
-                {generatedInvites.map((invite) => (
-                  <div
-                    key={invite.id}
-                    className="flex items-center justify-between gap-2 rounded-md border border-border p-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate font-mono text-caption">
-                        {invite.token}
-                      </p>
-                      <p className="text-caption text-muted-foreground">
-                        {[
-                          invite.role,
-                          labelled("Expires", formatDayTime(invite.expires_at)),
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </p>
-                    </div>
-                    <IconButton
-                      label={`Copy the ${invite.role} invite link ending ${tokenTail(invite.token)}`}
-                      onClick={() => handleCopyInvite(invite)}
-                    >
-                      <Copy />
-                    </IconButton>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          <div className="space-y-2">
-            <p className="text-sm font-semibold">Active invite tokens</p>
-            {/*
-            Revoke's verdict differs from Generate's — free-tier vs
-            grace-blocked diverge exactly inside the grace window — so it needs
-            its own notice for its own `aria-describedby` target.
-          */}
+          <section aria-labelledby="invite-list-label" className="space-y-2">
+            <SectionLabel
+              id="invite-list-label"
+              count={invitesQuery.data ? rows.length : null}
+            >
+              Invited
+            </SectionLabel>
             <SubscriptionNotice gate={revokeGate} feature="revoking invites" />
-            {activeInviteRows.length === 0 ? (
-              <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
-                No active invite tokens.
-              </div>
+            {invitesQuery.data && rows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Nobody yet. People you invite show up here until they join.
+              </p>
             ) : (
-              activeInviteRows.map((invite) => (
-                <div
-                  key={invite.id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-input p-3"
-                >
-                  <div className="space-y-1">
-                    <p className="font-mono text-caption">{invite.token}</p>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">{invite.role}</Badge>
-                      {formatDayTime(invite.expires_at) ? (
-                        <span className="text-caption text-muted-foreground">
-                          Expires {formatDayTime(invite.expires_at)}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <IconButton
-                      label={`Copy the ${invite.role} invite link ending ${tokenTail(invite.token)}`}
-                      onClick={() => handleCopyInvite(invite)}
-                    >
-                      <Copy />
-                    </IconButton>
-                    <IconButton
-                      label={`Revoke the ${invite.role} invite ending ${tokenTail(invite.token)}`}
-                      onClick={() => handleRevokeInvite(invite.id)}
-                      {...revokeGate.controlProps(
-                        revokeInviteMutation.isPending || hasLiveDataError,
-                      )}
-                    >
-                      <Trash2 />
-                    </IconButton>
-                  </div>
-                </div>
-              ))
+              <ul className="-mx-2">
+                {rows.map((invite) => (
+                  <InviteRow
+                    key={invite.id}
+                    invite={invite}
+                    entries={entriesFor(invite)}
+                  />
+                ))}
+              </ul>
             )}
-          </div>
+          </section>
         </PanelBody>
       </PanelContent>
     </Sheet>
+  );
+}
+
+function InviteRow({
+  invite,
+  entries,
+}: {
+  invite: InviteListItem;
+  entries: RowMenuEntry[];
+}) {
+  const name = invite.email ?? "Invite link";
+  const Icon = invite.email ? Mail : Link2;
+  const row = (menuButton: React.ReactNode) => (
+    <li className="group flex min-h-12 items-center gap-3 rounded-md px-2 py-1.5 hover:bg-card-hover">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-card text-muted-foreground">
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold">{name}</p>
+        <p className="truncate text-caption text-muted-foreground">
+          {invite.role} · {sentLabel(invite.created_at)}
+        </p>
+      </div>
+      <span
+        className={cn(
+          "shrink-0 text-caption font-semibold",
+          invite.status === "joined" ? "text-success" : "text-muted-foreground",
+        )}
+      >
+        {STATUS_LABEL[invite.status]}
+      </span>
+      {/* Same width with or without a menu, so statuses line up. */}
+      {menuButton ?? <span className="w-9 shrink-0" aria-hidden="true" />}
+    </li>
+  );
+  if (entries.length === 0) return row(null);
+  return (
+    // Share links all read "Invite link", so their menus also name when.
+    <RowMenu
+      entries={entries}
+      label={`More for ${name}${invite.email ? "" : `, ${sentLabel(invite.created_at).replace(/^Sent/, "sent")}`}`}
+    >
+      {row}
+    </RowMenu>
   );
 }
