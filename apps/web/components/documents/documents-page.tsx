@@ -262,7 +262,7 @@ function ChapterDocumentsPage() {
     cached data**", and §10 says background refetches keep stale content in
     place — so replacing a library already in hand with an "unavailable
     offline" card on a WiFi blip would discard what the member can still read.
-    Being offline *with* content is the shell's `OfflineBanner`'s job; it
+    Being offline *with* content is the shell's `ConnectionPill`'s job; it
     renders on every route already, so the screen owes a state only when it
     has nothing else to say. Gated on `documents`, not `visible`: a folder
     filter that matches nothing is the empty case, not the offline one.

@@ -8,7 +8,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { OfflineBanner } from "@/components/shared/offline-banner";
+import { ConnectionPill } from "@/components/shared/connection-pill";
 import { beyondGrace, chapterSubscription } from "@/tests/chapter-subscription";
 import type { SubscriptionWriteClass } from "@repo/validation";
 
@@ -57,7 +57,7 @@ function Harness({ writeClass }: { writeClass?: SubscriptionWriteClass }) {
     <div>
       {/* Same chrome the dashboard layout mounts — the offline close path
           sends focus here rather than letting it fall to `<body>`. */}
-      <OfflineBanner />
+      <ConnectionPill />
       <Dialog {...dialog.dialogProps}>
         <DialogTrigger asChild>
           <Button {...gate.controlProps()}>Upload</Button>
@@ -440,7 +440,7 @@ describe("useGatedDialog", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("moves focus to the offline banner when a dialog closes while OFFLINE", async () => {
+  it("moves focus to the connection pill when a dialog closes while OFFLINE", async () => {
     // Finding 2: the trigger is now disabled, so Radix's restore is a no-op
     // and focus would fall to <body> unless onCloseAutoFocus preempts it.
     chapter.active();
@@ -456,7 +456,7 @@ describe("useGatedDialog", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
-    expect(screen.getByRole("alert")).toHaveFocus();
+    expect(screen.getByRole("button", { name: /You're offline/ })).toHaveFocus();
     expect(document.body).not.toHaveFocus();
   });
 });
