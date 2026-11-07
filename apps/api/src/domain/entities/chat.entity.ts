@@ -329,6 +329,26 @@ export interface ChannelUnreadCount {
 }
 
 /**
+ * One channel's latest message, for Chat home's row preview (2026-11-06).
+ *
+ * A projection, not a `ChatMessage`: just what a one-line preview and its
+ * time need. Read by `get_channel_latest_messages`, which skips deleted rows
+ * and members the viewer blocked. `content` is cut to 500 characters, and
+ * `payload` is set only on an audit line (`kind: 'system_audit'`).
+ */
+export interface ChannelLatestMessage {
+  channel_id: string;
+  message_id: string;
+  sender_id: string | null;
+  author_name: string | null;
+  content: string;
+  kind: string;
+  payload: Record<string, unknown> | null;
+  attachment_count: number;
+  created_at: string;
+}
+
+/**
  * Per-user reaction / vote / RSVP / card-action row (Chunk 02).
  * Unique on (message_id, user_id, action_type); enforced by
  * `idx_chat_message_actions_dedupe`.
