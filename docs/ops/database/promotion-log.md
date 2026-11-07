@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-07: Members keep the Member role beside custom roles
+
+### 20261107020000_members_keep_base_role.sql
+
+- **Purpose**: A data repair, no DDL. A member who holds at least one role and no seeded role (every role a custom or Discord-imported one, `system_key` null) gets the chapter's Member role (`system_key = 'MEMBER'`) prepended to `members.role_ids`. Such members were refused on every screen, because `members:view` and the rest of a member's base access live on the seeded roles; the redeem change in the same PR stops new ones ([`spec/behavior/onboarding.md`](../../../spec/behavior/onboarding.md)). Two production members matched when written (2026-11-07). Members with no roles, and chapters with no Member role, are untouched.
+- **Checks**: After `db push`, `select count(*) from members m where cardinality(m.role_ids) > 0 and not exists (select 1 from roles r where r.id::text = any(m.role_ids) and r.system_key is not null);` returns `0` (or only members of chapters with no Member role).
+- **Promoter notes**: Order-independent with the API: the old API keeps working on the repaired rows, and the new API never relies on the repair. Idempotent: a repaired member holds a seeded role and no longer matches. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-members-keep-the-member-role-20261107020000) § Rollback members keep the Member role.
+
 ## 2026-11-06: A member's major
 
 ### 20261106200000_users_major.sql

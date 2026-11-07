@@ -2779,6 +2779,13 @@ A function body. It re-creates `get_channel_unread_counts` with one more join pr
 
 Afterwards every settings change lights the `#chapter-audit` badge again, for every member.
 
+## Rollback members keep the Member role (20261107020000)
+
+* **Migration**: `20261107020000_members_keep_base_role.sql`
+* **Action**: none needed. It only added a role to members who had no base access, so leaving it in place is safe even if the API change is reverted.
+
+To take the role back off a specific member, an officer removes Member from them on web Members, which locks that member out of every screen again. There is no bulk undo, by design: the rows it touched were broken.
+
 ## Rollback users major (20261106200000)
 
 * **Migration**: `20261106200000_users_major.sql`

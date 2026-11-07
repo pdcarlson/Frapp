@@ -108,6 +108,7 @@ const {
       isError: boolean;
       isFetching: boolean;
       isSuccess?: boolean;
+      error?: unknown;
       refetch: ReturnType<typeof vi.fn>;
     },
   },
@@ -1161,6 +1162,22 @@ describe("Chat home loading and error states", () => {
       retry.props.onPress();
     });
     expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("says a refused list is about the member's role, not the network", () => {
+    channelsState.value = {
+      ...channelsState.value,
+      isError: true,
+      error: Object.assign(new Error("Forbidden"), { status: 403 }),
+    };
+    const tree = render();
+
+    const error = tree.root.findByType(ErrorState);
+    expect(error.props.title).toBe("Chat isn't open to you yet");
+    expect(error.props.body).toContain(
+      "Ask an officer to give you the Member role",
+    );
+    expect(error.props.body).not.toContain("reach the server");
   });
 
   it("says Retrying… and holds the control while a retry is in flight", () => {

@@ -330,11 +330,29 @@ export class InviteService {
    * relabelled it would otherwise leave redeemers with no role at all.
    */
   private async resolveRedeemRole(invite: Invite) {
+    const { role } = await this.resolveRedeemRoles(invite);
+    return role;
+  }
+
+  /**
+   * The role a redeem grants, plus every role id the new membership starts
+   * with. A role with no `system_key` (one a chapter made itself, or one a
+   * Discord import brought over, which usually carries nothing but a
+   * `channels:read:<slug>` permission) is added on top of the chapter's
+   * Member role, never in place of it: Member is what carries the access
+   * every member needs (`members:view` and the rest), so without it the new
+   * member is refused on every screen (2026-11-07, two testers invited as
+   * "Cabinet"). A seeded role (President, New Member, Alumni, ...) is granted
+   * alone, as before, because each already carries its own base access.
+   */
+  private async resolveRedeemRoles(invite: Invite) {
     const roles = await this.roleRepo.findByChapter(invite.chapter_id);
-    return (
-      roles.find((r) => r.name === invite.role) ??
-      roles.find((r) => r.system_key === SystemRoleKeys.MEMBER)
-    );
+    const member = roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
+    const role = roles.find((r) => r.name === invite.role) ?? member;
+    const roleIds: string[] = [];
+    if (role && !role.system_key && member) roleIds.push(member.id);
+    if (role) roleIds.push(role.id);
+    return { role, roleIds };
   }
 
   /**
@@ -433,7 +451,7 @@ export class InviteService {
     await this.legalAcceptance.requireOrAccept(userId, acceptTerms);
 
     // Before the claim, so a roles outage does not consume the token (#1863).
-    const targetRole = await this.resolveRedeemRole(invite);
+    const { roleIds } = await this.resolveRedeemRoles(invite);
 
     const claimedAt = await this.inviteRepo.markUsedAtomically(invite.id);
     if (!claimedAt) throw new GoneException('Invite already used');
@@ -443,7 +461,7 @@ export class InviteService {
       member = await this.memberRepo.create({
         user_id: userId,
         chapter_id: invite.chapter_id,
-        role_ids: targetRole ? [targetRole.id] : [],
+        role_ids: roleIds,
       });
     } catch (error) {
       // The claim is not redemption yet: spec/behavior/onboarding.md sets

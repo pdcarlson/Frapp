@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { statusOf } from "@repo/api-sdk";
 import { createPortal } from "react-dom";
 import { MembersGlyph } from "./chat-glyphs";
 import { ChannelMemberList } from "./channel-member-list";
@@ -2082,11 +2083,25 @@ export function ChatShell({
         ) : null}
         {channelsPaneState === "error" ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            <ErrorState
-              title="Couldn't load channels"
-              description="Check your chapter access."
-              onRetry={() => void channelsQuery.refetch()}
-            />
+            {/*
+              A 403 is the server refusing this member's role, not a load
+              failure (2026-11-07: testers invited as a Discord-imported role
+              with only a channel permission). Same words as mobile Chat home
+              (`apps/mobile/lib/chat/channels-error.ts`).
+            */}
+            {statusOf(channelsQuery.error) === 403 ? (
+              <ErrorState
+                title="Chat isn't open to you yet"
+                description="Your role in this chapter doesn't include chat. Ask an officer to give you the Member role."
+                onRetry={() => void channelsQuery.refetch()}
+              />
+            ) : (
+              <ErrorState
+                title="Couldn't load channels"
+                description="Check your chapter access."
+                onRetry={() => void channelsQuery.refetch()}
+              />
+            )}
           </div>
         ) : null}
         {channelsPaneState === "empty" ? (
