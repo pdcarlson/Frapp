@@ -489,6 +489,25 @@ describe("check-deploy-config: as the job runs it", () => {
     assert.doesNotMatch(summary, /boot check .* accepts/);
   });
 
+  it("prints the minimum check's probe and words unmasked, while still masking every secret (#3123)", () => {
+    // HEAD's own mobile files name the probe; a minimum far above any build trips it.
+    const { status, output, summary } = run(tree({ boot: BOOT.accepts }), {
+      ...STORE,
+      NODE_ENV: "staging",
+      MOBILE_MIN_VERSION_IOS: "999.0.0",
+      MOBILE_MIN_VERSION_ANDROID: "0.0",
+      CHECK_API_BOOT: "true",
+      DEPLOYS_FUNCTIONS: "false",
+      VERIFIES_API: "false",
+    });
+    assert.equal(status, 0, output);
+    assert.match(output, /^::warning::MOBILE_MIN_VERSION_IOS is above ios\/\d+\.\d+\.\d+(\+\d+)?, .*A warning on staging only: a staging minimum/m);
+    assert.match(output, /✓ MOBILE_MIN_VERSION_ANDROID still serves android\/\d/);
+    assert.match(summary, /^- ⚠️ MOBILE_MIN_VERSION_IOS is above ios\//m);
+    assert.doesNotMatch(output, /\*\*\*/, output);
+    assert.doesNotMatch(output, new RegExp(CANARY), output);
+  });
+
   it("refuses to check anything without the env baseline", () => {
     const result = spawnSync(process.execPath, [SCRIPT], {
       cwd: tree(),

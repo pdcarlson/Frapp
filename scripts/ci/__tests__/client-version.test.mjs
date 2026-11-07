@@ -1,16 +1,19 @@
 // Pins `scripts/ci/lib/client-version.mjs` (#3123) to the API's own rule.
 //
 // The deploy's config check judges `MOBILE_MIN_VERSION_*` with a copy of the
-// API's parse and comparison, because the trusted copy it runs from can't
-// import the API. This loads the API's module itself through Node's type
-// stripping (it is erasable TypeScript with no imports) and holds the copy to
-// the same answer on every case below. A change to the API's rule fails here
-// until the copy follows.
+// API's parse, comparison and policy decision, because the trusted copy it
+// runs from can't import the API. This loads the API's own code through Node's
+// type stripping (`client-version.ts` as it is, and `resolveClientPolicy` from
+// its service as `loadPolicyService` describes) and holds the copy to the same
+// answer on every case below. A change to the API's rule fails here until the
+// copy follows.
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import * as copy from "../lib/client-version.mjs";
 
@@ -31,6 +34,64 @@ const api = await import(
     "client-version.ts",
   )
 );
+
+/**
+ * The API's `resolveClientPolicy`, loaded from its source. It sits in a Nest
+ * service, which plain Node can't load as written: `@Injectable()` is not
+ * erasable syntax and `#domain/...` resolves through Nest's build. So the
+ * test loads a copy with exactly those two things changed, the decorator and
+ * its import dropped and the alias pointed at the file. If the service grows
+ * another import this can't follow, this fails loudly rather than skipping.
+ */
+async function loadPolicyService() {
+  const path = join(
+    REPO_ROOT,
+    "apps",
+    "api",
+    "src",
+    "application",
+    "services",
+    "client-policy.service.ts",
+  );
+  const source = readFileSync(path, "utf8");
+  const rewritten = source
+    .replace(/^import \{ Injectable \} from '@nestjs\/common';\n/m, "")
+    .replace(/^@Injectable\(\)\n/m, "")
+    .replace(
+      "'#domain/constants/client-version'",
+      JSON.stringify(
+        pathToFileURL(
+          join(
+            REPO_ROOT,
+            "apps",
+            "api",
+            "src",
+            "domain",
+            "constants",
+            "client-version.ts",
+          ),
+        ).href,
+      ),
+    );
+  const imports = [
+    ...rewritten.matchAll(/^import[^;]*?from\s+['"]([^'"]+)['"]/gms),
+  ].map((m) => m[1]);
+  assert.deepEqual(
+    imports.filter((spec) => !spec.startsWith("file:")),
+    [],
+    `${path} imports something this test can't load; teach loadPolicyService about it`,
+  );
+  const dir = mkdtempSync(join(tmpdir(), "client-policy-"));
+  const copyPath = join(dir, "client-policy.service.mts");
+  writeFileSync(copyPath, rewritten);
+  try {
+    return await import(pathToFileURL(copyPath).href);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+const service = await loadPolicyService();
+
 const VERSIONS = [
   "0.9.0",
   "0.9.0+14",
@@ -111,30 +172,29 @@ describe("lib/client-version.mjs: the API's client-version rule, copied", () => 
   });
 
   it("decides update_required as resolveClientPolicy does, for every header and minimum", () => {
-    // `resolveClientPolicy` itself sits in a Nest service, which plain Node
-    // can't load (decorators aren't erasable), so its three lines are restated
-    // from `client-policy.service.ts` over the API's own parse and compare:
-    // a trimmed, non-blank minimum that parses, and a header that parses.
-    const decide = (header, minimum) => {
-      const client = api.parseClientVersionHeader(header);
-      const raw =
-        typeof minimum === "string" && minimum.trim() !== ""
-          ? minimum.trim()
-          : undefined;
-      const parsed = raw === undefined ? null : api.parseVersionWithBuild(raw);
-      return (
-        client !== null && parsed !== null && api.isBelowMinimum(client, parsed)
-      );
-    };
     for (const header of HEADERS) {
-      for (const minimum of [...VERSIONS, undefined, "  "]) {
+      const platform = api.parseClientVersionHeader(header)?.platform ?? "ios";
+      for (const minimum of [...VERSIONS, undefined, "  ", 9]) {
+        const env = { [service.MINIMUM_VERSION_ENV[platform]]: minimum };
         assert.equal(
           copy.wouldRequireUpdate(header, minimum),
-          decide(header, minimum),
+          service.resolveClientPolicy(header, env).updateRequired,
           `${header} under ${JSON.stringify(minimum)}`,
         );
       }
     }
+  });
+
+  it("refuses an over-long header that would otherwise parse, as the API does", () => {
+    const padded = `ios/${" ".repeat(61)}0.9.0`;
+    assert.ok(padded.length > 64);
+    assert.notEqual(
+      api.parseVersionWithBuild(padded.slice(4)),
+      null,
+      "the version alone parses",
+    );
+    assert.equal(api.parseClientVersionHeader(padded), null);
+    assert.equal(copy.parseClientVersionHeader(padded), null);
   });
 
   it("covers the cases the issue names", () => {

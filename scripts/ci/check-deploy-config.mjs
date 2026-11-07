@@ -68,9 +68,12 @@
 // version, so `0.9.1` passed while every recorded build was `0.9.0`, and the
 // client check after the deploy (`smoke-deployed-api.mjs`) caught it only with
 // the new API already serving it and every install of that platform on the
-// blocking update screen. A running Render service keeps its environment until
-// it restarts, so the deploy that picks up a bad minimum is the one that turns
-// it on. When this run deploys the API, each platform's minimum is put to the
+// blocking update screen. Infisical's sync copies a changed value to Render,
+// and a running service keeps the value it booted with until it restarts
+// (AGENTS.md § Credentials and secrets), so a bad minimum usually goes live
+// with the next API deploy. Not always: a restart outside a deploy run (a
+// crash, a manual one, a sync set to redeploy) turns it on with no run to stop
+// it, and only the next run's client check sees it. When this run deploys the API, each platform's minimum is put to the
 // same probe that check sends (`clientProbes`, from the TRUSTED ref, as there)
 // and judged by a copy of the API's own rule (`lib/client-version.mjs`). A
 // minimum that would answer that probe `update_required: true` fails a
@@ -124,6 +127,14 @@ export const OWN_INPUTS = Object.freeze([...FLAGS, "TARGET_ENVIRONMENT", "ENV_BA
 
 /** Shorter values are left alone: masking `1` would garble every version number. */
 const MIN_REDACTED_LENGTH = 4;
+
+/**
+ * Injected names whose values are not secret and are short, common words or
+ * version numbers, which masking would garble every line with: `staging`, or
+ * a minimum of `0.9.0` hiding the probe `ios/0.9.0+14`. Their values are
+ * documented in ENV_REFERENCE.md, and no line here quotes one.
+ */
+export const NOT_REDACTED = Object.freeze(["NODE_ENV", "MOBILE_MIN_VERSION_IOS", "MOBILE_MIN_VERSION_ANDROID"]);
 
 /** The argument that makes this file the child, and the fd its verdict goes to. */
 const CHILD_FLAG = "--run-boot-check";
@@ -423,7 +434,9 @@ function main() {
     functions: listFunctions(),
   });
   // Every line, not only the boot check's: `validateInputs` quotes the project ref.
-  const secretValues = Object.values(splitByBaseline(process.env, baselineNames).injected);
+  const secretValues = Object.entries(splitByBaseline(process.env, baselineNames).injected)
+    .filter(([name]) => !NOT_REDACTED.includes(name))
+    .map(([, value]) => value);
   const clean = (lines) => lines.map((line) => redact(line, secretValues));
   const report = { problems: clean(problems), warnings: clean(warnings), passed: clean(passed) };
 
