@@ -269,8 +269,11 @@ export function ImportRunning({
           {hasChannelCounts
             ? `${count(row.channels_done ?? 0)} of ${count(row.channels_total as number)} channels and threads done. `
             : ""}
-          You can close this tab. You&apos;ll get a notification when it
-          finishes.
+          {/* While the worker waits out a temporary error, its note takes
+              this line's place, so the page says "paused" rather than
+              looking stalled, and nothing moves (#1692). */}
+          {row.error ??
+            "You can close this tab. You'll get a notification when it finishes."}
         </p>
       </div>
       {percent !== null ? (
@@ -314,7 +317,11 @@ export function ImportDeleting({ row }: { row: ImportRow }) {
       <h2 id="discord-import-deleting" className="text-headline">
         Deleting the import
       </h2>
-      <p className="text-sm text-muted-foreground">{purgeLine(row)}</p>
+      {/* The worker's "paused" note stands in for the count, as it does
+          while importing (#1692). */}
+      <p className="text-sm text-muted-foreground">
+        {row.error ?? purgeLine(row)}
+      </p>
       {progress && progress.left > 0 ? (
         <div className="space-y-1">
           <Meter percent={progress.percent} />

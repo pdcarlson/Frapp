@@ -108,6 +108,7 @@ export async function createDiscordImportFixture(
     findById: jest.fn(async () => current),
     findByChapter: jest.fn(async () => [current]),
     update: jest.fn(async (_id, _chapter, patch) => ({ ...current, ...patch })),
+    clearPause: jest.fn(async () => undefined),
     replaceChannels: jest.fn(async (_id, _chapter, rows) => rows),
     findChannels: jest.fn(async () => []),
     countChannels: jest.fn(async () => ({ total: 0, done: 0 })),
