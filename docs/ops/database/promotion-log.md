@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-07: Whether anyone can @ a role
+
+### 20261107043000_roles_mentionable.sql
+
+- **Purpose**: Adds `roles.mentionable boolean not null default true`: whether any member may `@` the role in chat. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it; anyone else's `@Role` reaches nobody. Edited on web's Roles page through `PATCH /v1/roles/:id` and read by `GET /v1/channels/mention-roles` and send-time mention resolution. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#role-mentions) § Role mentions. A constant default, so no row is rewritten and every existing role reads `true`.
+- **Checks**: After `db push`, `select count(*) filter (where mentionable) = count(*) from public.roles;` returns `true`, and `select column_default, is_nullable from information_schema.columns where table_name = 'roles' and column_name = 'mentionable';` returns `true | NO`.
+- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never reads or writes the column, and `GET /v1/roles` returns the raw row, so it gains `mentionable: true` that shipped clients ignore. The newer API against an unmigrated database fails a role `PATCH` carrying `mentionable` (PostgREST refuses the unknown column), and reads every role as mentionable, so don't deploy the API first. `add column if not exists` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-roles-mentionable-20261107043000) § Rollback roles mentionable.
+
 ## 2026-11-06: Each member's time zone, for push text
 
 ### 20261106230000_user_settings_time_zone.sql
@@ -38,16 +48,6 @@ date — is welcome; inventing a date to turn the gate green is not.
 - **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The newer API against an unmigrated database fails every zone write (PostgREST refuses the unknown column), which is logged per request and retried, so don't deploy the API first. The older API never reads or writes the column. `add column if not exists` and `drop constraint if exists` make re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
 
 **Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-user-settings-time-zone-20261106230000) § Rollback user settings time zone.
-
-## 2026-11-06: Whether anyone can @ a role
-
-### 20261106220000_roles_mentionable.sql
-
-- **Purpose**: Adds `roles.mentionable boolean not null default true`: whether any member may `@` the role in chat. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it; anyone else's `@Role` reaches nobody. Edited on web's Roles page through `PATCH /v1/roles/:id` and read by `GET /v1/channels/mention-roles` and send-time mention resolution. The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#role-mentions) § Role mentions. A constant default, so no row is rewritten and every existing role reads `true`.
-- **Checks**: After `db push`, `select count(*) filter (where mentionable) = count(*) from public.roles;` returns `true`, and `select column_default, is_nullable from information_schema.columns where table_name = 'roles' and column_name = 'mentionable';` returns `true | NO`.
-- **Promoter notes**: Ship it before, or with, the API from the same PR; a deploy applies migrations first. The older API never reads or writes the column, and `GET /v1/roles` returns the raw row, so it gains `mentionable: true` that shipped clients ignore. The newer API against an unmigrated database fails a role `PATCH` carrying `mentionable` (PostgREST refuses the unknown column), and reads every role as mentionable, so don't deploy the API first. `add column if not exists` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
-
-**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-roles-mentionable-20261106220000) § Rollback roles mentionable.
 
 ## 2026-11-06: Chat home previews
 
