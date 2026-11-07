@@ -446,8 +446,9 @@ export function orgColorsFor(
  * official color, or `undefined` when we hold none.
  *
  * The wizards prefer this over `chapter_directory.default_colors.accent`,
- * because 45 of the directory's 50 rows carry the same placeholder gold
- * (`#C9A56F`), which is how the beta chapter ended up cream instead of purple.
+ * because the directory's rows carry one placeholder gold (`#C9A56F`: 45 of
+ * the first seed's 50 rows, and every row since the Wikipedia seed of
+ * 2026-11-06), which is how the beta chapter ended up cream instead of purple.
  */
 export function orgDefaultAccent(
   orgName: string | null | undefined,

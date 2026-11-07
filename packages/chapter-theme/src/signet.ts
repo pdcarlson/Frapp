@@ -205,8 +205,9 @@ function ratio(foreground: string, background: string): number {
  * construction". The generator does not actually deliver that for light seeds in
  * dark appearance: it returns `#FFFFFF` for `#C9A56F` (2.31:1) and `#FF69B4`
  * (2.65:1), where black would have scored 9.10 and 7.93. That is not a corner
- * case — `#C9A56F` is the accent of 45 of the 50 chapters in
- * `supabase/seed/chapter_directory.csv`.
+ * case — `#C9A56F` is the accent every row of
+ * `supabase/seed/chapter_directory.csv` carries (45 of the first seed's 50 did),
+ * and so the one a chapter of an organization `ORG_PROFILES` lacks starts on.
  *
  * Substituting the better of black and white makes the guarantee hold for every
  * possible seed rather than most of them. It cannot itself fail: the two curves
