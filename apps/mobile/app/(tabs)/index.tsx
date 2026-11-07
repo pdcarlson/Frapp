@@ -66,7 +66,7 @@ import {
 import { formatListStamp } from "@repo/formatting";
 import { ChapterMark } from "@/components/chapter-mark";
 import { useRefetchAll } from "@/components/pull-to-refresh";
-import { ScreenShell } from "@/components/screen-shell";
+import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
 import { NotificationsBell } from "@/components/chat/notifications-bell";
@@ -623,10 +623,15 @@ export default function ChatHomeScreen() {
           */}
           {arranged.sections.length === 0
             ? emptiedHeading
-            : arranged.sections.map((section, index) => (
-                <View key={section.key} style={styles.section}>
-                  <View style={styles.headingRow}>
-                    {/*
+            : arranged.sections.flatMap((section, index) => {
+                // The heading pins while its rows scroll under it (owner
+                // 2026-11-07), so it is the shell's own child, with the rows
+                // after it, not inside a section view (`StickyHeader`).
+                const line = index === 0 ? filterLine : null;
+                return [
+                  <StickyHeader key={`${section.key}:heading`}>
+                    <View style={styles.headingRow}>
+                      {/*
                       A header that folds (#2877). Folded, it keeps the
                       section's unread total, red when anything inside
                       addresses the member, so folding never hides a mention.
@@ -636,56 +641,64 @@ export default function ChatHomeScreen() {
                       whether the section is folded and the hint says what a
                       double-tap does.
                     */}
-                    <PressableRow
-                      accessibilityRole="header"
-                      accessibilityState={{ expanded: !section.collapsed }}
-                      accessibilityLabel={
-                        section.collapsed
-                          ? section.unreadCount > 0 || section.addressed
-                            ? `${section.label}, folded, ${foldedSectionAnnouncement(section)}`
-                            : `${section.label}, folded`
-                          : section.label
-                      }
-                      accessibilityHint={
-                        section.collapsed
-                          ? "Double-tap to show its channels."
-                          : "Double-tap to fold this section."
-                      }
-                      onPress={() =>
-                        setSectionCollapsed({
-                          sectionKey: section.key,
-                          collapsed: !section.collapsed,
-                        })
-                      }
-                      style={[styles.sectionHeader, styles.headingGrow]}
-                    >
-                      <Text style={styles.sectionChevron}>
-                        {section.collapsed ? "▸" : "▾"}
-                      </Text>
-                      <Text
-                        numberOfLines={1}
-                        style={[
-                          styles.sectionLabel,
-                          styles.sectionLabelInHeader,
-                        ]}
+                      <PressableRow
+                        accessibilityRole="header"
+                        accessibilityState={{ expanded: !section.collapsed }}
+                        accessibilityLabel={
+                          section.collapsed
+                            ? section.unreadCount > 0 || section.addressed
+                              ? `${section.label}, folded, ${foldedSectionAnnouncement(section)}`
+                              : `${section.label}, folded`
+                            : section.label
+                        }
+                        accessibilityHint={
+                          section.collapsed
+                            ? "Double-tap to show its channels."
+                            : "Double-tap to fold this section."
+                        }
+                        onPress={() =>
+                          setSectionCollapsed({
+                            sectionKey: section.key,
+                            collapsed: !section.collapsed,
+                          })
+                        }
+                        style={[styles.sectionHeader, styles.headingGrow]}
                       >
-                        {section.label}
-                      </Text>
-                      {section.collapsed &&
-                      (section.unreadCount > 0 || section.addressed) ? (
-                        <UnreadBadge
-                          unreadCount={section.unreadCount}
-                          mentionCount={section.mentionCount}
-                          addressed={section.addressed}
-                        />
-                      ) : null}
-                    </PressableRow>
-                    {index === 0 ? filterButton : null}
-                  </View>
-                  {index === 0 ? filterLine : null}
-                  {section.rows.map(renderChannel)}
-                </View>
-              ))}
+                        <Text style={styles.sectionChevron}>
+                          {section.collapsed ? "▸" : "▾"}
+                        </Text>
+                        <Text
+                          numberOfLines={1}
+                          style={[
+                            styles.sectionLabel,
+                            styles.sectionLabelInHeader,
+                          ]}
+                        >
+                          {section.label}
+                        </Text>
+                        {section.collapsed &&
+                        (section.unreadCount > 0 || section.addressed) ? (
+                          <UnreadBadge
+                            unreadCount={section.unreadCount}
+                            mentionCount={section.mentionCount}
+                            addressed={section.addressed}
+                          />
+                        ) : null}
+                      </PressableRow>
+                      {index === 0 ? filterButton : null}
+                    </View>
+                  </StickyHeader>,
+                  line || section.rows.length > 0 ? (
+                    <View
+                      key={`${section.key}:rows`}
+                      style={[styles.section, styles.sectionRows]}
+                    >
+                      {line}
+                      {section.rows.map(renderChannel)}
+                    </View>
+                  ) : null,
+                ];
+              })}
 
           {arranged.emptiedByFilters ? (
             <EmptyState
@@ -705,19 +718,23 @@ export default function ChatHomeScreen() {
           ) : null}
 
           {hidden.length > 0 ? (
-            <View style={styles.section}>
-              <PressableRow
-                accessibilityRole="button"
-                accessibilityState={{ expanded: showHidden }}
-                onPress={() => setShowHidden((open) => !open)}
-                style={styles.hiddenToggle}
-              >
-                <Text style={styles.sectionLabel}>
-                  {`${HIDDEN_CONVERSATIONS_LABEL} (${hidden.length})`}
-                </Text>
-              </PressableRow>
-              {showHidden
-                ? hidden.map((channel) => (
+            <>
+              {/* Pinned like the section headings, so the last heading never sits over these rows. */}
+              <StickyHeader>
+                <PressableRow
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: showHidden }}
+                  onPress={() => setShowHidden((open) => !open)}
+                  style={styles.hiddenToggle}
+                >
+                  <Text style={styles.sectionLabel}>
+                    {`${HIDDEN_CONVERSATIONS_LABEL} (${hidden.length})`}
+                  </Text>
+                </PressableRow>
+              </StickyHeader>
+              {showHidden ? (
+                <View style={[styles.section, styles.sectionRows]}>
+                  {hidden.map((channel) => (
                     <ChannelRow
                       key={channel.id}
                       name={displayChannelName(channel, viewerId, memberNames)}
@@ -752,9 +769,10 @@ export default function ChatHomeScreen() {
                         });
                       }}
                     />
-                  ))
-                : null}
-            </View>
+                  ))}
+                </View>
+              ) : null}
+            </>
           ) : null}
         </>
       )}
@@ -792,6 +810,11 @@ function createStyles(tokens: SignetTokens) {
     },
     section: {
       gap: tokens.spacing.xs,
+    },
+    // The rows under a pinned heading: the shell spaces its children by `md`,
+    // and a heading sits `xs` above its own rows, as it did inside a section.
+    sectionRows: {
+      marginTop: tokens.spacing.xs - tokens.spacing.md,
     },
     sectionLabel: {
       ...typeRole(tokens.typography.role.caption),
