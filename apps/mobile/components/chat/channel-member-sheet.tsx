@@ -16,6 +16,7 @@ import {
   useMemberDisplayNames,
 } from "@repo/hooks";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
+import { MemberAvatar } from "@/components/member-avatar";
 import { initialsFor } from "@/lib/chat/display-name";
 import {
   ErrorState,
@@ -125,6 +126,8 @@ export function ChannelMembersButton({ onPress }: { onPress: () => void }) {
 export interface ChannelMemberSheetRow {
   userId: string;
   name: string;
+  /** Their profile photo, or `null` for initials. */
+  avatarUrl: string | null;
   roleColor: string | null;
   roleRank: number | null;
   roleId: string | null;
@@ -136,7 +139,7 @@ export function MemberRows({ channelId }: { channelId: string | null }) {
   const styles = createStyles(tokens);
   const membersQuery = useChannelMembers(channelId);
   const roster = useMemberDisplayNames();
-  const { byId, roleColorFor } = roster;
+  const { byId, avatarFor, roleColorFor } = roster;
 
   const [query, setQuery] = useState("");
 
@@ -147,12 +150,13 @@ export function MemberRows({ channelId }: { channelId: string | null }) {
         // `memberLabel`, never a drop: a member who never set a name still
         // reads the channel, so they are listed as "Member 2f4a1c" (#2422).
         name: memberLabel(byId[member.user_id], member.user_id),
+        avatarUrl: avatarFor(member.user_id),
         roleColor: roleColorFor(member.user_id),
         roleRank: member.role_rank,
         roleId: member.role_id ?? null,
         roleName: member.role_name ?? null,
       })),
-    [membersQuery.data, byId, roleColorFor],
+    [membersQuery.data, byId, avatarFor, roleColorFor],
   );
   const searchable = rows.length > MEMBER_SEARCH_THRESHOLD;
   const trimmed = searchable ? query.trim() : "";
@@ -220,9 +224,13 @@ export function MemberRows({ channelId }: { channelId: string | null }) {
                 accessible
                 accessibilityLabel={row.name}
               >
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{initialsFor(row.name)}</Text>
-                </View>
+                <MemberAvatar
+                  uri={row.avatarUrl}
+                  initials={initialsFor(row.name)}
+                  size={AVATAR_SIZE}
+                  style={styles.avatar}
+                  textStyle={styles.avatarText}
+                />
                 <Text
                   numberOfLines={1}
                   style={[

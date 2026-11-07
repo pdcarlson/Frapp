@@ -13,6 +13,7 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
+import { MemberAvatar } from "@/components/member-avatar";
 import {
   BLOCK_ROW_DESCRIPTION,
   confirmBlockMember,
@@ -278,9 +279,13 @@ export const MemberDetailSheet = forwardRef<
           {detail ? (
             <>
               <View style={styles.identity}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{detail.initials}</Text>
-                </View>
+                <MemberAvatar
+                  uri={detail.avatarUrl}
+                  initials={detail.initials}
+                  size={DETAIL_AVATAR_SIZE}
+                  style={styles.avatar}
+                  textStyle={styles.avatarText}
+                />
                 <Text style={styles.name}>{detail.displayName}</Text>
                 {detail.meta ? (
                   <Text style={styles.meta}>{detail.meta}</Text>
@@ -423,8 +428,11 @@ export const MemberDetailSheet = forwardRef<
   );
 });
 
+/** The identity block's avatar diameter. */
+const DETAIL_AVATAR_SIZE = 64;
+
 function createStyles(tokens: SignetTokens) {
-  const avatarSize = 64;
+  const avatarSize = DETAIL_AVATAR_SIZE;
   return StyleSheet.create({
     scroll: {
       flex: 1,

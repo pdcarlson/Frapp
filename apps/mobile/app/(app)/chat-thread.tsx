@@ -33,9 +33,11 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   CHANNEL_LIST_KEY,
+  resolveAuthorAvatar,
   resolveAuthorLabel,
   resolveAuthorName,
   useActiveChapterId,
+  useAuthorAvatars,
   useChannel,
   useChapterRoster,
   useMentionRoles,
@@ -249,7 +251,12 @@ export default function ChatThreadScreen() {
   // over the live `postgres_changes` echo as well as one from the REST page — a
   // join on the message payload could only ever have covered the latter.
   const roster = useMemberDisplayNames();
-  const { nameFor, roleColorFor, refetch: refetchRoster } = roster;
+  const {
+    nameFor,
+    roleColorFor,
+    avatarFor: memberAvatarFor,
+    refetch: refetchRoster,
+  } = roster;
 
   // `#name` for a channel, the other member for a DM (#2775).
   // The cached list is read, not subscribed to: the fallback must not start
@@ -545,6 +552,17 @@ export default function ChatThreadScreen() {
     return index;
   }, [messages]);
 
+  // Each row's avatar photo, resolved the way web's timeline does it
+  // (`resolveAuthorAvatar`): a member's own profile photo from the roster, or
+  // an imported author's Discord avatar, whose signed URLs one batched read
+  // fetches for the distinct paths in the window. A miss draws initials.
+  const importedAvatars = useAuthorAvatars(channelId ?? undefined, messages);
+  const avatarFor = useCallback(
+    (message: ChatMessage) =>
+      resolveAuthorAvatar(message, memberAvatarFor, importedAvatars.data),
+    [memberAvatarFor, importedAvatars.data],
+  );
+
   // A new message lands at the bottom, so a member who sends from deep in
   // history is taken there on the tap to see it go: `onSending` runs once the
   // composer has decided a message goes out, before `send` is awaited, which
@@ -765,6 +783,7 @@ export default function ChatThreadScreen() {
           viewerId={viewerId}
           nameFor={nameFor}
           roleColorFor={roleColorFor}
+          avatarFor={avatarFor}
           replyParent={replyParent}
           blockState={blockState}
           onVote={(id, actionType, payload) =>
@@ -789,6 +808,7 @@ export default function ChatThreadScreen() {
       viewerId,
       nameFor,
       roleColorFor,
+      avatarFor,
       retry,
       discard,
       handleReact,
@@ -1190,6 +1210,7 @@ export default function ChatThreadScreen() {
             canSend={canSend && channelCanPost && !staging.isSavingEdit}
             context={staging.context}
             mentionCandidates={mentionRoster.data}
+            avatarFor={memberAvatarFor}
             mentionRoles={mentionRoles.data}
             placeholder={composerPlaceholder}
             // A send that never reached the outbox has no failed row to show

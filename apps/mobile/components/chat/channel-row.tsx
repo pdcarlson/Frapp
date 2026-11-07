@@ -7,6 +7,7 @@ import {
 import Svg, { Path } from "react-native-svg";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
+import { MemberAvatar } from "@/components/member-avatar";
 import { initialsFor } from "@/lib/chat/display-name";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { SkeletonBlock, SkeletonRegion } from "@/components/state-block";
@@ -54,10 +55,18 @@ import {
  * exactly those cases. This component only renders what it is handed.
  */
 
+/** A DM row's avatar diameter. */
+const DIRECT_AVATAR_SIZE = 34;
+
 export interface ChannelRowProps {
   name: string;
-  /** DM/group rows draw initials; channel rows draw a `#` sigil. */
+  /** DM/group rows draw an avatar; channel rows draw a `#` sigil. */
   isDirect?: boolean;
+  /**
+   * A one-to-one DM's other member's photo, drawn over the initials. `null`
+   * (a group DM, or no photo) keeps the initials.
+   */
+  avatarUrl?: string | null;
   /**
    * The member pinned this row (#2877). Names the pin action "Unpin from top".
    * The sigil stays muted like every row's: a row icon is neutral, never the
@@ -126,6 +135,7 @@ export function badgeLabel(unreadCount: number, mentionCount: number): string {
 export function ChannelRow({
   name,
   isDirect = false,
+  avatarUrl = null,
   isPinned = false,
   preview,
   isMuted = false,
@@ -200,9 +210,13 @@ export function ChannelRow({
       style={[styles.row, preview == null ? styles.rowOneLine : null]}
     >
       {isDirect ? (
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initialsFor(name)}</Text>
-        </View>
+        <MemberAvatar
+          uri={avatarUrl}
+          initials={initialsFor(name)}
+          size={DIRECT_AVATAR_SIZE}
+          style={styles.avatar}
+          textStyle={styles.avatarText}
+        />
       ) : (
         <Text
           style={[
@@ -386,7 +400,7 @@ export function accessibilityLabelFor({
 }
 
 function createStyles(tokens: SignetTokens) {
-  const AVATAR_SIZE = 34;
+  const AVATAR_SIZE = DIRECT_AVATAR_SIZE;
 
   return StyleSheet.create({
     row: {

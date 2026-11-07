@@ -36,6 +36,8 @@ export interface MemberDetail {
   userId: string;
   displayName: string;
   initials: string;
+  /** Their profile photo, or `null` for initials. */
+  avatarUrl: string | null;
   email: string | null;
   bio: string | null;
   /**
@@ -62,6 +64,8 @@ export function selectMemberDetail(data: unknown): MemberDetail | null {
     // same "no name set" case — matches `DirectoryRow`'s fallback.
     displayName: memberLabel(rawDisplayName, userId),
     initials: initialsFor(rawDisplayName),
+    // Signed by the API (`ProfilePhotoUrlService`); `null` draws initials.
+    avatarUrl: str(data, "avatar_url"),
     email: str(data, "email"),
     bio: str(data, "bio"),
     meta: metaLine([

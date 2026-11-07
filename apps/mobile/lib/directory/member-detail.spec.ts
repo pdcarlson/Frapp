@@ -37,6 +37,7 @@ describe("selectMemberDetail", () => {
       userId: "u-1",
       displayName: "Ada Lovelace",
       initials: "AL",
+      avatarUrl: null,
       email: "ada@example.edu",
       bio: "Loves a good algorithm.",
       meta: "Acme Inc. · Chicago · '27",

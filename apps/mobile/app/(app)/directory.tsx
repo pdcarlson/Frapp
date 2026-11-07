@@ -12,6 +12,7 @@ import {
 import { useRouter } from "expo-router";
 import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
+import { MemberAvatar } from "@/components/member-avatar";
 import {
   ErrorState,
   NoChapterState,
@@ -423,9 +424,13 @@ export function MemberRow({
         onPress ? feedback.lift(pressed) : null,
       ]}
     >
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{row.initials}</Text>
-      </View>
+      <MemberAvatar
+        uri={row.avatarUrl}
+        initials={row.initials}
+        size={AVATAR_SIZE}
+        style={styles.avatar}
+        textStyle={styles.avatarText}
+      />
       <View style={styles.rowText}>
         <Text style={styles.rowName}>{row.displayName}</Text>
         {row.meta ? <Text style={styles.rowMeta}>{row.meta}</Text> : null}
