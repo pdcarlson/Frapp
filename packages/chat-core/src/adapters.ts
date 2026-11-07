@@ -40,6 +40,15 @@ export interface OutboxAttachment {
   filename: string;
   contentType: string;
   byteSize?: number | null;
+  /**
+   * A photo's pixel size, ThumbHash and preview copy (2026-11-07): what a
+   * reader draws before the photo itself loads. All optional, so an outbox row
+   * an older build queued still flushes.
+   */
+  width?: number | null;
+  height?: number | null;
+  thumbhash?: string | null;
+  previewStoragePath?: string | null;
 }
 
 export interface OutboxRow {

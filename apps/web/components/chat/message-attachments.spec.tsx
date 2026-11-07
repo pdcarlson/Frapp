@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -12,6 +12,14 @@ vi.mock("@repo/hooks", () => ({
     hookState.calls.push(args);
     return hookState.result;
   },
+}));
+
+// jsdom's CSS parser drops a background-image as long as a real ThumbHash's
+// PNG, so the blur is a short stand-in here; `photo-preview.spec.ts` decodes
+// real hashes.
+vi.mock("@/lib/chat/photo-preview", () => ({
+  thumbhashPlaceholderUrl: (hash: string | null | undefined) =>
+    hash ? `data:image/png;base64,BLUR` : null,
 }));
 
 const { MessageAttachments } = await import("./message-attachments");
@@ -468,5 +476,85 @@ describe("the image viewer", () => {
     expect(
       within(dialog).queryByRole("button", { name: "Next image" }),
     ).toBeNull();
+  });
+});
+
+describe("photo previews (2026-11-07)", () => {
+  const THUMBHASH = "3OcRJYB4d3h/iIeHeEh3eIhw+j3A";
+  const sent = attachment({
+    id: "att-new",
+    filename: "IMG_1.jpg",
+    content_type: "image/jpeg",
+    width: 2560,
+    height: 1920,
+    thumbhash: THUMBHASH,
+    download_url: "https://storage.test/signed/IMG_1.jpg",
+    preview_url: "https://storage.test/signed/preview.jpg",
+  });
+
+  function threadImage() {
+    return screen.getByRole("img", { name: "IMG_1.jpg" });
+  }
+
+  it("draws the preview copy in the thread, at the photo's shape, over a blur of it", () => {
+    show(sent);
+    const image = threadImage();
+
+    expect(image).toHaveAttribute(
+      "src",
+      "https://storage.test/signed/preview.jpg",
+    );
+    expect(image.style.aspectRatio).toBe("2560 / 1920");
+    // As wide as the photo at the 256px height cap.
+    expect(image.style.width).toBe(`${(256 * 2560) / 1920}px`);
+    expect(image.style.backgroundImage).toBe(
+      'url("data:image/png;base64,BLUR")',
+    );
+  });
+
+  it("drops the blur once the photo paints", async () => {
+    show(sent);
+
+    fireEvent.load(threadImage());
+
+    await vi.waitFor(() =>
+      expect(threadImage().style.backgroundImage).toBe(""),
+    );
+  });
+
+  it("falls back to the original when the preview fails", async () => {
+    show(sent);
+
+    fireEvent.error(threadImage());
+
+    await vi.waitFor(() =>
+      expect(threadImage()).toHaveAttribute(
+        "src",
+        "https://storage.test/signed/IMG_1.jpg",
+      ),
+    );
+  });
+
+  it("opens the original, not the preview, in the viewer", async () => {
+    show(sent);
+
+    const { dialog } = await openViewerOn("IMG_1.jpg");
+
+    expect(shownImage(dialog)).toHaveAttribute(
+      "src",
+      "https://storage.test/signed/IMG_1.jpg",
+    );
+  });
+
+  it("draws an older photo from the original, unsized and with no blur", () => {
+    show(photo(1));
+    const image = screen.getByRole("img", { name: "photo-1.png" });
+
+    expect(image).toHaveAttribute(
+      "src",
+      "https://storage.test/signed/photo-1.png",
+    );
+    expect(image.style.aspectRatio).toBe("");
+    expect(image.style.backgroundImage).toBe("");
   });
 });

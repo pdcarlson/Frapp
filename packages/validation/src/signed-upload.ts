@@ -37,3 +37,26 @@ export function readSignedUpload(signed: unknown): {
   }
   return { signedUrl, storagePath };
 }
+
+/**
+ * The preview half of a chat photo's upload ticket (`with_preview: true`,
+ * 2026-11-07): where to PUT the preview JPEG and the path to claim it under.
+ * Null when the API minted none, which is not an error: an API from before
+ * previews, or a file that is not an image, answers without it, and the
+ * photo is sent without a preview.
+ */
+export function readPreviewUpload(
+  signed: unknown,
+): { signedUrl: string; storagePath: string } | null {
+  if (!signed || typeof signed !== "object") return null;
+  const rec = signed as Record<string, unknown>;
+  return typeof rec.preview_upload_url === "string" &&
+    rec.preview_upload_url.length > 0 &&
+    typeof rec.preview_storage_path === "string" &&
+    rec.preview_storage_path.length > 0
+    ? {
+        signedUrl: rec.preview_upload_url,
+        storagePath: rec.preview_storage_path,
+      }
+    : null;
+}

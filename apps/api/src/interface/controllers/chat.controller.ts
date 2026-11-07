@@ -807,6 +807,7 @@ export class ChatController {
       dto.filename,
       dto.content_type,
       dto.size_bytes,
+      dto.with_preview ?? false,
     );
     if (!ticket.signedUrl || !ticket.storagePath) {
       throw new InternalServerErrorException(
@@ -817,6 +818,12 @@ export class ChatController {
       upload_url: ticket.signedUrl,
       storage_path: ticket.storagePath,
       message_id: ticket.messageId,
+      ...('previewSignedUrl' in ticket
+        ? {
+            preview_upload_url: ticket.previewSignedUrl,
+            preview_storage_path: ticket.previewStoragePath,
+          }
+        : {}),
     };
   }
 

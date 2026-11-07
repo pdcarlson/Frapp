@@ -3089,3 +3089,18 @@ alter table public.events
   drop column if exists others_invited;
 ```
 
+## Rollback chat attachment previews (20261107130000)
+
+* **Migration**: `20261107130000_chat_attachment_previews.sql`
+
+Two nullable columns on `chat_message_attachments`, `thumbhash` and `preview_storage_path`. The API from the same PR writes both on every attachment insert, so roll the API back first: a column dropped under the new API fails every message sent with a file. Roll web and the mobile OTA back with the API, not after it: a client from this PR sends photo fields an older API refuses, so every photo send from it fails until it is rolled back too.
+
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). After the API is back on the earlier version:
+
+```sql
+alter table public.chat_message_attachments
+  drop column if exists thumbhash,
+  drop column if exists preview_storage_path;
+```
+
+Dropping them loses each photo's blur and the link to its preview copy; photos still draw, from the original. The preview objects stay in the `chat` bucket under each original's `preview/` folder, unreferenced, until a sweep removes them (#2197).
