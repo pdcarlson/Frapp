@@ -89,7 +89,7 @@ describe("ChapterShowcase", () => {
       for (const label of [
         "To do",
         "In progress",
-        "Awaiting confirmation",
+        "Waiting on an officer",
         "Confirmed",
         "Someone is typing…",
       ]) {
@@ -98,7 +98,7 @@ describe("ChapterShowcase", () => {
     }
     expect([...seen].sort()).toEqual(
       [
-        "Awaiting confirmation",
+        "Waiting on an officer",
         "Confirmed",
         "In progress",
         "Someone is typing…",

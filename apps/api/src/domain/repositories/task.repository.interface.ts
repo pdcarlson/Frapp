@@ -15,5 +15,14 @@ export interface ITaskRepository {
    * COMPLETED, or already awarded (e.g. a concurrent confirm won the race).
    */
   confirmCompletionAtomic(id: string, chapterId: string): Promise<Task | null>;
+  /**
+   * Move a COMPLETED task back to IN_PROGRESS and clear `completed_at`, only
+   * while it is still COMPLETED and unconfirmed (compare-and-set on `status`
+   * and `points_awarded`). Returns the updated task, or `null` when nothing
+   * was updated: an officer confirmed it, or another write moved it first.
+   * Backs both an officer's reject and the assignee taking back their own
+   * "done" before it is confirmed.
+   */
+  reopenCompletion(id: string, chapterId: string): Promise<Task | null>;
   delete(id: string, chapterId: string): Promise<void>;
 }

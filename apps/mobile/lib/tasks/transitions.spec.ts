@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isOpenTask, nextTapSequence } from "./transitions";
+import { checkboxSequence, isOpenTask, nextTapSequence } from "./transitions";
 
 describe("isOpenTask", () => {
   it("keeps every status except COMPLETED", () => {
@@ -24,7 +24,9 @@ describe("nextTapSequence", () => {
   });
 
   it("completes a started task in one write", () => {
-    expect(nextTapSequence("IN_PROGRESS", "IN_PROGRESS")).toEqual(["COMPLETED"]);
+    expect(nextTapSequence("IN_PROGRESS", "IN_PROGRESS")).toEqual([
+      "COMPLETED",
+    ]);
   });
 
   it("offers nothing on a completed task", () => {
@@ -65,5 +67,23 @@ describe("nextTapSequence", () => {
     expect(nextTapSequence("ARCHIVED", "TODO")).toEqual([]);
     expect(nextTapSequence(null, null)).toEqual([]);
     expect(nextTapSequence("", "")).toEqual([]);
+  });
+});
+
+describe("checkboxSequence", () => {
+  const at = (storedStatus: string, pointsAwarded = false) => ({
+    storedStatus,
+    displayStatus: storedStatus,
+    pointsAwarded,
+  });
+
+  it("walks an open task to done, as the tap ladder does", () => {
+    expect(checkboxSequence(at("TODO"))).toEqual(["IN_PROGRESS", "COMPLETED"]);
+    expect(checkboxSequence(at("IN_PROGRESS"))).toEqual(["COMPLETED"]);
+  });
+
+  it("unchecks the member's own completion until an officer confirms it", () => {
+    expect(checkboxSequence(at("COMPLETED"))).toEqual(["IN_PROGRESS"]);
+    expect(checkboxSequence(at("COMPLETED", true))).toEqual([]);
   });
 });
