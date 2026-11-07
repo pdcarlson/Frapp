@@ -96,6 +96,8 @@ export const reactNativeStub = {
   // below.
   FlatList: "FlatList",
   ActivityIndicator: "ActivityIndicator",
+  // A channel row's long-press menu (`channel-actions-menu.tsx`) opens in one.
+  Modal: "Modal",
   KeyboardAvoidingView: "KeyboardAvoidingView",
   Share: {
     share: vi.fn().mockResolvedValue({ action: "sharedAction" }),
