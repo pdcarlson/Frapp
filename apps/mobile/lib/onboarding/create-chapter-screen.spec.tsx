@@ -27,11 +27,23 @@ import { flatStyle } from "@/test/flat-style";
 
 let pushAvailable = false;
 const requestPushPermission = vi.fn();
-let permission: { granted: boolean } | null = null;
+let permission: {
+  granted: boolean;
+  canAskAgain?: boolean;
+  status?: string;
+} | null = null;
 
 vi.mock("@/lib/notifications/push", () => ({
   isPushAvailable: () => pushAvailable,
-  getPushPermission: () => Promise.resolve(permission),
+  getPushPermission: () =>
+    Promise.resolve(
+      permission && {
+        canAskAgain: true,
+        status: permission.granted ? "granted" : "undetermined",
+        ...permission,
+      },
+    ),
+  isPushChannelBlocked: () => Promise.resolve(false),
   requestPushPermission: (...args: unknown[]) => requestPushPermission(...args),
 }));
 
@@ -816,14 +828,18 @@ describe("chapter setup — push primer for the founder", () => {
     expect(title(root)).toBe(SETUP_TITLES.invite);
   });
 
-  it("draws no line over the card, which makes its own case", async () => {
+  it("draws the same step a joining member sees, answers pinned", async () => {
     pushAvailable = true;
     permission = { granted: false };
     const { root } = await render();
     await createFromMatch(root);
     await press(root, "Continue");
-    expect(title(root)).toBe(SETUP_TITLES.primer);
-    expect(allText(root)).not.toContain("start posting");
+    expect(title(root)).toBe("Turn on notifications");
+    expect(allText(root)).toContain(
+      "DMs, mentions, #general, and #announcements",
+    );
+    expect(control(root, "Turn on notifications")).toBeDefined();
+    expect(control(root, "Not now")).toBeDefined();
   });
 });
 

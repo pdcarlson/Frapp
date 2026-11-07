@@ -744,13 +744,29 @@ client cannot read (`GET /v1/invoices/overdue` is `billing:view`-only). §Status
 labels reserves the backend's own labels for states the client can actually
 confirm.
 
+### Push opt-in (mobile)
+
+Onboarding's notifications step (s03's second beat, and chapter setup's step) and the
+chat home's one reminder (`components/notifications/push-ask.tsx`,
+`push-reminder.tsx`). The rows name what pushes by default, in the app's nouns: every message in a DM,
+#general and #announcements, and a mention anywhere. The footnote names where each is
+changed: chat per conversation from its menu (Settings has no chat switch), events and
+tasks in Settings ([`../mobile/patterns.md`](../mobile/patterns.md#push-notifications) § Push
+notifications).
+
+| State | Title | Copy |
+|---|---|---|
+| Step | `Turn on notifications` | `Chapter plans move fast. Get a ping when something is for you.` Rows: `DMs, mentions, #general, and #announcements` (chat glyph), `New events, reminders, and changes` (events glyph), `Tasks assigned to you or coming due` (tasks glyph). Footnote: `Mute any chat from its menu. Event and task alerts, and quiet hours, are in Settings.` Gold `Turn on notifications`, quiet `Not now`. |
+| Step, no prompt left | `Turn on notifications` | As above, with the gold button reading `Open Settings`. Stored as a deferral, so the chat home's reminder can still ask once. |
+| Chat home reminder | `Notifications are off` | `You won't hear about mentions or new events until you open the app.` Action `Turn on` (`Open Settings` when no prompt is left), and a close. |
+
 ### Push availability (mobile, s16)
 
 The reason Settings states on its push row, in place of the switch, when this build
 can't push (`pushUnavailableReason()` in `apps/mobile/lib/notifications/push.ts`).
 One sentence per cause, because each cause has a different remedy
 ([`../mobile/patterns.md`](../mobile/patterns.md#push-notifications) § Push
-notifications). The s03 primer card never shows these: it isn't drawn when push
+notifications). Onboarding's notifications step never shows these: it is skipped when push
 is unavailable ([#2299](https://github.com/pdcarlson/Frapp/issues/2299)).
 
 | State | Title | Description |
@@ -1074,7 +1090,7 @@ Mobile's first-officer setup, `(auth)/create-chapter.tsx` (#3351). Titles are `S
 | Live | `<name> is live` | `Your channels are ready. Invite your members next.` Then the seeded public channels, each marked `ready`. |
 | Live, chapter not made active | `<name> is live` | `Your chapter is ready. Open chat to see its channels and invite your members.` No channel list, no invite step: both act on the active chapter. |
 | Live, logo | — | `Add your chapter's logo` (`Change logo` once set) + `Optional. A logo stands in for your letter mark everywhere.` A refusal shows `uploadFailureReason`'s sentence, or `Logos can be JPEG, PNG, GIF or WebP.` / `Logos can be up to <limit>.` When the new chapter couldn't be made active: `You can add a logo later from the web dashboard's Settings.` |
-| Primer | `Stay in the loop` | No line under the title; the push primer card says it. Only when this build can push. |
+| Notifications | `Turn on notifications` | The same step s03 shows a joining member: see § Push opt-in (mobile). Only when this build can push and push is off. |
 | Invite | `Invite your chapter` | `Send each person their own link. A link lets one person in and lasts 24 hours.` No link is ever drawn: a card reads `A new link for each person` over `<host>, good for 24 hours`. The gold primary is `Share invite` with the platform's share mark; each press shares a fresh link under the line `Join <name> on Frapp` (owner pick 2026-11-06, "Share first"). Links shared list under a `Shared` caption, newest first, as `Link <n>` with `Not used yet` or `Joined`. Leaving is the quiet line under the primary: `Skip for now`, then `Go to chat` once a link has gone out. |
 | Invite failed | — | The server's message, else `Couldn't create an invite. You can invite members from the web dashboard.` When the share sheet won't open: `Couldn't open the share sheet. Try again, or invite members from the web dashboard.` |
 
