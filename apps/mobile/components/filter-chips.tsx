@@ -60,7 +60,7 @@ export interface FilterChip {
 
 /**
  * One chip, for a control that sits beside a chip row rather than in it
- * (Directory's Filters). `FilterChips` and `ToggleChips` draw theirs with it.
+ * (Directory's Filters). `FilterChips` draws its chips with it.
  *
  * On: the chapter's solid accent with its own label colour, as components.md
  * §3 paints a control that stays on. Off: `surface1` with a hairline, the
@@ -208,36 +208,6 @@ export function FilterChips({
         ))}
       </View>
       {trailing}
-    </ChipRow>
-  );
-}
-
-/**
- * Chips that switch on and off independently, in `FilterChips`' recipe: s04's
- * Unread only and Hide muted (#2877), which can both be on at once, so they are
- * switches rather than one tab list. They wrap rather than scroll: there are
- * two of them, and a scroller would only add a gesture.
- */
-export function ToggleChips<K extends string>({
-  chips,
-  onToggle,
-}: {
-  chips: readonly { key: K; label: string; on: boolean }[];
-  onToggle: (key: K, next: boolean) => void;
-}) {
-  return (
-    <ChipRow scroll={false}>
-      {chips.map((chip) => (
-        <Chip
-          key={chip.key}
-          accessibilityRole="switch"
-          accessibilityState={{ checked: chip.on }}
-          accessibilityLabel={chip.label}
-          label={chip.label}
-          on={chip.on}
-          onPress={() => onToggle(chip.key, !chip.on)}
-        />
-      ))}
     </ChipRow>
   );
 }
