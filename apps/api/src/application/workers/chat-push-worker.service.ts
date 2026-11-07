@@ -86,6 +86,14 @@ interface FanOutOutcome {
  */
 export const CHAT_PUSH_CLAIM_RETENTION_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * The iOS stack a chat push joins (`PushPayload.threadId`): one per channel,
+ * which for a DM is one per person.
+ */
+export function chatPushThreadId(channelId: string): string {
+  return `chat:${channelId}`;
+}
+
 /** The placeholder `ChatService.createGroupDm` names a group DM given no name. */
 const UNNAMED_GROUP_DM = /^group-dm-\d+$/;
 
@@ -906,6 +914,9 @@ export class ChatPushWorkerService
       title: this.titleFor(channel, isAnnouncement, senderName),
       category: isAnnouncement ? 'announcements' : 'chat',
       priority: isAnnouncement ? ('URGENT' as const) : ('NORMAL' as const),
+      // One iOS stack per conversation. A DM is its own channel, so this is
+      // also one stack per person; the app clears a stack once it is read.
+      threadId: chatPushThreadId(channel.id),
     };
     // The sender rides on every chat row, bundled or not, so the in-app list
     // can withhold a member's rows from someone who blocks them later (#2715).

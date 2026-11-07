@@ -57,6 +57,9 @@ export interface PushNotificationResponse {
   };
 }
 
+/** A notification the OS is still showing in the tray / Notification Center. */
+export type PresentedNotification = PushNotificationResponse["notification"];
+
 export interface PushSubscription {
   remove(): void;
 }
@@ -129,6 +132,8 @@ export interface NotificationsModule {
   scheduleNotificationAsync(request: PushScheduleRequest): Promise<string>;
   cancelScheduledNotificationAsync(identifier: string): Promise<void>;
   dismissNotificationAsync(identifier: string): Promise<void>;
+  /** What is still in the tray, local and remote alike. */
+  getPresentedNotificationsAsync(): Promise<PresentedNotification[]>;
   setNotificationHandler(handler: unknown): void;
   /** Local, like the badge itself — never requires the EAS `projectId`. */
   setBadgeCountAsync(count: number): Promise<boolean>;
