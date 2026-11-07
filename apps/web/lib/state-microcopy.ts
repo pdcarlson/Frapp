@@ -34,13 +34,18 @@ export const stateMicrocopy = {
   // not an empty chapter. The `preview*` pair had no reader left.
   events: {
     loading: "Loading chapter events...",
-    emptyTitle: "No events yet",
-    emptyDescription:
-      "Create your first chapter event to unlock attendance and point automation.",
-    filteredTitle: "No events match the filters",
-    filteredDescription: "Clear a filter to see more.",
-    // The title is built at the call site because it quotes the live query.
-    noMatchDescription: "Check the spelling, or widen the filters.",
+    // Inline lines, not card titles (`components.md` §10). A chapter with no
+    // events opens on the calendar, so `empty` is what the List tab says if
+    // someone switches to it; the calendar carries its own line.
+    empty: "No events yet.",
+    noUpcoming: "No upcoming events.",
+    noPast: "No past events.",
+    noSearchMatches: "No events match that search.",
+    noFilterMatches: "No events match these filters.",
+    // On the calendar of a chapter with no events. Officers who can create
+    // get the how; everyone else gets the fact.
+    calendarFirstEvent: "Pick a day to schedule the first event.",
+    calendarNothingYet: "Nothing on the calendar yet.",
     offlineTitle: "Events workspace unavailable offline",
     offlineDescription:
       "Reconnect to load event schedules and attendance updates.",
