@@ -36,6 +36,7 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { BlockedMembersCard } from "@/components/profile/blocked-members-card";
 import { DiscordHistoryCard } from "@/components/profile/discord-history-card";
 import { ProfileSection } from "@/components/profile/profile-section";
+import { ChatDensityControl } from "@/components/profile/chat-density-control";
 import { ProfilePhotoControl } from "@/components/profile/profile-photo-control";
 import {
   DELETE_ACCOUNT_FAILED,
@@ -998,6 +999,18 @@ export function ProfilePanel() {
               )}
             </div>
           )}
+        </ProfileSection>
+
+        {/*
+          How tightly the thread draws (§11 § Density). Kept on the device, so
+          the hint says so: a phone can stay cozy while a laptop goes compact.
+        */}
+        <ProfileSection
+          id="chat-density"
+          title="Chat density"
+          hint="Applies on this browser."
+        >
+          <ChatDensityControl />
         </ProfileSection>
 
         {/*
