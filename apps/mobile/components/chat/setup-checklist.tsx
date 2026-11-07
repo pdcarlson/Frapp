@@ -27,13 +27,14 @@ import { CheckGlyph } from "@/components/tasks/task-glyphs";
  * UP NEXT and above the channels, drawn the way UP NEXT is (an eyebrow over
  * rows), so it reads as one more strip of chrome and not a card.
  *
- * The phone can upload a document and schedule an event, so those lines open
- * Documents (its + is the upload sheet) and Events (its empty state points at
- * the tab bar's +, where New event is). It has no screen for inviting or
- * study zones, so those lines open the same page of the web app in the
- * in-app browser, and
- * say so before the tap, the way Settings' Study zones row says where zones
- * are managed. It never draws dues ({@link MOBILE_SETUP_CHECKLIST_OMIT}).
+ * The phone can invite, upload a document and schedule an event, so those
+ * lines open Invite members (its one button shares a fresh link, owner ask
+ * 2026-11-06), Documents (its + is the upload sheet) and Events (its empty
+ * state points at the tab bar's +, where New event is). It has no screen for
+ * study zones, so that line opens the same page of the web app in the in-app
+ * browser, and says so before the tap, the way Settings' Study zones row says
+ * where zones are managed. It never draws dues
+ * ({@link MOBILE_SETUP_CHECKLIST_OMIT}).
  *
  * Chat home calls the hook itself and hands the result in, so its pull to
  * refresh can re-read the lists too.
@@ -51,6 +52,8 @@ export const MOBILE_SETUP_CHECKLIST_OMIT = ["dues"] as const;
 export const SETUP_CHECKLIST_APP_ROUTE: Partial<
   Record<SetupChecklistKey, string>
 > = {
+  // `from=chat` gives the screen `‹ Chat`, the way back to this list.
+  invite: "/invite?from=chat",
   document: "/documents",
   event: "/events",
 };
