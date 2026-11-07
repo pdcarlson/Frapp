@@ -32,3 +32,19 @@ export function selectionHaptic(): void {
     // The native module is missing; there is nothing to feel.
   }
 }
+
+/**
+ * One firm tap, for a long press that opens a menu (a channel row on s04),
+ * the feel a long press has anywhere else on the phone.
+ *
+ * Best effort and silent, as `successHaptic` is.
+ */
+export function pressHaptic(): void {
+  try {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(
+      () => undefined,
+    );
+  } catch {
+    // The native module is missing; there is nothing to feel.
+  }
+}
