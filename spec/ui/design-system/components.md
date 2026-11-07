@@ -290,7 +290,7 @@ Not on this yet: the notifications drawer and the backwork category drawer and m
 
 ### More options
 
-*(Added 2026-11-06, owner: nobody wants every option at once on create.)* A create form shows the fields every item needs and keeps the rest behind one row. Closed, the row reads "More options" over a one-line summary of what those fields hold now ("10 pts · Required for Officers · Every week"), so nothing set there is hidden; open, it reads "Fewer options" and the fields follow it. On mobile a validation error in a hidden field opens it. The web event editor opens with it open on an edit, since the officer came to change something. Mobile: `MoreOptionsRow` in `apps/mobile/components/events/new-event-sheet.tsx`; web: `apps/web/components/ui/more-options-toggle.tsx`. Users: New event (both), Create a task (web).
+*(Added 2026-11-06, owner: nobody wants every option at once on create.)* A create form shows the fields every item needs and keeps the rest behind one row. Closed, the row reads "More options" over a one-line summary of what those fields hold now ("10 pts · Required for Officers · Every week"), so nothing set there is hidden; open, it reads "Fewer options" and the fields follow it. On mobile a validation error in a hidden field opens it. The web event editor opens with it open on an edit, since the officer came to change something. Mobile: `MoreOptionsRow` in `apps/mobile/components/events/new-event-sheet.tsx`; web: `apps/web/components/ui/more-options-toggle.tsx`. Users: New event (both).
 
 ### Bottom sheet (mobile)
 
