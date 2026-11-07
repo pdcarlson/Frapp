@@ -160,10 +160,10 @@ export function ChatComposer({
     mentionCandidates,
   );
 
-  // An empty or whitespace-only body is not a send — unless something is
-  // attached. An attachment-only message is a real message, and gating it on
-  // the text alone would strand a photo that is already in the bucket with the
-  // send button greyed out and no way to explain why.
+  // An empty or whitespace-only body is not a send — unless a photo is
+  // staged. A photo-only message is a real message, uploaded or still
+  // uploading, and gating it on the text alone would strand it with the send
+  // button greyed out and no way to explain why.
   const isSendable =
     canSend && (value.trim().length > 0 || photos.length > 0);
 
@@ -255,6 +255,8 @@ export function ChatComposer({
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`Remove ${label.toLowerCase()}`}
+                  // 24 + 10 each side reaches the 44pt floor (§2), all of it
+                  // inside the thumb, where Android delivers touches.
                   hitSlop={10}
                   onPress={() => onRemovePhoto?.(photo.key)}
                   style={({ pressed }) => [
@@ -262,7 +264,7 @@ export function ChatComposer({
                     pressed ? styles.pressed : null,
                   ]}
                 >
-                  <CloseGlyph color={THUMB_REMOVE_INK} size={12} />
+                  <CloseGlyph color={THUMB_REMOVE_INK} size={14} />
                 </Pressable>
               </View>
             );
@@ -482,8 +484,8 @@ const INPUT_BORDER = 1;
 
 /** A staged photo's square: two lines of text tall, like iMessage's tray. */
 const THUMB_SIZE = 64;
-/** How far a thumb's remove badge reaches past its corner. */
-const THUMB_BADGE_OVERHANG = 6;
+/** How far a thumb's remove badge sits in from its corner. */
+const THUMB_BADGE_INSET = 4;
 /** Photo-overlay ink, fixed in both themes: it sits on the picture, not the surface. */
 const THUMB_REMOVE_DISC = "rgba(0,0,0,0.72)";
 const THUMB_REMOVE_INK = "#FFFFFF";
@@ -513,9 +515,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     tray: {
       gap: tokens.spacing.xs,
-      // Room for each thumb's remove badge, which sits over its corner.
-      paddingTop: THUMB_BADGE_OVERHANG,
-      paddingRight: THUMB_BADGE_OVERHANG,
     },
     thumb: {
       width: THUMB_SIZE,
@@ -544,11 +543,11 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     // A dark disc so the × reads over any photo, light or dark.
     thumbRemove: {
       position: "absolute",
-      top: -THUMB_BADGE_OVERHANG,
-      right: -THUMB_BADGE_OVERHANG,
-      width: 20,
-      height: 20,
-      borderRadius: 10,
+      top: THUMB_BADGE_INSET,
+      right: THUMB_BADGE_INSET,
+      width: 24,
+      height: 24,
+      borderRadius: 12,
       backgroundColor: THUMB_REMOVE_DISC,
       alignItems: "center",
       justifyContent: "center",
@@ -591,7 +590,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       alignItems: "flex-end",
       gap: tokens.spacing.sm,
     },
-    // The staged-chip surface, so the list reads as part of the composer
+    // The composer's surface recipe, so the list reads as part of the composer
     // rather than a floating card over the thread.
     mentionList: {
       borderRadius: tokens.radius.control,

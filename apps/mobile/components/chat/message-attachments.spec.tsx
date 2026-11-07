@@ -38,6 +38,11 @@ vi.mock("@repo/hooks", async () => {
 import * as WebBrowser from "expo-web-browser";
 import { ImageViewerContext } from "./image-viewer";
 import { MessageAttachments } from "./message-attachments";
+import {
+  attachmentMatchKey,
+  clearLocalPhotosForTest,
+  rememberLocalPhotos,
+} from "@/lib/chat/local-photos";
 
 /**
  * The behaviours this file exists for, all from #1229.
@@ -309,11 +314,11 @@ describe("the loading tiles", () => {
         node.props.testID === "attachment-loading-tile",
     );
 
-  it("reserves a bare preview's room and an unsized preview's height per file", () => {
+  it("reserves a bare preview's room and an unsized preview's height for one file", () => {
     hookState.result = { isPending: true, isError: false, data: undefined };
-    const tree = render({ count: 2 });
+    const tree = render({ count: 1 });
 
-    expect(tiles(tree)).toHaveLength(2);
+    expect(tiles(tree)).toHaveLength(1);
     // No caption line to grow out of.
     expect(tree.root.findAllByType("Text" as never)).toHaveLength(0);
 
@@ -490,5 +495,85 @@ describe("opening an image", () => {
     const [row] = tree.root.findAllByProps({ accessibilityRole: "button" });
     act(() => row!.props.onPress());
     expect(openViewer).not.toHaveBeenCalled();
+  });
+});
+
+describe("several photos and the sender's own", () => {
+  const photo = (id: string, extra: Record<string, unknown> = {}) =>
+    attachment({
+      id,
+      filename: `${id}.jpg`,
+      content_type: "image/jpeg",
+      byte_size: 1000,
+      download_url: `https://example.test/signed/${id}.jpg`,
+      ...extra,
+    });
+  const uris = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAll(
+        (node) =>
+          (node.type as unknown) === "Image" &&
+          typeof node.props.source?.uri === "string",
+      )
+      .map((node) => node.props.source.uri as string);
+
+  beforeEach(() => {
+    clearLocalPhotosForTest();
+  });
+
+  it("draws two or more photos as one grid, four tiles, the last saying +N", () => {
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: ["a", "b", "c", "d", "e", "f"].map((id) => photo(id)),
+    };
+    const tree = render({ count: 6 }, vi.fn());
+    expect(uris(tree)).toHaveLength(4);
+    const texts = tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map((node) => [node.props.children].flat().join(""));
+    expect(texts).toContain("+2");
+    expect(
+      tree.root.findAll(
+        (node) => node.props.accessibilityLabel === "View 6 photos",
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("reserves a grid, not a stack, while several photos load", () => {
+    hookState.result = { isPending: true };
+    const tree = render({ count: 6 });
+    expect(
+      tree.root.findAll(
+        (node) =>
+          node.props.testID === "attachment-loading-tile" &&
+          (node.type as unknown) === "View",
+      ),
+    ).toHaveLength(4);
+  });
+
+  it("draws the sender's photos from the phone while the message sends, fetching nothing", () => {
+    rememberLocalPhotos("c-1", [
+      { uri: "file:///a.jpg", width: 3, height: 4, match: null },
+      { uri: "file:///b.jpg", width: 4, height: 3, match: null },
+    ]);
+    hookState.result = { isPending: true };
+    const tree = render({ count: 2, clientMessageId: "c-1", confirmed: false });
+    expect(uris(tree)).toEqual(["file:///a.jpg", "file:///b.jpg"]);
+    expect(hookState.calls.at(-1)?.enabled).toBe(false);
+  });
+
+  it("keeps drawing the sender's own file once the message is confirmed", () => {
+    rememberLocalPhotos("c-1", [
+      {
+        uri: "file:///a.jpg",
+        width: 3,
+        height: 4,
+        match: attachmentMatchKey("a.jpg", 1000),
+      },
+    ]);
+    hookState.result = { isPending: false, isError: false, data: [photo("a")] };
+    const tree = render({ count: 1, clientMessageId: "c-1" }, vi.fn());
+    expect(uris(tree)).toEqual(["file:///a.jpg"]);
   });
 });

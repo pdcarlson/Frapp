@@ -62,7 +62,8 @@ import {
  * While the message is still sending there is no server row to read, so the
  * pictures the member picked draw at once, at their real shape; once it is
  * confirmed, each server row that matches a local photo still draws the local
- * file, so the sender never downloads back what they just uploaded.
+ * file in the thread, so the sender's thread never downloads back what they
+ * just uploaded (the full-screen viewer still reads the server copy).
  */
 export interface MessageAttachmentsProps {
   channelId: string;
@@ -129,6 +130,9 @@ export function MessageAttachments({
   if (!confirmed) return null;
 
   if (query.isPending) {
+    // Two or more files are bet to be photos, drawn as the grid they become
+    // (components.md §10: the skeleton mirrors the layout it becomes).
+    const tiles = Math.min(count, GRID_MAX_TILES);
     return (
       <View
         accessible
@@ -138,15 +142,24 @@ export function MessageAttachments({
         }
         style={styles.list}
       >
-        {Array.from({ length: count }, (_, index) => (
-          <View
-            key={index}
-            testID="attachment-loading-tile"
-            style={styles.imageRow}
-          >
+        {count === 1 ? (
+          <View testID="attachment-loading-tile" style={styles.imageRow}>
             <View style={styles.loadingTile} />
           </View>
-        ))}
+        ) : (
+          <View style={styles.grid}>
+            {Array.from({ length: tiles }, (_, index) => (
+              <View
+                key={index}
+                testID="attachment-loading-tile"
+                style={[
+                  styles.tile,
+                  tiles === 3 && index === 2 ? styles.tileWide : null,
+                ]}
+              />
+            ))}
+          </View>
+        )}
       </View>
     );
   }
@@ -441,11 +454,10 @@ function createStyles(tokens: SignetTokens) {
     },
     tileMoreText: {
       ...typeRole({
-        ...tokens.typography.role.body,
+        ...tokens.typography.role.title,
         weight: tokens.typography.weight.semibold,
       }),
       color: "#FFFFFF",
-      fontSize: 20,
     },
     imageRow: {
       alignSelf: "stretch",

@@ -14,8 +14,7 @@ import {
 } from "@repo/validation";
 
 /**
- * Pick a photo and put it in the bucket, returning the claim the next send
- * carries.
+ * Pick photos and put each in the bucket, returning the claim a send carries.
  *
  * This is the mobile half of the upload path web has had since the chat
  * rework; `apps/web/components/chat/composer.tsx`'s `handleAttach` is the
@@ -33,12 +32,14 @@ import {
  * That keeps this module a plain async function: testable without a renderer,
  * and callable from a handler rather than only from a component body.
  *
- * ## The bytes land before the message exists
+ * ## The bytes land before the message is queued
  *
- * The object is in the bucket the moment this resolves, which is why the
- * return value is a *claim* and not a file. Dropping the chip before sending
- * drops the claim, not the object, and an abandoned composer leaves the object
- * unreferenced. Nothing collects an upload that no message ever claimed, so it
+ * The object is in the bucket the moment an upload resolves, which is why the
+ * return value is a *claim* and not a file. A send can go up while its photos
+ * still upload (the optimistic row waits on the claims, `use-chat-channel.ts`),
+ * but nothing reaches the outbox or the server without them. Removing an
+ * uploaded photo from the tray drops the claim, not the object, and an
+ * abandoned composer leaves the object unreferenced. Nothing collects an upload that no message ever claimed, so it
  * stays there as an orphan until #2197's sweep exists. Web took this trade
  * deliberately (`composer.tsx`, "Files uploaded and waiting to be claimed by
  * the next send") because the alternative it replaced was worse: the only
@@ -529,10 +530,13 @@ export async function uploadPickedImage(
 
 /**
  * Pick one photo from the library and PUT it to a freshly minted signed URL:
- * the pipeline chat attachments ({@link pickAndUploadPhoto}), the profile
- * photo and the chapter logo ({@link pickUploadAndConfirmImage}) share, so a
- * fix to one reaches all of them. It is {@link pickImage} then
- * {@link uploadPickedImage}, and like both it never throws.
+ * the pipeline the profile photo and the chapter logo
+ * ({@link pickUploadAndConfirmImage}) share. It is {@link pickImage} then
+ * {@link uploadPickedImage}, and like both it never throws. Chat picks several
+ * at once ({@link pickChatPhotos}) and uploads each in the background
+ * ({@link uploadChatPhoto}); all of them share `launchLibrary`,
+ * `preparePickedAsset` and {@link uploadPickedImage}, so a fix to a step there
+ * reaches every caller.
  */
 export async function pickAndUploadImage(
   options: ImageUploadOptions,

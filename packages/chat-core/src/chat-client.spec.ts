@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import {
   actOnCard,
+  AttachmentsNotReadyError,
   classifyChatError,
   definitiveRefusalMessage,
   deleteMessage,
@@ -1933,7 +1934,9 @@ describe("sendMessage with attachments still uploading", () => {
       attachmentsReady: ready,
       attachmentCount: 1,
     });
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The draft is cleared before the wait, so a draft typed meanwhile survives.
+    expect(outbox.clearDraft).toHaveBeenCalledWith("chan-1");
 
     const pending = ctx.queryClient.getQueryData<ChannelCache>(
       chatMessagesKey("chan-1"),
@@ -1967,7 +1970,7 @@ describe("sendMessage with attachments still uploading", () => {
     );
   });
 
-  it("takes the row back out and rethrows when an upload fails, queueing nothing", async () => {
+  it("keeps the row, failed with the reason, when an upload fails, queueing nothing", async () => {
     const outbox = stubOutbox();
     const ctx = buildCtx({ outbox });
 
@@ -1979,12 +1982,14 @@ describe("sendMessage with attachments still uploading", () => {
         attachmentsReady: Promise.reject(new Error("Couldn't upload")),
         attachmentCount: 1,
       }),
-    ).rejects.toThrow("Couldn't upload");
+    ).rejects.toBeInstanceOf(AttachmentsNotReadyError);
 
     const cache = ctx.queryClient.getQueryData<ChannelCache>(
       chatMessagesKey("chan-1"),
     );
-    expect(selectMessages(cache!)).toEqual([]);
+    expect(selectMessages(cache!)).toMatchObject([
+      { client_message_id: "c-1", _status: "failed", _error: "Couldn't upload" },
+    ]);
     expect(outbox.enqueue).not.toHaveBeenCalled();
   });
 });
