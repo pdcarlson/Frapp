@@ -3,10 +3,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { of } from 'rxjs';
 import { AuthSyncInterceptor } from './auth-sync.interceptor';
 import { AuthService } from '../../application/services/auth.service';
+import { TimeZoneSyncService } from '../../application/services/time-zone-sync.service';
 
 describe('AuthSyncInterceptor', () => {
   let interceptor: AuthSyncInterceptor;
   let mockAuthService: jest.Mocked<Pick<AuthService, 'syncUser'>>;
+  let mockTimeZones: jest.Mocked<Pick<TimeZoneSyncService, 'record'>>;
 
   const mockCallHandler: CallHandler = {
     handle: () => of({ result: 'ok' }),
@@ -17,7 +19,11 @@ describe('AuthSyncInterceptor', () => {
     email: string | null | undefined;
     user_metadata?: Record<string, unknown>;
   }): ExecutionContext => {
-    const request = { supabaseUser, appUser: undefined as unknown };
+    const request = {
+      supabaseUser,
+      appUser: undefined as unknown,
+      headers: { 'x-time-zone': 'America/Chicago' },
+    };
     return {
       switchToHttp: () => ({
         getRequest: () => request,
@@ -29,11 +35,13 @@ describe('AuthSyncInterceptor', () => {
     mockAuthService = {
       syncUser: jest.fn(),
     };
+    mockTimeZones = { record: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthSyncInterceptor,
         { provide: AuthService, useValue: mockAuthService },
+        { provide: TimeZoneSyncService, useValue: mockTimeZones },
       ],
     }).compile();
 
@@ -51,6 +59,10 @@ describe('AuthSyncInterceptor', () => {
 
     const request = ctx.switchToHttp().getRequest();
     expect(request.appUser).toEqual({ id: 'user-1' });
+    expect(mockTimeZones.record).toHaveBeenCalledWith(
+      'user-1',
+      'America/Chicago',
+    );
     expect(mockAuthService.syncUser).toHaveBeenCalledWith(
       'auth-123',
       'test@example.com',
