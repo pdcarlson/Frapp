@@ -77,6 +77,11 @@ const BYLAWS = {
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => mockCurrentChapter(),
+  useMyPermissions: () => ({
+    data: {
+      permissions: canGate.granted ? ["chapter_docs:upload"] : [],
+    },
+  }),
   useDocuments: (options?: { search?: string }) => {
     // The upload panel's unsearched library read passes no options; only the
     // page's own list call carries the search being asserted on.
@@ -823,16 +828,24 @@ describe("DocumentsPage title search (#402)", () => {
     render(<DocumentsPage />);
 
     // No query yet: the library really is empty, so invite an upload.
-    expect(screen.getByText("No documents here yet")).toBeInTheDocument();
+    expect(screen.getByText(/^No documents yet\./)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Upload a file" }),
+    ).toBeInTheDocument();
 
     await user.type(screen.getByLabelText("Search documents"), "zzz");
 
     await waitFor(() =>
-      expect(
-        screen.getByText("No documents match that search"),
-      ).toBeInTheDocument(),
+      expect(screen.getByText(/No documents match “zzz”/)).toBeInTheDocument(),
     );
-    expect(screen.queryByText("No documents here yet")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^No documents yet/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Upload a file" })).toBeNull();
+
+    // The miss offers the way back, and the way back is the library.
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    await waitFor(() =>
+      expect(screen.getByText(/^No documents yet\./)).toBeInTheDocument(),
+    );
   });
 
   it("composes with the folder tab", async () => {
@@ -849,8 +862,13 @@ describe("DocumentsPage title search (#402)", () => {
     // empty state rather than the row.
     await user.click(screen.getByRole("button", { name: /^Rush$/ }));
     expect(
-      screen.getByText("No documents match that search"),
+      screen.getByText(/Nothing in Rush matches “bylaws”/),
     ).toBeInTheDocument();
+    expect(documentsArgs.value).toEqual({ search: "bylaws" });
+
+    // The way out of a folder miss is the whole library, search kept.
+    await user.click(screen.getByRole("button", { name: "Search all files" }));
+    expect(screen.queryByText(/Nothing in Rush matches/)).toBeNull();
     expect(documentsArgs.value).toEqual({ search: "bylaws" });
   });
 });
@@ -1188,7 +1206,7 @@ describe("DocumentsPage search and folder resilience", () => {
     // match and must show the search-aware empty state.
     await waitFor(() =>
       expect(
-        screen.getByText("No documents match that search"),
+        screen.getByText("No documents outside a folder match “bylaws”."),
       ).toBeInTheDocument(),
     );
     expect(documentsArgs.value).toEqual({ search: "bylaws" });

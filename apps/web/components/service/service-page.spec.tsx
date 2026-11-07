@@ -58,18 +58,20 @@ const APPROVED_ENTRY = {
 };
 
 const entriesPending = vi.hoisted(() => ({ current: false }));
+const entriesEmpty = vi.hoisted(() => ({ current: false }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   // The real PUT, so the specs below assert on the request it actually sends.
   putSignedUpload: (await importOriginal<typeof import("@repo/hooks")>())
     .putSignedUpload,
   useCurrentChapter: () => mockCurrentChapter(),
+  useMyPermissions: () => ({ data: { permissions: ["service:log"] } }),
   useServiceEntries: (...args: unknown[]) => {
     mockServiceEntries(...args);
     return entriesPending.current
       ? { data: undefined, isPending: true, isError: false }
       : {
-          data: [PENDING_ENTRY, APPROVED_ENTRY],
+          data: entriesEmpty.current ? [] : [PENDING_ENTRY, APPROVED_ENTRY],
           isPending: false,
           isError: false,
         };
@@ -141,6 +143,37 @@ describe("ServiceHoursPage first load", () => {
       "Loading service hours",
     );
     expect(container.querySelector(".bg-card")).toBeNull();
+  });
+});
+
+describe("ServiceHoursPage with nothing logged", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+    mockFrappUser.mockReturnValue({ userId: "u-1", isLoading: false });
+    entriesEmpty.current = true;
+  });
+  afterEach(() => {
+    entriesEmpty.current = false;
+  });
+
+  it("says so in one line per section and starts the first entry from it", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<ServiceHoursPage />);
+
+    expect(screen.getByText("Nothing waiting for review.")).toBeInTheDocument();
+    expect(screen.getByText(/^No service logged yet\./)).toBeInTheDocument();
+    // Lines, not the old centered cards.
+    expect(container.querySelector("h2, h3")?.textContent ?? "").not.toMatch(
+      /No service activity|No pending entries/,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Log the first hours" }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: /log service hours/i }),
+    ).toBeInTheDocument();
   });
 });
 

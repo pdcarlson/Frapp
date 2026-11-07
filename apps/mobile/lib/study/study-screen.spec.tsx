@@ -114,9 +114,13 @@ let sessions: unknown[] = NO_SESSIONS;
 const refetchZones = vi.fn();
 const refetchSessions = vi.fn();
 
+/** The viewer's permissions: a member unless a test says so. */
+let permissions: string[] = [];
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => ({ data: chapter, refetch: refetchChapter }),
+  usePermissionList: () => permissions,
   useGeofences: () => ({
     data: isLoading ? undefined : zones,
     isPending: isLoading,
@@ -941,12 +945,25 @@ describe("Study loading and empty states", () => {
     zones = [];
     const tree = render();
 
-    expect(screenText(tree)).toContain("No study zones yet");
     expect(screenText(tree)).toContain(
-      "Ask an officer who manages study zones to add one.",
+      "No study zones yet. An officer adds them.",
     );
     expect(screenText(tree)).not.toContain("geofences:manage");
     act(() => tree.unmount());
+  });
+
+  it("tells an officer who manages zones where to add one", () => {
+    zones = [];
+    permissions = ["geofences:manage"];
+    try {
+      const tree = render();
+      expect(screenText(tree)).toContain(
+        "No study zones yet. Add one from Frapp on the web.",
+      );
+      act(() => tree.unmount());
+    } finally {
+      permissions = [];
+    }
   });
 });
 

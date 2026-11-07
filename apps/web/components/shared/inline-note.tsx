@@ -28,6 +28,15 @@ export function InlineNote({
 }
 
 /**
+ * The link look of {@link InlineNoteAction}, for a line whose action goes to
+ * another page (a `next/link` `Link`) rather than changing this one.
+ */
+export const inlineNoteActionClassName = cn(
+  buttonVariants({ variant: "link" }),
+  "inline h-auto p-0 align-baseline text-sm",
+);
+
+/**
  * The way back out of an {@link InlineNote}, such as Clear search: a link in
  * running text, so Button's `link` variant and its accent (foundations §6,
  * "Where the accent goes"), sized to the sentence rather than to a control.
@@ -40,11 +49,7 @@ export function InlineNoteAction({
   return (
     <button
       type={type}
-      className={cn(
-        buttonVariants({ variant: "link" }),
-        "inline h-auto p-0 align-baseline text-sm",
-        className,
-      )}
+      className={cn(inlineNoteActionClassName, className)}
       {...props}
     />
   );
