@@ -14,9 +14,31 @@ export interface FrappClientConfig {
    * served. Mobile native builds set it; web and Expo Go leave it unset.
    */
   clientVersion?: string;
+  /**
+   * The zone this device's clock reads in, sent as {@link TIME_ZONE_HEADER}.
+   * Defaults to the runtime's own (`Intl`), which is right for both the
+   * browser and the phone; a test can pin it.
+   */
+  getTimeZone?: () => string | null;
 }
 
 export const REQUEST_ID_HEADER = "x-request-id";
+
+/**
+ * Matches the API's `TIME_ZONE_HEADER`. The API records it per member so a
+ * push can name an event's time the way the member's phone shows it.
+ */
+export const TIME_ZONE_HEADER = "x-time-zone";
+
+/** This runtime's IANA zone, or null where `Intl` cannot say. */
+export const runtimeTimeZone = (): string | null => {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return typeof zone === "string" && zone.length > 0 ? zone : null;
+  } catch {
+    return null;
+  }
+};
 
 /** Matches the API's `CLIENT_VERSION_HEADER` (`#domain/constants/client-version`). */
 export const CLIENT_VERSION_HEADER = "x-client-version";
@@ -97,6 +119,11 @@ export const createFrappClient = (config: FrappClientConfig) => {
 
       if (config.clientVersion) {
         request.headers.set(CLIENT_VERSION_HEADER, config.clientVersion);
+      }
+
+      const timeZone = (config.getTimeZone ?? runtimeTimeZone)();
+      if (timeZone) {
+        request.headers.set(TIME_ZONE_HEADER, timeZone);
       }
 
       ensureRequestIdHeader(request.headers);
