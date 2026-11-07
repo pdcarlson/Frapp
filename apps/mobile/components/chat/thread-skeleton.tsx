@@ -2,6 +2,7 @@ import { StyleSheet, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { SkeletonBlock, SkeletonRegion } from "@/components/state-block";
 import { avatarRadius, useFrappTheme } from "@/lib/theme";
+import { useChatDensity } from "@/lib/chat/chat-density";
 import { MESSAGE_AVATAR_SIZE } from "./message-item";
 
 /** How many message shapes to draw: enough to fill the lower half of a phone. */
@@ -19,6 +20,9 @@ const BODY_WIDTHS = ["70%", "52%", "60%", "45%"] as const;
  * where an inverted thread draws its newest messages, so the real rows land
  * where the shapes were rather than dropping in from the top.
  *
+ * In compact density (§11 § Density) each row is compact's first row instead:
+ * no avatar, a time bar and a name bar leading one body bar, runs 4 apart.
+ *
  * Its shapes are `SkeletonBlock`s in one `SkeletonRegion`
  * (`components/state-block.tsx`), so they pulse with every other skeleton's
  * and the §10 shimmer lands here when it lands in `SkeletonBlock`. Neutral
@@ -27,6 +31,28 @@ const BODY_WIDTHS = ["70%", "52%", "60%", "45%"] as const;
 export function ThreadSkeleton() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const compact = useChatDensity() === "compact";
+
+  if (compact) {
+    return (
+      <SkeletonRegion label="Loading messages" style={styles.container}>
+        {Array.from({ length: ROWS * 2 }, (_, index) => (
+          <View key={index} style={[styles.compactRow]}>
+            <SkeletonBlock
+              width={tokens.spacing["2xl"]}
+              height={tokens.spacing.md}
+            />
+            <SkeletonBlock width="22%" height={tokens.spacing.md} />
+            <SkeletonBlock
+              width={BODY_WIDTHS[index % BODY_WIDTHS.length]!}
+              height={tokens.spacing.md}
+              style={styles.compactBody}
+            />
+          </View>
+        ))}
+      </SkeletonRegion>
+    );
+  }
 
   return (
     <SkeletonRegion label="Loading messages" style={styles.container}>
@@ -65,6 +91,16 @@ function createStyles(tokens: SignetTokens) {
       paddingHorizontal: tokens.spacing.lg,
       paddingTop: tokens.spacing.lg,
     },
+    // Compact's row: the time and name leading the body on one 25pt line.
+    compactRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+      height: 25,
+      paddingHorizontal: tokens.spacing.lg,
+      marginTop: tokens.spacing.xs,
+    },
+    compactBody: { flexShrink: 1 },
     column: {
       flex: 1,
       gap: tokens.spacing.sm,
