@@ -5,6 +5,7 @@ import {
   type IDiscordImportRepository,
 } from '#domain/repositories/discord-import.repository.interface';
 import { archiveQuotaMessage } from '../services/discord-import.service';
+import { willRetryImport } from './discord-import-retry';
 import {
   DISCORD_CONNECTION_REPOSITORY,
   type IDiscordConnectionRepository,
@@ -448,12 +449,16 @@ export class DiscordExportWorkerService {
         const failed =
           error instanceof DestinationError ? error.mapping : mapping;
         const cause = error instanceof DestinationError ? error.cause : error;
-        await this.importRepo
-          .updateChannel(failed.id, job.id, {
-            status: 'failed',
-            error: toReportableError(cause).message,
-          })
-          .catch(() => undefined);
+        // Not when the sweep will pause and try again (#1692): the row would
+        // show "failed" through a wait that ends with it running again.
+        if (!willRetryImport(cause, job.attempt_count)) {
+          await this.importRepo
+            .updateChannel(failed.id, job.id, {
+              status: 'failed',
+              error: toReportableError(cause).message,
+            })
+            .catch(() => undefined);
+        }
         throw cause;
       }
       if (!done) return this.sliceResult(totals, false);
