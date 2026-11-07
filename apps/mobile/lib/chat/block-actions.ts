@@ -27,18 +27,8 @@ import { useBlockMember, useFrappClient, useUnblockMember } from "@repo/hooks";
  * scoped to one chapter and a member can belong to several, so the copy says
  * "this chapter" wherever it says what a block hides. The confirmations and
  * failures are web's too and live in `@repo/chat-core/block-copy` (#2687);
- * what is here is the native alert flow and the sheet rows' descriptions.
+ * what is here is the native alert flow.
  */
-
-/**
- * The second line under a Block / Unblock row, on every surface that draws one
- * (the message actions sheet and the directory's member sheet), so the two
- * cannot explain one control two ways.
- */
-export const BLOCK_ROW_DESCRIPTION =
-  "Hides their messages from you in this chapter's chat. They aren't told.";
-export const UNBLOCK_ROW_DESCRIPTION =
-  "Their messages in this chapter's chat show again.";
 
 export interface BlockActions {
   /** Resolves once the server confirmed and the caches were told. Rejects on failure. */

@@ -15,10 +15,8 @@ import {
 } from "@repo/hooks";
 import { can } from "@repo/validation";
 import {
-  BLOCK_ROW_DESCRIPTION,
   confirmBlockMember,
   confirmUnblockMember,
-  UNBLOCK_ROW_DESCRIPTION,
   useBlockActions,
 } from "@/lib/chat/block-actions";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
@@ -446,7 +444,6 @@ export const MemberDetailSheet = forwardRef<
                   {isBlocked ? (
                     <ListRow
                       label={`Unblock ${blockTarget.displayName}`}
-                      description={UNBLOCK_ROW_DESCRIPTION}
                       action
                       disabled={blockActions.isPending}
                       onPress={() =>
@@ -459,7 +456,6 @@ export const MemberDetailSheet = forwardRef<
                   ) : (
                     <ListRow
                       label={`Block ${blockTarget.displayName}`}
-                      description={BLOCK_ROW_DESCRIPTION}
                       action
                       destructive
                       disabled={blockActions.isPending}
