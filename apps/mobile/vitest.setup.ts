@@ -528,6 +528,8 @@ vi.mock("@sentry/react-native", () => ({
   setUser: vi.fn(),
   // Both QueryClients report failures through it (`lib/sentry/query-errors.ts`).
   captureException: vi.fn(),
+  // Chat home's refused-channels warning (`lib/chat/channels-error.ts`).
+  captureMessage: vi.fn(),
   mobileReplayIntegration: vi.fn(),
 }));
 
