@@ -123,6 +123,7 @@ runs:
         '
 
     - name: Back up Storage objects
+      id: backup
       shell: bash
       env:
         BACKUP_ENVIRONMENT: ${{ inputs.environment }}
@@ -165,3 +166,15 @@ runs:
           echo
           echo "Restore: db-rollback-playbook.md section 'Restoring Storage objects'."
         } >> "$GITHUB_STEP_SUMMARY"
+
+# Below `runs:`, not with the inputs: the metadata above it is evaluated with
+# almost no contexts, and a `steps` expression there fails the manifest to load
+# (infisical-secrets-action.test.mjs).
+outputs:
+  behind:
+    description: >
+      `true` when the backup stopped at its budget while the mirror is
+      converging (`budgetStopVerdict`, #3099): the job passes, and its
+      `Storage mirror catching up` step tells the freshness watch the success
+      is not a whole mirror. `false` otherwise.
+    value: ${{ steps.backup.outputs.behind }}

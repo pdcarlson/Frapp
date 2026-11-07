@@ -32,13 +32,17 @@
 //
 // What the Storage job's `success` proves: the job verifies content, not just
 // that no command failed (#2335). It refuses a prefix with no manifest or one
-// recording another destination, a listing that would tombstone every object,
+// recording another destination, a listing that would tombstone every object
+// (unless that bucket lists at least as many as before: a turnover, #3099),
 // and a mirror whose manifest names objects missing offsite
 // (`scripts/storage-backup.mjs`, "Proving the mirror is where we think"). So a
 // job that mirrored nothing, or mirrored into the wrong bucket, concludes
 // failure and the Storage watch raises its alert the same day. The check lives
 // in the job because it holds the R2 credentials; this script holds only
-// GITHUB_TOKEN on purpose (#2518). Two gaps are deliberate. A mirror with no
+// GITHUB_TOKEN on purpose (#2518). Three gaps are deliberate. A mirror that
+// stopped at its budget while catching up (#3099) succeeds, and this watch
+// reads its `CATCHING_UP_STEP` as a pass that is never fresh: no alert opens,
+// none closes, until the mirror is whole or stops converging and fails. A mirror with no
 // live objects passes with a warning in the job log (production had no
 // uploads when this landed, and a P1 open until launch would teach everyone to
 // ignore it), which also covers one emptied by a run someone allowed with
