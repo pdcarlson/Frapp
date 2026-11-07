@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   deregisterStoredPushToken,
+  notifyPushPermissionGranted,
+  onPushPermissionGranted,
   registerCurrentPushToken,
   sessionOwnsPushRegistration,
 } from "./push-token-lifecycle";
@@ -42,13 +44,13 @@ describe("sessionOwnsPushRegistration", () => {
 });
 
 describe("registerCurrentPushToken", () => {
-  it("skips a re-register when the stored row already matches", async () => {
+  it("POSTs again when the stored row already matches, because the server may have dropped it (#2617)", async () => {
     const d = deps({
       id: "row-ExponentPushToken[new]",
       token: "ExponentPushToken[new]",
     });
     await registerCurrentPushToken(d);
-    expect(d.register).not.toHaveBeenCalled();
+    expect(d.register).toHaveBeenCalledWith({ token: "ExponentPushToken[new]" });
     expect(d.remove).not.toHaveBeenCalled();
   });
 
@@ -122,13 +124,15 @@ describe("registerCurrentPushToken", () => {
     let nestedCalls = 0;
     d.getToken.mockImplementation(async () => {
       nestedCalls += 1;
-      if (nestedCalls === 1) {
-        await registerCurrentPushToken(d);
-      }
+      // Every token read re-enters, as the native listener can.
+      await registerCurrentPushToken(d);
       return "ExponentPushToken[new]";
     });
     await registerCurrentPushToken(d);
-    expect(d.register).toHaveBeenCalledTimes(1);
+    // The re-entry is coalesced into one follow-up run, and a re-entry from
+    // that follow-up is dropped, so this ends.
+    expect(nestedCalls).toBe(2);
+    expect(d.register).toHaveBeenCalledTimes(2);
   });
 
   it("warns and keeps the old row when POST throws", async () => {
@@ -141,6 +145,42 @@ describe("registerCurrentPushToken", () => {
     });
     expect(d.remove).not.toHaveBeenCalled();
     expect(d.warn).toHaveBeenCalled();
+  });
+});
+
+describe("registerCurrentPushToken overlap", () => {
+  it("runs a register asked for mid-flight once more, so a failed first try is retried", async () => {
+    const d = deps(null);
+    let release!: () => void;
+    d.getToken
+      .mockImplementationOnce(
+        () =>
+          new Promise<string>((_, reject) => {
+            release = () => reject(new Error("network"));
+          }),
+      )
+      .mockResolvedValue("ExponentPushToken[new]");
+
+    const first = registerCurrentPushToken(d);
+    await registerCurrentPushToken(d); // the grant, while the first is in flight
+    expect(d.register).not.toHaveBeenCalled();
+    release();
+    await first;
+
+    expect(d.register).toHaveBeenCalledTimes(1);
+    expect(d.register).toHaveBeenCalledWith({ token: "ExponentPushToken[new]" });
+  });
+});
+
+describe("onPushPermissionGranted", () => {
+  it("calls listeners on a grant until they unsubscribe", () => {
+    const listener = vi.fn();
+    const unsubscribe = onPushPermissionGranted(listener);
+    notifyPushPermissionGranted();
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
+    notifyPushPermissionGranted();
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });
 
