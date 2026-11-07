@@ -80,6 +80,35 @@ describe("matchFrappRole (#2818)", () => {
     expect(matched("Rush Chair")).toBeNull();
   });
 
+  it("does not read a past, pledge-class or assistant title as the officer", () => {
+    // Real roles from a chapter's server: each would have read the
+    // officer's own channels.
+    expect(matched("Past Treasurer")).toBeNull();
+    expect(matched("PC President")).toBeNull();
+    expect(matched("Pledge Class President")).toBeNull();
+    expect(matched("Former VP")).toBeNull();
+    expect(matched("Assistant Treasurer")).toBeNull();
+    // The qualifier need not come first.
+    expect(matched("Immediate Past President")).toBeNull();
+    expect(matched("Incoming Treasurer")).toBeNull();
+    expect(matched("Fall 2025 PC President")).toBeNull();
+    expect(matched("Alpha Beta Class President")).toBeNull();
+    expect(matched("New Member President")).toBeNull();
+    // Only officer titles are checked: an alumni class is still Alumni, and
+    // an ordinary title still matches.
+    expect(matched("Class of 2020 Alumni")).toEqual(["alumni", "close"]);
+    expect(matched("Recording Secretary")).toEqual(["secretary", "close"]);
+    // A role the chapter itself named that way still matches by name.
+    expect(
+      matchFrappRole("Past President", [
+        ...frappRoles,
+        { id: "past", name: "Past President", system_key: null },
+      ])?.role.id,
+    ).toBe("past");
+    // One word is the title itself.
+    expect(matched("Pledges")).toEqual(["new-member", "close"]);
+  });
+
   it("matches seeded roles by system key, so a renamed one still matches", () => {
     const renamed = frappRoles.map((role) =>
       role.id === "secretary" ? { ...role, name: "Scribe" } : role,
@@ -105,14 +134,14 @@ describe("defaultRoleChoice (#2855)", () => {
   });
 
   it("creates a role that gates no channel too, since roles classify people", () => {
-    // #2818 left these on Ignore; a class year is still worth keeping.
+    // #2818 left these on Skip; a class year is still worth keeping.
     expect(defaultRoleChoice(role("Class of 2027"), frappRoles, true)).toEqual({
       choice: { action: "new", name: "Class of 2027" },
       kind: null,
     });
   });
 
-  it("starts everything at Ignore for a viewer who cannot manage roles", () => {
+  it("starts everything at Skip for a viewer who cannot manage roles", () => {
     expect(
       defaultRoleChoice(role("Treasurer"), frappRoles, false).choice,
     ).toEqual({ action: "ignore" });
