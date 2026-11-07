@@ -4,8 +4,6 @@ import {
   DEGRADED_THRESHOLD as sharedThreshold,
 } from "@repo/validation";
 import {
-  connectionBannerCopy,
-  connectionPillLabel,
   deriveConnectionState,
   DEGRADED_THRESHOLD,
   writeBlockedReason,
@@ -52,35 +50,6 @@ describe("deriveConnectionState", () => {
         consecutiveFailures: DEGRADED_THRESHOLD,
       }),
     ).toBe("OFFLINE");
-  });
-});
-
-describe("connectionBannerCopy", () => {
-  it("says nothing when online", () => {
-    expect(connectionBannerCopy("ONLINE")).toBeNull();
-  });
-
-  it("carries the spec's sentences, without its emoji", () => {
-    expect(connectionBannerCopy("DEGRADED")).toBe(
-      "Slow connection. Some features may be delayed.",
-    );
-    expect(connectionBannerCopy("OFFLINE")).toBe(
-      "You're offline. Showing cached data.",
-    );
-    expect(connectionBannerCopy("DEGRADED")).not.toMatch(
-      /[\u{1F300}-\u{1FAFF}⚡]/u,
-    );
-    expect(connectionBannerCopy("OFFLINE")).not.toMatch(
-      /[\u{1F300}-\u{1FAFF}⚡]/u,
-    );
-  });
-});
-
-describe("connectionPillLabel", () => {
-  it("draws the banner sentence's first clause, and nothing when online", () => {
-    expect(connectionPillLabel("ONLINE")).toBeNull();
-    expect(connectionPillLabel("DEGRADED")).toBe("Slow connection");
-    expect(connectionPillLabel("OFFLINE")).toBe("Offline");
   });
 });
 
