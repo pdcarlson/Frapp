@@ -439,9 +439,9 @@ describe("UploadDocumentSheet (#3399)", () => {
     expect(titleInput(tree).props.value).toBe("");
   });
 
-  it("drops a failure with nothing held on close, keeping the photo", async () => {
-    // Reopening is the member's next try, so it doesn't open on the last
-    // one's error.
+  it("keeps a failed upload's reason through a close, until Cancel", async () => {
+    // The pending row says it didn't upload and reopens the sheet to say why,
+    // so a close, Upload's own included, keeps the reason.
     const tree = render();
     await choose(tree);
     uploadDocumentPhoto.mockResolvedValue({
@@ -450,13 +450,39 @@ describe("UploadDocumentSheet (#3399)", () => {
       final: false,
     });
     await pressUpload(tree);
-    expect(screenText(tree)).toContain("Try again in a moment.");
-
+    // A quick failure lands before gorhom reports Upload's own close.
     closed(tree);
     open(tree);
-    expect(screenText(tree)).not.toContain("Try again in a moment.");
+    expect(screenText(tree)).toContain("Try again in a moment.");
     expect(screenText(tree)).toContain("IMG_2041.jpg");
     expect(uploadButton(tree).props.disabled).toBe(false);
+
+    act(() => {
+      pressable(tree, "Cancel").props.onPress();
+    });
+    expect(onPending).toHaveBeenLastCalledWith(null);
+  });
+
+  it("gives the pending row up on Cancel after an officer-only refusal", async () => {
+    // A refusal at the mint holds no bytes and sets no `failure`, and Cancel
+    // must still take the row away.
+    const tree = render();
+    await choose(tree);
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "refused",
+      reason: "Uploads are paused until the subscription is renewed.",
+      final: true,
+    });
+    await pressUpload(tree);
+    closed(tree);
+    open(tree);
+    expect(screenText(tree)).toContain("subscription is renewed");
+
+    act(() => {
+      pressable(tree, "Cancel").props.onPress();
+    });
+    expect(onPending).toHaveBeenLastCalledWith(null);
+    expect(onPending).toHaveBeenCalledTimes(3);
   });
 
   it("keeps the bytes a failed confirm sent across a swipe, until Cancel", async () => {
@@ -497,31 +523,6 @@ describe("UploadDocumentSheet (#3399)", () => {
       expect.any(Object),
       expect.any(Object),
       undefined,
-    );
-  });
-
-  it("drops an officer-only refusal on close, keeping the bytes it sent", async () => {
-    const tree = render();
-    await choose(tree);
-    uploadDocumentPhoto.mockResolvedValue({
-      status: "refused",
-      reason: "Uploads are paused until the subscription is renewed.",
-      final: true,
-      sent: SENT,
-    });
-    await pressUpload(tree);
-    expect(uploadButton(tree).props.disabled).toBe(true);
-
-    closed(tree);
-    open(tree);
-    expect(screenText(tree)).not.toContain("subscription is renewed");
-    expect(uploadButton(tree).props.disabled).toBe(false);
-    await pressUpload(tree);
-    expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
-      PHOTO,
-      expect.any(Object),
-      expect.any(Object),
-      SENT,
     );
   });
 
@@ -581,7 +582,7 @@ describe("UploadDocumentSheet (#3399)", () => {
 
   it("keeps an officer-only refusal that lands after the sheet closed", async () => {
     // The sheet closes on Upload, so the visit the pending row reopens is
-    // where the member reads why. A close after that drops it, as above.
+    // where the member reads why.
     const tree = render();
     await choose(tree);
     const settle = heldUpload();
@@ -598,17 +599,10 @@ describe("UploadDocumentSheet (#3399)", () => {
     expect(screenText(tree)).toContain("subscription is renewed");
     expect(uploadButton(tree).props.disabled).toBe(true);
 
+    // Still there after another close: only Cancel gives it up.
     closed(tree);
     open(tree);
-    expect(screenText(tree)).not.toContain("subscription is renewed");
-    // The bytes it sent are still held, so the next try is the confirm alone.
-    await pressUpload(tree);
-    expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
-      PHOTO,
-      expect.any(Object),
-      expect.any(Object),
-      SENT,
-    );
+    expect(screenText(tree)).toContain("subscription is renewed");
   });
 
   it("shows an officer-only refusal on a sheet reopened mid-upload", async () => {

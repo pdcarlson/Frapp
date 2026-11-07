@@ -463,8 +463,10 @@ export async function uploadPickedImage(
       // `uploadAsync` defaults to a BACKGROUND session, which on iOS hands
       // the request to the system's background transfer daemon: it is built
       // to survive the app being suspended, not to be quick, and it added
-      // seconds to every upload while the member watched. Every caller here
-      // waits on the result with the app open, so it runs in the foreground.
+      // seconds to every upload while the member watched. The trade: a
+      // foreground task stops if the app is suspended mid-PUT, and the caller
+      // reports a failure the member can retry (s12's pending row does). With
+      // photos shrunk first (`PHOTO_MAX_EDGE`) a PUT is a second or two.
       sessionType: FileSystem.FileSystemSessionType.FOREGROUND,
     });
     if (response.status < 200 || response.status >= 300) {

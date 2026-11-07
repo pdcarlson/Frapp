@@ -264,7 +264,7 @@ export function useQuickActionsHost({
               if (!pending) return;
               confirm(
                 pending.failed
-                  ? `“${pending.title}” didn't upload. Open Upload document to try again.`
+                  ? `“${pending.title}” didn't upload. Tap + then Upload to try again.`
                   : `Uploading “${pending.title}”…`,
               );
             }}

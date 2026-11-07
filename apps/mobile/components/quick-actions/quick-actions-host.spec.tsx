@@ -213,7 +213,7 @@ describe("a confirmation after a create", () => {
     expect(latest.notice).toBe("Uploading “Bylaws”…");
     act(() => onPending({ title: "Bylaws", failed: "Couldn't upload." }));
     expect(latest.notice).toBe(
-      "“Bylaws” didn't upload. Open Upload document to try again.",
+      "“Bylaws” didn't upload. Tap + then Upload to try again.",
     );
   });
 

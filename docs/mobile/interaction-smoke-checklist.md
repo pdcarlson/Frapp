@@ -74,8 +74,8 @@ in the S2 nav restructure (#957) — see
 | Profile (`/(tabs)/profile`) | Edit, Save with no connection | "That didn't save" under the fields; what you typed is still there |
 | Documents (`/(tabs)/documents`) | Open as the President, then as a plain member | The President sees an upload arrow at the right end of `‹ More`; a member sees none |
 | Documents (`/(tabs)/documents`) | Upload arrow, choose a photo, type a title, tap a folder, Upload | The sheet shows the photo's name and size; nothing uploads until Upload; Upload closes the sheet at once, a row with the title and a gray "Uploading…" heads the list, and within a few seconds the document takes that row's place and opens. With the network off, the row reads "Didn't upload. Tap to try again." and a tap reopens the sheet on the draft |
-| Documents (`/(tabs)/documents`) | Upload with no connection | "Couldn't upload that photo" in the sheet; the photo, title and folder are still there; if the photo had already gone up, the title and folder stop taking edits; Upload works once you're back online and files one document |
-| Documents (`/(tabs)/documents`) | After a failed upload whose title stopped taking edits, swipe the sheet down, reopen it, Upload | The photo, title and folder are still there, and one document is filed |
+| Documents (`/(tabs)/documents`) | Upload with no connection | The sheet closes and the pending row reads "Didn't upload. Tap to try again."; tapping it reopens the sheet with "Couldn't upload that photo" and the photo, title and folder still there; if the photo had already gone up, the title and folder stop taking edits; Upload works once you're back online and files one document |
+| Documents (`/(tabs)/documents`) | After a failed upload, swipe the sheet down, reopen it from the row, Upload | The reason, photo, title and folder are still there, and one document is filed; Cancel instead removes the row |
 | Notifications (`/(tabs)/notifications`) | `‹ Chat` above the title | Lands on Chat home |
 | Chat thread | Retry failed upload | Requeues retry state + feedback |
 | Chat thread | Queue message | Queues message + feedback |

@@ -204,6 +204,11 @@ export const UploadDocumentSheet = forwardRef<
   // Set the moment Upload sends, before `uploading` reaches a render, so two
   // taps in one batch send one upload.
   const sending = useRef(false);
+  // Set from Upload until the upload files or Cancel gives it up: the
+  // screen behind holds a pending row for it (`onPending`), so the sheet owes
+  // it a `null` on Cancel, and a failure's reason is what that row reopens
+  // the sheet to read, so a close keeps it.
+  const reported = useRef(false);
   // Set the moment Choose opens the library, so a second tap before the
   // picker draws doesn't launch another (Android rejects the second launch).
   const pickingNow = useRef(false);
@@ -219,7 +224,9 @@ export const UploadDocumentSheet = forwardRef<
   const closed = () => {
     markClosed();
     setTitleFocused(false);
-    if (sending.current) return;
+    // Upload's own close lands while the upload runs, or just after a quick
+    // failure; either way the reason stays for the pending row to reopen on.
+    if (sending.current || reported.current) return;
     setRefusal(null);
     setPickRefusal(null);
     if (stored === null) setFailure(null);
@@ -231,7 +238,10 @@ export const UploadDocumentSheet = forwardRef<
   // batch as Upload, before `uploading` reaches a render.
   const cancel = () => {
     if (sending.current) return;
-    if (stored !== null || failure !== null) onPending?.(null);
+    if (reported.current) {
+      reported.current = false;
+      onPending?.(null);
+    }
     reset();
     dismiss();
   };
@@ -265,6 +275,7 @@ export const UploadDocumentSheet = forwardRef<
     // The title it will be filed under, for the pending row: a retry files
     // the one it was first sent with.
     const filedAs = stored ? stored.title : documentTitle(title, picked);
+    reported.current = true;
     onPending?.({ title: filedAs, failed: null });
     setTitleFocused(false);
     dismiss();
@@ -280,6 +291,7 @@ export const UploadDocumentSheet = forwardRef<
     sending.current = false;
     setUploading(false);
     if (result.status === "uploaded") {
+      reported.current = false;
       reset();
       onUploaded?.(result.title);
       return;
