@@ -111,13 +111,14 @@ export class EventController {
   @ApiOperation({ summary: 'Update an event' })
   async update(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') actorId: string,
     @Param('id') id: string,
     @Body() dto: UpdateEventDto,
   ) {
     // `scope` is a control flag, not a column. Split it off here so it can never
     // reach the repository's update payload as a stray field.
     const { scope, ...patch } = dto;
-    return this.eventService.update(id, chapterId, patch, scope);
+    return this.eventService.update(id, chapterId, patch, scope, actorId);
   }
 
   @Get(':id/ics')
