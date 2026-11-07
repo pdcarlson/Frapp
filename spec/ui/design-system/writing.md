@@ -850,7 +850,7 @@ clients import it from `@repo/hooks`.
 
 | State | Title | Description | Where |
 |---|---|---|---|
-| The control | — | `Hide conversation`: a choice in a 1:1 DM row's long-press menu (since #2877; before it, the long press asked directly), and the row's accessibility action of the same name (mobile); a control on a 1:1 DM row in the rail, named `Hide conversation with <name>`, and a row in the open DM's `⋯` menu (web) | `HIDE_CONVERSATION_LABEL` |
+| The control | — | `Hide conversation`: a choice in a 1:1 DM row's long-press menu (since #2877; before it, the long press asked directly), and the row's accessibility action of the same name (mobile); a choice in a 1:1 DM row's right-click menu in the rail, and a row in the open DM's `⋯` menu (web) | `HIDE_CONVERSATION_LABEL` |
 | Confirmation | `Hide your conversation with <name>?` | `It leaves your list, and nothing in it is deleted. They aren't told. It comes back when there's something new in it, and you can open it from Hidden conversations anytime.` · confirm `Hide`. A native alert on mobile; on web, the shell's confirm dialog from the rail and the `⋯` menu's panel from the header | `hideConversationConfirmTitle`, `HIDE_CONVERSATION_CONFIRM_BODY` |
 | Hidden group | `Hidden conversations (<n>)` | A collapsed group at the end of the list, on both clients; opening a row from it brings that DM back | `HIDDEN_CONVERSATIONS_LABEL` |
 | Hide failed | `Couldn't hide the conversation` | `Nothing changed. Check your connection and try again.` A mobile alert; a toast on web, because a rail hide can fail for a DM that is not open | `HIDE_CONVERSATION_FAILED_TITLE`, `HIDE_CONVERSATION_FAILED_BODY` |
@@ -875,7 +875,8 @@ and both import it from `@repo/hooks`. The filter note below is web's alone and 
 
 | State | Title | Description | Where |
 |---|---|---|---|
-| Pin | — | `Pin to top`, and `Unpin from top` on a pinned row: a long-press choice and a named accessibility action (mobile); a control on the rail row, named `Pin to top: <title>`, and a row in the channel menu (web) | `PIN_TO_TOP_LABEL`, `UNPIN_FROM_TOP_LABEL` |
+| Pin | — | `Pin to top`, and `Unpin from top` on a pinned row: a row in the long-press menu and a named accessibility action (mobile); a row in the rail row's right-click menu and in the channel menu (web) | `PIN_TO_TOP_LABEL`, `UNPIN_FROM_TOP_LABEL` |
+| Row menu (web right-click, mobile long press) | — | `Mark as read`, `Pin to top`, `Notifications` (with the level, `All`, `Mentions` or `Muted`, before the chevron; its choices are the channel menu's `Every message`, `Only @mentions`, `Mute`), `Copy link` (toast `Link copied`), `Hide conversation`; then `Edit channel` (web) and `Delete channel` for `channels:manage`; mobile has no `Copy link` or `Edit channel`. Delete asks `Delete #<name>?` with `Every message, attachment, and pin in this channel is removed. This cannot be undone.`, the same words as Chat settings | `MARK_AS_READ_LABEL`, `CHANNEL_NOTIFICATIONS_LABEL`, `COPY_CHANNEL_LINK_LABEL`, `DELETE_CHANNEL_LABEL`, `deleteChannelConfirmTitle`, `DELETE_CHANNEL_CONFIRM_BODY` |
 | Pinned section | `Pinned` | The section header above everything else | `PINNED_SECTION_LABEL` |
 | Filters | — | `Unread only`, `Hide muted`: toggle chips above the list (mobile); two switches behind the Channels header's filter control, named `Filter channels`, or `Filter channels, filters on` while one is on (web) | `UNREAD_ONLY_LABEL`, `HIDE_MUTED_LABEL` |
 | Filtered to nothing | — | `No channels match your filters.` with the action `Show all channels`, which turns both filters off | `NO_MATCHING_CHANNELS`, `SHOW_ALL_CHANNELS_LABEL` |

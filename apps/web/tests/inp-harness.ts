@@ -40,7 +40,9 @@ class FakePerformanceObserver {
   }
 }
 
-export function installEventTiming(stubGlobal: (name: string, value: unknown) => void) {
+export function installEventTiming(
+  stubGlobal: (name: string, value: unknown) => void,
+) {
   class PerformanceEventTiming {}
   Object.defineProperty(PerformanceEventTiming.prototype, "interactionId", {
     value: 0,
@@ -52,7 +54,11 @@ export function installEventTiming(stubGlobal: (name: string, value: unknown) =>
 /** Let queued microtasks and zero-delay timers run. */
 export const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
-/** A button labelled like `channel-list.tsx`'s hide control. */
+/**
+ * A button with a member's name in its label, the kind of selector the INP
+ * scrubber must strip (the chat rail's hover Hide button was one, until the
+ * row's right-click menu replaced it).
+ */
 export function labelledButton(label: string): HTMLButtonElement {
   const button = document.createElement("button");
   button.className = "rounded-md px-2";
@@ -65,7 +71,8 @@ export function labelledButton(label: string): HTMLButtonElement {
  * The selector `labelledButton` gets from the SDK once its label value is
  * removed.
  */
-export const REDUCED_BUTTON_SELECTOR = "body > button.rounded-md.px-2[aria-label]";
+export const REDUCED_BUTTON_SELECTOR =
+  "body > button.rounded-md.px-2[aria-label]";
 
 /**
  * One 240 ms click on `target`, then the page going hidden, which is when
@@ -110,7 +117,10 @@ function createEnvelopeRecorder() {
     snapshot: {
       name: "EnvelopeSnapshot",
       setup(client: {
-        on(hook: "beforeEnvelope", callback: (envelope: unknown) => void): unknown;
+        on(
+          hook: "beforeEnvelope",
+          callback: (envelope: unknown) => void,
+        ): unknown;
       }) {
         client.on("beforeEnvelope", (envelope) => {
           built.push(JSON.stringify(envelope));
@@ -125,7 +135,9 @@ function createEnvelopeRecorder() {
       flush: () => Promise.resolve(true),
     }),
     /** Every sent item of one type, with its envelope's header. */
-    itemsOfType<T>(type: string): { header: Record<string, unknown>; payload: T }[] {
+    itemsOfType<T>(
+      type: string,
+    ): { header: Record<string, unknown>; payload: T }[] {
       return sent.flatMap(([header, items]) =>
         items
           .filter(([itemHeader]) => itemHeader.type === type)
@@ -151,7 +163,9 @@ export async function importSentryClientBuild(): Promise<
   // The package's `exports` resolve the server build under vitest, and it
   // has no browser tracing.
   const clientBuild = join(
-    dirname(createRequire(import.meta.url).resolve("@sentry/nextjs/package.json")),
+    dirname(
+      createRequire(import.meta.url).resolve("@sentry/nextjs/package.json"),
+    ),
     "build/cjs/index.client.js",
   );
   const { vi } = await import("vitest");
