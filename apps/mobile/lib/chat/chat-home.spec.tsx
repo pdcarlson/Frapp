@@ -1508,9 +1508,14 @@ describe("Chat home opens the last channel on launch", () => {
   it("stays on the list when the remembered channel is gone, hidden, or a DM", async () => {
     answered();
     vi.mocked(AsyncStorage.getItem).mockResolvedValue(dmBobHidden.id);
-    render();
+    const tree = render();
+    // Held behind the skeleton while the jump may still happen, so the list
+    // never flashes before a channel opens over it (2026-11-07)…
+    expect(rows(tree)).toHaveLength(0);
     await settle();
     expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+    // …and shown once the launch settles with nowhere to go.
+    expect(rows(tree).map((row) => row.props.name)).toEqual(["general"]);
   });
 
   it("stands aside for a notification tap", async () => {

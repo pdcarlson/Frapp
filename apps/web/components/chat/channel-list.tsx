@@ -257,7 +257,7 @@ export interface ChannelListProps {
  * #1191.
  *
  * **Red means one thing.** A mention or a DM takes the fixed `#E5484D` badge and
- * nothing else does — a plain unread channel is the neutral `--input` badge,
+ * nothing else does — a plain unread channel carries no badge, only its bold name (2026-11-07),
  * because red is reserved for direct address and must read identically under
  * every chapter seed (foundations.md §5, accent-engine.md §5).
  */
@@ -469,6 +469,11 @@ export function ChannelList({
                 >
                   {badgeLabel(counts.unreadCount, counts.mentionCount)}
                 </Badge>
+              ) : isUnread ? (
+                // No number to draw, but a screen reader still hears it.
+                <span className="sr-only">
+                  {unreadAnnouncement(counts, isDm(channel))}
+                </span>
               ) : null}
             </span>
           </button>
@@ -544,8 +549,12 @@ export function ChannelList({
                     className="ml-auto h-5 justify-center px-1.5 normal-case tracking-normal"
                     aria-label={foldedSectionAnnouncement(section)}
                   >
-                    {badgeLabel(section.unreadCount, section.mentionCount)}
+                    {badgeLabel(section.addressedCount, section.mentionCount)}
                   </Badge>
+                ) : section.collapsed && section.unreadCount > 0 ? (
+                  <span className="sr-only">
+                    {foldedSectionAnnouncement(section)}
+                  </span>
                 ) : null}
               </button>
             ) : (

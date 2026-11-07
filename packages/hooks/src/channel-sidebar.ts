@@ -75,6 +75,11 @@ export interface ArrangedSidebarSection<C extends SidebarChannelLike> {
   mentionCount: number;
   /** Some row here addresses the member: an @-mention, or an unread DM. */
   addressed: boolean;
+  /**
+   * The numbers the rows here would draw, summed (`addressedCount`): what the
+   * folded header's badge counts, so a busy channel adds nothing to it.
+   */
+  addressedCount: number;
 }
 
 export interface ArrangedSidebar<C extends SidebarChannelLike> {
@@ -201,11 +206,22 @@ export function isAddressed(
 }
 
 /**
- * The chat half of the app icon badge: mentions everywhere, plus every unread
- * message in a direct message (owner decision 2026-11-07, after a tester:
- * "do I care how many messages got sent"). The same rule as a channel row's
- * badge (`countsAddressMember`), so the icon never counts what no row shows a
- * number for: a channel that is merely unread shows a bold name, not a count.
+ * The number a channel's badge draws, or 0 for none (owner decision
+ * 2026-11-07, after a tester: "do I care how many messages got sent"): its
+ * mentions, or a direct message's unread count. A channel that is merely
+ * unread draws no number; its bold name says so.
+ */
+export function addressedCount(
+  isDirect: boolean,
+  counts: SidebarUnreadCounts,
+): number {
+  if (counts.mentionCount > 0) return counts.mentionCount;
+  return isDirect ? counts.unreadCount : 0;
+}
+
+/**
+ * The chat half of the app icon badge: the sum of the numbers the channel rows
+ * draw (`addressedCount`), so the icon never counts what no row shows.
  */
 export function addressedUnreadTotal(
   rows: readonly {
@@ -217,7 +233,10 @@ export function addressedUnreadTotal(
 ): number {
   let total = 0;
   for (const row of rows) {
-    total += isDirect(row.channel_id) ? row.unread_count : row.mention_count;
+    total += addressedCount(isDirect(row.channel_id), {
+      unreadCount: row.unread_count,
+      mentionCount: row.mention_count,
+    });
   }
   return total;
 }
@@ -298,11 +317,13 @@ export function arrangeChannelSidebar<C extends SidebarChannelLike>(
     let unreadCount = 0;
     let mentionCount = 0;
     let addressed = false;
+    let addressedTotal = 0;
     for (const channel of kept) {
       const counts = countsOf(channel);
       unreadCount += counts.unreadCount;
       mentionCount += counts.mentionCount;
       addressed ||= isAddressed(channel, counts);
+      addressedTotal += addressedCount(isDirectChannel(channel), counts);
     }
     const folded = collapsed.has(key);
     return {
@@ -315,6 +336,7 @@ export function arrangeChannelSidebar<C extends SidebarChannelLike>(
       unreadCount,
       mentionCount,
       addressed,
+      addressedCount: addressedTotal,
     };
   };
 

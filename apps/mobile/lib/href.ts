@@ -1,11 +1,5 @@
 import type { Href } from "expo-router";
 
-/** expo-router's `dangerouslySingular` key function (`NavigationOptions`). */
-type SingularKey = (
-  name: string,
-  params: Record<string, unknown>,
-) => string | undefined;
-
 /**
  * Typed-route generation does not always include every file-based path in this app.
  * Use for static in-app paths that are valid at runtime.
@@ -24,14 +18,13 @@ const TAB_PATHS: ReadonlySet<string> = new Set([
 
 /** Whether `href` opens one of the four tabs rather than a pushed screen. */
 export function isTabHref(href: Href): boolean {
-  const pathname =
-    typeof href === "string" ? href.split(/[?#]/)[0]! : String(href.pathname);
-  return TAB_PATHS.has(pathname);
+  return TAB_PATHS.has(pathOf(href));
 }
 
 /** The slice of expo-router's router these helpers call. */
 type TabRouter = {
-  push: (href: Href, options?: { dangerouslySingular?: SingularKey }) => void;
+  push: (href: Href) => void;
+  replace: (href: Href) => void;
   navigate: (href: Href) => void;
   dismissTo: (href: Href) => void;
 };
@@ -44,24 +37,28 @@ type TabRouter = {
  * navigating to one, from a pushed screen would stack a second copy of the
  * tab navigator, tab bar and all, over the screen: expo-router's stack only
  * reuses a route that is already on top (`spec/ui/mobile/navigation.md`
- * § Going back). A pushed screen already on the stack is moved, not copied
- * (`singularKey`).
+ * § Going back). A link to the kind of screen already on top replaces it
+ * (`currentPathname`, the focused route's path): a push for #academics while
+ * a channel is open stacked a second channel, so the swipe back landed in a
+ * channel again before the list (owner, 2026-11-07). Replacing keeps what was
+ * under it, so back still reaches chat home.
  */
-export function openHref(router: TabRouter, href: Href): void {
+export function openHref(
+  router: TabRouter,
+  href: Href,
+  currentPathname?: string,
+): void {
   if (isTabHref(href)) router.dismissTo(href);
-  else router.push(href, { dangerouslySingular: singularKey });
+  else if (currentPathname !== undefined && pathOf(href) === currentPathname)
+    router.replace(href);
+  else router.push(href);
 }
 
-/**
- * One copy of a linked screen on the stack. A push for #academics while
- * #academics is open stacked a second copy, so the swipe back landed in the
- * same channel before the channel list (owner, 2026-11-07). A channel is
- * keyed by its name alone, so a push for another channel takes the open
- * one's place, as Discord switches channels, and back still reaches the list;
- * any other screen is one copy per set of params.
- */
-const singularKey: SingularKey = (name, params) =>
-  name.endsWith("chat-thread") ? name : `${name}:${JSON.stringify(params)}`;
+function pathOf(href: Href): string {
+  return typeof href === "string"
+    ? href.split(/[?#]/)[0]!
+    : String(href.pathname);
+}
 
 /**
  * A drawn way back's fixed destination, for when nothing is under the screen

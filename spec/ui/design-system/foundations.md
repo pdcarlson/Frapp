@@ -17,12 +17,12 @@
 
 Fixed for every chapter — only the accent varies per tenant.
 
-| Token | Value | Role |
-|-------|-------|------|
-| `--background` | `#0A0A0A` | App background, base of the ladder |
-| `--surface-1` | `#111111` | Raised surface — nav bars, input fills, other-party chat context |
-| `--card` | `#171717` | Cards and list rows |
-| `--popover` | `#1E1E1E` | Elevated surface — sheets, popovers, menus (the "elevated" step) |
+| Token          | Value     | Role                                                             |
+| -------------- | --------- | ---------------------------------------------------------------- |
+| `--background` | `#0A0A0A` | App background, base of the ladder                               |
+| `--surface-1`  | `#111111` | Raised surface — nav bars, input fills, other-party chat context |
+| `--card`       | `#171717` | Cards and list rows                                              |
+| `--popover`    | `#1E1E1E` | Elevated surface — sheets, popovers, menus (the "elevated" step) |
 
 Rationale: a pure neutral graphite ladder with no hue in any step, so nothing on a surface competes with the chapter's accent and every chapter's accent sits on it the same way. Each step is an even notch lighter than the one below it (OKLCH lightness 0.145 / 0.178 / 0.205 / 0.235), which is what carries elevation (§10). `--card-hover` (`#2C2C2C`, `--popover` lifted 6% toward white) and the skeleton highlight (`#2B2B2B`) sit above the ladder and are neutral for the same reason.
 
@@ -44,10 +44,10 @@ It previously ran `#0E0D0B` / `#171512` / `#1E1B17` / `#26221C`. Two things move
 
 ## 3. Borders & Hairlines
 
-| Token | Value | Role |
-|-------|-------|------|
-| `--border` | `rgba(255,255,255,.08)` | Default hairline — card edges, dividers, tab rules |
-| `--input` | `rgba(255,255,255,.14)` | Input and secondary-button borders — stronger, so interactive edges read as interactive |
+| Token      | Value                   | Role                                                                                    |
+| ---------- | ----------------------- | --------------------------------------------------------------------------------------- |
+| `--border` | `rgba(255,255,255,.08)` | Default hairline — card edges, dividers, tab rules                                      |
+| `--input`  | `rgba(255,255,255,.14)` | Input and secondary-button borders — stronger, so interactive edges read as interactive |
 
 Borders MUST be low-opacity white. Fixed-hex border colors are banned: an opaque border tuned for one surface breaks on every other step of the ladder, while an alpha hairline tracks whatever it sits on.
 
@@ -55,12 +55,12 @@ Borders MUST be low-opacity white. Fixed-hex border colors are banned: an opaque
 
 ## 4. Text Ladder
 
-| Token | Value | Role |
-|-------|-------|------|
-| `--foreground` | `#EBEBEB` | Primary text |
-| `--muted-foreground` | `#A3A3A3` | Secondary text |
-| `--muted` | `#737373` | Muted text — placeholders, timestamps, metadata |
-| `--disabled` | `#525252` | Disabled text |
+| Token                | Value     | Role                                            |
+| -------------------- | --------- | ----------------------------------------------- |
+| `--foreground`       | `#EBEBEB` | Primary text                                    |
+| `--muted-foreground` | `#A3A3A3` | Secondary text                                  |
+| `--muted`            | `#737373` | Muted text — placeholders, timestamps, metadata |
+| `--disabled`         | `#525252` | Disabled text                                   |
 
 Token names follow panel 4h (ShadCN-style); panel 4a labels the same values text / secondary / muted. All four are neutral, matching the surface ladder: cream text on the graphite ladder reads yellow. Until 2026-11-05 they were warm-tinted (`#EDEAE3` / `#A9A399` / `#78716A` / `#57534C`) to match the warm ladder (§2).
 
@@ -70,38 +70,39 @@ Token names follow panel 4h (ShadCN-style); panel 4a labels the same values text
 
 Status-only, never decorative. A semantic hue states a fact ("paid", "overdue"); it never tints chrome, headings, or illustration.
 
-| Token | Value | Use |
-|-------|-------|-----|
-| `--success` | `#3fb950` | Paid, confirmed, checked-in, inside-zone |
-| `--warning` | `#e5a000` | Pending, at-risk, degraded |
-| `--destructive` | `#f85149` | Errors, overdue, destructive actions |
-| `--info` | `#2f81f7` | Informational status only — never a brand or accent color |
-| Mention/DM red | `#E5484D` | "You were addressed" — mention badges and DM indicators |
-| `--mention-chip` | `#2D2617` | Fill of the `@Name` chip *inside* a message body — recipe in [components.md](components.md) § In-body mention chip |
-| `--mention-chip-text` | `#EED7A8` | The handle drawn on that fill |
-| `--success-tint` | `rgba(63, 185, 80, 0.13)` | The success tint fill: `--success` at 13% alpha (below) |
-| `--warning-tint` | `rgba(229, 160, 0, 0.13)` | The warning tint fill, same recipe |
-| `--destructive-tint` | `rgba(248, 81, 73, 0.13)` | The danger tint fill, same recipe. Its text is `--destructive-text` |
-| `--destructive-tint-hover` | `rgba(248, 81, 73, 0.2)` | A danger tint's hover (the destructive button): `--destructive` at 20% |
+| Token                      | Value                     | Use                                                                                                                |
+| -------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `--success`                | `#3fb950`                 | Paid, confirmed, checked-in, inside-zone                                                                           |
+| `--warning`                | `#e5a000`                 | Pending, at-risk, degraded                                                                                         |
+| `--destructive`            | `#f85149`                 | Errors, overdue, destructive actions                                                                               |
+| `--info`                   | `#2f81f7`                 | Informational status only — never a brand or accent color                                                          |
+| Mention/DM red             | `#E5484D`                 | "You were addressed" — mention badges and DM indicators                                                            |
+| `--mention-chip`           | `#2D2617`                 | Fill of the `@Name` chip _inside_ a message body — recipe in [components.md](components.md) § In-body mention chip |
+| `--mention-chip-text`      | `#EED7A8`                 | The handle drawn on that fill                                                                                      |
+| `--success-tint`           | `rgba(63, 185, 80, 0.13)` | The success tint fill: `--success` at 13% alpha (below)                                                            |
+| `--warning-tint`           | `rgba(229, 160, 0, 0.13)` | The warning tint fill, same recipe                                                                                 |
+| `--destructive-tint`       | `rgba(248, 81, 73, 0.13)` | The danger tint fill, same recipe. Its text is `--destructive-text`                                                |
+| `--destructive-tint-hover` | `rgba(248, 81, 73, 0.2)`  | A danger tint's hover (the destructive button): `--destructive` at 20%                                             |
 
-- **Mention/DM red is fixed and semantic.** `#E5484D` states exactly one fact — *you were addressed*: an @-mention or a direct message. It MUST NOT be replaced by the chapter accent under any seed, and MUST NOT stand in for any other status, so "you were addressed" reads identically in every chapter. Its foreground is white. (This row is not in panel 4h; it is locked by the Canvas header and screens.)
+- **Mention/DM red is fixed and semantic.** `#E5484D` states exactly one fact — _you were addressed_: an @-mention or a direct message. It MUST NOT be replaced by the chapter accent under any seed, and MUST NOT stand in for any other status, so "you were addressed" reads identically in every chapter. Its foreground is white. (This row is not in panel 4h; it is locked by the Canvas header and screens.)
   - **White on this red measures 3.91:1**, under the 4.5:1 text floor [README.md](README.md) §6 sets, and it is the one drawn tone [components.md](components.md) §1's lift cannot rescue — the text is already white, and the fill is the fixed semantic. Both shipping surfaces render it as drawn; the miss is real, is pinned to its measured value by `apps/web/components/chat/chat-contrast.spec.ts`, and needs a system-level decision (darken the fill for both platforms, or grant the badge an explicit exemption) rather than a per-surface patch — tracked in #1190.
-- **Channel unread is neutral — never red, never accent, and carries no number.** Red is reserved for direct address, so an unread channel signals itself without it: the row itself emphasized, bold title in `--foreground`. *(Corrected 2026-11-07, owner direction after a tester asked "do I care how many messages got sent": a plain unread channel no longer draws a count badge, as on Discord. Only what addresses the member carries a number, a mention or a direct message, in the badge below; a folded section over plain unread draws its heading in `--foreground` bold instead. The app icon badge counts the same way, `spec/behavior/notifications.md` § Badge Count. It was a neutral count badge filled `rgba(255,255,255,.14)`, the `--input` value from §3, which ran up on every busy channel.)* A read row drops to a lighter title in `--muted-foreground` over a `--muted` preview and carries no badge at all, only its timestamp. The mention/DM badge is that same badge with the fill swapped to `#E5484D` and the text to white — fill and text are the only difference, so badge geometry stays one recipe, owned by [`components.md`](components.md).
+- **Channel unread is neutral — never red, never accent, and carries no number.** Red is reserved for direct address, so an unread channel signals itself without it: the row itself emphasized, bold title in `--foreground`. _(Corrected 2026-11-07, owner direction after a tester asked "do I care how many messages got sent": a plain unread channel no longer draws a count badge, as on Discord. Only what addresses the member carries a number, a mention or a direct message, in the badge below; a folded section over plain unread draws its heading in `--foreground` bold instead. The app icon badge counts the same way, `spec/behavior/notifications.md` § Badge Count. It was a neutral count badge filled `rgba(255,255,255,.14)`, the `--input` value from §3, which ran up on every busy channel.)_ A read row drops to a lighter title in `--muted-foreground` over a `--muted` preview and carries no badge at all, only its timestamp. The mention/DM badge is the one count badge: fill `#E5484D`, white text, geometry owned by [`components.md`](components.md).
 - On dark surfaces, semantic fills are tints, not solids: ~13% opacity of the hue as background with a lightened step of the same hue as text (see panels 4a/4d). Chip and badge recipes are specified in [`components.md`](components.md).
   - **The tint is a token, never an alpha utility** (decided 2026-09-25, #2376). `bg-success/[.13]` renders the recipe in a current browser, but Tailwind v4 compiles it to a `color-mix()` behind `@supports`, with the **solid hue** as the fallback. Below the `color-mix` floor (Chrome 111, Safari 16.2, Firefox 113) the fill therefore became the text's own colour, and every status label read 1.00:1: invisible. So the recipe lives in the four `--*-tint` tokens (table above), each the fixed hue as an `rgba()` at 13% alpha (20% for the danger hover). `rgba()` has no browser floor, so every engine paints the composite a current one painted for the utility, over whatever surface the fill sits on, and there is no fallback path left to degrade. The channels restate the hue, and `packages/theme/src/signet.css.spec.ts` holds them to it.
   - Three alternatives were weighed and rejected. **An opaque literal** (the recipe resolved over `--card`, as `--mention-chip` does) gives one contrast figure on every surface, but one fill can't stay distinct from every ladder step: the danger tint came out 1.06:1 against `--popover`, so a destructive button in a dialog lost its edge. `--mention-chip` can be a literal because it always sits in a message body; a status tint sits anywhere. **A `color-mix()` token** (`color-mix(in oklab, var(--destructive) 13%, transparent)`) avoids restating the hue, but below the floor it degrades to no fill at all, which leaves the borderless tints (the destructive button, the error icon tile) with no shape. **Keeping the alpha utility and documenting the band** would leave text invisible on a stated floor rather than degrading it.
   - **A tint over something other than a ladder step takes an opaque base.** The tint is 87% see-through, so it is only as legible as what is under it. The destructive toast floats over page content, so it paints `--popover` as its background colour and the tint over it as a one-colour gradient image. Anything inside it that paints its own tint hover repaints that base too, rather than stacking 20% on the toast's 13%, which measures 3.94:1 over `--popover`.
   - **Danger text on the danger tint is always `--destructive-text`.** Solid `--destructive` measures 3.82–4.85:1 on its tint across the ladder. `apps/web`'s `status-tint-call-sites.spec.ts` fails on a `bg-<semantic>/<alpha>` fill anywhere in the Next surfaces and on unlifted danger text over the tint, and `status-tint-contrast.spec.ts` measures every shipped pair on every step, reading the alpha from the tokens. The tokens are CSS-only: `signetDarkTokens` is what `apps/mobile` reads, and React Native has no `color-mix` fallback to avoid.
-- **A lifted text tone is not a second semantic.** [`components.md`](components.md) §5 lets an implementation raise the *text* tone of a semantic for AA while the hue stays fixed; the solid token remains the fill and the border. The greenfield ladder (§2) made two of these load-bearing, because solid `--destructive` and solid `--info` fell under 4.5:1 on the surfaces their badges sat on. On the neutral ladder (2026-11-05) the plain-surface miss is down to solid `--info` on `--popover`, but both lifts stay: the danger tint still needs its lift (below), and one rule for "hue as text" is simpler than a per-surface one. Measured on the neutral ladder, greenfield figures in brackets:
+- **A lifted text tone is not a second semantic.** [`components.md`](components.md) §5 lets an implementation raise the _text_ tone of a semantic for AA while the hue stays fixed; the solid token remains the fill and the border. The greenfield ladder (§2) made two of these load-bearing, because solid `--destructive` and solid `--info` fell under 4.5:1 on the surfaces their badges sat on. On the neutral ladder (2026-11-05) the plain-surface miss is down to solid `--info` on `--popover`, but both lifts stay: the danger tint still needs its lift (below), and one rule for "hue as text" is simpler than a per-surface one. Measured on the neutral ladder, greenfield figures in brackets:
 
-  | Text token | Value | Lifts | Measured on `--card` / `--popover` |
-  |---|---|---|---|
-  | `--destructive-text` | `#FF7B72` | `--destructive` (5.35 / 4.97 solid; was 4.95 / 4.48) | 7.11 / 6.61 (was 6.58 / 5.96) |
-  | `--info-text` | `#4C93F8` | `--info` (4.78 / 4.45 solid; was 4.43 / 4.01) | 5.84 / 5.43 (was 5.40 / 4.89) |
+  | Text token           | Value     | Lifts                                                | Measured on `--card` / `--popover` |
+  | -------------------- | --------- | ---------------------------------------------------- | ---------------------------------- |
+  | `--destructive-text` | `#FF7B72` | `--destructive` (5.35 / 4.97 solid; was 4.95 / 4.48) | 7.11 / 6.61 (was 6.58 / 5.96)      |
+  | `--info-text`        | `#4C93F8` | `--info` (4.78 / 4.45 solid; was 4.43 / 4.01)        | 5.84 / 5.43 (was 5.40 / 4.89)      |
 
   Neither is a new semantic. `--info-text` is CSS-only (`packages/theme/src/signet.css`). `--destructive-text` is also `signetDarkTokens.color.semantic.destructiveText`, so mobile's `StatusChip` can draw danger text on its tint at the same lift (added 2026-11-05). Use the lifted token wherever the hue is **text**, and the solid wherever it is a fill or a border.
 
-  **On the tint recipe both lifts now clear on every step.** On the §5 *tint* recipe (13% of the hue as fill, the hue as text) the neutral ladder measures `--destructive-text` at 5.67–6.96:1 and `--info-text` at 4.66–5.74:1 across the four steps, so both clear, with `--info-text` on a `--popover`-seated tint the thinnest margin (4.66). On the greenfield ladder `--info-text` failed there (4.08) and an info badge in a dialog needed a further lift; that is no longer true (2026-11-05). Solid `--destructive` on its own tint still misses on `--popover` (4.26), which is why danger text on a tint is always the lift.
+  **On the tint recipe both lifts now clear on every step.** On the §5 _tint_ recipe (13% of the hue as fill, the hue as text) the neutral ladder measures `--destructive-text` at 5.67–6.96:1 and `--info-text` at 4.66–5.74:1 across the four steps, so both clear, with `--info-text` on a `--popover`-seated tint the thinnest margin (4.66). On the greenfield ladder `--info-text` failed there (4.08) and an info badge in a dialog needed a further lift; that is no longer true (2026-11-05). Solid `--destructive` on its own tint still misses on `--popover` (4.26), which is why danger text on a tint is always the lift.
+
 - **Mention red did not get a lifted tone, and the reason matters.** On the neutral ladder `#E5484D` measures 5.06 / 4.82 / 4.58 / 4.26:1 from `--background` to `--popover`, so it is under the text floor on `--popover` only (on the greenfield ladder it missed on every step except `--background`). It is exempt from the lift above because it is not drawn as text: it is a badge fill carrying white text (the separate, tracked 3.91:1 miss above) and an avatar dot, and a dot is non-text UI held to §6's 3:1 floor, which it clears on every step. A future surface that renders mention red **as text** needs a lifted tone first; it does not have one today — which is why the in-body mention chip takes its own amber pair rather than this red.
 - **The in-body mention chip is a second fixed family, not a lift of the red.** `--mention-chip` / `--mention-chip-text` are their own hue rather than a lifted `#E5484D`, so they sit in the table above rather than in the lift table below, and they are locked out of the accent engine exactly as the red and the gold family are (`packages/theme/src/signet.css.spec.ts`'s `FIXED` list). Both ship in `signetDarkTokens` as `semantic.mentionChip` / `semantic.mentionChipText` since mobile started drawing the chip (2026-11-06); until then they were CSS-only, since no mobile screen drew an in-body mention. The pair's fill is **opaque** where this section's tint recipe would use 13% alpha, so one contrast figure covers the row at rest and hovered (it was first argued from the per-chapter `--primary` self bubble, which the compact chat layout removed on 2026-09-29); the geometry, the reasoning and the guards are owned by [components.md](components.md) § In-body mention chip.
 
@@ -123,7 +124,7 @@ The accent is a signal, so it goes only where a member has to act or notice. The
 4. **A link in running text**, through Button's `link` variant or an inline anchor.
 5. **The chapter's own mark:** its letters, crest or chosen color where the chapter is the subject (the accent picker, the chapter card).
 6. **Where the member is:** the active row of a navigation list (the sidebar, the channel list, the Settings rail, the mobile tab bar) and the open item of a list-and-detail page (the folder you are in, the role you are editing). Only the active one; its neighbours' hover is neutral.
-7. **A message that addresses the member:** a chat row whose server-resolved mentions include them wears the accent-subtle fill with a 2px accent bar ([`components.md`](components.md) §11, "A row that mentions you"). *(Added 2026-11-06, owner direction "do what discord does".)* It is the one row tint in chat, and it marks being addressed, not unread: the channel list's badges stay §5's red.
+7. **A message that addresses the member:** a chat row whose server-resolved mentions include them wears the accent-subtle fill with a 2px accent bar ([`components.md`](components.md) §11, "A row that mentions you"). _(Added 2026-11-06, owner direction "do what discord does".)_ It is the one row tint in chat, and it marks being addressed, not unread: the channel list's badges stay §5's red.
 
 **Everything else is neutral**, from the text ladder (§4) and the surface ladder (§2):
 
@@ -154,14 +155,14 @@ A signature moment ([`README.md`](README.md) §7 § Signature moments) may carry
 
 Italic is a style, not a fourth weight, and it appears in chat only: markdown emphasis (`*italic*`, `***bold italic***`) and the italic placeholders, such as a deleted message's. Which font files carry it on each platform: [`packages/theme/README.md` § Fonts](../../../packages/theme/README.md#fonts).
 
-| Style | Size / line | Weight |
-|-------|-------------|--------|
-| display | 32 | 700 |
-| headline | 24 | 700 |
-| title | 18 | 600 |
-| body | 16 / 25 | 400 |
-| label | 14 | 600 |
-| caption | 12.5 | 400 |
+| Style    | Size / line | Weight |
+| -------- | ----------- | ------ |
+| display  | 32          | 700    |
+| headline | 24          | 700    |
+| title    | 18          | 600    |
+| body     | 16 / 25     | 400    |
+| label    | 14          | 600    |
+| caption  | 12.5        | 400    |
 
 Body text MUST NOT render below 16. Label and caption are for controls and metadata, never paragraphs — this is a consumer app read at arm's length, not a dense dashboard.
 
@@ -206,15 +207,15 @@ Paul's bar is that nothing in a row reads as sitting higher or lower than its ne
 
 The six roles above are the **product** scale and bind every product surface. A storefront headline is not a product heading, and the largest locked role — `display`, 32 — is not a hero. So the landing surface carries three additional roles **above** the scale, added with the token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) and drawn on the reskin's System sheet ([`../landing/reference/canvas/System.dc.html`](../landing/reference/canvas/System.dc.html)).
 
-| Role | Desktop | Phone | Used by |
-| --- | --- | --- | --- |
-| `--text-hero` | 72 / 74 · 700 · tracking `-0.02em` | 40 / 44 | The hero H1. On phone only, also the pricing figures — see the note below |
-| `--text-display-lg` | 48 / 52 · 700 · tracking `-0.02em` | 32 / 37 (the locked `display` role) | Section H2s, and the pricing figures on desktop only |
-| `--text-lead` | 20 / 30 · 400 | 18 / 27 | Hero and closing paragraphs, and nothing else |
+| Role                | Desktop                            | Phone                               | Used by                                                                   |
+| ------------------- | ---------------------------------- | ----------------------------------- | ------------------------------------------------------------------------- |
+| `--text-hero`       | 72 / 74 · 700 · tracking `-0.02em` | 40 / 44                             | The hero H1. On phone only, also the pricing figures — see the note below |
+| `--text-display-lg` | 48 / 52 · 700 · tracking `-0.02em` | 32 / 37 (the locked `display` role) | Section H2s, and the pricing figures on desktop only                      |
+| `--text-lead`       | 20 / 30 · 400                      | 18 / 27                             | Hero and closing paragraphs, and nothing else                             |
 
 **This does not widen the scale for anyone else, and the rule above is unchanged.** Three things keep it that way:
 
-1. **They are named tokens, not literals.** The off-scale defect the paragraph above describes is a size invented *at a call site*. These are declared once, as roles, with an owner — which is precisely the remedy [`README.md`](README.md) §3 rule 4 prescribes for a missing role.
+1. **They are named tokens, not literals.** The off-scale defect the paragraph above describes is a size invented _at a call site_. These are declared once, as roles, with an owner — which is precisely the remedy [`README.md`](README.md) §3 rule 4 prescribes for a missing role.
 2. **They live on the surface that owns them**, in `apps/landing/app/globals.css`, bound as utilities by `apps/landing/tailwind.config.ts`. They are deliberately **not** in `packages/theme/src/signet.css`: that stylesheet is pinned to `signet.ts`, which is the token source `apps/mobile` reads, so a 72px marketing headline declared there would sit one import away from every product screen on two surfaces where the six roles are the whole scale.
 3. **Using one outside `apps/landing` is a defect**, exactly as an off-scale literal is. A product surface that believes it needs a fourth size above `display` is asking for an amendment to the table above, not for a marketing role.
 
@@ -226,21 +227,21 @@ Type inside the landing's product frames is transcribed from the design-system a
 
 The same six roles as CSS custom properties, for web surfaces. Mobile reads the numeric source off `typography.role` in `packages/theme/src/signet.ts` instead; these are the web half of the same scale, not a second one.
 
-| Token | Value | Role |
-|-------|-------|------|
-| `--text-display` | `32px` | display size |
-| `--text-display-weight` | `700` | display weight |
-| `--text-headline` | `24px` | headline size |
-| `--text-headline-weight` | `700` | headline weight |
-| `--text-title` | `18px` | title size |
-| `--text-title-weight` | `600` | title weight |
-| `--text-body` | `16px` | body size, the floor for paragraph text |
-| `--text-body-weight` | `400` | body weight |
-| `--text-body-line` | `25px` | body line height, the only one the scale states — see the note below on the other five |
-| `--text-label` | `14px` | label size |
-| `--text-label-weight` | `600` | label weight |
-| `--text-caption` | `12.5px` | caption size |
-| `--text-caption-weight` | `400` | caption weight |
+| Token                    | Value    | Role                                                                                   |
+| ------------------------ | -------- | -------------------------------------------------------------------------------------- |
+| `--text-display`         | `32px`   | display size                                                                           |
+| `--text-display-weight`  | `700`    | display weight                                                                         |
+| `--text-headline`        | `24px`   | headline size                                                                          |
+| `--text-headline-weight` | `700`    | headline weight                                                                        |
+| `--text-title`           | `18px`   | title size                                                                             |
+| `--text-title-weight`    | `600`    | title weight                                                                           |
+| `--text-body`            | `16px`   | body size, the floor for paragraph text                                                |
+| `--text-body-weight`     | `400`    | body weight                                                                            |
+| `--text-body-line`       | `25px`   | body line height, the only one the scale states — see the note below on the other five |
+| `--text-label`           | `14px`   | label size                                                                             |
+| `--text-label-weight`    | `600`    | label weight                                                                           |
+| `--text-caption`         | `12.5px` | caption size                                                                           |
+| `--text-caption-weight`  | `400`    | caption weight                                                                         |
 
 **The other five roles ship a line height this scale does not define.** `display`, `headline`,
 `title`, `label` and `caption` are emitted as Tailwind `fontSize` keys in the shared preset
@@ -257,19 +258,19 @@ utility layer. Tracked as L-09 in [`../web-dashboard/tokens.md`](../web-dashboar
 
 Canonical map (locked; supersedes panel 4h — see deviation note):
 
-| Surface | Radius |
-|---------|--------|
-| Controls, inputs, buttons | 12 |
-| Cards | 14 standard · 16 large |
-| Sheets + AI answer card | 20 |
-| Badges / chips | 8–10 |
-| Sidebar / nav item | 10 |
-| Avatars | 50% (circle) |
+| Surface                   | Radius                 |
+| ------------------------- | ---------------------- |
+| Controls, inputs, buttons | 12                     |
+| Cards                     | 14 standard · 16 large |
+| Sheets + AI answer card   | 20                     |
+| Badges / chips            | 8–10                   |
+| Sidebar / nav item        | 10                     |
+| Avatars                   | 50% (circle)           |
 
 - Radii MUST come from this map. Inventing an off-map radius in screen code is a defect, exactly as a raw hex value is.
 - **No pill shapes** (`border-radius: 999px` on rectangles) except toggle tracks and **proportion meters** — a meter's track and its fill are both full-round. The reference draws them that way ([`reference/canvas-screens.dc.html`](reference/canvas-screens.dc.html) s10 and s22 both render an 8px track and its fill at `999px`), and references beat docs on visuals, so the exception is recorded here rather than left as a standing conflict. The recipe is [`apps/web/components/shared/meter.ts`](../../../apps/web/components/shared/meter.ts).
 - The graduated map is intentional: small elements take small radii, elevated surfaces take the largest, so roundness itself signals what kind of surface you are on. Sheets and the AI card share the 20 ceiling because both are "special" surfaces.
-- *(Corrected 2026-09-29: the map had a "Chat bubbles: 18, tail corner 6" row, the radius the §11 chat bubble took. The owner replaced the bubble with a compact, bubble-free chat layout ([#2873](https://github.com/pdcarlson/Frapp/issues/2873), [components.md](components.md) §11), so the row and its `radius.bubble` / `radius.bubbleTail` tokens were deleted with it.)*
+- _(Corrected 2026-09-29: the map had a "Chat bubbles: 18, tail corner 6" row, the radius the §11 chat bubble took. The owner replaced the bubble with a compact, bubble-free chat layout ([#2873](https://github.com/pdcarlson/Frapp/issues/2873), [components.md](components.md) §11), so the row and its `radius.bubble` / `radius.bubbleTail` tokens were deleted with it.)_
 
 > **Deviation note — panel 4h predates the radius lock.** 4h reads `control/card: 14 · card-lg: 16 · bubble/AI/sheet: 20 · badge/chip: 8`, and panel 4e renders bubbles at r20. The Canvas header ([`reference/canvas-screens.dc.html`](reference/canvas-screens.dc.html)) locks the map above — controls 12, bubbles 18 (tail 6), a value retired with the bubble on 2026-09-29 — and wins. This is the only place the reference HTML is not truth for tokens. (Panel 4g's 5-tab bar is the equivalent stale artifact for navigation; see the mobile spec.)
 
@@ -283,15 +284,15 @@ Canonical map (locked; supersedes panel 4h — see deviation note):
 
 ### Control size scale
 
-*(Added 2026-11-05, owner direction: the old system was "flawed" and "all the bubbles just feel way too big".)* Every control, row and chip takes a step from this table, and new work never invents a height off it. It is the rule the sizing, icon-button, chrome and dialog passes all build on, so a component spec names its step rather than restating a number. The shipped surfaces still off the scale are listed in [#3511](https://github.com/pdcarlson/Frapp/issues/3511) until they move.
+_(Added 2026-11-05, owner direction: the old system was "flawed" and "all the bubbles just feel way too big".)_ Every control, row and chip takes a step from this table, and new work never invents a height off it. It is the rule the sizing, icon-button, chrome and dialog passes all build on, so a component spec names its step rather than restating a number. The shipped surfaces still off the scale are listed in [#3511](https://github.com/pdcarlson/Frapp/issues/3511) until they move.
 
-| Step | Mouse (web, fine pointer) | Touch (web coarse pointer, and mobile) | Takes it |
-|------|------|------|------|
-| Chip | 24 | 24 drawn, 44 hit area through padding or `hitSlop` | badges, status chips, counts. Mobile's filter chips draw 32 |
-| Row | 32 | 44 | menu, select and command rows; a checkbox row inside a form |
-| Small | 36 | 44 | toolbar controls, Inline (`sm`) and icon buttons, tabs, a table header, a dense list row, a sheet's fields and footer buttons |
-| Field | 40 | 44 | text fields, select triggers, Default buttons, the color picker |
-| Primary | (web: Field) | 48 | mobile only: a full-width button that ends a sheet or a flow step (the sheet CTA, the dues Pay button, onboarding's buttons). A web full-width primary is a Default button, 44 on touch |
+| Step    | Mouse (web, fine pointer) | Touch (web coarse pointer, and mobile)             | Takes it                                                                                                                                                                                |
+| ------- | ------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Chip    | 24                        | 24 drawn, 44 hit area through padding or `hitSlop` | badges, status chips, counts. Mobile's filter chips draw 32                                                                                                                             |
+| Row     | 32                        | 44                                                 | menu, select and command rows; a checkbox row inside a form                                                                                                                             |
+| Small   | 36                        | 44                                                 | toolbar controls, Inline (`sm`) and icon buttons, tabs, a table header, a dense list row, a sheet's fields and footer buttons                                                           |
+| Field   | 40                        | 44                                                 | text fields, select triggers, Default buttons, the color picker                                                                                                                         |
+| Primary | (web: Field)              | 48                                                 | mobile only: a full-width button that ends a sheet or a flow step (the sheet CTA, the dues Pay button, onboarding's buttons). A web full-width primary is a Default button, 44 on touch |
 
 - **Mouse and touch are one rule, not two designs.** Web reads `pointer-coarse` for the touch column (Tailwind's `pointer-coarse:` variant), so a laptop gets the dense column and a phone or tablet browser the 44 floor. Mobile is touch-only and reads the touch column alone. The web sidebar (34) and app bar (34) are older pointer-only geometry and stay as [components.md](components.md) §7 draws them.
 - **Labels stay 14, values stay 16.** Button, tab and table-header labels are 14px at every height. A menu or select row's label is 14px on a mouse and 16px on touch. A typed value is 16px at every height, because §7's body floor binds on text a member types.
@@ -305,16 +306,16 @@ Tokens: `touch.minimum` (44) is every touch step's floor, `touch.button` (44) th
 
 The grid as CSS custom properties. Every value is 4 × an integer; that is the whole rule, and a spacing value that is not on this list is a defect the same way an off-scale font size is.
 
-| Token | Value | Role |
-|-------|-------|------|
-| `--space-xs` | `4px` | the grid unit |
-| `--space-sm` | `8px` | inside a component |
-| `--space-md` | `12px` | control padding |
-| `--space-lg` | `16px` | between components |
-| `--space-xl` | `24px` | between sections |
-| `--space-2xl` | `32px` | major section breaks |
-| `--space-3xl` | `48px` | page-level separation |
-| `--touch-min` | `44px` | the touch floor, honored on web as well as mobile |
+| Token            | Value  | Role                                                  |
+| ---------------- | ------ | ----------------------------------------------------- |
+| `--space-xs`     | `4px`  | the grid unit                                         |
+| `--space-sm`     | `8px`  | inside a component                                    |
+| `--space-md`     | `12px` | control padding                                       |
+| `--space-lg`     | `16px` | between components                                    |
+| `--space-xl`     | `24px` | between sections                                      |
+| `--space-2xl`    | `32px` | major section breaks                                  |
+| `--space-3xl`    | `48px` | page-level separation                                 |
+| `--touch-min`    | `44px` | the touch floor, honored on web as well as mobile     |
 | `--touch-button` | `44px` | standard button height on touch (46 until 2026-11-05) |
 
 ---
@@ -330,7 +331,7 @@ The grid as CSS custom properties. Every value is 4 × an integer; that is the w
 
 Panel 4h defines no motion tokens, so **no Signet motion values are locked yet (TODO-DESIGN)**. What that does and does not put in question:
 
-- **Settled — the discipline.** The three-class taxonomy (micro-feedback, standard transition, context shift), the budget each class is held to, and the requirements that motion stay subtle, functional, and reduced-motion-compatible bind every surface today. They are owned by [`README.md`](README.md) §7 and are not restated here. *Corrected 2026-11-06:* the taxonomy has four classes now, and "subtle, functional" binds every surface outside a signature moment; reduced-motion compatibility still binds all four.
+- **Settled — the discipline.** The three-class taxonomy (micro-feedback, standard transition, context shift), the budget each class is held to, and the requirements that motion stay subtle, functional, and reduced-motion-compatible bind every surface today. They are owned by [`README.md`](README.md) §7 and are not restated here. _Corrected 2026-11-06:_ the taxonomy has four classes now, and "subtle, functional" binds every surface outside a signature moment; reduced-motion compatibility still binds all four.
 - **Provisional — the numbers only.** The durations and easing curves in use are carried forward from the legacy `@repo/theme` system, now in `packages/theme/src/motion.ts` (`duration` / `easing`) and are listed in README §7. Implementations SHOULD keep using them so motion stays consistent across the app, but they are placeholders, not Signet canon: a Signet motion spec MAY replace every value without changing any rule above.
 - **A fourth class, added 2026-11-06: signature.** The owner asked for a few deliberate, fun moments that set Frapp apart (#3493), so the taxonomy gained a `signature` class beside the three, with its own triggers, budget, reduced-motion rule and catalog, all owned by [`README.md`](README.md) §7 § Signature moments. Its numbers (`motion.duration.signature` = 520, `motion.easing.settle`, and the 1.8s whole-moment budget in `packages/theme/src/signature.ts`) are as provisional as the other three: chosen for the first moment, the Discord import landing, not Signet canon.
 
@@ -340,12 +341,12 @@ Panel 4h defines no motion tokens, so **no Signet motion values are locked yet (
 
 A scroll region on a Signet surface draws its own scrollbar. The browser default is a light-mode artifact on this ladder: it renders as a pale gutter that reads as a seam between panes.
 
-| Token | Value | Role |
-|-------|-------|------|
-| `--scrollbar-width` | `6px` | gutter width, and height for a horizontal bar |
-| `--scrollbar-thumb` | `rgba(255,255,255,0.12)` | the thumb at rest |
-| `--scrollbar-thumb-hover` | `rgba(255,255,255,0.22)` | the thumb under the pointer |
-| `--scrollbar-track` | `rgba(0,0,0,0)` | the track, which paints nothing |
+| Token                     | Value                    | Role                                          |
+| ------------------------- | ------------------------ | --------------------------------------------- |
+| `--scrollbar-width`       | `6px`                    | gutter width, and height for a horizontal bar |
+| `--scrollbar-thumb`       | `rgba(255,255,255,0.12)` | the thumb at rest                             |
+| `--scrollbar-thumb-hover` | `rgba(255,255,255,0.22)` | the thumb under the pointer                   |
+| `--scrollbar-track`       | `rgba(0,0,0,0)`          | the track, which paints nothing               |
 
 The thumb is inset 1px inside its gutter and rounded with `--radius-xs` (which clamps to a full round at this size), so the visible bar is 4px wide.
 
@@ -370,10 +371,10 @@ A Signet surface paints its own `::selection`. Before the web greenfield's lane 
 any text produced the user agent's default highlight, which on this ladder is a system blue that
 belongs to neither the neutral scale nor the chapter.
 
-| Property | Value | Role |
-|----------|-------|------|
+| Property           | Value               | Role                               |
+| ------------------ | ------------------- | ---------------------------------- |
 | `background-color` | `var(--foreground)` | the highlight behind selected text |
-| `color` | `var(--background)` | selected text itself |
+| `color`            | `var(--background)` | selected text itself               |
 
 **It is neutral, and the accent is the wrong answer here for a measured reason.** The obvious wiring
 is `--primary` over `--primary-foreground`: it retints per chapter for free and it is the one pair
@@ -381,9 +382,9 @@ the accent engine measures ([accent-engine.md](accent-engine.md) §8). It is als
 surfaces the accent already paints. `apps/web/components/chat/renderers/text-renderer.tsx` drew the
 viewer's own chat bubble `bg-primary text-primary-foreground` — the identical pair — so selecting
 your own message to copy it would have changed nothing on screen; the same collision hits every
-default `Button` label and the selected calendar day. *(Corrected 2026-09-29: the compact chat layout,
+default `Button` label and the selected calendar day. _(Corrected 2026-09-29: the compact chat layout,
 [#2873](https://github.com/pdcarlson/Frapp/issues/2873), removed the self bubble, so chat no longer
-paints this pair. The Button and calendar collisions still do, so the decision stands.)* Stepping the accent does not rescue it: `--accent-text`
+paints this pair. The Button and calendar collisions still do, so the decision stands.)_ Stepping the accent does not rescue it: `--accent-text`
 is accent-11 against the fill's accent-9, which on the house seed measures `#E7C86B` on `#DDB844`,
 about 1.18:1 — under the 1.2 §10's fixture treats as imperceptible — while the text would move
 between two near-blacks.
@@ -434,12 +435,12 @@ Owner pick 2026-11-05 ("Floating bar, no glow"). The recipe is `signetGlass` in 
 
 **Glass is chrome only.** It is for what floats over content: the mobile tab bar and its quick-actions + and panel, back capsules, the floating create button, and the blur under a sheet or dialog scrim. Never a sheet, a card or an input. Those stay solid steps on the ladder (§2) so their text keeps the contrast measured against a known fill.
 
-| Part | Value |
-| ---- | ----- |
-| Fill | `surface-1` at 56% over a blur, so colour shows through (`glassFill`). Where nothing blurs behind it, 92% |
-| Blur | 26px backdrop blur |
-| Edge | 1px (a hairline on mobile) of white at 10%, a step brighter than §3's 8% hairline so the shape reads over any content |
-| Sheen | white at 7% at the top, gone by 46% of the height |
+| Part  | Value                                                                                                                                                             |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fill  | `surface-1` at 56% over a blur, so colour shows through (`glassFill`). Where nothing blurs behind it, 92%                                                         |
+| Blur  | 26px backdrop blur                                                                                                                                                |
+| Edge  | 1px (a hairline on mobile) of white at 10%, a step brighter than §3's 8% hairline so the shape reads over any content                                             |
+| Sheen | white at 7% at the top, gone by 46% of the height                                                                                                                 |
 | Scrim | a 6px blur under the existing 55% black, on web's dialogs and sheets. Mobile's sheet scrim has none yet ([#3545](https://github.com/pdcarlson/Frapp/issues/3545)) |
 
 The fill moves with the ladder because it is `surface-1`, never a hex of its own. Elevation stays luminance (§10): the edge and the sheen are light, and glass casts no shadow.
@@ -452,4 +453,3 @@ The fill moves with the ladder because it is `surface-1`, never a hex of its own
 - **Reduce Transparency on:** plain `surface-1` and §3's hairline, nothing see-through. Web reads `prefers-reduced-transparency`.
 
 `glass-surface.spec.tsx` pins the modes and `glass.spec.ts` the recipe.
-

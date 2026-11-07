@@ -216,18 +216,17 @@ function ThreadMessageRowBody({
         { onVote },
       );
   if (card) {
-    const quote =
-      message.reply_to_id ? (
-        <ReplyQuote
-          message={message}
-          replyParent={quotedParent}
-          hiddenText={replyParentHidden}
-          nameFor={nameFor}
-          viewerId={viewerId}
-          onPress={onJumpToParent}
-          onLongPress={openActions}
-        />
-      ) : null;
+    const quote = message.reply_to_id ? (
+      <ReplyQuote
+        message={message}
+        replyParent={quotedParent}
+        hiddenText={replyParentHidden}
+        nameFor={nameFor}
+        viewerId={viewerId}
+        onPress={onJumpToParent}
+        onLongPress={openActions}
+      />
+    ) : null;
     return (
       <MessageRowFrame
         message={message}
@@ -308,7 +307,9 @@ function cardFor(
     }
     case "announcement": {
       const body = readAnnouncementBody(message);
-      return body ? <AnnouncementCard {...frame} body={body} /> : null;
+      return body ? (
+        <AnnouncementCard {...frame} body={body} mentions={message.mentions} />
+      ) : null;
     }
     default:
       return null;

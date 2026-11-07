@@ -623,7 +623,7 @@ export function MessageItem({
   // Parsed once per content, for the body and for its links' accessibility
   // actions, so the actions name exactly the links drawn.
   const hasContent = !message.is_deleted && message.content.trim().length > 0;
-  const chips = useMentionChips(message.mentions);
+  const chips = useMentionChips(message);
   const parsed = useMemo(
     () => (hasContent ? parseMessageMarkdown(message.content, chips) : null),
     [hasContent, message.content, chips],

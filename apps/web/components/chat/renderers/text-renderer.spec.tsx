@@ -191,6 +191,18 @@ describe("TextRenderer mention chips", () => {
     expect(chips(container)).toHaveLength(0);
   });
 
+  it("chips an imported archive message's handles, which resolve nobody", () => {
+    const { container } = render(
+      <TextRenderer
+        message={message("thanks @TristanHatton", {
+          kind: "imported",
+          mentions: [],
+        })}
+      />,
+    );
+    expect(chips(container)).toHaveLength(1);
+  });
+
   it("chips the role that pinged someone and not the name nobody holds", () => {
     const { container } = render(
       <MentionChipTargetsContext.Provider

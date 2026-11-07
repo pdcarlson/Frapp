@@ -183,9 +183,7 @@ describe("Notifications row target", () => {
     expect(router.push).not.toHaveBeenCalled();
 
     act(() => row("About billing").props.onPress());
-    expect(router.push).toHaveBeenCalledWith("/dues", {
-      dangerouslySingular: expect.any(Function),
-    });
+    expect(router.push).toHaveBeenCalledWith("/dues");
   });
 });
 

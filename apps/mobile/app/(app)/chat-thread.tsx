@@ -177,12 +177,21 @@ export default function ChatThreadScreen() {
 
   // Params arrive as `string | string[]`; a repeated query key would otherwise
   // silently produce an array where a channel id is expected.
-  const params = useLocalSearchParams<{ channelId?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    channelId?: string | string[];
+    landing?: string | string[];
+  }>();
   const channelId = useMemo(() => {
     const raw = params.channelId;
     const value = Array.isArray(raw) ? raw[0] : raw;
     return typeof value === "string" && value.length > 0 ? value : null;
   }, [params.channelId]);
+  // `landing` opens the launch jump with no slide (`app/(app)/_layout.tsx`).
+  // Dropped once it has, so going back slides as from any other channel.
+  const landing = params.landing !== undefined;
+  useEffect(() => {
+    if (landing) router.setParams({ landing: undefined });
+  }, [landing, router]);
 
   // Channel-level metadata (#704) — mobile had no read-only/post gating of any
   // kind before this, unlike web's `chat-shell.tsx`. `can_post` already folds

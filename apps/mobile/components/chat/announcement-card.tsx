@@ -6,6 +6,7 @@ import {
   useCardStyles,
   type ChatCardFrameProps,
 } from "./chat-card";
+import { useMentionChips } from "@repo/hooks/mention-chips";
 import { MessageMarkdown, parseMessageMarkdown } from "./message-markdown";
 
 /**
@@ -22,10 +23,19 @@ import { MessageMarkdown, parseMessageMarkdown } from "./message-markdown";
  */
 export function AnnouncementCard({
   body,
+  mentions,
   ...frame
-}: ChatCardFrameProps & { body: string }) {
+}: ChatCardFrameProps & {
+  body: string;
+  /** The message's resolved `mentions`: a token that pinged nobody stays plain. */
+  mentions?: readonly string[] | null;
+}) {
   const styles = useCardStyles();
-  const parsed = useMemo(() => parseMessageMarkdown(body), [body]);
+  const chips = useMentionChips({ mentions });
+  const parsed = useMemo(
+    () => parseMessageMarkdown(body, chips),
+    [body, chips],
+  );
   return (
     <ChatCardShell
       {...frame}

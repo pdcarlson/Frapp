@@ -82,7 +82,7 @@
 - **Quiet hours:** Per-user configurable time window; NORMAL notifications silenced during quiet hours.
 - **Grouping:** Multiple notifications from the same source collapsed into one.
 - **Per-channel mute:** Users can mute individual chat channels.
-- **Badge count:** Total unread across notifications and chat.
+- **Badge count:** Unread notifications plus what addresses the member in chat: @-mentions and unread direct messages ([`notifications.md`](../behavior/notifications.md) § Badge Count).
 - **Triggers:** Chat mentions, DMs, announcements, event reminders, point changes, study session events, billing alerts, admin notifications.
 - **In-app history:** All notifications stored in `notifications` table; viewable and dismissable.
 - **Preferences:** Per-category opt-in/opt-out.
@@ -188,7 +188,7 @@
 
 - Chapters upload a logo (displayed in app header, directory, PDF reports, onboarding).
 - Chapters set a custom accent color (hex) for buttons, links, and highlights.
-- Default accent: several distinct "defaults" are in play and they are **not** interchangeable — the value a chapter *holds* until an accent is chosen (the `chapters.accent_color` column default), the value a client *paints* when the stored one is absent or illegible, and the seed a no-accent chapter's palette is generated from. [`spec/behavior/branding.md`](../behavior/branding.md) owns the first two and [`spec/ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md) owns the seed; this file restates none of them.
+- Default accent: several distinct "defaults" are in play and they are **not** interchangeable — the value a chapter _holds_ until an accent is chosen (the `chapters.accent_color` column default), the value a client _paints_ when the stored one is absent or illegible, and the seed a no-accent chapter's palette is generated from. [`spec/behavior/branding.md`](../behavior/branding.md) owns the first two and [`spec/ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md) owns the seed; this file restates none of them.
 - Chapter branding applies only within the chapter context; Frapp branding is unaffected.
 
 ---
@@ -213,33 +213,33 @@ Not every paid module has a slash command: a module gets one only when it has a 
 
 ## Always-on (free tier — cannot be disabled)
 
-| Module | Key | Description |
-|--------|-----|-------------|
-| Chat | `chat` | Channels, DMs, reactions, pins, threads |
-| Members | `members` | Roster, profiles, custom fields, alumni status |
-| Announcements | `announcements` | Exec-write, member-read broadcast channel |
-| Audit Log | `audit-log` | Member-visible officer action history |
+| Module           | Key                | Description                                          |
+| ---------------- | ------------------ | ---------------------------------------------------- |
+| Chat             | `chat`             | Channels, DMs, reactions, pins, threads              |
+| Members          | `members`          | Roster, profiles, custom fields, alumni status       |
+| Announcements    | `announcements`    | Exec-write, member-read broadcast channel            |
+| Audit Log        | `audit-log`        | Member-visible officer action history                |
 | Chapter Settings | `chapter-settings` | Archetype, branding, modules, roles, workflows, dues |
 
 ## Paid integrations (gated by subscription)
 
-| Module | Key | Description |
-|--------|-----|-------------|
-| Events | `events` | Calendar, RSVP, QR check-in, post-event points |
-| Tasks | `tasks` | Assignments, confirmations, points-on-completion |
-| Points | `points` | Earn/spend ledger, leaderboard |
-| Service Hours | `hours` | Time tracking with approval queue |
-| Dues | `dues` | Invoices, payment plans, scholarships, Stripe |
-| Polls | `polls` | Chapter votes, anonymous or named — anonymity **not built**, and not a small addition ([`spec/behavior/polls.md` § Anonymous polls](../behavior/polls.md#anonymous-polls)) |
-| Recruitment | `rush` | Candidate funnel, voting, bid management |
-| Backwork | `backwork` | Document library + academic archive |
-| Documents | `documents` | Chapter-level docs (bylaws, minutes, policies) |
-| Reports | `reports` | Health dashboard, nationals export, advisor digest |
-| Onboarding | `onboarding` | Structured new-member pathway |
-| Geofences | `geofences` | Geo-fenced check-in zones |
-| Meetings | `meetings` | Audio transcription + AI summary + single-template per type ([`spec/behavior/meetings.md`](../behavior/meetings.md)) |
-| Vault | `vault` | Encrypted private storage for risk / standards content ([`spec/behavior/vault.md`](../behavior/vault.md)) |
-| AI Q&A | `ai` | Ask-anything over meeting minutes, documents, structured data, announcements ([`spec/behavior/ai.md`](../behavior/ai.md)) |
+| Module        | Key          | Description                                                                                                                                                                |
+| ------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Events        | `events`     | Calendar, RSVP, QR check-in, post-event points                                                                                                                             |
+| Tasks         | `tasks`      | Assignments, confirmations, points-on-completion                                                                                                                           |
+| Points        | `points`     | Earn/spend ledger, leaderboard                                                                                                                                             |
+| Service Hours | `hours`      | Time tracking with approval queue                                                                                                                                          |
+| Dues          | `dues`       | Invoices, payment plans, scholarships, Stripe                                                                                                                              |
+| Polls         | `polls`      | Chapter votes, anonymous or named — anonymity **not built**, and not a small addition ([`spec/behavior/polls.md` § Anonymous polls](../behavior/polls.md#anonymous-polls)) |
+| Recruitment   | `rush`       | Candidate funnel, voting, bid management                                                                                                                                   |
+| Backwork      | `backwork`   | Document library + academic archive                                                                                                                                        |
+| Documents     | `documents`  | Chapter-level docs (bylaws, minutes, policies)                                                                                                                             |
+| Reports       | `reports`    | Health dashboard, nationals export, advisor digest                                                                                                                         |
+| Onboarding    | `onboarding` | Structured new-member pathway                                                                                                                                              |
+| Geofences     | `geofences`  | Geo-fenced check-in zones                                                                                                                                                  |
+| Meetings      | `meetings`   | Audio transcription + AI summary + single-template per type ([`spec/behavior/meetings.md`](../behavior/meetings.md))                                                       |
+| Vault         | `vault`      | Encrypted private storage for risk / standards content ([`spec/behavior/vault.md`](../behavior/vault.md))                                                                  |
+| AI Q&A        | `ai`         | Ask-anything over meeting minutes, documents, structured data, announcements ([`spec/behavior/ai.md`](../behavior/ai.md))                                                  |
 
 ## Archetype-specific extras (prototype extras carried forward)
 
@@ -253,13 +253,13 @@ Enabling paid ops modules is never a gate — it is surfaced as a dismissible in
 
 Officers get one **Set up your chapter** list instead of an officer half on every empty screen. On web it sits at the top of the chat channel rail, above the channels, where it stays out of the conversation. On mobile it sits on chat home under UP NEXT and above the channels, without the dues line: its web page is where the Frapp plan is bought, which the app does not link to, and counting it would cache the whole chapter's invoices on a treasurer's phone. Each line opens the screen where the thing gets made, and checks itself off once the real thing exists, counted from the same list that screen shows:
 
-| Line | Shown to holders of | Module | Done when |
-| --- | --- | --- | --- |
-| Invite members | `members:invite` | always on | the roster has someone besides the officer, or an invite is out |
-| Schedule the first event | `events:create` and `members:view` (the events controller requires both) | `events` | the chapter has an event |
-| Add a study zone | `geofences:manage` | `geofences` | the chapter has an active study zone |
-| Upload the bylaws | `chapter_docs:upload` | `documents` | the library has a document |
-| Send the first dues | `billing:manage` and `billing:view` (only `view` reads the whole chapter's invoices) | `dues` | the chapter has an invoice |
+| Line                     | Shown to holders of                                                                  | Module      | Done when                                                       |
+| ------------------------ | ------------------------------------------------------------------------------------ | ----------- | --------------------------------------------------------------- |
+| Invite members           | `members:invite`                                                                     | always on   | the roster has someone besides the officer, or an invite is out |
+| Schedule the first event | `events:create` and `members:view` (the events controller requires both)             | `events`    | the chapter has an event                                        |
+| Add a study zone         | `geofences:manage`                                                                   | `geofences` | the chapter has an active study zone                            |
+| Upload the bylaws        | `chapter_docs:upload`                                                                | `documents` | the library has a document                                      |
+| Send the first dues      | `billing:manage` and `billing:view` (only `view` reads the whole chapter's invoices) | `dues`      | the chapter has an invoice                                      |
 
 A line shows only to an officer who can do it, and only while the module the server gates its action on is on (switching a module on is the ops nudge's job, above). The list draws nothing until every read it needs has loaded, so it never flashes in half-checked, and a read that fails leaves it undrawn rather than guessing a line. It is worked out from live counts, so it goes away while every line it shows is done and comes back if one comes undone, say the only event is deleted or a module is switched on. An officer can hide it for good; like a nudge, the hide is stored per user per chapter, as `setup-checklist` in `members.dismissed_ops_nudges`. The rule, the copy and each line's web page are shared by both clients (`useChapterSetupChecklist` and `SETUP_CHECKLIST_WEB_PATH` in `@repo/hooks`). The phone can invite, upload a document and schedule an event, so those lines open Invite members, Documents and Events in the app (Invite members since 2026-11-06, [`navigation.md` § Inviting members](../ui/mobile/navigation.md#inviting-members)): Documents' + opens the upload sheet, and Events' empty state points at the tab bar's +, where New event is; it has no screen for study zones, so that line says "Web", done or not, and opens the same page of the web app in the in-app browser. Closing the browser re-reads the lists, since the step may just have been done there, and so does chat home's pull to refresh. The web page opens in whichever chapter the web session has active, not necessarily the phone's ([#3575](https://github.com/pdcarlson/Frapp/issues/3575)).
 

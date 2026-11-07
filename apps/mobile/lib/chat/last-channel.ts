@@ -89,6 +89,11 @@ export function chatLaunchOpen(now: number = Date.now()): boolean {
   );
 }
 
+/** How long the launch window has left, for a hold that must not outlast it. */
+export function chatLaunchWindowLeftMs(now: number = Date.now()): number {
+  return Math.max(0, launchStartedAt + LAUNCH_WINDOW_MS - now);
+}
+
 /** Test seam: a fresh process, launched at `startedAt`. */
 export function resetChatLaunchForTests(startedAt: number = Date.now()): void {
   launchSettled = false;

@@ -42,7 +42,7 @@ interface TextRendererProps {
  */
 export function TextRenderer({ message, trailing, muted }: TextRendererProps) {
   // A token that pinged nobody draws as plain text (`mentionChipFilter`).
-  const chips = useMentionChips(message.mentions);
+  const chips = useMentionChips(message);
   if (message.is_deleted) {
     return (
       <div

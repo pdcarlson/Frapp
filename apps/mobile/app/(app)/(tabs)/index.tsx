@@ -99,6 +99,7 @@ import {
 } from "@/lib/chat/channels-error";
 import {
   chatLaunchOpen,
+  chatLaunchWindowLeftMs,
   claimChatLaunch,
   readLastChannel,
   settleChatLaunch,
@@ -407,14 +408,17 @@ export default function ChatHomeScreen() {
   );
   useEffect(() => {
     if (!holdingForLaunch) return;
-    if (channelsQuery.isError || !isFocused) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- release the launch hold on an external edge (failed list read, chat home losing focus)
+    if (channelsQuery.isError || viewerQuery.isError || !isFocused) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- release the launch hold on an external edge (a failed list or account read, chat home losing focus)
       setHoldingForLaunch(false);
     }
     // Past the launch window the jump can no longer happen.
-    const timer = setTimeout(() => setHoldingForLaunch(false), 10_000);
+    const timer = setTimeout(
+      () => setHoldingForLaunch(false),
+      chatLaunchWindowLeftMs(),
+    );
     return () => clearTimeout(timer);
-  }, [holdingForLaunch, channelsQuery.isError, isFocused]);
+  }, [holdingForLaunch, channelsQuery.isError, viewerQuery.isError, isFocused]);
   useEffect(() => {
     if (!listAnswered || !viewerId) return;
     if (!isFocused) {
@@ -711,7 +715,7 @@ export default function ChatHomeScreen() {
                         </Text>
                         {section.collapsed && section.addressed ? (
                           <UnreadBadge
-                            unreadCount={section.unreadCount}
+                            unreadCount={section.addressedCount}
                             mentionCount={section.mentionCount}
                           />
                         ) : null}

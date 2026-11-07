@@ -522,6 +522,12 @@ export interface MentionChipTargets {
  *   `@President @bigsigma` chips the first and not the second.
  * - Before the roster has loaded, every token chips on a message that reached
  *   someone, rather than none: the common case is a real mention.
+ *
+ * Two kinds of row chip by token instead, decided by the caller
+ * (`useMentionChips` in `@repo/hooks/mention-chips`): an imported archive
+ * message, whose `mentions` the Discord import never resolves though it
+ * rewrites names precisely so they chip, and the sender's own row before the
+ * server confirms it.
  */
 export function mentionChipFilter(
   mentionedIds: readonly string[],

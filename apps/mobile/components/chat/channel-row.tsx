@@ -27,9 +27,10 @@ import {
  *   one fact — *you were addressed*: an @-mention or a direct message. It MUST
  *   NOT be replaced by the chapter accent under any seed", so "you were
  *   addressed" reads identically in every chapter.
- * - **Channel unread is neutral — never red, never accent.** A plain unread
- *   channel takes the `border.input` fill with `text.foreground` text, plus a
- *   bold title. A read row keeps a bright regular-weight title and no badge.
+ * - **Channel unread is neutral — never red, never accent, and has no
+ *   number** (2026-11-07). A plain unread channel is a bold title alone; only
+ *   a mention or an unread DM draws the badge. A read row keeps a bright
+ *   regular-weight title.
  *
  * **A read name stays bright** (owner, 2026-11-07). The emphasis is weight,
  * the sigil and the badge: a 700 title against a read row's 400, both in
@@ -43,10 +44,7 @@ import {
  * `surface1`, which on a busy chapter striped the list in card-coloured bars
  * that said nothing the badge didn't; the lift is now only the iOS press
  * state (`usePressFeedback`, through `PressableRow`).
- *
- * "fill and text are the only difference, so badge geometry stays one recipe" —
- * hence a single `styles.badge` with two colour overlays rather than two badges.
- *
+ * *
  * **Neither count is computed here.** `spec/behavior/chat/README.md`
  * § Read Receipts requires both to come from `GET /v1/channels/unread`, because
  * the server excludes the viewer's own and deleted messages and treats a channel
@@ -140,7 +138,7 @@ export function ChannelRow({
   const styles = createStyles(tokens);
   // Red means "you were addressed": an @-mention, or anything unread in a
   // direct message (foundations.md §5). The DM half was missing here until
-  // #2877, so an unread DM drew the neutral badge while web drew it red; the
+  // #2877, so an unread DM drew a neutral badge while web drew it red; the
   // rule is now `countsAddressMember` in `@repo/hooks`, which the shared
   // sidebar arrangement uses too.
   const hasMention = countsAddressMember(isDirect, {
