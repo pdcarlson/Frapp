@@ -192,3 +192,32 @@ export function useClaimPresidency() {
     },
   });
 }
+
+/** A role as the caller's `@`-mention picker offers it. */
+export type ChatMentionRole = components["schemas"]["MentionRoleDto"];
+
+/**
+ * The chapter roles the caller may `@`, for both composers' mention pickers
+ * (2026-11-06, `GET /v1/channels/mention-roles`). Each says whether the caller
+ * may ping it: the server decides, and the same rule decides who a sent
+ * `@Role` reaches, so the picker never offers a ping that would land on
+ * nobody. Membership is not sent; the server expands the role on send.
+ *
+ * Keyed under `["roles", chapterId, …]` so the role mutations, which
+ * invalidate `["roles", chapterId]`, refresh it. A member's role changing
+ * elsewhere is caught by the minute's staleness, as the roster is.
+ */
+export function useMentionRoles() {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["roles", chapterId, "mention-roles"],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/channels/mention-roles");
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 60_000,
+    enabled: !!chapterId,
+  });
+}

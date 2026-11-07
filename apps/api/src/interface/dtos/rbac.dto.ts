@@ -14,6 +14,7 @@ import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ROLE_COLOR_HEXES, ROLE_NAME_MAX_LENGTH } from '@repo/validation';
 import { POSITION_MAX } from '#domain/constants/field-limits';
+import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 
 /**
  * Upper-cases a role color string before `@IsIn` checks it, so `#f2994a` is
@@ -56,6 +57,14 @@ export class CreateRoleDto {
     message: 'color must be one of the role palette colors',
   })
   color?: string | null;
+  @ApiPropertyOptional({
+    type: Boolean,
+    description:
+      'Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  mentionable?: boolean;
 }
 
 export class UpdateRoleDto {
@@ -91,6 +100,14 @@ export class UpdateRoleDto {
     message: 'color must be one of the role palette colors',
   })
   color?: string | null;
+  @ApiPropertyOptional({
+    type: Boolean,
+    description:
+      'Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  mentionable?: boolean;
 }
 
 export class TransferPresidencyDto {

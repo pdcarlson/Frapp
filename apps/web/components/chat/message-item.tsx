@@ -308,6 +308,16 @@ export function MessageItem({
   // `message.sender_id.slice(...)` fallbacks below threw on it.
   const authorName = resolveAuthorName(message, nameFor);
   const authorLabel = resolveAuthorLabel(message, nameFor, viewerId);
+  // The server resolved who this message pings (`chat_messages.mentions`),
+  // so the row trusts that list rather than re-reading the body: it is the
+  // same set the notifier used. A viewer's own message never lights up.
+  const mentionsViewer =
+    !!viewerId &&
+    message.sender_id !== viewerId &&
+    // A deleted message no longer counts as a mention anywhere else (the
+    // unread badge skips it, the push is gone), so its tombstone stays plain.
+    !message.is_deleted &&
+    message.mentions.includes(viewerId);
   // Frapp's own posts (the welcome, the audit bridge, a poll's closing notice,
   // an invite-accept DM) wear the crest, not initials: the sender is the
   // product, not a member (#3347).
@@ -1016,12 +1026,20 @@ export function MessageItem({
         // Delineation without a bubble (§11): the whole row lifts one surface
         // step under a pointer, with keyboard focus inside it, or once tapped.
         // Pointer feedback, not information, so the ~1.1:1 step is enough.
-        // `:focus-visible`, not `:focus-within`: a mouse click on a control
-        // in the row leaves focus there, and must not hold the lift on after
-        // the pointer has gone (the action bar's note below).
-        "hover:bg-surface-1 has-[:focus-visible]:bg-surface-1",
-        isTapRevealed && "bg-surface-1",
+        mentionsViewer
+          ? // A row that @-mentions the viewer wears the chapter accent the
+            // way Discord marks one (§11): the accent-subtle fill with a 2px
+            // accent bar on its leading edge. It is information, so it stays
+            // on under a pointer instead of giving way to the surface lift.
+            "bg-accent-subtle shadow-[inset_2px_0_0_var(--primary)] hover:bg-accent-subtle-hover has-[:focus-visible]:bg-accent-subtle-hover"
+          : // `:focus-visible`, not `:focus-within`: a mouse click on a control
+            // in the row leaves focus there, and must not hold the lift on after
+            // the pointer has gone (the action bar's note below).
+            "hover:bg-surface-1 has-[:focus-visible]:bg-surface-1",
+        !mentionsViewer && isTapRevealed && "bg-surface-1",
+        mentionsViewer && isTapRevealed && "bg-accent-subtle-hover",
       )}
+      data-mentions-viewer={mentionsViewer || undefined}
       data-status={message._status}
       data-run={showHeader ? "start" : "follow"}
       onPointerDown={(event) => {
