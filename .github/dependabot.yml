@@ -242,6 +242,7 @@ updates:
       - dependency-name: "expo-application"
       - dependency-name: "expo-blur"
       - dependency-name: "expo-camera"
+      - dependency-name: "expo-clipboard"
       - dependency-name: "expo-constants"
       - dependency-name: "expo-crypto"
       - dependency-name: "expo-device"
