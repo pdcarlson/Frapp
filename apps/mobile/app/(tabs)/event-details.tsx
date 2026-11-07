@@ -1,10 +1,18 @@
 import { useRequiredOfViewer } from "@/lib/events/viewer-roles";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEvent, useNowDate } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { PencilGlyph } from "@/components/control-glyphs";
+import { IconButton } from "@/components/icon-button";
+import {
+  NewEventSheet,
+  useEventEditGrants,
+} from "@/components/events/new-event-sheet";
+import { seriesRuleOf, type EventEditTarget } from "@/lib/events/edit-event";
 import { BACK_TO_EVENTS } from "@/components/back-row";
 import { PressableRow } from "@/components/list-section";
 import { SheetPrimaryButton } from "@/components/sheet-scaffold";
@@ -50,6 +58,16 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * the endpoint (#1035). A line that used to stand in for it ("Check in at the
  * event to be counted.") is gone too: the check-in card above already says it.
  *
+ * ## Editing
+ *
+ * A viewer who may edit events (`events:update`) gets a pencil in the back
+ * row, the slot Profile's edit uses, for any event in the chapter, not only
+ * their own: the officer fixing tonight's room minutes before chapter is
+ * rarely the one who made the series in August. It opens the New event sheet
+ * filled in as "Edit event", which also holds Delete for a viewer with
+ * `events:delete`. A generated occurrence reads its series parent first, so
+ * the form can show the series' Repeat and move the whole series' time.
+ *
  * ## Where the chips sit
  *
  * The board draws Mandatory and `+N pts` above the title and the place in the
@@ -71,6 +89,34 @@ export default function EventDetailsScreen() {
     () => selectEventDetail(eventQuery.data),
     [eventQuery.data],
   );
+
+  const router = useRouter();
+  const { accent } = useChapterBranding();
+  const grants = useEventEditGrants();
+  const editSheetRef = useRef<BottomSheetModal>(null);
+  // Read only for a generated occurrence an editor may open: the series'
+  // rule and start live on its parent.
+  const parentQuery = useEvent(
+    grants.edit && event?.parent_event_id ? event.parent_event_id : "",
+  );
+  const parent = useMemo(
+    () => selectEventDetail(parentQuery.data),
+    [parentQuery.data],
+  );
+  const parentSettled = !event?.parent_event_id || !parentQuery.isPending;
+  const editTarget = useMemo<EventEditTarget | null>(() => {
+    if (!event) return null;
+    return {
+      event,
+      seriesRule: seriesRuleOf(event, parent),
+      parent: event.parent_event_id ? parent : null,
+    };
+  }, [event, parent]);
+  // The sheet's draft is seeded from the event when it mounts, so a save
+  // (or anyone else's) remounts it with what the server now holds.
+  const editSheetKey = editTarget
+    ? JSON.stringify([eventQuery.data, parentQuery.data ?? null])
+    : "";
 
   const [calendarState, setCalendarState] = useState<
     "ready" | "exporting" | "exported" | "failed"
@@ -152,71 +198,100 @@ export default function EventDetailsScreen() {
   const requiredOfViewer = requiredOf(event.attendance);
 
   return (
-    <ScreenShell
-      back={BACK_TO_EVENTS}
-      title={event.name}
-      subtitle={[
-        formatEventWindow(event.start_time, event.end_time, now),
-        event.location,
-      ]
-        .filter(Boolean)
-        .join(" · ")}
-    >
-      {requiredOfViewer || event.point_value ? (
-        <View style={styles.badgeRow}>
-          {requiredOfViewer ? (
-            <StatusChip
-              label="Mandatory"
-              hue={tokens.color.semantic.destructive}
-            />
-          ) : null}
-          {event.point_value ? (
-            <AccentChip label={`+${event.point_value} pts`} />
-          ) : null}
-        </View>
-      ) : null}
-
-      <CheckInCard event={event} window={window} />
-
-      {event.description ? (
-        <DetailSection
-          label="DETAILS"
-          body={event.description}
-          styles={styles}
-        />
-      ) : null}
-
-      {event.notes ? (
-        <DetailSection
-          label="INTERNAL NOTES"
-          body={event.notes}
-          styles={styles}
-        />
-      ) : null}
-
-      <PressableRow
-        accessibilityRole="button"
-        accessibilityLabel="Add this event to your calendar"
-        accessibilityState={{ disabled: calendarState === "exporting" }}
-        disabled={calendarState === "exporting"}
-        onPress={() => void handleCalendarExport()}
-        // The press feedback the s06 cards use: a ripple on Android, rounded
-        // to the button's corners by `PressableRow`'s clip and dropped while
-        // exporting, and a lift from the card fill to `surface.popover` on iOS.
-        onCard
-        style={styles.secondaryButton}
+    <>
+      <ScreenShell
+        back={BACK_TO_EVENTS}
+        backAction={
+          grants.edit ? (
+            // A pencil, as Profile's edit: the same back-row slot.
+            <IconButton
+              label="Edit event"
+              hint="Opens a sheet to change this event."
+              disabled={!parentSettled}
+              onPress={() => editSheetRef.current?.present()}
+            >
+              <PencilGlyph color={accent} />
+            </IconButton>
+          ) : undefined
+        }
+        title={event.name}
+        subtitle={[
+          formatEventWindow(event.start_time, event.end_time, now),
+          event.location,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
       >
-        <Text style={styles.secondaryButtonText}>
-          {calendarState === "exporting"
-            ? "Adding…"
-            : calendarState === "exported"
-              ? "Added to calendar"
-              : calendarState === "failed"
-                ? "Couldn't add — try again"
-                : "Add to calendar"}
-        </Text>
-      </PressableRow>
-    </ScreenShell>
+        {requiredOfViewer || event.point_value ? (
+          <View style={styles.badgeRow}>
+            {requiredOfViewer ? (
+              <StatusChip
+                label="Mandatory"
+                hue={tokens.color.semantic.destructive}
+              />
+            ) : null}
+            {event.point_value ? (
+              <AccentChip label={`+${event.point_value} pts`} />
+            ) : null}
+          </View>
+        ) : null}
+
+        <CheckInCard event={event} window={window} />
+
+        {event.description ? (
+          <DetailSection
+            label="DETAILS"
+            body={event.description}
+            styles={styles}
+          />
+        ) : null}
+
+        {event.notes ? (
+          <DetailSection
+            label="INTERNAL NOTES"
+            body={event.notes}
+            styles={styles}
+          />
+        ) : null}
+
+        <PressableRow
+          accessibilityRole="button"
+          accessibilityLabel="Add this event to your calendar"
+          accessibilityState={{ disabled: calendarState === "exporting" }}
+          disabled={calendarState === "exporting"}
+          onPress={() => void handleCalendarExport()}
+          // The press feedback the s06 cards use: a ripple on Android, rounded
+          // to the button's corners by `PressableRow`'s clip and dropped while
+          // exporting, and a lift from the card fill to `surface.popover` on iOS.
+          onCard
+          style={styles.secondaryButton}
+        >
+          <Text style={styles.secondaryButtonText}>
+            {calendarState === "exporting"
+              ? "Adding…"
+              : calendarState === "exported"
+                ? "Added to calendar"
+                : calendarState === "failed"
+                  ? "Couldn't add — try again"
+                  : "Add to calendar"}
+          </Text>
+        </PressableRow>
+      </ScreenShell>
+      {grants.edit && editTarget ? (
+        <NewEventSheet
+          key={editSheetKey}
+          ref={editSheetRef}
+          now={now}
+          editing={editTarget}
+          onSaved={({ leave }) => {
+            // A series save can replace the occurrence on screen with a new
+            // one; the Events list shows where it went.
+            if (leave) router.navigate(BACK_TO_EVENTS.href);
+          }}
+          onDeleted={() => router.navigate(BACK_TO_EVENTS.href)}
+        />
+      ) : null}
+    </>
   );
 }
 

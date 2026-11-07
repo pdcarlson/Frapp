@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   Keyboard,
   Platform,
   Pressable,
@@ -17,7 +18,13 @@ import DateTimePicker, {
 } from "@react-native-community/datetimepicker";
 import { formatWeekdayDay } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
-import { useCreateEvent, usePermissionList, useRoles } from "@repo/hooks";
+import {
+  useCreateEvent,
+  useDeleteEvent,
+  usePermissionList,
+  useRoles,
+  useUpdateEvent,
+} from "@repo/hooks";
 import {
   RECURRENCE_REPEAT_LABELS,
   RECURRENCE_RULES,
@@ -58,6 +65,19 @@ import {
   type NewEventDraft,
   type NewEventErrors,
 } from "@/lib/events/create-event";
+import {
+  DELETE_EVENT_PERMISSIONS,
+  EDIT_EVENT_PERMISSIONS,
+  draftFromEvent,
+  isEmptyPatch,
+  isInSeries,
+  leavesAfterSave,
+  saveRequestFor,
+  saveScopeFor,
+  validateEventEdit,
+  type EventEditScope,
+  type EventEditTarget,
+} from "@/lib/events/edit-event";
 import { formatEventClock } from "@/lib/events/format";
 import { gateRefusalOf } from "@/lib/chat/gated-upload";
 import { successHaptic } from "@/lib/haptics";
@@ -90,6 +110,14 @@ import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
  * keeping the event's length. Nothing is drawn by hand, so the pickers read
  * as the phone's own (owner, 2026-11-06, after a hand-drawn grid).
  *
+ * ## Editing
+ *
+ * Passed `editing`, the same sheet edits that event: "Edit event", the form
+ * filled from it, Save changes, and Delete event at the foot for a viewer who
+ * may delete. A repeating event asks on save whether the change is for this
+ * event or every upcoming one, as Calendar does. `lib/events/edit-event.ts`
+ * holds what is sent and where.
+ *
  * ## Errors wait for Create
  *
  * Nothing is checked as the officer types. Create runs the checks and shows
@@ -104,6 +132,15 @@ export interface NewEventSheetProps {
   now?: Date;
   /** Fired after a successful create. */
   onCreated?: () => void;
+  /** Set to edit this event instead of creating one. */
+  editing?: EventEditTarget;
+  /**
+   * Fired after an edit saves. `leave` says the event on screen may have been
+   * replaced by the save, so the host should go back to the list.
+   */
+  onSaved?: (result: { leave: boolean }) => void;
+  /** Fired after the event is deleted from the sheet. */
+  onDeleted?: () => void;
 }
 
 /**
@@ -120,13 +157,49 @@ export function useCanCreateEvents(): boolean {
   return canAll(CREATE_EVENT_PERMISSIONS, usePermissionList());
 }
 
+/** Whether the viewer may edit, and delete, any event in the chapter. */
+export function useEventEditGrants(): { edit: boolean; delete: boolean } {
+  const permissions = usePermissionList();
+  return {
+    edit: canAll(EDIT_EVENT_PERMISSIONS, permissions),
+    delete: canAll(DELETE_EVENT_PERMISSIONS, permissions),
+  };
+}
+
+/**
+ * Calendar's question for a repeating event, as the platform's own alert.
+ * Resolves `null` on Cancel.
+ */
+function askSeriesScope(copy: {
+  title: string;
+  message: string;
+  seriesDestructive?: boolean;
+}): Promise<EventEditScope | null> {
+  return new Promise((resolve) => {
+    Alert.alert(
+      copy.title,
+      copy.message,
+      [
+        { text: "This event only", onPress: () => resolve("instance") },
+        {
+          text: "All upcoming events",
+          style: copy.seriesDestructive ? "destructive" : "default",
+          onPress: () => resolve("series"),
+        },
+        { text: "Cancel", style: "cancel", onPress: () => resolve(null) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(null) },
+    );
+  });
+}
+
 const GATE_COPY = {
   subscription: SUBSCRIPTION_REFUSAL_COPY.event,
   module: MODULE_REFUSAL_COPY.event,
 };
 
 export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
-  function NewEventSheet({ now, onCreated }, ref) {
+  function NewEventSheet({ now, onCreated, editing, onSaved, onDeleted }, ref) {
     const { tokens } = useFrappTheme();
     const brand = useChapterBranding();
     const styles = createStyles(tokens, brand);
@@ -135,6 +208,9 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
       useSheetVisit(ref);
     const createEvent = useCreateEvent();
+    const updateEvent = useUpdateEvent();
+    const deleteEvent = useDeleteEvent();
+    const grants = useEventEditGrants();
     const attendanceRef = useRef<BottomSheetModal>(null);
     const rolesQuery = useRoles();
     const roleName = useMemo(() => {
@@ -145,7 +221,11 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     }, [rolesQuery.data]);
 
     const at = useMemo(() => now ?? new Date(), [now]);
-    const [draft, setDraft] = useState<NewEventDraft>(emptyEventDraft);
+    const freshDraft = useCallback(
+      () => (editing ? draftFromEvent(editing) : emptyEventDraft()),
+      [editing],
+    );
+    const [draft, setDraft] = useState<NewEventDraft>(freshDraft);
     const [focused, setFocused] = useState<
       "name" | "location" | "points" | "description" | null
     >(null);
@@ -156,8 +236,13 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     const [refusal, setRefusal] = useState<string | null>(null);
     const sending = useRef(false);
 
-    const pending = createEvent.isPending;
+    const pending =
+      createEvent.isPending || updateEvent.isPending || deleteEvent.isPending;
     const { start, end } = resolveEventTimes(draft, at);
+    // An event already under way may keep its start, so the pickers' floor
+    // is the earlier of now and where it starts.
+    const originalStart = editing ? new Date(editing.event.start_time) : null;
+    const startFloor = originalStart && originalStart < at ? originalStart : at;
     const canSubmit = !pending && refusal === null;
 
     const update = useCallback(
@@ -185,12 +270,12 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     }
 
     const reset = useCallback(() => {
-      setDraft(emptyEventDraft());
+      setDraft(freshDraft());
       setFocused(null);
       setErrors({});
       setSubmitFailed(false);
       setRefusal(null);
-    }, []);
+    }, [freshDraft]);
 
     /** A swipe or scrim close: the draft stays, the visit's state goes. */
     const closed = useCallback(() => {
@@ -206,8 +291,129 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       dismiss();
     }, [reset, dismiss]);
 
+    async function saveEdit(target: EventEditTarget) {
+      const result = validateEventEdit(
+        { ...draft, start, end },
+        target,
+        new Date(),
+      );
+      if (!result.ok) {
+        setErrors(result.errors);
+        if (result.errors.points || result.errors.attendance) {
+          setDraft((previous) => ({ ...previous, showMore: true }));
+        }
+        return;
+      }
+      setErrors({});
+      // Nothing changed: there is nothing to send, and nobody to notify.
+      if (isEmptyPatch(result.patch)) {
+        reset();
+        dismiss();
+        return;
+      }
+      Keyboard.dismiss();
+      let scope = saveScopeFor(target, result.patch);
+      if (scope === "ask") {
+        sending.current = true;
+        const picked = await askSeriesScope({
+          title: "This is a repeating event",
+          message:
+            "Save your changes to this event only, or to every upcoming event in the series?",
+        });
+        sending.current = false;
+        if (!picked) return;
+        scope = picked;
+      }
+      const request = saveRequestFor(target, result.patch, scope);
+      sending.current = true;
+      setSubmitFailed(false);
+      setRefusal(null);
+      const sentFrom = visit();
+      updateEvent.mutate(
+        { id: request.id, body: { ...request.body, scope: request.scope } },
+        {
+          onSuccess: (saved) => {
+            sending.current = false;
+            successHaptic();
+            const savedId =
+              saved && typeof saved === "object" && "id" in saved
+                ? String((saved as { id: unknown }).id)
+                : null;
+            if (isSameVisit(sentFrom)) dismiss();
+            onSaved?.({ leave: leavesAfterSave(request, target, savedId) });
+          },
+          onError: (error) => {
+            sending.current = false;
+            if (!isSameVisit(sentFrom)) return;
+            const gated = gateRefusalOf(error, GATE_COPY);
+            if (gated) setRefusal(gated);
+            else setSubmitFailed(true);
+          },
+        },
+      );
+    }
+
+    async function confirmDelete(target: EventEditTarget) {
+      if (pending || sending.current) return;
+      Keyboard.dismiss();
+      let scope: EventEditScope | null;
+      sending.current = true;
+      if (isInSeries(target.event)) {
+        scope = await askSeriesScope({
+          title: "Delete a repeating event",
+          message:
+            "Delete this event only, or every upcoming event in the series? Events that already happened stay.",
+          seriesDestructive: true,
+        });
+      } else {
+        scope = await new Promise<EventEditScope | null>((resolve) => {
+          Alert.alert(
+            "Delete this event?",
+            "It comes off the chapter's calendar for everyone.",
+            [
+              { text: "Cancel", style: "cancel", onPress: () => resolve(null) },
+              {
+                text: "Delete",
+                style: "destructive",
+                onPress: () => resolve("instance"),
+              },
+            ],
+            { cancelable: true, onDismiss: () => resolve(null) },
+          );
+        });
+      }
+      sending.current = false;
+      if (!scope) return;
+      sending.current = true;
+      setSubmitFailed(false);
+      setRefusal(null);
+      const sentFrom = visit();
+      deleteEvent.mutate(
+        { id: target.event.id, scope },
+        {
+          onSuccess: () => {
+            sending.current = false;
+            successHaptic();
+            if (isSameVisit(sentFrom)) dismiss();
+            onDeleted?.();
+          },
+          onError: (error) => {
+            sending.current = false;
+            if (!isSameVisit(sentFrom)) return;
+            const gated = gateRefusalOf(error, GATE_COPY);
+            if (gated) setRefusal(gated);
+            else setSubmitFailed(true);
+          },
+        },
+      );
+    }
+
     function submit() {
       if (!canSubmit || sending.current) return;
+      if (editing) {
+        void saveEdit(editing);
+        return;
+      }
       // Send the times on screen, read against the real clock (the host's
       // ticks every 30 seconds): an unpicked default resolved again here
       // could land on tomorrow while the sheet still shows today.
@@ -245,7 +451,14 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       });
     }
 
-    const repeatNote = repeatCaption(start, draft.recurrenceRule);
+    // An existing series' length was set when it was made; the line comes
+    // back only when the officer changes Repeat and the series is rebuilt.
+    const repeatNote =
+      editing && draft.recurrenceRule === editing.seriesRule
+        ? null
+        : repeatCaption(start, draft.recurrenceRule);
+    const repeatUnknown =
+      !!editing?.event.parent_event_id && editing.parent === null;
 
     return (
       <>
@@ -266,7 +479,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
             keyboardShouldPersistTaps="handled"
           >
             <SheetHeader
-              title="New event"
+              title={editing ? "Edit event" : "New event"}
               onCancel={cancel}
               cancelDisabled={pending}
             />
@@ -303,7 +516,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                 label="Starts"
                 value={start}
                 now={at}
-                minimumDate={at}
+                minimumDate={startFloor}
                 disabled={pending}
                 onChange={setStart}
               />
@@ -409,23 +622,31 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                   <Text style={styles.error}>{errors.points}</Text>
                 ) : null}
 
-                <Text style={styles.sectionLabel}>Repeat</Text>
-                <FilterChips
-                  chips={REPEAT_CHIPS}
-                  selected={draft.recurrenceRule ?? NEVER}
-                  onSelect={(value) =>
-                    update(
-                      {
-                        recurrenceRule: isRecurrenceRule(value) ? value : null,
-                      },
-                      [],
-                    )
-                  }
-                  accessibilityLabel="Repeat"
-                />
-                {repeatNote ? (
-                  <Text style={styles.caption}>{repeatNote}</Text>
-                ) : null}
+                {/* A generated occurrence whose series couldn't be read
+                    doesn't know its rule, so it doesn't offer to change it. */}
+                {repeatUnknown ? null : (
+                  <>
+                    <Text style={styles.sectionLabel}>Repeat</Text>
+                    <FilterChips
+                      chips={REPEAT_CHIPS}
+                      selected={draft.recurrenceRule ?? NEVER}
+                      onSelect={(value) =>
+                        update(
+                          {
+                            recurrenceRule: isRecurrenceRule(value)
+                              ? value
+                              : null,
+                          },
+                          [],
+                        )
+                      }
+                      accessibilityLabel="Repeat"
+                    />
+                    {repeatNote ? (
+                      <Text style={styles.caption}>{repeatNote}</Text>
+                    ) : null}
+                  </>
+                )}
 
                 <View
                   style={[
@@ -456,18 +677,43 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
             {refusal ? <Text style={styles.error}>{refusal}</Text> : null}
             {submitFailed ? (
               <Text style={styles.error}>
-                That didn&apos;t save. Your event is still here, so try again.
+                That didn&apos;t save. Your{" "}
+                {editing ? "changes are" : "event is"} still here, so try again.
               </Text>
             ) : null}
 
             <SheetPrimaryButton
-              label={pending ? "Creating…" : "Create event"}
+              label={
+                editing
+                  ? updateEvent.isPending
+                    ? "Saving…"
+                    : "Save changes"
+                  : pending
+                    ? "Creating…"
+                    : "Create event"
+              }
               onPress={submit}
               disabled={!canSubmit}
               accessibilityHint={refusal ?? undefined}
               accent={brand.accent}
               onAccent={tokens.color.gold.onHouse}
             />
+
+            {editing && grants.delete ? (
+              // Quiet, and last: a couple of taps away and never next to Save.
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Delete event"
+                accessibilityState={{ disabled: pending }}
+                disabled={pending}
+                onPress={() => void confirmDelete(editing)}
+                style={styles.deleteRow}
+              >
+                <Text style={styles.deleteText}>
+                  {deleteEvent.isPending ? "Deleting…" : "Delete event"}
+                </Text>
+              </Pressable>
+            ) : null}
           </BottomSheetScrollView>
         </BottomSheetModal>
 
@@ -770,6 +1016,16 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     error: {
       ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
+    },
+    deleteRow: {
+      alignSelf: "center",
+      minHeight: tokens.touch.minimum,
+      justifyContent: "center",
+      paddingHorizontal: tokens.spacing.md,
+    },
+    deleteText: {
+      ...typeRole(tokens.typography.role.label),
       color: tokens.color.semantic.destructive,
     },
   });
