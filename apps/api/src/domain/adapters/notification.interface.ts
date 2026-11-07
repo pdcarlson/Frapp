@@ -12,6 +12,14 @@ export interface PushPayload {
    * records be sliced by category (`spec/behavior/observability.md`).
    */
   category?: string;
+  /**
+   * What the phone stacks this push with. iOS groups every push sharing a
+   * `threadId` into one stack in Notification Center (`aps.thread-id`); Android
+   * ignores it. Chat pushes set it per channel, so a DM stacks per person and a
+   * channel per channel (`spec/behavior/notifications.md` § Grouping and
+   * clearing). Absent, iOS stacks the push with the app's others.
+   */
+  threadId?: string;
 }
 
 export interface SendToUserResult {

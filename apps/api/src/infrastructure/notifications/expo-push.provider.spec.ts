@@ -131,6 +131,24 @@ describe('ExpoPushProvider', () => {
         category: 'default',
       });
     });
+
+    it('sends threadId as the iOS stack, and leaves it off when unset', async () => {
+      mockSendPushNotificationsAsync.mockResolvedValue([
+        { status: 'ok', id: 'r-1' },
+      ]);
+
+      await provider.sendToUser([VALID_A], {
+        title: 'Hi',
+        body: 'There',
+        threadId: 'chat:channel-1',
+      });
+      await provider.sendToUser([VALID_A], { title: 'Hi', body: 'There' });
+
+      const [[stacked], [plain]] = mockSendPushNotificationsAsync.mock
+        .calls as [Record<string, unknown>[]][];
+      expect(stacked[0]).toMatchObject({ threadId: 'chat:channel-1' });
+      expect(plain[0]).not.toHaveProperty('threadId');
+    });
   });
 
   describe('ticket errors', () => {
