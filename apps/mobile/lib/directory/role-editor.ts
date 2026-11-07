@@ -127,5 +127,24 @@ export function removeBaseAccessBody(name: string): string {
 }
 
 export const ROLES_SAVE_FAILED_TITLE = "Couldn't save roles";
-export const ROLES_SAVE_FAILED_BODY =
-  "That change didn't reach the server, so it was put back. Try again.";
+
+/**
+ * Why a save failed, by the API's answer: a 400 is a role deleted since the
+ * list loaded, a 403 a viewer who can no longer edit roles (for one, an
+ * officer who just took away their own). Neither is fixed by trying again.
+ */
+export function rolesSaveFailedBody(status: number | undefined): string {
+  if (status === 400) {
+    return "One of those roles was just deleted. The list has been refreshed and the change put back.";
+  }
+  if (status === 403) {
+    return "You can no longer change roles, so the change was put back.";
+  }
+  return "That change didn't reach the server, so it was put back. Try again.";
+}
+
+/** Custom roles keep their own editor on the web; this one changes `role_ids`. */
+export function customRolesCaption(names: readonly string[]): string | null {
+  if (names.length === 0) return null;
+  return `${names.join(", ")} ${names.length === 1 ? "is a custom role" : "are custom roles"}, changed on the web.`;
+}

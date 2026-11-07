@@ -6,7 +6,8 @@ import {
   BottomSheetTextInput,
 } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
-import { useUpdateMemberRoles } from "@repo/hooks";
+import { statusOf } from "@repo/api-sdk";
+import { useRoles, useUpdateMemberRoles } from "@repo/hooks";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
@@ -26,8 +27,9 @@ import {
   removeBaseAccessBody,
   removeBaseAccessTitle,
   removesBaseAccess,
+  customRolesCaption,
   ROLES_LOCKED_CAPTION,
-  ROLES_SAVE_FAILED_BODY,
+  rolesSaveFailedBody,
   ROLES_SAVE_FAILED_TITLE,
   toggleRole,
   type RoleOption,
@@ -53,6 +55,8 @@ export interface MemberRolesSession {
   memberId: string;
   name: string;
   heldIds: string[];
+  /** Custom-role labels the member holds, which this editor leaves alone. */
+  customRoleNames: string[];
 }
 
 export interface MemberRolesSheetProps {
@@ -74,6 +78,7 @@ export const MemberRolesSheet = forwardRef<
   const tallSheet = useTallSheetProps();
   const closeSheet = useSheetClose(ref);
   const updateRoles = useUpdateMemberRoles();
+  const rolesQuery = useRoles();
 
   const [draft, setDraft] = useState<string[]>([]);
   const [search, setSearch] = useState("");
@@ -86,7 +91,8 @@ export const MemberRolesSheet = forwardRef<
   const confirmedRef = useRef<string[]>([]);
   const inFlightRef = useRef(false);
   const queuedRef = useRef<string[] | null>(null);
-  const sessionRef = useRef(session);
+  // Set by the opening effect, so the first opening is never "the same member".
+  const sessionRef = useRef<MemberRolesSession | null>(null);
   // The set the next tap starts from, so two taps inside one render don't
   // both start from the same stale `draft`.
   const draftRef = useRef<string[]>([]);
@@ -94,18 +100,28 @@ export const MemberRolesSheet = forwardRef<
   // Each opening starts from the member's roles; edits must not leak across
   // members.
   useEffect(() => {
+    const previous = sessionRef.current;
     sessionRef.current = session;
-    queuedRef.current = null;
-    // A save still out for the previous member finishes on its own; it no
-    // longer holds this one's queue.
-    inFlightRef.current = false;
     if (!session) return;
-    confirmedRef.current = session.heldIds;
-    draftRef.current = session.heldIds;
-    setDraft(session.heldIds);
+    // Reopened on the same member: their profile can still hold the roles
+    // from before the last save (the save, or its refetch, may not have
+    // landed), so start from what this sheet last sent and keep its queue.
+    // Starting over from the profile would send the old set on the next tap
+    // and quietly undo the save.
+    const sameMember = previous?.memberId === session.memberId;
+    const start = sameMember ? draftRef.current : session.heldIds;
+    if (!sameMember) {
+      // A save still out for the previous member finishes on its own; it no
+      // longer holds this one's queue.
+      queuedRef.current = null;
+      inFlightRef.current = false;
+      confirmedRef.current = session.heldIds;
+    }
+    draftRef.current = start;
+    setDraft(start);
     setSearch("");
-    setStatus("idle");
-    setOrderedIds(orderRoleOptions(options, session.heldIds).map((o) => o.id));
+    if (!inFlightRef.current) setStatus("idle");
+    setOrderedIds(orderRoleOptions(options, start).map((o) => o.id));
     // `options` is read for the opening order only, so a roles refetch while
     // the sheet is open doesn't reshuffle the rows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -140,7 +156,7 @@ export const MemberRolesSheet = forwardRef<
           id: owner.memberId,
           role_ids: current,
         });
-        if (sessionRef.current !== owner) return;
+        if (sessionRef.current?.memberId !== owner.memberId) return;
         confirmedRef.current = current;
         const next = queuedRef.current;
         queuedRef.current = null;
@@ -148,15 +164,19 @@ export const MemberRolesSheet = forwardRef<
         current = next;
       }
       setStatus("saved");
-    } catch {
-      if (sessionRef.current !== owner) return;
+    } catch (caught) {
+      if (sessionRef.current?.memberId !== owner.memberId) return;
       queuedRef.current = null;
       draftRef.current = confirmedRef.current;
       setDraft(confirmedRef.current);
       setStatus("idle");
-      Alert.alert(ROLES_SAVE_FAILED_TITLE, ROLES_SAVE_FAILED_BODY);
+      const status = statusOf(caught);
+      if (status === 400) void rolesQuery.refetch();
+      Alert.alert(ROLES_SAVE_FAILED_TITLE, rolesSaveFailedBody(status));
     } finally {
-      if (sessionRef.current === owner) inFlightRef.current = false;
+      if (sessionRef.current?.memberId === owner.memberId) {
+        inFlightRef.current = false;
+      }
     }
   }
 
@@ -183,7 +203,9 @@ export const MemberRolesSheet = forwardRef<
           {
             text: `Remove ${option.name}`,
             style: "destructive",
-            onPress: () => apply(next),
+            // Recomputed on confirm: a save that failed while the alert was
+            // up has put the list back, and this must not resend it.
+            onPress: () => apply(toggleRole(draftRef.current, option.id)),
           },
         ],
       );
@@ -198,6 +220,8 @@ export const MemberRolesSheet = forwardRef<
       : status === "saved"
         ? "Saved"
         : "Tap a role to add or remove it.";
+
+  const customCaption = customRolesCaption(session?.customRoleNames ?? []);
 
   return (
     <BottomSheetModal
@@ -242,6 +266,9 @@ export const MemberRolesSheet = forwardRef<
             >
               {statusText}
             </Text>
+            {customCaption ? (
+              <Text style={styles.status}>{customCaption}</Text>
+            ) : null}
           </View>
         }
         ListEmptyComponent={

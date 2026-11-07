@@ -17,11 +17,15 @@ import {
  * puts the list back, and taking away basic access asks first.
  */
 
-const state = vi.hoisted(() => ({ mutateAsync: vi.fn() }));
+const state = vi.hoisted(() => ({
+  mutateAsync: vi.fn(),
+  refetchRoles: vi.fn(),
+}));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => ({ data: undefined }),
+  useRoles: () => ({ refetch: state.refetchRoles }),
   useUpdateMemberRoles: () => ({
     mutateAsync: state.mutateAsync,
     isPending: false,
@@ -41,16 +45,21 @@ const SESSION = {
   memberId: "m-ada",
   name: "Ada",
   heldIds: ["r-brothers", "r-member"],
+  customRoleNames: [] as string[],
 };
+
+function sheet(session: typeof SESSION) {
+  return (
+    <FrappThemeProvider>
+      <MemberRolesSheet session={session} options={OPTIONS} />
+    </FrappThemeProvider>
+  );
+}
 
 function render(): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(
-      <FrappThemeProvider>
-        <MemberRolesSheet session={SESSION} options={OPTIONS} />
-      </FrappThemeProvider>,
-    );
+    tree = create(sheet(SESSION));
   });
   return tree;
 }
@@ -181,6 +190,31 @@ describe("MemberRolesSheet", () => {
     )!;
     act(() => input.props.onChangeText?.("cab"));
     expect(shownIds(tree)).toEqual(["r-cabinet"]);
+    act(() => tree.unmount());
+  });
+
+  it("reopened on the same member, starts from what it last sent, not the stale profile", async () => {
+    const tree = render();
+    await tap(tree, "r-cabinet");
+    // The profile still shows the roles from before the save.
+    act(() => tree.update(sheet({ ...SESSION })));
+    expect(row(tree, "r-cabinet").props.accessibilityState.checked).toBe(true);
+    await tap(tree, "r-brothers");
+    expect(state.mutateAsync).toHaveBeenLastCalledWith({
+      id: "m-ada",
+      role_ids: ["r-member", "r-cabinet"],
+    });
+    act(() => tree.unmount());
+  });
+
+  it("says a deleted role, not a network problem, on a 400, and re-reads the roles", async () => {
+    state.mutateAsync.mockRejectedValueOnce({ status: 400 });
+    const tree = render();
+    await tap(tree, "r-cabinet");
+    expect(state.refetchRoles).toHaveBeenCalled();
+    expect(vi.mocked(Alert.alert).mock.calls.at(-1)?.[1]).toContain(
+      "just deleted",
+    );
     act(() => tree.unmount());
   });
 });

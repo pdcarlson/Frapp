@@ -4,7 +4,9 @@ import {
   hasBaseAccess,
   orderRoleOptions,
   parseRoleOptions,
+  customRolesCaption,
   removesBaseAccess,
+  rolesSaveFailedBody,
   toggleRole,
 } from "./role-editor";
 
@@ -132,5 +134,22 @@ describe("base access", () => {
     expect(
       removesBaseAccess(["r-brothers", "r-cabinet"], ["r-brothers"], options),
     ).toBe(false);
+  });
+});
+
+describe("rolesSaveFailedBody", () => {
+  it("only offers a retry when trying again could work", () => {
+    expect(rolesSaveFailedBody(400)).toContain("deleted");
+    expect(rolesSaveFailedBody(403)).toContain("no longer change roles");
+    expect(rolesSaveFailedBody(undefined)).toContain("Try again");
+  });
+});
+
+describe("customRolesCaption", () => {
+  it("names the custom roles this editor leaves alone", () => {
+    expect(customRolesCaption([])).toBeNull();
+    expect(customRolesCaption(["Rush Chair"])).toBe(
+      "Rush Chair is a custom role, changed on the web.",
+    );
   });
 });

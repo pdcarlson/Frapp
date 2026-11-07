@@ -603,6 +603,7 @@ describe("MemberDetailSheet Roles row", () => {
       memberId: `m-${ADA}`,
       name: "Ada",
       heldIds: [],
+      customRoleNames: [],
     });
     act(() => tree.unmount());
     state.permissions = [];

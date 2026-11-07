@@ -288,6 +288,11 @@ export function useUpdateMemberRoles() {
       // Alumni list still lacks them, so for up to a minute they'd be on
       // neither tab.
       queryClient.invalidateQueries({ queryKey: ["alumni", chapterId] });
+      // An officer editing their own roles can change what they may do, so
+      // their permission list is re-read rather than kept for its stale time.
+      queryClient.invalidateQueries({
+        queryKey: ["user", "me", "permissions", chapterId],
+      });
     },
   });
 }

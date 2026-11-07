@@ -334,6 +334,7 @@ export const MemberDetailSheet = forwardRef<
                             memberId: member?.memberId ?? "",
                             name: detail.displayName,
                             heldIds: detail.roleIds,
+                          customRoleNames,
                           });
                           rolesSheetRef.current?.present();
                         }
