@@ -2,6 +2,11 @@
 
 import { describeLoadFailure } from "@repo/api-sdk";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  CHANNELS_ROLE_REFUSAL_TITLE,
+  channelsRoleRefusalBody,
+  isRoleRefusal,
+} from "@repo/chat-core/channels-refused-copy";
 import { createPortal } from "react-dom";
 import { MembersGlyph } from "./chat-glyphs";
 import { ChannelMemberList } from "./channel-member-list";
@@ -2083,9 +2088,22 @@ export function ChatShell({
         ) : null}
         {channelsPaneState === "error" ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            {/*
+              A refusal by role is not a load failure (2026-11-07: testers
+              invited as a Discord-imported role with only a channel
+              permission). The words are shared with mobile Chat home.
+            */}
             <ErrorState
-              title="Couldn't load channels"
-              description={describeLoadFailure(channelsQuery.error)}
+              title={
+                isRoleRefusal(channelsQuery.error)
+                  ? CHANNELS_ROLE_REFUSAL_TITLE
+                  : "Couldn't load channels"
+              }
+              description={
+                isRoleRefusal(channelsQuery.error)
+                  ? channelsRoleRefusalBody(null)
+                  : describeLoadFailure(channelsQuery.error)
+              }
               onRetry={() => void channelsQuery.refetch()}
             />
           </div>

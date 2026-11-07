@@ -128,6 +128,7 @@ const {
       isError: boolean;
       isFetching: boolean;
       isSuccess?: boolean;
+      error?: unknown;
       refetch: ReturnType<typeof vi.fn>;
     },
   },
@@ -288,6 +289,8 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import ChatHomeScreen from "@/app/(tabs)/index";
+import * as Sentry from "@sentry/react-native";
+import { resetChannelsRefusedReport } from "@/lib/chat/channels-error";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   resetChatLaunchForTests,
@@ -1256,6 +1259,38 @@ describe("Chat home loading and error states", () => {
       retry.props.onPress();
     });
     expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("says a refused list is about the member's role, not the network", () => {
+    channelsState.value = {
+      ...channelsState.value,
+      isError: true,
+      error: Object.assign(new Error("Forbidden"), { status: 403 }),
+    };
+    const tree = render();
+
+    const error = tree.root.findByType(ErrorState);
+    expect(error.props.title).toBe("Chat isn't open to you yet");
+    expect(error.props.body).toContain(
+      "Ask an officer to give you the Member role",
+    );
+    expect(error.props.body).not.toContain("reach the server");
+  });
+
+  it("reports a refusal by role to Sentry", () => {
+    resetChannelsRefusedReport();
+    vi.mocked(Sentry.captureMessage).mockClear();
+    channelsState.value = {
+      ...channelsState.value,
+      isError: true,
+      error: Object.assign(new Error("Forbidden"), { status: 403 }),
+    };
+    render();
+
+    expect(Sentry.captureMessage).toHaveBeenCalledWith(
+      "Chat home: channel list refused by role (403)",
+      expect.objectContaining({ level: "warning" }),
+    );
   });
 
   it("says Retrying… and holds the control while a retry is in flight", () => {
