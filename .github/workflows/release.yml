@@ -324,6 +324,13 @@ jobs:
             fi
             echo ""
             echo "Deployed commit: \`$SHA\`"
+            # This tag counts web + API deploys. The store version is its own
+            # number (`mobile-vX.Y.Z` tags, mint-mobile-release-tags.mjs).
+            APP_VERSION=$(node -p 'require("./apps/mobile/app.json").expo.version' 2>/dev/null || true)
+            if [ -n "$APP_VERSION" ]; then
+              echo ""
+              echo "Web and API release. Mobile app version in this commit: $APP_VERSION. Store builds are tagged \`mobile-vX.Y.Z\`."
+            fi
           } > /tmp/changelog.md
 
           cat /tmp/changelog.md
