@@ -547,7 +547,6 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Channel header (web: `# <name> • <description>` on one line, the description muted and truncated; mobile: the description on a muted line under the name) | — | The channel's own description. The four default channels start with `The whole chapter. Plans, questions, whatever's going on.` (#general), `News from officers. Everyone gets notified.` (#announcements), `Officer changes to dues, roles and settings, posted automatically.` (#chapter-audit) and `Alumni and actives keeping in touch.` (#alumni), from `DEFAULT_CHANNELS` |
 | Error | `Couldn't load channels` / `Couldn't load messages` | `Confirm your chapter access and retry.` |
 | Channel list refused by role (a 403 with no `chapter.*` code; both clients, `@repo/chat-core/channels-refused-copy`) | `Chat isn't open to you yet` | `Your role in <chapter> doesn't include chat. Ask an officer to give you the Member role.` (`this chapter` until the name loads). A `chapter.*` 403 keeps the error row above |
-| Removing a member's last role with basic access (mobile role editor, `apps/mobile/lib/directory/role-editor.ts`) | `Take away <name>'s access?` | `Without a role like Member, <name> can't open chat, the member list or events.` Buttons `Cancel` and `Remove <role>`. A failed save reads `Couldn't save roles` / `That change didn't reach the server, so it was put back. Try again.` |
 | Read-only channel | — | `This channel is read-only for your role.` (mobile still quotes the permission key, [#3422](https://github.com/pdcarlson/Frapp/issues/3422)) |
 | Alumni-restricted channel | — | `Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.` |
 | Archived conversation (mobile only: a Group DM everyone else left, #348; web's channel list leaves archived channels out) | — | `This conversation is archived because everyone else left. You can still read it.` |
@@ -920,6 +919,26 @@ Reply, Edit and Delete on a message (#2775). Who is offered which is owned by
 | Edited marker | — | `(edited)` after the message's last line, on every row, grouped or not, and not on a deleted message. On a card it goes on a line under the card. The behavior is [`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Edit and delete; the placement is [`components.md`](components.md) §11 § What rides the row | `@repo/chat-core/message-actions` (`EDITED_MARKER`, `showsEditedMarker`) |
 | Link wouldn't open | `Couldn't open that link` | `Check the address in the message, or copy it into your browser.` (an alert) | mobile `lib/chat/open-link.ts` |
 | Link, to a screen reader | — | `Open <link text>` as a named action on the message; a quote's jump reads `Go to the original message` | mobile `components/chat/message-markdown.tsx`, `components/chat/message-item.tsx` |
+
+### Edit roles (mobile s13)
+
+The role editor behind the directory member sheet's Roles row, the one place on mobile
+roles are edited. Who gets it, and what it changes, is owned by
+[`../mobile/screens.md`](../mobile/screens.md) s13.
+
+| State | Title | Description | Home |
+|---|---|---|---|
+| The sheet | `<name>'s roles` | Search field `Search roles`; under it one fixed-height status line: `Tap a role to add or remove it.`, then `Saving…` and `Saved` | mobile `components/directory/member-roles-sheet.tsx` |
+| President's row | — | `Changes with Transfer presidency` under the name; the row can't be tapped | mobile `lib/directory/role-editor.ts` (`ROLES_LOCKED_CAPTION`) |
+| Custom roles held | — | `<names> is a custom role, changed on the web.` (`are custom roles` for several) | mobile `lib/directory/role-editor.ts` (`customRolesCaption`) |
+| Empty | — | `This chapter has no roles yet.`, or `No roles match that search.` while searching | mobile `components/directory/member-roles-sheet.tsx` |
+| Removing the last role carrying `members:view` | `Take away <name>'s access?` | `Without a role like Member, <name> can't open chat, the member list or events.` Buttons `Cancel` and `Remove <role>` | mobile `lib/directory/role-editor.ts` (`removeBaseAccessTitle`, `removeBaseAccessBody`) |
+| Save failed: a role was deleted (400) | `Couldn't save roles` | `One of those roles was just deleted. The change was put back and the list refreshed.` | mobile `lib/directory/role-editor.ts` (`rolesSaveFailedBody`) |
+| Save failed: not allowed (403) | `Couldn't save roles` | `The change isn't allowed any more, so it was put back.` | same |
+| Save failed: anything else | `Couldn't save roles` | `The change didn't reach the server, so it was put back. Try again.` | same |
+
+When the officer has already opened someone else, a failed save still alerts, and
+`The change` reads `Your change to <name>'s roles`, so no change is lost without a word.
 
 ### Start a DM (mobile s13)
 

@@ -57,6 +57,21 @@ export interface MemberRolesSession {
   heldIds: string[];
   /** Custom-role labels the member holds, which this editor leaves alone. */
   customRoleNames: string[];
+  /** When the profile holding `heldIds` was fetched (ms since epoch). */
+  fetchedAt: number;
+}
+
+interface SaveLine {
+  name: string;
+  /** What the server last confirmed. */
+  confirmed: string[];
+  /** The newest set this sheet chose, sent or waiting. */
+  latest: string[];
+  /** The newest set waiting behind the save in flight. */
+  queued: string[] | null;
+  inFlight: boolean;
+  /** When the last save landed (ms since epoch), 0 for none. */
+  savedAt: number;
 }
 
 export interface MemberRolesSheetProps {
@@ -85,42 +100,46 @@ export const MemberRolesSheet = forwardRef<
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [orderedIds, setOrderedIds] = useState<string[]>([]);
 
-  // What the server last confirmed, the save in flight, and the newest set
-  // waiting behind it. Refs, because a save's continuation must see the
-  // latest values rather than the render it started in.
-  const confirmedRef = useRef<string[]>([]);
-  const inFlightRef = useRef(false);
-  const queuedRef = useRef<string[] | null>(null);
-  // Set by the opening effect, so the first opening is never "the same member".
+  // One save line per member, kept across openings, so a save still out when
+  // the officer moves to someone else finishes (or fails out loud) on its own,
+  // and coming back joins it rather than starting a second one. Refs, because
+  // a save's continuation must see the latest values rather than the render it
+  // started in.
+  const linesRef = useRef(new Map<string, SaveLine>());
+  // Set by the opening effect; a save updates the screen only while its
+  // member is the one shown.
   const sessionRef = useRef<MemberRolesSession | null>(null);
   // The set the next tap starts from, so two taps inside one render don't
   // both start from the same stale `draft`.
   const draftRef = useRef<string[]>([]);
 
-  // Each opening starts from the member's roles; edits must not leak across
-  // members.
   useEffect(() => {
-    const previous = sessionRef.current;
     sessionRef.current = session;
     if (!session) return;
-    // Reopened on the same member: their profile can still hold the roles
-    // from before the last save (the save, or its refetch, may not have
-    // landed), so start from what this sheet last sent and keep its queue.
-    // Starting over from the profile would send the old set on the next tap
-    // and quietly undo the save.
-    const sameMember = previous?.memberId === session.memberId;
-    const start = sameMember ? draftRef.current : session.heldIds;
-    if (!sameMember) {
-      // A save still out for the previous member finishes on its own; it no
-      // longer holds this one's queue.
-      queuedRef.current = null;
-      inFlightRef.current = false;
-      confirmedRef.current = session.heldIds;
+    const line = linesRef.current.get(session.memberId);
+    // The profile can predate this sheet's last save (the save, or its
+    // refetch, may not have landed), so while a save is out, or the profile
+    // was fetched before the last one landed, start from what this sheet
+    // sent. Otherwise the profile is newer, and starting from it keeps a
+    // change made elsewhere (on the web, by another officer) from being sent
+    // back over.
+    const keep =
+      line !== undefined && (line.inFlight || line.savedAt > session.fetchedAt);
+    const start = keep ? line.latest : session.heldIds;
+    if (!keep) {
+      linesRef.current.set(session.memberId, {
+        name: session.name,
+        confirmed: session.heldIds,
+        latest: session.heldIds,
+        queued: null,
+        inFlight: false,
+        savedAt: 0,
+      });
     }
     draftRef.current = start;
     setDraft(start);
     setSearch("");
-    if (!inFlightRef.current) setStatus("idle");
+    setStatus(keep && line.inFlight ? "saving" : "idle");
     setOrderedIds(orderRoleOptions(options, start).map((o) => o.id));
     // `options` is read for the opening order only, so a roles refetch while
     // the sheet is open doesn't reshuffle the rows.
@@ -142,52 +161,58 @@ export const MemberRolesSheet = forwardRef<
   );
   const held = useMemo(() => new Set(draft), [draft]);
 
-  async function send(ids: string[]) {
-    const owner = sessionRef.current;
-    if (!owner) return;
-    inFlightRef.current = true;
-    setStatus("saving");
+  const isShown = (memberId: string) =>
+    sessionRef.current?.memberId === memberId;
+
+  async function send(memberId: string, line: SaveLine, ids: string[]) {
+    line.inFlight = true;
+    if (isShown(memberId)) setStatus("saving");
     let current = ids;
     try {
-      // Taps that land while a save is out wait in `queuedRef`; only the
-      // newest set is sent next, since each save carries the whole list.
+      // Taps that land while a save is out wait in `queued`; only the newest
+      // set is sent next, since each save carries the whole list.
       for (;;) {
-        await updateRoles.mutateAsync({
-          id: owner.memberId,
-          role_ids: current,
-        });
-        if (sessionRef.current?.memberId !== owner.memberId) return;
-        confirmedRef.current = current;
-        const next = queuedRef.current;
-        queuedRef.current = null;
+        await updateRoles.mutateAsync({ id: memberId, role_ids: current });
+        line.confirmed = current;
+        line.savedAt = Date.now();
+        const next = line.queued;
+        line.queued = null;
         if (!next) break;
         current = next;
       }
-      setStatus("saved");
+      if (isShown(memberId)) setStatus("saved");
     } catch (caught) {
-      if (sessionRef.current?.memberId !== owner.memberId) return;
-      queuedRef.current = null;
-      draftRef.current = confirmedRef.current;
-      setDraft(confirmedRef.current);
-      setStatus("idle");
+      line.queued = null;
+      line.latest = line.confirmed;
+      if (isShown(memberId)) {
+        draftRef.current = line.confirmed;
+        setDraft(line.confirmed);
+        setStatus("idle");
+      }
       const status = statusOf(caught);
       if (status === 400) void rolesQuery.refetch();
-      Alert.alert(ROLES_SAVE_FAILED_TITLE, rolesSaveFailedBody(status));
+      // Said even when the officer has moved on, so no change is lost quietly.
+      Alert.alert(
+        ROLES_SAVE_FAILED_TITLE,
+        rolesSaveFailedBody(status, isShown(memberId) ? null : line.name),
+      );
     } finally {
-      if (sessionRef.current?.memberId === owner.memberId) {
-        inFlightRef.current = false;
-      }
+      line.inFlight = false;
     }
   }
 
   function apply(next: string[]) {
+    const memberId = sessionRef.current?.memberId;
+    const line = memberId ? linesRef.current.get(memberId) : undefined;
+    if (!memberId || !line) return;
     draftRef.current = next;
     setDraft(next);
-    if (inFlightRef.current) {
-      queuedRef.current = next;
+    line.latest = next;
+    if (line.inFlight) {
+      line.queued = next;
       return;
     }
-    void send(next);
+    void send(memberId, line, next);
   }
 
   function onToggle(option: RoleOption) {
@@ -203,9 +228,13 @@ export const MemberRolesSheet = forwardRef<
           {
             text: `Remove ${option.name}`,
             style: "destructive",
-            // Recomputed on confirm: a save that failed while the alert was
-            // up has put the list back, and this must not resend it.
-            onPress: () => apply(toggleRole(draftRef.current, option.id)),
+            // A removal, never a toggle: a save that failed while the alert
+            // was up may have put the list back, and the button must not
+            // then add the role.
+            onPress: () => {
+              if (!draftRef.current.includes(option.id)) return;
+              apply(draftRef.current.filter((id) => id !== option.id));
+            },
           },
         ],
       );

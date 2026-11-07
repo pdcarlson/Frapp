@@ -25,9 +25,11 @@ export interface RoleOption {
    */
   locked: boolean;
   /**
-   * Holding it is enough to open chat, the roster and events: a seeded system
-   * role, or any role carrying `members:view`. A Discord-imported role carries
-   * only its channel reads, so on its own it locks a member out (2026-11-07).
+   * Holding it is enough to open chat, the roster and events: it carries
+   * `members:view` (or `*`), the permission the API checks. The seeded flag
+   * doesn't count, because a seeded role's permissions can be edited. A
+   * Discord-imported role carries only its channel reads, so on its own it
+   * locks a member out (2026-11-07).
    */
   grantsBase: boolean;
 }
@@ -47,7 +49,7 @@ export function parseRoleOptions(rolesData: unknown): RoleOption[] {
       name,
       color: str(row, "color"),
       locked: permissions.includes(WILDCARD_PERMISSION),
-      grantsBase: row.is_system === true || can("members:view", permissions),
+      grantsBase: can("members:view", permissions),
     });
   }
   return options;
@@ -130,17 +132,23 @@ export const ROLES_SAVE_FAILED_TITLE = "Couldn't save roles";
 
 /**
  * Why a save failed, by the API's answer: a 400 is a role deleted since the
- * list loaded, a 403 a viewer who can no longer edit roles (for one, an
- * officer who just took away their own). Neither is fixed by trying again.
+ * list loaded; a 403 is a change the viewer may no longer make (they lost
+ * `roles:manage`, the member left the chapter, or the change touched
+ * President). Neither is fixed by trying again. `name` is set when the officer
+ * has already moved on to someone else, so the alert says whose change it was.
  */
-export function rolesSaveFailedBody(status: number | undefined): string {
+export function rolesSaveFailedBody(
+  status: number | undefined,
+  name: string | null = null,
+): string {
+  const change = name ? `Your change to ${name}'s roles` : "The change";
   if (status === 400) {
-    return "One of those roles was just deleted. The list has been refreshed and the change put back.";
+    return `One of those roles was just deleted. ${change} was put back and the list refreshed.`;
   }
   if (status === 403) {
-    return "You can no longer change roles, so the change was put back.";
+    return `${change} isn't allowed any more, so it was put back.`;
   }
-  return "That change didn't reach the server, so it was put back. Try again.";
+  return `${change} didn't reach the server, so it was put back. Try again.`;
 }
 
 /** Custom roles keep their own editor on the web; this one changes `role_ids`. */

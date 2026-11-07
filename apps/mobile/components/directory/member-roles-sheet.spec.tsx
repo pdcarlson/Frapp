@@ -36,7 +36,12 @@ import { MemberRolesSheet } from "./member-roles-sheet";
 
 const OPTIONS = parseRoleOptions([
   { id: "r-pres", name: "President", is_system: true, permissions: ["*"] },
-  { id: "r-member", name: "Member", is_system: true, permissions: [] },
+  {
+    id: "r-member",
+    name: "Member",
+    is_system: true,
+    permissions: ["members:view"],
+  },
   { id: "r-brothers", name: "Brothers", is_system: false, permissions: [] },
   { id: "r-cabinet", name: "Cabinet", is_system: false, permissions: [] },
 ]);
@@ -46,6 +51,8 @@ const SESSION = {
   name: "Ada",
   heldIds: ["r-brothers", "r-member"],
   customRoleNames: [] as string[],
+  // A profile fetched before any save in a test.
+  fetchedAt: 0,
 };
 
 function sheet(session: typeof SESSION) {
@@ -56,10 +63,10 @@ function sheet(session: typeof SESSION) {
   );
 }
 
-function render(): ReactTestRenderer {
+function render(session: typeof SESSION = SESSION): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(sheet(SESSION));
+    tree = create(sheet(session));
   });
   return tree;
 }
@@ -215,6 +222,124 @@ describe("MemberRolesSheet", () => {
     expect(vi.mocked(Alert.alert).mock.calls.at(-1)?.[1]).toContain(
       "just deleted",
     );
+    act(() => tree.unmount());
+  });
+
+  it("reopened after the profile caught up, starts from the profile, not an old draft", async () => {
+    const tree = render();
+    await tap(tree, "r-cabinet");
+    // Since then someone else changed Ada's roles, and the profile refetched.
+    act(() =>
+      tree.update(
+        sheet({ ...SESSION, heldIds: ["r-member"], fetchedAt: Date.now() + 1 }),
+      ),
+    );
+    expect(row(tree, "r-cabinet").props.accessibilityState.checked).toBe(false);
+    expect(row(tree, "r-brothers").props.accessibilityState.checked).toBe(
+      false,
+    );
+    act(() => tree.unmount());
+  });
+
+  it("finishes a member's queued save after moving on, and says whose change failed", async () => {
+    let fail!: (e: unknown) => void;
+    state.mutateAsync.mockImplementationOnce(
+      () => new Promise<void>((resolve) => resolve()),
+    );
+    const tree = render();
+    // First save lands; the second stays out.
+    await tap(tree, "r-cabinet");
+    state.mutateAsync.mockImplementationOnce(
+      () => new Promise<void>((_, reject) => (fail = reject)),
+    );
+    await tap(tree, "r-brothers");
+    act(() =>
+      tree.update(
+        sheet({ ...SESSION, memberId: "m-ben", name: "Ben", heldIds: [] }),
+      ),
+    );
+    await act(async () => fail(new Error("offline")));
+    expect(vi.mocked(Alert.alert).mock.calls.at(-1)?.[1]).toContain(
+      "Your change to Ada's roles",
+    );
+    // Ben's sheet is untouched by Ada's failure.
+    expect(row(tree, "r-cabinet").props.accessibilityState.checked).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("coming back to a member mid-save joins that save rather than starting a second", async () => {
+    let release!: () => void;
+    state.mutateAsync.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (release = resolve)),
+    );
+    const tree = render();
+    await tap(tree, "r-cabinet");
+    act(() =>
+      tree.update(
+        sheet({ ...SESSION, memberId: "m-ben", name: "Ben", heldIds: [] }),
+      ),
+    );
+    act(() => tree.update(sheet({ ...SESSION })));
+    expect(row(tree, "r-cabinet").props.accessibilityState.checked).toBe(true);
+    await tap(tree, "r-brothers");
+    expect(state.mutateAsync).toHaveBeenCalledTimes(1);
+    await act(async () => release());
+    expect(state.mutateAsync).toHaveBeenCalledTimes(2);
+    expect(state.mutateAsync).toHaveBeenLastCalledWith({
+      id: "m-ada",
+      role_ids: ["r-member", "r-cabinet"],
+    });
+    act(() => tree.unmount());
+  });
+
+  it("confirming Remove after a failed save put the role back never adds it", async () => {
+    let fail!: (e: unknown) => void;
+    state.mutateAsync.mockImplementationOnce(
+      () => new Promise<void>((_, reject) => (fail = reject)),
+    );
+    const tree = render({ ...SESSION, heldIds: ["r-brothers"] });
+    await tap(tree, "r-member");
+    await tap(tree, "r-member");
+    const [, , buttons] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
+    const remove = buttons!.find((b) => b.style === "destructive")!;
+    await act(async () => fail(new Error("offline")));
+    await act(async () => remove.onPress!());
+    expect(state.mutateAsync).toHaveBeenCalledTimes(1);
+    expect(row(tree, "r-member").props.accessibilityState.checked).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("sends only the newest of several queued taps", async () => {
+    let release!: () => void;
+    state.mutateAsync.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (release = resolve)),
+    );
+    const tree = render();
+    await tap(tree, "r-cabinet");
+    await tap(tree, "r-brothers");
+    await tap(tree, "r-brothers");
+    await act(async () => release());
+    expect(state.mutateAsync).toHaveBeenCalledTimes(2);
+    expect(state.mutateAsync).toHaveBeenLastCalledWith({
+      id: "m-ada",
+      role_ids: ["r-member", "r-cabinet", "r-brothers"],
+    });
+    act(() => tree.unmount());
+  });
+
+  it("puts back to the last saved set, not the opening one, and drops the queue", async () => {
+    const tree = render();
+    await tap(tree, "r-cabinet");
+    let fail!: (e: unknown) => void;
+    state.mutateAsync.mockImplementationOnce(
+      () => new Promise<void>((_, reject) => (fail = reject)),
+    );
+    await tap(tree, "r-brothers");
+    await tap(tree, "r-brothers");
+    await act(async () => fail(new Error("offline")));
+    expect(state.mutateAsync).toHaveBeenCalledTimes(2);
+    expect(row(tree, "r-cabinet").props.accessibilityState.checked).toBe(true);
+    expect(row(tree, "r-brothers").props.accessibilityState.checked).toBe(true);
     act(() => tree.unmount());
   });
 });

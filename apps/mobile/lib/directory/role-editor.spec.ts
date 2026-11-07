@@ -117,10 +117,15 @@ describe("toggleRole", () => {
 describe("base access", () => {
   const options = parseRoleOptions(ROLES);
 
-  it("counts system roles and members:view roles, not Discord channel roles", () => {
+  it("counts roles carrying members:view, not Discord channel roles or the seeded flag", () => {
     expect(hasBaseAccess(["r-brothers", "r-cabinet"], options)).toBe(false);
     expect(hasBaseAccess(["r-brothers", "r-member"], options)).toBe(true);
     expect(hasBaseAccess(["r-rush"], options)).toBe(true);
+    // A seeded role whose members:view was edited away grants nothing.
+    const edited = parseRoleOptions([
+      { id: "r-new", name: "New Member", is_system: true, permissions: [] },
+    ]);
+    expect(hasBaseAccess(["r-new"], edited)).toBe(false);
   });
 
   it("warns only on the change that takes basic access away", () => {
@@ -140,8 +145,11 @@ describe("base access", () => {
 describe("rolesSaveFailedBody", () => {
   it("only offers a retry when trying again could work", () => {
     expect(rolesSaveFailedBody(400)).toContain("deleted");
-    expect(rolesSaveFailedBody(403)).toContain("no longer change roles");
+    expect(rolesSaveFailedBody(403)).toContain("isn't allowed any more");
     expect(rolesSaveFailedBody(undefined)).toContain("Try again");
+    expect(rolesSaveFailedBody(undefined, "Ada")).toMatch(
+      /^Your change to Ada's roles didn't reach the server/,
+    );
   });
 });
 

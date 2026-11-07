@@ -334,7 +334,8 @@ export const MemberDetailSheet = forwardRef<
                             memberId: member?.memberId ?? "",
                             name: detail.displayName,
                             heldIds: detail.roleIds,
-                          customRoleNames,
+                            customRoleNames,
+                            fetchedAt: memberQuery.dataUpdatedAt,
                           });
                           rolesSheetRef.current?.present();
                         }
