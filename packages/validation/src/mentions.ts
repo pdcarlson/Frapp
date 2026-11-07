@@ -334,6 +334,25 @@ export function mentionLabelFor(displayName: string): string {
   return displayName.replace(/[^\p{L}\p{N}\p{M}]/gu, "");
 }
 
+/**
+ * The draft with `@Name ` added at its end: a message menu's Mention (mobile's
+ * long-press, as Discord's), which writes the same body the picker would.
+ * A space separates it from text already there, and the trailing space lets
+ * the member keep typing. `null` when the name leaves no label the picker
+ * would write.
+ */
+export function draftWithMention(
+  draft: string,
+  displayName: string,
+): string | null {
+  const label = mentionLabelFor(displayName);
+  // The picker's own refusals (`mentionSuggestions`): a label the tokenizer
+  // wouldn't read as a mention reaches nobody.
+  if (!/^\p{L}/u.test(label) || label.length > MAX_TOKEN_LENGTH) return null;
+  const gap = draft.length === 0 || /\s$/.test(draft) ? "" : " ";
+  return `${draft}${gap}@${label} `;
+}
+
 /** One member as a mention picker offers them. */
 export interface MentionSuggestion<T extends MentionCandidate> {
   member: T;

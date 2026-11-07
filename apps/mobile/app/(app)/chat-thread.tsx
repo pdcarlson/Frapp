@@ -47,7 +47,7 @@ import {
   useRequestChatUploadUrl,
   useSetChannelNotificationLevel,
 } from "@repo/hooks";
-import { can } from "@repo/validation";
+import { can, draftWithMention } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ChatComposer } from "@/components/chat/chat-composer";
@@ -615,6 +615,19 @@ export default function ChatThreadScreen() {
     [remove],
   );
 
+  // The menu's Mention: `@Name ` at the end of the draft, the body the `@`
+  // picker would have written.
+  const handleMention = useCallback(
+    (messageId: string) => {
+      const message = byId.get(messageId);
+      if (!message) return;
+      const name = resolveAuthorName(message, nameFor);
+      const next = name ? draftWithMention(draft, name) : null;
+      if (next !== null) handleChangeText(next);
+    },
+    [byId, draft, handleChangeText, nameFor],
+  );
+
   // A reaction chip's tap and the actions sheet's quick row, through the same
   // optimistic calls; a refusal lands in the reaction banner. Each tap ticks
   // once (`spec/ui/mobile/README.md` § Native-feel rules), here where the
@@ -709,6 +722,15 @@ export default function ChatThreadScreen() {
         copyText: copyableText(message),
         canReply: actions.canReply,
         canEdit: actions.canEdit,
+        // Someone else's message from a real member, where the viewer can
+        // post: the system actor and an imported author have nobody to ping.
+        canMention:
+          actions.canReport &&
+          channelCanPost &&
+          // An open edit owns the input; a mention would land in the hidden
+          // draft instead.
+          !staging.isEditing &&
+          isBlockableSender(message.sender_id),
         canDelete: actions.canDelete,
         canReport: actions.canReport,
         blockUserId: actions.canBlock ? message.sender_id : null,
@@ -727,6 +749,7 @@ export default function ChatThreadScreen() {
       isMember,
       nameFor,
       refetchRoster,
+      staging.isEditing,
       viewerId,
     ],
   );
@@ -739,14 +762,13 @@ export default function ChatThreadScreen() {
   const sheetTarget = useMemo<MessageActionsTarget | null>(() => {
     if (!actionTarget) return null;
     const current = byId.get(actionTarget.messageId);
+    const groups = current && viewerId ? groupReactions(current, viewerId) : [];
     return {
       ...actionTarget,
-      reactedWith:
-        current && viewerId
-          ? groupReactions(current, viewerId)
-              .filter((group) => group.mine)
-              .map((group) => group.emoji)
-          : [],
+      reactedWith: groups
+        .filter((group) => group.mine)
+        .map((group) => group.emoji),
+      messageEmojis: groups.map((group) => group.emoji),
     };
   }, [actionTarget, byId, viewerId]);
 
@@ -1288,6 +1310,7 @@ export default function ChatThreadScreen() {
         onReply={staging.startReply}
         onEdit={staging.startEdit}
         onDelete={handleDelete}
+        onMention={handleMention}
         onReact={handleReact}
         onUnreact={handleUnreact}
       />
