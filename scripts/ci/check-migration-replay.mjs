@@ -46,7 +46,9 @@
 // production applied — and this gate does not claim otherwise. It is the same
 // assumption the whole migrations-as-files model already rests on. Since #2751
 // `check-migration-safety.mjs` refuses a PR that edits the executable SQL of a
-// migration already on `main`, which is how the assumption would break.
+// migration already on `main`, or removes one, which is how the files would
+// stop matching the bytes applied. A recorded exception or a direct push can
+// still break it.
 //
 // ── Read-only against production ────────────────────────────────────────────
 // The only production access is a GET to the Management API's migration-history

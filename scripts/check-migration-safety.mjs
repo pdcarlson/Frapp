@@ -640,47 +640,71 @@ function validateLedgerCoverage(migrations) {
 /**
  * Applied migrations are never edited (#2751).
  *
- * `supabase db push` skips a version a hosted database already applied, so an
- * edit to the SQL of a migration already on `main` never reaches staging or
- * production. Everything in CI replays the files (PGlite, the change-topics
- * spec, a fresh `db reset`), so the edit goes green while the hosted
- * databases keep the old SQL: a renamed topic or a changed policy fails
- * silently there. The fix is always a NEW migration.
+ * `supabase db push` records each migration by its 14-digit version and skips
+ * a version a hosted database already applied, so a change to a migration
+ * already on `main` never reaches staging or production. Everything in CI
+ * replays the files (PGlite, the change-topics spec, a fresh `db reset`), so
+ * the change goes green while the hosted databases keep the old SQL: a renamed
+ * topic or a changed policy fails silently there. The fix is always a NEW
+ * migration.
  *
- * What counts is the executable SQL: `executableSql` drops `--` and `/* … *\/`
- * comments (outside string literals and quoted identifiers) and collapses
- * whitespace, so a comment fix to a shipped file passes (#1703, #1409). Only a
- * file that exists on both sides of the range and changed (`M`) is judged. A
- * rename or delete is left to `check-migration-replay.mjs`, which fails a
- * version a hosted database holds that the tree no longer names.
+ * The check pairs the migrations at the merge base with the head's by version,
+ * so a file renamed under the same version is judged like an edit:
+ * - a version whose executable SQL changed fails. `executableSql` drops
+ *   comments and collapses whitespace outside literals, so a comment fix to a
+ *   shipped file passes (#1703, #1409);
+ * - a version the head no longer has fails: every hosted database still holds
+ *   its SQL, and a replay from empty would build a different schema.
+ * A new version is not this check's concern.
  *
- * A reviewed exception goes in EDITED_MIGRATION_EXCEPTIONS: the file, the
- * sha256 of its executable SQL as edited, and why replaying it is safe. It
- * matches that exact content only, so a later edit to the same file is judged
- * again.
+ * A reviewed exception goes in EDITED_MIGRATION_EXCEPTIONS, with why it is
+ * safe: `{ file, sha256, reason }` for an edit, `file` being the head's path
+ * and `sha256` the hash of its executable SQL as edited, so a later edit to
+ * the same file is judged again; or `{ file, removed: true, reason }` for a
+ * removal, `file` being the path at the merge base.
  */
 export const EDITED_MIGRATION_EXCEPTIONS = Object.freeze([]);
 
+/** A dollar-quote tag, `$$` or `$name$`, matched at `lastIndex`. */
+const DOLLAR_TAG = /\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/y;
+/** Characters an unquoted identifier or number continues with (`$` included, as Postgres allows). */
+const WORD_CHAR = /[A-Za-z0-9_$]/;
+
 /**
- * `text` with SQL comments removed and whitespace collapsed. String literals
- * (`'…'`, with `''` escapes) and quoted identifiers (`"…"`) are kept as they
- * are, so a `--` inside one is not a comment. Block comments nest, as in
- * Postgres. Dollar-quoted bodies are scanned as code, which is what a function
- * body is: a `--` comment inside one is still a comment.
+ * `text` with SQL comments removed and whitespace outside literals collapsed
+ * to single spaces.
+ *
+ * Kept exactly as written: string literals (`'…'` with `''` escapes, and
+ * `E'…'` with backslash escapes), quoted identifiers (`"…"`), and any
+ * dollar-quoted string that is data (`comment … is $$…$$`, a `format($p$…$p$)`
+ * template). A dollar-quoted body that follows `as` or `do` is code, a
+ * function or `do` block, so it is normalized the same way: a `--` comment in
+ * a function body is still a comment. Its extent is fixed by the closing tag
+ * alone, as Postgres's lexer fixes it, before anything inside is read. Block
+ * comments nest, as in Postgres.
  */
 export function executableSql(text) {
   let out = "";
+  let space = false;
+  let word = "";
+  let wordEnd = -1;
+  const emit = (s) => {
+    if (space && out) out += " ";
+    space = false;
+    out += s;
+  };
   let i = 0;
   const n = text.length;
   while (i < n) {
     const c = text[i];
     const next = text[i + 1];
-    if (c === "-" && next === "-") {
+    if (/\s/.test(c)) {
+      space = true;
+      i += 1;
+    } else if (c === "-" && next === "-") {
       while (i < n && text[i] !== "\n") i += 1;
-      out += " ";
-      continue;
-    }
-    if (c === "/" && next === "*") {
+      space = true;
+    } else if (c === "/" && next === "*") {
       let depth = 1;
       i += 2;
       while (i < n && depth > 0) {
@@ -694,24 +718,46 @@ export function executableSql(text) {
           i += 1;
         }
       }
-      out += " ";
-      continue;
-    }
-    if (c === "'" || c === '"') {
+      space = true;
+    } else if (c === "'" || c === '"') {
+      const backslashes = c === "'" && word === "e" && wordEnd === i;
       let j = i + 1;
       while (j < n) {
-        if (text[j] === c && text[j + 1] === c) j += 2;
+        if (backslashes && text[j] === "\\") j += 2;
+        else if (text[j] === c && text[j + 1] === c) j += 2;
         else if (text[j] === c) break;
         else j += 1;
       }
-      out += text.slice(i, j + 1);
+      emit(text.slice(i, j + 1));
       i = j + 1;
-      continue;
+      word = "";
+    } else if (/[A-Za-z0-9_]/.test(c)) {
+      let j = i + 1;
+      while (j < n && WORD_CHAR.test(text[j])) j += 1;
+      emit(text.slice(i, j));
+      word = text.slice(i, j).toLowerCase();
+      wordEnd = j;
+      i = j;
+    } else {
+      DOLLAR_TAG.lastIndex = i;
+      const tag = c === "$" ? DOLLAR_TAG.exec(text)?.[0] : undefined;
+      const close = tag ? text.indexOf(tag, i + tag.length) : -1;
+      if (tag && close !== -1) {
+        const body = text.slice(i + tag.length, close);
+        emit(word === "as" || word === "do" ? `${tag}${executableSql(body)}${tag}` : text.slice(i, close + tag.length));
+        i = close + tag.length;
+      } else if (tag) {
+        // Unterminated: Postgres would reject the file. Keep the rest as written.
+        emit(text.slice(i));
+        i = n;
+      } else {
+        emit(c);
+        i += 1;
+      }
+      word = "";
     }
-    out += c;
-    i += 1;
   }
-  return out.replace(/\s+/g, " ").trim();
+  return out;
 }
 
 /** sha256 of a file's executable SQL, as EDITED_MIGRATION_EXCEPTIONS records it. */
@@ -720,10 +766,26 @@ export function executableSqlHash(text) {
 }
 
 /**
- * The applied migrations a change set edits. `edits` is `[{ file, before,
- * after }]`, one per migration file modified in the range. Returns the ones
- * whose executable SQL changed and that no exception covers, each `{ file,
- * hash }`.
+ * Pairs two migration listings (`Map<version, { file, blob }>`, as
+ * `migrationTree` reads them) by version. `changed` holds each version whose
+ * blob differs, `{ before, after }`; `removed` the merge base's path of each
+ * version the head lacks.
+ */
+export function changedVersions(before, after) {
+  const changed = [];
+  const removed = [];
+  for (const [version, old] of before) {
+    const now = after.get(version);
+    if (!now) removed.push(old.file);
+    else if (now.blob !== old.blob) changed.push({ before: old, after: now });
+  }
+  return { changed, removed };
+}
+
+/**
+ * The edits that break the rule. `edits` is `[{ file, before, after }]`, one
+ * per changed version, `file` being the head's path. Returns the ones whose
+ * executable SQL changed and that no exception covers, each `{ file, hash }`.
  */
 export function executableEdits(edits, exceptions = EDITED_MIGRATION_EXCEPTIONS) {
   return edits
@@ -732,39 +794,87 @@ export function executableEdits(edits, exceptions = EDITED_MIGRATION_EXCEPTIONS)
     .filter(({ file, hash }) => !exceptions.some((e) => e.file === file && e.sha256 === hash));
 }
 
-/** `git` with argv, never a shell: paths and refs reach it unquoted. */
-function git(args) {
-  return execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+/** The removals no `{ removed: true }` exception covers. */
+export function unexcusedRemovals(removed, exceptions = EDITED_MIGRATION_EXCEPTIONS) {
+  return removed.filter((file) => !exceptions.some((e) => e.removed === true && e.file === file));
 }
 
-/** Migration files modified (not added, renamed or deleted) between the merge base of `base` and `head`, and `head`. */
-function modifiedMigrations(base, head) {
-  // getChangedFiles has already fetched the refs when they were missing.
-  const mergeBase = git(["merge-base", base, head]).trim();
-  return git(["diff", "--name-status", "--no-renames", "--diff-filter=M", mergeBase, head, "--", "supabase/migrations"])
-    .split("\n")
-    .map((line) => line.split("\t")[1])
-    .filter((file) => file && MIGRATION_FILENAME.test(basename(file)) && file === `supabase/migrations/${basename(file)}`)
-    .map((file) => ({
-      file,
-      before: git(["show", `${mergeBase}:${file}`]),
-      after: git(["show", `${head}:${file}`]),
-    }));
+/** `git` in the repo, with argv, never a shell: paths and refs reach it unquoted. */
+function git(args, options = {}) {
+  return execFileSync("git", args, {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"],
+    ...options,
+  });
+}
+
+/** The merge base of `base` and `head`, fetching once if either is missing locally. */
+function resolveMergeBase(base, head) {
+  const attempt = () => {
+    try {
+      return git(["merge-base", base, head]).trim();
+    } catch {
+      return "";
+    }
+  };
+  const found = attempt();
+  if (found) return found;
+  try {
+    git(["fetch", "--no-tags", "--depth=500", "origin", base, head], { stdio: "ignore" });
+  } catch {
+    // Best effort, as getChangedFiles: fall through to the failure below.
+  }
+  const fetched = attempt();
+  if (fetched) return fetched;
+  throw new Error(
+    `Unable to find the merge base of base=${base} head=${head}, so applied migrations ` +
+      "cannot be checked for edits. Fetch more history (checkout fetch-depth 0).",
+  );
+}
+
+/** The top-level migration files in `rev`'s tree, by version: `Map<version, { file, blob }>`. */
+function migrationTree(rev) {
+  const entries = new Map();
+  for (const line of git(["ls-tree", rev, "--", "supabase/migrations/"]).split("\n")) {
+    const match = /^\d+ blob ([0-9a-f]+)\t(.+)$/.exec(line);
+    if (!match || !MIGRATION_FILENAME.test(basename(match[2]))) continue;
+    entries.set(basename(match[2]).slice(0, 14), { file: match[2], blob: match[1] });
+  }
+  return entries;
 }
 
 function validateNoAppliedEdits(base, head) {
-  if (!base || !head) return;
-  const edits = executableEdits(modifiedMigrations(base, head));
-  if (edits.length === 0) return;
-  console.error("Migration safety check failed: an applied migration's SQL was edited.");
-  for (const { file, hash } of edits) console.error(`- ${file} (executable SQL sha256 ${hash})`);
+  if (!base || !head) {
+    const missing = [!base && "--base", !head && "--head"].filter(Boolean).join(" and ");
+    console.log(
+      `Migration safety check: ${missing} not given, skipping the applied-migration edit check ` +
+        "(cannot tell which migrations were already on the base without a commit range).",
+    );
+    return;
+  }
+  const { changed, removed } = changedVersions(migrationTree(resolveMergeBase(base, head)), migrationTree(head));
+  const edits = executableEdits(
+    changed.map(({ before, after }) => ({
+      file: after.file,
+      before: git(["cat-file", "blob", before.blob]),
+      after: git(["cat-file", "blob", after.blob]),
+    })),
+  );
+  const removals = unexcusedRemovals(removed);
+  if (edits.length === 0 && removals.length === 0) return;
+  console.error("Migration safety check failed: an applied migration's SQL was edited or removed.");
+  for (const { file, hash } of edits) console.error(`- edited: ${file} (executable SQL sha256 ${hash})`);
+  for (const file of removals) console.error(`- removed: ${file}`);
   console.error(
-    "\n`supabase db push` skips a version a hosted database already applied, so this edit\n" +
+    "\n`supabase db push` skips a version a hosted database already applied, so this change\n" +
       "would never reach staging or production, while every replay in CI runs it.\n" +
-      "Put the change in a NEW migration instead, and restore this file. A comment-only\n" +
-      "edit passes. If replaying the edit is safe and you mean it (say, a fix to a file no\n" +
-      "hosted database has applied), add the file, the sha256 above and the reason to\n" +
-      "EDITED_MIGRATION_EXCEPTIONS in scripts/check-migration-safety.mjs (#2751).",
+      "Put the change in a NEW migration instead, and restore the file. A comment-only\n" +
+      "edit passes. If the change is safe and you mean it (say, a fix to a file no hosted\n" +
+      "database has applied), add an entry with the reason to EDITED_MIGRATION_EXCEPTIONS\n" +
+      "in scripts/check-migration-safety.mjs: `{ file, sha256, reason }` for an edit, with\n" +
+      "the sha256 above, or `{ file, removed: true, reason }` for a removal (#2751).",
   );
   process.exit(1);
 }
@@ -808,8 +918,8 @@ function main() {
     validateDocManifest();
     validateLedgerManifest();
     validateLedgerCoverage(migrations);
-    validatePromotionDocs(getArg("--base"), getArg("--head"));
     validateNoAppliedEdits(getArg("--base"), getArg("--head"));
+    validatePromotionDocs(getArg("--base"), getArg("--head"));
     console.log("Migration safety check passed.");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
