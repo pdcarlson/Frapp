@@ -655,7 +655,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List chapter invites */
+        /** List chapter invites, newest first */
         get: operations["InviteController_list_v1"];
         put?: never;
         /** Generate an invite token */
@@ -3783,6 +3783,27 @@ export interface components {
             /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
             role?: string;
         };
+        /**
+         * @description pending: still joinable. joined: someone joined with it. expired: unused past expires_at. revoked: an officer revoked it.
+         * @enum {string}
+         */
+        InviteStatus: "pending" | "joined" | "expired" | "revoked";
+        InviteListItemDto: {
+            id: string;
+            /** @description The single-use token. Clients build the join link from it; they never show it. */
+            token: string;
+            /** @description The role name joining grants */
+            role: string;
+            /** @description The address the invite was emailed to, or null for a share-link invite */
+            email: string | null;
+            /** @description pending: still joinable. joined: someone joined with it. expired: unused past expires_at. revoked: an officer revoked it. */
+            status: components["schemas"]["InviteStatus"];
+            expires_at: string;
+            /** @description Set when it was used, and also when it was revoked */
+            used_at: string | null;
+            revoked_at: string | null;
+            created_at: string;
+        };
         BatchCreateInvitesDto: {
             /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
             role?: string;
@@ -3794,6 +3815,11 @@ export interface components {
             role?: string;
             /** @description Email addresses to invite, one invite token per address */
             emails: string[];
+        };
+        BulkEmailInviteResponseDto: {
+            invites: components["schemas"]["InviteListItemDto"][];
+            /** @description Addresses whose invite was created but whose email did not send. Their invites still work as links. */
+            failed: string[];
         };
         PreviewInviteDto: {
             /** @description The invite token, as the join link carries it */
@@ -6745,7 +6771,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["InviteListItemDto"][];
+                };
             };
             /** @description Error */
             default: {
@@ -6775,7 +6803,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["InviteListItemDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -6835,7 +6865,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["BulkEmailInviteResponseDto"];
+                };
             };
             /** @description Error */
             default: {

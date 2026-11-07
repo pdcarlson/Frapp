@@ -260,7 +260,7 @@ export const SITE_ROSTERS = [
   {
     kind: "invite email copy",
     walk: "api",
-    is: (source) => /DEFAULT_FROM_ADDRESS/.test(source) || /You're invited to join a chapter/.test(source),
+    is: (source) => /DEFAULT_FROM_ADDRESS/.test(source) || /You're invited to join /.test(source),
     sites: [
       "apps/api/src/infrastructure/email/resend-email.provider.ts",
       "apps/api/src/modules/email/email.module.ts",
@@ -436,7 +436,6 @@ export function builderDescription(source) {
 
 const OPENAPI_CONFIG = "apps/api/src/openapi-config.ts";
 const SYSTEM_MIGRATION = "20260924190000_rename_system_actor_to_frapp.sql";
-const INVITE_BODY = "invited to join a chapter on Frapp as";
 /** A count entry for PINS: how many `prop=` values in a file equal `value`, read by jsxProp. */
 const propCount = (prop, value, min) => ({
   what: `${prop}="${value}"`,
@@ -511,10 +510,20 @@ export const PINS = [
     has: ["const DEFAULT_FROM_ADDRESS = 'Frapp <invites@mail.frapp.live>'", "RESEND_FROM_EMAIL"],
     lacks: [/const DEFAULT_FROM_ADDRESS = 'Signet /, /const DEFAULT_FROM_ADDRESS = '[^']*<invites@frapp\.live>'/, SIGNET],
   },
+  // The subject and the headline both bodies open with name the product; the
+  // chapter's own name fills "a chapter" when it is known.
   {
     file: "apps/api/src/infrastructure/email/resend-email.provider.ts",
+    section: (source) => functionBody(source, "inviteSubject"),
     why: "invite email subject",
-    has: ["You're invited to join a chapter on Frapp"],
+    has: ["You're invited to join ", "?? 'a chapter'} on Frapp`"],
+    lacks: [SIGNET],
+  },
+  {
+    file: "apps/api/src/infrastructure/email/resend-email.provider.ts",
+    section: (source) => functionBody(source, "inviteHeadline"),
+    why: "invite email headline",
+    has: ["invited you to join ${chapter} on Frapp`", "You're invited to join ${chapter} on Frapp`"],
     lacks: [SIGNET],
   },
   // HTML and text bodies are pinned apart, so one can't hide a leftover in the other.
@@ -522,7 +531,8 @@ export const PINS = [
     file: "apps/api/src/infrastructure/email/resend-email.provider.ts",
     section: (source) => functionBody(source, name),
     why: `${name} body`,
-    has: [INVITE_BODY],
+    has: ["inviteHeadline(params)"],
+    lacks: [SIGNET],
   })),
 
   // --- The seeded system actor --------------------------------------------
@@ -596,11 +606,6 @@ export const PINS = [
     file: "apps/web/components/events/event-detail-sheet.tsx",
     why: "the empty-title .ics fallback",
     has: ['|| "frapp-event"'],
-  },
-  {
-    file: "apps/web/components/members/invite-member-dialog.tsx",
-    why: "the invite share header",
-    has: ['"Frapp member invite",'],
   },
   {
     // The template puts the name in every child tab and `default` serves the

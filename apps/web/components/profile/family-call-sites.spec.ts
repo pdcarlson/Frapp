@@ -179,10 +179,10 @@ describe("mono is reserved for machine values", () => {
    * `text-[0.65rem]` (10.4px), off the locked scale entirely.
    */
   const ALLOWED: Record<string, number> = {
-    // The accent hex and the invite link — both machine values. Was three
-    // until the #920 slice-9 cutover removed the second colour picker: a
-    // chapter now supplies one seed, not a dark/accent pair.
-    "components/onboarding/chapter-wizard.tsx": 2,
+    // The accent hex, a machine value. Was three until the #920 slice-9
+    // cutover removed the second colour picker, then two until 2026-11-06,
+    // when the invite step stopped showing the join link at all.
+    "components/onboarding/chapter-wizard.tsx": 1,
     // The invite token a member reads character by character.
     "app/(auth)/join/page.tsx": 1,
   };
