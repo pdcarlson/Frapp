@@ -61,6 +61,7 @@ import {
 } from "@repo/hooks";
 import { formatTimeOfDay, formatTimeOfDayShort } from "@repo/formatting";
 import { cn, initials } from "@/lib/utils";
+import { useChatDensity } from "@/lib/chat/chat-density";
 
 /**
  * The crest at 180², synced from `@repo/brand-assets` by `SYNCED` in
@@ -250,7 +251,9 @@ export interface MessageItemProps {
 
 /**
  * A single message row in the compact layout (`components.md` §11, owner
- * decision 2026-09-29, #2873).
+ * decision 2026-09-29, #2873). "Compact layout" there means bubble-free; the
+ * member's density (§11 § Density, 2026-11-06) then draws it cozy, as below,
+ * or compact, with a time gutter and the name leading the body.
  *
  * **One shape for every row, the viewer's included.** The first row of a run
  * draws a 32px avatar and an author line (name, then the time of day); a
@@ -320,6 +323,10 @@ export function MessageItem({
   const auditLine = !message.is_deleted && isAuditLine(message);
   // Its author line is never drawn, whatever the run says.
   const drawsHeader = showHeader && !auditLine;
+  // The member's density on this browser (§11 § Density). Compact drops the
+  // avatar and the author line: the time takes a fixed gutter and the name
+  // leads the body's first line.
+  const compact = useChatDensity() === "compact";
   const avatarSrc = isSystemPost ? SYSTEM_AVATAR_SRC : avatarUrl;
   const isPending = message._status === "pending";
   const isFailed = message._status === "failed";
@@ -540,12 +547,16 @@ export function MessageItem({
         {/*
           The elbow: from the avatar's centre (16px into the 32px gutter) up
           and across to the quote, so the quote reads as belonging to the row
-          below it rather than floating between two rows.
+          below it rather than floating between two rows. Compact has no
+          avatar, so it drops from the text column's edge onto the name.
         */}
         <span
           aria-hidden="true"
           data-slot="reply-elbow"
-          className="ml-4 mt-2.5 h-2.5 w-6 shrink-0 rounded-tl-[6px] border-l-2 border-t-2 border-popover"
+          className={cn(
+            "mt-2.5 h-2.5 shrink-0 rounded-tl-[6px] border-l-2 border-t-2 border-popover",
+            compact ? "ml-16 w-3" : "ml-4 w-6",
+          )}
         />
         <QuotedMessage
           className="border-l-0 pl-0"
@@ -609,6 +620,9 @@ export function MessageItem({
   const trailingOnOwnLine =
     !message.is_deleted &&
     (isCardMessage(message) || message.content.trim().length === 0);
+  // Compact leads a text body's first line with the name. A card, an
+  // attachment-only message and the open editor have no line to lead.
+  const inlineName = compact && drawsHeader && !isEditing && !trailingOnOwnLine;
 
   const renderer = (
     <MessageRenderer
@@ -944,7 +958,16 @@ export function MessageItem({
         "group/message relative px-5 pb-0.5",
         // An audit stack's first line sits 8 below the row above: a log line
         // is not a new speaker, so it takes less than a run's 16.
-        auditLine ? (showHeader ? "pt-2" : "pt-0.5") : showHeader ? "pt-4" : "pt-0.5",
+        // Compact starts a run 4 below, cozy 16 (§11 § Density).
+        auditLine
+          ? showHeader
+            ? "pt-2"
+            : "pt-0.5"
+          : showHeader
+            ? compact
+              ? "pt-1"
+              : "pt-4"
+            : "pt-0.5",
         // Delineation without a bubble (§11): the whole row lifts one surface
         // step under a pointer, with keyboard focus inside it, or once tapped.
         // Pointer feedback, not information, so the ~1.1:1 step is enough.
@@ -956,13 +979,40 @@ export function MessageItem({
       onClick={handleRowTap}
     >
       {replyQuote}
-      <div className="flex gap-3">
-        {/* The 32px gutter, held open on every row of a run. */}
-        <div className="w-8 shrink-0">
+      <div className={cn("flex", compact ? "gap-2" : "gap-3")}>
+        {/*
+          The gutter, held open on every row of a run: 32px for the avatar in
+          cozy, 56px for the time in compact (§11 § Density).
+        */}
+        <div className={cn("shrink-0", compact ? "w-14" : "w-8")}>
           {auditLine ? (
-            <div className="flex h-5 items-center justify-center">
+            <div
+              className={cn(
+                "flex h-5 items-center",
+                compact ? "justify-end" : "justify-center",
+              )}
+            >
               <AuditGlyph className="h-3.5 w-3.5 text-muted" />
             </div>
+          ) : compact ? (
+            /*
+              Compact's gutter is the time: the run's first row always shows
+              it, and a follow-on reveals its own the way cozy's does.
+            */
+            <time
+              dateTime={message.created_at}
+              data-slot={drawsHeader ? "compact-time" : "gutter-time"}
+              className={cn(
+                "flex justify-end whitespace-nowrap text-caption leading-[25px] text-muted-foreground",
+                !drawsHeader &&
+                  "opacity-0 group-hover/message:opacity-100 group-focus-within/message:opacity-100",
+                !drawsHeader && isTapRevealed && "opacity-100",
+              )}
+            >
+              {drawsHeader
+                ? formatTimeOfDay(message.created_at)
+                : formatTimeOfDayShort(message.created_at, runStartedAt)}
+            </time>
           ) : showHeader ? (
             <Avatar
               className="h-8 w-8"
@@ -1018,7 +1068,7 @@ export function MessageItem({
           )}
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
-          {drawsHeader ? (
+          {drawsHeader && !compact ? (
             <div
               data-slot="author-line"
               className="flex min-w-0 items-baseline gap-2 leading-5"
@@ -1039,7 +1089,41 @@ export function MessageItem({
               </time>
             </div>
           ) : null}
-          {isEditing ? editForm : body}
+          {compact && drawsHeader && !inlineName ? (
+            // A card, an attachment-only message, or the editor: nothing to
+            // lead with the name, so it takes a line of its own.
+            <div
+              data-slot="author-line"
+              className="truncate text-base font-semibold leading-[25px] text-foreground"
+              style={authorColor ? { color: authorColor } : undefined}
+            >
+              {authorLabel}
+            </div>
+          ) : null}
+          {inlineName ? (
+            /*
+              Compact's name leads the body's first line, floated so the text
+              flows beside it and wraps back under it, the way a sentence would
+              (`flow-root` keeps the float inside the row). Body size at 600,
+              so the name and the text share a baseline.
+            */
+            <div className="flow-root min-w-0">
+              <span
+                data-slot="author-line"
+                // `max-w-full break-words`: an unbroken imported handle wraps
+                // inside the column rather than spilling past it.
+                className="float-left mr-2 max-w-full break-words text-base font-semibold leading-[25px] text-foreground"
+                style={authorColor ? { color: authorColor } : undefined}
+              >
+                {authorLabel}
+              </span>
+              {body}
+            </div>
+          ) : isEditing ? (
+            editForm
+          ) : (
+            body
+          )}
           {attachments}
           {trailingOnOwnLine && trailing && !isEditing ? (
             <div className="mt-1 leading-5 [&>span]:ml-0">{trailing}</div>
