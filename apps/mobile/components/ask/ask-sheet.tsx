@@ -22,7 +22,7 @@ import {
   type AskSource,
 } from "@/lib/ask/corpus";
 import { isAskAvailable } from "@/lib/ask/flag";
-import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
+import { fieldTypeRole, fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * s17 — the ✦ Ask sheet (`canvas-screens.dc.html`, `id="s17"`).
@@ -422,7 +422,7 @@ function createStyles(tokens: SignetTokens) {
       // TODO-DESIGN: Canvas draws padding-x 14 and the placeholder at 15.5px;
       // `spacing.md` (12) and the 16px `body` role are the nearest steps.
       paddingHorizontal: tokens.spacing.md,
-      ...typeRole(tokens.typography.role.body),
+      ...fieldTypeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },
     send: {
