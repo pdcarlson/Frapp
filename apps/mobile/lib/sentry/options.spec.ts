@@ -177,13 +177,20 @@ describe("shipped options", () => {
 
   it("runs the native SDK versions whose breadcrumbs were last read (#3342)", () => {
     // The two options above, and the list of what the native SDKs still
-    // record, come from reading these exact versions' breadcrumb sources. A
-    // `@sentry/react-native` bump that moves either pin can add a crumb no JS
-    // hook sees. When this fails, diff each SDK's crumb sources between the old
-    // pin and the new one, update spec/behavior/observability.md § "Mobile
-    // turns off native breadcrumb data no JS hook can reach", then move these.
+    // record, come from reading these exact versions' breadcrumb sources, and
+    // the React Native bridge's own native code at this exact version. Any
+    // `@sentry/react-native` bump can add a crumb no JS hook sees, or stop
+    // passing those options to native init, so even a patch fails here. When
+    // it does, diff the bridge's ios/ and android/ code between the old
+    // version and the new one, and each native SDK's crumb sources if a pin
+    // moved; update spec/behavior/observability.md § "Mobile turns off native
+    // breadcrumb data no JS hook can reach"; then move these.
     const require = createRequire(import.meta.url);
     const sdk = dirname(require.resolve("@sentry/react-native/package.json"));
+    const { version } = JSON.parse(
+      readFileSync(join(sdk, "package.json"), "utf8"),
+    ) as { version: string };
+    expect(version).toBe("8.33.0");
     const podspec = readFileSync(join(sdk, "RNSentry.podspec"), "utf8");
     const gradle = readFileSync(join(sdk, "android", "build.gradle"), "utf8");
     expect(podspec.match(/sentry_cocoa_version = '([^']+)'/)?.[1]).toBe(
