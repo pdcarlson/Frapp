@@ -138,13 +138,14 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
         {
           body: { directory_id: 'd1' },
           result: { id: 'c9', org_archetype: 'ifc' },
+          signInMethod: 'google',
         },
-        { archetype: 'ifc', from_directory: true },
+        { archetype: 'ifc', from_directory: true, sign_in_method: 'google' },
       ],
       [
         'an unknown stored archetype',
         { body: {}, result: { id: 'c9', org_archetype: 'toString' } },
-        { archetype: null, from_directory: false },
+        { archetype: null, from_directory: false, sign_in_method: null },
       ],
     ],
   },
@@ -386,7 +387,18 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
     ],
   },
   'InviteController.redeem': {
-    'invite-redeemed': [['a redeem', { result: { chapterId: 'c7' } }, {}]],
+    'invite-redeemed': [
+      [
+        'a redeem after Sign in with Apple',
+        { result: { chapterId: 'c7' }, signInMethod: 'apple' },
+        { sign_in_method: 'apple' },
+      ],
+      [
+        'a redeem with no session user',
+        { result: { chapterId: 'c7' } },
+        { sign_in_method: null },
+      ],
+    ],
   },
   'MemberController.updateOnboarding': {
     'member-onboarding-completed': [
