@@ -37,10 +37,12 @@ import { generateRadixColors } from "./vendor/generate-radix-colors.js";
  * **That freeze has now paid for itself, which is why the count no longer
  * matches the file.** `default_colors` was a `{ dark, accent }` pair when this
  * list was taken: 18 distinct across both halves, of which only 5 were accents.
- * #1225 dropped the dead `dark` half, so the CSV holds 50 values and 5 distinct
- * colors today — `#BF0A30`, `#C0C0C0`, `#C9A56F`, `#FF69B4`, `#FFFFFF`. Reading
- * it at test time would therefore have silently cut this corpus from 18 seeds to
- * those 5, which is the exact narrowing this docstring predicted.
+ * #1225 dropped the dead `dark` half, so the CSV then held 50 values and 5
+ * distinct colors — `#BF0A30`, `#C0C0C0`, `#C9A56F`, `#FF69B4`, `#FFFFFF`.
+ * Reading it at test time would therefore have silently cut this corpus from 18
+ * seeds to those 5, which is the exact narrowing this docstring predicted. Since
+ * the Wikipedia-built seed (#232, 2026-11-06) every row carries `#C9A56F`, so it
+ * would now cut it to one.
  *
  * Note *which* 13 it would drop, because it is the opposite of what a skim
  * suggests: every dark one. Pure black `#000000`, near-black `#1F1A15`, and the

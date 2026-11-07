@@ -76,4 +76,4 @@ All cents fields are validated as non-negative integers (no `NaN`, no negatives 
 
 ## GET /chapter-directory/search
 
-Directory search backs the onboarding autofill. `GET /chapter-directory/search?q=...&university=...` returns the top matches from `chapter_directory` (Greek org letters/name + university, with default colors and identity fields) for the wizard to pre-fill chapter identity. Backed by indexes on `(university_short, org_letters)` and full-text on the combined name. Directory rows are public chapter identities, not personal data.
+Directory search backs the onboarding autofill. `GET /chapter-directory/search?q=...&university=...` returns the top matches from `chapter_directory` (Greek org letters/name + university, with default colors and identity fields) for the wizard to pre-fill chapter identity. Matching and ranking are owned by [`onboarding.md` § Chapter Directory Search](onboarding.md#chapter-directory-search). Directory rows are public chapter identities, not personal data.
