@@ -322,6 +322,10 @@ export const UNPIN_FROM_TOP_LABEL = "Unpin from top";
 export const UNREAD_ONLY_LABEL = "Unread only";
 export const HIDE_MUTED_LABEL = "Hide muted";
 
+/** The control both clients keep the two filters behind (mobile since 2026-11-06). */
+export const FILTER_CHANNELS_LABEL = "Filter channels";
+export const FILTER_CHANNELS_ON_LABEL = "Filter channels, filters on";
+
 export const NO_MATCHING_CHANNELS = "No channels match your filters.";
 export const SHOW_ALL_CHANNELS_LABEL = "Show all channels";
 
