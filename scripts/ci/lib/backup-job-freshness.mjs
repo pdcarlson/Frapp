@@ -19,6 +19,8 @@
 //   ran on a runner for its whole timeout (within a minute below it, and not
 //   far past it) counts as timed out. A job cancelled before any step ran,
 //   such as one parked in `waiting`, never did.
+// - A success whose job ran the `CATCHING_UP_STEP` passes but is never fresh:
+//   the Storage mirror stopped at its budget while converging (#3099).
 // - Otherwise the newest run's job is in flight (queued, running, or
 //   `waiting` on a deployment protection rule), or it was cancelled before its
 //   timeout or skipped, or the run was cancelled or skipped before any job
@@ -51,6 +53,15 @@
 // The earlier runs searched are the ones the scripts list: the
 // `RUNS_PER_PAGE` newest on `main`. More runs than that inside the window
 // could hide an earlier success; that fails closed, as a P1.
+
+/**
+ * The step a Nightly Backup Storage job runs only when its mirror stopped at
+ * the budget while catching up (`budgetStopVerdict` in scripts/storage-backup.mjs,
+ * #3099). The job succeeds, and its success is not fresh: it passes as a
+ * warning, never raises the alert and never closes one. `db-backup.yml` names
+ * the step; a test pins the two to each other.
+ */
+export const CATCHING_UP_STEP = "Storage mirror catching up";
 
 /** How many recent runs the scripts list; the earlier-success search sees no further back. */
 export const RUNS_PER_PAGE = 30;
@@ -200,7 +211,16 @@ export function judgeNewest({ jobName, run, fetched, staleAfterMs, hungAfterMs, 
       verdict: jobVerdict(false, false, `last ${jobName} success is older than ${hours(staleAfterMs)}`),
     };
   }
+  if (catchingUp(job)) {
+    return {
+      verdict: jobVerdict(true, false, `${jobName} succeeded within ${hours(staleAfterMs)}, but its mirror is still catching up (step "${CATCHING_UP_STEP}")`),
+    };
+  }
   return { verdict: jobVerdict(true, true, `${jobName} succeeded within ${hours(staleAfterMs)}`) };
+}
+
+function catchingUp(job) {
+  return (job.steps ?? []).some((step) => step?.name === CATCHING_UP_STEP && step.conclusion === "success");
 }
 
 /**
