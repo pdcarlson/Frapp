@@ -868,8 +868,9 @@ channel that reports a different one fails the import rather than being skipped.
   channel has since turned private, and any Same as Discord choice whose
   readers the new scan no longer names. An
   uploaded export carries no permissions, so every new channel from one needs
-  the same choice; "Set who can read…" answers a whole category, or the whole
-  server, in one go.
+  the same choice; the "Who can read" control on a category, or on the whole
+  server, answers all its new channels in one go, and shows their shared
+  answer, or Mixed when they differ.
 - **The bot reads only what its roles can see.** Discord lists every channel to
   a bot, including ones hidden from it, so the scan works out the bot's own
   access per channel from Discord's permission overwrites rather than finding
@@ -892,19 +893,23 @@ channel that reports a different one fails the import rather than being skipped.
   had all been set to whole chapter.*
   - **Roles are mapped before channels**, bot path only (an export names no
     roles). Each Discord role becomes an existing Frapp role, a new role
-    named after it, or nothing (Ignore). The default is the Frapp role with
+    named after it, or nothing (Skip, stored as `ignore`; the wizard called it
+    Ignore until 2026-11-06). The default is the Frapp role with
     the same name, ignoring case and punctuation (letters of any script
     count, so "ΔΔ Class" and "ΓΓ Class" differ); then a close match to a
     seeded role, read from the end of the Discord name ("Recording Secretary"
     is a Secretary, "Pledges" are New Members, but "Pledge Educator" is not a
     pledge), except Member, the widest role, which matches only a whole name
-    ("Brothers", never "Board Member"); then a new role named after it.
+    ("Brothers", never "Board Member"), and except a name that starts by
+    saying it is not the sitting officer ("Past Treasurer", "PC President",
+    "Assistant Treasurer"), which only a same-name role matches; then a new
+    role named after it.
     *2026-09-29, owner's decision (#2855), replacing "a new role if it could
     read a private channel, and Ignore if it could not, so colour, class-year
     and game roles create nothing": a role classifies people (a class year, a
     committee) even when it gates no channel, and the admin sets any role
     they don't want to Ignore.* A viewer who cannot manage roles, or cannot
-    load the chapter's roles, keeps every role on Ignore and can still import.
+    load the chapter's roles, keeps every role on Skip and can still import.
     `@everyone`, and the managed roles Discord gives bots and boosters, are
     not offered: the Frapp bot's own role is allowed on every channel it was
     let into.
@@ -917,7 +922,7 @@ channel that reports a different one fails the import rather than being skipped.
   - **Same as Discord** makes the channel `ROLE_GATED`, readable by the Frapp
     roles mapped from those Discord roles. It is on offer only for a channel
     the scan saw was private and named readers for, and counts as chosen
-    only while one of them is mapped: a Discord role set to Ignore is left
+    only while one of them is mapped: a Discord role set to Skip is left
     out, which is narrower than Discord and never wider, and a channel none of
     whose readers is mapped needs a choice like any other private channel.
     Discord answers per combination of roles and Frapp's gate has no deny, so
@@ -935,7 +940,7 @@ channel that reports a different one fails the import rather than being skipped.
     permissions**, and nothing else: a new role gets only the read permissions
     of the imported channels gated on it. It never touches a `members` row;
     imported authors are names on messages, not accounts, and people are put
-    into roles by hand. Mapping anything but Ignore, and starting an import
+    into roles by hand. Mapping anything but Skip, and starting an import
     that creates a role or grants a permission, need `roles:manage` as well
     as `channels:manage`, as Settings → Roles would.
     Deleting the import keeps the roles and permissions it made. Importing who
