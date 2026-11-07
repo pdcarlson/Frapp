@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Popover,
   PopoverContent,
@@ -76,7 +76,9 @@ export function ReactionChips({
       userIds,
     }))
     .filter(
-      (group): group is { actionType: string; emoji: string; userIds: string[] } =>
+      (
+        group,
+      ): group is { actionType: string; emoji: string; userIds: string[] } =>
         group.emoji != null && group.userIds.length > 0,
     );
   if (entries.length === 0) return null;
@@ -128,6 +130,8 @@ export function ReactionQuickPick({
   onUnreact,
 }: ReactionBarProps) {
   const [open, setOpen] = useState(false);
+  // Whether the picker's last input was a pointer, for its close below.
+  const pointerInPicker = useRef(false);
   return (
     <>
       {QUICK_REACTIONS.map((emoji) => {
@@ -159,7 +163,29 @@ export function ReactionQuickPick({
             <ReactionGlyph className="h-4 w-4" />
           </button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="end">
+        <PopoverContent
+          className="w-auto p-0"
+          align="end"
+          onPointerDown={() => {
+            pointerInPicker.current = true;
+          }}
+          onKeyDown={() => {
+            pointerInPicker.current = false;
+          }}
+          // A pick closes the picker from inside it, so Radix hands focus back
+          // to the trigger by script. The picker's search field had focus (a
+          // text field always matches `:focus-visible`, and an emoji cell keeps
+          // focus there on pointerdown), and a script focus away from a ringed
+          // element can inherit the ring (WebKit's rule; headless Chromium did
+          // not, 2026-11-06). The row's `:focus-visible` reveal would then
+          // hold the action bar on screen after a mouse pick, once the pointer
+          // has left. A keyboard pick still returns focus to the trigger.
+          onCloseAutoFocus={(event) => {
+            if (!pointerInPicker.current) return;
+            pointerInPicker.current = false;
+            event.preventDefault();
+          }}
+        >
           <EmojiPicker
             onPick={(emoji) => {
               setOpen(false);
