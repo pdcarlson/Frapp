@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { AppState, StyleSheet, Text, View } from "react-native";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
+  useChapterRoster,
   useCurrentUser,
   useLeaderboard,
   useMyPoints,
@@ -10,7 +12,9 @@ import {
   useTasks,
   useUpdateTaskStatus,
   useViewerUserId,
+  type TaskStatus,
 } from "@repo/hooks";
+import { memberLabel } from "@repo/hooks/display-names";
 import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { useRefetchAll } from "@/components/pull-to-refresh";
@@ -26,10 +30,12 @@ import {
   SkeletonRegion,
 } from "@/components/state-block";
 import { TaskRow, TaskRowSkeleton } from "@/components/tasks/task-row";
+import { TaskDetailSheet } from "@/components/tasks/task-detail-sheet";
+import { UNDO_WINDOW_MS, UndoBar } from "@/components/tasks/undo-bar";
 import { PointsSummaryCard } from "@/components/tasks/points-summary-card";
 import { selectTaskRows, type TaskRowModel } from "@/lib/tasks/board";
 import { selectHouseRank, selectPointsSummary } from "@/lib/tasks/points-card";
-import { nextTapSequence } from "@/lib/tasks/transitions";
+import { checkboxSequence } from "@/lib/tasks/transitions";
 import { taskStatusGateRefusal } from "@/lib/tasks/status-refusal";
 import { successHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -45,6 +51,14 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * Composition only. Every rule lives in `lib/tasks/` where it is unit-tested,
  * and every optimistic write lives in `packages/hooks` (#560) — the acceptance
  * criteria of #995 name both placements explicitly.
+ *
+ * ## Only the checkbox changes a task, and it can be taken back
+ *
+ * A tap on a row opens the task's detail sheet; only the checkbox completes it
+ * (owner audit 2026-11-06, P6.1). Completing floats "Marked done · Undo" over
+ * the tab bar for a few seconds, and the box itself unchecks until an officer
+ * confirms: the API lets the assignee move their own unconfirmed completion
+ * back to `IN_PROGRESS` (`spec/behavior/tasks.md` § Assignee Actions).
  *
  * ## The checkbox is two writes, not one
  *
@@ -67,6 +81,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * rows — see its header. An officer's review queue is a different surface with a
  * different shape, and is not this slice.
  */
+const TAKE_BACK_FAILED =
+  "Couldn't mark that task not done. An officer may have confirmed it already.";
+
 export default function TasksScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -171,61 +188,162 @@ export default function TasksScreen() {
    */
   const inFlight = useRef<Set<string>>(new Set());
 
-  const toggle = useCallback(
-    async (row: TaskRowModel) => {
-      const sequence = nextTapSequence(row.storedStatus, row.displayStatus);
-      if (sequence.length === 0) return;
-      if (inFlight.current.has(row.id)) return;
+  /**
+   * The task the undo bar offers to take back, while its window runs. Cleared
+   * by its own timer, by Undo, or by the box unchecking the same task.
+   */
+  const [undo, setUndo] = useState<{
+    id: string;
+    message: string;
+    key: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!undo) return undefined;
+    const timer = setTimeout(() => setUndo(null), UNDO_WINDOW_MS);
+    return () => clearTimeout(timer);
+  }, [undo]);
 
-      inFlight.current.add(row.id);
-      setPendingId(row.id);
+  /**
+   * A one-off line for a take-back that didn't land: the bar has gone by
+   * then, and without it the row just stays done with no word of why. Not a
+   * latch like `refusal`: the next tap, or coming back, clears it.
+   */
+  const [notice, setNotice] = useState<string | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      setNotice(null);
+      return undefined;
+    }, []),
+  );
+
+  /**
+   * Sends one sequence for one task, in order, guarded against a double tap.
+   * Resolves to what happened: a gate refusal has already said why.
+   */
+  const run = useCallback(
+    async (
+      id: string,
+      sequence: readonly TaskStatus[],
+    ): Promise<"ok" | "gate" | "failed" | "skipped"> => {
+      if (sequence.length === 0) return "skipped";
+      if (inFlight.current.has(id)) return "skipped";
+
+      inFlight.current.add(id);
+      setPendingId(id);
       try {
         for (const status of sequence) {
-          await updateStatus.mutateAsync({ id: row.id, body: { status } });
+          await updateStatus.mutateAsync({ id, body: { status } });
         }
-        // The confirming action (`spec/ui/mobile/README.md` § Native-feel
-        // rules), felt once the server holds the task done: a TODO row
-        // writes two rungs, the first only draws it in progress, and a gate
-        // can refuse either. Only a sequence that completes the task earns
-        // it.
-        if (sequence[sequence.length - 1] === "COMPLETED") successHaptic();
+        return "ok";
       } catch (error) {
         // The hook has already reverted its own write and invalidated, so the
         // row redraws at whatever the server actually holds. A gate refusal
         // also says why and withdraws the toggles; anything else, a permission
-        // 403 included, stays the quiet revert it always was, with the retap.
+        // 403 or an officer's confirm landing first included, stays the quiet
+        // revert it always was.
         const gate = taskStatusGateRefusal(error);
         if (gate) setRefusal(gate);
+        return gate ? "gate" : "failed";
       } finally {
-        inFlight.current.delete(row.id);
+        inFlight.current.delete(id);
         setPendingId(null);
       }
     },
     [updateStatus],
   );
 
+  const toggle = useCallback(
+    async (row: TaskRowModel) => {
+      const sequence = checkboxSequence(row);
+      const completes = sequence[sequence.length - 1] === "COMPLETED";
+      setNotice(null);
+      // Unchecking is its own undo: the bar for this task has nothing left to
+      // offer. Cleared before the write so it never sits over the change.
+      if (!completes) setUndo((open) => (open?.id === row.id ? null : open));
+      const outcome = await run(row.id, sequence);
+      // The confirming action (`spec/ui/mobile/README.md` § Native-feel
+      // rules), felt once the server holds the task done. Only a sequence
+      // that completes the task earns it, and offers the undo.
+      if (outcome === "ok" && completes) {
+        successHaptic();
+        setUndo((open) => ({
+          id: row.id,
+          message: "Marked done",
+          // A new key per completion, so a second one inside the window is
+          // announced again even though the words are the same.
+          key: (open?.key ?? 0) + 1,
+        }));
+      }
+      if (outcome === "failed" && !completes) setNotice(TAKE_BACK_FAILED);
+    },
+    [run],
+  );
+
+  const takeBack = useCallback(
+    async (id: string) => {
+      setUndo(null);
+      setNotice(null);
+      // Most often refused because an officer confirmed it inside the
+      // window: the bar has gone, so say so rather than leave it done.
+      if ((await run(id, ["IN_PROGRESS"])) === "failed") {
+        setNotice(TAKE_BACK_FAILED);
+      }
+    },
+    [run],
+  );
+
+  // The detail sheet. It holds the id, not the row, so it redraws with the
+  // board as a write lands.
+  const sheetRef = useRef<BottomSheetModal>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const openRow = useMemo(
+    () =>
+      openId === null
+        ? null
+        : ([...board.dueThisWeek, ...board.later].find(
+            (row) => row.id === openId,
+          ) ?? null),
+    [board, openId],
+  );
+  const rosterQuery = useChapterRoster();
+  const createdBy = openRow?.createdBy ?? null;
+  const assignedBy = useMemo(() => {
+    if (!createdBy) return null;
+    if (createdBy === viewerUserId) return "You";
+    const match = (rosterQuery.data ?? []).find(
+      (member) => member.user_id === createdBy,
+    );
+    // The shared fallback, so a creator with no name reads as on web.
+    return memberLabel(match?.display_name, createdBy);
+  }, [createdBy, rosterQuery.data, viewerUserId]);
+
+  const canToggle = useCallback(
+    (row: TaskRowModel) =>
+      pendingId !== row.id &&
+      refusal === null &&
+      checkboxSequence(row).length > 0,
+    [pendingId, refusal],
+  );
+
   const renderRows = useCallback(
     (rows: TaskRowModel[]) =>
-      rows.map((row, index) => {
-        const busy = pendingId === row.id;
-        const pressable =
-          !busy &&
-          refusal === null &&
-          nextTapSequence(row.storedStatus, row.displayStatus).length > 0;
-        return (
-          <TaskRow
-            key={row.id}
-            row={row}
-            now={now}
-            isPending={busy}
-            isFirst={index === 0}
-            // Dropped, not disabled-in-place, while the sequence runs: the row
-            // is mid-ladder, so a second tap would race the compare-and-set.
-            onToggle={pressable ? () => void toggle(row) : undefined}
-          />
-        );
-      }),
-    [now, pendingId, refusal, toggle],
+      rows.map((row, index) => (
+        <TaskRow
+          key={row.id}
+          row={row}
+          now={now}
+          isPending={pendingId === row.id}
+          isFirst={index === 0}
+          // Dropped, not disabled-in-place, while the sequence runs: the row
+          // is mid-ladder, so a second tap would race the compare-and-set.
+          onToggle={canToggle(row) ? () => void toggle(row) : undefined}
+          onOpen={() => {
+            setOpenId(row.id);
+            sheetRef.current?.present();
+          }}
+        />
+      )),
+    [now, pendingId, canToggle, toggle],
   );
 
   function renderBoard() {
@@ -314,18 +432,50 @@ export default function TasksScreen() {
   }
 
   return (
-    <ScreenShell title="Tasks" refresh={refresh}>
-      <PointsSummaryCard summary={summary} rank={rank} />
+    <View style={styles.frame}>
+      <ScreenShell title="Tasks" refresh={refresh}>
+        <PointsSummaryCard summary={summary} rank={rank} />
 
-      {refusal ? <Text style={styles.refusal}>{refusal}</Text> : null}
+        {refusal ? <Text style={styles.refusal}>{refusal}</Text> : null}
+        {notice && !refusal ? (
+          <Text style={styles.refusal}>{notice}</Text>
+        ) : null}
 
-      {renderBoard()}
-    </ScreenShell>
+        {renderBoard()}
+      </ScreenShell>
+
+      {undo ? (
+        <UndoBar
+          key={undo.key}
+          message={undo.message}
+          onUndo={() => void takeBack(undo.id)}
+        />
+      ) : null}
+
+      <TaskDetailSheet
+        ref={sheetRef}
+        row={openRow}
+        assignedBy={assignedBy}
+        refusal={refusal}
+        onToggle={
+          openRow && canToggle(openRow)
+            ? () => {
+                sheetRef.current?.dismiss();
+                void toggle(openRow);
+              }
+            : undefined
+        }
+        onDismiss={() => setOpenId(null)}
+      />
+    </View>
   );
 }
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    frame: {
+      flex: 1,
+    },
     // `ScreenShell`'s gap, between the caption and its rows.
     skeleton: {
       gap: tokens.spacing.md,

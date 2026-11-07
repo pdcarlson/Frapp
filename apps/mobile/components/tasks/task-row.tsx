@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { TASK_ACTION_LABELS, taskStatusLabel } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
@@ -6,7 +7,6 @@ import { gutterBleed, PressableRow } from "@/components/list-section";
 import { AccentChip } from "@/components/status-chip";
 import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 import {
-  formatDoneSubtitle,
   formatDueSubtitle,
   formatPointsChip,
   isDueUrgent,
@@ -25,6 +25,19 @@ import type { TaskRowModel } from "@/lib/tasks/board";
  * finished work is the quietest thing on a list, so a done state takes a muted
  * fill or check, never the accent.
  *
+ * ## Two targets: the box completes, the row opens
+ *
+ * Only the checkbox changes the task; a tap anywhere else on the row opens the
+ * task's detail sheet (owner audit 2026-11-06, P6.1). The whole row used to be
+ * the checkbox, so a stray tap while scrolling marked a task done. The box
+ * unchecks too, while no officer has confirmed it, so a mis-tap is one tap to
+ * take back, as a checked reminder is.
+ *
+ * A finished row says who it is waiting on ("Waiting on an officer", the
+ * shared word from `@repo/hooks`), not "Done": the member's half is done, and
+ * the points aren't theirs until an officer confirms. Only a confirmed row
+ * dims.
+ *
  * ## The checkbox is a three-state control, not a two-state one
  *
  * Canvas draws two boxes — empty and gold-filled — because it draws a *moment*,
@@ -42,22 +55,31 @@ import type { TaskRowModel } from "@/lib/tasks/board";
 export interface TaskRowProps {
   row: TaskRowModel;
   now: Date;
-  /** Omitted entirely when the server allows no transition — never a no-op handler. */
+  /**
+   * The checkbox: completes an open task, or takes back the viewer's own
+   * unconfirmed completion. Omitted when the server allows neither, and the
+   * box then draws inert, never a no-op handler.
+   */
   onToggle?: () => void;
+  /** Opens the task's detail sheet. Any tap on the row outside the box. */
+  onOpen?: () => void;
   /**
    * True while this row's own PATCH sequence is in flight. The Tasks screen
-   * drops `onToggle` for that time, so an in-flight row takes the plain branch;
-   * it dims and reads busy whichever branch it takes.
+   * drops `onToggle` for that time; the row dims and reads busy.
    */
   isPending?: boolean;
   /** The first row of its group draws no hairline above it. */
   isFirst?: boolean;
 }
 
+/** The checkbox's hit area past its drawn 24pt, to a 44pt target. */
+const CHECKBOX_SLOP = 10;
+
 export function TaskRow({
   row,
   now,
   onToggle,
+  onOpen,
   isPending = false,
   isFirst = false,
 }: TaskRowProps) {
@@ -65,33 +87,59 @@ export function TaskRow({
   const styles = createStyles(tokens);
   const chip = formatPointsChip(row.pointReward, row.pointsAwarded);
   const started = row.storedStatus === "IN_PROGRESS";
+  const confirmed = row.isDone && row.pointsAwarded;
 
   const subtitle = row.isDone
-    ? formatDoneSubtitle(row.completedAt, now)
+    ? taskStatusLabel({
+        status: "COMPLETED",
+        points_awarded: row.pointsAwarded,
+      })
     : formatDueSubtitle(row.dueDate, now);
 
   // `semantic.destructive`, never `semantic.mention` — `foundations.md:67`
   // reserves the mention red for direct address, and an overdue task is not
   // someone speaking to you.
-  const urgent =
-    !row.isDone && !!row.dueDate && isDueUrgent(row.dueDate, now);
+  const urgent = !row.isDone && !!row.dueDate && isDueUrgent(row.dueDate, now);
+
+  const toggleLabel = row.isDone
+    ? TASK_ACTION_LABELS.reopen
+    : TASK_ACTION_LABELS.complete;
+
+  const box = (
+    <View
+      style={[
+        styles.checkbox,
+        row.isDone
+          ? styles.checkboxDone
+          : started
+            ? styles.checkboxStarted
+            : null,
+      ]}
+    >
+      {row.isDone ? (
+        <CheckGlyph color={tokens.color.text.mutedForeground} />
+      ) : null}
+    </View>
+  );
 
   const body = (
     <>
-      <View
-        style={[
-          styles.checkbox,
-          row.isDone
-            ? styles.checkboxDone
-            : started
-              ? styles.checkboxStarted
-              : null,
-        ]}
-      >
-        {row.isDone ? (
-          <CheckGlyph color={tokens.color.text.mutedForeground} />
-        ) : null}
-      </View>
+      {onToggle ? (
+        // Hidden from screen readers: the row carries the same move as a
+        // named action, so VoiceOver and TalkBack reach it without a second
+        // focus stop nested inside the row's.
+        <Pressable
+          testID={`task-checkbox-${row.id}`}
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+          hitSlop={CHECKBOX_SLOP}
+          onPress={onToggle}
+        >
+          {box}
+        </Pressable>
+      ) : (
+        box
+      )}
 
       <View style={styles.body}>
         <Text
@@ -105,7 +153,7 @@ export function TaskRow({
             style={[
               styles.subtitle,
               urgent ? styles.subtitleUrgent : null,
-              row.isDone ? styles.subtitleDone : null,
+              confirmed ? styles.subtitleDone : null,
             ]}
           >
             {subtitle}
@@ -123,28 +171,30 @@ export function TaskRow({
     </>
   );
 
-  // A row in flight is dimmed less than a finished one; the finished dim comes
-  // second so it wins if the optimistic write lands mid-sequence.
+  // A row in flight is dimmed less than a confirmed one; the confirmed dim
+  // comes second so it wins.
   const rowStyle = [
     styles.row,
     isFirst ? null : styles.rowDivider,
     isPending ? styles.rowPending : null,
-    row.isDone ? styles.rowDone : null,
+    confirmed ? styles.rowDone : null,
   ];
+  const label = `${row.title}${subtitle ? `, ${subtitle}` : ""}`;
 
-  // No `onPress` at all rather than a handler that returns early: a Pressable
-  // that silently swallows taps reads as broken, and the server allows this row
-  // nothing, or its own PATCH sequence is still running.
-  if (!onToggle) {
+  if (!onOpen) {
     return (
       <View
         accessibilityRole="checkbox"
         accessibilityState={{
           checked: row.isDone,
-          disabled: true,
+          disabled: !onToggle,
           busy: isPending,
         }}
-        accessibilityLabel={`${row.title}${subtitle ? `, ${subtitle}` : ""}`}
+        accessibilityLabel={label}
+        accessibilityActions={
+          onToggle ? [{ name: "activate", label: toggleLabel }] : undefined
+        }
+        onAccessibilityAction={onToggle}
         style={rowStyle}
       >
         {body}
@@ -154,16 +204,20 @@ export function TaskRow({
 
   return (
     <PressableRow
-      accessibilityRole="checkbox"
+      accessibilityRole="button"
       accessibilityState={{ checked: row.isDone, busy: isPending }}
-      accessibilityLabel={`${row.title}${subtitle ? `, ${subtitle}` : ""}`}
-      // One tap completes the task, whatever it currently reads as: a `TODO`
-      // row walks IN_PROGRESS then COMPLETED. Saying "Start this task" here
-      // told a screen-reader user the tap was reversible groundwork, when the
-      // server has no assignee transition out of COMPLETED and this app ships
-      // no reject affordance — only an officer could undo it.
-      accessibilityHint="Mark this task done."
-      onPress={onToggle}
+      accessibilityLabel={label}
+      accessibilityHint="Opens the task."
+      // The box's move as a named action, so it is one swipe-up away on
+      // VoiceOver and in TalkBack's actions menu, rather than the row's
+      // default tap, which opens the task.
+      accessibilityActions={
+        onToggle ? [{ name: "toggle", label: toggleLabel }] : undefined
+      }
+      onAccessibilityAction={(event) => {
+        if (event.nativeEvent.actionName === "toggle") onToggle?.();
+      }}
+      onPress={onOpen}
       style={rowStyle}
     >
       {body}
