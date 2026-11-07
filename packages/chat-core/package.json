@@ -20,6 +20,7 @@
     "./message-actions": "./src/message-actions.ts",
     "./report-copy": "./src/report-copy.ts",
     "./grouping": "./src/grouping.ts",
+    "./density": "./src/density.ts",
     "./links": "./src/links.ts",
     "./markdown": "./src/markdown.ts",
     "./test/markdown-parse-budget.fixtures": "./src/test/markdown-parse-budget.fixtures.ts",
