@@ -3,6 +3,12 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { randomUUID } from 'node:crypto';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import {
+  MAX_IMPORT_ATTEMPTS,
+  importFailureStreak,
+  importRetryDelayMs,
+  isTransientImportFailure,
+} from './discord-import-retry';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
 import { isForeignKeyViolation } from '#domain/constants/postgres-error-codes';
 import {
@@ -193,6 +199,23 @@ function targetDeleted(
   );
 }
 
+/**
+ * The line the import's page shows while it waits out a temporary error
+ * (#1692), so an admin watching a stalled import can tell "trying again" from
+ * "stopped". It says nothing about the cause: the cause is a database or
+ * network detail that goes to Sentry, not a sentence an admin can act on.
+ */
+function retryNote(
+  job: Pick<DiscordImport, 'status'>,
+  attempt: number,
+  delayMs: number,
+): string {
+  const what = job.status === 'purging' ? 'Deleting' : 'The import';
+  const minutes = delayMs / 60_000;
+  const wait = minutes === 1 ? 'a minute' : `${minutes} minutes`;
+  return `${what} hit a temporary problem and paused. Try ${attempt + 1} of ${MAX_IMPORT_ATTEMPTS} starts in about ${wait}.`;
+}
+
 export interface ImportSweepResult {
   claimed: boolean;
   importId?: string;
@@ -315,23 +338,65 @@ export class DiscordImportWorkerService {
       if (!claim) return { claimed: false };
 
       const { job, lockToken } = claim;
+      // The claim's clock is fixed for the tick; this one measures how long
+      // the slice ran, so a pause starts when the slice failed, not when the
+      // tick began (a slice can run most of its 45 s budget first).
+      const sliceStartedAt = Date.now();
+      // Set when the slice failed on a temporary error (#1692): the job is
+      // released with its lease running to then, so no tick claims it sooner.
+      let pauseUntil: Date | undefined;
+      // A slice that ended cleanly after a failed one ends the streak.
+      let endRetryStreak = false;
       try {
+        let result: ImportSweepResult;
         if (job.status === 'purging') {
-          return await this.runPurgeSlice(job, lockToken, now);
+          result = await this.runPurgeSlice(job, lockToken, now);
+        } else if (job.source === 'bot') {
+          // The purge is source-agnostic — it deletes rows and sweeps a
+          // storage prefix, both of which look identical whichever way the
+          // bytes arrived. Only the FETCH differs, so only the fetch branches.
+          result = await this.runBotExportSlice(job, lockToken, now);
+        } else {
+          result = await this.runImportSlice(job, lockToken, now);
         }
-        // The purge is source-agnostic — it deletes rows and sweeps a storage
-        // prefix, both of which look identical whichever way the bytes arrived.
-        // Only the FETCH differs, so only the fetch branches.
-        if (job.source === 'bot') {
-          return await this.runBotExportSlice(job, lockToken, now);
-        }
-        return await this.runImportSlice(job, lockToken, now);
+        // Any count at all is cleared: a streak, or a pre-#1692 row that
+        // counted every claim.
+        endRetryStreak = job.attempt_count !== 0;
+        return result;
       } catch (error) {
         // Read through `toReportableError`, not `String()`: before #1264 a
         // repository threw PostgREST's plain `{ code, message }` object, which
         // `String()` turned into "[object Object]" in the log and on the page,
         // and anything else that is not an `Error` still would.
         const message = toReportableError(error).message;
+        const attempt = importFailureStreak(job.attempt_count) + 1;
+        const transient =
+          !isExpectedStop(error) && isTransientImportFailure(error);
+
+        if (transient && attempt < MAX_IMPORT_ATTEMPTS) {
+          // Leave the job runnable and try again after a pause: a PostgREST
+          // blip, a reset connection or a migration's schema-cache reload
+          // clears on its own, and failing here used to end an import hours
+          // in. Set before the write below, so a failure there still pauses.
+          const delayMs = importRetryDelayMs(attempt);
+          pauseUntil = new Date(
+            now.getTime() + (Date.now() - sliceStartedAt) + delayMs,
+          );
+          reportCaughtFailure(this.logger, {
+            level: 'warning',
+            site: 'discord-import-job-retrying',
+            message: `Discord import ${job.id} hit a temporary error on try ${attempt} of ${MAX_IMPORT_ATTEMPTS}; trying again in ${delayMs / 60_000} min`,
+            error,
+          });
+          await this.importRepo.updateIfStatus(
+            job.id,
+            job.chapter_id,
+            [...WORKER_MAY_CONTINUE, 'purging'],
+            { error: retryNote(job, attempt, delayMs), attempt_count: attempt },
+          );
+          return { claimed: true, importId: job.id, finished: false };
+        }
+
         if (isExpectedStop(error)) {
           logThrowable(
             this.logger,
@@ -351,17 +416,26 @@ export class DiscordImportWorkerService {
           job.id,
           job.chapter_id,
           [...WORKER_MAY_CONTINUE, 'purging'],
-          { status: 'failed', error: message },
+          {
+            status: 'failed',
+            error: transient
+              ? `Stopped after ${MAX_IMPORT_ATTEMPTS} tries that each hit a temporary error. The last one: ${message}`
+              : message,
+          },
         );
         // A deletion that failed is not news to send: the admin who asked
         // for it is watching it count down. An import that failed is.
         if (job.status !== 'purging') await this.announceFinished(failed);
         return { claimed: true, importId: job.id, finished: true };
       } finally {
-        await this.importRepo.releaseLease(job.id, lockToken).catch(() => {
-          // A lost lease is the normal outcome of a slice that overran; the
-          // next tick re-claims. Never worth failing the sweep over.
-        });
+        await this.importRepo
+          .releaseLease(job.id, lockToken, { endRetryStreak, pauseUntil })
+          .catch(() => {
+            // A lost lease is the normal outcome of a slice that overran;
+            // the next tick re-claims. Never worth failing the sweep over.
+            // A pause that fails to write is lost with it, and the job runs
+            // again after LEASE_MS instead: a different wait, not a lost job.
+          });
       }
     } finally {
       this.running = false;
@@ -500,6 +574,9 @@ export class DiscordImportWorkerService {
         attachments_skipped: result.totals.attachmentsSkipped,
         warnings: result.totals.warnings.slice(-MAX_WARNINGS),
         completed_at: result.finished ? new Date().toISOString() : null,
+        // A finished import shows no "trying again" note (#1692), even when
+        // the release that would have cleared it does not land.
+        ...(result.finished ? { error: null } : {}),
       },
     );
     await this.announceFinished(closed);
@@ -814,6 +891,7 @@ export class DiscordImportWorkerService {
         attachments_skipped: attachmentsSkipped,
         warnings: warnings.slice(-MAX_WARNINGS),
         completed_at: finished ? new Date().toISOString() : null,
+        ...(finished ? { error: null } : {}),
       },
     );
     await this.announceFinished(closed);
@@ -1289,6 +1367,7 @@ export class DiscordImportWorkerService {
     await this.importRepo.update(job.id, job.chapter_id, {
       status: 'purged',
       purged_at: new Date().toISOString(),
+      error: null,
     });
     // The running total, not this slice's: a large purge spans many slices,
     // and the last one can delete nothing if the one before emptied the rows.
