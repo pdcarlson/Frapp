@@ -14,13 +14,13 @@ import {
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
 import {
-  EmptyState,
   ErrorState,
   NoChapterState,
   SkeletonBlock,
   SkeletonRegion,
   SkeletonText,
 } from "@/components/state-block";
+import { InlineNote } from "@/components/inline-note";
 import { AccentChip, StatusChip } from "@/components/status-chip";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { useCanCreateEvents } from "@/components/events/new-event-sheet";
@@ -53,8 +53,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * `spec/ui/mobile/patterns.md` § Bottom sheets.
  *
  * An officer who can create events (`events:create`) adds one from the tab
- * bar's quick-actions + (New event, `components/quick-actions/`); the empty
- * state points at it, as Tasks' does.
+ * bar's quick-actions + (New event, `components/quick-actions/`); the
+ * one-line zero state points at it, as Tasks' does.
  *
  * The board's Going / Can't buttons and "Going ✓" marker are not drawn: RSVP
  * has no server model yet (`spec/behavior/events.md`), and they come back with
@@ -110,13 +110,14 @@ export default function EventsScreen() {
 
     if (events.length === 0) {
       return (
-        <EmptyState
-          glyph="◷"
-          title="Nothing scheduled"
-          // The title says it; only the way to change it is worth a line
-          // (`writing.md` § 4, Empty states).
-          body={canCreateEvents ? "Tap + to add an event." : undefined}
-        />
+        // One line where the rows would be, not a card (`writing.md` § 4,
+        // rule 7): the fact, and for a creator the way to change it, which is
+        // the tab bar's + (New event) rather than a button of the screen's own.
+        <InlineNote>
+          {canCreateEvents
+            ? "Nothing scheduled yet. Tap + to add the first event."
+            : "Nothing scheduled yet."}
+        </InlineNote>
       );
     }
 
