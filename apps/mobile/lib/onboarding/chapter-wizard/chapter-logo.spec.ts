@@ -147,7 +147,7 @@ describe("pickAndSetChapterLogo", () => {
     expect(confirm).not.toHaveBeenCalled();
   });
 
-  it("shows the API's own reason when the confirm is refused", async () => {
+  it("never shows the API's field-named reason when the confirm is refused", async () => {
     granted();
     picked({
       uri: "file:///crest.png",
@@ -160,7 +160,7 @@ describe("pickAndSetChapterLogo", () => {
     });
     await expect(run()).resolves.toEqual({
       status: "refused",
-      reason: "storage_path does not reference an uploaded logo",
+      reason: "Try again in a moment.",
     });
   });
 });

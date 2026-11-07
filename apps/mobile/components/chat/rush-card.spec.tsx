@@ -382,7 +382,9 @@ describe("RushCard — live", () => {
     vote.mockRejectedValue({ statusCode: 404, message: "Candidate not found" });
     const tree = render();
     await press(tree, "Vote");
-    expect(screenText(tree)).toContain("Candidate not found");
+    expect(screenText(tree)).toContain(
+      "It may have been deleted. Refresh and try again.",
+    );
     expect(button(tree, "Vote").props.disabled).toBe(false);
   });
 

@@ -187,9 +187,10 @@ export class AttendanceService {
       ) {
         // Names the surface, because the caller that hits this is usually the
         // web chat event card, which structurally cannot send a location. The
-        // card renders the server's message verbatim through `getErrorMessage`,
-        // so putting the guidance here is what makes that path honest — and it
-        // costs no per-card fetch of the event just to learn it has a zone.
+        // card words it through the shared error map (`SERVER_MESSAGE_COPY` in
+        // `@repo/validation`, keyed by this exact sentence), so putting the
+        // guidance here is what makes that path honest — and it costs no
+        // per-card fetch of the event just to learn it has a zone.
         throw new BadRequestException(
           'This event checks you in by location — use the Frapp mobile app to check in.',
         );

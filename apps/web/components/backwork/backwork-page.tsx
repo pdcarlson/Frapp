@@ -330,7 +330,7 @@ export function BackworkPage() {
         title: "Couldn't fetch download link",
         description: getErrorMessage(
           error,
-          "Retry in a moment. Signed links expire quickly.",
+          "Try again in a moment.",
         ),
         variant: "destructive",
       });

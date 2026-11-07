@@ -306,7 +306,7 @@ export function EventsPage() {
       const detail = failures
         .map(
           ({ eventId, reason }) =>
-            `${eventName(eventId)}: ${getErrorMessage(reason, "unknown error")}`,
+            `${eventName(eventId)}: ${getErrorMessage(reason, "Try again in a moment.")}`,
         )
         .join("; ");
       toast({

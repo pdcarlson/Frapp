@@ -13,7 +13,7 @@ import {
   useTransitionInvoiceStatus,
 } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
-import { can } from "@repo/validation";
+import { STATUS_LABELS, can, statusLabel } from "@repo/validation";
 import { formatDay } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -827,10 +827,12 @@ export function InvoiceList({ id }: { id?: string }) {
                       {formatCurrency(invoice.amount)}
                     </span>
                     <Badge variant={invoiceStatusKind(invoice.status)}>
-                      {invoice.status}
+                      {statusLabel("invoice", invoice.status)}
                     </Badge>
                     {isOverdue ? (
-                      <Badge variant="destructive">OVERDUE</Badge>
+                      <Badge variant="destructive">
+                        {STATUS_LABELS.invoice.OVERDUE}
+                      </Badge>
                     ) : null}
                     {canPay(invoice) ? (
                       <Button

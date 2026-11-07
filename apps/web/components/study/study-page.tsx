@@ -303,7 +303,7 @@ export function StudyPage() {
       setGeolocationError(
         getErrorMessage(
           error,
-          "Couldn't reach your device location. The session will expire if heartbeats keep failing.",
+          "Couldn't read your location. Your session ends if this keeps happening.",
         ),
       );
     }
@@ -485,7 +485,7 @@ export function StudyPage() {
         title: "Couldn't stop session",
         description: getErrorMessage(
           error,
-          "Retry in a moment. The server may have already expired the session.",
+          "Try again in a moment. The session may have already ended.",
         ),
         variant: "destructive",
       });

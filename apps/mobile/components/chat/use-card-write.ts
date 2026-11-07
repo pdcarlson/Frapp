@@ -1,7 +1,7 @@
+import { errorCopy } from "@repo/hooks/error-copy";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { useFocusEffect } from "expo-router";
-import { serverMessageOf } from "@repo/api-sdk";
 import { useConnection } from "@/lib/connection/use-connection";
 
 /** A refused write's line on a card. */
@@ -77,7 +77,7 @@ export function useCardWrite(input: {
       setRefusal(
         gate
           ? { text: gate, gate: true }
-          : { text: serverMessageOf(error) ?? fallback, gate: false },
+          : { text: errorCopy(error, fallback), gate: false },
       );
     } finally {
       inFlight.current = false;

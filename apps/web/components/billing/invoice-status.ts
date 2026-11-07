@@ -88,9 +88,10 @@ export function subscriptionStatusKind(
  *
  * Stripe's tokens are snake_case, and CSS `capitalize` does not treat `_` as a
  * word boundary — so `past_due` under a `capitalize` class rendered as
- * "Past_due". `writing.md` §5 fixes the vocabulary for the states it names;
- * these are Stripe's own and have no §5 row, so they map to the plain-language
- * equivalent once, here, rather than being re-cased at each call site.
+ * "Past_due". These are Stripe's own states, read only by
+ * web's billing panel, so they map to plain language once, here, rather than
+ * in `STATUS_LABELS` (`writing.md` §5) or at each call site. Move them there if
+ * mobile ever shows subscription state.
  */
 export function subscriptionStatusLabel(
   status: string | null | undefined,

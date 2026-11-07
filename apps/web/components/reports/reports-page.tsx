@@ -150,20 +150,12 @@ type PickerFieldProps = {
   allLabel: string;
   /** Plural noun used in the empty/error copy, e.g. "events". */
   noun: string;
-  /** Singular noun used in the manual-entry disclosure, e.g. "event". */
-  singularNoun: string;
 };
 
 /**
- * A named-entity filter: a picker `<select>` backed by a live list, plus a
- * collapsed manual-ID fallback.
- *
- * The fallback exists because the picker can only offer what its list query
- * returns, and that query is scoped by `members:view` (and, for events, the
- * `events` module) — permissions `reports:export` does not imply. A caller
- * who knows an id the list omits (a departed member, a role-targeted event,
- * or a custom role without `members:view`) can still reach it directly,
- * matching what the raw-UUID input this replaces already allowed.
+ * A named-entity filter: a picker `<select>` backed by a live list. Blank is a
+ * chapter-wide report. There is no typed-id fallback: an officer picks a
+ * name, never an id (principles.md P2.2).
  */
 function PickerField({
   idPrefix,
@@ -174,9 +166,7 @@ function PickerField({
   query,
   allLabel,
   noun,
-  singularNoun,
 }: PickerFieldProps) {
-  const matchesOption = options.some((option) => option.id === value);
   const selectId = `${idPrefix}-select`;
 
   return (
@@ -184,11 +174,7 @@ function PickerField({
       <Label htmlFor={selectId}>{label}</Label>
       <select
         id={selectId}
-        // Falls back to the "chapter-wide" option rather than letting the
-        // browser show nothing selected whenever `value` is a manually-entered
-        // id the list doesn't contain — the manual field below is the one
-        // source of truth for that case.
-        value={matchesOption ? value : ""}
+        value={value}
         onChange={(event) => onValueChange(event.target.value)}
         disabled={query.isPending}
         className={`${dashboardFormSelectClassName} w-full`}
@@ -202,8 +188,8 @@ function PickerField({
       </select>
       {query.isError ? (
         <p className="text-xs text-destructive">
-          Couldn&apos;t load {noun}. Enter an id manually below, or leave both
-          blank for a chapter-wide report, or{" "}
+          Couldn&apos;t load {noun}. Leave it blank for a chapter-wide report,
+          or{" "}
           <button
             type="button"
             onClick={() => query.refetch()}
@@ -218,22 +204,6 @@ function PickerField({
           No {noun} yet. Every report will be chapter-wide.
         </p>
       ) : null}
-      <details className="text-xs text-muted-foreground">
-        <summary className="cursor-pointer select-none">
-          Can&apos;t find the {singularNoun}? Enter its id directly
-        </summary>
-        <Input
-          className="mt-1"
-          value={value}
-          onChange={(event) => onValueChange(event.target.value)}
-          placeholder={`${singularNoun} id`}
-        />
-        {value && !matchesOption ? (
-          <p className="mt-1">
-            Not in the list above. The report will still scope to this id.
-          </p>
-        ) : null}
-      </details>
     </div>
   );
 }
@@ -688,7 +658,6 @@ export function ReportsPage() {
                     query={eventsQuery}
                     allLabel="Chapter-wide (all events)"
                     noun="events"
-                    singularNoun="event"
                   />
                   <div className="grid gap-1">
                     <Label htmlFor="report-start">Start date</Label>
@@ -726,7 +695,6 @@ export function ReportsPage() {
                     query={membersQuery}
                     allLabel="Chapter-wide (all members)"
                     noun="members"
-                    singularNoun="member"
                   />
                   <div className="grid gap-1">
                     <Label htmlFor="report-window">Time window</Label>
@@ -764,7 +732,6 @@ export function ReportsPage() {
                     query={membersQuery}
                     allLabel="Chapter-wide (all members)"
                     noun="members"
-                    singularNoun="member"
                   />
                   <div className="grid gap-1">
                     <Label htmlFor="service-report-start">Start date</Label>
@@ -793,8 +760,7 @@ export function ReportsPage() {
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-muted-foreground">
-                PDF export is generated server-side; its download link is valid
-                for one hour.
+                A PDF download link works for one hour.
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 {/*
@@ -864,7 +830,7 @@ export function ReportsPage() {
             <p className="text-sm text-muted-foreground">
               {truncation?.truncated
                 ? `${truncationSummary(truncation)} This preview and the CSV built from it are not a complete record of the chapter.`
-                : "First 25 rows of the generated report. The CSV download contains every returned row."}
+                : "First 25 rows of the generated report. The CSV has every row."}
             </p>
             <div>
               {/*

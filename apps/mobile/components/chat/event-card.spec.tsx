@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { MemberFacingError } from "@repo/hooks/error-copy";
 import React from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
@@ -313,7 +314,9 @@ describe("EventCard — Check in", () => {
 
   it("says why when location access is refused, and leaves the button to retry", async () => {
     state.event = { ...EVENT_ROW, check_in_zone: [[1, 2]] };
-    requireForegroundFix.mockRejectedValue(new Error("Allow location access."));
+    requireForegroundFix.mockRejectedValue(
+      new MemberFacingError("Allow location access."),
+    );
     const tree = render();
     await press(tree, "Check in");
     expect(checkIn).not.toHaveBeenCalled();
@@ -382,11 +385,13 @@ describe("EventCard — Check in", () => {
   it("relays any other refusal and leaves the button to retry", async () => {
     checkIn.mockRejectedValue({
       statusCode: 400,
-      message: "Check-in for this event has closed.",
+      message: "Check-in is only allowed during the event time window",
     });
     const tree = render();
     await press(tree, "Check in");
-    expect(screenText(tree)).toContain("Check-in for this event has closed.");
+    expect(screenText(tree)).toContain(
+      "You can only check in while the event is on.",
+    );
     expect(button(tree, "Check in").props.disabled).toBe(false);
   });
 

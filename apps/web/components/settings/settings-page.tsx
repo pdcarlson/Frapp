@@ -411,7 +411,7 @@ function SettingsPageContent() {
         title: "Couldn't save settings",
         description: getErrorMessage(
           error,
-          "The API rejected the update. Retry in a moment.",
+          "Your change wasn't saved. Try again in a moment.",
         ),
         variant: "destructive",
       });
@@ -572,7 +572,6 @@ function SettingsPageContent() {
           */}
           <TabsContent value="roles" className="mt-0">
             <SettingsRolesTab
-              archetypeKey={archetypeKey}
               canManage={canManage}
               catalog={permissionsCatalog}
               // Pending as well as error. `renderConfigGated` used to block on

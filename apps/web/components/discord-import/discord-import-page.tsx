@@ -1,6 +1,7 @@
 "use client";
 
 import { describeLoadFailure } from "@repo/api-sdk";
+import { DISCORD_ROUTES_WRITE_FOR_MEMBERS } from "@/lib/discord-error-copy";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -288,7 +289,11 @@ function DiscordImportView({
     } catch (error) {
       toast({
         variant: "destructive",
-        description: getErrorMessage(error, "Could not stop the import."),
+        description: getErrorMessage(
+          error,
+          "Could not stop the import.",
+          DISCORD_ROUTES_WRITE_FOR_MEMBERS,
+        ),
       });
     }
   }
@@ -302,7 +307,11 @@ function DiscordImportView({
     } catch (error) {
       toast({
         variant: "destructive",
-        description: getErrorMessage(error, "Could not resume the import."),
+        description: getErrorMessage(
+          error,
+          "Could not resume the import.",
+          DISCORD_ROUTES_WRITE_FOR_MEMBERS,
+        ),
       });
     }
   }
@@ -313,7 +322,11 @@ function DiscordImportView({
     } catch (error) {
       toast({
         variant: "destructive",
-        description: getErrorMessage(error, "Could not clear the import."),
+        description: getErrorMessage(
+          error,
+          "Could not clear the import.",
+          DISCORD_ROUTES_WRITE_FOR_MEMBERS,
+        ),
       });
     }
   }
@@ -328,7 +341,11 @@ function DiscordImportView({
     } catch (error) {
       toast({
         variant: "destructive",
-        description: getErrorMessage(error, "Could not delete the import."),
+        description: getErrorMessage(
+          error,
+          "Could not delete the import.",
+          DISCORD_ROUTES_WRITE_FOR_MEMBERS,
+        ),
       });
     }
   }
