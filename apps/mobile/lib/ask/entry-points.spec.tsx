@@ -140,7 +140,6 @@ function sheets(root: Node): Node[] {
   return root.findAll((node) => (node.type as unknown) === "BottomSheetModal");
 }
 
-
 beforeEach(() => {
   delete process.env[ASK_FLAG_ENV_KEY];
   present.mockClear();
@@ -186,25 +185,29 @@ describe.each([
   });
 });
 
-// #3362: Chat home's notifications bell shares the title row with the pill,
-// and is drawn whether or not the build has Ask.
-describe("Chat home (s04) notifications bell", () => {
+// Chat home's header pair (owner, 2026-11-07): the Messages door and the
+// account avatar share the title row with the pill, and are drawn whether or
+// not the build has Ask. The notification bell folded into the avatar.
+describe("Chat home (s04) header controls", () => {
   const screen = () => <ChatHomeScreen />;
+  const labelled = (tree: ReactTestRenderer, label: string) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === label,
+    );
 
   it.each([
     ["off", undefined],
     ["on", "1"],
-  ])("draws the notifications bell with Ask %s", (_state, flag) => {
+  ])("draws Messages and Your account with Ask %s", (_state, flag) => {
     if (flag) process.env[ASK_FLAG_ENV_KEY] = flag;
     const tree = render(screen());
 
-    expect(
-      tree.root.findAll(
-        (node) =>
-          (node.type as unknown) === "Pressable" &&
-          node.props.accessibilityLabel === "Notifications",
-      ),
-    ).toHaveLength(1);
+    expect(labelled(tree, "Messages")).toHaveLength(1);
+    expect(labelled(tree, "Your account")).toHaveLength(1);
+    // The bell is gone: Notifications lives in the account menu.
+    expect(labelled(tree, "Notifications")).toHaveLength(0);
   });
 });
 
