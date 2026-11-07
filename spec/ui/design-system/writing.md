@@ -954,6 +954,26 @@ Reply, Edit and Delete on a message (#2775). Who is offered which is owned by
 | Link wouldn't open | `Couldn't open that link` | `Check the address in the message, or copy it into your browser.` (an alert) | mobile `lib/chat/open-link.ts` |
 | Link, to a screen reader | — | `Open <link text>` as a named action on the message; a quote's jump reads `Go to the original message` | mobile `components/chat/message-markdown.tsx`, `components/chat/message-item.tsx` |
 
+### Edit roles (mobile s13)
+
+The role editor behind the directory member sheet's Roles row, the one place on mobile
+roles are edited. Who gets it, and what it changes, is owned by
+[`../mobile/screens.md`](../mobile/screens.md) s13.
+
+| State | Title | Description | Home |
+|---|---|---|---|
+| The sheet | `<name>'s roles` | Search field `Search roles`; under it one fixed-height status line: `Tap a role to add or remove it.`, then `Saving…` and `Saved` | mobile `components/directory/member-roles-sheet.tsx` |
+| President's row | — | `Changes with Transfer presidency` under the name; the row can't be tapped | mobile `lib/directory/role-editor.ts` (`ROLES_LOCKED_CAPTION`) |
+| Custom roles held | — | `<names> is a custom role, changed on the web.` (`are custom roles` for several) | mobile `lib/directory/role-editor.ts` (`customRolesCaption`) |
+| Empty | — | `This chapter has no roles yet.`, or `No roles match that search.` while searching | mobile `components/directory/member-roles-sheet.tsx` |
+| Removing the last role carrying `members:view` | `Take away <name>'s access?` | `Without a role like Member, <name> can't open chat, the member list or events.` Buttons `Cancel` and `Remove <role>` | mobile `lib/directory/role-editor.ts` (`removeBaseAccessTitle`, `removeBaseAccessBody`) |
+| Save failed: a role was deleted (400) | `Couldn't save roles` | `One of those roles was just deleted. The change was put back and the list refreshed.` | mobile `lib/directory/role-editor.ts` (`rolesSaveFailedBody`) |
+| Save failed: not allowed (403) | `Couldn't save roles` | `The change isn't allowed any more, so it was put back.` | same |
+| Save failed: anything else | `Couldn't save roles` | `The change didn't reach the server, so it was put back. Try again.` | same |
+
+When the officer has already opened someone else, a failed save still alerts, and
+`The change` reads `Your change to <name>'s roles`, so no change is lost without a word.
+
 ### Start a DM (mobile s13)
 
 The directory member sheet's Message action (#2773). The behavior is owned by
