@@ -19,7 +19,7 @@ import { ScreenShell } from "@/components/screen-shell";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { BACK_TO_MORE } from "@/components/back-row";
 import { SectionHeader } from "@/components/list-section";
-import { EmptyState, ErrorState } from "@/components/state-block";
+import { ErrorState } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
 import { CardListSkeleton } from "@/components/card-list-skeleton";
 import { CardMessages } from "@/components/card-messages";
@@ -867,13 +867,9 @@ export default function StudyScreen() {
             align="left"
             placement="screen"
           />
-          <EmptyState
-            glyph="◷"
-            title="Study hours are turned off"
-            body={
-              session ? MODULE_OFF_COPY.runningSession : MODULE_OFF_COPY.start
-            }
-          />
+          <InlineNote>
+            {session ? MODULE_OFF_COPY.runningSession : MODULE_OFF_COPY.start}
+          </InlineNote>
         </>
       );
     }

@@ -299,15 +299,11 @@ import {
 import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
 import { ChannelFilterMenu } from "@/components/chat/channel-filter-menu";
 import { Toggle } from "@/components/toggle";
-import { SearchGlyph } from "@/components/search-glyph";
 import { SetupChecklistView } from "@/components/chat/setup-checklist";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
-import {
-  EmptyState,
-  EmptyStateAction,
-  ErrorState,
-} from "@/components/state-block";
+import { ErrorState } from "@/components/state-block";
+import { InlineNote } from "@/components/inline-note";
 
 const general = { id: "c-general", name: "general", type: "PUBLIC" };
 const dmAlice = {
@@ -779,31 +775,11 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     };
     const tree = render();
 
-    // The state family's empty card, with its CTA, not a hand-rolled block.
-    const empty = tree.root.findByType(EmptyState);
-    expect(empty.findAllByType(EmptyStateAction)).toHaveLength(1);
-    // writing.md § Arrange the channel list gives this state no title, and
-    // every string it shows lives in `@repo/hooks`; web shows none either.
-    expect(empty.props.title).toBeUndefined();
-    // The search glyph, not the "⌕" character Figtree doesn't carry.
-    expect(empty.props.glyph).toBe(SearchGlyph);
-    expect(
-      tree.root.findAll(
-        (node) =>
-          (node.type as unknown) === "Text" &&
-          node.props.children === "No channels match your filters.",
-      ),
-    ).toHaveLength(1);
-    const clear = tree.root.find(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        node.findAll(
-          (inner) =>
-            (inner.type as unknown) === "Text" &&
-            inner.props.children === "Show all channels",
-        ).length > 0,
-    );
-    act(() => clear.props.onPress());
+    // One line where the rows go, with Show all channels as its way out.
+    const empty = tree.root.findByType(InlineNote);
+    expect(empty.props.children).toBe("No channels match your filters.");
+    expect(empty.props.action?.label).toBe("Show all channels");
+    act(() => empty.props.action?.onPress());
     expect(setFilter).toHaveBeenCalledWith({
       unread_only: false,
       hide_muted: false,
@@ -1312,9 +1288,8 @@ describe("Chat home loading and error states", () => {
     channelsData.value = [];
     const tree = render();
 
-    const empty = tree.root.findByType(EmptyState);
-    expect(empty.props.title).toBe("No channels yet");
-    expect(empty.props.body).toBe("Ask an admin to add one.");
+    const empty = tree.root.findByType(InlineNote);
+    expect(empty.props.children).toBe("No channels yet. Ask an admin to add one.");
   });
 });
 

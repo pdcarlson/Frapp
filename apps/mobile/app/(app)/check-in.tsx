@@ -31,7 +31,7 @@ import { useCheckIn, useEvent } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ManualCodeSheet } from "@/components/check-in/manual-code-sheet";
 import { useSheetVisit } from "@/components/sheet-scaffold";
-import { EmptyState, ErrorState } from "@/components/state-block";
+import { ErrorState } from "@/components/state-block";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   isPlausibleManualCode,
@@ -48,6 +48,7 @@ import { selectEventDetail } from "@/lib/events/select";
 import { useConnection } from "@/lib/connection/use-connection";
 import { successHaptic } from "@/lib/haptics";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { InlineNote } from "@/components/inline-note";
 
 /**
  * s18 — QR check-in scanner (`canvas-screens.dc.html:600`).
@@ -620,11 +621,7 @@ export default function CheckInScreen() {
         </View>
       ) : !eventId ? (
         <View style={styles.stateWrap}>
-          <EmptyState
-            glyph="◎"
-            title="No event selected"
-            body="Open an event, then tap Scan QR to check in."
-          />
+          <InlineNote>Open an event, then tap Scan QR to check in.</InlineNote>
         </View>
       ) : !eventLoaded && eventQuery.isError ? (
         // Nothing can be sent without the event (see `eventLoaded`), so a

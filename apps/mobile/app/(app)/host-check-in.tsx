@@ -19,7 +19,6 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
 import {
-  EmptyState,
   ErrorState,
   SkeletonBlock,
   SkeletonRegion,
@@ -29,6 +28,7 @@ import { CHECK_IN_TOKEN_WINDOW_MS } from "@/lib/events/check-in-code";
 import { formatCountdown } from "@/lib/events/format";
 import { selectEventDetail, selectMintedToken } from "@/lib/events/select";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
+import { InlineNote } from "@/components/inline-note";
 
 /**
  * s22 — Host check-in, admin (`canvas-screens.dc.html:704`).
@@ -279,19 +279,11 @@ export default function HostCheckInScreen() {
 
       {!eventId ? (
         <View style={styles.stateWrap}>
-          <EmptyState
-            glyph="◎"
-            title="No event selected"
-            body="Open an event to host its check-in."
-          />
+          <InlineNote>Open an event to host its check-in.</InlineNote>
         </View>
       ) : !canHost ? (
         <View style={styles.stateWrap}>
-          <EmptyState
-            glyph="◎"
-            title="Officers only"
-            body="Hosting check-in needs the events permission."
-          />
+          <InlineNote>Hosting check-in is for officers who manage events.</InlineNote>
         </View>
       ) : !minted &&
         (tokenQuery.isError || (!tokenQuery.isPending && !cached)) ? (

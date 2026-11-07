@@ -43,11 +43,7 @@ import {
   useDeleteAccountFlow,
 } from "@/components/profile/use-delete-account-flow";
 import { anyReadUncached } from "@/components/shared/async-states";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedOffline,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { Switch } from "@/components/ui/switch";
 import { useNetwork } from "@/lib/providers/network-provider";
@@ -59,6 +55,7 @@ import {
   ProfilePageSkeleton,
   QuietHoursSkeleton,
 } from "@/components/profile/profile-skeleton";
+import { InlineNote } from "@/components/shared/inline-note";
 
 type CurrentUser = {
   id?: string;
@@ -471,10 +468,7 @@ export function ProfilePanel() {
   let categoriesState: React.ReactNode = null;
   if (!chapterId) {
     categoriesState = (
-      <NestedEmpty
-        title="Select a chapter"
-        description="Notification categories are set per chapter, so these switches appear once a chapter is active."
-      />
+      <InlineNote>Pick a chapter to set its notifications.</InlineNote>
     );
   } else if (isOffline && anyReadUncached(preferencesQuery)) {
     categoriesState = (

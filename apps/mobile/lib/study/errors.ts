@@ -41,7 +41,7 @@ export const MODULE_OFF_COPY = {
    * gone.
    */
   session:
-    "Your chapter isn't tracking study hours right now, so that didn't save. An officer can turn the module back on — study time tracked now may not be credited.",
+    "Your chapter isn't tracking study hours right now, so that didn't save. An officer can turn the module back on. Study time tracked now may not be credited.",
   /**
    * The module-off screen's body when a session is still running under it
    * (#2718). The screen replaces the session's card, so this is the only
@@ -50,7 +50,7 @@ export const MODULE_OFF_COPY = {
    * failed for the chapter payload to report `hours` off.
    */
   runningSession:
-    "Your chapter isn't tracking study hours right now, so your running session can't be updated or ended. An officer can turn the module back on — study time tracked now may not be credited.",
+    "Your chapter isn't tracking study hours right now, so your running session can't be updated or ended. An officer can turn the module back on. Study time tracked now may not be credited.",
 } as const;
 
 /**

@@ -82,10 +82,7 @@ import {
   UnreadBadge,
 } from "@/components/chat/channel-row";
 import { gutterBleed, PressableRow } from "@/components/list-section";
-import { SearchGlyph } from "@/components/search-glyph";
 import {
-  EmptyState,
-  EmptyStateAction,
   ErrorState,
 } from "@/components/state-block";
 import {
@@ -121,6 +118,7 @@ import {
 import { useConnection } from "@/lib/connection/use-connection";
 import { pressHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { InlineNote } from "@/components/inline-note";
 
 /**
  * s04 — Chat home. Chat is home, so this is the tab bar's `index` route.
@@ -635,11 +633,7 @@ export default function ChatHomeScreen() {
         // No line saying channels appear here, which would only restate what
         // Chat is for; the one line says what to do, since mobile has no way
         // to create a channel (writing.md §4, as amended 2026-11-05).
-        <EmptyState
-          glyph="#"
-          title="No channels yet"
-          body="Ask an admin to add one."
-        />
+        <InlineNote>No channels yet. Ask an admin to add one.</InlineNote>
       ) : (
         <>
           {/*
@@ -729,20 +723,15 @@ export default function ChatHomeScreen() {
               })}
 
           {arranged.emptiedByFilters ? (
-            <EmptyState
-              glyph={SearchGlyph}
-              // No title: writing.md § Arrange the channel list gives this
-              // state none, and web shows none either.
-              body={NO_MATCHING_CHANNELS}
-              action={
-                <EmptyStateAction
-                  label={SHOW_ALL_CHANNELS_LABEL}
-                  onPress={() =>
-                    setSidebarFilter({ unread_only: false, hide_muted: false })
-                  }
-                />
-              }
-            />
+            <InlineNote
+              action={{
+                label: SHOW_ALL_CHANNELS_LABEL,
+                onPress: () =>
+                  setSidebarFilter({ unread_only: false, hide_muted: false }),
+              }}
+            >
+              {NO_MATCHING_CHANNELS}
+            </InlineNote>
           ) : null}
 
           {hidden.length > 0 ? (

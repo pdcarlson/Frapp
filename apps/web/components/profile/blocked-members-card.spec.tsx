@@ -166,6 +166,6 @@ describe("BlockedMembersCard (#2313)", () => {
     state.chapterId = null;
     state.list = list({ status: "loading" });
     render(<BlockedMembersCard />);
-    expect(screen.getByText("Select a chapter")).toBeInTheDocument();
+    expect(screen.getByText("Pick a chapter to see who you blocked there.")).toBeInTheDocument();
   });
 });
