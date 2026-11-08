@@ -18,7 +18,10 @@ import {
 } from './event-announcement.service';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { isInvited } from './event-role-targeting';
-import { eventLimitsAudience } from '@repo/validation';
+import {
+  DEFAULT_CHECK_IN_OPENS_MINUTES,
+  eventLimitsAudience,
+} from '@repo/validation';
 import { normalizeCheckInZone } from './event-input';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import type {
@@ -206,6 +209,8 @@ export class EventService {
       notes: input.notes ?? null,
       check_in_zone: normalizeCheckInZone(input.check_in_zone) ?? null,
       check_in_zone_name: input.check_in_zone_name ?? null,
+      check_in_opens_minutes:
+        input.check_in_opens_minutes ?? DEFAULT_CHECK_IN_OPENS_MINUTES,
     });
 
     if (parent.recurrence_rule) {

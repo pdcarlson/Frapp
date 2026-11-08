@@ -27,6 +27,7 @@ const EVENT = {
   location: "Great Hall",
   point_value: 10,
   is_mandatory: true,
+  check_in_opens_minutes: 20,
   created_at: "2026-11-01T12:00:00.000Z",
 };
 
@@ -110,6 +111,8 @@ describe("readEventPayload", () => {
           location: 42,
           point_value: Number.NaN,
           is_mandatory: "yes",
+          // A card posted before the field existed.
+          check_in_opens_minutes: undefined,
           created_at: undefined,
         }),
       ),
@@ -118,6 +121,7 @@ describe("readEventPayload", () => {
       location: null,
       point_value: 0,
       is_mandatory: false,
+      check_in_opens_minutes: 10,
       created_at: "",
     });
   });

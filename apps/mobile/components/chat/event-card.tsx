@@ -47,8 +47,8 @@ import { LocationGlyph } from "./location-glyph";
  * points), read by `readEventPayload` from `@repo/chat-core/cards`, the reader
  * web uses. Server-originated: a client cannot forge `kind:"event"`.
  *
- * **Check in, inline.** Inside the event's window (start to end plus the
- * 15-minute grace, `resolveCheckInWindow`), any member can check in from the
+ * **Check in, inline.** Inside the event's window (its lead before the start,
+ * to the end plus the 15-minute grace, `resolveCheckInWindow`), any member can check in from the
  * card. It is the plain self check-in web's card makes, with one thing web
  * can't do: an event with a check-in zone needs the member's position, so the
  * card reads the event while the window is open to learn whether it has one,
@@ -70,8 +70,12 @@ export function EventCard({
   const { tokens } = useFrappTheme();
   const now = useNowDate();
   const open =
-    resolveCheckInWindow(payload.start_time, payload.end_time, now).state ===
-    "open";
+    resolveCheckInWindow(
+      payload.start_time,
+      payload.end_time,
+      now,
+      payload.check_in_opens_minutes,
+    ).state === "open";
 
   const permissions = usePermissionList();
   const canViewAttendance = can("events:update", permissions);

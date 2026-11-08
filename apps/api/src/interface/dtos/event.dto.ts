@@ -15,7 +15,13 @@ import {
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { POINTS_ADJUSTMENT_MAX, RECURRENCE_RULES } from '@repo/validation';
+import {
+  CHECK_IN_GRACE_MINUTES,
+  DEFAULT_CHECK_IN_OPENS_MINUTES,
+  MAX_CHECK_IN_OPENS_MINUTES,
+  POINTS_ADJUSTMENT_MAX,
+  RECURRENCE_RULES,
+} from '@repo/validation';
 import type { Event } from '#domain/entities/event.entity';
 import type { GeofenceCoordinate } from '#domain/entities/study.entity';
 import { GeofenceCoordinateDto } from './study.dto';
@@ -140,6 +146,20 @@ export class CreateEventDto {
   @MaxLength(120)
   check_in_zone_name?: string;
 
+  // No `default:` in the schema on purpose: `openapi-typescript` turns a
+  // defaulted property required in the generated SDK type, which would break
+  // every existing create and update call. The default is applied server-side.
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: MAX_CHECK_IN_OPENS_MINUTES,
+    description: `Minutes before start_time that check-in opens. Omitted on create, it is ${DEFAULT_CHECK_IN_OPENS_MINUTES}; the window closes ${CHECK_IN_GRACE_MINUTES} minutes after end_time.`,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(MAX_CHECK_IN_OPENS_MINUTES)
+  check_in_opens_minutes?: number;
+
   @ApiPropertyOptional({
     description:
       'When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when the event keeps anyone out (`others_invited` false, including its default when `required_role_ids` is non-empty, or a non-empty `excluded_role_ids`), on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both limit its audience and post one. (`PATCH` can still limit the audience of an event whose card already posted; that card is left as-is.)',
@@ -236,6 +256,14 @@ export class CreateEventResponseDto implements Event {
 
   @ApiProperty({ type: String, nullable: true })
   check_in_zone_name: string | null;
+
+  @ApiProperty({
+    minimum: 0,
+    maximum: MAX_CHECK_IN_OPENS_MINUTES,
+    description:
+      'Minutes before start_time that check-in opens; it closes 15 minutes after end_time.',
+  })
+  check_in_opens_minutes: number;
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;
@@ -371,6 +399,20 @@ export class UpdateEventDto {
   @IsString()
   @MaxLength(120)
   check_in_zone_name?: string;
+
+  // No `default:` in the schema on purpose: `openapi-typescript` turns a
+  // defaulted property required in the generated SDK type, which would break
+  // every existing create and update call. The default is applied server-side.
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: MAX_CHECK_IN_OPENS_MINUTES,
+    description: `Minutes before start_time that check-in opens. Omitted on create, it is ${DEFAULT_CHECK_IN_OPENS_MINUTES}; the window closes ${CHECK_IN_GRACE_MINUTES} minutes after end_time.`,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(MAX_CHECK_IN_OPENS_MINUTES)
+  check_in_opens_minutes?: number;
 
   // No `default:` here on purpose. `openapi-typescript` promotes any property
   // carrying a schema default to *required* in the generated SDK type (the same

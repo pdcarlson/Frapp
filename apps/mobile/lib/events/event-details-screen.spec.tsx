@@ -13,6 +13,7 @@ import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
+import { formatEventClock } from "@/lib/events/format";
 
 /**
  * #2101. s07 is often opened before check-in opens: a member arriving early
@@ -28,7 +29,8 @@ import { screenText } from "@/test/screen-text";
  */
 
 const START = new Date("2026-09-25T18:00:00Z");
-const MOUNTED_AT = new Date(START.getTime() - 60_000);
+// A minute before check-in opens, ten minutes before the start.
+const MOUNTED_AT = new Date(START.getTime() - 11 * 60_000);
 
 const ACCENT = "#DDB844";
 const ACCENT_SUBTLE = "#251E0E";
@@ -50,6 +52,8 @@ let routeId: string | undefined = EVENT.id as string;
 let chapterId: string | null = "chapter-1";
 // The viewer's grants: a plain member by default.
 let permissions: string[] = ["members:view"];
+// `GET …/attendance/me`: not checked in by default.
+let myAttendance: unknown = { attendance: null };
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -60,6 +64,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useUpdateEvent: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteEvent: () => ({ mutate: vi.fn(), isPending: false }),
   useListChapters: () => ({ data: [{ chapter_id: "chapter-1", role_ids: [] }] }),
+  useMyAttendance: () => ({ isPending: false, data: myAttendance }),
   useEvent: () => ({
     isPending: eventPending,
     isError: false,
@@ -243,6 +248,8 @@ describe("Event details layout", () => {
     vi.useRealTimers();
     event = EVENT;
     chapterId = "chapter-1";
+    permissions = ["members:view"];
+    myAttendance = { attendance: null };
   });
 
   it("offers no calendar export until calendar sync ships (#3708)", () => {
@@ -330,6 +337,71 @@ describe("Event details layout", () => {
     expect(zone).toBeDefined();
     // Not info blue: the board draws no semantic hue here.
     expect(flat(zone!).color).toBe(signetDarkTokens.color.text.mutedForeground);
+  });
+
+  it("says only when an upcoming check-in opens (#3703)", () => {
+    vi.setSystemTime(new Date(START.getTime() - 30 * 60_000));
+    const tree = render();
+    const opensAt = new Date(START.getTime() - 10 * 60_000);
+
+    expect(
+      textNode(tree, `Check-in opens at ${formatEventClock(opensAt)}`),
+    ).toBeDefined();
+    expect(screenText(tree)).not.toMatch(/hasn't opened/);
+    expect(textNode(tree, "Scan QR to check in")).toBeUndefined();
+  });
+
+  it("swaps the scanner for the member's check-in once they're in (#3703)", () => {
+    event = { ...EVENT, point_value: 10 };
+    const at = new Date(START.getTime() + 2 * 60_000);
+    myAttendance = {
+      attendance: {
+        id: "a-1",
+        status: "PRESENT",
+        check_in_time: at.toISOString(),
+      },
+    };
+    const tree = render();
+
+    const title = `Checked in at ${formatEventClock(at)}`;
+    expect(textNode(tree, title)).toBeDefined();
+    expect(dotColor(tree, title)).toBe(signetDarkTokens.color.semantic.success);
+    expect(textNode(tree, "Scan QR to check in")).toBeUndefined();
+    expect(screenText(tree)).not.toContain("Check-in is open");
+    // The badge row's chip and the card's line both say the points.
+    expect(screenText(tree).match(/\+10 pts/g)).toHaveLength(2);
+  });
+
+  it("still offers the scanner to a member an officer marked absent", () => {
+    myAttendance = {
+      attendance: { id: "a-1", status: "ABSENT", check_in_time: null },
+    };
+    expect(textNode(render(), "Scan QR to check in")).toBeDefined();
+  });
+
+  it("gives a host Host check-in in place of the scanner (#3703)", () => {
+    permissions = ["events:update"];
+    const tree = render();
+
+    expect(textNode(tree, "Host check-in")).toBeDefined();
+    expect(textNode(tree, "Scan QR to check in")).toBeUndefined();
+    const [host] = tree.root.findAll(
+      (node) =>
+        typeof node.props.onPress === "function" &&
+        node.findAll((text) => text.props.children === "Host check-in")
+          .length > 0,
+    );
+    act(() => host.props.onPress());
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/host-check-in",
+      params: { eventId: "evt-1" },
+    });
+  });
+
+  it("lets a host put the QR up before check-in opens", () => {
+    permissions = ["*"];
+    vi.setSystemTime(new Date(START.getTime() - 30 * 60_000));
+    expect(textNode(render(), "Host check-in")).toBeDefined();
   });
 
   it("says a closed window in one line", () => {

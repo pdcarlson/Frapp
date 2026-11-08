@@ -1611,6 +1611,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/events/{eventId}/attendance/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's own attendance for an event
+         * @description Lets a member's event page show that they are checked in (and when) instead of offering check-in again. `attendance` is null when they have no row.
+         */
+        get: operations["AttendanceController_mine_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events/{eventId}/attendance": {
         parameters: {
             query?: never;
@@ -4339,6 +4359,8 @@ export interface components {
             check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
             /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
             check_in_zone_name?: string;
+            /** @description Minutes before start_time that check-in opens. Omitted on create, it is 10; the window closes 15 minutes after end_time. */
+            check_in_opens_minutes?: number;
             /** @description When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when the event keeps anyone out (`others_invited` false, including its default when `required_role_ids` is non-empty, or a non-empty `excluded_role_ids`), on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both limit its audience and post one. (`PATCH` can still limit the audience of an event whose card already posted; that card is left as-is.) */
             channel_id?: string;
             /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when the event keeps anyone out, even without `channel_id` — see that field. */
@@ -4370,6 +4392,8 @@ export interface components {
             /** @description Optional check-in geofence. `null` means the event has no zone. */
             check_in_zone: components["schemas"]["GeofenceCoordinateDto"][] | null;
             check_in_zone_name: string | null;
+            /** @description Minutes before start_time that check-in opens; it closes 15 minutes after end_time. */
+            check_in_opens_minutes: number;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the event row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
@@ -4398,6 +4422,8 @@ export interface components {
             check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
             /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
             check_in_zone_name?: string;
+            /** @description Minutes before start_time that check-in opens. Omitted on create, it is 10; the window closes 15 minutes after end_time. */
+            check_in_opens_minutes?: number;
             /**
              * @description Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved.
              * @enum {string}
@@ -4416,6 +4442,27 @@ export interface components {
             lat?: number;
             /** @description Scanner longitude. Required when the event defines a check-in geofence; ignored when it doesn't. */
             lng?: number;
+        };
+        EventAttendanceDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            event_id: string;
+            /** Format: uuid */
+            user_id: string;
+            /** @enum {string} */
+            status: "PRESENT" | "EXCUSED" | "ABSENT" | "LATE";
+            /** Format: date-time */
+            check_in_time: string | null;
+            excuse_reason: string | null;
+            /** Format: uuid */
+            marked_by: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        MyAttendanceDto: {
+            /** @description The caller's row, or null when they have none (not checked in, and not yet marked). */
+            attendance: components["schemas"]["EventAttendanceDto"] | null;
         };
         UpdateAttendanceDto: {
             /** @enum {string} */
@@ -9063,6 +9110,36 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AttendanceController_mine_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyAttendanceDto"];
+                };
             };
             /** @description Error */
             default: {

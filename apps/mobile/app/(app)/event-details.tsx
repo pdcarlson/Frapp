@@ -1,10 +1,15 @@
-import { checkInZoneLine } from "@repo/validation";
+import { can, checkInZoneLine } from "@repo/validation";
 import { useRequiredOfViewer } from "@/lib/events/viewer-roles";
 import { useMemo, useRef } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEvent, useNowDate } from "@repo/hooks";
+import {
+  useEvent,
+  useMyAttendance,
+  useNowDate,
+  usePermissionList,
+} from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { PencilGlyph } from "@/components/control-glyphs";
@@ -26,12 +31,17 @@ import {
 import { AccentChip, StatusChip } from "@/components/status-chip";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
+  formatCheckInOpens,
   formatEventClock,
   formatEventWindow,
   resolveCheckInWindow,
   type CheckInWindow,
 } from "@/lib/events/format";
-import { selectEventDetail, type EventDetail } from "@/lib/events/select";
+import {
+  selectEventDetail,
+  selectMyCheckIn,
+  type EventDetail,
+} from "@/lib/events/select";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { InlineNote } from "@/components/inline-note";
 
@@ -162,7 +172,12 @@ export default function EventDetailsScreen() {
     );
   }
 
-  const window = resolveCheckInWindow(event.start_time, event.end_time, now);
+  const window = resolveCheckInWindow(
+    event.start_time,
+    event.end_time,
+    now,
+    event.check_in_opens_minutes,
+  );
   const requiredOfViewer = requiredOf(event.attendance);
 
   return (
@@ -204,7 +219,7 @@ export default function EventDetailsScreen() {
           </View>
         ) : null}
 
-        <CheckInCard event={event} window={window} />
+        <CheckInCard event={event} window={window} now={now} />
 
         {event.description ? (
           <DetailSection
@@ -244,8 +259,31 @@ export default function EventDetailsScreen() {
 /**
  * The drawn "● Check-in is open · closes 6:15" card. Open, it takes the
  * chapter's accent-tinted fill and border with the green status dot and the
- * scan button, as drawn. Before and after the window it is one neutral line
- * with a muted dot, since there is nothing to do yet or any more.
+ * card's one button. Before and after the window it is one neutral line with
+ * a muted dot, since there is nothing to do yet or any more.
+ *
+ * What it says, top to bottom (#3703, from running a real chapter event):
+ *
+ * - **Checked in.** A member with a check-in on record sees "Checked in at
+ *   7:52 PM" and the points, with the green dot, and no scanner: the scan is
+ *   done, and offering it again only leads to "already checked in". Read from
+ *   the member's own row (`GET …/attendance/me`), so it holds on another
+ *   device and after the app restarts. The points are the event's
+ *   `point_value`, as s18's success panel says them; an edit to it after the
+ *   check-in isn't retroactive (`spec/behavior/events.md`), so in that rare
+ *   case the two differ.
+ * - **Not open yet.** Only "Check-in opens at 7:50 PM" (with the day when it
+ *   isn't today). No explanation: the time is the whole answer.
+ * - **Open, for a host.** A viewer who can host the check-in (`events:update`,
+ *   the permission that mints the rotating code) gets **Host check-in**, which
+ *   opens s22's QR and count, in place of the guest's scan button: forty
+ *   members walk in in the same five minutes and the host should not be
+ *   digging through More to find it. It is offered from before the window
+ *   opens too, so the QR can be up when the first member arrives. Events have
+ *   no creator or hosts list, so "host" is the permission.
+ * - **Open, for a guest.** "Scan QR to check in". Held back until their own
+ *   row has been read, so a checked-in member never sees it flash; a failed
+ *   read shows it (the server refuses a second check-in anyway).
  *
  * A check-in zone is said here, on the card it constrains, as one muted line
  * while checking in is still possible. It used to be its own box painted in
@@ -255,38 +293,53 @@ export default function EventDetailsScreen() {
 function CheckInCard({
   event,
   window,
+  now,
 }: {
   event: EventDetail;
   window: CheckInWindow;
+  now: Date;
 }) {
   const { tokens } = useFrappTheme();
   const { accent, accentSubtle, accentBorder } = useChapterBranding();
   const styles = createStyles(tokens);
   const router = useRouter();
+  const canHost = can("events:update", usePermissionList());
+  const mine = useMyAttendance(event.id);
+  const checkedInAt = selectMyCheckIn(mine.data);
   const isOpen = window.state === "open";
+  const hostable = canHost && (isOpen || window.state === "upcoming");
 
-  const title = isOpen
-    ? "Check-in is open"
-    : window.state === "upcoming"
-      ? "Check-in hasn't opened"
-      : window.state === "closed"
-        ? "Check-in is closed"
-        : "Check-in is unavailable";
-  const trailing = isOpen
-    ? `closes ${formatEventClock(window.closesAt)}`
-    : window.state === "upcoming"
-      ? `opens ${formatEventClock(window.opensAt)}`
+  const title = checkedInAt
+    ? `Checked in at ${formatEventClock(checkedInAt)}`
+    : isOpen
+      ? "Check-in is open"
+      : window.state === "upcoming" && window.opensAt
+        ? `Check-in opens ${formatCheckInOpens(window.opensAt, now)}`
+        : window.state === "closed"
+          ? "Check-in is closed"
+          : "Check-in is unavailable";
+  const trailing = checkedInAt
+    ? event.point_value
+      ? `+${event.point_value} pts`
+      : null
+    : isOpen
+      ? `closes ${formatEventClock(window.closesAt)}`
       : null;
   const zone =
-    event.hasCheckInZone && (isOpen || window.state === "upcoming")
+    !checkedInAt &&
+    event.hasCheckInZone &&
+    (isOpen || window.state === "upcoming")
       ? checkInZoneLine(event.check_in_zone_name)
       : null;
+  // The accent fill marks a card with something to do now.
+  const active = (isOpen && !checkedInAt) || hostable;
+  const showScan = isOpen && !canHost && !checkedInAt && !mine.isPending;
 
   return (
     <View
       style={[
         styles.checkInCard,
-        isOpen
+        active
           ? { backgroundColor: accentSubtle, borderColor: accentBorder }
           : null,
       ]}
@@ -296,13 +349,19 @@ function CheckInCard({
           style={[
             styles.dot,
             {
-              backgroundColor: isOpen
-                ? tokens.color.semantic.success
-                : tokens.color.text.muted,
+              backgroundColor:
+                isOpen || checkedInAt
+                  ? tokens.color.semantic.success
+                  : tokens.color.text.muted,
             },
           ]}
         />
-        <Text style={[styles.checkInTitle, isOpen ? { color: accent } : null]}>
+        <Text
+          style={[
+            styles.checkInTitle,
+            isOpen && !checkedInAt ? { color: accent } : null,
+          ]}
+        >
           {title}
         </Text>
         {trailing ? <Text style={styles.checkInMeta}>{trailing}</Text> : null}
@@ -310,7 +369,19 @@ function CheckInCard({
 
       {zone ? <Text style={styles.zoneText}>{zone}</Text> : null}
 
-      {isOpen ? (
+      {hostable ? (
+        <SheetPrimaryButton
+          label="Host check-in"
+          accent={accent}
+          onAccent={tokens.color.gold.onHouse}
+          onPress={() =>
+            router.push({
+              pathname: "/host-check-in",
+              params: { eventId: event.id },
+            })
+          }
+        />
+      ) : showScan ? (
         // The app's one primary button (`sheet-scaffold.tsx`): 48pt, the
         // control radius, the chapter accent under `gold.onHouse` ink, as the
         // dues Pay button and every sheet's CTA draw it.

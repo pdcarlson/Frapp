@@ -62,6 +62,8 @@ export function useCreateEvent() {
       // makes [] a 400 here, unlike on update).
       check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
       check_in_zone_name?: string;
+      // Minutes before the start that check-in opens; the server defaults it.
+      check_in_opens_minutes?: number;
     }) => {
       const { data, error } = await client.POST("/v1/events", { body });
       if (error) throw error;
@@ -102,6 +104,7 @@ export function useUpdateEvent() {
         // empty array clears a stored zone.
         check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
         check_in_zone_name?: string;
+        check_in_opens_minutes?: number;
         // Which rows of a repeating series the edit reaches
         // (`spec/behavior/events.md` § Recurrence edit and cancellation scope).
         scope?: "instance" | "series";

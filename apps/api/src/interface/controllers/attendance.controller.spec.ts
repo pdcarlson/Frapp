@@ -16,6 +16,7 @@ describe('AttendanceController', () => {
       | 'updateStatus'
       | 'markAutoAbsent'
       | 'mintCheckInToken'
+      | 'getMyAttendance'
     >
   >;
 
@@ -26,6 +27,7 @@ describe('AttendanceController', () => {
       updateStatus: jest.fn(),
       markAutoAbsent: jest.fn(),
       mintCheckInToken: jest.fn(),
+      getMyAttendance: jest.fn(),
     };
 
     const module: TestingModule = await createUnguardedTestingModule({
@@ -135,6 +137,36 @@ describe('AttendanceController', () => {
       ) as string[] | undefined;
 
       expect(permissions).toBeUndefined();
+    });
+  });
+
+  describe('mine', () => {
+    it("wraps the caller's own row", async () => {
+      const row = { id: 'attendance-1' };
+      attendanceService.getMyAttendance.mockResolvedValue(row as any);
+
+      await expect(
+        controller.mine('event-1', 'user-1', 'chapter-1'),
+      ).resolves.toEqual({ attendance: row });
+      expect(attendanceService.getMyAttendance).toHaveBeenCalledWith(
+        'event-1',
+        'user-1',
+        'chapter-1',
+      );
+    });
+
+    it('answers null, not an empty body, when there is no row', async () => {
+      attendanceService.getMyAttendance.mockResolvedValue(null);
+
+      await expect(
+        controller.mine('event-1', 'user-1', 'chapter-1'),
+      ).resolves.toEqual({ attendance: null });
+    });
+
+    it('is not permission-gated: it is the member\'s own record', () => {
+      expect(
+        Reflect.getMetadata(PERMISSIONS_KEY, AttendanceController.prototype.mine),
+      ).toBeUndefined();
     });
   });
 

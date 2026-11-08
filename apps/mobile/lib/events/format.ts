@@ -13,20 +13,7 @@
  */
 
 import { dayDelta, parseInstant } from "@repo/formatting";
-
-/**
- * Grace minutes after `end_time` during which check-in stays open.
- *
- * Mirrors `CHECK_IN_GRACE_PERIOD_MINUTES` in
- * `apps/api/src/application/services/attendance.service.ts`, which is the
- * authority — the server enforces the window on every surface and rejects a
- * late check-in regardless of what this client believes. This copy exists only
- * so the UI can stop *offering* a check-in it knows will fail; it never grants
- * one. `spec/behavior/events.md` documents the 15-minute default.
- */
-export const CHECK_IN_GRACE_MINUTES = 15;
-
-const MS_PER_MINUTE = 60 * 1000;
+import { checkInWindowBounds } from "@repo/validation";
 
 function clock(date: Date): string {
   return date.toLocaleTimeString(undefined, {
@@ -127,9 +114,9 @@ export function formatEventDateBlock(
 }
 
 export type CheckInWindowState =
-  /** Before `start_time`. */
+  /** Before check-in opens (the event's lead before `start_time`). */
   | "upcoming"
-  /** Between `start_time` and `end_time + grace` — the only state that checks in. */
+  /** From the lead before `start_time` to `end_time + grace` — the only state that checks in. */
   | "open"
   /** Past the grace period. */
   | "closed"
@@ -140,14 +127,23 @@ export interface CheckInWindow {
   state: CheckInWindowState;
   /** When check-in stops being accepted, for the "closes 6:15" line. */
   closesAt: Date | null;
-  /** When check-in starts, for the "opens 5:45" line on an upcoming event. */
+  /** When check-in opens, for "Check-in opens at 7:50 PM" on an upcoming event. */
   opensAt: Date | null;
 }
 
+/**
+ * Where an event is in its check-in window. The window is
+ * `@repo/validation`'s `checkInWindowBounds`, the rule the server enforces:
+ * it opens `opensMinutes` before the start (the event's
+ * `check_in_opens_minutes`; a missing value reads as the default 10) and
+ * closes 15 minutes after the end. The server rejects a check-in outside it
+ * whatever this says; this only stops the UI offering one.
+ */
 export function resolveCheckInWindow(
   startTime: string,
   endTime: string,
   now: Date,
+  opensMinutes?: unknown,
 ): CheckInWindow {
   const start = parseInstant(startTime);
   const end = parseInstant(endTime);
@@ -155,12 +151,30 @@ export function resolveCheckInWindow(
     return { state: "unknown", closesAt: null, opensAt: null };
   }
 
-  const closesAt = new Date(
-    end.getTime() + CHECK_IN_GRACE_MINUTES * MS_PER_MINUTE,
-  );
-  if (now < start) return { state: "upcoming", closesAt, opensAt: start };
-  if (now > closesAt) return { state: "closed", closesAt, opensAt: start };
-  return { state: "open", closesAt, opensAt: start };
+  const { opensAt, closesAt } = checkInWindowBounds(start, end, opensMinutes);
+  if (now < opensAt) return { state: "upcoming", closesAt, opensAt };
+  if (now > closesAt) return { state: "closed", closesAt, opensAt };
+  return { state: "open", closesAt, opensAt };
+}
+
+/**
+ * "at 7:50 PM" today, "tomorrow at 7:50 PM", otherwise "Fri, Nov 13 at
+ * 7:50 PM": when an upcoming event's check-in opens, for the one line its
+ * card says (#3703). The day is said whenever it isn't today, because "opens
+ * at 7:50 PM" on next week's meeting reads as tonight.
+ */
+export function formatCheckInOpens(opensAt: Date, now: Date): string {
+  const time = clock(opensAt);
+  const days = dayDelta(now, opensAt);
+  if (days === 0) return `at ${time}`;
+  if (days === 1) return `tomorrow at ${time}`;
+  const day = opensAt.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    ...(opensAt.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+  });
+  return `${day} at ${time}`;
 }
 
 /**

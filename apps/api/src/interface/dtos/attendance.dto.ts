@@ -81,3 +81,44 @@ export class AutoAbsentResultDto {
   })
   marked: number;
 }
+
+/** One attendance row, as `GET /v1/events/:eventId/attendance/me` returns it. */
+export class EventAttendanceDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  event_id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  user_id: string;
+
+  @ApiProperty({ enum: ['PRESENT', 'EXCUSED', 'ABSENT', 'LATE'] })
+  status: EventAttendanceStatus;
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  check_in_time: string | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  excuse_reason: string | null;
+
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  marked_by: string | null;
+
+  @ApiProperty({ format: 'date-time' })
+  created_at: string;
+}
+
+/**
+ * The caller's own attendance for an event. Wrapped rather than a bare row so
+ * "no record" is `{ attendance: null }`, a JSON body, not an empty 200.
+ */
+export class MyAttendanceDto {
+  @ApiProperty({
+    type: EventAttendanceDto,
+    nullable: true,
+    description:
+      'The caller\'s row, or null when they have none (not checked in, and not yet marked).',
+  })
+  attendance: EventAttendanceDto | null;
+}

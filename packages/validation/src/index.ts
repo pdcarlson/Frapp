@@ -895,6 +895,14 @@ export { STATUS_LABELS, statusLabel } from "./status-labels";
 export type { StatusVocabulary } from "./status-labels";
 export { checkInZoneLine } from "./check-in-zone-copy";
 export {
+  CHECK_IN_GRACE_MINUTES,
+  DEFAULT_CHECK_IN_OPENS_MINUTES,
+  MAX_CHECK_IN_OPENS_MINUTES,
+  checkInOpensMinutes,
+  checkInWindowBounds,
+} from "./check-in-window";
+export type { CheckInWindowBounds } from "./check-in-window";
+export {
   OFFLINE_COPY,
   SERVER_MESSAGE_COPY,
   STATUS_ERROR_COPY,

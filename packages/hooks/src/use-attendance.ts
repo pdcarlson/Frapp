@@ -48,6 +48,31 @@ export function useAttendance(
 }
 
 /**
+ * The signed-in member's own attendance for an event: the row, or `null`
+ * when they have none. Any member may read it (unlike the roster above), and
+ * it is what lets mobile's event page say "Checked in at 7:52 PM" instead of
+ * offering the scanner again (#3703).
+ *
+ * Keyed under `["attendance", eventId]`, so a check-in's invalidation, or an
+ * officer's status write, refreshes it with the roster.
+ */
+export function useMyAttendance(eventId: string) {
+  const client = useFrappClient();
+  return useQuery({
+    queryKey: ["attendance", eventId, "me"],
+    queryFn: async () => {
+      const result = await client.GET("/v1/events/{eventId}/attendance/me", {
+        params: { path: { eventId } },
+      });
+      throwUnlessOk(result);
+      return result.data;
+    },
+    staleTime: 30_000,
+    enabled: !!eventId,
+  });
+}
+
+/**
  * How many rows of an attendance roster (`useAttendance`'s data) are a member
  * who is there: `PRESENT` or `LATE`. A member marked LATE did attend, so
  * leaving them out would contradict the roster the same officer can open.
@@ -103,6 +128,16 @@ export function useCheckIn() {
     },
     onSuccess: (_data, { eventId }) => {
       queryClient.invalidateQueries({ queryKey: ["attendance", eventId] });
+    },
+    // A 409 is the member already on the list (a second scan, or a check-in
+    // from another device): re-read their own row so the event page shows
+    // them checked in rather than offering check-in again.
+    onError: (error, { eventId }) => {
+      if (statusOf(error) === 409) {
+        queryClient.invalidateQueries({
+          queryKey: ["attendance", eventId, "me"],
+        });
+      }
     },
   });
 }

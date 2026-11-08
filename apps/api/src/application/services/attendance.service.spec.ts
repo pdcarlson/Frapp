@@ -49,6 +49,7 @@ describe('AttendanceService', () => {
     notes: null,
     check_in_zone: null,
     check_in_zone_name: null,
+    check_in_opens_minutes: 10,
     created_at: '2026-02-26T00:00:00.000Z',
   };
 
@@ -430,6 +431,39 @@ describe('AttendanceService', () => {
       jest.useRealTimers();
     });
 
+    // #3703: members arrive early, so the window opens the event's lead
+    // before the start (17:50 for an 18:00 start with the default 10).
+    it('opens check-in the default ten minutes before the start', async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-02-26T17:50:00.000Z'));
+
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+      mockAttendanceRepo.checkInAtomic.mockResolvedValue(baseAttendance);
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).resolves.toEqual(
+        baseAttendance,
+      );
+      jest.useRealTimers();
+    });
+
+    it("refuses a check-in before the event's own lead", async () => {
+      jest.useFakeTimers();
+      // 17:54 is inside the default lead but outside this event's five.
+      jest.setSystemTime(new Date('2026-02-26T17:54:00.000Z'));
+
+      mockEventRepo.findById.mockResolvedValue({
+        ...baseEvent,
+        check_in_opens_minutes: 5,
+      });
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        'Check-in is only allowed during the event time window',
+      );
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
+      jest.useRealTimers();
+    });
+
     it('should reject role-targeted event check-in when member lacks required role', async () => {
       const duringEvent = new Date('2026-02-26T18:30:00.000Z');
       const roleTargetedEvent: Event = {
@@ -560,6 +594,40 @@ describe('AttendanceService', () => {
       );
 
       expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getMyAttendance', () => {
+    it("returns the caller's own row", async () => {
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(baseAttendance);
+
+      await expect(
+        service.getMyAttendance('evt-1', 'user-1', 'ch-1'),
+      ).resolves.toEqual(baseAttendance);
+      expect(mockEventRepo.findById).toHaveBeenCalledWith('evt-1', 'ch-1');
+      expect(mockAttendanceRepo.findByEventAndUser).toHaveBeenCalledWith(
+        'evt-1',
+        'user-1',
+      );
+    });
+
+    it('returns null when the caller has no row', async () => {
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+
+      await expect(
+        service.getMyAttendance('evt-1', 'user-1', 'ch-1'),
+      ).resolves.toBeNull();
+    });
+
+    it("404s an event outside the caller's chapter", async () => {
+      mockEventRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.getMyAttendance('evt-1', 'user-1', 'ch-1'),
+      ).rejects.toThrow(new NotFoundException('Event not found'));
+      expect(mockAttendanceRepo.findByEventAndUser).not.toHaveBeenCalled();
     });
   });
 

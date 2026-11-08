@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { type EventRow, groupByWeek, selectEventDetail } from "./select";
+import {
+  type EventRow,
+  groupByWeek,
+  selectEventDetail,
+  selectMyCheckIn,
+} from "./select";
 
 function event(overrides: Record<string, unknown> = {}) {
   return {
@@ -71,6 +76,39 @@ describe("selectEventDetail — recurrence", () => {
   });
 });
 
+describe("selectEventDetail — check-in lead", () => {
+  it("keeps the event's lead and defaults a row without one", () => {
+    expect(
+      selectEventDetail(event({ check_in_opens_minutes: 25 }))
+        ?.check_in_opens_minutes,
+    ).toBe(25);
+    expect(selectEventDetail(event())?.check_in_opens_minutes).toBe(10);
+  });
+});
+
+describe("selectMyCheckIn", () => {
+  const at = "2026-11-07T00:52:00.000Z";
+
+  it("reads a PRESENT or LATE row's check-in time", () => {
+    for (const status of ["PRESENT", "LATE"]) {
+      expect(
+        selectMyCheckIn({ attendance: { status, check_in_time: at } })?.toISOString(),
+      ).toBe(at);
+    }
+  });
+
+  it("is null without a check-in", () => {
+    expect(selectMyCheckIn({ attendance: null })).toBeNull();
+    expect(
+      selectMyCheckIn({ attendance: { status: "ABSENT", check_in_time: null } }),
+    ).toBeNull();
+    expect(
+      selectMyCheckIn({ attendance: { status: "EXCUSED", check_in_time: at } }),
+    ).toBeNull();
+    expect(selectMyCheckIn(undefined)).toBeNull();
+  });
+});
+
 describe("groupByWeek", () => {
   function at(start: Date | string, name: string): EventRow {
     return {
@@ -80,6 +118,7 @@ describe("groupByWeek", () => {
       start_time: typeof start === "string" ? start : start.toISOString(),
       end_time: typeof start === "string" ? start : start.toISOString(),
       point_value: null,
+      check_in_opens_minutes: 10,
       attendance: { is_mandatory: false },
     };
   }

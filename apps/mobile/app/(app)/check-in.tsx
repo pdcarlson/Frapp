@@ -49,6 +49,10 @@ import { useConnection } from "@/lib/connection/use-connection";
 import { successHaptic } from "@/lib/haptics";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { InlineNote } from "@/components/inline-note";
+import {
+  GlassCloseButton,
+  GlassCloseSpacer,
+} from "@/components/glass-close-button";
 
 /**
  * s18 — QR check-in scanner (`canvas-screens.dc.html:600`).
@@ -545,21 +549,14 @@ export default function CheckInScreen() {
       edges={["top", "left", "right", "bottom"]}
     >
       <View style={styles.header}>
-        <Pressable
-          accessibilityRole="button"
+        <GlassCloseButton
           accessibilityLabel="Close check-in"
           onPress={() => leaveTo(eventId)}
-          style={({ pressed }) => [
-            styles.close,
-            pressed ? styles.pressed : null,
-          ]}
-        >
-          <Text style={styles.closeText}>✕</Text>
-        </Pressable>
+        />
         <Text accessibilityRole="header" style={styles.headerTitle}>
           Check in
         </Text>
-        <View style={styles.close} />
+        <GlassCloseSpacer />
       </View>
 
       {/*
@@ -794,16 +791,6 @@ function createStyles(tokens: SignetTokens, accent: string) {
       alignItems: "center",
       paddingHorizontal: tokens.spacing.sm,
       gap: tokens.spacing.sm,
-    },
-    close: {
-      minWidth: tokens.touch.minimum,
-      minHeight: tokens.touch.minimum,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    closeText: {
-      color: tokens.color.text.foreground,
-      ...typeRole(tokens.typography.role.title),
     },
     headerTitle: {
       flex: 1,

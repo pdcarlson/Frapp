@@ -17,6 +17,8 @@ import type { EventAttendance } from '#domain/entities/event-attendance.entity';
 import { RbacService } from './rbac.service';
 import { attendanceFor } from './event-role-targeting';
 import {
+  CHECK_IN_GRACE_MINUTES,
+  checkInWindowBounds,
   eventRequiresAnyone,
   eventSetsRolesApart,
   type EventAttendanceFields,
@@ -32,10 +34,10 @@ import {
 /**
  * Grace period after `end_time` during which check-in stays open and before
  * which auto-absent must not run (`spec/behavior/events.md`). Exported so the
- * scheduled auto-absent sweep computes the same cutoff this service enforces,
- * rather than keeping a second copy that could drift.
+ * scheduled auto-absent sweep computes the same cutoff this service enforces;
+ * the value is `@repo/validation`'s, which the clients read too.
  */
-export const CHECK_IN_GRACE_PERIOD_MINUTES = 15;
+export const CHECK_IN_GRACE_PERIOD_MINUTES = CHECK_IN_GRACE_MINUTES;
 
 /**
  * Optional, like `ANALYTICS_HMAC_SALT`: absent, the rotating-token feature is
@@ -113,15 +115,19 @@ export class AttendanceService {
     const now = new Date();
     const start = new Date(event.start_time);
     const end = new Date(event.end_time);
-    const graceWindowEnd = new Date(
-      end.getTime() + CHECK_IN_GRACE_PERIOD_MINUTES * 60 * 1000,
-    );
 
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
       throw new BadRequestException('Event times are invalid');
     }
 
-    if (now < start || now > graceWindowEnd) {
+    // Opens the event's lead before the start (members arrive early, #3703)
+    // and closes after the grace.
+    const { opensAt, closesAt } = checkInWindowBounds(
+      start,
+      end,
+      event.check_in_opens_minutes,
+    );
+    if (now < opensAt || now > closesAt) {
       throw new BadRequestException(
         'Check-in is only allowed during the event time window',
       );
@@ -271,6 +277,28 @@ export class AttendanceService {
     }
 
     return attendance;
+  }
+
+  /**
+   * The caller's own attendance row for an event, or `null` when they have
+   * none. Any member who can see the event may ask: it is their own record,
+   * and it is what lets the event page say "Checked in at 7:52 PM" instead of
+   * offering the scanner again (#3703). The event is read only to 404 an id
+   * that isn't this chapter's. A member the event doesn't invite can't have a
+   * row (check-in refuses them), so they get `null` and learn nothing about
+   * the event beyond the id they already hold.
+   */
+  async getMyAttendance(
+    eventId: string,
+    userId: string,
+    chapterId: string,
+  ): Promise<EventAttendance | null> {
+    const event = await this.eventRepo.findById(eventId, chapterId);
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+
+    return this.attendanceRepo.findByEventAndUser(eventId, userId);
   }
 
   async getAttendance(

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useScreenBelow } from "@/lib/back-target";
@@ -29,6 +29,10 @@ import { formatCountdown } from "@/lib/events/format";
 import { selectEventDetail, selectMintedToken } from "@/lib/events/select";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
 import { InlineNote } from "@/components/inline-note";
+import {
+  GlassCloseButton,
+  GlassCloseSpacer,
+} from "@/components/glass-close-button";
 
 /**
  * s22 — Host check-in, admin (`canvas-screens.dc.html:704`).
@@ -255,18 +259,16 @@ export default function HostCheckInScreen() {
       edges={["top", "left", "right", "bottom"]}
     >
       <View style={styles.header}>
-        <Pressable
-          accessibilityRole="button"
+        {/*
+          Pops back where the officer started (the event's page, or More), as
+          the edge swipe and Android's back do (`spec/ui/mobile/navigation.md`
+          § Going back); More when nothing is under it. The app's glass close,
+          not the bare "✕ End" it used to be (#3703).
+        */}
+        <GlassCloseButton
           accessibilityLabel="End hosting and go back"
-          // Pops back where the officer started, as the edge swipe and
-          // Android's back do (`spec/ui/mobile/navigation.md` § Going back);
-          // More, whose Host check-in row is the one way in, when nothing is
-          // under it. "End" names no place, so it needs no label from it.
           onPress={() => (below ? below.goBack() : goBackTo(router, "/more"))}
-          style={({ pressed }) => [styles.end, pressed ? styles.pressed : null]}
-        >
-          <Text style={styles.endText}>✕ End</Text>
-        </Pressable>
+        />
         <Text
           accessibilityRole="header"
           numberOfLines={1}
@@ -274,7 +276,7 @@ export default function HostCheckInScreen() {
         >
           {event?.name ?? "Host check-in"}
         </Text>
-        <View style={styles.end} />
+        <GlassCloseSpacer />
       </View>
 
       {!eventId ? (
@@ -406,15 +408,6 @@ function createStyles(tokens: SignetTokens, accent: string) {
       paddingHorizontal: tokens.spacing.lg,
       gap: tokens.spacing.sm,
     },
-    end: {
-      minWidth: 64,
-      minHeight: tokens.touch.minimum,
-      justifyContent: "center",
-    },
-    endText: {
-      color: accent,
-      ...typeRole(tokens.typography.role.label),
-    },
     headerTitle: {
       flex: 1,
       textAlign: "center",
@@ -492,9 +485,6 @@ function createStyles(tokens: SignetTokens, accent: string) {
       ...typeRole(tokens.typography.role.title),
       fontFamily: MONO_FONT_FAMILY,
       letterSpacing: 1,
-    },
-    pressed: {
-      opacity: 0.7,
     },
   });
 }

@@ -198,7 +198,12 @@ function EventRowCard({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const required = useRequiredOfViewer()(event.attendance);
-  const window = resolveCheckInWindow(event.start_time, event.end_time, now);
+  const window = resolveCheckInWindow(
+    event.start_time,
+    event.end_time,
+    now,
+    event.check_in_opens_minutes,
+  );
   const date = formatEventDateBlock(event.start_time, now);
   const meta = [date?.clock, event.location].filter(Boolean).join(" · ");
   const isOpen = window.state === "open";
@@ -311,8 +316,12 @@ function EventRowFlat({
     .filter(Boolean)
     .join(" · ");
   const isOpen =
-    resolveCheckInWindow(event.start_time, event.end_time, now).state ===
-    "open";
+    resolveCheckInWindow(
+      event.start_time,
+      event.end_time,
+      now,
+      event.check_in_opens_minutes,
+    ).state === "open";
 
   return (
     <PressableRow

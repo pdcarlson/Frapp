@@ -194,6 +194,7 @@ export class EventAnnouncementService {
       location: event.location ?? null,
       point_value: event.point_value,
       is_mandatory: event.is_mandatory,
+      check_in_opens_minutes: event.check_in_opens_minutes,
       created_at: event.created_at,
     };
 

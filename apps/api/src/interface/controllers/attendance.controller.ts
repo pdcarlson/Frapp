@@ -10,6 +10,7 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
@@ -31,6 +32,7 @@ import {
 import {
   AutoAbsentResultDto,
   CheckInDto,
+  MyAttendanceDto,
   UpdateAttendanceDto,
 } from '../dtos/attendance.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
@@ -110,6 +112,30 @@ export class AttendanceController {
     @CurrentChapterId() chapterId: string,
   ) {
     return this.attendanceService.mintCheckInToken(eventId, chapterId);
+  }
+
+  // Declared before `@Get()`'s siblings take a path param, and a literal
+  // segment, so it never reads as a user id. Any member may ask: it is their
+  // own row (no `events:update`, unlike the roster below).
+  @Get('me')
+  @ApiOperation({
+    summary: "The caller's own attendance for an event",
+    description:
+      'Lets a member\'s event page show that they are checked in (and when) instead of offering check-in again. `attendance` is null when they have no row.',
+  })
+  @ApiOkResponse({ type: MyAttendanceDto })
+  async mine(
+    @Param('eventId') eventId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentChapterId() chapterId: string,
+  ): Promise<MyAttendanceDto> {
+    return {
+      attendance: await this.attendanceService.getMyAttendance(
+        eventId,
+        userId,
+        chapterId,
+      ),
+    };
   }
 
   @Get()
