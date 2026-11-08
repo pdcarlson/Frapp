@@ -63,6 +63,10 @@ File (or update) an issue for:
 
 - A Sentry production issue at level error or above that isn't already tracked, unless it is
   clearly noise (a bot, a browser extension, a single event from a dev build).
+- A `warning`-level Sentry production issue whose event shows a 5xx response from our own API.
+  The web and mobile apps report every failed request at `warning` (#3377), so an error-only bar
+  would miss a server failure a member hit, such as a 504 on sign-in. A network drop, a timeout
+  with no response, or a 4xx stays unfiled (owner decision, 2026-11-08).
 - Any crash or ANR from TestFlight or Play.
 - Tester feedback or a review describing a bug, a broken flow or confusing UI. A feature request
   is filed only when it's specific; general praise or complaint is reported, not filed.
