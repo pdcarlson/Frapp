@@ -1670,6 +1670,30 @@ describe('InviteService', () => {
       expect(mockNotificationService.notifyMembers).not.toHaveBeenCalled();
     });
 
+    it('still redeems, and reports once, when sending the push fails', async () => {
+      mockRbac.findUserIdsWithAnyPermissions.mockResolvedValue(['user-1']);
+      mockNotificationService.notifyMembers.mockRejectedValue(
+        new Error('push delivery failed'),
+      );
+      const error = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      await expect(service.redeem('test-uuid', 'user-2')).resolves.toEqual({
+        chapterId: 'ch-1',
+        memberId: member.id,
+      });
+
+      expect(captureException).toHaveBeenCalledTimes(1);
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'push delivery failed' }),
+        expect.objectContaining({
+          tags: { caught_at: 'invite-redeem-new-member-notify-failed' },
+        }),
+      );
+      error.mockRestore();
+    });
+
     it('still redeems, and reports once, when the member-joined notification fails', async () => {
       mockRbac.findUserIdsWithAnyPermissions.mockRejectedValue(
         new Error('roster read failed'),
