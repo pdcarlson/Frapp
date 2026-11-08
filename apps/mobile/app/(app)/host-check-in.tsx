@@ -23,7 +23,6 @@ import {
   SkeletonBlock,
   SkeletonRegion,
 } from "@/components/state-block";
-import { useChapterBranding } from "@/lib/chapter-branding";
 import { CHECK_IN_TOKEN_WINDOW_MS } from "@/lib/events/check-in-code";
 import { formatCountdown } from "@/lib/events/format";
 import { selectEventDetail, selectMintedToken } from "@/lib/events/select";
@@ -171,8 +170,7 @@ function useNow(active: boolean): DeviceInstant {
 
 export default function HostCheckInScreen() {
   const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
-  const styles = createStyles(tokens, accent);
+  const styles = createStyles(tokens);
   const router = useRouter();
   const below = useScreenBelow();
 
@@ -396,7 +394,7 @@ export default function HostCheckInScreen() {
   );
 }
 
-function createStyles(tokens: SignetTokens, accent: string) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     safeArea: {
       flex: 1,
