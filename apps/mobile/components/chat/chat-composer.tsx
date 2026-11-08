@@ -8,6 +8,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { MemberAvatar } from "@/components/member-avatar";
 import type { StagedPhoto } from "@/lib/chat/use-chat-channel";
@@ -23,7 +24,10 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { CloseGlyph, RetryGlyph } from "@/components/control-glyphs";
 import { NavGlyph } from "@/components/nav-glyph";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
-import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
+import {
+  type ChapterBranding,
+  useChapterBranding,
+} from "@/lib/chapter-branding";
 
 /**
  * The s05 composer (`canvas-screens.dc.html:186-189`).
@@ -64,6 +68,14 @@ import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding
  * message, so it always carries a cancel. While editing, the send control
  * saves the edit and says so to a screen reader, and the caller withholds the
  * attach control, since an edit changes text only.
+ *
+ * **Choosing Reply or Edit puts the caret in the input** (2026-11-07). The
+ * strip alone left the keyboard down, so an edit took a second tap on a box
+ * that looked idle, and testers read it as slow to open. While editing, the
+ * input sets the message's own line height and grows to `EDIT_MAX_LINES`
+ * before it scrolls: a long message squeezed into the drafting box's five
+ * tight lines read as shrunk, and the member could not see what they were
+ * changing.
  *
  * **`@` opens a member picker** above the input, as web's composer does: the
  * members whose name holds what follows the `@`, from `mentionCandidates`,
@@ -176,7 +188,15 @@ export function ChatComposer({
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand);
+  const { height: windowHeight } = useWindowDimensions();
   const inputRef = useRef<TextInput>(null);
+  const contextKind = context?.kind ?? null;
+  // Reply and Edit are both "type now": open the keyboard with the strip.
+  // Keyed on the kind, so it runs when one starts, not on every keystroke.
+  useEffect(() => {
+    if (contextKind) inputRef.current?.focus();
+  }, [contextKind]);
+  const isEditing = contextKind === "edit";
   const mention = useMentionPicker(
     inputRef,
     value,
@@ -189,8 +209,7 @@ export function ChatComposer({
   // staged. A photo-only message is a real message, uploaded or still
   // uploading, and gating it on the text alone would strand it with the send
   // button greyed out and no way to explain why.
-  const isSendable =
-    canSend && (value.trim().length > 0 || photos.length > 0);
+  const isSendable = canSend && (value.trim().length > 0 || photos.length > 0);
 
   const canAttach =
     !!onAttach && !isPicking && !attachFull && !attachDisabledReason && canSend;
@@ -248,7 +267,9 @@ export function ChatComposer({
             return (
               <View key={photo.key} style={styles.thumb}>
                 <Pressable
-                  accessibilityRole={photo.status === "failed" ? "button" : "image"}
+                  accessibilityRole={
+                    photo.status === "failed" ? "button" : "image"
+                  }
                   accessibilityLabel={
                     photo.status === "failed"
                       ? `${label}, didn't upload. Try again`
@@ -343,7 +364,22 @@ export function ChatComposer({
           onBlur={mention.onBlur}
           placeholder={placeholder}
           placeholderTextColor={tokens.color.text.muted}
-          style={styles.input}
+          style={
+            isEditing
+              ? [
+                  styles.input,
+                  styles.inputEditing,
+                  // Never more than a third of the screen, so the message
+                  // list and the strip stay in view above the keyboard.
+                  {
+                    maxHeight: Math.min(
+                      editMaxHeight(tokens),
+                      windowHeight / 3,
+                    ),
+                  },
+                ]
+              : styles.input
+          }
           value={value}
         />
 
@@ -542,6 +578,28 @@ const MENTION_ROWS_SHOWN = 4;
  */
 const INPUT_LINE_HEIGHT = 20;
 const INPUT_BORDER = 1;
+/** Lines an edit shows before it scrolls; a draft stops at `maxHeight: 120`. */
+const EDIT_MAX_LINES = 10;
+
+/** Vertical padding that keeps one line of `lineHeight` at the 44pt floor. */
+function inputPaddingFor(tokens: SignetTokens, lineHeight: number): number {
+  return (tokens.touch.minimum - lineHeight - 2 * INPUT_BORDER) / 2;
+}
+
+/** A message body's line height, which an edit is typed at. */
+function messageLineHeight(tokens: SignetTokens): number {
+  return tokens.typography.role.body.lineHeight ?? 25;
+}
+
+/** The edit input's height at `EDIT_MAX_LINES` of message-height lines. */
+function editMaxHeight(tokens: SignetTokens): number {
+  const lineHeight = messageLineHeight(tokens);
+  return (
+    EDIT_MAX_LINES * lineHeight +
+    2 * inputPaddingFor(tokens, lineHeight) +
+    2 * INPUT_BORDER
+  );
+}
 
 /** A staged photo's square: two lines of text tall, like iMessage's tray. */
 const THUMB_SIZE = 64;
@@ -554,8 +612,8 @@ const THUMB_REMOVE_INK = "#FFFFFF";
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   // What is left of the 44pt floor once one line and the border are drawn,
   // split above and below, so a one-line input is exactly button height.
-  const inputPaddingY =
-    (tokens.touch.minimum - INPUT_LINE_HEIGHT - 2 * INPUT_BORDER) / 2;
+  const inputPaddingY = inputPaddingFor(tokens, INPUT_LINE_HEIGHT);
+  const editPaddingY = inputPaddingFor(tokens, messageLineHeight(tokens));
   return StyleSheet.create({
     wrapper: {
       borderTopWidth: 1,
@@ -661,7 +719,8 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       paddingVertical: tokens.spacing.xs,
     },
     mentionListScroll: {
-      maxHeight: MENTION_ROWS_SHOWN * tokens.touch.minimum + 2 * tokens.spacing.xs,
+      maxHeight:
+        MENTION_ROWS_SHOWN * tokens.touch.minimum + 2 * tokens.spacing.xs,
     },
     mentionRow: {
       minHeight: tokens.touch.minimum,
@@ -728,6 +787,13 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       includeFontPadding: false,
       textAlignVertical: "center",
       color: tokens.color.text.foreground,
+    },
+    // An edit is typed at the message's own line height; the padding keeps
+    // one line at the 44pt floor, so the box only grows with the text.
+    inputEditing: {
+      paddingTop: editPaddingY,
+      paddingBottom: editPaddingY,
+      lineHeight: messageLineHeight(tokens),
     },
     // Deliberately NOT the accent. The accent is the send affordance on this
     // row, and two accent controls either side of the input would give the
