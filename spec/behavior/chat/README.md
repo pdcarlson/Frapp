@@ -913,8 +913,8 @@ channel that reports a different one fails the import rather than being skipped.
   `#announcements` with an exec allow, and comes out read-only until the
   admin turns it off. The reverse: on a server that lets nobody talk by
   default and allows members per channel, an `#announcements` that allows
-  only exec silenced nobody and still has a reader who can talk, so it comes
-  out postable until the admin turns the switch on.
+  only exec took talking from nobody, and exec can still talk there, so it
+  comes out postable until the admin turns the switch on.
 - **The bot reads only what its roles can see.** Discord lists every channel to
   a bot, including ones hidden from it, so the scan works out the bot's own
   access per channel from Discord's permission overwrites rather than finding
