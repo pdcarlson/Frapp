@@ -254,6 +254,10 @@ describe("EventDetailSheet header actions", () => {
       expect(button).toHaveTextContent(/^$/);
       expect(button).toHaveAttribute("title", name);
     }
+    // The .ics export was withdrawn until calendar sync ships (#3708).
+    expect(
+      screen.queryByRole("button", { name: /add to calendar/i }),
+    ).toBeNull();
   });
 });
 

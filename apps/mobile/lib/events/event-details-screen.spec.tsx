@@ -245,6 +245,10 @@ describe("Event details layout", () => {
     chapterId = "chapter-1";
   });
 
+  it("offers no calendar export until calendar sync ships (#3708)", () => {
+    expect(screenText(render())).not.toMatch(/add to calendar/i);
+  });
+
   it("puts the place in the line under the title, not beside the chips", () => {
     event = {
       ...EVENT,

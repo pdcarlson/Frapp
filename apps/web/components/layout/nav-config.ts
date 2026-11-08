@@ -156,7 +156,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         label: "Events",
         icon: EventsGlyph,
         href: "/events",
-        description: "Schedule, attendance, check-ins, calendar export.",
+        description: "Schedule, attendance and check-ins.",
         module: "events",
       },
       {

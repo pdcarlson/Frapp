@@ -52,8 +52,8 @@ describe("selectEventDetail — recurrence", () => {
   });
 
   // A one-off carries neither. Both must read as null rather than undefined:
-  // the calendar export branches on `parent_event_id` to decide whether the
-  // event may describe a series at all.
+  // the edit flow branches on `parent_event_id` to decide whether the event
+  // belongs to a series at all.
   it("is null for a one-off event, including when the keys are absent", () => {
     const detail = selectEventDetail(event());
     expect(detail?.recurrence_rule).toBeNull();

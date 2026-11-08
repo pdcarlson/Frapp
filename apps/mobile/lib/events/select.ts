@@ -55,14 +55,14 @@ export interface EventDetail extends EventRow {
   hasCheckInZone: boolean;
   /**
    * The series rule (`WEEKLY` / `BIWEEKLY` / `MONTHLY`), or `null` for a
-   * one-off. Read by the calendar export so a recurring meeting exports as a
-   * series rather than a single occurrence.
+   * one-off. The edit flow reads it (`seriesRuleOf` in `edit-event.ts`) to
+   * tell a series from a one-off and to know the series' rule.
    */
   recurrence_rule: string | null;
   /**
    * Set on a materialized child occurrence, `null` on a series parent or a
-   * one-off. Load-bearing for the export: only a parent may describe the
-   * series, or a child would re-export the whole series under its own id.
+   * one-off. The edit flow reads it to fetch the series parent and to ask
+   * whether a save covers this occurrence or the series.
    */
   parent_event_id: string | null;
 }
