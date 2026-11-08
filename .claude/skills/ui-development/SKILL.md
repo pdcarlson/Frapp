@@ -182,8 +182,8 @@ Owner rule, 2026-11-08, after a proposal page drew its screens from memory: plac
 an invented Profile left nothing to judge. A proposal is a mock, but a mock of the real app.
 
 - **Audit the screen first.** Capture it as it is now. The running app on the seeded demo chapter
-  is the best source ([`demo-data.md` § Capture screenshots](../../../docs/guides/demo-data.md#capture-screenshots);
-  mobile renders through Expo web on port 3002). Where a capture isn't possible, read the screen's
+  is the best source ([`demo-data.md` § Capture screenshots](../../../docs/guides/demo-data.md#capture-screenshots)
+  has the mobile setup). Where a capture isn't possible, read the screen's
   code. Then list the design-system values the change touches (the control step, spacing, glass,
   badge, type role, motion) from `spec/ui/design-system/` and `@repo/theme`, and put that list on
   the page so the reader can check the mock against it.

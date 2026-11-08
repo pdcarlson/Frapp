@@ -45,10 +45,14 @@ its own.
 
 ## Telling the owner
 
-When the run opens a PR, post one line to the owner (as your reply in the *Frapp scheduled
-tasks* session this routine runs in): the PR link and its one-sentence theme. He
-merges it without being asked, so don't phrase it as an ask. Post nothing when there is no PR,
-unless the phase's report has a **Needs you** item, which goes in the same short post.
+The owner reads the run's final message in the *Frapp scheduled tasks* session, so the ping is
+its first line. When the run opens a PR, that line is the PR link and its one-sentence theme. He
+merges it without being asked, so don't phrase it as an ask. A **Needs you** item from the phase's
+report goes right under it. With neither, the first line is "Nothing needs you this run."
+
+**Connectors.** The session holds every connector the owner has, write tools included. Use Sentry,
+Supabase, Vercel, Render and PostHog for reads only, and never call Stripe, Gmail, Resend or any
+messaging connector.
 
 ## How the run ends
 
@@ -57,4 +61,4 @@ The phase's own ending rules apply. Your last tracker write is the
 with the outcome the phase's skill would have given its own record (`stopped` when a push, the
 pre-push hook or the sandbox bringup ended it early). Its second line names the phase, as
 `docs-upkeep:` or `hygiene-scan:`, then what happened. The final message is the phase's run
-report.
+report, under the first line above.
