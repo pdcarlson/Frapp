@@ -33,6 +33,7 @@ import {
 } from "./upload-step";
 import { ChannelMappingStep, type ChannelChoice } from "./channel-mapping-step";
 import {
+  choiceIsReadOnly,
   mappingIssues,
   restageChoices,
   isImportTarget,
@@ -296,6 +297,7 @@ export function ImportWizard({
             privateInDiscord: channel.private_in_discord ?? null,
             privateThreads: privateThreads.get(channel.discord_channel_id) ?? 0,
             readerRoleIds: channel.discord_reader_role_ids ?? null,
+            readOnlyInDiscord: channel.read_only_in_discord ?? null,
             threads: threads.get(channel.discord_channel_id) ?? 0,
             categoryPosition: channel.discord_category_position ?? null,
           })),
@@ -570,7 +572,7 @@ export function ImportWizard({
         mapping_action: choice.action,
         target_channel_id: choice.targetChannelId ?? undefined,
         new_channel_name: choice.newName?.trim() || undefined,
-        new_channel_is_read_only: choice.readOnly ?? true,
+        new_channel_is_read_only: choiceIsReadOnly(channel, choice),
         // Only a new channel has a visibility; the API refuses one that was
         // (or may have been) private in Discord without one, so it is sent
         // as chosen. "Same as Discord" sends no permissions: the API works
