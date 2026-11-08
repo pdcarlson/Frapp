@@ -942,4 +942,100 @@ describe('ChapterGuard', () => {
       });
     });
   });
+  describe('requests arriving together (#3728)', () => {
+    const tablesQueried = () =>
+      mockFrom.mock.calls.map(([table]: [string]) => table).sort();
+
+    it('shares each lookup between concurrent requests for the same member and chapter', async () => {
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        member: { id: 'member-1', role_ids: ['role-1'] },
+        chapter: { subscription_status: 'active' },
+      });
+      const requests = [buildRequest(), buildRequest(), buildRequest()];
+
+      await expect(
+        Promise.all(
+          requests.map((request) =>
+            guard.canActivate(mockExecutionContext(request)),
+          ),
+        ),
+      ).resolves.toEqual([true, true, true]);
+
+      expect(tablesQueried()).toEqual(['chapters', 'members', 'users']);
+      for (const request of requests) {
+        expect(request.member).toEqual({
+          id: 'member-1',
+          role_ids: ['role-1'],
+        });
+      }
+      // Each request owns its copy; one handler's edit can't reach another.
+      expect(requests[0].member).not.toBe(requests[1].member);
+    });
+
+    it('looks the chapter up again for a request that starts after the first finished', async () => {
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        member: { id: 'member-1', role_ids: ['role-1'] },
+        chapter: { subscription_status: 'active' },
+      });
+      await guard.canActivate(mockExecutionContext(buildRequest()));
+      await guard.canActivate(mockExecutionContext(buildRequest()));
+
+      expect(tablesQueried()).toEqual([
+        'chapters',
+        'chapters',
+        'members',
+        'members',
+        'users',
+        'users',
+      ]);
+    });
+
+    it('reads an explicit chapter while the user lookup is still out', async () => {
+      let releaseUser!: (value: unknown) => void;
+      mockFrom.mockImplementation((table: string) => {
+        const maybeSingle =
+          table === 'users'
+            ? jest.fn().mockReturnValue(
+                new Promise((resolve) => {
+                  releaseUser = resolve;
+                }),
+              )
+            : jest.fn().mockResolvedValue({
+                data:
+                  table === 'members'
+                    ? { id: 'member-1', role_ids: [] }
+                    : { subscription_status: 'active' },
+                error: null,
+              });
+        const eq: jest.Mock = jest.fn();
+        eq.mockReturnValue({ eq, maybeSingle });
+        return { select: jest.fn().mockReturnValue({ eq }) };
+      });
+
+      const result = guard.canActivate(mockExecutionContext(buildRequest()));
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(tablesQueried()).toEqual(['chapters', 'users']);
+      releaseUser({ data: { id: 'user-1' }, error: null });
+      await expect(result).resolves.toBe(true);
+    });
+
+    it('still reports a missing profile before a mismatched chapter', async () => {
+      mockSupabaseChain({ appUser: null });
+      const ctx = mockExecutionContext(
+        buildRequest({
+          headers: { 'x-chapter-id': 'abcdef00-0000-4000-8000-0000000000aa' },
+          jwtClaims: {
+            active_chapter_id: 'bcdef000-0000-4000-8000-0000000000bb',
+          },
+        }),
+      );
+
+      await expect(guard.canActivate(ctx)).rejects.toMatchObject({
+        message: 'User profile not found',
+      });
+    });
+  });
 });

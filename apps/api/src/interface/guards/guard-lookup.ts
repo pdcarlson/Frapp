@@ -44,3 +44,43 @@ export function isAuthOutage(error: unknown): boolean {
   if (isAuthRetryableFetchError(error)) return true;
   return isAuthApiError(error) && (error.status >= 500 || error.status === 429);
 }
+
+/**
+ * Lets requests that arrive together share one lookup instead of each making
+ * its own (#3728).
+ *
+ * A mobile app resuming from a push fires about seven requests at once, all
+ * with the same token and chapter, and each ran the same guard lookups: seven
+ * `auth.getUser` calls and up to twenty-one PostgREST reads before any handler
+ * started. A caller that asks for a key already in flight gets that call's
+ * result; the entry is dropped once the call settles, so nothing is cached and
+ * a result is never older than the request that asked for it. A request that
+ * starts after the call settled makes its own.
+ *
+ * Results are shared by reference, so callers copy what they put on the
+ * request (`structuredClone`) rather than hand two requests one object.
+ *
+ * `load` resolves to a `{ data, error }` result, never rejects in normal use;
+ * a rejection is shared too, and each caller decides what to throw from it.
+ */
+export class InFlightLookups<T> {
+  private readonly pending = new Map<string, Promise<T>>();
+
+  run(key: string, load: () => PromiseLike<T>): Promise<T> {
+    const existing = this.pending.get(key);
+    if (existing) return existing;
+
+    const call = Promise.resolve()
+      .then(load)
+      .finally(() => {
+        this.pending.delete(key);
+      });
+    this.pending.set(key, call);
+    return call;
+  }
+
+  /** How many lookups are in flight; for tests. */
+  get size(): number {
+    return this.pending.size;
+  }
+}

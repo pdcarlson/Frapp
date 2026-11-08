@@ -181,4 +181,64 @@ describe('SupabaseAuthGuard', () => {
       );
     });
   });
+  describe('requests arriving together (#3728)', () => {
+    it('shares one getUser call between concurrent requests with the same token', async () => {
+      let release!: (value: unknown) => void;
+      mockGetUser.mockReturnValue(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      );
+      const first = mockExecutionContext({ authorization: 'Bearer burst' });
+      const second = mockExecutionContext({ authorization: 'Bearer burst' });
+
+      const results = Promise.all([
+        guard.canActivate(first),
+        guard.canActivate(second),
+      ]);
+      release({ data: { user: { id: 'auth-123' } }, error: null });
+
+      await expect(results).resolves.toEqual([true, true]);
+      expect(mockGetUser).toHaveBeenCalledTimes(1);
+      const firstUser = first.switchToHttp().getRequest().supabaseUser;
+      const secondUser = second.switchToHttp().getRequest().supabaseUser;
+      expect(firstUser).toEqual({ id: 'auth-123' });
+      expect(secondUser).toEqual({ id: 'auth-123' });
+      // Each request owns its copy; one handler's edit can't reach another.
+      expect(firstUser).not.toBe(secondUser);
+    });
+
+    it('checks the token again for a request that starts after the call settled', async () => {
+      mockGetUser.mockResolvedValue({
+        data: { user: { id: 'auth-123' } },
+        error: null,
+      });
+      await guard.canActivate(
+        mockExecutionContext({ authorization: 'Bearer again' }),
+      );
+      mockGetUser.mockResolvedValue({
+        data: { user: null },
+        error: new Error('session revoked'),
+      });
+
+      await expect(
+        guard.canActivate(
+          mockExecutionContext({ authorization: 'Bearer again' }),
+        ),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(mockGetUser).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not share a call between different tokens', async () => {
+      mockGetUser.mockResolvedValue({
+        data: { user: { id: 'auth-123' } },
+        error: null,
+      });
+      await Promise.all([
+        guard.canActivate(mockExecutionContext({ authorization: 'Bearer a' })),
+        guard.canActivate(mockExecutionContext({ authorization: 'Bearer b' })),
+      ]);
+      expect(mockGetUser).toHaveBeenCalledTimes(2);
+    });
+  });
 });
