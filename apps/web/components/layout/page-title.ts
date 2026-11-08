@@ -44,6 +44,7 @@ export type PageTitle = {
 /** Routes that are not nav rows. Profile hangs off the account menu. */
 const OFF_NAV_TITLES: Readonly<Record<string, string>> = {
   "/profile": "Profile",
+  "/whats-new": "What's new",
 };
 
 /**
