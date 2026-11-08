@@ -250,17 +250,36 @@ export function useRemovePushToken() {
 
 /**
  * Identifies `useMarkNotificationRead` (#3393), so a client can give it its
- * own defaults. Mobile retries it once (#3747, `apps/mobile/lib/query-client.ts`):
- * a push tap sends it the moment the app comes back, and it sets `read_at` to
- * the server's clock, so a replay is harmless.
+ * own defaults. Its failures group in Sentry under `notifications`, not
+ * `unkeyed` (`@repo/observability`'s `query-errors.ts`).
  */
 export const markNotificationReadMutationKey = ["notifications", "read"] as const;
 
-export function useMarkNotificationRead() {
+/**
+ * The read receipt a push tap sends as it opens the app: the same write, under
+ * a longer key so a client can default it on its own. Mobile retries it once
+ * (#3747, `apps/mobile/lib/query-client.ts`), because it goes out the moment
+ * the app comes back. The inbox's taps and its Mark all read keep the shorter
+ * key and no retry: a batch awaits every write, and a retry parked offline
+ * would never let it settle.
+ */
+export const markNotificationReadOnOpenMutationKey = [
+  ...markNotificationReadMutationKey,
+  "on-open",
+] as const;
+
+export function useMarkNotificationRead({
+  sentOnOpen = false,
+}: {
+  /** A push tap's receipt, sent as the app opens (see the key above). */
+  sentOnOpen?: boolean;
+} = {}) {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationKey: markNotificationReadMutationKey,
+    mutationKey: sentOnOpen
+      ? markNotificationReadOnOpenMutationKey
+      : markNotificationReadMutationKey,
     mutationFn: async (id: string) => {
       const result = await client.PATCH("/v1/notifications/{id}/read", {
         params: { path: { id } },

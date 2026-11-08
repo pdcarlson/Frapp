@@ -36,7 +36,7 @@ vi.mock("@repo/hooks", () => ({
   ),
   // `query-client.ts` registers mark-read's retry default by this key (#3747).
   markChannelReadMutationKey: ["channels", "read"],
-  markNotificationReadMutationKey: ["notifications", "read"],
+  markNotificationReadOnOpenMutationKey: ["notifications", "read", "on-open"],
 }));
 
 import { FrappProvider } from "./frapp-client";

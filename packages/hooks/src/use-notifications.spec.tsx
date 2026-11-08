@@ -7,6 +7,7 @@ import type { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider } from "./use-frapp-client";
 import {
   markNotificationReadMutationKey,
+  markNotificationReadOnOpenMutationKey,
   notificationKeys,
   useMarkNotificationRead,
   useUpdateNotificationPreference,
@@ -65,7 +66,7 @@ function deferredPatch() {
 }
 
 describe("useMarkNotificationRead", () => {
-  it("carries markNotificationReadMutationKey, which mobile's retry default is registered by (#3747)", async () => {
+  it("carries markNotificationReadMutationKey by default (the inbox's taps and Mark all read: no retry)", async () => {
     const queryClient = makeQueryClient();
     const patch = vi.fn().mockResolvedValue({
       data: { success: true },
@@ -84,6 +85,27 @@ describe("useMarkNotificationRead", () => {
     });
     const [mutation] = queryClient.getMutationCache().getAll();
     expect(mutation?.options.mutationKey).toEqual(markNotificationReadMutationKey);
+  });
+
+  it("carries the on-open key for a push tap's receipt, which mobile's retry default is registered by (#3747)", async () => {
+    const queryClient = makeQueryClient();
+    const patch = vi.fn().mockResolvedValue({
+      data: { success: true },
+      error: undefined,
+      response: { ok: true, status: 200 },
+    });
+    const { result } = renderHook(
+      () => useMarkNotificationRead({ sentOnOpen: true }),
+      { wrapper: createWrapper({ PATCH: patch }, queryClient) },
+    );
+
+    result.current.mutate("notif-1");
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const [mutation] = queryClient.getMutationCache().getAll();
+    expect(mutation?.options.mutationKey).toEqual(
+      markNotificationReadOnOpenMutationKey,
+    );
   });
 
   it("fails an empty-bodied 5xx, with its status, rather than reading it as a receipt", async () => {

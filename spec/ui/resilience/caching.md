@@ -98,9 +98,9 @@ it comes back once the connection monitor's first foreground probe has its verdi
 (#3747). iOS tears down a suspended app's sockets, so a focus refetch, or a retry the
 background parked, sent at the `active` edge died on the dead connection, all together
 within half a second of the resume. TanStack doesn't continue a retry while unfocused,
-so a request that dies in that window waits for the verdict, by which time the probe
-has opened a fresh connection, and then goes out. The verdict is an answer or a failure
-that counts. After a counted failure the parked work goes out too, into whatever the
+so a request that dies in that window waits for the verdict and then goes out. The
+verdict is an answer or a failure that counts: after an answer the work goes out on a
+connection that works. After a counted failure the parked work goes out too, into whatever the
 monitor now reports: paused while OFFLINE, attempted while DEGRADED. Holding focus
 until an answer would instead hold it, and every polling query with it, through a
 whole API outage. The wait is the probe, not a timer: up to two probes, each with a

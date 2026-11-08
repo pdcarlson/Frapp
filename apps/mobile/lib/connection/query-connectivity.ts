@@ -41,10 +41,9 @@
  * connection monitor's first foreground probe has its verdict
  * (`monitor.onResumeSettled`). TanStack's retryer will not continue while
  * unfocused, so a request that dies on the suspended socket in that window
- * parks its retry until the verdict is in, and the probe has by then opened a
- * fresh connection. The verdict is an answer or a failure that counts. On an
- * answer the focus refetch and the parked retries go out on a connection that
- * works. On a counted failure they go out too, into whatever `onlineManager`
+ * parks its retry until the verdict is in. The verdict is an answer or a
+ * failure that counts. On an answer the focus refetch and the parked retries
+ * go out on a connection that works. On a counted failure they go out too, into whatever `onlineManager`
  * now says: paused while OFFLINE, attempted while DEGRADED, which is still
  * "online" (see `publish` below). Holding focus until an answer instead would
  * hold it, and every `refetchInterval` poll with it, for a whole API outage.
@@ -93,9 +92,14 @@ export function bindQueryConnectivity(
   };
   const unsubscribeResume = monitor.onResumeSettled(() => refocusIfSettled());
 
-  // A rebind can land mid-resume after the last binding's listener is gone
-  // (Fast Refresh remounts the runtime): settle focus from where things stand.
-  refocusIfSettled();
+  // Settle focus from where things stand. Bound in the background (a launch
+  // straight there, for a notification or a headless task), focus is off
+  // explicitly: TanStack's default reads as focused on a device, which would
+  // let the first resume fire before the probe. Bound in the foreground, a
+  // rebind can land mid-resume after the last binding's listener is gone
+  // (Fast Refresh remounts the runtime), and this hands focus back.
+  if (appState.currentState === "background") focusManager.setFocused(false);
+  else refocusIfSettled();
 
   const subscription = appState.addEventListener(
     "change",

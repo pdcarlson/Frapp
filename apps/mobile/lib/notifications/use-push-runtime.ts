@@ -110,7 +110,9 @@ export function usePushRuntime(): void {
   const { isChapterResolving, status } = useAuthSession();
   const registerToken = useRegisterPushToken();
   const removeToken = useRemovePushToken();
-  const markRead = useMarkNotificationRead();
+  // Sent as the app opens from a tap, so it retries once through a resume-time
+  // socket drop (#3747); see `markNotificationReadOnOpenMutationKey`.
+  const markRead = useMarkNotificationRead({ sentOnOpen: true });
 
   /**
    * A tap read before the member could be sent anywhere. Held in state rather

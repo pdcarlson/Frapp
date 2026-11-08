@@ -1,6 +1,7 @@
 import {
   markChannelReadMutationKey,
   markNotificationReadMutationKey,
+  markNotificationReadOnOpenMutationKey,
 } from "@repo/hooks";
 import {
   focusManager,
@@ -268,7 +269,7 @@ describe("bindQueryConnectivity across a background → foreground", () => {
       .mockRejectedValueOnce(LOST)
       .mockResolvedValueOnce({ ok: true });
     const observer = new MutationObserver(queryClient, {
-      mutationKey: markNotificationReadMutationKey,
+      mutationKey: markNotificationReadOnOpenMutationKey,
       mutationFn,
     });
     const result = observer.mutate("notif-1");
@@ -306,6 +307,45 @@ describe("bindQueryConnectivity across a background → foreground", () => {
     await vi.advanceTimersByTimeAsync(0);
     await expect(result).resolves.toEqual({ ok: true });
     expect(mutationFn).toHaveBeenCalledTimes(2);
+  });
+
+  // s14's Mark all read awaits its whole batch: a retry parked offline would
+  // never let it settle, so the inbox's key must not match the push tap's
+  // default.
+  it("leaves the inbox's notification mark-read at retry 0, so Mark all read settles offline", async () => {
+    setup();
+    onlineManager.setOnline(false);
+    const mutationFn = vi.fn().mockRejectedValue(LOST);
+    const observer = new MutationObserver(queryClient, {
+      mutationKey: markNotificationReadMutationKey,
+      mutationFn,
+    });
+    await expect(observer.mutate("notif-1")).rejects.toBe(LOST);
+    expect(mutationFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds focus for the first resume after a launch straight into the background", async () => {
+    const { appState, emit } = fakeAppState("background");
+    const health = controllableHealth();
+    const monitor = createConnectionMonitor({
+      getState: vi
+        .fn()
+        .mockResolvedValue({ isConnected: true, isInternetReachable: true }),
+      addListener: vi.fn(() => ({ remove: vi.fn() })),
+      fetch: health.fetch,
+      appState,
+    });
+    monitor.start();
+    teardown.push(() => monitor.stop());
+    teardown.push(bindQueryConnectivity(monitor, appState));
+    expect(focusManager.isFocused()).toBe(false);
+
+    emit("active");
+    await flush();
+    expect(focusManager.isFocused()).toBe(false);
+    health.answer();
+    await flush();
+    expect(focusManager.isFocused()).toBe(true);
   });
 
   it("leaves every other mutation at retry 0, so a non-idempotent write fails visibly", async () => {
