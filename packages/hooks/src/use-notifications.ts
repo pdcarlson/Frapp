@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { components } from "@repo/api-sdk";
+import { throwUnlessOk, type components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 /**
@@ -248,17 +248,26 @@ export function useRemovePushToken() {
   });
 }
 
+/**
+ * Identifies `useMarkNotificationRead` (#3393), so a client can give it its
+ * own defaults. Mobile retries it once (#3747, `apps/mobile/lib/query-client.ts`):
+ * a push tap sends it the moment the app comes back, and it sets `read_at` to
+ * the server's clock, so a replay is harmless.
+ */
+export const markNotificationReadMutationKey = ["notifications", "read"] as const;
+
 export function useMarkNotificationRead() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: markNotificationReadMutationKey,
     mutationFn: async (id: string) => {
-      const { data, error } = await client.PATCH(
-        "/v1/notifications/{id}/read",
-        { params: { path: { id } } },
-      );
-      if (error) throw error;
-      return data;
+      const result = await client.PATCH("/v1/notifications/{id}/read", {
+        params: { path: { id } },
+      });
+      // On the status, not `error`: see `useMarkChannelRead`.
+      throwUnlessOk(result);
+      return result.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: notificationKeys.all });

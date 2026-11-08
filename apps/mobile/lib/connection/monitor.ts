@@ -68,7 +68,7 @@
  * `CONFIRM_RETRY_MS` retry). `onResumeSettled` reports that moment once per
  * return. `query-connectivity.ts` holds TanStack's focus until then, which is
  * what parks a resume-time retry rather than letting it die on the same socket.
- * The verdict says the network is usable, not that it is ONLINE: a counted
+ * The verdict means the probe is over, not that the network works: a counted
  * failure settles the resume too, and `onlineManager` says what to do next.
  *
  * ## `/health` is not under `/v1`

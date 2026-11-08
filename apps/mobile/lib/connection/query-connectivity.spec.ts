@@ -1,4 +1,7 @@
-import { markChannelReadMutationKey } from "@repo/hooks";
+import {
+  markChannelReadMutationKey,
+  markNotificationReadMutationKey,
+} from "@repo/hooks";
 import {
   focusManager,
   MutationObserver,
@@ -191,6 +194,91 @@ describe("bindQueryConnectivity across a background → foreground", () => {
     expect(focusManager.isFocused()).toBe(false);
     monitor.stop();
     expect(focusManager.isFocused()).toBe(true);
+  });
+
+  it("keeps focus off when the monitor stops while the app is in the background", async () => {
+    const { monitor, health, emit } = setup();
+    await flush();
+    health.answer();
+    await flush();
+    emit("background");
+    // `stop()` releases a pending return; in the background that release must
+    // not hand focus back.
+    monitor.stop();
+    expect(focusManager.isFocused()).toBe(false);
+  });
+
+  it("hands focus back when the runtime remounts mid-resume (stop, unbind, start, bind)", async () => {
+    const { appState, emit } = fakeAppState("active");
+    const health = controllableHealth();
+    const deps: Partial<MonitorDeps> = {
+      getState: vi
+        .fn()
+        .mockResolvedValue({ isConnected: true, isInternetReachable: true }),
+      addListener: vi.fn(() => ({ remove: vi.fn() })),
+      fetch: health.fetch,
+      appState,
+    };
+    const monitor = createConnectionMonitor(deps);
+    monitor.start();
+    let unbind = bindQueryConnectivity(monitor, appState);
+    teardown.push(() => monitor.stop());
+    teardown.push(() => unbind());
+    await suspendAndResume(emit, health);
+    expect(focusManager.isFocused()).toBe(false);
+
+    // `useConnectionRuntime`'s cleanup and effect, as a Fast Refresh runs them.
+    monitor.stop();
+    unbind();
+    monitor.start();
+    unbind = bindQueryConnectivity(monitor, appState);
+    expect(focusManager.isFocused()).toBe(true);
+  });
+
+  it("hands focus back on a rebind even when the old binding was gone before stop", async () => {
+    const { appState, emit } = fakeAppState("active");
+    const health = controllableHealth();
+    const monitor = createConnectionMonitor({
+      getState: vi
+        .fn()
+        .mockResolvedValue({ isConnected: true, isInternetReachable: true }),
+      addListener: vi.fn(() => ({ remove: vi.fn() })),
+      fetch: health.fetch,
+      appState,
+    });
+    monitor.start();
+    let unbind = bindQueryConnectivity(monitor, appState);
+    teardown.push(() => monitor.stop());
+    teardown.push(() => unbind());
+    await suspendAndResume(emit, health);
+
+    unbind();
+    monitor.stop();
+    monitor.start();
+    unbind = bindQueryConnectivity(monitor, appState);
+    expect(focusManager.isFocused()).toBe(true);
+  });
+
+  it("parks a push tap's notification read receipt through a resume-time drop too", async () => {
+    const { health, emit } = setup();
+    await suspendAndResume(emit, health);
+
+    const mutationFn = vi
+      .fn<(id: string) => Promise<unknown>>()
+      .mockRejectedValueOnce(LOST)
+      .mockResolvedValueOnce({ ok: true });
+    const observer = new MutationObserver(queryClient, {
+      mutationKey: markNotificationReadMutationKey,
+      mutationFn,
+    });
+    const result = observer.mutate("notif-1");
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(mutationFn).toHaveBeenCalledTimes(1);
+
+    health.answer();
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(result).resolves.toEqual({ ok: true });
+    expect(mutationFn).toHaveBeenCalledTimes(2);
   });
 
   it("parks mark-read's retry through a resume-time drop and sends it after the probe answers", async () => {

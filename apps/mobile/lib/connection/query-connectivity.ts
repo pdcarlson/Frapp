@@ -41,11 +41,20 @@
  * connection monitor's first foreground probe has its verdict
  * (`monitor.onResumeSettled`). TanStack's retryer will not continue while
  * unfocused, so a request that dies on the suspended socket in that window
- * parks its retry until `/health` has answered. Then focus returns, and the
- * focus refetch and the parked retries go out on a connection that works.
- * The wait is the probe, not a timer: a 5s timeout, plus one
- * `CONFIRM_RETRY_MS` retry when the first probe fails. A fresh request is not
- * held back by this, because focus gates only refetches and retries.
+ * parks its retry until the verdict is in, and the probe has by then opened a
+ * fresh connection. The verdict is an answer or a failure that counts. On an
+ * answer the focus refetch and the parked retries go out on a connection that
+ * works. On a counted failure they go out too, into whatever `onlineManager`
+ * now says: paused while OFFLINE, attempted while DEGRADED, which is still
+ * "online" (see `publish` below). Holding focus until an answer instead would
+ * hold it, and every `refetchInterval` poll with it, for a whole API outage.
+ *
+ * The wait is the probe, not a timer: up to two probes, each with a 5s
+ * timeout and `CONFIRM_RETRY_MS` apart when the first fails, so about 12s at
+ * worst, longer if the link drops meanwhile (the monitor's
+ * `LINK_DOWN_GRACE_MS`, then a probe). For that long a `refetchInterval` poll
+ * skips its ticks, since TanStack doesn't poll unfocused. A fresh request is
+ * not held back, because focus gates only refetches, polls and retries.
  *
  * Wiring is idempotent and reversible — `bindQueryConnectivity` returns its own
  * teardown so a spec can unwire between cases.
@@ -83,6 +92,10 @@ export function bindQueryConnectivity(
     focusManager.setFocused(true);
   };
   const unsubscribeResume = monitor.onResumeSettled(() => refocusIfSettled());
+
+  // A rebind can land mid-resume after the last binding's listener is gone
+  // (Fast Refresh remounts the runtime): settle focus from where things stand.
+  refocusIfSettled();
 
   const subscription = appState.addEventListener(
     "change",

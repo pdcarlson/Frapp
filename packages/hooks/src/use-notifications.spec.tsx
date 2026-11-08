@@ -6,7 +6,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider } from "./use-frapp-client";
 import {
+  markNotificationReadMutationKey,
   notificationKeys,
+  useMarkNotificationRead,
   useUpdateNotificationPreference,
   useUpdateUserSettings,
   useUserSettings,
@@ -61,6 +63,46 @@ function deferredPatch() {
     fail: () => settle({ data: null, error: new Error("Network down") }),
   };
 }
+
+describe("useMarkNotificationRead", () => {
+  it("carries markNotificationReadMutationKey, which mobile's retry default is registered by (#3747)", async () => {
+    const queryClient = makeQueryClient();
+    const patch = vi.fn().mockResolvedValue({
+      data: { success: true },
+      error: undefined,
+      response: { ok: true, status: 200 },
+    });
+    const { result } = renderHook(() => useMarkNotificationRead(), {
+      wrapper: createWrapper({ PATCH: patch }, queryClient),
+    });
+
+    result.current.mutate("notif-1");
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(patch).toHaveBeenCalledWith("/v1/notifications/{id}/read", {
+      params: { path: { id: "notif-1" } },
+    });
+    const [mutation] = queryClient.getMutationCache().getAll();
+    expect(mutation?.options.mutationKey).toEqual(markNotificationReadMutationKey);
+  });
+
+  it("fails an empty-bodied 5xx, with its status, rather than reading it as a receipt", async () => {
+    const queryClient = makeQueryClient();
+    const patch = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      response: { ok: false, status: 502 },
+    });
+    const { result } = renderHook(() => useMarkNotificationRead(), {
+      wrapper: createWrapper({ PATCH: patch }, queryClient),
+    });
+
+    result.current.mutate("notif-1");
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toMatchObject({ statusCode: 502 });
+  });
+});
 
 describe("useUpdateNotificationPreference", () => {
   let queryClient: QueryClient;

@@ -53,8 +53,11 @@ export function useConnectionRuntime(): void {
     connectionMonitor.start();
     const unbind = bindQueryConnectivity();
     return () => {
-      unbind();
+      // Stop first: a return to the foreground still waiting on its probe is
+      // released by `stop()`, and only a bound listener hands focus back
+      // (#3747). Unbinding first would leave TanStack unfocused.
       connectionMonitor.stop();
+      unbind();
     };
   }, []);
 }

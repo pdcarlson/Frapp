@@ -98,10 +98,15 @@ it comes back once the connection monitor's first foreground probe has its verdi
 (#3747). iOS tears down a suspended app's sockets, so a focus refetch, or a retry the
 background parked, sent at the `active` edge died on the dead connection, all together
 within half a second of the resume. TanStack doesn't continue a retry while unfocused,
-so a request that dies in that window waits for `/health` to answer and then goes out
-once. The wait is the probe (a 5s timeout, plus one 2s confirm retry on a first
-failure), not a timer, and it holds back only refetches and retries, never a fresh
-request. A *server* error, which no amount of
+so a request that dies in that window waits for the verdict, by which time the probe
+has opened a fresh connection, and then goes out. The verdict is an answer or a failure
+that counts. After a counted failure the parked work goes out too, into whatever the
+monitor now reports: paused while OFFLINE, attempted while DEGRADED. Holding focus
+until an answer would instead hold it, and every polling query with it, through a
+whole API outage. The wait is the probe, not a timer: up to two probes, each with a
+5s timeout and 2s apart when the first fails, so about 12s at worst, and longer if the
+link drops meanwhile. It holds back refetches, `refetchInterval` polls and retries,
+never a fresh request. A *server* error, which no amount of
 connectivity signalling fixes, is recovered by a pull; the explicit retry controls on
 s04/s06 stay as the recovery a member can see without knowing the gesture.
 
