@@ -541,12 +541,13 @@ and the run ends only when every still-held member has its exit action.
 | Context nearly exhausted, work exists | `AGENT-HANDOFF` `session-ending`, labels untouched, claim left live |
 | GitHub MCP unavailable | Stop and report. No claim, no work, no fallback tracker |
 | PR opened | Each `Fixes` member → `in-review`, no release; babysit to merge. The run may then loop or pipeline per Phase 4 |
-
-An issue this run promoted out of `triage` (Modes) goes back to Triage on every release above
-except `lost-race`: add `triage` back and remove the priority label the run added, keeping one the
-issue already had, so a withdrawn or vetoed pick never lands in the Backlog on an agent's priority.
 | PR opened, member named `Part of` | `AGENT-RELEASE` `slice-in-pr`, remove `in-progress`, add no `in-review`; the open PR holds it via §0.2 condition 4 |
 | Session ending, PR open **and** pipelined unit claimed | PR'd `Fixes` members stay `in-review` (`Part of` members were released at PR open); each unshipped member exits per its own row (work exists → handoff) |
+
+An issue this run promoted out of `triage` (Modes) goes back to Triage when a release leaves its
+work undone (`blocked-discovered`, `out-of-scope`, `plan-rejected`, `user-aborted`): add `triage`
+back and remove the priority label the run added, keeping one the issue already had, so a withdrawn
+or vetoed pick never lands in the Backlog on an agent's priority.
 
 `Reason` is a closed set: `plan-rejected` · `user-aborted` · `lost-race` · `blocked-discovered` ·
 `out-of-scope` · `superseded` · `session-ending` · `slice-in-pr`.
