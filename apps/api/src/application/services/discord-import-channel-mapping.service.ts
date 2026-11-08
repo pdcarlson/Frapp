@@ -284,7 +284,9 @@ export class DiscordImportChannelMappingService {
       mapping_action: 'skip' as const,
       target_channel_id: null,
       new_channel_name: null,
-      new_channel_is_read_only: true,
+      // Postable by whoever can read it, unless Discord took Send Messages
+      // away there (#3697): read-only lets only `announcements:post` post.
+      new_channel_is_read_only: channel.readOnlyInDiscord === true,
       message_count: 0,
       imported_count: 0,
       status: 'skipped' as const,
@@ -297,6 +299,7 @@ export class DiscordImportChannelMappingService {
       new_channel_type: 'PUBLIC' as const,
       new_channel_required_permissions: null,
       discord_reader_role_ids: channel.readerRoleIds,
+      read_only_in_discord: channel.readOnlyInDiscord,
       new_channel_same_as_discord: false,
     }));
 
@@ -457,7 +460,12 @@ export class DiscordImportChannelMappingService {
               ? (decision?.target_channel_id ?? null)
               : null,
           new_channel_name: decision?.new_channel_name?.trim() || null,
-          new_channel_is_read_only: decision?.new_channel_is_read_only ?? true,
+          // A thread lands in its parent's channel, so the parent's scan fact
+          // decides the default; a caller that says nothing gets "as in
+          // Discord", which is postable unless Discord made it read-only.
+          new_channel_is_read_only:
+            decision?.new_channel_is_read_only ??
+            known.get(key)?.read_only_in_discord === true,
           message_count: channel.message_count,
           imported_count: 0,
           status: action === 'skip' ? 'skipped' : 'pending',
@@ -469,6 +477,7 @@ export class DiscordImportChannelMappingService {
           readable: channel.readable,
           private_in_discord: channel.private_in_discord,
           discord_reader_role_ids: channel.discord_reader_role_ids,
+          read_only_in_discord: channel.read_only_in_discord,
           discord_category_position: channel.discord_category_position,
           // A thread lands in its parent's channel, so it carries the same
           // group; resolved to a chapter group only when the import starts.
@@ -700,7 +709,9 @@ export class DiscordImportChannelMappingService {
             ? (channel.target_channel_id ?? null)
             : null,
         new_channel_name: channel.new_channel_name ?? null,
-        new_channel_is_read_only: channel.new_channel_is_read_only ?? true,
+        // An export carries no permissions, so nothing says a channel was
+        // read-only: postable unless the admin chose otherwise (#3697).
+        new_channel_is_read_only: channel.new_channel_is_read_only ?? false,
         message_count: channel.message_count ?? 0,
         imported_count: 0,
         status: channel.mapping_action === 'skip' ? 'skipped' : 'pending',
@@ -715,6 +726,7 @@ export class DiscordImportChannelMappingService {
         readable: null,
         private_in_discord: null,
         discord_reader_role_ids: null,
+        read_only_in_discord: null,
         // An export lists each channel's category by name but not where it
         // sits, so an upload's groups are ordered by name.
         discord_category_position: null,

@@ -1022,3 +1022,136 @@ describe('DiscordImportChannelMappingService — keeping Discord categories as g
     ]);
   });
 });
+
+// #3697: every imported channel used to come out read-only, so only
+// `announcements:post` holders could talk in it.
+describe('DiscordImportChannelMappingService — who can post in an imported channel (#3697)', () => {
+  const general = {
+    discord_channel_id: '900000000000000001',
+    discord_channel_name: 'general',
+    mapping_action: 'create_new' as const,
+    new_channel_name: 'general',
+  };
+  const rowsWritten = () =>
+    repo.replaceChannels.mock.calls[0][2] as Record<string, unknown>[];
+
+  it('records whether Discord made the channel read-only, and defaults to that', async () => {
+    await build(job({ source: 'bot' }));
+    const scanned = (id: string, readOnlyInDiscord: boolean | null) => ({
+      id,
+      name: id,
+      guildId: GUILD,
+      categoryName: null,
+      parentChannelId: null,
+      isThread: false,
+      holdsOnlyThreads: false,
+      readable: true,
+      privateInDiscord: false,
+      readerRoleIds: null,
+      readOnlyInDiscord,
+    });
+    bot.discoverChannels.mockResolvedValue({
+      channels: [
+        scanned('general', false),
+        scanned('announcements', true),
+        scanned('unknown', null),
+      ],
+      warnings: [],
+      roles: [],
+    });
+
+    await channelMapping.discoverBotChannels(IMPORT_ID, CHAPTER);
+
+    expect(rowsWritten()).toEqual([
+      expect.objectContaining({
+        read_only_in_discord: false,
+        new_channel_is_read_only: false,
+      }),
+      expect.objectContaining({
+        read_only_in_discord: true,
+        new_channel_is_read_only: true,
+      }),
+      expect.objectContaining({
+        read_only_in_discord: null,
+        new_channel_is_read_only: false,
+      }),
+    ]);
+  });
+
+  it('creates a general-purpose channel postable when the wizard says nothing', async () => {
+    await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([
+      botChannel({ read_only_in_discord: false }),
+      // Its thread lands in it, and carries no fact of its own.
+      botChannel({
+        id: 'm-thread',
+        discord_channel_id: 't1',
+        parent_discord_channel_id: '900000000000000001',
+        read_only_in_discord: null,
+      }),
+    ]);
+    await channelMapping.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+      general,
+    ]);
+    expect(rowsWritten()).toEqual([
+      expect.objectContaining({ new_channel_is_read_only: false }),
+      expect.objectContaining({ new_channel_is_read_only: false }),
+    ]);
+  });
+
+  it('keeps an announcements-style channel read-only, threads included, unless the admin says otherwise', async () => {
+    await build(job({ source: 'bot' }));
+    repo.findChannels.mockResolvedValue([
+      botChannel({ read_only_in_discord: true }),
+      botChannel({
+        id: 'm-thread',
+        discord_channel_id: 't1',
+        parent_discord_channel_id: '900000000000000001',
+        read_only_in_discord: null,
+      }),
+    ]);
+    await channelMapping.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+      general,
+    ]);
+    expect(rowsWritten().map((row) => row.new_channel_is_read_only)).toEqual([
+      true,
+      true,
+    ]);
+
+    repo.replaceChannels.mockClear();
+    await channelMapping.applyDiscoveredChannelMapping(IMPORT_ID, CHAPTER, [
+      { ...general, new_channel_is_read_only: false },
+    ]);
+    expect(rowsWritten()[0]).toMatchObject({
+      new_channel_is_read_only: false,
+      // The scan's fact is kept, whatever the admin chose.
+      read_only_in_discord: true,
+    });
+  });
+
+  it('creates a channel from an export postable unless the admin chose read-only', async () => {
+    await build(job({ source: 'upload' }));
+    await channelMapping.setChannelMapping(IMPORT_ID, CHAPTER, [
+      {
+        ...general,
+        discord_channel_id: 'u1',
+        new_channel_visibility: 'chapter',
+      },
+      {
+        ...general,
+        discord_channel_id: 'u2',
+        discord_channel_name: 'announcements',
+        new_channel_name: 'announcements',
+        new_channel_visibility: 'chapter',
+        new_channel_is_read_only: true,
+      },
+    ]);
+    expect(rowsWritten()).toEqual([
+      expect.objectContaining({
+        new_channel_is_read_only: false,
+        read_only_in_discord: null,
+      }),
+      expect.objectContaining({ new_channel_is_read_only: true }),
+    ]);
+  });
+});

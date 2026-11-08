@@ -30,6 +30,7 @@ import { useGateCatalog } from "@/components/shared/use-gate-catalog";
 import type { StagedChannel } from "./upload-step";
 import {
   asNewChannel,
+  choiceIsReadOnly,
   isImportTarget,
   newChannelGroups,
   privacyReason,
@@ -1082,6 +1083,37 @@ function ChannelRow({
               </SelectContent>
             </Select>
           </div>
+        </div>
+      ) : null}
+
+      {action === "create_new" ? (
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 space-y-0.5">
+            <Label
+              htmlFor={`read-only-${channel.channelId}`}
+              className="text-xs"
+            >
+              Read-only
+            </Label>
+            <p
+              id={`read-only-hint-${channel.channelId}`}
+              className="text-xs text-muted-foreground"
+            >
+              {channel.readOnlyInDiscord === true &&
+              choiceIsReadOnly(channel, choice ?? {})
+                ? "On because members couldn't talk here in Discord. "
+                : ""}
+              When on, only members who can post announcements can post (by
+              default the President; give exec that permission in Settings
+              &rarr; Roles).
+            </p>
+          </div>
+          <Switch
+            id={`read-only-${channel.channelId}`}
+            checked={choiceIsReadOnly(channel, choice ?? {})}
+            onCheckedChange={(readOnly) => onPatch({ readOnly })}
+            aria-describedby={`read-only-hint-${channel.channelId}`}
+          />
         </div>
       ) : null}
 
