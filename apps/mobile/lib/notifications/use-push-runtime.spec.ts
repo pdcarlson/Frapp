@@ -5,7 +5,8 @@ import type { PushTokenRow } from "./push-registration";
 
 const mockState = vi.hoisted(() => ({
   isAuthenticated: false,
-  status: "unauthenticated" as "hydrating" | "authenticated" | "unauthenticated",
+  status: "unauthenticated" as
+    "hydrating" | "authenticated" | "unauthenticated",
   isChapterResolving: false,
   pushAvailable: true,
   token: "ExponentPushToken[abc]",
@@ -21,6 +22,7 @@ const mockState = vi.hoisted(() => ({
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: vi.fn() }),
+  usePathname: () => "/",
 }));
 
 vi.mock("../auth-session", () => ({
@@ -80,12 +82,9 @@ vi.mock("./push-registration", async (importOriginal) => {
 });
 
 const { usePushRuntime } = await import("./use-push-runtime");
-const { notifyPushPermissionGranted } = await import(
-  "./push-token-lifecycle"
-);
-const { claimChatLaunch, resetChatLaunchForTests } = await import(
-  "@/lib/chat/last-channel"
-);
+const { notifyPushPermissionGranted } = await import("./push-token-lifecycle");
+const { claimChatLaunch, resetChatLaunchForTests } =
+  await import("@/lib/chat/last-channel");
 
 beforeEach(() => {
   mockState.isAuthenticated = false;
@@ -142,9 +141,7 @@ describe("usePushRuntime token lifecycle", () => {
         token: "ExponentPushToken[rotated]",
       });
     });
-    expect(mockState.remove).toHaveBeenCalledWith(
-      "row-ExponentPushToken[abc]",
-    );
+    expect(mockState.remove).toHaveBeenCalledWith("row-ExponentPushToken[abc]");
   });
 
   it("does not POST when a rotation fires while signed out", async () => {

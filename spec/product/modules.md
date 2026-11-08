@@ -82,7 +82,7 @@
 - **Quiet hours:** Per-user configurable time window; NORMAL notifications silenced during quiet hours.
 - **Grouping:** Multiple notifications from the same source collapsed into one.
 - **Per-channel mute:** Users can mute individual chat channels.
-- **Badge count:** Total unread across notifications and chat.
+- **Badge count:** Unread notifications plus what addresses the member in chat: @-mentions and unread direct messages ([`notifications.md`](../behavior/notifications.md) § Badge Count).
 - **Triggers:** Chat mentions, DMs, announcements, event reminders, point changes, study session events, billing alerts, admin notifications.
 - **In-app history:** All notifications stored in `notifications` table; viewable and dismissable.
 - **Preferences:** Per-category opt-in/opt-out.

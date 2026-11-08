@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { readAnnouncementBody } from "@repo/chat-core/cards";
+import { useMentionChips } from "@repo/hooks/mention-chips";
 import { MessageMarkdown } from "./message-markdown";
 
 interface AnnouncementCardProps {
@@ -23,6 +24,8 @@ interface AnnouncementCardProps {
  */
 export function AnnouncementCard({ message }: AnnouncementCardProps) {
   const body = readAnnouncementBody(message) ?? "";
+  // A token that pinged nobody draws as plain text (`mentionChipFilter`).
+  const chips = useMentionChips(message);
 
   return (
     <Card className={cn(MESSAGE_CARD)}>
@@ -35,7 +38,7 @@ export function AnnouncementCard({ message }: AnnouncementCardProps) {
         <AnnouncementGlyph className="h-4 w-4" /> Announcement
       </div>
       <div className="mt-2 whitespace-pre-wrap break-words text-base">
-        <MessageMarkdown content={body} />
+        <MessageMarkdown content={body} chips={chips} />
       </div>
     </Card>
   );
