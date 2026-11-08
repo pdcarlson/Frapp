@@ -201,6 +201,22 @@ describe("bulk upload session", { timeout: TEST_TIMEOUT }, () => {
     await vi.waitFor(() => expect(statusOf(session, "a.pdf")).toBe("ready"), WAIT);
   });
 
+  it("refuses the later copy when its hash finishes last, too (#3665)", async () => {
+    let releaseSecond!: () => void;
+    const secondHeld = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    hashGate.hold = (call) => (call === 2 ? secondHeld : undefined);
+    const session = getBulkSession("u1", "c1");
+    session.queue.add([pdf("a.pdf", "same"), pdf("copy.pdf", "same")]);
+    await vi.waitFor(() => expect(statusOf(session, "a.pdf")).toBe("ready"), WAIT);
+    expect(statusOf(session, "copy.pdf")).toBe("preparing");
+
+    releaseSecond();
+    await vi.waitFor(() => expect(statusOf(session, "copy.pdf")).toBe("failed"), WAIT);
+    expect(statusOf(session, "a.pdf")).toBe("ready");
+  });
+
   it("ends another account's batch, and keeps the new account's", () => {
     const mine = getBulkSession("u1", "c1");
     mine.queue.add([pdf("a.pdf")]);

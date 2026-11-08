@@ -109,9 +109,11 @@ function createSession(userId: string, chapterId: string): BulkSession {
   const queue = new BulkUploadQueue<Prepared, Submission>({
     prepare: async (file, id) => {
       // Files read and hash side by side, but claim their hash one at a time
-      // in the order the queue started them, which is batch order. So of two
-      // copies, the later one in the batch is refused, whichever hash
-      // finishes first.
+      // in the order the queue started them. The queue starts the files it
+      // loads together in batch order, so of two copies loaded together the
+      // later one is refused, whichever hash finishes first. A retry starts
+      // afresh, so a copy retried after a failed read finds the other copy
+      // already holding the hash.
       const pdfLib = loadPdfModule();
       const hashing = file.arrayBuffer().then(async (buffer) => {
         const bytes = new Uint8Array(buffer);
@@ -132,7 +134,11 @@ function createSession(userId: string, chapterId: string): BulkSession {
         seenHashes.set(read.hash, id);
         return read;
       });
-      claimLine = claimed.catch(() => undefined);
+      // Settles to nothing either way, so the line never holds a file's bytes.
+      claimLine = claimed.then(
+        () => undefined,
+        () => undefined,
+      );
       const { bytes, hash } = await claimed;
       const { loadPdf, renderPagePreview, destroyPdf } = await pdfLib;
       let doc: PDFDocumentProxy;
