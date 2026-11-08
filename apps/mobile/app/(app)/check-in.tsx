@@ -133,7 +133,8 @@ type Status =
  * is `checkInFailure`'s, shared with the chat event card.
  *
  * A 409 means the member already has a row for this event. When that row is
- * a check-in (PRESENT or LATE), they are on the list, which is what they came
+ * PRESENT or LATE (a check-in, or an officer's mark that counts them), they
+ * are on the list, which is what they came
  * here for, so it lands on the success panel in its own words and with no
  * points (none were awarded this time), rather than in the error style it
  * used to take (#3703: the owner chose to keep the API's 409 and have the
@@ -156,7 +157,8 @@ function failureStatus(
 ): Status {
   const failure = checkInFailure(error);
   if (failure.kind !== "already") return failure;
-  if (ownRow?.checkedInAt) {
+  // PRESENT or LATE is on the list, whether scanned or marked by hand.
+  if (ownRow && (ownRow.status === "PRESENT" || ownRow.status === "LATE")) {
     return {
       kind: "success",
       message: failure.message,

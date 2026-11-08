@@ -1053,6 +1053,23 @@ describe("Check-in's manual code", () => {
     }
   });
 
+  it("reads a hand-marked PRESENT row as you're in", async () => {
+    const saved = state.ownRow;
+    state.ownRow = {
+      isSuccess: true,
+      data: { attendance: { status: "PRESENT", check_in_time: null } },
+    };
+    try {
+      checkIn.mockRejectedValue({ statusCode: 409, message: "Conflict" });
+      const tree = render();
+      await scan(tree, qrFor("evt-1"));
+      expect(screenText(tree)).toContain(ALREADY_CHECKED_IN_TITLE);
+      act(() => tree.unmount());
+    } finally {
+      state.ownRow = saved;
+    }
+  });
+
   it("claims nothing when the own-row read after a 409 fails", async () => {
     const saved = state.ownRow;
     state.ownRow = { isSuccess: false };
