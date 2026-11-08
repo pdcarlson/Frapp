@@ -55,6 +55,22 @@
  *   link-up event alone leaves OFFLINE in place until the probe answers, as
  *   the spec's recovery edge says.
  *
+ * ## The foreground verdict is an event (#3747)
+ *
+ * iOS tears down a suspended app's sockets. A request that was in flight when
+ * the app went to the background, or one sent the moment it comes back, can
+ * die on the dead pooled connection (NSURLError -1005, "the network connection
+ * was lost") with the link up the whole time. Anything that retries such a
+ * failure has to wait until the network is usable again, and the first
+ * foreground probe is how this monitor finds that out. So the return to the
+ * foreground is *pending* from `background` until a probe gives its verdict:
+ * an answer, or a failure that counts (a first failure waits for its
+ * `CONFIRM_RETRY_MS` retry). `onResumeSettled` reports that moment once per
+ * return. `query-connectivity.ts` holds TanStack's focus until then, which is
+ * what parks a resume-time retry rather than letting it die on the same socket.
+ * The verdict means the probe is over, not that the network works: a counted
+ * failure settles the resume too, and `onlineManager` says what to do next.
+ *
  * ## `/health` is not under `/v1`
  *
  * It is the one route that is not, so the poll needs the bare origin. That is
@@ -98,6 +114,13 @@ export interface ConnectionMonitor {
   /** Idempotent: safe to call from every mount of the runtime component. */
   start(): void;
   stop(): void;
+  /**
+   * Whether a return to the foreground is still waiting on its first probe's
+   * verdict: true from `background` until then. False when stopped.
+   */
+  resumePending(): boolean;
+  /** Fires once per return to the foreground, when that verdict is in. */
+  onResumeSettled(listener: () => void): () => void;
   /** Test seam — runs one probe cycle synchronously from the caller's await. */
   probeOnce(): Promise<void>;
 }
@@ -149,6 +172,7 @@ export function createConnectionMonitor(
 ): ConnectionMonitor {
   const deps: MonitorDeps = { ...defaultDeps, ...overrides };
   const listeners = new Set<(state: ConnectionState) => void>();
+  const resumeListeners = new Set<() => void>();
 
   // Optimistic until proven otherwise, matching the `NetworkState` port's
   // "unknown counts as online" contract: a false offline strands writes.
@@ -169,6 +193,8 @@ export function createConnectionMonitor(
   let started = false;
   /** In the background: link events and probe results are not evidence. */
   let suspended = false;
+  /** Back in the foreground, and no probe has given its verdict yet. */
+  let awaitingResume = false;
   /**
    * Counts listener events, so a `getState()` read can tell it was overtaken.
    *
@@ -195,6 +221,13 @@ export function createConnectionMonitor(
     // Copy first: a listener that unsubscribes itself would otherwise mutate
     // the set mid-iteration (the same guard `lib/auth-token.ts` uses).
     for (const listener of [...listeners]) listener(state);
+  }
+
+  /** The foreground's verdict is in: see "The foreground verdict is an event". */
+  function settleResume() {
+    if (!awaitingResume) return;
+    awaitingResume = false;
+    for (const listener of [...resumeListeners]) listener();
   }
 
   /** Drops the probe in flight: whatever it reports, it reports on old news. */
@@ -303,6 +336,7 @@ export function createConnectionMonitor(
       // about — do not paint a banner over a missing variable.
       consecutiveFailures = 0;
       publish();
+      settleResume();
       return;
     }
 
@@ -355,6 +389,8 @@ export function createConnectionMonitor(
       consecutiveFailures += 1;
     }
     publish();
+    // After `publish`, so a resume listener reads the state the verdict set.
+    settleResume();
   }
 
   function startPolling() {
@@ -373,6 +409,8 @@ export function createConnectionMonitor(
   function enterBackground() {
     if (suspended) return;
     suspended = true;
+    // Still pending, now on the next return: no verdict to report for this one.
+    awaitingResume = false;
     // A probe the OS cut off is not an outage, and a pending link drop was
     // most likely the OS blocking a backgrounded app. The foreground re-read
     // decides both.
@@ -385,6 +423,7 @@ export function createConnectionMonitor(
   function enterForeground() {
     if (!suspended) return;
     suspended = false;
+    awaitingResume = true;
     // The last link event may have been read while the network was blocked
     // for this app, and nothing re-emits when the block lifts. Read it fresh,
     // then probe: the probe also clears a down link that the read gets wrong.
@@ -462,6 +501,9 @@ export function createConnectionMonitor(
       startPolling();
     },
     stop() {
+      // Nothing will probe now, so nothing would ever settle a pending return:
+      // release whoever is waiting on it.
+      const wasPending = started && (suspended || awaitingResume);
       started = false;
       suspended = false;
       lifecycle += 1;
@@ -473,6 +515,15 @@ export function createConnectionMonitor(
       unsubscribeAppState?.();
       unsubscribeAppState = null;
       stopPolling();
+      awaitingResume = false;
+      if (wasPending) for (const listener of [...resumeListeners]) listener();
+    },
+    resumePending: () => started && (suspended || awaitingResume),
+    onResumeSettled(listener) {
+      resumeListeners.add(listener);
+      return () => {
+        resumeListeners.delete(listener);
+      };
     },
     probeOnce: () => probeOnce(),
   };
