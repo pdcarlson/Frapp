@@ -163,9 +163,12 @@ describe('AttendanceController', () => {
       ).resolves.toEqual({ attendance: null });
     });
 
-    it('is not permission-gated: it is the member\'s own record', () => {
+    it("is not permission-gated: it is the member's own record", () => {
       expect(
-        Reflect.getMetadata(PERMISSIONS_KEY, AttendanceController.prototype.mine),
+        Reflect.getMetadata(
+          PERMISSIONS_KEY,
+          AttendanceController.prototype.mine,
+        ),
       ).toBeUndefined();
     });
   });

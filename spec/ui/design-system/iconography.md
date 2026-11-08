@@ -281,7 +281,7 @@ the chapter accent in a back-row slot (2026-11-05).
 
 | Semantic intent | Glyph | Drawn by | Web counterpart |
 |---|---|---|---|
-| Dismiss, close, remove | `CloseGlyph` (an ×) | the network banner, the thread's error banner, the composer's reply strip (16px) and photo thumbnails (12px on a dark disc), the image viewer (24px), the service-hours proof row, Chat home's setup-checklist hide (16px) | Lucide `X` |
+| Dismiss, close, remove | `CloseGlyph` (an ×) | the network banner, the thread's error banner, the composer's reply strip (16px) and photo thumbnails (12px on a dark disc), the image viewer (24px), the service-hours proof row, Chat home's setup-checklist hide (16px), the glass close on the check-in scanner (s18) and host QR (s22) (18px, `glass-close-button.tsx`) | Lucide `X` |
 | Try again | `RetryGlyph` (a circling arrow) | a chat photo that didn't upload, in the composer tray (22px, destructive ink) | Lucide `RotateCw` |
 | Edit | `PencilGlyph` | Profile's back row | Lucide `Pencil` |
 | Mark all read | `CheckAllGlyph` (two checks) | the Notifications screen header | Lucide `CheckCheck` |

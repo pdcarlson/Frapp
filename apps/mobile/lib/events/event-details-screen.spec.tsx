@@ -54,6 +54,9 @@ let chapterId: string | null = "chapter-1";
 let permissions: string[] = ["members:view"];
 // `GET …/attendance/me`: not checked in by default.
 let myAttendance: unknown = { attendance: null };
+// That read's state: settled by default.
+let myAttendancePending = false;
+let myAttendancePaused = false;
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -64,7 +67,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useUpdateEvent: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteEvent: () => ({ mutate: vi.fn(), isPending: false }),
   useListChapters: () => ({ data: [{ chapter_id: "chapter-1", role_ids: [] }] }),
-  useMyAttendance: () => ({ isPending: false, data: myAttendance }),
+  useMyAttendance: () => ({
+    isPending: myAttendancePending,
+    isPaused: myAttendancePaused,
+    data: myAttendancePending ? undefined : myAttendance,
+  }),
   useEvent: () => ({
     isPending: eventPending,
     isError: false,
@@ -250,6 +257,8 @@ describe("Event details layout", () => {
     chapterId = "chapter-1";
     permissions = ["members:view"];
     myAttendance = { attendance: null };
+    myAttendancePending = false;
+    myAttendancePaused = false;
   });
 
   it("offers no calendar export until calendar sync ships (#3708)", () => {
@@ -372,11 +381,34 @@ describe("Event details layout", () => {
     expect(screenText(tree).match(/\+10 pts/g)).toHaveLength(2);
   });
 
-  it("still offers the scanner to a member an officer marked absent", () => {
+  it("says an officer's mark and offers no scan the server would refuse", () => {
     myAttendance = {
-      attendance: { id: "a-1", status: "ABSENT", check_in_time: null },
+      attendance: { id: "a-1", status: "EXCUSED", check_in_time: null },
     };
+    const tree = render();
+    expect(textNode(tree, "Marked excused")).toBeDefined();
+    expect(textNode(tree, "Scan QR to check in")).toBeUndefined();
+  });
+
+  it("holds the scanner back while the member's own row is first read", () => {
+    myAttendancePending = true;
+    expect(textNode(render(), "Scan QR to check in")).toBeUndefined();
+  });
+
+  it("offers the scanner when that read is paused offline", () => {
+    myAttendancePending = true;
+    myAttendancePaused = true;
     expect(textNode(render(), "Scan QR to check in")).toBeDefined();
+  });
+
+  it("says only the time before check-in opens, even with a zone", () => {
+    vi.setSystemTime(new Date(START.getTime() - 30 * 60_000));
+    event = {
+      ...EVENT,
+      check_in_zone: [[0, 0]],
+      check_in_zone_name: "Great Room",
+    };
+    expect(screenText(render())).not.toContain("Great Room zone");
   });
 
   it("gives a host Host check-in in place of the scanner (#3703)", () => {
@@ -396,6 +428,42 @@ describe("Event details layout", () => {
       pathname: "/host-check-in",
       params: { eventId: "evt-1" },
     });
+  });
+
+  it("lets a host who attends check themselves in, under the host button", () => {
+    permissions = ["events:update"];
+    const tree = render();
+    const [self] = tree.root.findAll(
+      (node) =>
+        typeof node.props.onPress === "function" &&
+        node.findAll((text) => text.props.children === "Check myself in")
+          .length > 0,
+    );
+    act(() => self.props.onPress());
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/check-in",
+      params: { eventId: "evt-1" },
+    });
+  });
+
+  it("offers a host no self check-in once they're in", () => {
+    permissions = ["events:update"];
+    myAttendance = {
+      attendance: {
+        id: "a-1",
+        status: "PRESENT",
+        check_in_time: START.toISOString(),
+      },
+    };
+    expect(textNode(render(), "Check myself in")).toBeUndefined();
+  });
+
+  it("offers a host no self check-in before it opens", () => {
+    permissions = ["events:update"];
+    vi.setSystemTime(new Date(START.getTime() - 30 * 60_000));
+    const tree = render();
+    expect(textNode(tree, "Host check-in")).toBeDefined();
+    expect(textNode(tree, "Check myself in")).toBeUndefined();
   });
 
   it("lets a host put the QR up before check-in opens", () => {

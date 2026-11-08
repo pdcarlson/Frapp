@@ -15,10 +15,11 @@ import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interf
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import type { EventAttendance } from '#domain/entities/event-attendance.entity';
 import { RbacService } from './rbac.service';
-import { attendanceFor } from './event-role-targeting';
+import { attendanceFor, isInvited } from './event-role-targeting';
+import { SystemPermissions } from '#domain/constants/permissions';
 import {
-  CHECK_IN_GRACE_MINUTES,
   checkInWindowBounds,
+  eventLimitsAudience,
   eventRequiresAnyone,
   eventSetsRolesApart,
   type EventAttendanceFields,
@@ -30,14 +31,6 @@ import {
   verifyManualCode,
   type MintedCheckInToken,
 } from '#domain/utils/check-in-token';
-
-/**
- * Grace period after `end_time` during which check-in stays open and before
- * which auto-absent must not run (`spec/behavior/events.md`). Exported so the
- * scheduled auto-absent sweep computes the same cutoff this service enforces;
- * the value is `@repo/validation`'s, which the clients read too.
- */
-export const CHECK_IN_GRACE_PERIOD_MINUTES = CHECK_IN_GRACE_MINUTES;
 
 /**
  * Optional, like `ANALYTICS_HMAC_SALT`: absent, the rotating-token feature is
@@ -283,10 +276,13 @@ export class AttendanceService {
    * The caller's own attendance row for an event, or `null` when they have
    * none. Any member who can see the event may ask: it is their own record,
    * and it is what lets the event page say "Checked in at 7:52 PM" instead of
-   * offering the scanner again (#3703). The event is read only to 404 an id
-   * that isn't this chapter's. A member the event doesn't invite can't have a
-   * row (check-in refuses them), so they get `null` and learn nothing about
-   * the event beyond the id they already hold.
+   * offering the scanner again (#3703).
+   *
+   * An event the caller can't see 404s exactly as a nonexistent id does,
+   * by the rule `GET /v1/events/:id` applies (`EventService.findById`): an
+   * event that leaves anyone out is visible to an `events:update` holder and
+   * to the members it invites. Answering `{ attendance: null }` instead would
+   * confirm a role-targeted event exists to someone it was hidden from.
    */
   async getMyAttendance(
     eventId: string,
@@ -294,11 +290,32 @@ export class AttendanceService {
     chapterId: string,
   ): Promise<EventAttendance | null> {
     const event = await this.eventRepo.findById(eventId, chapterId);
-    if (!event) {
+    if (!event || !(await this.isVisibleTo(event, chapterId, userId))) {
       throw new NotFoundException('Event not found');
     }
 
     return this.attendanceRepo.findByEventAndUser(eventId, userId);
+  }
+
+  /** `EventService.isVisibleToViewer`'s rule; see `getMyAttendance`. */
+  private async isVisibleTo(
+    event: Parameters<typeof eventLimitsAudience>[0],
+    chapterId: string,
+    userId: string,
+  ): Promise<boolean> {
+    if (!eventLimitsAudience(event)) return true;
+    if (
+      await this.rbac.memberHasAnyPermission(chapterId, userId, [
+        SystemPermissions.EVENTS_UPDATE,
+      ])
+    ) {
+      return true;
+    }
+    const member = await this.memberRepo.findByUserAndChapter(
+      userId,
+      chapterId,
+    );
+    return !!member && isInvited(event, member.role_ids);
   }
 
   async getAttendance(
@@ -398,9 +415,11 @@ export class AttendanceService {
       throw new NotFoundException('Event not found');
     }
 
-    const end = new Date(event.end_time);
-    const graceEnd = new Date(
-      end.getTime() + CHECK_IN_GRACE_PERIOD_MINUTES * 60 * 1000,
+    // The close of the check-in window, from the same rule check-in uses.
+    const { closesAt: graceEnd } = checkInWindowBounds(
+      new Date(event.start_time),
+      new Date(event.end_time),
+      event.check_in_opens_minutes,
     );
     if (new Date() < graceEnd) {
       throw new BadRequestException(

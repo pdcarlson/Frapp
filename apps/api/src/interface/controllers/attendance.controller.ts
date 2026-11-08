@@ -121,7 +121,7 @@ export class AttendanceController {
   @ApiOperation({
     summary: "The caller's own attendance for an event",
     description:
-      'Lets a member\'s event page show that they are checked in (and when) instead of offering check-in again. `attendance` is null when they have no row.',
+      "Lets a member's event page show that they are checked in (and when) instead of offering check-in again. `attendance` is null when they have no row.",
   })
   @ApiOkResponse({ type: MyAttendanceDto })
   async mine(

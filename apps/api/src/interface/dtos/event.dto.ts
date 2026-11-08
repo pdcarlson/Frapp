@@ -10,6 +10,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
@@ -154,7 +155,10 @@ export class CreateEventDto {
     maximum: MAX_CHECK_IN_OPENS_MINUTES,
     description: `Minutes before start_time that check-in opens. Omitted on create, it is ${DEFAULT_CHECK_IN_OPENS_MINUTES}; the window closes ${CHECK_IN_GRACE_MINUTES} minutes after end_time.`,
   })
-  @IsOptional()
+  // Absent means the default; `null` is refused (400), never stored: the
+  // column is not null, and `@IsOptional` alone would let null through to a
+  // 500 from the database.
+  @ValidateIf((_object, value) => value !== undefined)
   @IsInt()
   @Min(0)
   @Max(MAX_CHECK_IN_OPENS_MINUTES)
@@ -260,8 +264,7 @@ export class CreateEventResponseDto implements Event {
   @ApiProperty({
     minimum: 0,
     maximum: MAX_CHECK_IN_OPENS_MINUTES,
-    description:
-      'Minutes before start_time that check-in opens; it closes 15 minutes after end_time.',
+    description: `Minutes before start_time that check-in opens; it closes ${CHECK_IN_GRACE_MINUTES} minutes after end_time.`,
   })
   check_in_opens_minutes: number;
 
@@ -406,9 +409,9 @@ export class UpdateEventDto {
   @ApiPropertyOptional({
     minimum: 0,
     maximum: MAX_CHECK_IN_OPENS_MINUTES,
-    description: `Minutes before start_time that check-in opens. Omitted on create, it is ${DEFAULT_CHECK_IN_OPENS_MINUTES}; the window closes ${CHECK_IN_GRACE_MINUTES} minutes after end_time.`,
+    description: `Minutes before start_time that check-in opens; the window closes ${CHECK_IN_GRACE_MINUTES} minutes after end_time. Omitted leaves it unchanged; null is refused.`,
   })
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @IsInt()
   @Min(0)
   @Max(MAX_CHECK_IN_OPENS_MINUTES)

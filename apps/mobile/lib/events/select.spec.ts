@@ -3,7 +3,7 @@ import {
   type EventRow,
   groupByWeek,
   selectEventDetail,
-  selectMyCheckIn,
+  selectMyAttendance,
 } from "./select";
 
 function event(overrides: Record<string, unknown> = {}) {
@@ -86,26 +86,30 @@ describe("selectEventDetail — check-in lead", () => {
   });
 });
 
-describe("selectMyCheckIn", () => {
+describe("selectMyAttendance", () => {
   const at = "2026-11-07T00:52:00.000Z";
 
   it("reads a PRESENT or LATE row's check-in time", () => {
     for (const status of ["PRESENT", "LATE"]) {
       expect(
-        selectMyCheckIn({ attendance: { status, check_in_time: at } })?.toISOString(),
-      ).toBe(at);
+        selectMyAttendance({ attendance: { status, check_in_time: at } }),
+      ).toEqual({ status, checkedInAt: new Date(at) });
     }
   });
 
-  it("is null without a check-in", () => {
-    expect(selectMyCheckIn({ attendance: null })).toBeNull();
+  it("keeps an officer's mark, with no check-in", () => {
     expect(
-      selectMyCheckIn({ attendance: { status: "ABSENT", check_in_time: null } }),
-    ).toBeNull();
+      selectMyAttendance({ attendance: { status: "EXCUSED", check_in_time: at } }),
+    ).toEqual({ status: "EXCUSED", checkedInAt: null });
     expect(
-      selectMyCheckIn({ attendance: { status: "EXCUSED", check_in_time: at } }),
-    ).toBeNull();
-    expect(selectMyCheckIn(undefined)).toBeNull();
+      selectMyAttendance({ attendance: { status: "PRESENT", check_in_time: null } }),
+    ).toEqual({ status: "PRESENT", checkedInAt: null });
+  });
+
+  it("is null with no row, or one it can't read", () => {
+    expect(selectMyAttendance({ attendance: null })).toBeNull();
+    expect(selectMyAttendance({ attendance: { status: "GONE" } })).toBeNull();
+    expect(selectMyAttendance(undefined)).toBeNull();
   });
 });
 

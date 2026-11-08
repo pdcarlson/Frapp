@@ -175,17 +175,35 @@ export function selectMintedToken(data: unknown): MintedCheckInToken | null {
   };
 }
 
+/** The viewer's own attendance row, as the event page reads it. */
+export interface MyAttendance {
+  status: "PRESENT" | "LATE" | "EXCUSED" | "ABSENT";
+  /**
+   * When they checked in: set for a PRESENT or LATE row with a time (a LATE
+   * row is a check-in, as the roster counts it), `null` for a row an officer
+   * marked EXCUSED or ABSENT.
+   */
+  checkedInAt: Date | null;
+}
+
+const ATTENDANCE_STATUSES = new Set(["PRESENT", "LATE", "EXCUSED", "ABSENT"]);
+
 /**
- * When the viewer checked in, from `useMyAttendance`'s answer
- * (`{ attendance: row | null }`), or `null` when they haven't: no row, a row
- * without a check-in time (an officer's ABSENT or EXCUSED), or anything
- * unreadable. A LATE row with a time is a check-in, as the roster counts it.
+ * The viewer's row from `useMyAttendance`'s answer
+ * (`{ attendance: row | null }`), or `null` when they have none or the answer
+ * is unreadable.
  */
-export function selectMyCheckIn(data: unknown): Date | null {
+export function selectMyAttendance(data: unknown): MyAttendance | null {
   if (!isRecord(data) || !isRecord(data.attendance)) return null;
   const { status, check_in_time } = data.attendance;
-  if (status !== "PRESENT" && status !== "LATE") return null;
-  return parseInstant(check_in_time);
+  if (typeof status !== "string" || !ATTENDANCE_STATUSES.has(status)) {
+    return null;
+  }
+  const checkedIn = status === "PRESENT" || status === "LATE";
+  return {
+    status: status as MyAttendance["status"],
+    checkedInAt: checkedIn ? parseInstant(check_in_time) : null,
+  };
 }
 
 export function selectEventDetail(data: unknown): EventDetail | null {

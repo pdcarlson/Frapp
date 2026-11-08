@@ -28,7 +28,11 @@ describe('AttendanceService', () => {
   let mockAttendanceRepo: jest.Mocked<IAttendanceRepository>;
   let mockEventRepo: jest.Mocked<IEventRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
-  let mockRbac: { isAlumni: jest.Mock; getAlumniRoleId: jest.Mock };
+  let mockRbac: {
+    isAlumni: jest.Mock;
+    getAlumniRoleId: jest.Mock;
+    memberHasAnyPermission: jest.Mock;
+  };
 
   const baseEvent: Event = {
     id: 'evt-1',
@@ -102,6 +106,7 @@ describe('AttendanceService', () => {
     mockRbac = {
       isAlumni: jest.fn().mockResolvedValue(false),
       getAlumniRoleId: jest.fn().mockResolvedValue(null),
+      memberHasAnyPermission: jest.fn().mockResolvedValue(false),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -619,6 +624,51 @@ describe('AttendanceService', () => {
       await expect(
         service.getMyAttendance('evt-1', 'user-1', 'ch-1'),
       ).resolves.toBeNull();
+    });
+
+    // A role-targeted event the caller can't see answers as a missing id
+    // does, as GET /v1/events/:id does, never as `{ attendance: null }`.
+    describe('an event that leaves people out', () => {
+      const officersOnly: Event = {
+        ...baseEvent,
+        required_role_ids: ['role-officer'],
+        others_invited: false,
+      };
+
+      it("404s a member it doesn't invite", async () => {
+        mockEventRepo.findById.mockResolvedValue(officersOnly);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+          role_ids: ['role-member'],
+        } as never);
+
+        await expect(
+          service.getMyAttendance('evt-1', 'user-1', 'ch-1'),
+        ).rejects.toThrow(new NotFoundException('Event not found'));
+        expect(mockAttendanceRepo.findByEventAndUser).not.toHaveBeenCalled();
+      });
+
+      it('answers a member it invites', async () => {
+        mockEventRepo.findById.mockResolvedValue(officersOnly);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+          role_ids: ['role-officer'],
+        } as never);
+        mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+
+        await expect(
+          service.getMyAttendance('evt-1', 'user-1', 'ch-1'),
+        ).resolves.toBeNull();
+      });
+
+      it('answers anyone who may update events', async () => {
+        mockEventRepo.findById.mockResolvedValue(officersOnly);
+        mockRbac.memberHasAnyPermission.mockResolvedValue(true);
+        mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+
+        await expect(
+          service.getMyAttendance('evt-1', 'user-1', 'ch-1'),
+        ).resolves.toBeNull();
+        expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+      });
     });
 
     it("404s an event outside the caller's chapter", async () => {

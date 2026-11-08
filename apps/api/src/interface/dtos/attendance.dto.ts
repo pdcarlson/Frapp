@@ -118,7 +118,7 @@ export class MyAttendanceDto {
     type: EventAttendanceDto,
     nullable: true,
     description:
-      'The caller\'s row, or null when they have none (not checked in, and not yet marked).',
+      "The caller's row, or null when they have none (not checked in, and not yet marked).",
   })
   attendance: EventAttendanceDto | null;
 }

@@ -15,7 +15,9 @@
 // next week's meeting.
 //
 // Run: `npm run test:integration -w apps/api` (needs a local Supabase stack;
-// skips cleanly without one). Not run by CI today (#1568).
+// skips cleanly without one). Not run by CI today (#1568); the PGlite tier
+// `scripts/pglite/tiers/check-in-once.mjs` is the CI-run proof of the same
+// guard, everything here but the concurrent race.
 
 import { randomUUID } from 'node:crypto';
 import { SupabaseAttendanceRepository } from '../../src/infrastructure/supabase/repositories/supabase-attendance.repository';
@@ -121,8 +123,9 @@ describeIntegration('Event check-in happens once per member', () => {
       .eq('user_id', userId)
       .eq('category', 'ATTENDANCE');
     assertOk('ledger read', error);
-    return ((data ?? []) as { metadata: { event_id?: string } | null }[])
-      .filter((row) => row.metadata?.event_id === id).length;
+    return (
+      (data ?? []) as { metadata: { event_id?: string } | null }[]
+    ).filter((row) => row.metadata?.event_id === id).length;
   }
 
   it('writes one row and one award, and a second check-in writes neither', async () => {
@@ -150,6 +153,10 @@ describeIntegration('Event check-in happens once per member', () => {
   });
 
   it('refuses a duplicate row even written past the RPC', async () => {
+    // Its own original row, so the case stands alone (`-t`) rather than
+    // leaning on the first test: without one, the insert below would succeed
+    // and read as a missing constraint. A no-op when the row exists.
+    await checkIn(eventId);
     const { error } = await supabase.from('event_attendance').insert({
       event_id: eventId,
       user_id: userId,
