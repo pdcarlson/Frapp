@@ -11,19 +11,50 @@
 -- predate read_only_in_discord, so the stay-read-only call is by name:
 -- `announcements-bro`, the one announcements-style channel, stays read-only in
 -- both chapters and is not listed below. The other 33 per chapter flip.
--- Paul approved this list on 2026-11-08:
+-- Paul approved this list on 2026-11-08, for both chapters: 05321de3 (the
+-- live chapter) and 37a00bcc (a second Phi Gamma Delta row with no members),
+-- knowing that the stay-read-only call was by name, not from a rescan:
 -- https://github.com/pdcarlson/Frapp/issues/3743#issuecomment-6727191930
 --
--- Scope: an explicit list of channel ids. Each row must still match its
--- chapter, its name, and the import that created it, or it is skipped.
--- Idempotent: it only touches rows still read-only, so a re-run updates 0.
--- Expect 66 rows on the first run (33 per chapter) and 0 after that.
+-- Scope: an explicit list of channel ids. A row flips only when it still
+-- matches its chapter, its name, and the completed import that created it,
+-- and that import's mapping row for it still says read-only (on prod all 68
+-- did on 2026-11-08). The mapping row then gets the same value, because the
+-- import worker
+-- reuses a channel only when the channel's is_read_only equals the mapping's
+-- new_channel_is_read_only (channelServesMergeKey in
+-- apps/api/src/domain/utils/discord-channel-merge.ts).
 --
--- Hosted projects are changed only with the owner's approval. This file
--- records the statement that was applied; it is not a migration.
+-- Run the whole file in one go: it is one transaction. The final check raises,
+-- rolling everything back, unless all 66 listed channels end up postable and
+-- the two announcements-bro channels are still read-only. Re-running it never
+-- reverts a later choice: once applied, the mapping rows say postable, so the
+-- updates match nothing. If an admin has since made a listed channel
+-- read-only again, the check then fails and rolls back, which is expected.
+--
+-- Pre-check (read only), the listing the approval was given on:
+--   select d.chapter_id, icc.import_id, d.status, c.id, c.name, c.is_read_only
+--   from discord_import_created_channels icc
+--   join discord_imports d on d.id = icc.import_id
+--   join chat_channels c on c.id = icc.channel_id
+--   order by d.chapter_id, c.name;
+-- Expect 68 rows, all is_read_only = true, both imports completed. A row not
+-- in this file (a newer import) needs its own decision first.
+--
+-- Hosted projects are changed only with the owner's approval. This is the
+-- statement to apply, not a migration; #3743 records when it ran on prod and
+-- the counts before and after.
 
-with fix (chapter_id, import_id, channel_id, channel_name) as (
-  values
+begin;
+
+create temp table fix_3743 (
+  chapter_id uuid not null,
+  import_id uuid not null,
+  channel_id uuid primary key,
+  channel_name text not null
+) on commit drop;
+
+insert into fix_3743 (chapter_id, import_id, channel_id, channel_name) values
   ('05321de3-aa3d-466c-94ff-790a9a7c7753'::uuid, 'b071647d-215b-4a8e-a2a5-39eece57547f'::uuid, '11b7dff7-4bc6-4240-82fa-da2f69b68c30'::uuid, 'academics'),
   ('05321de3-aa3d-466c-94ff-790a9a7c7753'::uuid, 'b071647d-215b-4a8e-a2a5-39eece57547f'::uuid, '99be12ce-eaff-4bf3-92f7-7058847b932e'::uuid, 'anyone'),
   ('05321de3-aa3d-466c-94ff-790a9a7c7753'::uuid, 'b071647d-215b-4a8e-a2a5-39eece57547f'::uuid, 'eb8dd102-47f3-44ef-a4f1-95c764a7ca71'::uuid, 'bars'),
@@ -89,11 +120,11 @@ with fix (chapter_id, import_id, channel_id, channel_name) as (
   ('37a00bcc-100f-4c6d-9d20-cee2396a43e5'::uuid, 'a231ab3a-79e3-48fa-88ca-4a985a9001e2'::uuid, 'bba67aa0-d634-4ed8-9525-4dae40df6da3'::uuid, 'treasurer-committee'),
   ('37a00bcc-100f-4c6d-9d20-cee2396a43e5'::uuid, 'a231ab3a-79e3-48fa-88ca-4a985a9001e2'::uuid, '92514d3f-d2b3-4206-b3e1-0d4a72c0e688'::uuid, 'video-games'),
   ('37a00bcc-100f-4c6d-9d20-cee2396a43e5'::uuid, 'a231ab3a-79e3-48fa-88ca-4a985a9001e2'::uuid, 'd75fbb38-4007-4c18-86e4-194f0e29a156'::uuid, 'wellness'),
-  ('37a00bcc-100f-4c6d-9d20-cee2396a43e5'::uuid, 'a231ab3a-79e3-48fa-88ca-4a985a9001e2'::uuid, '045dd7d7-882d-48d9-bcd4-7ee260002f69'::uuid, 'workparty')
-)
+  ('37a00bcc-100f-4c6d-9d20-cee2396a43e5'::uuid, 'a231ab3a-79e3-48fa-88ca-4a985a9001e2'::uuid, '045dd7d7-882d-48d9-bcd4-7ee260002f69'::uuid, 'workparty');
+
 update public.chat_channels c
 set is_read_only = false
-from fix
+from fix_3743 fix
 where c.id = fix.channel_id
   and c.chapter_id = fix.chapter_id
   and c.name = fix.channel_name
@@ -105,5 +136,51 @@ where c.id = fix.channel_id
     where icc.channel_id = c.id
       and icc.import_id = fix.import_id
       and d.chapter_id = fix.chapter_id
+      and d.status = 'completed'
   )
-returning c.chapter_id, c.id, c.name, c.is_read_only;
+  and exists (
+    select 1
+    from public.discord_import_channels dic
+    where dic.import_id = fix.import_id
+      and dic.target_channel_id = c.id
+      and dic.new_channel_is_read_only = true
+  );
+
+update public.discord_import_channels dic
+set new_channel_is_read_only = false
+from fix_3743 fix
+join public.chat_channels c on c.id = fix.channel_id
+where dic.import_id = fix.import_id
+  and dic.target_channel_id = fix.channel_id
+  and dic.new_channel_is_read_only = true
+  and c.is_read_only = false;
+
+do $$
+declare
+  postable int;
+  announcements_read_only int;
+begin
+  select count(*) into postable
+  from fix_3743 fix
+  join public.chat_channels c
+    on c.id = fix.channel_id
+   and c.chapter_id = fix.chapter_id
+   and c.name = fix.channel_name
+  where c.is_read_only = false;
+
+  select count(*) into announcements_read_only
+  from public.discord_import_created_channels icc
+  join public.chat_channels c on c.id = icc.channel_id
+  where icc.import_id in (select distinct import_id from fix_3743)
+    and c.name = 'announcements-bro'
+    and c.is_read_only = true;
+
+  if postable <> 66 or announcements_read_only <> 2 then
+    raise exception 'data fix #3743: % of 66 listed channels postable, % of 2 announcements-bro read-only; rolling back',
+      postable, announcements_read_only;
+  end if;
+  raise notice 'data fix #3743: 66 listed channels postable, announcements-bro read-only in both chapters';
+end
+$$;
+
+commit;
