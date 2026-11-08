@@ -247,9 +247,9 @@ export interface DiscordImportChannel {
    */
   discord_reader_role_ids: string[] | null;
   /**
-   * Whether the channel was read-only in Discord: it took Send Messages away
-   * from a reader the server otherwise let talk (see `readOnlyInDiscord`,
-   * #3697). It is the default for `new_channel_is_read_only`: an imported
+   * Whether the channel was read-only in Discord: none of its ordinary
+   * readers could talk there, and the channel is what stopped them (the rule
+   * is `readOnlyInDiscord`, #3697). It is the default for `new_channel_is_read_only`: an imported
    * channel is postable by whoever can read it unless this is true. Recorded
    * by the scan for a top-level channel; null for a thread, when the roles
    * could not be read, and always on the upload path.

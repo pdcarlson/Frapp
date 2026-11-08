@@ -1099,8 +1099,9 @@ function ChannelRow({
               id={`read-only-hint-${channel.channelId}`}
               className="text-xs text-muted-foreground"
             >
-              {channel.readOnlyInDiscord === true
-                ? "On because members couldn't send messages here in Discord. "
+              {channel.readOnlyInDiscord === true &&
+              choiceIsReadOnly(channel, choice ?? {})
+                ? "On because members couldn't talk here in Discord. "
                 : ""}
               When on, only members who can post announcements can post (by
               default the President; give exec that permission in Settings

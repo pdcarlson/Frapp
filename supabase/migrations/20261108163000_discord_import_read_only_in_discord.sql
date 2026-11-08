@@ -6,9 +6,10 @@
 -- Discord was left with channels its members could read but not talk in.
 --
 -- From here on an imported channel is postable by whoever can read it, and is
--- read-only only when Discord took Send Messages away from a reader the
--- server otherwise let talk (an announcements-style channel). That is a scan
--- fact, like private_in_discord:
+-- read-only only when Discord made it so: none of its ordinary readers could
+-- talk there, and the channel is what stopped them (an announcements-style
+-- channel; the rule is in spec/behavior/chat/README.md). That is a scan fact,
+-- like private_in_discord:
 --
 --   read_only_in_discord  true when the channel was read-only in Discord;
 --                         false when it was not; null for a thread (it lands

@@ -372,6 +372,17 @@ describe('readOnlyInDiscord', () => {
     ).toBe(true);
   });
 
+  it('keeps a channel nobody ordinary reads postable, such as one only an Administrator role reads', () => {
+    const ADMIN = '900000000000000009';
+    const withAdmin: DiscordRolePermissions[] = [
+      ...open,
+      { id: ADMIN, permissions: String(ADMINISTRATOR) },
+    ];
+    expect(readOnlyInDiscord(GUILD, withAdmin, [everyoneDenied], [ADMIN])).toBe(
+      false,
+    );
+  });
+
   describe('a forum, where members talk by replying to posts', () => {
     const forumOpen: DiscordRolePermissions[] = [
       {

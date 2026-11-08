@@ -435,11 +435,21 @@ describe('DiscordBotGatewayService.discoverChannels: who can read what', () => {
   });
 
   it('records which channels Discord made read-only, from the overwrites (#3697)', async () => {
-    const TALK = String((1n << 10n) | (1n << 16n) | (1n << 11n));
+    const TALK = String((1n << 10n) | (1n << 16n) | (1n << 11n) | (1n << 38n));
     const SEND = String(1n << 11n);
     serve({
       [`/guilds/${GUILD}/channels`]: [
         { id: '11', type: 0, name: 'academics', parent_id: null },
+        // A forum where only Brother creates posts and everyone replies.
+        {
+          id: '16',
+          type: 15,
+          name: 'events',
+          permission_overwrites: [
+            { id: GUILD, type: 0, allow: '0', deny: SEND },
+            { id: BROTHER, type: 0, allow: SEND, deny: '0' },
+          ],
+        },
         {
           id: '15',
           type: 5,
@@ -468,6 +478,8 @@ describe('DiscordBotGatewayService.discoverChannels: who can read what', () => {
     const { channels } = await gateway().discoverChannels(GUILD);
     const byId = new Map(channels.map((channel) => [channel.id, channel]));
     expect(byId.get('11')).toMatchObject({ readOnlyInDiscord: false });
+    // Same overwrites as #announcements, but a forum's members talk by replying.
+    expect(byId.get('16')).toMatchObject({ readOnlyInDiscord: false });
     // Pledge is a candidate the channel silences; Brother is the one it lets talk.
     expect(byId.get('15')).toMatchObject({ readOnlyInDiscord: true });
     // A thread lands in its parent's channel and carries no answer of its own.

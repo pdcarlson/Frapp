@@ -303,8 +303,8 @@ type ReadersOf = (channel: StagedChannel) => SameAsDiscordReaders | null;
 /**
  * Whether the channel a choice creates is read-only, where only
  * `announcements:post` holders can post (#3697). Unless the admin said
- * otherwise, as in Discord: read-only only when Discord took Send Messages
- * away there, so everyone who could talk in Discord can talk in Frapp.
+ * otherwise, as in Discord: read-only only when the scan saw Discord make it
+ * so (`readOnlyInDiscord`), and postable by whoever can read it otherwise.
  */
 export function choiceIsReadOnly(
   channel: Pick<StagedChannel, "readOnlyInDiscord">,

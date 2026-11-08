@@ -142,9 +142,8 @@ export interface DiscordChannelRef {
    */
   readerRoleIds: string[] | null;
   /**
-   * For a top-level channel: whether it was read-only in Discord, taking Send
-   * Messages away from a reader the server otherwise lets talk
-   * (`readOnlyInDiscord`). Null for a thread, which lands in its parent's
+   * For a top-level channel: whether it was read-only in Discord, none of its
+   * ordinary readers able to talk there (`readOnlyInDiscord`). Null for a thread, which lands in its parent's
    * channel, or when the roles could not be read.
    */
   readOnlyInDiscord: boolean | null;

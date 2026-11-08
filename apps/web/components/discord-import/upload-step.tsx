@@ -63,8 +63,9 @@ export interface StagedChannel {
    */
   readerRoleIds?: string[] | null;
   /**
-   * Bot path only: whether Discord took Send Messages away from the
-   * channel's readers there (an announcements-style channel, #3697), which
+   * Bot path only: whether Discord made the channel read-only, none of its
+   * ordinary readers able to talk there (an announcements-style channel,
+   * #3697), which
    * makes the channel it creates read-only by default. Null or absent means
    * not known, and the channel is postable by whoever can read it.
    */

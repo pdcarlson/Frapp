@@ -674,7 +674,7 @@ describe("ImportWizard — the bot path", () => {
     expect(screen.getByText("#announcements")).toBeInTheDocument();
   });
 
-  it("lets the admin turn read-only off for a channel Discord made read-only, and lists only new channels once (#3697)", async () => {
+  it("lists like-named read-only channels once, as the one channel they land in (#3697)", async () => {
     discoverChannels.mockResolvedValue({
       channels: ["c1", "c2"].map((id) => ({
         discord_channel_id: id,

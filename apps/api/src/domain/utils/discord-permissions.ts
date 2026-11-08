@@ -237,11 +237,9 @@ export function readerRoleIds(
  * denying "Brothers" when they can talk only by inheriting from `@everyone`.
  * A channel where the brothers talk and the pledges are denied stays
  * postable (Frapp has no deny; the pledges can post there), and so does
- * every channel of a server whose "Muted" role is denied everywhere. A server
- * that lets nobody talk by default and allows members per channel reads its
- * per-channel allows as privileged only where nobody else can talk, so its
- * discussion channels stay postable, and an `#announcements` there that
- * allows exec is postable too (the one shape this misses).
+ * every channel of a server whose "Muted" role is denied everywhere. The
+ * shapes it gets wrong are the Known gaps in `spec/behavior/chat/README.md`
+ * (§ Imported archive messages), which owns this rule.
  *
  * Talking is Send Messages, except in a forum (`isForum`), where that is
  * Create Posts and members talk by replying, Send Messages in Threads. One role
