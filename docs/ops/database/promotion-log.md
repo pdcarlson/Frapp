@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-08: A presidency transfer keeps the outgoing President's member access
+
+### 20261108200000_transfer_presidency_keeps_member_access.sql
+
+- **Purpose**: Redefines `transfer_presidency` with the same signature. After the compare-and-set strips President from the outgoing member, the same transaction appends the chapter's Member role (`system_key = 'MEMBER'`) when their remaining roles grant no member access (no live role in the chapter carrying `members:view` or `*`, no custom role carrying `members:view`). A founder holds President alone, so a transfer used to leave them with no roles and refused on every screen (#3670). Re-pins `search_path = public, pg_temp`, which `create or replace` resets. An outgoing President who already holds Member (a chapter that took `members:view` off it) gets no second copy, and a chapter with no `system_key = 'MEMBER'` role transfers as before. No repair: on 2026-11-08 neither `frapp-prod` nor `frapp-staging` had a `presidency_transferred` audit row or a member without member access, and none of `frapp-prod`'s 3 chapters lacked a Member role or had one without `members:view` (checked with the Supabase connector: `select count(*) filter (where not exists (select 1 from roles r where r.chapter_id = c.id and r.system_key = 'MEMBER')) from chapters c`, and the same with `not (r.permissions && array['members:view','*'])`). Exercised by the pglite tier `scripts/pglite/tiers/transfer-presidency-keeps-member-access.mjs`.
+- **Checks**: After `db push`, `select proconfig from pg_proc where proname = 'transfer_presidency';` returns `{search_path=public, pg_temp}`, and `select has_function_privilege('authenticated', 'public.transfer_presidency(uuid, uuid, uuid, text)', 'execute');` returns `false` (the grants from 20260604120000 survive `create or replace`).
+- **Promoter notes**: Order-independent with the API: the API calls the RPC with the same arguments and reads the same rows back. Idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-transfer-presidency-keeps-member-access-20261108200000) § Rollback transfer presidency keeps member access.
+
 ## 2026-11-08: Discord-imported channels are postable
 
 ### 20261108163000_discord_import_read_only_in_discord.sql
