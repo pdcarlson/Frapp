@@ -277,13 +277,17 @@ describe("validateDeploySha", () => {
   });
 
   // The CLI path can't be seen by a test that injects its own fetchImpl, so
-  // the script must not reach for `lib/http.mjs` at all: any import from it,
-  // aliased or not, is how a retrying fetch gets back under ghRequest.
+  // neither the script nor the module that now holds its checks read
+  // (`lib/check-runs.mjs`, #3599) may reach for `lib/http.mjs` at all: any
+  // import from it, aliased or not, is how a retrying fetch gets back under
+  // ghRequest.
   it("never imports a retrying fetch to hand to ghRequest", () => {
-    const code = readFileSync(new URL("../validate-deploy-sha.mjs", import.meta.url), "utf8")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^\s*\/\/.*$/gm, "");
-    assert.doesNotMatch(code, /lib\/http\.mjs|resilientFetch|fetchWithRetry/);
+    for (const file of ["../validate-deploy-sha.mjs", "../lib/check-runs.mjs"]) {
+      const code = readFileSync(new URL(file, import.meta.url), "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+      assert.doesNotMatch(code, /lib\/http\.mjs|\.\/http\.mjs|resilientFetch|fetchWithRetry/, file);
+    }
   });
 
   // A malformed 2xx body must not read as "zero check runs" — that would
