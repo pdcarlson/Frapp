@@ -6,6 +6,7 @@ import { CHAT_SINCE_NOT_FOUND_CODE } from "@repo/validation";
 import {
   BACKFILL_PAGE_LIMIT,
   INBOX_TOPIC,
+  RESUME_RECONNECT_AFTER_MS,
   chatRealtime,
   createBackfillFetcher,
   POLL_DEGRADE_AFTER_MS,
@@ -1599,6 +1600,7 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
   let socket: {
     isConnected: ReturnType<typeof vi.fn>;
     connect: ReturnType<typeof vi.fn>;
+    disconnect: ReturnType<typeof vi.fn>;
   };
   let offline: boolean;
   let netListener: ((online: boolean) => void) | null;
@@ -1611,7 +1613,11 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
       BackfillFetcher;
     queryClient = new QueryClient();
     ({ supabase, channels } = makeFakeSupabase());
-    socket = { isConnected: vi.fn(() => true), connect: vi.fn() };
+    socket = {
+      isConnected: vi.fn(() => true),
+      connect: vi.fn(),
+      disconnect: vi.fn(async () => "ok"),
+    };
     (supabase as unknown as { realtime: typeof socket }).realtime = socket;
     activity = vi.fn() as ReturnType<typeof vi.fn> &
       ((a: MessageActivity) => void);
@@ -1655,7 +1661,7 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
     ...extra,
   });
 
-  test("joins one inbox listening for every new chat message, scoped by RLS", () => {
+  test("joins one inbox listening for every new chat message, unfiltered (RLS does the scoping server-side)", () => {
     const ch = inbox();
     expect(ch).toBeDefined();
     expect(ch.on).toHaveBeenCalledWith(
@@ -1665,23 +1671,14 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
     );
   });
 
-  test("a message in a channel nobody has open reports it as not open", () => {
+  test("a new message is reported with its channel and sender", () => {
     inbox().trigger("SUBSCRIBED");
     inbox().emitPostgresChange({ eventType: "INSERT", new: row("elsewhere") });
     expect(activity).toHaveBeenCalledWith({
       type: "message",
       channelId: "elsewhere",
       senderId: OTHER,
-      open: false,
     });
-  });
-
-  test("a message in the open thread reports it as open", () => {
-    chatRealtime.subscribe("c1");
-    inbox().emitPostgresChange({ eventType: "INSERT", new: row("c1") });
-    expect(activity).toHaveBeenLastCalledWith(
-      expect.objectContaining({ channelId: "c1", open: true }),
-    );
   });
 
   test("an archive import is not activity", () => {
@@ -1712,6 +1709,33 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
     expect(second).not.toBe(first);
     second.trigger("SUBSCRIBED");
     expect(activity).toHaveBeenCalledWith({ type: "resync" });
+  });
+
+  test("a first join that only lands after failing reports a resync", async () => {
+    const first = inbox();
+    first.trigger("TIMED_OUT");
+    await vi.advanceTimersByTimeAsync(1000);
+    const second = inbox();
+    expect(second).not.toBe(first);
+    second.trigger("SUBSCRIBED");
+    expect(activity).toHaveBeenCalledWith({ type: "resync" });
+  });
+
+  test("a replaced inbox's late status can't knock out the live one", async () => {
+    const first = inbox();
+    first.trigger("SUBSCRIBED");
+    first.trigger("CHANNEL_ERROR");
+    await vi.advanceTimersByTimeAsync(1000);
+    const second = inbox();
+    second.trigger("SUBSCRIBED");
+    activity.mockClear();
+
+    // The superseded channel reports its own teardown after the new one joined.
+    first.trigger("CLOSED");
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(inbox()).toBe(second);
+    expect(activity).not.toHaveBeenCalled();
   });
 
   test("coming back online rejoins the inbox, and its join reports a resync", async () => {
@@ -1764,6 +1788,54 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
       expect(socket.connect).not.toHaveBeenCalled();
     });
 
+    test("a channel that isn't live is reopened, and read once, by its own join", async () => {
+      chatRealtime.subscribe("c1");
+      const before = channels.get("chat:channel:c1")!;
+      before.trigger("SUBSCRIBED");
+      before.trigger("CHANNEL_ERROR");
+      backfill.mockClear();
+
+      chatRealtime.resume();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(backfill).not.toHaveBeenCalled();
+
+      const after = channels.get("chat:channel:c1")!;
+      expect(after).not.toBe(before);
+      after.trigger("SUBSCRIBED");
+      expect(backfill).toHaveBeenCalledTimes(1);
+    });
+
+    test("after a long absence, drops a socket that still reads open and rejoins everything on a fresh one", async () => {
+      chatRealtime.subscribe("c1");
+      const thread = channels.get("chat:channel:c1")!;
+      thread.trigger("SUBSCRIBED");
+      const inboxBefore = inbox();
+      inboxBefore.trigger("SUBSCRIBED");
+      const actionsBefore = channels.get("chat:actions:global")!;
+      // Disconnected from here on: a release's leave resolves at once.
+      socket.disconnect.mockImplementation(async () => {
+        socket.isConnected.mockReturnValue(false);
+        return "ok";
+      });
+
+      chatRealtime.resume(RESUME_RECONNECT_AFTER_MS);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(socket.disconnect).toHaveBeenCalledTimes(1);
+      expect(channels.get("chat:channel:c1")).not.toBe(thread);
+      expect(inbox()).not.toBe(inboxBefore);
+      expect(channels.get("chat:actions:global")).not.toBe(actionsBefore);
+      expect(socket.connect).toHaveBeenCalled();
+      expect(activity).toHaveBeenCalledWith({ type: "resync" });
+    });
+
+    test("a short absence trusts a socket that reads open", () => {
+      chatRealtime.subscribe("c1");
+      channels.get("chat:channel:c1")!.trigger("SUBSCRIBED");
+      chatRealtime.resume(RESUME_RECONNECT_AFTER_MS - 1);
+      expect(socket.disconnect).not.toHaveBeenCalled();
+    });
+
     test("reconnects a socket known to be down and reopens what isn't live", async () => {
       chatRealtime.subscribe("c1");
       const before = channels.get("chat:channel:c1")!;
@@ -1796,6 +1868,7 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
 
     test("a socket that throws on reconnect still catches the threads up", () => {
       chatRealtime.subscribe("c1");
+      channels.get("chat:channel:c1")!.trigger("SUBSCRIBED");
       socket.isConnected.mockReturnValue(false);
       socket.connect.mockImplementation(() => {
         throw new Error("no socket");

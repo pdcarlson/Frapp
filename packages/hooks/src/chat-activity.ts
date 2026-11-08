@@ -19,7 +19,6 @@ export type ChatActivity =
       type: "message";
       channelId: string;
       senderId: string | null;
-      open: boolean;
     }
   | { type: "resync" };
 
@@ -31,15 +30,45 @@ export type ChatActivity =
  */
 export const CHAT_ACTIVITY_COALESCE_MS = 250;
 
+/*
+  The channel a thread screen is showing right now, process-wide.
+
+  Not "subscribed": a mobile thread stays mounted and subscribed under a screen
+  pushed over it (another thread, an event), and a message there is not on
+  screen. Each thread claims this on focus (mobile's `useFocusEffect`) or while
+  it is the active channel (web), and releases it on blur. A newer claim wins,
+  and a stale release can't clear it.
+*/
+let viewedChannel: { channelId: string; token: symbol } | null = null;
+
+/**
+ * Says `channelId` is the thread on screen until the returned release runs.
+ * Call it where the thread stamps its read cursor on focus, and release where
+ * it stamps again on blur.
+ */
+export function claimViewedChannel(channelId: string): () => void {
+  const token = Symbol(channelId);
+  viewedChannel = { channelId, token };
+  return () => {
+    if (viewedChannel?.token === token) viewedChannel = null;
+  };
+}
+
+/** The channel a thread screen has claimed, or `null`. */
+export function viewedChannelId(): string | null {
+  return viewedChannel?.channelId ?? null;
+}
+
 export interface ChatActivityHandlerOptions {
   queryClient: QueryClient;
   /** `users.id` of the signed-in member, read at the time of each message. */
   viewerId: () => string | null;
   /**
-   * Is the member looking at the app right now? A message in an open thread
-   * only counts as read while they are.
+   * Is the member looking at `channelId` right now: its thread on screen, and
+   * the app or tab in front of them? Only then does a message there count as
+   * read.
    */
-  isForeground: () => boolean;
+  isViewing: (channelId: string) => boolean;
   /** `POST /v1/channels/{id}/read`; its result is not read. */
   markRead: (channelId: string) => Promise<unknown>;
   delayMs?: number;
@@ -56,13 +85,16 @@ export interface ChatActivityHandler {
  * which drives every unread badge, the app badge and the rail's bold rows, and
  * `GET /v1/channels/latest`, which orders and previews the Messages screen.
  *
- * - A message from someone else in a thread this client has open, while the
- *   member is looking, re-stamps that channel's read cursor before the
- *   summaries are read again. The thread is on screen, so the message has been
- *   seen; without the stamp the next count would light up the very channel the
+ * - A message from someone else in the thread the member is looking at
+ *   re-stamps that channel's read cursor before the summaries are read again.
+ *   Without the stamp the next count would light up the very channel the
  *   member is reading (the cursor was stamped when it opened, before this
  *   message). One stamp per channel per burst, not one per message.
  * - Anything else, and every `resync`, reads both summaries again.
+ *
+ * Rounds run one after another, never overlapping: a round re-reads only after
+ * every stamp before it has landed, so a slow stamp can't be overtaken by a
+ * later round's read that would count the message as unread.
  *
  * Invalidates those two keys exactly, never the `["channels"]` prefix, which
  * would also re-read the channel list, its categories and every open channel's
@@ -76,9 +108,10 @@ export function createChatActivityHandler(
   let refresh = false;
   const stamps = new Set<string>();
   let disposed = false;
+  /** The round in flight, which the next one waits on. */
+  let running: Promise<void> = Promise.resolve();
 
-  const flush = async () => {
-    timer = null;
+  const round = async () => {
     const toStamp = [...stamps];
     stamps.clear();
     const shouldRefresh = refresh || toStamp.length > 0;
@@ -87,14 +120,23 @@ export function createChatActivityHandler(
     // answer, which is better than a badge left stale.
     await Promise.allSettled(toStamp.map((id) => options.markRead(id)));
     if (disposed || !shouldRefresh) return;
-    void options.queryClient.invalidateQueries({
-      queryKey: CHANNEL_UNREAD_COUNTS_KEY,
-      exact: true,
-    });
-    void options.queryClient.invalidateQueries({
-      queryKey: CHANNEL_LATEST_MESSAGES_KEY,
-      exact: true,
-    });
+    await Promise.allSettled([
+      options.queryClient.invalidateQueries({
+        queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+        exact: true,
+      }),
+      options.queryClient.invalidateQueries({
+        queryKey: CHANNEL_LATEST_MESSAGES_KEY,
+        exact: true,
+      }),
+    ]);
+  };
+
+  const flush = () => {
+    timer = null;
+    // Taken now, at the end of the coalescing window; what arrives while the
+    // previous round is still running joins this round.
+    running = running.then(round, round);
   };
 
   const handle = (activity: ChatActivity) => {
@@ -105,13 +147,13 @@ export function createChatActivityHandler(
       const viewerId = options.viewerId();
       const fromSomeoneElse =
         activity.senderId !== null && activity.senderId !== viewerId;
-      if (activity.open && fromSomeoneElse && options.isForeground()) {
+      if (fromSomeoneElse && options.isViewing(activity.channelId)) {
         stamps.add(activity.channelId);
       } else {
         refresh = true;
       }
     }
-    timer ??= setTimeout(() => void flush(), delayMs);
+    timer ??= setTimeout(flush, delayMs);
   };
 
   const dispose = () => {
@@ -128,6 +170,9 @@ export function createChatActivityHandler(
 /**
  * {@link createChatActivityHandler} bound to the app's query and API clients,
  * as the `onMessageActivity` both clients configure the realtime manager with.
+ * The member is viewing a channel when its thread has claimed it
+ * ({@link claimViewedChannel}) and `isForeground()` says the app or tab is in
+ * front of them.
  *
  * The returned function keeps its identity for the life of the component, so
  * a `configure` effect keyed on it doesn't re-run per render; the viewer and
@@ -151,7 +196,8 @@ export function useChatActivityHandler(
     const handler = createChatActivityHandler({
       queryClient,
       viewerId: () => viewerRef.current,
-      isForeground: () => foregroundRef.current(),
+      isViewing: (channelId) =>
+        viewedChannelId() === channelId && foregroundRef.current(),
       markRead: async (id) => {
         const { error } = await client.POST("/v1/channels/{id}/read", {
           params: { path: { id } },

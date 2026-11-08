@@ -175,9 +175,11 @@ export interface ManagerContext {
 /**
  * What the inbox channel saw.
  *
- * - `message`: a new message the viewer may read landed in `channelId`.
- *   `open` says whether this client has that channel subscribed (a thread on
- *   screen), in which case the thread already merged the row itself.
+ * - `message`: a new message the viewer may read landed in `channelId`. If
+ *   this client has that channel subscribed, its thread merged the row itself;
+ *   the activity is about everything that summarizes channels. Whether the
+ *   member is looking at it is the client's to say: a subscribed thread can be
+ *   mounted under another screen.
  * - `resync`: the manager may have missed messages (the inbox rejoined after a
  *   drop, or the app came back from the background) and anything derived from
  *   them should be read again.
@@ -187,9 +189,17 @@ export type MessageActivity =
       type: "message";
       channelId: string;
       senderId: string | null;
-      open: boolean;
     }
   | { type: "resync" };
+
+/**
+ * How long the app may have been away before `resume()` stops trusting a socket
+ * that still reads open. Realtime heartbeats every 25s and only notices a dead
+ * socket when one goes unanswered, so after an absence longer than a heartbeat
+ * a socket the OS cut can still read open for up to another 50s. Shorter than
+ * that, the socket was very likely never cut.
+ */
+export const RESUME_RECONNECT_AFTER_MS = 25_000;
 
 /**
  * The one topic carrying every new message the viewer may read, whichever
@@ -254,8 +264,11 @@ class ChatRealtimeManager {
   private inboxChannel: RealtimeChannel | null = null;
   private inboxAttachSeq = 0;
   private inboxLive = false;
-  /** Set by the first SUBSCRIBED; every later one is a rejoin that owes a resync. */
-  private inboxJoinedOnce = false;
+  /**
+   * Set by the first SUBSCRIBED or the first failure, whichever comes first:
+   * every SUBSCRIBED after either follows a gap and owes a resync.
+   */
+  private inboxOwesResync = false;
   private inboxBackoffStep = 0;
   private inboxRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private statusListeners = new Set<(status: ConnectionStatus) => void>();
@@ -367,7 +380,7 @@ class ChatRealtimeManager {
       this.inboxChannel = null;
     }
     this.inboxLive = false;
-    this.inboxJoinedOnce = false;
+    this.inboxOwesResync = false;
     this.inboxBackoffStep = 0;
     if (this.typingTickHandle) clearInterval(this.typingTickHandle);
     this.typingTickHandle = null;
@@ -425,35 +438,79 @@ class ChatRealtimeManager {
 
   /**
    * The app is back in front of the member: a mobile app returning from the
-   * background, a web tab becoming visible (#3698).
+   * background, a web tab becoming visible (#3698). `awayMs` is how long it was
+   * gone, when the caller knows.
    *
    * The socket may have died while nobody was looking, and the client may not
-   * notice until its next heartbeat, tens of seconds later, so this does not
-   * wait on Realtime to say so. It reconnects a socket that is known down,
-   * reads every subscribed channel since its cursor over REST now (the same
-   * idempotent backfill a reconnect runs, so a row that also arrives live
-   * collapses to one), reopens any channel or inbox that isn't live, and
-   * reports a `resync` so the channel summaries are read again too.
+   * notice until a heartbeat goes unanswered, tens of seconds later, so this
+   * does not wait on Realtime to say so:
    *
-   * Cheap enough to call on every foreground: one REST read per open thread
-   * (usually zero or one) and two summary reads. Offline it does nothing; the
-   * online edge reopens everything when the network returns.
+   * - A socket known to be down is reconnected. One that reads open after an
+   *   absence of `RESUME_RECONNECT_AFTER_MS` or more is dropped and every
+   *   channel reopened on a fresh one (`reconnectSocket`), because it may be a
+   *   socket the OS cut that hasn't noticed; each rejoin backfills.
+   * - Otherwise each live channel is read since its cursor over REST now (the
+   *   idempotent backfill a reconnect runs, so a row that also arrives live
+   *   collapses to one), and any channel or inbox that isn't live is reopened,
+   *   which backfills when it lands.
+   * - A `resync` is reported so the channel summaries are read again too.
+   *
+   * Offline it does nothing; the online edge reopens everything when the
+   * network returns.
    */
-  resume(): void {
+  resume(awayMs = 0): void {
     if (!this.ctx || this.offline) return;
+    const realtime = this.ctx.supabase.realtime;
+    let reconnecting = false;
     try {
-      const realtime = this.ctx.supabase.realtime;
-      if (realtime && !realtime.isConnected()) realtime.connect();
+      if (realtime && !realtime.isConnected()) {
+        realtime.connect();
+      } else if (realtime && awayMs >= RESUME_RECONNECT_AFTER_MS) {
+        reconnecting = true;
+        void this.reconnectSocket();
+      }
     } catch {
       // A socket that won't come back is the backoff's and polling's to cover.
     }
-    for (const state of this.channels.values()) {
-      void this.runBackfill(state.channelId);
-      if (state.status !== "live") this.reopenChannel(state);
+    if (!reconnecting) {
+      for (const state of this.channels.values()) {
+        if (state.status === "live") void this.runBackfill(state.channelId);
+        else this.reopenChannel(state);
+      }
+      if (!this.inboxLive) this.reopenInbox();
     }
-    if (!this.inboxLive) this.reopenInbox();
     this.reportActivity({ type: "resync" });
     this.emitStatus();
+  }
+
+  /**
+   * Drops the socket and rejoins everything on a fresh one.
+   *
+   * Order matters. A socket that died without telling anyone may never fire
+   * its close, so its channels never error and would sit "joined" on the new
+   * socket, receiving nothing. So every channel is reopened by the manager
+   * itself, after the disconnect: with the socket down, each release's leave
+   * resolves at once instead of waiting out its timeout on a dead link
+   * (`releaseTopic`). The first new `subscribe()` connects the socket; the
+   * `connect()` after is for a manager with nothing to rejoin.
+   */
+  private async reconnectSocket(): Promise<void> {
+    const realtime = this.ctx?.supabase.realtime;
+    if (!realtime) return;
+    try {
+      await realtime.disconnect();
+    } catch {
+      // Reopening below still replaces every channel.
+    }
+    if (!this.ctx || this.offline) return;
+    for (const state of this.channels.values()) this.reopenChannel(state);
+    this.reopenInbox();
+    void this.attachActionsChannel();
+    try {
+      realtime.connect();
+    } catch {
+      // The channels' reconnect backoff and polling cover a socket that won't.
+    }
   }
 
   subscribeStatus(cb: (status: ConnectionStatus) => void): () => void {
@@ -951,7 +1008,6 @@ class ChatRealtimeManager {
           type: "message",
           channelId: row.channel_id,
           senderId: row.sender_id ?? null,
-          open: this.channels.has(row.channel_id),
         });
       },
     );
@@ -966,16 +1022,18 @@ class ChatRealtimeManager {
           clearTimeout(this.inboxRetryTimer);
           this.inboxRetryTimer = null;
         }
-        // The first join has nothing to catch up on: the summaries were read
-        // when their screens mounted. Every rejoin follows a gap.
-        if (this.inboxJoinedOnce) this.reportActivity({ type: "resync" });
-        this.inboxJoinedOnce = true;
+        // A first join that went straight through has nothing to catch up on:
+        // the summaries were read when their screens mounted. A rejoin, or a
+        // first join that only landed after failing, follows a gap.
+        if (this.inboxOwesResync) this.reportActivity({ type: "resync" });
+        this.inboxOwesResync = true;
       } else if (
         status === "CHANNEL_ERROR" ||
         status === "TIMED_OUT" ||
         status === "CLOSED"
       ) {
         this.inboxLive = false;
+        this.inboxOwesResync = true;
         this.scheduleInboxReconnect();
       }
     });

@@ -267,6 +267,7 @@ vi.mock("@repo/hooks", async () => ({
     .importActual<typeof import("@repo/hooks")>("@repo/hooks")
     .then(
       ({
+        claimViewedChannel,
         HIDE_SETUP_CHECKLIST_LABEL,
         landingChannelId,
         lastChannelStorageKey,
@@ -279,6 +280,7 @@ vi.mock("@repo/hooks", async () => ({
         DELETE_CHANNEL_CONFIRM_BODY,
         DELETE_CHANNEL_LABEL,
       }) => ({
+        claimViewedChannel,
         deleteChannelConfirmTitle,
         DELETE_CHANNEL_CONFIRM_BODY,
         DELETE_CHANNEL_LABEL,
@@ -2917,7 +2919,9 @@ describe("ChatShell with no chapter and no channels (#2145)", () => {
 
     // Phrased as an instruction, not a claim about the account —
     // `profile-panel.tsx` owns that reasoning for the same window.
-    expect(screen.getByText("Pick an active chapter to load its channels.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Pick an active chapter to load its channels."),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("region", { name: "Channels" }),
     ).toBeInTheDocument();

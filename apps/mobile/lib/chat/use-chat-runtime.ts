@@ -37,6 +37,7 @@ import {
   createBackfillFetcher,
 } from "@repo/chat-core/realtime-manager";
 import { useLatestTrack } from "@/lib/use-latest-track";
+import { useIsApiAuthenticated } from "@/lib/use-is-api-authenticated";
 import { getSupabaseClient } from "@/lib/supabase";
 import { connectionMonitor } from "@/lib/connection/monitor";
 import { useChatScope } from "./chat-scope";
@@ -91,9 +92,9 @@ function isForeground(): boolean {
 /**
  * Binds the chat realtime manager to the app's clients, once, for the life of
  * the process (#3698). Mounted from `components/app-runtime.tsx`, above the
- * auth gate, so it runs before the member reaches any screen; until the viewer
- * resolves it binds with `viewerId: null`, and `configure` rejoins the inbox
- * when they do.
+ * auth gate, so it runs before the member reaches any screen. It binds once a
+ * member is signed in and their `users.id` has resolved, never before, and a
+ * different member's `configure` rejoins every channel for them.
  *
  * What it adds over the per-thread wiring this replaced:
  *
@@ -112,11 +113,18 @@ export function useChatRealtimeBinding(): void {
   const queryClient = useQueryClient();
   const apiClient = useFrappClient();
   const supabase = useMemo(() => getSupabaseClient(), []);
-  const viewerId = useViewerUserId();
+  // Above the auth gate, so `/v1/users/me` is read only once someone is signed
+  // in; ungated, every signed-out launch and foreground sent it without a
+  // token (the hazard `lib/notifications/use-badge-sync.ts` gates against).
+  const signedIn = useIsApiAuthenticated();
+  const viewerId = useViewerUserId({ enabled: signedIn });
   const onMessageActivity = useChatActivityHandler(viewerId, isForeground);
 
   useEffect(() => {
-    if (!supabase) return;
+    // No member, no binding: nothing is joined under a signed-out session.
+    // Signing out leaves the manager bound; the next member's `configure`
+    // rejoins every channel for them.
+    if (!supabase || !viewerId) return;
     let cancelled = false;
 
     void bootChatAdapters().then(() => {
@@ -139,13 +147,20 @@ export function useChatRealtimeBinding(): void {
 
   useEffect(() => {
     let previous: AppStateStatus | null = AppState.currentState;
+    let backgroundedAt: number | null = null;
     const subscription = AppState.addEventListener("change", (next) => {
       // `background`, not `inactive`: a permission prompt or the notification
       // shade passes through `inactive` with the socket still up. The same
       // line `lib/connection/monitor.ts` draws.
+      if (next === "background") backgroundedAt ??= Date.now();
       if (next === "active" && previous === "background") {
-        chatRealtime.resume();
+        // How long it was gone decides whether a socket that still reads open
+        // is trusted (`RESUME_RECONNECT_AFTER_MS`).
+        chatRealtime.resume(
+          backgroundedAt === null ? 0 : Date.now() - backgroundedAt,
+        );
       }
+      if (next === "active") backgroundedAt = null;
       previous = next;
     });
     return () => subscription.remove();

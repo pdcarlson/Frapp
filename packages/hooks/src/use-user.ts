@@ -9,7 +9,12 @@ import {
 import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
-export function useCurrentUser() {
+/**
+ * `enabled: false` keeps an observer from fetching, for a caller mounted where
+ * nobody may be signed in yet (mobile's app-wide runtimes sit above the auth
+ * gate). It still reads whatever another observer cached.
+ */
+export function useCurrentUser(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["user", "me"],
@@ -19,6 +24,7 @@ export function useCurrentUser() {
       return data;
     },
     staleTime: 300_000,
+    enabled: options?.enabled ?? true,
   });
 }
 
@@ -33,8 +39,10 @@ export function useCurrentUser() {
  * `users.id` is the id chat is keyed on — `chat_messages.sender_id` and a DM
  * channel's `member_ids` both reference it, *not* the Supabase auth uid.
  */
-export function useViewerUserId(): string | null {
-  const query = useCurrentUser();
+export function useViewerUserId(options?: {
+  enabled?: boolean;
+}): string | null {
+  const query = useCurrentUser(options);
   return userIdOf(query.data);
 }
 

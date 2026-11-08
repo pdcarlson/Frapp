@@ -154,9 +154,11 @@ policy that Realtime runs per subscriber, so a member is told about exactly the 
 read would return them, archive imports excluded. It carries no message into a timeline. It
 reports each new message to the client (`onMessageActivity`), which, coalescing a burst into one
 round, re-reads `GET /v1/channels/unread` and `/latest`. When the message landed in the thread
-the member has open, and the app or tab is in front of them, the client first re-stamps that
-channel read (`POST /v1/channels/{id}/read`), because they are looking at it
-(`createChatActivityHandler` in `@repo/hooks`). Each rejoin of the inbox after a drop reports a
+the member is looking at, the client first re-stamps that channel read
+(`POST /v1/channels/{id}/read`) (`createChatActivityHandler` in `@repo/hooks`). "Looking at"
+means the thread has claimed it on focus (`claimViewedChannel`) and the app or tab is in front of
+them. Being subscribed is not enough, because a mobile thread stays mounted under a screen pushed
+over it. Rounds never overlap, so a slow stamp can't be overtaken by a later round's re-read. Each rejoin of the inbox after a drop reports a
 `resync`, which re-reads both. Mobile binds the manager app-wide from `components/app-runtime.tsx`
 so the inbox runs from launch. Web binds it in `ChatProvider`, so off `/chat` the nav's chat
 badge still refreshes on focus and staleness only.
@@ -165,8 +167,12 @@ badge still refreshes on focus and staleness only.
 or the tab is hidden (web), and the client finds out only at its next heartbeat. So the return
 calls `chatRealtime.resume()`: on mobile the AppState edge from `background` to `active`, not
 from `inactive`; on web the tab becoming visible. `resume()` reconnects a socket known to be down,
-runs the gap-recovery read below for every open thread at once, reopens any channel or inbox that
-isn't live, and reports a `resync`. Offline it does nothing, and the online edge reopens
+runs the gap-recovery read below for every live open thread at once, reopens any channel or inbox
+that isn't live (its join runs the same read), and reports a `resync`. After an absence of 25 s or
+more (`RESUME_RECONNECT_AFTER_MS`, one Realtime heartbeat) it doesn't trust a socket that still
+reads open, because one the OS cut can read open until a heartbeat goes unanswered, up to 50 s
+later. It drops that socket and reopens every channel, the inbox and the actions channel on a
+fresh one, and each join backfills. Offline it does nothing, and the online edge reopens
 everything instead.
 
 **Fallback:** If Supabase Realtime disconnects or fails, fall back to polling.

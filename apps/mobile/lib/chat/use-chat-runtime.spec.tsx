@@ -21,16 +21,25 @@
 import React, { createContext } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const apiClient = vi.hoisted(() => ({ GET: vi.fn() }));
 const viewer = vi.hoisted(() => ({ id: null as string | null }));
 
 const onMessageActivity = vi.hoisted(() => vi.fn());
+const auth = vi.hoisted(() => ({ signedIn: true }));
+/** The `enabled` each `useViewerUserId` call was made with. */
+const viewerReads = vi.hoisted(() => [] as (boolean | undefined)[]);
 vi.mock("@repo/hooks", () => ({
   useFrappClient: () => apiClient,
-  useViewerUserId: () => viewer.id,
+  useViewerUserId: (options?: { enabled?: boolean }) => {
+    viewerReads.push(options?.enabled);
+    return viewer.id;
+  },
   useChatActivityHandler: () => onMessageActivity,
+}));
+vi.mock("@/lib/use-is-api-authenticated", () => ({
+  useIsApiAuthenticated: () => auth.signedIn,
 }));
 const appState = vi.hoisted(() => ({
   currentState: "active" as string,
@@ -95,6 +104,29 @@ function queryWrapper() {
 }
 
 describe("useChatRealtimeBinding", () => {
+  beforeEach(() => {
+    viewer.id = "viewer-1";
+    auth.signedIn = true;
+    viewerReads.length = 0;
+    vi.mocked(chatRealtime.configure).mockClear();
+    vi.mocked(chatRealtime.resume).mockClear();
+  });
+  afterEach(() => {
+    viewer.id = null;
+    vi.useRealTimers();
+  });
+
+  it("binds nothing while signed out, and never reads /users/me without a session", async () => {
+    auth.signedIn = false;
+    viewer.id = null;
+    renderHook(() => useChatRealtimeBinding(), { wrapper: queryWrapper() });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(chatRealtime.configure).not.toHaveBeenCalled();
+    expect(viewerReads.length).toBeGreaterThan(0);
+    expect(viewerReads.every((enabled) => enabled === false)).toBe(true);
+  });
+
   it("hands the manager chat-core's one backfill read, on the app's API client (#2807)", async () => {
     renderHook(() => useChatRealtimeBinding(), { wrapper: queryWrapper() });
 
@@ -116,8 +148,8 @@ describe("useChatRealtimeBinding", () => {
     );
   });
 
-  it("resumes the manager on the way back from the background, not from inactive (#3698)", () => {
-    vi.mocked(chatRealtime.resume).mockClear();
+  it("resumes the manager on the way back from the background, not from inactive, with the time it was away (#3698)", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
     const { unmount } = renderHook(() => useChatRealtimeBinding(), {
       wrapper: queryWrapper(),
     });
@@ -128,8 +160,10 @@ describe("useChatRealtimeBinding", () => {
     expect(chatRealtime.resume).not.toHaveBeenCalled();
 
     setAppState("background");
+    vi.advanceTimersByTime(40_000);
     setAppState("active");
     expect(chatRealtime.resume).toHaveBeenCalledTimes(1);
+    expect(chatRealtime.resume).toHaveBeenLastCalledWith(40_000);
 
     unmount();
     setAppState("background");
