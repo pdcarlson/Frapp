@@ -25,7 +25,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
-import { InviteService, inviteStatus } from './invite.service';
+import {
+  InviteService,
+  inviteStatus,
+  MEMBER_JOINED_AUDIENCE,
+} from './invite.service';
 import { INVITE_REPOSITORY } from '#domain/repositories/invite.repository.interface';
 import type { IInviteRepository } from '#domain/repositories/invite.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
@@ -42,6 +46,7 @@ import type { Role } from '#domain/entities/role.entity';
 import type { Member } from '#domain/entities/member.entity';
 import { SystemRoleKeys } from '#domain/constants/permissions';
 import { NotificationService } from './notification.service';
+import { RbacService } from './rbac.service';
 import { ActivationService } from './activation.service';
 import { ChatService } from './chat.service';
 import { LegalAcceptanceService } from './legal-acceptance.service';
@@ -71,6 +76,7 @@ describe('InviteService', () => {
     Pick<NotificationService, 'notifyUser' | 'notifyChapter' | 'notifyMembers'>
   >;
   let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
+  let mockRbac: jest.Mocked<Pick<RbacService, 'findUserIdsWithAnyPermissions'>>;
   let mockEmailProvider: jest.Mocked<IEmailProvider>;
   let mockConfig: jest.Mocked<Pick<ConfigService, 'get'>>;
   let mockUserRepo: jest.Mocked<IUserRepository>;
@@ -129,6 +135,10 @@ describe('InviteService', () => {
     };
 
     mockActivation = { record: jest.fn().mockResolvedValue(true) };
+    // Nobody can act on a join unless a test says so (#3656).
+    mockRbac = {
+      findUserIdsWithAnyPermissions: jest.fn().mockResolvedValue([]),
+    };
 
     mockEmailProvider = { sendInviteEmail: jest.fn().mockResolvedValue(true) };
     mockConfig = { get: jest.fn().mockReturnValue(undefined) };
@@ -198,6 +208,7 @@ describe('InviteService', () => {
           useValue: { create: messageInsert },
         },
         { provide: LegalAcceptanceService, useValue: mockLegalAcceptance },
+        { provide: RbacService, useValue: mockRbac },
       ],
     }).compile();
 
@@ -1563,7 +1574,7 @@ describe('InviteService', () => {
     });
   });
 
-  it('should notify chapter when invite is redeemed', async () => {
+  describe('member-joined push (#3656)', () => {
     const invite: Invite = {
       id: 'inv-1',
       token: 'test-uuid',
@@ -1583,96 +1594,111 @@ describe('InviteService', () => {
       is_system: true,
       display_order: 3,
     });
-    const member: Member = memberFixture({
-      user_id: 'user-2',
-      role_ids: [memberRole.id],
-    });
-    mockInviteRepo.findByToken.mockResolvedValue(invite);
-    mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
-    mockInviteRepo.markUsedAtomically.mockResolvedValue(
-      '2026-01-01T00:00:00.000Z',
-    );
-    mockRoleRepo.findByChapter.mockResolvedValue([memberRole]);
-    mockMemberRepo.create.mockResolvedValue(member);
+    let member: Member;
 
-    mockMemberRepo.findByChapter.mockResolvedValue([
-      memberFixture({ user_id: 'user-1' }),
-      member,
-    ]);
-    mockUserRepo.findByIds.mockResolvedValue([
-      userFixture({ id: 'user-2', display_name: 'Alex Smith' }),
-    ]);
-
-    await service.redeem('test-uuid', 'user-2');
-
-    expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
-      'ch-1',
-      ['user-1'],
-      expect.objectContaining({
-        title: 'Alex Smith joined',
-        priority: 'NORMAL',
-        category: 'admin',
-      }),
-    );
-  });
-
-  it('still redeems, and reports once, when the member-joined notification fails', async () => {
-    const invite: Invite = {
-      id: 'inv-1',
-      token: 'test-uuid',
-      chapter_id: 'ch-1',
-      role: 'Member',
-      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      created_by: 'user-1',
-      used_at: null,
-      created_at: '2024-01-01',
-      email: null,
-      revoked_at: null,
-    };
-    const memberRole: Role = roleFixture({
-      id: 'role-member',
-      name: 'Member',
-      system_key: SystemRoleKeys.MEMBER,
-      is_system: true,
-      display_order: 3,
-    });
-    const member: Member = memberFixture({
-      user_id: 'user-2',
-      role_ids: [memberRole.id],
-    });
-    mockInviteRepo.findByToken.mockResolvedValue(invite);
-    mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
-    mockInviteRepo.markUsedAtomically.mockResolvedValue(
-      '2026-01-01T00:00:00.000Z',
-    );
-    mockRoleRepo.findByChapter.mockResolvedValue([memberRole]);
-    mockMemberRepo.create.mockResolvedValue(member);
-    mockMemberRepo.findByChapter.mockRejectedValue(
-      new Error('roster read failed'),
-    );
-    const error = jest
-      .spyOn(Logger.prototype, 'error')
-      .mockImplementation(() => undefined);
-
-    await expect(service.redeem('test-uuid', 'user-2')).resolves.toEqual({
-      chapterId: 'ch-1',
-      memberId: member.id,
+    beforeEach(() => {
+      member = memberFixture({
+        user_id: 'user-2',
+        role_ids: [memberRole.id],
+      });
+      mockInviteRepo.findByToken.mockResolvedValue(invite);
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+      mockInviteRepo.markUsedAtomically.mockResolvedValue(
+        '2026-01-01T00:00:00.000Z',
+      );
+      mockRoleRepo.findByChapter.mockResolvedValue([memberRole]);
+      mockMemberRepo.create.mockResolvedValue(member);
+      mockUserRepo.findByIds.mockResolvedValue([
+        userFixture({ id: 'user-2', display_name: 'Alex Smith' }),
+      ]);
     });
 
-    expect(captureException).toHaveBeenCalledTimes(1);
-    expect(captureException).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'roster read failed' }),
-      expect.objectContaining({
-        level: 'error',
-        tags: { caught_at: 'invite-redeem-new-member-notify-failed' },
-        fingerprint: [
-          'caught-failure',
-          'invite-redeem-new-member-notify-failed',
-          'Error',
-        ],
-      }),
-    );
-    error.mockRestore();
+    it('names the new member to whoever can act on a join', async () => {
+      mockRbac.findUserIdsWithAnyPermissions.mockResolvedValue([
+        'user-1',
+        'user-officer',
+      ]);
+
+      await service.redeem('test-uuid', 'user-2');
+
+      expect(mockRbac.findUserIdsWithAnyPermissions).toHaveBeenCalledWith(
+        'ch-1',
+        MEMBER_JOINED_AUDIENCE,
+      );
+      expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
+        'ch-1',
+        ['user-1', 'user-officer'],
+        expect.objectContaining({
+          title: 'Alex Smith joined',
+          priority: 'NORMAL',
+          category: 'admin',
+          data: { target: { screen: 'members' } },
+        }),
+      );
+    });
+
+    it('asks for roster access plus the invite or role-management permission', () => {
+      expect(MEMBER_JOINED_AUDIENCE).toEqual([
+        ['members:view', 'members:invite'],
+        ['members:view', 'roles:manage'],
+      ]);
+    });
+
+    it('never pushes the member who joined, even when they could act on it', async () => {
+      mockRbac.findUserIdsWithAnyPermissions.mockResolvedValue([
+        'user-2',
+        'user-1',
+      ]);
+
+      await service.redeem('test-uuid', 'user-2');
+
+      expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
+        'ch-1',
+        ['user-1'],
+        expect.anything(),
+      );
+    });
+
+    it('sends nothing when nobody else can act on a join', async () => {
+      mockRbac.findUserIdsWithAnyPermissions.mockResolvedValue(['user-2']);
+
+      await expect(service.redeem('test-uuid', 'user-2')).resolves.toEqual({
+        chapterId: 'ch-1',
+        memberId: member.id,
+      });
+
+      expect(mockNotificationService.notifyMembers).not.toHaveBeenCalled();
+    });
+
+    it('still redeems, and reports once, when the member-joined notification fails', async () => {
+      mockRbac.findUserIdsWithAnyPermissions.mockRejectedValue(
+        new Error('roster read failed'),
+      );
+      const error = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      await expect(service.redeem('test-uuid', 'user-2')).resolves.toEqual({
+        chapterId: 'ch-1',
+        memberId: member.id,
+      });
+
+      expect(mockNotificationService.notifyMembers).not.toHaveBeenCalled();
+      expect(captureException).toHaveBeenCalledTimes(1);
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'roster read failed' }),
+        expect.objectContaining({
+          level: 'error',
+          tags: { caught_at: 'invite-redeem-new-member-notify-failed' },
+          fingerprint: [
+            'caught-failure',
+            'invite-redeem-new-member-notify-failed',
+            'Error',
+          ],
+        }),
+      );
+      error.mockRestore();
+    });
   });
 
   it('should reject if invite not found', async () => {
