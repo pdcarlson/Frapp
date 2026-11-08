@@ -1,10 +1,9 @@
 "use client";
 
 import { checkInZoneLine } from "@repo/validation";
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import {
   AlertTriangle,
-  CalendarPlus,
   Loader2,
   Pencil,
   Trash2,
@@ -19,7 +18,6 @@ import {
 } from "@/components/events/chapter-ops-glyphs";
 import {
   useDeleteEvent,
-  useDownloadEventIcs,
   useEvent,
   useRoles,
 } from "@repo/hooks";
@@ -45,7 +43,7 @@ import { AttendancePanel } from "@/components/events/attendance-panel";
 import { normalizeRoleOptions } from "@/lib/roles";
 import { formatDayTimeRange } from "@repo/formatting";
 import { pointsLabel, recurrenceLabel } from "@/components/events/event-labels";
-import { downloadBlob, getErrorMessage } from "@/lib/utils";
+import { getErrorMessage } from "@/lib/utils";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 
 type EventRecord = Record<string, unknown>;
@@ -70,16 +68,6 @@ export function EventDetailSheet({
   const eventId = typeof event?.id === "string" ? event.id : "";
   const eventQuery = useEvent(!usingPreviewData ? eventId : "");
   const deleteEventMutation = useDeleteEvent();
-  const downloadIcsMutation = useDownloadEventIcs();
-  // `events-page.tsx` renders one `<EventDetailSheet>` and swaps `event`/`open`
-  // props rather than remounting per event, so this mutation instance (and
-  // its isPending/error state) would otherwise survive a switch to a
-  // different event — showing event B's button as pending/erroring for a
-  // request that was actually made against event A.
-  const { reset: resetDownloadIcs } = downloadIcsMutation;
-  useEffect(() => {
-    resetDownloadIcs();
-  }, [eventId, resetDownloadIcs]);
   // `DELETE /v1/events/:id` and the `PATCH /v1/events/:id` behind "Edit event"
   // are both paid-ops. Edit is gated here rather than only inside the editor
   // dialog because this button *is* the trigger for that flow (§5 rule 1) —
@@ -210,32 +198,6 @@ export function EventDetailSheet({
     }
   }
 
-  // Preview mode has no live event to fetch an .ics for — `canMutate` already
-  // guards the button, but the guard is repeated here so this can never fire
-  // from a stray keyboard/programmatic click.
-  async function handleAddToCalendar() {
-    if (!eventId || usingPreviewData) return;
-
-    try {
-      const icsBlob = await downloadIcsMutation.mutateAsync(eventId);
-      const slug =
-        eventName
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "") || "frapp-event";
-      downloadBlob(icsBlob, `${slug}.ics`);
-    } catch (error) {
-      toast({
-        title: "Could not export calendar file",
-        description: getErrorMessage(
-          error,
-          "Something went wrong. Please retry.",
-        ),
-        variant: "destructive",
-      });
-    }
-  }
-
   const editControl = gate.controlProps(!resolvedEvent);
   const deleteControl = gate.controlProps(
     !canMutate || deleteEventMutation.isPending,
@@ -251,7 +213,7 @@ export function EventDetailSheet({
       <PanelContent aria-describedby={undefined}>
         {/*
           The panel's actions are icons in its title row, beside the close
-          (components.md § Chrome weight). They were three full-width worded
+          (components.md § Chrome weight). They were full-width worded
           buttons opening the body, which made the first thing in an event's
           details a toolbar. The words live on as each control's accessible
           name and tooltip (`IconButton`, components.md § Icon-only actions).
@@ -259,17 +221,6 @@ export function EventDetailSheet({
         <PanelHeader
           actions={
             <>
-              <IconButton
-                label="Add to calendar"
-                disabled={!canMutate || downloadIcsMutation.isPending}
-                onClick={handleAddToCalendar}
-              >
-                {downloadIcsMutation.isPending ? (
-                  <Loader2 className="animate-spin" aria-hidden="true" />
-                ) : (
-                  <CalendarPlus aria-hidden="true" />
-                )}
-              </IconButton>
               <IconButton
                 label="Edit event"
                 {...editControl}

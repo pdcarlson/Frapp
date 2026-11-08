@@ -7,17 +7,14 @@ import {
   Patch,
   Post,
   Query,
-  Res,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiOperation,
-  ApiProduces,
   ApiTags,
 } from '@nestjs/swagger';
-import type { Response } from 'express';
 import { EventService } from '../../application/services/event.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -119,26 +116,6 @@ export class EventController {
     // reach the repository's update payload as a stray field.
     const { scope, ...patch } = dto;
     return this.eventService.update(id, chapterId, patch, scope, actorId);
-  }
-
-  @Get(':id/ics')
-  @ApiOperation({ summary: 'Download .ics calendar file for an event' })
-  @ApiProduces('text/calendar')
-  // A `@Res()` handler resolves to undefined after sending, which still
-  // reaches the interceptor's `next`; a throw before `res.send` records nothing.
-  @FeatureEvent('event-calendar-downloaded')
-  async getIcs(
-    @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
-    @CurrentUser('id') userId: string,
-    @Res() res: Response,
-  ) {
-    const ics = await this.eventService.generateIcs(id, chapterId, userId);
-    res.set({
-      'Content-Type': 'text/calendar; charset=utf-8',
-      'Content-Disposition': `attachment; filename="${id}.ics"`,
-    });
-    res.send(ics);
   }
 
   @Delete(':id')

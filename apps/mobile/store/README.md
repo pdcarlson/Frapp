@@ -794,8 +794,6 @@ Contacts, Installed apps, Web browsing, and the remaining Personal info types.
 - **Files and docs:** the documents screen uploads photos only, declared under Photos (#3399). A
   PDF or Office document, a PDF service-hour proof, and backwork still upload only from the web
   dashboard (see *Other User Content* above).
-- **Calendar:** the event `.ics` export is handed to the phone's share sheet and never comes back
-  to us.
 - **Financial info is conditional, as on iOS.** Payment info and Purchase history are *not
   collected* only while EAS `production` has no Stripe key. If the key ships, re-answer both in
   the same sitting as the App Store *Payment Info* and *Purchases* rows.

@@ -13,3 +13,10 @@
 # packages/hooks define them, unused).
 POST /v1/roles request property 'color' was restricted to a list of enum values
 PATCH /v1/roles/{id} request property 'color' was restricted to a list of enum values
+
+# #3708 deletes the .ics export. Only the web dashboard called GET /v1/events/{id}/ics (through
+# useDownloadEventIcs); mobile built its .ics locally in apps/mobile/lib/calendar-export.ts. At
+# every shipped SHA (ea9bc12c, cca52dec, 5e43a27b, 55922eab, 728fb69e, b61c20c3, 547c1364),
+# `git grep 'useDownloadEventIcs\|/ics"' <sha> -- apps/mobile` finds no caller, so the binaries
+# never request the route (the hook they bundle from packages/hooks defines it, unused).
+GET /v1/events/{id}/ics api path removed without deprecation

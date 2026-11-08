@@ -5,8 +5,8 @@
 // native config didn't already allow (#2526). The first store upload fixes
 // each name below: App Store Connect and Play bind the bundle id and package;
 // the OS routes `frapp://` links to whichever app owns the scheme; `.ics`
-// files already sitting in members' calendars carry
-// `frapp://event-details?id=…`; and every binary asks EAS Update and the Expo
+// files members exported before the calendar export was withdrawn (#3708)
+// still sit in their calendars and carry `frapp://event-details?id=…`; and every binary asks EAS Update and the Expo
 // push service for this EAS project by id. A leftover sweep or a well-meant
 // tidy that renames one ships a binary that can't reach what the old ones
 // left behind, with nothing failing until a member taps a dead link.
@@ -32,9 +32,10 @@
 //   in the EAS dashboard (it supplies just the ones app.config.js requires: the
 //   Supabase URL and key, the Google services file), or an `EAS_BUILD*` value
 //   outside that list.
-// - The `.ics` deep link: the calendar export still writes
-//   `frapp://event-details?id=…`, and the screen still declares the `id`
-//   param that URL carries.
+// - The `.ics` deep link: the screen still declares the `id` param that
+//   `frapp://event-details?id=…` carries. Nothing writes the URL any more
+//   (#3708), but files already exported do; the route filename is pinned in
+//   apps/mobile/lib/routes.spec.ts.
 // - Every `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_APP_URL` in `eas.json`, on
 //   every profile as it resolves through `extends`, is an https frapp.live
 //   origin (a development-client build may use a loopback http origin).
@@ -196,15 +197,12 @@ export function dynamicLayerProblems(staticExpo, resolved) {
 }
 
 /**
- * The calendar export writes this URL into every `.ics` file, and the screen
- * reads its `id`. Both halves must hold: a new URL strands the old files, and
- * a renamed param opens them on an empty screen.
+ * `.ics` files members exported before the export was withdrawn (#3708) carry
+ * `frapp://event-details?id=…`, and the screen reads its `id`. A renamed param
+ * opens every one of them on an empty screen.
  */
 export function eventDetailsDeepLinkProblems(source) {
   const problems = [];
-  if (!/deepLinkUrl:\s*`frapp:\/\/event-details\?id=\$\{/.test(source)) {
-    problems.push(`${EVENT_DETAILS} must export deepLinkUrl \`frapp://event-details?id=\${…}\``);
-  }
   if (!/useLocalSearchParams<\{[^}]*\bid\?\s*:/.test(source)) {
     problems.push(`${EVENT_DETAILS} must declare the id param in useLocalSearchParams<{ id?: … }>`);
   }
@@ -532,7 +530,7 @@ test("no config file Expo prefers shadows app.json or app.config.js", () => {
   assert.deepEqual(shadowingConfigProblems(), []);
 });
 
-test("the calendar export still writes the event-details deep link the screen reads", () => {
+test("the event-details screen still reads the id param exported .ics files carry", () => {
   assert.deepEqual(eventDetailsDeepLinkProblems(readRepo(EVENT_DETAILS)), []);
 });
 
@@ -805,18 +803,6 @@ test("resolveExpoConfig clears ambient build variables and restores process.env"
 });
 
 for (const [label, find, replace, expected] of [
-  [
-    "changing the deep link's route",
-    "`frapp://event-details?id=${",
-    "`frapp://events?id=${",
-    "deepLinkUrl",
-  ],
-  [
-    "renaming the deep link's param",
-    "`frapp://event-details?id=${",
-    "`frapp://event-details?eventId=${",
-    "deepLinkUrl",
-  ],
   ["renaming the screen's param", "useLocalSearchParams<{ id?:", "useLocalSearchParams<{ eventId?:", "id param"],
 ]) {
   test(`${label} fails`, () => {

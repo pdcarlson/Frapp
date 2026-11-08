@@ -105,7 +105,7 @@ export function eventAttendanceFor(
 
 /**
  * Whether anyone is kept out: the event's read gate (list, detail, search,
- * feed, `.ics`, pushes) only has work to do when this is true.
+ * feed, pushes) only has work to do when this is true.
  */
 export function eventLimitsAudience(event: EventAttendanceFields): boolean {
   return (
