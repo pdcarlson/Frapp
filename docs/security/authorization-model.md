@@ -28,10 +28,16 @@ guards compose, in this order:
 
 Each refuses with a 4xx only on an answer; a lookup that failed is a `503`, still a refusal ([`multi-tenancy.md`](../../spec/behavior/multi-tenancy.md), #3143).
 
+`ChapterGuard` shares two of its reads between requests that arrive together (`InFlightLookups` in
+`guards/guard-lookup.ts`, #3728): the caller's `users` row id and the chapter's subscription and module state. A request
+joins such a read only within `IN_FLIGHT_JOIN_WINDOW_MS` of its start, so its answer can predate the request by at most
+that. Membership and roles are still read per request, as [`rbac.md`](../../spec/behavior/rbac.md) and
+[`multi-tenancy.md`](../../spec/behavior/multi-tenancy.md) promise, and so is the session (`auth.getUser`).
+
 **The header is never trusted on its own.** `ChapterGuard` re-reads the membership row for whatever
 chapter was requested (`findMembership` in `chapter.guard.ts`), and a JWT/header disagreement is a hard
-`403 chapter.context.mismatch` (`resolveChapterContext`) — the header cannot override the claim. A user with no
-chapter context is auto-resolved only when they hold exactly one membership (`resolveChapterContext`).
+`403 chapter.context.mismatch` (`readRequestedChapter`) — the header cannot override the claim. A user with no
+chapter context is auto-resolved only when they hold exactly one membership (`resolveSoleChapter`).
 
 Below the guards, the API talks to Postgres with the **service-role key, which bypasses RLS**. So for
 almost every table the *API is the enforcing layer* and RLS is a default-deny backstop. See §4.
