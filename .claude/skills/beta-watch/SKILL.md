@@ -93,8 +93,8 @@ Follow [`file-follow-up`](../file-follow-up/SKILL.md) under its
 
 ## Telling the owner
 
-The owner wants a ping only when something needs him. Post to him (in the Frapp project thread
-this routine reports into, with the chat tool the session has) only when the run produced at
+The owner wants a ping only when something needs him. Post to him (as your reply in the
+*Frapp scheduled tasks* session this routine runs in) only when the run produced at
 least one of:
 
 - a new P1 or P2 issue;

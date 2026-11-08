@@ -51,8 +51,8 @@ phase is named in the report and the record's second line, and next week's run s
 
 ## Telling the owner
 
-The owner wants a ping only for a real decision. Post to him (in the Frapp project thread this
-routine reports into, with the chat tool the session has) only when the run found at least one of:
+The owner wants a ping only for a real decision. Post to him (as your reply in the *Frapp
+scheduled tasks* session this routine runs in) only when the run found at least one of:
 
 - a new `[human]` or `[pr-followup][human]` item filed this run;
 - an owner decision a phase can't make (a spec-vs-code contradiction, a priority he set that looks

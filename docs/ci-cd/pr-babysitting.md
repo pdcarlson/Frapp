@@ -165,7 +165,7 @@ returning a live trigger id. It simply *asks*, and asking is what disqualifies i
 runs — not failing. Owner's standing preference (2026-08-08): don't call it. The other three layers
 carried PR #743 unaided — three `CI wake` comments (CI, Docs checks, Links) plus the merge
 notification, none of which prompted. Anything genuinely needing a schedule is a scheduled task
-created with `create_trigger` from a project thread, as the routines are ([`routines.md`](routines.md));
+created with `create_trigger` and bound to a session, as the routines are ([`routines.md`](routines.md));
 that call doesn't ask the owner each time the way `send_later` does. If a session does call it and it prompts, say so once, never
 re-arm, and never ship a settings change to "fix" it — that would be the fourth attempt at a fix
 that has already failed three times.

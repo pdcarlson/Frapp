@@ -45,8 +45,8 @@ its own.
 
 ## Telling the owner
 
-When the run opens a PR, post one line to the owner (in the Frapp project thread this routine
-reports into, with the chat tool the session has): the PR link and its one-sentence theme. He
+When the run opens a PR, post one line to the owner (as your reply in the *Frapp scheduled
+tasks* session this routine runs in): the PR link and its one-sentence theme. He
 merges it without being asked, so don't phrase it as an ask. Post nothing when there is no PR,
 unless the phase's report has a **Needs you** item, which goes in the same short post.
 
