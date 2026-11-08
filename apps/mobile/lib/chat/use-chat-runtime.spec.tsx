@@ -159,18 +159,22 @@ describe("useChatRealtimeBinding", () => {
     );
   });
 
-  it("doesn't rebind while still signed in with the viewer re-reading (a chapter switch)", async () => {
+  it("rebinds at once on an account swap, before the new member's id is read", async () => {
+    // A magic link for another member: still signed in, the viewer re-reading.
+    // The old member's channels must not stay joined until the read answers.
     const { rerender } = renderHook(() => useChatRealtimeBinding(), {
       wrapper: queryWrapper(),
     });
     await waitFor(() => expect(chatRealtime.configure).toHaveBeenCalled());
-    vi.mocked(chatRealtime.configure).mockClear();
 
     viewer.id = null;
     rerender();
-    await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(chatRealtime.configure).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(chatRealtime.configure).toHaveBeenLastCalledWith(
+        expect.objectContaining({ viewerId: null }),
+      ),
+    );
   });
 
   it("hands the manager the activity handler that keeps chat home live (#3698)", async () => {

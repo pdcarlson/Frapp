@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+  type Mock,
+} from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createFrappClient } from "@repo/api-sdk";
@@ -6,6 +14,7 @@ import { CHAT_SINCE_NOT_FOUND_CODE } from "@repo/validation";
 import {
   BACKFILL_PAGE_LIMIT,
   INBOX_TOPIC,
+  RESUME_PROBE_LOOKS,
   RESUME_PROBE_MS,
   chatRealtime,
   createBackfillFetcher,
@@ -1600,7 +1609,7 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
   let socket: {
     isConnected: ReturnType<typeof vi.fn>;
     connect: ReturnType<typeof vi.fn>;
-    sendHeartbeat: ReturnType<typeof vi.fn>;
+    sendHeartbeat: Mock<() => Promise<void>>;
     pendingHeartbeatRef: string | null;
   };
   /**
@@ -1827,22 +1836,26 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
       expect(backfill).toHaveBeenCalledTimes(1);
     });
 
-    test("a socket that never answers the probe is recovered: every channel errors, rejoins and catches up", async () => {
+    /** Realtime's scheduled heartbeat goes out (it is overdue when the app wakes). */
+    const scheduledHeartbeat = () => void socket.sendHeartbeat();
+
+    test("a heartbeat that stays unanswered is recovered: every channel errors, rejoins and catches up", async () => {
       chatRealtime.subscribe("c1");
       const thread = channels.get("chat:channel:c1")!;
       thread.trigger("SUBSCRIBED");
       const inboxBefore = inbox();
       inboxBefore.trigger("SUBSCRIBED");
-      backfill.mockClear();
-      activity.mockClear();
 
       chatRealtime.resume();
-      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(1);
+      scheduledHeartbeat();
       activity.mockClear();
+      // The probe sends nothing of its own.
+      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(1);
 
-      // Unanswered for the whole window: the probe's second call is the
-      // heartbeat timeout, and the manager rejoins what it errored.
-      await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS);
+      // First look catches the scheduled heartbeat pending; the second sees the
+      // same one still unanswered and runs the timeout.
+      await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS * 2);
+      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(2);
       await vi.advanceTimersByTimeAsync(1_000);
       const rejoined = channels.get("chat:channel:c1")!;
       expect(rejoined).not.toBe(thread);
@@ -1855,39 +1868,57 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
       expect(activity).toHaveBeenCalledWith({ type: "resync" });
     });
 
-    test("a socket that answers is never touched", async () => {
+    test("a heartbeat already pending at the return is the one watched", async () => {
       chatRealtime.subscribe("c1");
       const thread = channels.get("chat:channel:c1")!;
       thread.trigger("SUBSCRIBED");
+      scheduledHeartbeat();
 
       chatRealtime.resume();
-      answerHeartbeat();
-      await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS * 2);
-
-      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(1);
-      expect(channels.get("chat:channel:c1")).toBe(thread);
-    });
-
-    test("a heartbeat already in flight is waited on, not sent over (which would time it out at once)", async () => {
-      chatRealtime.subscribe("c1");
-      const thread = channels.get("chat:channel:c1")!;
-      thread.trigger("SUBSCRIBED");
-      socket.pendingHeartbeatRef = "scheduled";
-
-      chatRealtime.resume();
-      expect(socket.sendHeartbeat).not.toHaveBeenCalled();
-
-      // Its reply lands inside the window: nothing more happens.
-      socket.pendingHeartbeatRef = null;
       await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS);
-      expect(socket.sendHeartbeat).not.toHaveBeenCalled();
+      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(2);
+    });
+
+    test("a heartbeat answered inside the window leaves the socket alone", async () => {
+      chatRealtime.subscribe("c1");
+      const thread = channels.get("chat:channel:c1")!;
+      thread.trigger("SUBSCRIBED");
+
+      chatRealtime.resume();
+      scheduledHeartbeat();
+      await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS);
+      answerHeartbeat();
+      await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS * RESUME_PROBE_LOOKS);
+
+      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(1);
       expect(channels.get("chat:channel:c1")).toBe(thread);
     });
 
-    test("a second resume during a probe doesn't send over the first one's heartbeat", () => {
+    test("with no heartbeat out, the probe sends none and gives up after its looks", async () => {
+      chatRealtime.resume();
+      await vi.advanceTimersByTimeAsync(
+        RESUME_PROBE_MS * (RESUME_PROBE_LOOKS + 2),
+      );
+      expect(socket.sendHeartbeat).not.toHaveBeenCalled();
+    });
+
+    test("a second resume during a probe doesn't start another", async () => {
       chatRealtime.resume();
       chatRealtime.resume();
-      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(1);
+      scheduledHeartbeat();
+      await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS * 2);
+      // One timeout call, from one probe.
+      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(2);
+    });
+
+    test("a blip before the inbox's first join still ends in a resync", async () => {
+      offline = true;
+      netListener!(false);
+      offline = false;
+      netListener!(true);
+      await vi.advanceTimersByTimeAsync(0);
+      inbox().trigger("SUBSCRIBED");
+      expect(activity).toHaveBeenCalledWith({ type: "resync" });
     });
 
     test("an inbox whose first join never landed still owes the resync its rejoin reports", async () => {
@@ -1898,11 +1929,11 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
       expect(activity).toHaveBeenCalledWith({ type: "resync" });
     });
 
-    test("a resume after the manager is torn down sends no late heartbeat", async () => {
+    test("a resume after the manager is torn down runs no late timeout", async () => {
+      scheduledHeartbeat();
       chatRealtime.resume();
-      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(1);
       chatRealtime.destroy();
-      await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS);
+      await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS * 3);
       expect(socket.sendHeartbeat).toHaveBeenCalledTimes(1);
     });
 

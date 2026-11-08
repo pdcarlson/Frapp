@@ -11,13 +11,15 @@
  * a backgrounded device on a dead socket:
  *
  * - `sendHeartbeat()` with nothing outstanding sends one heartbeat and exposes
- *   its ref as `pendingHeartbeatRef`; the server's reply clears it. So a probe
- *   can tell "the heartbeat I'm waiting on" from a newer one.
+ *   its ref as `pendingHeartbeatRef` before the call returns, un-awaited; the
+ *   server's reply clears it. So a probe looking at the ref can tell "the
+ *   heartbeat it saw pending last time" from a newer one.
  * - `sendHeartbeat()` while one is still unanswered runs the client's heartbeat
  *   timeout: every joined channel reports `CHANNEL_ERROR` and the socket is
- *   replaced. So the probe's second call is Realtime's own recovery, and the
- *   probe must never make a first call while one is pending, which would run
- *   it on a live socket whose reply is merely in flight.
+ *   replaced. So the probe's one call is Realtime's own recovery, made only
+ *   once a heartbeat has gone unanswered for a whole window; it never sends a
+ *   heartbeat of its own, which a pending one would turn into a timeout of a
+ *   live socket.
  *
  * Frames are vsn 2.0.0 text frames, `[join_ref, ref, topic, event, payload]`.
  */
@@ -150,7 +152,8 @@ describe("realtime-js heartbeats, as resume()'s probe relies on them (#3698)", (
     const { ws } = await joined();
     expect(supabase.realtime.pendingHeartbeatRef).toBeNull();
 
-    await supabase.realtime.sendHeartbeat();
+    // Un-awaited, as Realtime's own timer and the probe call it.
+    void supabase.realtime.sendHeartbeat();
     const [beat] = heartbeatsOn(ws);
     expect(beat).toBeDefined();
     expect(supabase.realtime.pendingHeartbeatRef).toBe(beat![1]);

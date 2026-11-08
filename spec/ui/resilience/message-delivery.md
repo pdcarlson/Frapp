@@ -171,20 +171,22 @@ schedule up to 50 s later. So the return calls `chatRealtime.resume()`: on mobil
 edge from `background` to `active`, not from `inactive`; on web the tab becoming visible.
 `resume()`:
 
-- Reconnects a socket known to be down. It probes one that reads open: it sends a heartbeat
-  through Realtime's public API (or waits on one already outstanding), and if that same heartbeat
-  is still unanswered after `RESUME_PROBE_MS` (5 s), it runs Realtime's own heartbeat timeout, which
-  errors every channel on the socket and reconnects and rejoins them. A socket that answers is
-  never touched, so nothing sharing it (web's notification and event pings, presence) is
-  disturbed.
+- Reconnects a socket known to be down. It probes one that reads open, through Realtime's public
+  heartbeat API, without sending a heartbeat of its own (one sent while another is pending would
+  time out a live socket): every `RESUME_PROBE_MS` (4 s), up to three looks, it reads the
+  outstanding heartbeat, usually Realtime's scheduled one that fired as the app woke. The same one
+  pending at two looks in a row has gone unanswered for a whole window, and only then does it run
+  Realtime's own heartbeat timeout, which errors every channel on the socket and reconnects and
+  rejoins them. A socket that answers is never touched, so nothing sharing it (web's notification
+  and event pings, presence) is disturbed.
 - Runs the gap-recovery read below for every live open thread at once, and reopens any thread
   channel that isn't live, whose join runs the same read.
 - Re-reads the summaries and re-stamps the thread the member is looking at, through a `resync`
   reported at once when the inbox is live, otherwise through the one its rejoin reports.
 
 Offline it does nothing, and the online edge reopens everything instead. Finding a dead socket
-takes the probe window, then Realtime's own teardown (about 1.5 s) and first reconnect step (1 s):
-up to about 8 s after the return, where the heartbeat schedule alone took up to 50 s. A message
+takes one or two probe windows, then Realtime's own teardown (about 1.5 s) and first reconnect
+step (1 s): up to about 11 s after the return, where the heartbeat schedule alone took up to 50 s. A message
 sent in that window isn't lost: the threads' rejoin reads it and the inbox's rejoin reports a
 `resync`.
 

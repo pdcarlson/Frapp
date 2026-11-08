@@ -122,20 +122,21 @@ export function useChatRealtimeBinding(): void {
   const viewerId = useViewerUserId({ enabled: signedIn });
   const onMessageActivity = useChatActivityHandler(viewerId, isForeground);
   /**
-   * Once bound, the manager is rebound on every viewer change and on sign-out:
-   * `configure({ viewerId: null })` rejoins the inbox under the signed-out
-   * session, so a signed-out device stops receiving the member's messages, and
-   * the next sign-in (even the same member's) rejoins it under theirs.
+   * Once bound, the manager is rebound on every viewer change, a `null` one
+   * included: `configure({ viewerId: null })` rejoins the inbox and every
+   * thread under the session the device now holds. That covers a sign-out, so
+   * a signed-out device stops receiving the member's messages, and an
+   * in-place account swap (a magic link for another member), whose old
+   * channels must not stay joined under the previous member until the new
+   * one's `/v1/users/me` answers. A chapter switch passes through the same
+   * `null` while its re-read lands and pays a second rejoin; it can't be told
+   * apart from a swap here, and a swap is the one that must not wait.
    */
   const boundRef = useRef(false);
 
   useEffect(() => {
-    if (!supabase) return;
-    // Before the first member is known, nothing is joined at all. A `null`
-    // viewer while still signed in is a re-read in flight (a chapter switch
-    // clears the query cache), not a sign-out, and rebinding on it would
-    // rejoin everything twice for a member who never left.
-    if (!viewerId && (signedIn || !boundRef.current)) return;
+    // Before the first member is known, nothing is joined at all.
+    if (!supabase || (!viewerId && !boundRef.current)) return;
     let cancelled = false;
 
     void bootChatAdapters().then(() => {
@@ -155,7 +156,7 @@ export function useChatRealtimeBinding(): void {
     return () => {
       cancelled = true;
     };
-  }, [queryClient, supabase, apiClient, viewerId, signedIn, onMessageActivity]);
+  }, [queryClient, supabase, apiClient, viewerId, onMessageActivity]);
 
   useEffect(() => {
     let previous: AppStateStatus | null = AppState.currentState;
