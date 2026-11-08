@@ -39,6 +39,7 @@ import {
 } from "@/lib/events/check-in-code";
 import { createScanLatch, type ScanLatch } from "@/lib/events/scan-latch";
 import {
+  ALREADY_CHECKED_IN_TITLE,
   CHECK_IN_LOCATION_DENIED_COPY,
   checkInFailure,
   checkInSuccess,
@@ -127,16 +128,31 @@ type Status =
   | { kind: "blocked"; message: string };
 
 /**
- * Which terminal state a failed check-in lands in. The copy, gate refusals
- * included, is `checkInFailure`'s, shared with the chat event card. "Already
- * checked in" stays an `error` here, as it always was: it leaves the scanner
- * armed for the member's next event, where `blocked` would disarm it. It is
- * about the member, not the code, so a typed code would meet it too.
+ * Which state a failed check-in lands in. The copy, gate refusals included,
+ * is `checkInFailure`'s, shared with the chat event card.
+ *
+ * A 409, "already checked in", is not a failure: the member is on the list,
+ * which is what they came to this screen for. So it lands on the success
+ * panel, in its own words and with no points (none were awarded this time),
+ * rather than in the error style it used to take (#3703: the owner chose to
+ * keep the API's 409 and have the scanner read it as "you're in"). The panel
+ * resets on focus like any success, so the next event's scanner is armed.
  */
-function failureStatus(error: unknown): Status {
+function failureStatus(
+  error: unknown,
+  eventId: string,
+  eventName: string | null,
+): Status {
   const failure = checkInFailure(error);
   return failure.kind === "already"
-    ? { kind: "error", message: failure.message, attemptOnly: false }
+    ? {
+        kind: "success",
+        message: failure.message,
+        title: ALREADY_CHECKED_IN_TITLE,
+        pointsLabel: null,
+        eventId,
+        eventName,
+      }
     : failure;
 }
 
@@ -413,7 +429,17 @@ export default function CheckInScreen() {
         }
       } catch (error) {
         if (eventIdRef.current !== submittedFor) return;
-        setStatus(failureStatus(error));
+        const next = failureStatus(error, submittedFor, eventName);
+        setStatus(next);
+        if (next.kind === "success") {
+          // As a fresh check-in clears them: the panel replaces the scanner.
+          setManualCode("");
+          Keyboard.dismiss();
+          dismissSheet();
+          if (Platform.OS === "ios") {
+            AccessibilityInfo.announceForAccessibility(next.message);
+          }
+        }
       } finally {
         setSending((current) => {
           if (current.get(submittedFor) !== request) return current;
