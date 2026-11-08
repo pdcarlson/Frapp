@@ -14,7 +14,7 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { readEventPayload } from "@repo/chat-core/cards";
-import { can } from "@repo/validation";
+import { can, checkInWindowBounds } from "@repo/validation";
 import { parseInstant } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,8 +31,6 @@ interface EventCardProps {
   isConfirmed: boolean;
 }
 
-/** Grace window (ms) after end_time during which check-in stays open (spec: 15 min). */
-const CHECK_IN_GRACE_MS = 15 * 60 * 1000;
 
 function formatRange(startIso: string, endIso: string): string {
   const start = parseInstant(startIso);
@@ -114,11 +112,16 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   const checkedIn = countCheckedIn(attendance);
   const start = parseInstant(payload.start_time);
   const end = parseInstant(payload.end_time);
+  // The server's window (`spec/behavior/events.md` § Check-In): the event's
+  // lead before the start to the grace after the end.
+  const bounds =
+    start && end
+      ? checkInWindowBounds(start, end, payload.check_in_opens_minutes)
+      : null;
   const windowOpen =
-    !!start &&
-    !!end &&
-    now >= start.getTime() &&
-    now <= end.getTime() + CHECK_IN_GRACE_MS;
+    !!bounds &&
+    now >= bounds.opensAt.getTime() &&
+    now <= bounds.closesAt.getTime();
   const actionsDisabled = !isConfirmed || checkIn.isPending;
 
   const handleCheckIn = async (): Promise<void> => {

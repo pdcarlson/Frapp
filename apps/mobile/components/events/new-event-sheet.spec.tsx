@@ -441,6 +441,7 @@ describe("Edit event", () => {
     start_time: local(9, 18, 45).toISOString(),
     end_time: local(9, 20, 15).toISOString(),
     point_value: 10,
+    check_in_opens_minutes: 10,
     attendance: {
       is_mandatory: true,
       others_invited: true,

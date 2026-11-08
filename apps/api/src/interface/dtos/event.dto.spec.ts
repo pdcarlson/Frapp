@@ -1,0 +1,62 @@
+import {
+  ArgumentMetadata,
+  BadRequestException,
+  ValidationPipe,
+} from '@nestjs/common';
+import { MAX_CHECK_IN_OPENS_MINUTES } from '@repo/validation';
+import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
+import { CreateEventDto, UpdateEventDto } from './event.dto';
+
+/**
+ * `check_in_opens_minutes` (#3703) through the real global pipe, built from
+ * `VALIDATION_PIPE_OPTIONS` as `bootstrap.ts` registers it. The service specs
+ * build their inputs directly, so without this nothing would notice a lost
+ * bound, and an out-of-range or null lead would reach the database's check or
+ * not-null constraint as a 500 rather than a 400.
+ */
+describe('Event DTOs — check_in_opens_minutes', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  const transform = (
+    metatype: ArgumentMetadata['metatype'],
+    payload: unknown,
+  ) => pipe.transform(payload, { type: 'body', metatype });
+
+  const create = {
+    name: 'Chapter',
+    start_time: '2026-11-07T20:00:00.000Z',
+    end_time: '2026-11-07T21:00:00.000Z',
+  };
+
+  it.each([
+    ['create', CreateEventDto, create],
+    ['update', UpdateEventDto, {}],
+  ] as const)(
+    '%s accepts 0 and the maximum, and omission',
+    async (_, dto, base) => {
+      for (const value of [0, MAX_CHECK_IN_OPENS_MINUTES]) {
+        await expect(
+          transform(dto, { ...base, check_in_opens_minutes: value }),
+        ).resolves.toEqual(
+          expect.objectContaining({ check_in_opens_minutes: value }),
+        );
+      }
+      await expect(transform(dto, base)).resolves.not.toHaveProperty(
+        'check_in_opens_minutes',
+      );
+    },
+  );
+
+  it.each([
+    ['create', CreateEventDto, create],
+    ['update', UpdateEventDto, {}],
+  ] as const)(
+    '%s refuses null, a fraction, a negative and past the maximum',
+    async (_, dto, base) => {
+      for (const value of [null, 2.5, -1, MAX_CHECK_IN_OPENS_MINUTES + 1]) {
+        await expect(
+          transform(dto, { ...base, check_in_opens_minutes: value }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      }
+    },
+  );
+});

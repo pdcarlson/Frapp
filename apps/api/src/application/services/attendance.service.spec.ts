@@ -28,7 +28,11 @@ describe('AttendanceService', () => {
   let mockAttendanceRepo: jest.Mocked<IAttendanceRepository>;
   let mockEventRepo: jest.Mocked<IEventRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
-  let mockRbac: { isAlumni: jest.Mock; getAlumniRoleId: jest.Mock };
+  let mockRbac: {
+    isAlumni: jest.Mock;
+    getAlumniRoleId: jest.Mock;
+    memberHasAnyPermission: jest.Mock;
+  };
 
   const baseEvent: Event = {
     id: 'evt-1',
@@ -49,6 +53,7 @@ describe('AttendanceService', () => {
     notes: null,
     check_in_zone: null,
     check_in_zone_name: null,
+    check_in_opens_minutes: 10,
     created_at: '2026-02-26T00:00:00.000Z',
   };
 
@@ -101,6 +106,7 @@ describe('AttendanceService', () => {
     mockRbac = {
       isAlumni: jest.fn().mockResolvedValue(false),
       getAlumniRoleId: jest.fn().mockResolvedValue(null),
+      memberHasAnyPermission: jest.fn().mockResolvedValue(false),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -430,6 +436,39 @@ describe('AttendanceService', () => {
       jest.useRealTimers();
     });
 
+    // #3703: members arrive early, so the window opens the event's lead
+    // before the start (17:50 for an 18:00 start with the default 10).
+    it('opens check-in the default ten minutes before the start', async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-02-26T17:50:00.000Z'));
+
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+      mockAttendanceRepo.checkInAtomic.mockResolvedValue(baseAttendance);
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).resolves.toEqual(
+        baseAttendance,
+      );
+      jest.useRealTimers();
+    });
+
+    it("refuses a check-in before the event's own lead", async () => {
+      jest.useFakeTimers();
+      // 17:54 is inside the default lead but outside this event's five.
+      jest.setSystemTime(new Date('2026-02-26T17:54:00.000Z'));
+
+      mockEventRepo.findById.mockResolvedValue({
+        ...baseEvent,
+        check_in_opens_minutes: 5,
+      });
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        'Check-in is only allowed during the event time window',
+      );
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
+      jest.useRealTimers();
+    });
+
     it('should reject role-targeted event check-in when member lacks required role', async () => {
       const duringEvent = new Date('2026-02-26T18:30:00.000Z');
       const roleTargetedEvent: Event = {
@@ -560,6 +599,85 @@ describe('AttendanceService', () => {
       );
 
       expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getMyAttendance', () => {
+    it("returns the caller's own row", async () => {
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(baseAttendance);
+
+      await expect(
+        service.getMyAttendance('evt-1', 'user-1', 'ch-1'),
+      ).resolves.toEqual(baseAttendance);
+      expect(mockEventRepo.findById).toHaveBeenCalledWith('evt-1', 'ch-1');
+      expect(mockAttendanceRepo.findByEventAndUser).toHaveBeenCalledWith(
+        'evt-1',
+        'user-1',
+      );
+    });
+
+    it('returns null when the caller has no row', async () => {
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+
+      await expect(
+        service.getMyAttendance('evt-1', 'user-1', 'ch-1'),
+      ).resolves.toBeNull();
+    });
+
+    // A role-targeted event the caller can't see answers as a missing id
+    // does, as GET /v1/events/:id does, never as `{ attendance: null }`.
+    describe('an event that leaves people out', () => {
+      const officersOnly: Event = {
+        ...baseEvent,
+        required_role_ids: ['role-officer'],
+        others_invited: false,
+      };
+
+      it("404s a member it doesn't invite", async () => {
+        mockEventRepo.findById.mockResolvedValue(officersOnly);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+          role_ids: ['role-member'],
+        } as never);
+
+        await expect(
+          service.getMyAttendance('evt-1', 'user-1', 'ch-1'),
+        ).rejects.toThrow(new NotFoundException('Event not found'));
+        expect(mockAttendanceRepo.findByEventAndUser).not.toHaveBeenCalled();
+      });
+
+      it('answers a member it invites', async () => {
+        mockEventRepo.findById.mockResolvedValue(officersOnly);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+          role_ids: ['role-officer'],
+        } as never);
+        mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+
+        await expect(
+          service.getMyAttendance('evt-1', 'user-1', 'ch-1'),
+        ).resolves.toBeNull();
+      });
+
+      it('answers anyone who may update events', async () => {
+        mockEventRepo.findById.mockResolvedValue(officersOnly);
+        mockRbac.memberHasAnyPermission.mockResolvedValue(true);
+        mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+
+        await expect(
+          service.getMyAttendance('evt-1', 'user-1', 'ch-1'),
+        ).resolves.toBeNull();
+        expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+      });
+    });
+
+    it("404s an event outside the caller's chapter", async () => {
+      mockEventRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.getMyAttendance('evt-1', 'user-1', 'ch-1'),
+      ).rejects.toThrow(new NotFoundException('Event not found'));
+      expect(mockAttendanceRepo.findByEventAndUser).not.toHaveBeenCalled();
     });
   });
 
@@ -804,6 +922,34 @@ describe('AttendanceService', () => {
       await expect(service.markAutoAbsent('evt-1', 'ch-1')).rejects.toThrow(
         BadRequestException,
       );
+    });
+
+    // The cutoff is the check-in window's close, end + 15 minutes, never its
+    // opening: marking absent while check-in is still open would refuse the
+    // members still arriving (their row would exist).
+    it('refuses until the check-in window closes, and runs once it has', async () => {
+      const endedEvent: Event = {
+        ...baseEvent,
+        is_mandatory: true,
+        start_time: '2026-02-26T18:00:00.000Z',
+        end_time: '2026-02-26T19:00:00.000Z',
+      };
+      mockEventRepo.findById.mockResolvedValue(endedEvent);
+      mockMemberRepo.findByChapter.mockResolvedValue([]);
+      jest.useFakeTimers();
+      try {
+        jest.setSystemTime(new Date('2026-02-26T19:14:00.000Z'));
+        await expect(service.markAutoAbsent('evt-1', 'ch-1')).rejects.toThrow(
+          'Cannot mark auto-absent before the grace period ends',
+        );
+
+        jest.setSystemTime(new Date('2026-02-26T19:16:00.000Z'));
+        await expect(service.markAutoAbsent('evt-1', 'ch-1')).resolves.toEqual({
+          marked: 0,
+        });
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it('should do nothing for optional events', async () => {

@@ -14,6 +14,7 @@
 import type { DeviceInstant } from "@repo/hooks";
 import {
   attendanceFieldsOf,
+  checkInOpensMinutes,
   type EventAttendanceFields,
 } from "@repo/validation";
 import { dayDelta, parseInstant } from "@repo/formatting";
@@ -26,6 +27,11 @@ export interface EventRow {
   start_time: string;
   end_time: string;
   point_value: number | null;
+  /**
+   * Minutes before the start that check-in opens: the event's own, or the
+   * default for a row that carries none (`checkInOpensMinutes`).
+   */
+  check_in_opens_minutes: number;
   /**
    * Who's coming, by role. Whether it is required of the viewer depends on
    * their roles, so a screen asks `useRequiredOfViewer` (`viewer-roles.ts`).
@@ -93,6 +99,7 @@ function toRow(row: Record<string, unknown>): EventRow | null {
     start_time: startTime,
     end_time: endTime,
     point_value: typeof row.point_value === "number" ? row.point_value : null,
+    check_in_opens_minutes: checkInOpensMinutes(row.check_in_opens_minutes),
     attendance: attendanceFieldsOf(row),
   };
 }
@@ -165,6 +172,37 @@ export function selectMintedToken(data: unknown): MintedCheckInToken | null {
       wall: requestedAt.wall,
     },
     rotatesInMs,
+  };
+}
+
+/** The viewer's own attendance row, as the event page reads it. */
+export interface MyAttendance {
+  status: "PRESENT" | "LATE" | "EXCUSED" | "ABSENT";
+  /**
+   * When they checked in: set for a PRESENT or LATE row with a time (a LATE
+   * row is a check-in, as the roster counts it), `null` for a row an officer
+   * marked EXCUSED or ABSENT.
+   */
+  checkedInAt: Date | null;
+}
+
+const ATTENDANCE_STATUSES = new Set(["PRESENT", "LATE", "EXCUSED", "ABSENT"]);
+
+/**
+ * The viewer's row from `useMyAttendance`'s answer
+ * (`{ attendance: row | null }`), or `null` when they have none or the answer
+ * is unreadable.
+ */
+export function selectMyAttendance(data: unknown): MyAttendance | null {
+  if (!isRecord(data) || !isRecord(data.attendance)) return null;
+  const { status, check_in_time } = data.attendance;
+  if (typeof status !== "string" || !ATTENDANCE_STATUSES.has(status)) {
+    return null;
+  }
+  const checkedIn = status === "PRESENT" || status === "LATE";
+  return {
+    status: status as MyAttendance["status"],
+    checkedInAt: checkedIn ? parseInstant(check_in_time) : null,
   };
 }
 

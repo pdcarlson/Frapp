@@ -17,7 +17,8 @@ import { screenText } from "@/test/screen-text";
  */
 
 const START = new Date("2026-09-25T18:00:00Z");
-const MOUNTED_AT = new Date(START.getTime() - 60_000);
+// A minute before check-in opens, ten minutes before the start.
+const MOUNTED_AT = new Date(START.getTime() - 11 * 60_000);
 const ACCENT = "#DDB844";
 
 const EVENT = {

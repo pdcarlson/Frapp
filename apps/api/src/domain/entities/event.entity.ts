@@ -42,5 +42,11 @@ export interface Event {
   check_in_zone: GeofenceCoordinate[] | null;
   /** Human-readable name for `check_in_zone`, rendered on the s18 status line. */
   check_in_zone_name: string | null;
+  /**
+   * Minutes before `start_time` that check-in opens (0–120, default 10;
+   * `spec/behavior/events.md` § Check-In). The window is
+   * `checkInWindowBounds` in `@repo/validation`.
+   */
+  check_in_opens_minutes: number;
   created_at: string;
 }

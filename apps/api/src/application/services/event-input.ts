@@ -19,6 +19,7 @@ export interface CreateEventInput {
   notes?: string | null;
   check_in_zone?: GeofenceCoordinate[] | null;
   check_in_zone_name?: string | null;
+  check_in_opens_minutes?: number;
   /** Creator user id — used as the chat card sender when posting via `/event`. */
   created_by?: string;
   /**
@@ -63,6 +64,7 @@ export interface UpdateEventInput {
   notes?: string | null;
   check_in_zone?: GeofenceCoordinate[] | null;
   check_in_zone_name?: string | null;
+  check_in_opens_minutes?: number;
 }
 
 /**

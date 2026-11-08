@@ -1,10 +1,15 @@
-import { checkInZoneLine } from "@repo/validation";
+import { can, checkInZoneLine, statusLabel } from "@repo/validation";
 import { useRequiredOfViewer } from "@/lib/events/viewer-roles";
 import { useMemo, useRef } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEvent, useNowDate } from "@repo/hooks";
+import {
+  useEvent,
+  useMyAttendance,
+  useNowDate,
+  usePermissionList,
+} from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { PencilGlyph } from "@/components/control-glyphs";
@@ -26,12 +31,17 @@ import {
 import { AccentChip, StatusChip } from "@/components/status-chip";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
+  formatCheckInOpens,
   formatEventClock,
   formatEventWindow,
   resolveCheckInWindow,
   type CheckInWindow,
 } from "@/lib/events/format";
-import { selectEventDetail, type EventDetail } from "@/lib/events/select";
+import {
+  selectEventDetail,
+  selectMyAttendance,
+  type EventDetail,
+} from "@/lib/events/select";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { InlineNote } from "@/components/inline-note";
 
@@ -122,9 +132,9 @@ export default function EventDetailsScreen() {
   /*
     A ticking clock, not one frozen at mount: this screen is often opened
     *before* check-in opens — a member arriving early taps through from UP
-    NEXT — and a `new Date()` captured once would leave "Check-in hasn't opened
-    / opens 6:00" on screen through 6:00, 6:15 and past the close, with no
-    way to reach the scanner but to back out and re-enter.
+    NEXT — and a `new Date()` captured once would leave "Check-in opens at
+    5:50 PM" on screen through 5:50, 6:15 and past the close, with no way to
+    reach the scanner but to back out and re-enter.
 
     It is the shared `@repo/hooks` clock the Events list and web's event card
     read, so this screen and the row it was opened from agree on whether the
@@ -162,7 +172,12 @@ export default function EventDetailsScreen() {
     );
   }
 
-  const window = resolveCheckInWindow(event.start_time, event.end_time, now);
+  const window = resolveCheckInWindow(
+    event.start_time,
+    event.end_time,
+    now,
+    event.check_in_opens_minutes,
+  );
   const requiredOfViewer = requiredOf(event.attendance);
 
   return (
@@ -204,7 +219,7 @@ export default function EventDetailsScreen() {
           </View>
         ) : null}
 
-        <CheckInCard event={event} window={window} />
+        <CheckInCard event={event} window={window} now={now} />
 
         {event.description ? (
           <DetailSection
@@ -244,49 +259,110 @@ export default function EventDetailsScreen() {
 /**
  * The drawn "● Check-in is open · closes 6:15" card. Open, it takes the
  * chapter's accent-tinted fill and border with the green status dot and the
- * scan button, as drawn. Before and after the window it is one neutral line
- * with a muted dot, since there is nothing to do yet or any more.
+ * card's one button. Before and after the window it is one neutral line with
+ * a muted dot, since there is nothing to do yet or any more.
+ *
+ * What it says, top to bottom (#3703, from running a real chapter event):
+ *
+ * - **Checked in.** A member with a check-in on record sees "Checked in at
+ *   7:52 PM" and the points, with the green dot, and no scanner: the scan is
+ *   done, and offering it again only leads to "already checked in". Read from
+ *   the member's own row (`GET …/attendance/me`), so it holds on another
+ *   device and after the app restarts. The points are the event's
+ *   `point_value`, as s18's success panel says them; an edit to it after the
+ *   check-in isn't retroactive (`spec/behavior/events.md`), so in that rare
+ *   case the two differ.
+ * - **Marked by an officer.** A row that isn't a check-in (an officer marked
+ *   them excused, absent, or present by hand) says so, "Marked excused", and
+ *   offers no scanner:
+ *   the server refuses any second row, so a scan could only answer "already
+ *   checked in".
+ * - **Not open yet.** Only "Check-in opens at 7:50 PM" (with the day when it
+ *   isn't today). No explanation, not even the zone line: the time is the
+ *   whole answer.
+ * - **Open, for a host.** A viewer who can host the check-in (`events:update`,
+ *   the permission that mints the rotating code) gets **Host check-in**, which
+ *   opens s22's QR and count, as the card's button in place of the guest's:
+ *   forty members walk in in the same five minutes and the host should not be
+ *   digging through More to find it. It is offered from before the window
+ *   opens too, so the QR can be up when the first member arrives. Events have
+ *   no creator or hosts list (#3762), so "host" is the permission. A host who
+ *   attends still earns the points, so while the window is open and they
+ *   aren't in yet, a quieter "Check myself in" under the button opens the
+ *   scanner.
+ * - **Open, for a guest.** "Scan QR to check in". Held back while their own
+ *   row is first being read, so a checked-in member never sees it flash. Not
+ *   while that read is paused offline: the scanner says what offline means
+ *   for a check-in, and a card with no button would say nothing. A failed
+ *   read shows it too (the server refuses a second check-in anyway).
  *
  * A check-in zone is said here, on the card it constrains, as one muted line
- * while checking in is still possible. It used to be its own box painted in
+ * while check-in is open. It used to be its own box painted in
  * info blue, a semantic hue the board never draws on this screen, and inside
  * a chapter the blue read as an alert rather than a condition.
  */
 function CheckInCard({
   event,
   window,
+  now,
 }: {
   event: EventDetail;
   window: CheckInWindow;
+  now: Date;
 }) {
   const { tokens } = useFrappTheme();
   const { accent, accentSubtle, accentBorder } = useChapterBranding();
   const styles = createStyles(tokens);
   const router = useRouter();
+  const canHost = can("events:update", usePermissionList());
+  const mine = useMyAttendance(event.id);
+  const own = selectMyAttendance(mine.data);
+  const checkedInAt = own?.checkedInAt ?? null;
+  // A row without a check-in (an officer's mark): one the server won't let a
+  // scan replace.
+  const marked = own && !checkedInAt ? own.status : null;
   const isOpen = window.state === "open";
+  const hostable = canHost && (isOpen || window.state === "upcoming");
 
-  const title = isOpen
-    ? "Check-in is open"
-    : window.state === "upcoming"
-      ? "Check-in hasn't opened"
-      : window.state === "closed"
-        ? "Check-in is closed"
-        : "Check-in is unavailable";
-  const trailing = isOpen
-    ? `closes ${formatEventClock(window.closesAt)}`
-    : window.state === "upcoming"
-      ? `opens ${formatEventClock(window.opensAt)}`
+  const title = checkedInAt
+    ? `Checked in at ${formatEventClock(checkedInAt)}`
+    : marked
+      ? `Marked ${statusLabel("attendance", marked).toLowerCase()}`
+      : isOpen
+      ? "Check-in is open"
+      : window.state === "upcoming" && window.opensAt
+        ? `Check-in opens ${formatCheckInOpens(window.opensAt, now)}`
+        : window.state === "closed"
+          ? "Check-in is closed"
+          : "Check-in is unavailable";
+  const trailing = checkedInAt
+    ? event.point_value
+      ? `+${event.point_value} pts`
+      : null
+    : isOpen && !own
+      ? `closes ${formatEventClock(window.closesAt)}`
       : null;
   const zone =
-    event.hasCheckInZone && (isOpen || window.state === "upcoming")
+    !own && event.hasCheckInZone && isOpen
       ? checkInZoneLine(event.check_in_zone_name)
       : null;
+  // Whether the viewer may still check themselves in, once their own row has
+  // been read (or the read is paused offline).
+  const canScan = isOpen && !own && !(mine.isPending && !mine.isPaused);
+  // The accent fill marks a card with something to do now.
+  const active = (isOpen && !own) || hostable;
+  const showScan = canScan && !canHost;
+  const openScanner = () =>
+    router.push({
+      pathname: "/check-in",
+      params: { eventId: event.id },
+    });
 
   return (
     <View
       style={[
         styles.checkInCard,
-        isOpen
+        active
           ? { backgroundColor: accentSubtle, borderColor: accentBorder }
           : null,
       ]}
@@ -296,13 +372,21 @@ function CheckInCard({
           style={[
             styles.dot,
             {
-              backgroundColor: isOpen
-                ? tokens.color.semantic.success
-                : tokens.color.text.muted,
+              // Green while there is a check-in to make, or one made; an
+              // officer's mark has nothing left to do, so it reads muted.
+              backgroundColor:
+                checkedInAt || (isOpen && !own)
+                  ? tokens.color.semantic.success
+                  : tokens.color.text.muted,
             },
           ]}
         />
-        <Text style={[styles.checkInTitle, isOpen ? { color: accent } : null]}>
+        <Text
+          style={[
+            styles.checkInTitle,
+            isOpen && !own ? { color: accent } : null,
+          ]}
+        >
           {title}
         </Text>
         {trailing ? <Text style={styles.checkInMeta}>{trailing}</Text> : null}
@@ -310,7 +394,35 @@ function CheckInCard({
 
       {zone ? <Text style={styles.zoneText}>{zone}</Text> : null}
 
-      {isOpen ? (
+      {hostable ? (
+        <>
+          <SheetPrimaryButton
+            label="Host check-in"
+            accent={accent}
+            onAccent={tokens.color.gold.onHouse}
+            onPress={() =>
+              router.push({
+                pathname: "/host-check-in",
+                params: { eventId: event.id },
+              })
+            }
+          />
+          {canScan ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={openScanner}
+              style={({ pressed }) => [
+                styles.selfCheckIn,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <Text style={[styles.selfCheckInText, { color: accent }]}>
+                Check myself in
+              </Text>
+            </Pressable>
+          ) : null}
+        </>
+      ) : showScan ? (
         // The app's one primary button (`sheet-scaffold.tsx`): 48pt, the
         // control radius, the chapter accent under `gold.onHouse` ink, as the
         // dues Pay button and every sheet's CTA draw it.
@@ -318,12 +430,7 @@ function CheckInCard({
           label="Scan QR to check in"
           accent={accent}
           onAccent={tokens.color.gold.onHouse}
-          onPress={() =>
-            router.push({
-              pathname: "/check-in",
-              params: { eventId: event.id },
-            })
-          }
+          onPress={openScanner}
         />
       ) : null}
     </View>
@@ -428,6 +535,18 @@ function createStyles(tokens: SignetTokens) {
     checkInMeta: {
       color: tokens.color.text.mutedForeground,
       ...typeRole(tokens.typography.role.caption),
+    },
+    // A text action under the card's button, centred, at the 44pt floor.
+    selfCheckIn: {
+      minHeight: tokens.touch.minimum,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    selfCheckInText: {
+      ...typeRole(tokens.typography.role.label),
+    },
+    pressed: {
+      opacity: 0.7,
     },
     zoneText: {
       color: tokens.color.text.mutedForeground,

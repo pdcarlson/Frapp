@@ -15,8 +15,9 @@ import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interf
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import type { EventAttendance } from '#domain/entities/event-attendance.entity';
 import { RbacService } from './rbac.service';
-import { attendanceFor } from './event-role-targeting';
+import { attendanceFor, isEventVisibleTo } from './event-role-targeting';
 import {
+  checkInWindowBounds,
   eventRequiresAnyone,
   eventSetsRolesApart,
   type EventAttendanceFields,
@@ -28,14 +29,6 @@ import {
   verifyManualCode,
   type MintedCheckInToken,
 } from '#domain/utils/check-in-token';
-
-/**
- * Grace period after `end_time` during which check-in stays open and before
- * which auto-absent must not run (`spec/behavior/events.md`). Exported so the
- * scheduled auto-absent sweep computes the same cutoff this service enforces,
- * rather than keeping a second copy that could drift.
- */
-export const CHECK_IN_GRACE_PERIOD_MINUTES = 15;
 
 /**
  * Optional, like `ANALYTICS_HMAC_SALT`: absent, the rotating-token feature is
@@ -113,15 +106,19 @@ export class AttendanceService {
     const now = new Date();
     const start = new Date(event.start_time);
     const end = new Date(event.end_time);
-    const graceWindowEnd = new Date(
-      end.getTime() + CHECK_IN_GRACE_PERIOD_MINUTES * 60 * 1000,
-    );
 
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
       throw new BadRequestException('Event times are invalid');
     }
 
-    if (now < start || now > graceWindowEnd) {
+    // Opens the event's lead before the start (members arrive early, #3703)
+    // and closes after the grace.
+    const { opensAt, closesAt } = checkInWindowBounds(
+      start,
+      end,
+      event.check_in_opens_minutes,
+    );
+    if (now < opensAt || now > closesAt) {
       throw new BadRequestException(
         'Check-in is only allowed during the event time window',
       );
@@ -273,6 +270,36 @@ export class AttendanceService {
     return attendance;
   }
 
+  /**
+   * The caller's own attendance row for an event, or `null` when they have
+   * none. Any member who can see the event may ask: it is their own record,
+   * and it is what lets the event page say "Checked in at 7:52 PM" instead of
+   * offering the scanner again (#3703).
+   *
+   * An event the caller can't see 404s exactly as a nonexistent id does,
+   * by the rule `GET /v1/events/:id` applies (`isEventVisibleTo`).
+   * Answering `{ attendance: null }` instead would confirm a role-targeted
+   * event exists to someone it was hidden from.
+   */
+  async getMyAttendance(
+    eventId: string,
+    userId: string,
+    chapterId: string,
+  ): Promise<EventAttendance | null> {
+    const event = await this.eventRepo.findById(eventId, chapterId);
+    if (
+      !event ||
+      !(await isEventVisibleTo(event, chapterId, userId, {
+        rbac: this.rbac,
+        memberRepo: this.memberRepo,
+      }))
+    ) {
+      throw new NotFoundException('Event not found');
+    }
+
+    return this.attendanceRepo.findByEventAndUser(eventId, userId);
+  }
+
   async getAttendance(
     eventId: string,
     chapterId: string,
@@ -370,9 +397,11 @@ export class AttendanceService {
       throw new NotFoundException('Event not found');
     }
 
-    const end = new Date(event.end_time);
-    const graceEnd = new Date(
-      end.getTime() + CHECK_IN_GRACE_PERIOD_MINUTES * 60 * 1000,
+    // The close of the check-in window, from the same rule check-in uses.
+    const { closesAt: graceEnd } = checkInWindowBounds(
+      new Date(event.start_time),
+      new Date(event.end_time),
+      event.check_in_opens_minutes,
     );
     if (new Date() < graceEnd) {
       throw new BadRequestException(

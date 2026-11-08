@@ -27,7 +27,8 @@ import { useScreenBelow } from "@/lib/back-target";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import Svg, { Path } from "react-native-svg";
-import { useCheckIn, useEvent } from "@repo/hooks";
+import { useCheckIn, useEvent, useMyAttendance } from "@repo/hooks";
+import { statusLabel } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ManualCodeSheet } from "@/components/check-in/manual-code-sheet";
 import { useSheetVisit } from "@/components/sheet-scaffold";
@@ -39,16 +40,21 @@ import {
 } from "@/lib/events/check-in-code";
 import { createScanLatch, type ScanLatch } from "@/lib/events/scan-latch";
 import {
+  ALREADY_CHECKED_IN_TITLE,
   CHECK_IN_LOCATION_DENIED_COPY,
   checkInFailure,
   checkInSuccess,
 } from "@/lib/events/check-in-outcome";
 import { latLngOf, requireForegroundFix } from "@/lib/location";
-import { selectEventDetail } from "@/lib/events/select";
+import { selectEventDetail, selectMyAttendance } from "@/lib/events/select";
 import { useConnection } from "@/lib/connection/use-connection";
 import { successHaptic } from "@/lib/haptics";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { InlineNote } from "@/components/inline-note";
+import {
+  GlassCloseButton,
+  GlassCloseSpacer,
+} from "@/components/glass-close-button";
 
 /**
  * s18 — QR check-in scanner (`canvas-screens.dc.html:600`).
@@ -123,17 +129,52 @@ type Status =
   | { kind: "blocked"; message: string };
 
 /**
- * Which terminal state a failed check-in lands in. The copy, gate refusals
- * included, is `checkInFailure`'s, shared with the chat event card. "Already
- * checked in" stays an `error` here, as it always was: it leaves the scanner
- * armed for the member's next event, where `blocked` would disarm it. It is
- * about the member, not the code, so a typed code would meet it too.
+ * Which state a failed check-in lands in. The copy, gate refusals included,
+ * is `checkInFailure`'s, shared with the chat event card.
+ *
+ * A 409 means the member already has a row for this event. When that row is
+ * PRESENT or LATE (a check-in, or an officer's mark that counts them), they
+ * are on the list, which is what they came
+ * here for, so it lands on the success panel in its own words and with no
+ * points (none were awarded this time), rather than in the error style it
+ * used to take (#3703: the owner chose to keep the API's 409 and have the
+ * scanner read it as "you're in"). The panel resets on focus like any
+ * success, so the next event's scanner is armed.
+ *
+ * The API answers 409 for any row, though, including one an officer marked
+ * absent or excused after the member checked in. Telling that member
+ * "you're in" would contradict their record, so the caller reads their own
+ * row first (`ownRow`) and passes what it found: a mark is said as one
+ * ("An officer marked you absent for this event."), the same fact the event
+ * page shows. An unread row (the read failed) keeps the old error line,
+ * which claims nothing about the record.
  */
-function failureStatus(error: unknown): Status {
+function failureStatus(
+  error: unknown,
+  eventId: string,
+  eventName: string | null,
+  ownRow: ReturnType<typeof selectMyAttendance> | undefined,
+): Status {
   const failure = checkInFailure(error);
-  return failure.kind === "already"
-    ? { kind: "error", message: failure.message, attemptOnly: false }
-    : failure;
+  if (failure.kind !== "already") return failure;
+  // PRESENT or LATE is on the list, whether scanned or marked by hand.
+  if (ownRow && (ownRow.status === "PRESENT" || ownRow.status === "LATE")) {
+    return {
+      kind: "success",
+      message: failure.message,
+      title: ALREADY_CHECKED_IN_TITLE,
+      pointsLabel: null,
+      eventId,
+      eventName,
+    };
+  }
+  return {
+    kind: "error",
+    message: ownRow
+      ? `An officer marked you ${statusLabel("attendance", ownRow.status).toLowerCase()} for this event.`
+      : failure.message,
+    attemptOnly: false,
+  };
 }
 
 /** The drawn corner bracket: 36pt arms, a 3pt stroke in the foreground text. */
@@ -276,8 +317,10 @@ export default function CheckInScreen() {
    * `success` is reset for the same reason: the success panel replaces the
    * camera, so a member who checked in at one event would otherwise re-enter
    * at the next one to "You're checked in" for the *previous* event, with no
-   * scanner at all. Ordinary failures and the 409 "already checked in" keep
-   * behaving exactly as they did, because those leave the scanner armed.
+   * scanner at all. A repeat scan's 409 lands on the same panel when the
+   * member's row is a check-in (`failureStatus`), so it is reset here too;
+   * ordinary failures, and a 409 over an officer's mark, leave the scanner
+   * armed and need no reset.
    *
    * Leaving the screen also turns the torch off and closes the manual sheet,
    * which is portalled above the navigator and would otherwise float over
@@ -301,6 +344,11 @@ export default function CheckInScreen() {
   // whichever event that was for, so nothing here reads it: `sending` and the
   // latches are per event.
   const { mutateAsync: sendCheckIn } = useCheckIn();
+  // Read only on a 409, to tell a check-in from an officer's mark
+  // (`failureStatus`); never fetched up front.
+  const { refetch: refetchOwnRow } = useMyAttendance(eventId, {
+    enabled: false,
+  });
 
   // Last foreign-event code already reported — see `handleBarcode`.
   const reportedForeignRef = useRef<string | null>(null);
@@ -409,7 +457,23 @@ export default function CheckInScreen() {
         }
       } catch (error) {
         if (eventIdRef.current !== submittedFor) return;
-        setStatus(failureStatus(error));
+        let ownRow: ReturnType<typeof selectMyAttendance> | undefined;
+        if (checkInFailure(error).kind === "already") {
+          const read = await refetchOwnRow();
+          if (eventIdRef.current !== submittedFor) return;
+          ownRow = read.isSuccess ? selectMyAttendance(read.data) : undefined;
+        }
+        const next = failureStatus(error, submittedFor, eventName, ownRow);
+        setStatus(next);
+        if (next.kind === "success") {
+          // As a fresh check-in clears them: the panel replaces the scanner.
+          setManualCode("");
+          Keyboard.dismiss();
+          dismissSheet();
+          if (Platform.OS === "ios") {
+            AccessibilityInfo.announceForAccessibility(next.message);
+          }
+        }
       } finally {
         setSending((current) => {
           if (current.get(submittedFor) !== request) return current;
@@ -422,7 +486,15 @@ export default function CheckInScreen() {
         latch.release();
       }
     },
-    [dismissSheet, event, eventId, latchFor, resolveLocation, sendCheckIn],
+    [
+      dismissSheet,
+      event,
+      eventId,
+      latchFor,
+      refetchOwnRow,
+      resolveLocation,
+      sendCheckIn,
+    ],
   );
 
   const handleBarcode = useCallback(
@@ -545,21 +617,14 @@ export default function CheckInScreen() {
       edges={["top", "left", "right", "bottom"]}
     >
       <View style={styles.header}>
-        <Pressable
-          accessibilityRole="button"
+        <GlassCloseButton
           accessibilityLabel="Close check-in"
           onPress={() => leaveTo(eventId)}
-          style={({ pressed }) => [
-            styles.close,
-            pressed ? styles.pressed : null,
-          ]}
-        >
-          <Text style={styles.closeText}>✕</Text>
-        </Pressable>
+        />
         <Text accessibilityRole="header" style={styles.headerTitle}>
           Check in
         </Text>
-        <View style={styles.close} />
+        <GlassCloseSpacer />
       </View>
 
       {/*
@@ -794,16 +859,6 @@ function createStyles(tokens: SignetTokens, accent: string) {
       alignItems: "center",
       paddingHorizontal: tokens.spacing.sm,
       gap: tokens.spacing.sm,
-    },
-    close: {
-      minWidth: tokens.touch.minimum,
-      minHeight: tokens.touch.minimum,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    closeText: {
-      color: tokens.color.text.foreground,
-      ...typeRole(tokens.typography.role.title),
     },
     headerTitle: {
       flex: 1,

@@ -258,6 +258,7 @@ export class EventSeriesService {
         // set a zone that a later regenerate silently dropped again.
         check_in_zone: parent.check_in_zone,
         check_in_zone_name: parent.check_in_zone_name,
+        check_in_opens_minutes: parent.check_in_opens_minutes,
       });
     }
 

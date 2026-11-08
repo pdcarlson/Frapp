@@ -119,6 +119,12 @@ export interface EventPayload {
   point_value: number;
   /** Whether attendance is mandatory (always `false` for slash-created events). */
   is_mandatory: boolean;
+  /**
+   * Minutes before `start_time` that check-in opens. Cards posted before the
+   * field existed carry none; `readEventPayload` gives them the default
+   * (`checkInOpensMinutes` in `@repo/validation`).
+   */
+  check_in_opens_minutes: number;
   /** `events.created_at`. */
   created_at: string;
 }

@@ -481,6 +481,9 @@ describe("Host check-in while the room fills", () => {
         node.type === ("Pressable" as never) &&
         node.props.accessibilityLabel === "End hosting and go back",
     );
+    // The app's glass close (#3703), not the bare "✕ End" it replaced, which
+    // carried the same label.
+    expect(end.props.testID).toBe("glass-close");
     act(() => end.props.onPress());
     // Nothing is under the screen in this spec (no stack), so it falls back
     // to More; on a device it pops to where the officer started.
