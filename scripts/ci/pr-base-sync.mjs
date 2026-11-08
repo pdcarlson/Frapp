@@ -246,11 +246,13 @@ export async function compareBehindBy({
   baseRef,
   headSha,
   fetchImpl,
+  retry = false,
 }) {
   const { ok, data } = await ghRequest({
     token,
     fetchImpl,
     path: `/repos/${repo}/compare/${encodeURIComponent(baseRef)}...${headSha}`,
+    retry,
   });
   if (!ok || typeof data?.behind_by !== "number") return null;
   return data.behind_by;
@@ -459,7 +461,11 @@ const canTake = (c) => isQueueable(c) && c.checks !== null;
  * after an update all of these are routinely unreadable for a while.
  */
 export function isInFlight(c, now) {
-  if (!c || c.isFork || c.behindBy !== 0 || c.pr?.mergeable === false) return false;
+  if (!c || c.isFork || c.pr?.mergeable === false || c.dropped) return false;
+  // A compare that failed even after its retry: this PR may be the holder, up to
+  // date with CI running, and reading it as idle would start a second racer.
+  if (c.behindBy === null) return true;
+  if (c.behindBy !== 0) return false;
   if (c.checks === null) return true;
   const { state, lastCompletedMs } = c.checks;
   if (state === "running") return true;
@@ -537,7 +543,7 @@ async function assessAutoMergeQueue({
   const readHead = async (entry, sha, { compared = false } = {}) => {
     if (!compared) {
       entry.sha = sha;
-      entry.behindBy = await compareBehindBy({ token, repo, baseRef, headSha: sha, fetchImpl });
+      entry.behindBy = await compareBehindBy({ token, repo, baseRef, headSha: sha, fetchImpl, retry: true });
     }
     entry.checks = null;
     entry.headAtMs = null;
@@ -563,7 +569,14 @@ async function assessAutoMergeQueue({
     };
     candidates.push(entry);
     if (entry.isFork) continue;
-    entry.behindBy = await compareBehindBy({ token, repo, baseRef, headSha: entry.sha, fetchImpl });
+    entry.behindBy = await compareBehindBy({
+      token,
+      repo,
+      baseRef,
+      headSha: entry.sha,
+      fetchImpl,
+      retry: true,
+    });
     if (entry.behindBy !== 0) continue;
     await readHead(entry, entry.sha, { compared: true });
     if (stopAtInFlight && isInFlight(entry, now)) {
@@ -571,7 +584,12 @@ async function assessAutoMergeQueue({
     }
   }
 
-  const assessed = new Map();
+  // Up-to-date PRs are fully read already (the per-PR pass needs no mergeability
+  // for them: a PR containing the base tip can't conflict with it), so it reuses
+  // them as they are rather than reading them again behind the slot's back.
+  const assessed = new Map(
+    candidates.filter((c) => !c.isFork && c.behindBy === 0).map((c) => [c.number, c]),
+  );
   for (const entry of candidates) {
     if (entry.isFork || entry.behindBy === 0) continue;
     const pr = await fetchPrWithMergeable({ token, repo, number: entry.number, fetchImpl, sleep });
@@ -620,8 +638,10 @@ export function isHeadMoved({ status, error }) {
  *
  * Trying every eligible PR rather than stopping after a few is what keeps one PR
  * nobody is watching (a rule rejecting the App's push, say) from holding the
- * queue. A repo-wide failure fails every call fast, or trips the stall stop, so
- * the cost is the pre-#3599 one: each behind PR gets its wake.
+ * queue. In the push sweep a repo-wide failure fails every call fast, or trips
+ * the stall stop, so the cost is the pre-#3599 one: each behind PR gets its
+ * wake. A `tryUpdate` result with `stopSlot` ends the sweep's attempts instead
+ * (the slot sweep's rejected token, rate limit or stall).
  */
 async function runSlot({ queue, logger, tryUpdate, onHeld = async () => {}, fallback = async () => null }) {
   const results = [];
@@ -784,9 +804,9 @@ export async function processBaseMove({
         stopAtInFlight: mode === "checks",
       })
     : null;
-  if (queue && queue.assessed.size > 0) {
+  if (queue && (queue.inFlight || queue.queued.length > 0)) {
     logger.log?.(
-      `[pr-base-sync] ${queue.assessed.size} auto-merge PR(s); update slot: ` +
+      `[pr-base-sync] update slot: ` +
         (queue.inFlight
           ? `#${queue.inFlight} (in flight)`
           : queue.order.length
@@ -898,9 +918,11 @@ export async function processBaseMove({
  * push sweep does. Its other writes are few, because the push sweep owns the
  * rest (conflicts, the per-PR pass, raising the alert):
  * - it deletes the updated PR's stale wake;
- * - a PR it could not update gets the behind wake, but only when it has no
- *   base-sync comment already, so a failure that repeats on every CI completion
- *   wakes its session once rather than every time;
+ * - a PR it could not update for a reason specific to it (a 4xx other than a
+ *   rejected token, a rate limit, a head-moved 422 or a conflict) gets the behind
+ *   wake, but only when it has no base-sync comment already, so a failure that
+ *   repeats on every CI completion wakes its session once rather than every
+ *   time. Every other failure gets no wake (see tryUpdate);
  * - an update that went through closes an open token alert, which is proof the
  *   token works. It never raises one.
  */
@@ -939,22 +961,23 @@ async function advanceSlot({
         );
         return { number, verdict: "behind", action: "raced" };
       }
-      // Failures that would hit every PR alike (a rejected token, a rate limit,
-      // GitHub 5xx or no answer) and a conflict get no wake here: the push sweep
-      // diagnoses the first in one alert and owns conflicts, and a "merge main
-      // yourself" wake on each queued PR would restart the race the slot
-      // prevents. The slot stops for this sweep instead.
-      const repoWide =
+      // No wake for any of these: a "merge main yourself" wake on each queued PR
+      // would restart the race the slot prevents, and the push sweep owns the
+      // diagnosis (one alert) and conflicts.
+      // - A rejected token or a rate limit hits every PR alike: stop the sweep.
+      // - A stall would stall the next call too: stop the sweep.
+      // - A 5xx, no answer, or a conflict may be this PR's alone: try the next.
+      const stop =
+        result.stalled ||
+        RATE_LIMITED.test(result.error) ||
         result.status === 401 ||
-        result.status === 403 ||
-        !result.status ||
-        result.status >= 500 ||
-        RATE_LIMITED.test(result.error);
-      if (repoWide || /conflict/i.test(result.error)) {
+        result.status === 403;
+      if (stop || !result.status || result.status >= 500 || /conflict/i.test(result.error)) {
         logger.log?.(
-          `[pr-base-sync] #${number}: update-branch failed (${result.error}) — no wake; the next push sweep handles it`,
+          `[pr-base-sync] #${number}: update-branch failed (${result.error}) — no wake; ` +
+            (stop ? "the slot stops for this sweep" : "trying the next PR"),
         );
-        return { number, verdict: "behind", action: "skipped", stopSlot: repoWide || result.stalled };
+        return { number, verdict: "behind", action: "skipped", stopSlot: stop };
       }
       const existing = await findMarkedCommentIds({
         token,
@@ -1121,6 +1144,16 @@ async function processOnePr({
   // including an unresolved mergeability (pr: null), which must not be polled
   // a second time and then read clean behind the slot's back.
   const assessed = queue?.assessed.get(number);
+  // An up-to-date one was read without its detail (it needs none): it is in sync
+  // as of the assessment, and is not compared again against a base that may
+  // have moved since, which would update it outside the slot.
+  if (assessed && assessed.pr === undefined && assessed.behindBy === 0) {
+    const cleared = await clearWakeComments({ token, repo, prNumber: number, fetchImpl });
+    logger.log?.(
+      `[pr-base-sync] #${number}: already contains ${baseRef} tip — in sync${cleared ? `, cleared ${cleared} stale wake comment(s)` : ""}`,
+    );
+    return { number, verdict: "current", action: "none" };
+  }
   const pr = assessed
     ? assessed.pr
     : await fetchPrWithMergeable({

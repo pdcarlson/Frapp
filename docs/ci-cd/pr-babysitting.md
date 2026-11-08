@@ -300,10 +300,10 @@ busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeabl
     haven't reported yet and its head was pushed under 15 minutes ago, going by its earliest check
     suite: right after an update, the new head has no check runs while CI cancels the old run, and
     that cancelled run's completion fires a slot sweep. Or they all passed under 5 minutes ago, so
-    auto-merge is about to act. This check fails safe: an up-to-date PR whose checks, or (with
-    checks not yet reported) whose push time, can't be read also counts as in flight, and an
-    unresolved mergeability doesn't exclude it, because right after an update all of these often
-    can't be read yet. Otherwise the sweep tries the behind PRs in turn until one updates.
+    auto-merge is about to act. This check fails safe: a same-repo auto-merge PR whose compare fails
+    even after a retry, or an up-to-date one whose checks, or (with checks not yet reported) whose
+    push time, can't be read, also counts as in flight, and an unresolved mergeability doesn't
+    exclude it, because right after an update all of these often can't be read yet. Otherwise the sweep tries the behind PRs in turn until one updates.
     First come those whose checks are still running, which is almost always the holder knocked
     behind by a merge the queue didn't cause, so it keeps the slot. Then the rest, lowest number
     first.
@@ -330,15 +330,17 @@ busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeabl
     in flight, and no event marks the end of that grace. It's a backstop, not a bound: ADR-24
     measured a `*/15` schedule in this repo running at a median gap of 3.1 h. In this mode
     (`mode: "checks"`) the sweep fills the slot the same way, with two differences. It reads
-    lazily: it compares each auto-merge PR first and stops at the first one in flight, so with a
-    holder running it costs a list call, a compare per auto-merge PR up to the holder, and the
-    holder's checks, all on the repository's shared `GITHUB_TOKEN` budget. And its writes are few.
-    It deletes the updated PR's stale wake. It wakes a PR it couldn't update for a reason specific
-    to that PR, if the PR has no base-sync comment yet, so a failure that repeats on every
-    completion wakes the session once. It closes an open token alert when an update goes through.
-    A failure that would hit every PR alike (401/403, a rate limit, 5xx, no answer) or a conflict
-    stops the sweep with no wake, and the push sweep diagnoses it. It never raises the alert: the
-    base did not move, and that job belongs to the push sweep. Push sweeps and slot sweeps run in separate concurrency
+    lazily: it compares each auto-merge PR first, reads checks only for up-to-date ones (plus the
+    push time for those whose checks haven't reported), and stops at the first one in flight. With a
+    holder running it costs a list call, a compare per auto-merge PR up to the holder, and those
+    reads for the up-to-date ones among them, all on the repository's shared `GITHUB_TOKEN`
+    budget. And its writes are few. It deletes the updated PR's stale wake. It wakes a PR it
+    couldn't update for a reason specific to that PR (a 4xx other than those below), if the PR has
+    no base-sync comment yet, so a failure that repeats on every completion wakes the session once.
+    It closes an open token alert when an update goes through. A rejected token (401/403), a rate
+    limit or a stall stops the sweep with no wake; a 5xx, no answer or a conflict gets no wake and
+    the sweep tries the next PR. The push sweep diagnoses all of these. It never raises the alert:
+    the base did not move, and that job belongs to the push sweep. Push sweeps and slot sweeps run in separate concurrency
     groups, so a slot sweep never cancels a push sweep midway through its wakes. Completions the job
     skips (`main`'s own CI, a fork's) go to a third group. The two kinds can still overlap. When both
     pick the same PR, the head-moved rule absorbs it. When they pick different PRs at the same
