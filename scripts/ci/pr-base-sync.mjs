@@ -30,7 +30,7 @@
 // date and green can merge. When every behind auto-merge PR was updated on every
 // push, they all raced: the fastest CI merged, moved `main`, and restarted the
 // rest, so a PR whose CI outlasted the gap between merges never merged at all.
-// So each sweep picks one holder (see pickSlotHolder) and updates only that one;
+// So each sweep picks one holder (see pickSlotOrder) and updates only that one;
 // the other behind auto-merge PRs are HELD (no update, no wake comment) until the
 // holder merges and its push to `main` hands the slot on. A holder that goes red,
 // or turns green without merging, would stall that hand-off, so the workflow also
@@ -323,27 +323,52 @@ export const UPDATE_BRANCH_STALLS_BEFORE_STOP = 2;
 const PASSING_CONCLUSIONS = new Set(["success", "skipped", "neutral"]);
 
 // Required checks are about two dozen check runs among more; three pages of a
-// hundred is ample, and a commit past that reads as unknown, not as settled.
+// hundred is ample, and a commit past that reads as unknown, never as passed.
 const CHECK_RUN_PAGES = 3;
 
-const startedAtMs = (run) => {
-  const parsed = Date.parse(run?.started_at ?? run?.completed_at ?? "");
-  return Number.isNaN(parsed) ? 0 : parsed;
-};
+/**
+ * How long an up-to-date PR whose required checks have not all reported yet
+ * still counts as in flight, measured from its `updated_at` (a new head bumps
+ * it). Right after update-branch, the new head has no check runs while CI's
+ * `ci-${{ github.ref }}` group cancels the old run; that cancelled run's own
+ * completion fires a slot sweep inside exactly that window. Without the grace
+ * the holder would read as idle and a second PR would be updated to race it. A
+ * check that never reports at all stops holding the slot once this runs out.
+ */
+export const CHECKS_START_GRACE_MS = 15 * 60 * 1000;
 
 /**
- * Where a commit's REQUIRED checks stand, for the slot:
+ * How long an up-to-date PR whose required checks all passed still counts as in
+ * flight after the last one completed. CI completing fires a slot sweep before
+ * auto-merge has finished the merge; without this, that sweep would update the
+ * next PR against a `main` the holder's merge outdates seconds later, wasting a
+ * full CI run. Past it, a green PR that has not merged is waiting on something
+ * other than CI and must not block the queue.
+ */
+export const MERGE_GRACE_MS = 5 * 60 * 1000;
+
+const timeMs = (value) => {
+  const parsed = Date.parse(value ?? "");
+  return Number.isNaN(parsed) ? 0 : parsed;
+};
+const startedAtMs = (run) => timeMs(run?.started_at ?? run?.completed_at);
+
+/**
+ * Where a commit's REQUIRED checks stand, for the slot, as `{ state,
+ * lastCompletedMs }`, or null when the checks API could not be read (fail safe:
+ * such a PR never holds the slot and is never held). `state` is one of:
  * - "failed": the latest run of some required check concluded anything but a pass
  *   (cancelled included: auto-merge cannot act on it either);
  * - "running": none failed, and at least one has a run that has not completed;
- * - "settled": none failed and none is running. That covers all green, and also
- *   required checks that never reported, because a check that never reports never
- *   finishes, and a PR waiting on it must not hold the slot forever;
- * - null: the checks API could not be read (fail safe: never picked as holder).
+ * - "missing": none failed or running, but some have not reported (a fresh head,
+ *   or a check that never reports; isInFlight bounds it in time);
+ * - "passed": every required check reported a pass.
  *
  * Kept here rather than imported from validate-deploy-sha.mjs, whose module pulls
  * in `child_process`: this watchdog holds the base-sync App token and shells out
  * nowhere, transitively (docs/ci-cd/pr-babysitting.md § the security review).
+ * It retries like that module's read does, because a single transient failure
+ * here takes the in-flight holder out of the queue.
  */
 export async function readRequiredChecks({
   token,
@@ -351,6 +376,7 @@ export async function readRequiredChecks({
   sha,
   fetchImpl,
   required = ALL_REQUIRED_CHECKS,
+  retryOptions,
 }) {
   if (!sha) return null;
   const latest = new Map();
@@ -359,6 +385,8 @@ export async function readRequiredChecks({
       token,
       fetchImpl,
       path: `/repos/${repo}/commits/${sha}/check-runs?per_page=100&page=${page}`,
+      retry: true,
+      retryOptions,
     });
     if (!ok || !Array.isArray(data?.check_runs)) return null;
     for (const run of data.check_runs) {
@@ -372,54 +400,88 @@ export async function readRequiredChecks({
     if (page === CHECK_RUN_PAGES) return null;
   }
   let running = false;
+  let missing = false;
+  let lastCompletedMs = 0;
   for (const name of required) {
     const run = latest.get(name);
-    if (!run) continue;
-    if (run.status !== "completed") {
+    if (!run) {
+      missing = true;
+    } else if (run.status !== "completed") {
       running = true;
     } else if (!PASSING_CONCLUSIONS.has(run.conclusion)) {
-      return "failed";
+      return { state: "failed", lastCompletedMs: timeMs(run.completed_at) };
+    } else {
+      lastCompletedMs = Math.max(lastCompletedMs, timeMs(run.completed_at));
     }
   }
-  return running ? "running" : "settled";
+  const state = running ? "running" : missing ? "missing" : "passed";
+  return { state, lastCompletedMs };
 }
 
-/**
- * The one auto-merge PR the sweep may update, or null.
- *
- * `candidates` are assessed auto-merge PRs in ascending PR number. Only a clean
- * (mergeable), same-repo PR whose compare and checks were readable, and whose
- * required checks have not failed, can hold the slot:
- *
- * 1. A PR already up to date with its required checks still running is in
- *    flight. It keeps the slot, so a sweep that fires while it runs (a CI
- *    completion elsewhere) never starts a second PR racing it.
- * 2. Otherwise the lowest-numbered behind one. A fixed order keeps the slot on
- *    the same PR across sweeps, so a base move the queue did not cause (a manual
- *    merge) restarts the holder's CI instead of handing the slot to another PR.
- *
- * An up-to-date PR whose checks are settled is skipped: if it is green, the
- * auto-merge is about to act (and its push re-sweeps); if it is not merging, it is
- * waiting on something other than CI and must not block the queue.
- */
-export function pickSlotHolder(candidates) {
-  const eligible = candidates.filter(
-    (c) =>
+/** May hold the slot, or be held behind it: clean, same-repo, readable, not red. */
+function isQueueable(c) {
+  return Boolean(
+    c?.pr &&
       c.pr.mergeable === true &&
       !c.isFork &&
       typeof c.behindBy === "number" &&
-      (c.checks === "running" || c.checks === "settled"),
+      c.checks &&
+      c.checks.state !== "failed",
   );
-  const inFlight = eligible.find((c) => c.behindBy === 0 && c.checks === "running");
-  return inFlight ?? eligible.find((c) => c.behindBy > 0) ?? null;
+}
+
+/** Up to date, and its CI is still on its way to a merge. */
+export function isInFlight(c, now) {
+  if (!isQueueable(c) || c.behindBy !== 0) return false;
+  const { state, lastCompletedMs } = c.checks;
+  if (state === "running") return true;
+  if (state === "missing") return now - timeMs(c.pr.updated_at) < CHECKS_START_GRACE_MS;
+  if (state === "passed") return now - lastCompletedMs < MERGE_GRACE_MS;
+  return false;
 }
 
 /**
- * Reads every auto-merge PR in this sweep once (mergeability, how far behind,
- * required checks) and picks the holder. Returns the assessments by number, so
- * the per-PR pass reuses them instead of reading each PR twice.
+ * The auto-merge PRs the sweep may update, best first (`order`): the holder,
+ * then the fallbacks to try if updating the holder fails. Empty means nothing is
+ * updated. `queued` is every queueable behind PR; those not updated are held.
+ *
+ * `candidates` are assessed auto-merge PRs in ascending PR number.
+ *
+ * 1. A PR in flight (isInFlight) holds the slot. Nothing is updated, so a sweep
+ *    that fires while it runs never starts a second PR racing it.
+ * 2. Otherwise the queueable behind PRs: first those whose required checks are
+ *    still running (on a head the base has since passed), then the rest, each
+ *    group lowest number first. A holder knocked behind by a base move the queue
+ *    did not cause (a manual merge) still has its checks running, so it keeps the
+ *    slot instead of losing it to a lower-numbered PR; the fixed order keeps the
+ *    choice stable across sweeps.
+ *
+ * A red PR is not queueable: it is neither the holder nor held, and the sweep
+ * updates it as it did before #3599, so a fix on `main` still reaches it.
  */
-async function assessAutoMergeQueue({ token, repo, baseRef, listed, fetchImpl, sleep }) {
+export function pickSlotOrder(candidates, now = Date.now()) {
+  // `queued`: every PR the slot governs this sweep (each is tried or held).
+  const queued = candidates.filter((c) => isQueueable(c) && c.behindBy > 0).map((c) => c.number);
+  const inFlight = candidates.find((c) => isInFlight(c, now));
+  if (inFlight) return { holder: inFlight.number, order: [], queued };
+  // A behind PR whose checks are still running was, almost always, the holder
+  // until a base move the queue did not cause; it goes first so the slot stays put.
+  const byNumber = new Map(candidates.map((c) => [c.number, c]));
+  const running = (n) => byNumber.get(n).checks.state === "running";
+  const order = [...queued.filter(running), ...queued.filter((n) => !running(n))];
+  return { holder: order[0] ?? null, order, queued };
+}
+
+/**
+ * Reads every auto-merge PR open against the base once (mergeability, how far
+ * behind, required checks) and picks the holder. Every one, not only the
+ * MAX_PRS slice: updating the holder bumps its `updated_at` to the back of the
+ * list, and a holder the slice no longer showed would read as absent, so the
+ * next sweep would update a second PR. Returns the assessments by number, so the
+ * per-PR pass reuses them instead of reading each PR twice; an unresolved
+ * mergeability is recorded as `pr: null` for the same reason.
+ */
+async function assessAutoMergeQueue({ token, repo, baseRef, listed, fetchImpl, sleep, now }) {
   const assessed = new Map();
   const numbers = listed
     .filter((pr) => pr.auto_merge)
@@ -427,10 +489,13 @@ async function assessAutoMergeQueue({ token, repo, baseRef, listed, fetchImpl, s
     .sort((a, b) => a - b);
   for (const number of numbers) {
     const pr = await fetchPrWithMergeable({ token, repo, number, fetchImpl, sleep });
+    if (pr === null) {
+      assessed.set(number, { number, pr: null });
+      continue;
+    }
     // The detail is the source of truth: auto-merge may have been turned off
-    // since the list was read. Unknown mergeability stays out of the queue and
-    // takes the per-PR pass's fail-safe skip.
-    if (pr === null || !pr.auto_merge) continue;
+    // since the list was read. Such a PR takes the ordinary per-PR pass.
+    if (!pr.auto_merge) continue;
     const isFork = pr.head?.repo?.full_name !== repo;
     const entry = { number, pr, isFork, behindBy: null, checks: null };
     if (pr.mergeable === true && !isFork) {
@@ -450,34 +515,34 @@ async function assessAutoMergeQueue({ token, repo, baseRef, listed, fetchImpl, s
     }
     assessed.set(number, entry);
   }
-  const holder = pickSlotHolder([...assessed.values()]);
-  return { assessed, holder: holder?.number ?? null };
+  const { holder, order, queued } = pickSlotOrder([...assessed.values()], now);
+  return { assessed, holder, order, queued, failed: new Set() };
 }
 
-/** A PR that is held is a clean, same-repo auto-merge PR that is behind and is not the holder. */
-function isHeld(queue, number) {
-  const entry = queue?.assessed.get(number);
-  return Boolean(
-    entry &&
-      queue.holder !== number &&
-      entry.pr.mergeable === true &&
-      !entry.isFork &&
-      typeof entry.behindBy === "number" &&
-      entry.behindBy > 0,
-  );
-}
-
-function heldResult(queue, number, logger) {
+function logHeld(queue, number, logger) {
   const entry = queue.assessed.get(number);
   logger.log?.(
     `[pr-base-sync] #${number}: behind by ${entry.behindBy}, auto-merge on — held, ` +
-      (queue.holder
-        ? `#${queue.holder} holds the update slot`
-        : "no auto-merge PR can hold the update slot right now") +
-      ` (required checks on this head: ${entry.checks ?? "unreadable"})`,
+      `#${queue.holder} holds the update slot (required checks on this head: ${entry.checks.state})`,
   );
   return { number, verdict: "behind", action: "held", holder: queue.holder };
 }
+
+/**
+ * The slot moves to the next PR in `queue.order` after `failedNumber`, which the
+ * sweep tried to update and could not. Without this, a holder whose update keeps
+ * failing (a human PR nobody is watching, a rule rejecting the App's push) would
+ * keep the slot on every sweep and hold the whole queue behind it.
+ */
+function passSlotOn(queue, failedNumber) {
+  queue.failed.add(failedNumber);
+  if (queue.holder !== failedNumber) return null;
+  queue.holder = queue.order.find((n) => !queue.failed.has(n)) ?? null;
+  return queue.holder;
+}
+
+/** How many PRs a sweep may try for the slot before it gives up until the next one. */
+export const SLOT_ATTEMPTS = 3;
 
 /** Deletes this sweep's stale wake comments without posting a new one. */
 export async function clearWakeComments({ token, repo, prNumber, fetchImpl }) {
@@ -563,6 +628,7 @@ export async function processBaseMove({
   // "push": the base moved; the full sweep. "checks": CI completed on some PR
   // and the base did NOT move; only the auto-merge slot is advanced.
   mode = "push",
+  now = Date.now,
 }) {
   if (mode === "checks" && !updateToken) {
     logger.log?.(
@@ -602,7 +668,7 @@ export async function processBaseMove({
   // Without an app token nothing is updated, so there is no slot to share: every
   // behind PR gets its wake, as before.
   const queue = updateToken
-    ? await assessAutoMergeQueue({ token, repo, baseRef, listed: prs, fetchImpl, sleep })
+    ? await assessAutoMergeQueue({ token, repo, baseRef, listed: data, fetchImpl, sleep, now: now() })
     : null;
   if (queue && queue.assessed.size > 0) {
     logger.log?.(
@@ -618,8 +684,11 @@ export async function processBaseMove({
   // Shared by every PR in this sweep: see UPDATE_BRANCH_STALLS_BEFORE_STOP.
   const updateBranch = { stalls: 0, stoppedDetail: null };
   const results = [];
+  // The PRs the slot governs are handled after the rest, by runSlot.
+  const queued = new Set(queue?.queued ?? []);
   for (const listed of prs) {
     const number = listed.number;
+    if (queued.has(number)) continue;
     // Belt over the per-PR body: ghRequest already converts network failures into
     // ok:false, so a throw here is a logic error — but even that must cost one PR,
     // not the rest of the sweep (the fail-safe contract in the header).
@@ -648,6 +717,40 @@ export async function processBaseMove({
     }
   }
 
+  if (queue) {
+    results.push(
+      ...(await runSlot({
+        queue,
+        logger,
+        // The full per-PR path, so a failed holder gets exactly the wake and the
+        // alert evidence it would have had before #3599.
+        tryUpdate: (number) =>
+          processOnePr({
+            token,
+            updateToken,
+            repo,
+            baseRef,
+            baseSha,
+            number,
+            fetchImpl,
+            sleep,
+            logger,
+            updateBranch,
+            updateBranchTimeoutMs,
+            queue,
+          }).catch((error) => {
+            logger.log?.(
+              `[pr-base-sync] #${number}: unexpected error (${error.message}) — skipping, fail safe`,
+            );
+            return { number, verdict: "unknown", action: "skipped" };
+          }),
+        // A held PR keeps no stale "merge main yourself" wake from an earlier
+        // sweep: following it would restart the race the slot prevents.
+        onHeld: (number) => clearWakeComments({ token, repo, prNumber: number, fetchImpl }),
+      })),
+    );
+  }
+
   await reconcileTokenAlert({
     token,
     updateToken,
@@ -661,42 +764,73 @@ export async function processBaseMove({
 }
 
 /**
- * The "checks" mode: CI finished somewhere, `main` did not move. Update the
- * holder if it is behind, report the held ones, and touch nothing else. No wake
- * comment (each one is a fresh "base moved" signal, and the base did not move),
- * no conflict handling and no alert: those belong to the push sweep, which runs
- * on every base move. A failed update is only logged; the next push sweep
- * handles that PR in full.
+ * Tries the slot's PRs in order until one updates (at most SLOT_ATTEMPTS), and
+ * reports every other queued PR as held. `tryUpdate(number)` returns that PR's
+ * result; anything but "updated" or "raced" passes the slot on.
  */
-async function advanceSlot({ updateToken, repo, queue, fetchImpl, logger, updateBranchTimeoutMs }) {
+async function runSlot({ queue, logger, tryUpdate, onHeld = async () => {} }) {
   const results = [];
-  for (const [number, entry] of queue.assessed) {
-    if (isHeld(queue, number)) {
-      results.push(heldResult(queue, number, logger));
+  let attempts = 0;
+  for (const number of queue.queued) {
+    if (number === queue.holder && attempts < SLOT_ATTEMPTS) {
+      attempts += 1;
+      const result = await tryUpdate(number);
+      results.push(result);
+      if (result.action !== "updated" && result.action !== "raced") {
+        const next = passSlotOn(queue, number);
+        logger.log?.(
+          `[pr-base-sync] #${number}: held the update slot but was not updated — ` +
+            (next ? `slot passes to #${next}` : "no other PR can take the slot this sweep"),
+        );
+      }
       continue;
     }
-    if (number !== queue.holder || !(entry.behindBy > 0)) continue;
-    const result = await updatePrBranch({
-      updateToken,
-      repo,
-      number,
-      expectedHeadSha: entry.pr.head?.sha,
-      fetchImpl,
-      timeoutMs: updateBranchTimeoutMs,
-    });
-    if (result.updated) {
-      logger.log?.(
-        `[pr-base-sync] #${number}: behind by ${entry.behindBy} — holds the update slot, auto-updated via update-branch`,
-      );
-      results.push({ number, verdict: "behind", action: "updated" });
-    } else {
-      logger.log?.(
-        `[pr-base-sync] #${number}: holds the update slot, but update-branch failed (${result.error}) — left for the next push sweep`,
-      );
-      results.push({ number, verdict: "behind", action: "skipped" });
-    }
+    if (number === queue.holder || queue.failed.has(number)) continue;
+    await onHeld(number);
+    results.push(logHeld(queue, number, logger));
   }
   return results;
+}
+
+/**
+ * The "checks" mode: CI finished somewhere, `main` did not move. Update the slot
+ * holder if it is behind (or the next PR, if that fails), report the held ones,
+ * and write nothing else: no wake comment (each one is a fresh "base moved"
+ * signal, and the base did not move), no conflict handling and no alert. Those
+ * belong to the push sweep, which runs on every base move.
+ */
+async function advanceSlot({ updateToken, repo, queue, fetchImpl, logger, updateBranchTimeoutMs }) {
+  return runSlot({
+    queue,
+    logger,
+    tryUpdate: async (number) => {
+      const entry = queue.assessed.get(number);
+      const result = await updatePrBranch({
+        updateToken,
+        repo,
+        number,
+        expectedHeadSha: entry.pr.head?.sha,
+        fetchImpl,
+        timeoutMs: updateBranchTimeoutMs,
+      });
+      if (result.updated) {
+        logger.log?.(
+          `[pr-base-sync] #${number}: behind by ${entry.behindBy} — holds the update slot, auto-updated via update-branch`,
+        );
+        return { number, verdict: "behind", action: "updated" };
+      }
+      if (result.status === 422) {
+        logger.log?.(
+          `[pr-base-sync] #${number}: head moved while the slot was being updated (${result.error}) — another sweep or a push got there first`,
+        );
+        return { number, verdict: "behind", action: "raced" };
+      }
+      logger.log?.(
+        `[pr-base-sync] #${number}: update-branch failed (${result.error}) — the next push sweep handles it in full`,
+      );
+      return { number, verdict: "behind", action: "skipped" };
+    },
+  });
 }
 
 /**
@@ -814,17 +948,19 @@ async function processOnePr({
   updateBranchTimeoutMs,
   queue = null,
 }) {
-  // An auto-merge PR was already read by assessAutoMergeQueue; reuse it.
+  // An auto-merge PR was already read by assessAutoMergeQueue; reuse it,
+  // including an unresolved mergeability (pr: null), which must not be polled
+  // a second time and then read clean behind the slot's back.
   const assessed = queue?.assessed.get(number);
-  const pr =
-    assessed?.pr ??
-    (await fetchPrWithMergeable({
-      token,
-      repo,
-      number,
-      fetchImpl,
-      sleep,
-    }));
+  const pr = assessed
+    ? assessed.pr
+    : await fetchPrWithMergeable({
+        token,
+        repo,
+        number,
+        fetchImpl,
+        sleep,
+      });
 
   if (pr === null) {
     logger.log?.(
@@ -876,11 +1012,6 @@ async function processOnePr({
     );
     return { number, verdict: "current", action: "none" };
   }
-
-  // Behind, clean, auto-merge on, and another PR holds the update slot. No wake
-  // either: the wake says "merge main yourself", which would start exactly the
-  // race the slot exists to stop. Its turn comes when the holder merges.
-  if (isHeld(queue, number)) return heldResult(queue, number, logger);
 
   // Behind and clean. A fork head cannot be updated through the API from here,
   // and without a working app token an update would run no CI (see header).
@@ -957,6 +1088,15 @@ async function processOnePr({
     // would file a P2 accusing a credential that is fine, so the rate-limited
     // case skips fail-safe (the module's standing contract) and the next base
     // move re-sweeps. Only a non-rate-limited 401/403 is a token verdict.
+    // A slot PR whose head moved under the call: a concurrent sweep (push and
+    // checks sweeps run in separate groups) or a push already updated it. A
+    // "merge main yourself" wake now would start a second CI racing that one.
+    if (result.status === 422 && queue?.queued.includes(number)) {
+      logger.log?.(
+        `[pr-base-sync] #${number}: head moved while the slot was being updated (${result.error}) — no wake`,
+      );
+      return { number, verdict: "behind", action: "raced" };
+    }
     if (RATE_LIMITED.test(result.error)) {
       logger.log?.(
         `[pr-base-sync] #${number}: update-branch rate-limited (${result.error}) — skipping, fail safe`,
@@ -1043,6 +1183,16 @@ async function postWakeComment({ token, repo, number, body, what, fetchImpl, log
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
 
+/**
+ * A CI completion only advances the slot; anything else is a base move. Failing
+ * toward "push" is safe only because the workflow has no other trigger: a
+ * completion read as a push would post wakes and update every behind PR on every
+ * CI run, so the mapping is tested.
+ */
+export function sweepModeFor(eventName) {
+  return eventName === "workflow_run" ? "checks" : "push";
+}
+
 async function main() {
   const token = requireEnv("GITHUB_TOKEN");
   const repo = requireEnv("GITHUB_REPOSITORY");
@@ -1051,7 +1201,7 @@ async function main() {
   const updateToken = process.env.PR_BASE_SYNC_TOKEN || null;
   // A CI completion runs on the default branch's ref and tip, so baseRef and
   // baseSha still name `main`; only what the sweep may do changes.
-  const mode = process.env.GITHUB_EVENT_NAME === "workflow_run" ? "checks" : "push";
+  const mode = sweepModeFor(process.env.GITHUB_EVENT_NAME);
   await processBaseMove({ token, updateToken, repo, baseRef, baseSha, mode });
 }
 

@@ -284,28 +284,41 @@ busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeabl
     and never closes it (the "a no-op run never closes an open alert" rule under
     [`agent-infra.md` → Deploy visibility](agent-infra.md#deploy-visibility-scriptscideploy-alertmjs)).
 - **Behind, clean, auto-merge on, and another PR holds the update slot** → **held**: no update and
-  no wake comment, only a log line (#3599). Updating a PR cancels the CI running on its old head,
-  and under `strict: true` only an up-to-date green PR can merge. When the sweep updated every
-  auto-merge PR on every push, they raced: the fastest CI merged and restarted the rest, so on a
-  busy afternoon a PR whose CI outlasted the gap between merges (`mobile-validate` is about nine
-  minutes after a sync) never merged. Now one auto-merge PR at a time holds the slot
-  (`pickSlotHolder`): an up-to-date one whose required checks
-  ([`required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs)) are still running keeps it;
-  otherwise it goes to the lowest-numbered clean, same-repo auto-merge PR with no failed or
-  cancelled required check on its head. Only the holder is updated. Its merge is a push to `main`,
-  which passes the slot on. A held PR's session should leave it alone: merging `main` into it
-  starts the race again. PRs without auto-merge, conflicts, fork heads and the no-token path behave
-  as described above, so the slot changes nothing until auto-merge is on.
+  no wake comment, only a log line, and any stale base-sync wake from an earlier sweep is deleted
+  (#3599). Updating a PR cancels the CI running on its old head, and under `strict: true` only an
+  up-to-date green PR can merge. When the sweep updated every auto-merge PR on every push, they
+  raced: the fastest CI merged and restarted the rest, so on a busy afternoon a PR whose CI outlasted
+  the gap between merges (`mobile-validate` finishes about nine minutes after a sync) never merged.
+  Now one auto-merge PR at a time holds the slot (`pickSlotOrder`), and only it is updated. Its
+  merge is a push to `main`, which passes the slot on. A held PR's session should leave it alone:
+  merging `main` into it starts the race again. It can tell it is held because auto-merge is on, the
+  PR stays behind, and it has no base-sync comment (a held PR's stale one is deleted, and anything
+  the session must act on, such as a conflict or a failed update, gets a fresh one).
+  - **Who holds it.** An up-to-date PR in flight keeps it: its required checks
+    ([`required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs)) are running; or they have
+    not reported yet and its head is under 15 minutes old (right after an update, the new head has
+    no check runs while CI cancels the old run, and that cancelled run's completion fires a slot
+    sweep); or they all passed under 5 minutes ago (auto-merge is about to act). Otherwise the slot
+    goes to a behind PR: first one whose checks are still running, which is almost always the holder
+    knocked behind by a merge the queue didn't cause, then the lowest-numbered.
+  - **Who is queued.** A clean, same-repo auto-merge PR whose required checks are readable and not
+    failed. A red PR (a failed or cancelled required check) is not queued and is updated as before,
+    so a fix on `main` still reaches it. An unreadable checks read is retried, then leaves the PR
+    unqueued. Every open auto-merge PR is assessed, not only the 20-PR slice, because updating the
+    holder moves it to the back of the list.
+  - **When the holder can't be updated**, it gets the per-PR treatment above (a wake, or alert
+    evidence), and the slot passes to the next queued PR, up to `SLOT_ATTEMPTS` (three) per sweep.
+    So a holder nobody is watching can't hold the queue. A 422 (`expected_head_sha` lost to a
+    concurrent sweep or a push) keeps the slot and posts no wake, because the head already moved.
   - A holder that goes red, or turns green without merging, never pushes, so the workflow also runs
-    on `workflow_run: completed` of `CI` and `Migration drift gate` for PR runs (these two emit
-    every required check). In that mode (`mode: "checks"`) the sweep only updates the holder if it
-    is behind. It posts no wake, handles no conflict and touches no alert: the base did not move,
-    and those jobs belong to the push sweep. It runs in its own concurrency group
-    (`pr-base-sync-${{ github.event_name }}`), so a CI completion never cancels a push sweep midway
-    through its wakes.
-  - A required check that never reports doesn't keep a PR holding the slot (it reads as settled,
-    not running), and an up-to-date green PR that hasn't merged is skipped: it's waiting on
-    something other than CI and mustn't block the queue.
+    on `workflow_run: completed` of `CI` and `Migration drift gate` (together they emit every
+    required check), for this repository's PRs only. In that mode (`mode: "checks"`) the sweep only
+    updates the slot's PR if it is behind, passing the slot on if that fails. It posts and deletes no
+    comment, handles no conflict and touches no alert: the base did not move, and those jobs belong
+    to the push sweep. Push sweeps and slot sweeps run in separate concurrency groups, so a CI
+    completion never cancels a push sweep midway through its wakes. A completion of `main`'s own CI,
+    or of a fork's, lands in neither. The two kinds can still overlap, and both may pick the same
+    holder, which the 422 rule above absorbs.
   - Merge queue is the platform version of this (option 3 in #3599). It needs a branch-protection
     change, which is the owner's call.
 - **Already in sync** → any stale base-sync wake comment is deleted and the sweep stays silent.
@@ -380,19 +393,23 @@ scoped to one repository, against a credential bound to a person's account at th
 #689 specified. (That PAT was never created, so
 this compares against a design, not against something that ran.) What makes it safe:
 
-- **`pr-base-sync.yml` runs only `main`'s own code.** It triggers on `push` to `main`, and since
-  #3599 on `workflow_run: completed` of `CI` and `Migration drift gate`. A fork PR's CI run can
-  fire the second trigger, but `workflow_run` executes the **default branch's** copy of the
-  workflow and the script, checks out `main`, and reads no artifact or event payload (the script
-  sees only `GITHUB_EVENT_NAME`). So untrusted code never executes in a job holding the App
-  credentials, and the only thing a fork PR can cause is one extra slot sweep of this repo's own
-  PRs (fork heads are never updated).
+- **`pr-base-sync.yml` triggers only on `push` to `main`**, so it runs only on commits that already
+  reached the default branch. A fork PR cannot trigger it, and untrusted code never executes in a
+  job holding the App credentials. _Amended 2026-11-08 (#3599), outside this review:_ it now also
+  triggers on `workflow_run: completed` of `CI` and `Migration drift gate`. `workflow_run` executes
+  the **default branch's** copy of the workflow and the script, checks out `main`, and reads no
+  artifact or event payload (the script sees only `GITHUB_EVENT_NAME`), so the "only `main`'s code
+  runs with the key" property holds. A fork PR can still fire the event (and could name a workflow
+  of its own `CI`), so the job `if:` skips any completion whose head repository isn't this one; see
+  item 2 of the list below.
 - **No `pull_request_target` exists anywhere in `.github/`** — the trigger that would hand full
   secrets to a job running untrusted PR code.
-- **No script-injection surface.** No `${{ }}` interpolation reaches a shell: the workflow
-  interpolates three secrets, `steps.app-token.outputs.token`, and (in the concurrency group and
-  the job `if:`) `github.event_name` and `github.event.workflow_run.event`, both values GitHub
-  sets rather than text a PR author writes. `run:` is a fixed command with no interpolation at all, and no workflow in this repo puts `github.event.*` inside a `run:`.
+- **No script-injection surface.** The workflow had exactly four `${{ }}` interpolations: three
+  secrets and `steps.app-token.outputs.token`. None is event data. _Amended 2026-11-08 (#3599):_ the
+  concurrency group and the job `if:` now also read `github.event_name`,
+  `github.event.workflow_run.event` and `head_repository.full_name`. The first two are values
+  GitHub sets, and the repository name is only compared, so the group never contains PR-authored
+  text and none of it reaches a shell. `run:` is a fixed command with no interpolation at all, and no workflow in this repo puts `github.event.*` inside a `run:`.
   Neither `pr-base-sync.mjs` nor `ci-wake.mjs` shells out (no `exec`, `spawn`, or `child_process`,
   transitively through their only imports); all network I/O is `fetch`, and the sole other host
   call is `readFileSync` on `GITHUB_EVENT_PATH`.
@@ -443,10 +460,15 @@ workflow could read. **Four
 changes would break the first, and none should ever be made:**
 
 1. Adding a `pull_request_target` workflow that checks out PR-head code.
-2. Adding a `workflow_run` workflow that carries the App key. `workflow_run` also runs base-repo
-   code with secrets off a fork-PR-derived event; today `ci-wake.yml` uses it with no fork guard,
-   which is safe only because it carries `GITHUB_TOKEN` and never the key (`deploy-staging.yml` does
-   guard, on `head_repository.full_name`).
+2. Adding a `workflow_run` workflow that carries the App key **without a fork guard**.
+   `workflow_run` also runs base-repo code with secrets off a fork-PR-derived event; today
+   `ci-wake.yml` uses it with no fork guard, which is safe only because it carries `GITHUB_TOKEN` and
+   never the key (`deploy-staging.yml` does guard, on `head_repository.full_name`). _Amended
+   2026-11-08 (#3599):_ `pr-base-sync.yml` itself now runs on `workflow_run`, guarded the
+   `deploy-staging.yml` way. Its job `if:` requires `head_repository.full_name == github.repository`,
+   and its concurrency group keeps fork and `main` completions out of the slot group. Keep that
+   guard: without it, a fork could add its own workflow named `CI` and fire the App-token job at
+   will.
 3. Interpolating untrusted event data (a PR title, branch name, or comment body) into a `run:`
    block in any workflow that holds secrets.
 4. Widening the App beyond this repository or beyond its two permissions.

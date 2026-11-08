@@ -46,6 +46,9 @@ permissions:
   # at "Expected", the exact state the script refuses.
   pull-requests: write
   issues: write # the alert issue (and possibly the wake comments; see above)
+  # The auto-merge slot reads each auto-merge PR's required checks (#3599).
+  # Without it the read fails, no PR can hold the slot, and the queue stops.
+  checks: read
 
 # Only the newest sweep matters — it re-reads every open PR against the newest
 # base tip, so cancelling a superseded in-progress or pending run loses nothing
@@ -54,17 +57,27 @@ permissions:
 # the per-PR pass; the per-PR wakes themselves are written inline, and the next
 # merge to main re-sweeps and re-raises.
 #
-# Keyed on the event: a CI completion (slot-only, posts nothing) must never
-# cancel a push sweep midway through its wake comments, and completions arrive
-# far more often than pushes.
+# Two groups. A CI completion (slot-only, posts nothing) must never cancel a push
+# sweep midway through its wake comments, so push sweeps get their own. And only
+# completions the job will act on may share the slot group: a completion of
+# `main`'s own push CI, or of a fork PR's CI, is skipped by the job `if:` below,
+# but concurrency is evaluated first, so in the slot group it would cancel a
+# running slot sweep and then do nothing itself. Both expressions are values
+# GitHub sets (event names, and a repo-equality boolean), never PR-authored text.
 concurrency:
-  group: pr-base-sync-${{ github.event_name }}
+  group: ${{ github.event_name == 'push' && 'pr-base-sync-push' || format('pr-base-sync-slot-{0}-{1}', github.event.workflow_run.event, github.event.workflow_run.head_repository.full_name == github.repository) }}
   cancel-in-progress: true
 
 jobs:
   pr-base-sync:
     # Push runs of CI on main are not a PR's checks; only PR runs move the slot.
-    if: github.event_name == 'push' || github.event.workflow_run.event == 'pull_request'
+    # And only this repo's PRs: a fork head is never queued, so a fork PR's CI
+    # can't change the slot, and a fork could otherwise fire this App-token job
+    # at will by adding its own workflow named `CI`.
+    if: >-
+      github.event_name == 'push' ||
+      (github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     # Secrets belong to the `automation` environment: `main` only, no required
     # reviewers (#2518, #2583).

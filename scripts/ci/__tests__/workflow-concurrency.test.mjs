@@ -123,11 +123,14 @@ describe("workflow concurrency — a main push run must never cancel another", (
     // pr-base-sync: one group per event, never per ref, so it never collapses
     // per-ref. Cancelling a superseded sweep is deliberate — the next sweep
     // re-reads every open PR against the newest base tip — and it emits no
-    // required check. Keyed on the event so a CI-completion run (slot only,
-    // #3599) never cancels a push sweep's wake comments.
+    // required check. Push sweeps and slot sweeps (#3599) get separate groups,
+    // so a CI completion never cancels a push sweep's wake comments.
     const sync = workflows.find((w) => w.name === "pr-base-sync.yml");
     assert.ok(sync, "pr-base-sync.yml must exist");
-    assert.equal(concurrencyOf(sync.text)?.group, "pr-base-sync-${{ github.event_name }}");
+    assert.equal(
+      concurrencyOf(sync.text)?.group,
+      "${{ github.event_name == 'push' && 'pr-base-sync-push' || format('pr-base-sync-slot-{0}-{1}', github.event.workflow_run.event, github.event.workflow_run.head_repository.full_name == github.repository) }}",
+    );
     assert.ok(
       !concurrencyOf(sync.text)?.group.includes("github.ref"),
       "pr-base-sync's exemption rests on its group NOT being ref-keyed",
