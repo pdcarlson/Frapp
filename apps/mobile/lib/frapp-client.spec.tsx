@@ -34,6 +34,9 @@ vi.mock("@repo/hooks", () => ({
   FrappClientProvider: ({ children }: { children: React.ReactNode }) => (
     <>{children}</>
   ),
+  // `query-client.ts` registers mark-read's retry default by this key (#3747).
+  markChannelReadMutationKey: ["channels", "read"],
+  markNotificationReadOnOpenMutationKey: ["notifications", "read", "on-open"],
 }));
 
 import { FrappProvider } from "./frapp-client";

@@ -1,4 +1,9 @@
 import { QueryClient } from "@tanstack/react-query";
+import { isRetryableFailure } from "@repo/api-sdk";
+import {
+  markChannelReadMutationKey,
+  markNotificationReadOnOpenMutationKey,
+} from "@repo/hooks";
 import { createReportingCaches } from "@/lib/sentry/query-errors";
 import { forgetDuesMemory } from "@/lib/dues/visit-memory";
 import { forgetCachedChatPhotos } from "@/lib/chat/photo-cache";
@@ -63,6 +68,58 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+/**
+ * One more attempt for a failure that may pass next time (a dropped
+ * connection, a 5xx), never for a definitive refusal
+ * (`spec/ui/resilience/api-retry.md` § Writes).
+ */
+export function retryOnceIfRetryable(
+  failureCount: number,
+  error: unknown,
+): boolean {
+  return failureCount < 1 && isRetryableFailure(error);
+}
+
+/**
+ * Idempotent, fire-and-forget writes the app sends as something opens retry
+ * once (#3747). Every other mutation keeps `retry: 0`.
+ *
+ * The case is a resume. iOS tears down a suspended app's sockets, and what a
+ * notification tap sends the moment the app comes back (its read receipt, and
+ * the mark-read of the thread it opens) can die on the dead connection.
+ * FRAPP-MOBILE-F and J were unkeyed mutations that died that way as
+ * chat-thread opened, which makes mark-read the likely one. The retryer won't
+ * continue while unfocused, and `lib/connection/query-connectivity.ts` holds
+ * focus until the connection monitor's foreground probe has its verdict, so
+ * the retry waits out the probe instead of following the failure onto the dead
+ * connection at once. The verdict can be a failure, so this narrows the window
+ * rather than promising a working connection.
+ *
+ * Only writes nobody awaits belong here. A retry parks while the monitor reads
+ * OFFLINE (`networkMode: "offlineFirst"`), which is right for a stamp sent and
+ * forgotten and a dead end for anything a spinner waits on: s14's Mark all read
+ * awaits every write in its batch. A non-idempotent write must not join either:
+ * it keeps failing visibly (`spec/ui/design-system/README.md` §5 rule 2).
+ *
+ * - Channel mark-read (`useMarkChannelRead`, every caller: thread focus and
+ *   blur, the channel menu's Mark as read, all `mutate`) stamps the read cursor
+ *   to the server's clock, so a replay only re-stamps it. Lost, it leaves the
+ *   badge counting a thread the member read.
+ * - A push tap's notification receipt (`useMarkNotificationRead({ sentOnOpen:
+ *   true })`) sets `read_at` the same way. Lost, the tapped notification stays
+ *   unread. The inbox's taps and Mark all read use the shorter key, which this
+ *   default doesn't match (a default's key must prefix the mutation's).
+ *
+ * Not covered: chat's resume resync re-stamps the open thread with a direct
+ * call, not this mutation (`createChatActivityHandler` in `@repo/hooks`, #3764).
+ */
+for (const mutationKey of [
+  markChannelReadMutationKey,
+  markNotificationReadOnOpenMutationKey,
+]) {
+  queryClient.setMutationDefaults(mutationKey, { retry: retryOnceIfRetryable });
+}
 
 /**
  * Drop every cached query for the current product session.
