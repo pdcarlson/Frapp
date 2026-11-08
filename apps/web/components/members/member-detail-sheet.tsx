@@ -33,7 +33,11 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import { memberLabel } from "@repo/hooks/display-names";
-import { normalizeRoleOptions } from "@/lib/roles";
+import {
+  memberAccessRoleIds,
+  normalizeRoleOptions,
+  removesMemberAccess,
+} from "@/lib/roles";
 
 type MemberRecord = Record<string, unknown>;
 
@@ -284,6 +288,30 @@ export function MemberDetailSheet({
 
   async function handleSaveRoles() {
     if (!memberId) return;
+    // Taking away the last role with member access locks the member out of
+    // chat, the roster and events, the way the 2026-11-07 testers were
+    // (#3670). The API allows it, so ask first, as mobile's editor does.
+    // Custom roles count only when their list loaded; otherwise the save
+    // leaves them unchanged, so they sit on both sides.
+    const customBefore = memberCustomRoleIds;
+    const customAfter = customRolesQuery.isSuccess
+      ? selectedCustomRoleIds
+      : memberCustomRoleIds;
+    if (
+      removesMemberAccess(
+        [...memberRoleIds, ...customBefore],
+        [...selectedRoleIds, ...customAfter],
+        memberAccessRoleIds(rolesQuery.data, customRolesQuery.data),
+      )
+    ) {
+      const confirmed = await confirm({
+        title: `Take away ${displayName}'s access?`,
+        description: `Without a role like Member, ${displayName} can't open chat, the member list or events.`,
+        confirmLabel: "Take away access",
+        tone: "destructive",
+      });
+      if (!confirmed) return;
+    }
     try {
       await updateRolesMutation.mutateAsync({
         id: memberId,
