@@ -139,7 +139,7 @@ export class ChapterGuard implements CanActivate {
       throw new ForbiddenException('User profile not found');
     }
     if (requested.kind === 'refused') {
-      throw requested.error;
+      throw requested.refusal;
     }
 
     // Resolved after the user, because auto-resolving a single-chapter user
@@ -216,7 +216,7 @@ export class ChapterGuard implements CanActivate {
   ):
     | { kind: 'explicit'; chapterId: string }
     | { kind: 'auto' }
-    | { kind: 'refused'; error: ForbiddenException } {
+    | { kind: 'refused'; refusal: ForbiddenException } {
     const jwtChapterId = getActiveChapterClaim(request.jwtClaims);
     const headerChapterId = getHeaderValue(request.headers, 'x-chapter-id');
 
@@ -227,7 +227,7 @@ export class ChapterGuard implements CanActivate {
     ) {
       return {
         kind: 'refused',
-        error: new ForbiddenException({
+        refusal: new ForbiddenException({
           code: 'chapter.context.mismatch',
           message:
             'The x-chapter-id header disagrees with the active chapter in your token.',
@@ -245,7 +245,7 @@ export class ChapterGuard implements CanActivate {
     if (!UUID_PATTERN.test(explicit)) {
       return {
         kind: 'refused',
-        error: new ForbiddenException({
+        refusal: new ForbiddenException({
           code: 'chapter.context.invalid',
           message: 'You are not a member of the requested chapter.',
         }),
