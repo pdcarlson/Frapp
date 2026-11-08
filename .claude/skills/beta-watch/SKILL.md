@@ -103,8 +103,9 @@ The owner wants a ping only when something needs him. He reads the run's final m
 - a Play or TestFlight crash on the current build.
 
 Keep it to about five lines: one line per item, each with its issue link, then any source you
-couldn't read. A P1 is posted the same morning so the owner can start it in a thread; it stays in
-`triage` until the weekly Board Sweep promotes it, so `/next` won't pick it up before then. Otherwise open the report with "Nothing needs you this run." A run that found nothing new is a good run.
+couldn't read. A P1 is posted the same morning so the owner can start it with `/next <N>`, which promotes
+it out of `triage` as it claims it; until then it waits for the weekly Board Sweep, and ranked
+`/next` won't pick it up. Otherwise open the report with "Nothing needs you this run." A run that found nothing new is a good run.
 
 ## How the run ends
 
