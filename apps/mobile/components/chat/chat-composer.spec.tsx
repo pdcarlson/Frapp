@@ -135,7 +135,8 @@ describe("ChatComposer attach affordance", () => {
     // a missing feature.
     const { tree } = renderComposer({
       onAttach: vi.fn(),
-      attachDisabledReason: "Photos need a connection — you can still send text.",
+      attachDisabledReason:
+        "Photos need a connection — you can still send text.",
     });
     const button = byLabel(tree, "Attach photo");
     expect(button).toBeDefined();
@@ -184,12 +185,16 @@ describe("ChatComposer staged photos", () => {
     const uris = tree.root
       .findAll((node) => node.props?.source?.uri !== undefined)
       .map((node) => node.props.source.uri);
-    expect(uris).toEqual(expect.arrayContaining(["file:///a.jpg", "file:///b.heic"]));
+    expect(uris).toEqual(
+      expect.arrayContaining(["file:///a.jpg", "file:///b.heic"]),
+    );
     expect(byLabel(tree, "Photo 2 of 2")).toBeDefined();
   });
 
   it("names an uploading photo as uploading, without a spinner", () => {
-    const { tree } = renderComposer({ photos: [photo({ status: "uploading" })] });
+    const { tree } = renderComposer({
+      photos: [photo({ status: "uploading" })],
+    });
     expect(byLabel(tree, "Photo 1 of 1, uploading")).toBeDefined();
     expect(byLabel(tree, "Uploading photo")).toBeUndefined();
   });
@@ -274,10 +279,8 @@ function restingStyle(node: ReactTestInstance) {
 
 function glyphColor(tree: ReactTestRenderer) {
   const glyph = byLabel(tree, "Send message")!.findByType("Text" as never);
-  return Object.assign(
-    {},
-    ...[glyph.props.style].flat().filter(Boolean),
-  ).color as string;
+  return Object.assign({}, ...[glyph.props.style].flat().filter(Boolean))
+    .color as string;
 }
 
 describe("ChatComposer accent", () => {
@@ -332,6 +335,68 @@ describe("ChatComposer input", () => {
   });
 });
 
+describe("ChatComposer editing (2026-11-07)", () => {
+  const edit = {
+    kind: "edit" as const,
+    title: "Editing message",
+    preview: null,
+    onCancel: () => {},
+  };
+
+  it("types an edit at the message's own line height, still 44pt for one line", () => {
+    const { tree } = renderComposer({ value: "fixed", context: edit });
+    const input = tree.root.findByType("TextInput" as never);
+    const style = Object.assign({}, ...[input.props.style].flat()) as {
+      paddingTop: number;
+      paddingBottom: number;
+      lineHeight: number;
+      borderWidth: number;
+      maxHeight: number;
+    };
+    // Body type's 25, the line a message is read at, not the draft's 20.
+    expect(style.lineHeight).toBe(25);
+    expect(
+      style.paddingTop +
+        style.paddingBottom +
+        style.lineHeight +
+        2 * style.borderWidth,
+    ).toBe(44);
+    // Room for a long message, where a draft stops at 120.
+    expect(style.maxHeight).toBeGreaterThan(120);
+  });
+
+  it("opens the keyboard the moment Edit or Reply is chosen", () => {
+    const focus = vi.fn();
+    const props: ChatComposerProps = {
+      value: "",
+      onChangeText: vi.fn(),
+      onSend: vi.fn(),
+      canSend: true,
+      placeholder: "Message",
+    };
+    const node = (context: ChatComposerProps["context"]) => (
+      <FrappThemeProvider>
+        <ChatComposer {...props} context={context} />
+      </FrappThemeProvider>
+    );
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(node(null), {
+        createNodeMock: (el) =>
+          el.type === "TextInput" ? { focus, setSelection: vi.fn() } : null,
+      });
+    });
+    expect(focus).not.toHaveBeenCalled();
+    act(() => tree.update(node(edit)));
+    expect(focus).toHaveBeenCalledTimes(1);
+    // A keystroke re-renders with a fresh context object: no second focus.
+    act(() => tree.update(node({ ...edit })));
+    expect(focus).toHaveBeenCalledTimes(1);
+    act(() => tree.update(node({ ...edit, kind: "reply" })));
+    expect(focus).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("ChatComposer @-mention picker", () => {
   const ROSTER = [
     { user_id: "u-paul", display_name: "Paul Carlson" },
@@ -340,8 +405,16 @@ describe("ChatComposer @-mention picker", () => {
   ];
 
   /** The draft, focused, with the caret at `caret` (default: the end). */
-  function typed(value: string, caret = value.length, overrides: Partial<ChatComposerProps> = {}) {
-    const result = renderComposer({ value, mentionCandidates: ROSTER, ...overrides });
+  function typed(
+    value: string,
+    caret = value.length,
+    overrides: Partial<ChatComposerProps> = {},
+  ) {
+    const result = renderComposer({
+      value,
+      mentionCandidates: ROSTER,
+      ...overrides,
+    });
     const input = result.tree.root.findByType("TextInput" as never);
     act(() => {
       input.props.onFocus?.();
