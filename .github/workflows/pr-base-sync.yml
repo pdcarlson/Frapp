@@ -18,6 +18,17 @@ name: PR base sync
 on:
   push:
     branches: [main]
+  # The auto-merge update slot (#3599; docs/ci-cd/pr-babysitting.md § Base-branch
+  # sync). The slot passes on when its holder merges, which is a push. A holder
+  # that goes red, or turns green without merging, never pushes, so without this
+  # the queue would wait for an unrelated merge. These two workflows emit every
+  # required check (scripts/ci/lib/required-checks.mjs). workflow_run runs the
+  # DEFAULT branch's copy of this file and the script, never the PR's, and the
+  # script reads only the event's name, so a fork PR's run executes none of its
+  # own code here.
+  workflow_run:
+    workflows: [CI, "Migration drift gate"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -42,12 +53,18 @@ permissions:
 # a cancel can drop is the trailing alert-issue reconciliation, which runs after
 # the per-PR pass; the per-PR wakes themselves are written inline, and the next
 # merge to main re-sweeps and re-raises.
+#
+# Keyed on the event: a CI completion (slot-only, posts nothing) must never
+# cancel a push sweep midway through its wake comments, and completions arrive
+# far more often than pushes.
 concurrency:
-  group: pr-base-sync
+  group: pr-base-sync-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
   pr-base-sync:
+    # Push runs of CI on main are not a PR's checks; only PR runs move the slot.
+    if: github.event_name == 'push' || github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     # Secrets belong to the `automation` environment: `main` only, no required
     # reviewers (#2518, #2583).

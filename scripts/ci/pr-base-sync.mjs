@@ -25,6 +25,18 @@
 //      clears the stale per-PR comments. A later sweep that actually updates a
 //      branch closes it.
 //
+// Auto-merge PRs share ONE update slot (#3599). Updating a PR cancels the CI
+// running on its old head, and under `strict: true` only a PR that is both up to
+// date and green can merge. When every behind auto-merge PR was updated on every
+// push, they all raced: the fastest CI merged, moved `main`, and restarted the
+// rest, so a PR whose CI outlasted the gap between merges never merged at all.
+// So each sweep picks one holder (see pickSlotHolder) and updates only that one;
+// the other behind auto-merge PRs are HELD (no update, no wake comment) until the
+// holder merges and its push to `main` hands the slot on. A holder that goes red,
+// or turns green without merging, would stall that hand-off, so the workflow also
+// runs this sweep when CI completes on a PR (`mode: "checks"`), which only
+// advances the slot.
+//
 // Verdicts fail SAFE: a PR whose mergeability cannot be established (API error,
 // mergeable still null after bounded polling) is skipped — never blind-updated
 // and never falsely accused of conflicts. The next push to main re-sweeps.
@@ -44,6 +56,7 @@
 //   GITHUB_REPOSITORY   — required, owner/repo
 //   GITHUB_REF_NAME     — required, the base branch that moved (main)
 //   GITHUB_SHA          — required, the new base tip
+//   GITHUB_EVENT_NAME   — `push` (the full sweep) or `workflow_run` (slot only)
 //
 // Exits 0 on every handled outcome (a watchdog that reds CI creates the noise
 // it exists to remove); 1 only on unexpected errors.
@@ -64,6 +77,7 @@ import {
 } from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
+import { ALL_REQUIRED_CHECKS } from "./lib/required-checks.mjs";
 
 // One live comment per PR. No workflow-name suffix (unlike ci-wake's per-workflow
 // markers): this sweep owns exactly one verdict per PR and each new base move
@@ -302,6 +316,169 @@ export async function updatePrBranch({
  */
 export const UPDATE_BRANCH_STALLS_BEFORE_STOP = 2;
 
+// ── The auto-merge slot (#3599) ─────────────────────────────────────────────
+
+// What a required check may conclude and still let a PR merge. A skipped job
+// reports success-equivalent for a required check (ADR-15 amendment 2026-08-19).
+const PASSING_CONCLUSIONS = new Set(["success", "skipped", "neutral"]);
+
+// Required checks are about two dozen check runs among more; three pages of a
+// hundred is ample, and a commit past that reads as unknown, not as settled.
+const CHECK_RUN_PAGES = 3;
+
+const startedAtMs = (run) => {
+  const parsed = Date.parse(run?.started_at ?? run?.completed_at ?? "");
+  return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+/**
+ * Where a commit's REQUIRED checks stand, for the slot:
+ * - "failed": the latest run of some required check concluded anything but a pass
+ *   (cancelled included: auto-merge cannot act on it either);
+ * - "running": none failed, and at least one has a run that has not completed;
+ * - "settled": none failed and none is running. That covers all green, and also
+ *   required checks that never reported, because a check that never reports never
+ *   finishes, and a PR waiting on it must not hold the slot forever;
+ * - null: the checks API could not be read (fail safe: never picked as holder).
+ *
+ * Kept here rather than imported from validate-deploy-sha.mjs, whose module pulls
+ * in `child_process`: this watchdog holds the base-sync App token and shells out
+ * nowhere, transitively (docs/ci-cd/pr-babysitting.md § the security review).
+ */
+export async function readRequiredChecks({
+  token,
+  repo,
+  sha,
+  fetchImpl,
+  required = ALL_REQUIRED_CHECKS,
+}) {
+  if (!sha) return null;
+  const latest = new Map();
+  for (let page = 1; page <= CHECK_RUN_PAGES; page += 1) {
+    const { ok, data } = await ghRequest({
+      token,
+      fetchImpl,
+      path: `/repos/${repo}/commits/${sha}/check-runs?per_page=100&page=${page}`,
+    });
+    if (!ok || !Array.isArray(data?.check_runs)) return null;
+    for (const run of data.check_runs) {
+      const previous = latest.get(run?.name);
+      // A re-run is a second check run with the same name; the newest decides.
+      if (!previous || startedAtMs(run) >= startedAtMs(previous)) {
+        latest.set(run?.name, run);
+      }
+    }
+    if (data.check_runs.length < 100) break;
+    if (page === CHECK_RUN_PAGES) return null;
+  }
+  let running = false;
+  for (const name of required) {
+    const run = latest.get(name);
+    if (!run) continue;
+    if (run.status !== "completed") {
+      running = true;
+    } else if (!PASSING_CONCLUSIONS.has(run.conclusion)) {
+      return "failed";
+    }
+  }
+  return running ? "running" : "settled";
+}
+
+/**
+ * The one auto-merge PR the sweep may update, or null.
+ *
+ * `candidates` are assessed auto-merge PRs in ascending PR number. Only a clean
+ * (mergeable), same-repo PR whose compare and checks were readable, and whose
+ * required checks have not failed, can hold the slot:
+ *
+ * 1. A PR already up to date with its required checks still running is in
+ *    flight. It keeps the slot, so a sweep that fires while it runs (a CI
+ *    completion elsewhere) never starts a second PR racing it.
+ * 2. Otherwise the lowest-numbered behind one. A fixed order keeps the slot on
+ *    the same PR across sweeps, so a base move the queue did not cause (a manual
+ *    merge) restarts the holder's CI instead of handing the slot to another PR.
+ *
+ * An up-to-date PR whose checks are settled is skipped: if it is green, the
+ * auto-merge is about to act (and its push re-sweeps); if it is not merging, it is
+ * waiting on something other than CI and must not block the queue.
+ */
+export function pickSlotHolder(candidates) {
+  const eligible = candidates.filter(
+    (c) =>
+      c.pr.mergeable === true &&
+      !c.isFork &&
+      typeof c.behindBy === "number" &&
+      (c.checks === "running" || c.checks === "settled"),
+  );
+  const inFlight = eligible.find((c) => c.behindBy === 0 && c.checks === "running");
+  return inFlight ?? eligible.find((c) => c.behindBy > 0) ?? null;
+}
+
+/**
+ * Reads every auto-merge PR in this sweep once (mergeability, how far behind,
+ * required checks) and picks the holder. Returns the assessments by number, so
+ * the per-PR pass reuses them instead of reading each PR twice.
+ */
+async function assessAutoMergeQueue({ token, repo, baseRef, listed, fetchImpl, sleep }) {
+  const assessed = new Map();
+  const numbers = listed
+    .filter((pr) => pr.auto_merge)
+    .map((pr) => pr.number)
+    .sort((a, b) => a - b);
+  for (const number of numbers) {
+    const pr = await fetchPrWithMergeable({ token, repo, number, fetchImpl, sleep });
+    // The detail is the source of truth: auto-merge may have been turned off
+    // since the list was read. Unknown mergeability stays out of the queue and
+    // takes the per-PR pass's fail-safe skip.
+    if (pr === null || !pr.auto_merge) continue;
+    const isFork = pr.head?.repo?.full_name !== repo;
+    const entry = { number, pr, isFork, behindBy: null, checks: null };
+    if (pr.mergeable === true && !isFork) {
+      entry.behindBy = await compareBehindBy({
+        token,
+        repo,
+        baseRef,
+        headSha: pr.head?.sha,
+        fetchImpl,
+      });
+      entry.checks = await readRequiredChecks({
+        token,
+        repo,
+        sha: pr.head?.sha,
+        fetchImpl,
+      });
+    }
+    assessed.set(number, entry);
+  }
+  const holder = pickSlotHolder([...assessed.values()]);
+  return { assessed, holder: holder?.number ?? null };
+}
+
+/** A PR that is held is a clean, same-repo auto-merge PR that is behind and is not the holder. */
+function isHeld(queue, number) {
+  const entry = queue?.assessed.get(number);
+  return Boolean(
+    entry &&
+      queue.holder !== number &&
+      entry.pr.mergeable === true &&
+      !entry.isFork &&
+      typeof entry.behindBy === "number" &&
+      entry.behindBy > 0,
+  );
+}
+
+function heldResult(queue, number, logger) {
+  const entry = queue.assessed.get(number);
+  logger.log?.(
+    `[pr-base-sync] #${number}: behind by ${entry.behindBy}, auto-merge on — held, ` +
+      (queue.holder
+        ? `#${queue.holder} holds the update slot`
+        : "no auto-merge PR can hold the update slot right now") +
+      ` (required checks on this head: ${entry.checks ?? "unreadable"})`,
+  );
+  return { number, verdict: "behind", action: "held", holder: queue.holder };
+}
+
 /** Deletes this sweep's stale wake comments without posting a new one. */
 export async function clearWakeComments({ token, repo, prNumber, fetchImpl }) {
   const { deleted } = await clearMarkedComments({
@@ -383,7 +560,17 @@ export async function processBaseMove({
   logger = console,
   // Tests shorten it; production keeps the library's write ceiling.
   updateBranchTimeoutMs,
+  // "push": the base moved; the full sweep. "checks": CI completed on some PR
+  // and the base did NOT move; only the auto-merge slot is advanced.
+  mode = "push",
 }) {
+  if (mode === "checks" && !updateToken) {
+    logger.log?.(
+      "[pr-base-sync] checks completed, but no app token minted — the update slot cannot advance; the next push to main sweeps (and raises the alert)",
+    );
+    return [];
+  }
+
   // sort=updated&direction=asc: see the MAX_PRS comment — least-recently-updated
   // first is what makes the cap a rotation instead of a permanent starvation of
   // the oldest PRs.
@@ -412,6 +599,22 @@ export async function processBaseMove({
         : " (no app token — auto-update off; a behind PR raises the alert issue)"),
   );
 
+  // Without an app token nothing is updated, so there is no slot to share: every
+  // behind PR gets its wake, as before.
+  const queue = updateToken
+    ? await assessAutoMergeQueue({ token, repo, baseRef, listed: prs, fetchImpl, sleep })
+    : null;
+  if (queue && queue.assessed.size > 0) {
+    logger.log?.(
+      `[pr-base-sync] ${queue.assessed.size} auto-merge PR(s); update slot: ` +
+        (queue.holder ? `#${queue.holder}` : "none eligible"),
+    );
+  }
+
+  if (mode === "checks") {
+    return advanceSlot({ updateToken, repo, queue, fetchImpl, logger, updateBranchTimeoutMs });
+  }
+
   // Shared by every PR in this sweep: see UPDATE_BRANCH_STALLS_BEFORE_STOP.
   const updateBranch = { stalls: 0, stoppedDetail: null };
   const results = [];
@@ -434,6 +637,7 @@ export async function processBaseMove({
           logger,
           updateBranch,
           updateBranchTimeoutMs,
+          queue,
         }),
       );
     } catch (error) {
@@ -453,6 +657,45 @@ export async function processBaseMove({
     logger,
   });
 
+  return results;
+}
+
+/**
+ * The "checks" mode: CI finished somewhere, `main` did not move. Update the
+ * holder if it is behind, report the held ones, and touch nothing else. No wake
+ * comment (each one is a fresh "base moved" signal, and the base did not move),
+ * no conflict handling and no alert: those belong to the push sweep, which runs
+ * on every base move. A failed update is only logged; the next push sweep
+ * handles that PR in full.
+ */
+async function advanceSlot({ updateToken, repo, queue, fetchImpl, logger, updateBranchTimeoutMs }) {
+  const results = [];
+  for (const [number, entry] of queue.assessed) {
+    if (isHeld(queue, number)) {
+      results.push(heldResult(queue, number, logger));
+      continue;
+    }
+    if (number !== queue.holder || !(entry.behindBy > 0)) continue;
+    const result = await updatePrBranch({
+      updateToken,
+      repo,
+      number,
+      expectedHeadSha: entry.pr.head?.sha,
+      fetchImpl,
+      timeoutMs: updateBranchTimeoutMs,
+    });
+    if (result.updated) {
+      logger.log?.(
+        `[pr-base-sync] #${number}: behind by ${entry.behindBy} — holds the update slot, auto-updated via update-branch`,
+      );
+      results.push({ number, verdict: "behind", action: "updated" });
+    } else {
+      logger.log?.(
+        `[pr-base-sync] #${number}: holds the update slot, but update-branch failed (${result.error}) — left for the next push sweep`,
+      );
+      results.push({ number, verdict: "behind", action: "skipped" });
+    }
+  }
   return results;
 }
 
@@ -569,14 +812,19 @@ async function processOnePr({
   logger,
   updateBranch,
   updateBranchTimeoutMs,
+  queue = null,
 }) {
-  const pr = await fetchPrWithMergeable({
-    token,
-    repo,
-    number,
-    fetchImpl,
-    sleep,
-  });
+  // An auto-merge PR was already read by assessAutoMergeQueue; reuse it.
+  const assessed = queue?.assessed.get(number);
+  const pr =
+    assessed?.pr ??
+    (await fetchPrWithMergeable({
+      token,
+      repo,
+      number,
+      fetchImpl,
+      sleep,
+    }));
 
   if (pr === null) {
     logger.log?.(
@@ -600,13 +848,16 @@ async function processOnePr({
 
   if (pr.mergeable === false) return postConflictComment();
 
-  const behindBy = await compareBehindBy({
-    token,
-    repo,
-    baseRef,
-    headSha: pr.head?.sha,
-    fetchImpl,
-  });
+  const behindBy =
+    typeof assessed?.behindBy === "number"
+      ? assessed.behindBy
+      : await compareBehindBy({
+          token,
+          repo,
+          baseRef,
+          headSha: pr.head?.sha,
+          fetchImpl,
+        });
   if (behindBy === null) {
     logger.log?.(
       `[pr-base-sync] #${number}: compare with ${baseRef} failed — skipping, fail safe`,
@@ -625,6 +876,11 @@ async function processOnePr({
     );
     return { number, verdict: "current", action: "none" };
   }
+
+  // Behind, clean, auto-merge on, and another PR holds the update slot. No wake
+  // either: the wake says "merge main yourself", which would start exactly the
+  // race the slot exists to stop. Its turn comes when the holder merges.
+  if (isHeld(queue, number)) return heldResult(queue, number, logger);
 
   // Behind and clean. A fork head cannot be updated through the API from here,
   // and without a working app token an update would run no CI (see header).
@@ -793,7 +1049,10 @@ async function main() {
   const baseRef = requireEnv("GITHUB_REF_NAME");
   const baseSha = requireEnv("GITHUB_SHA");
   const updateToken = process.env.PR_BASE_SYNC_TOKEN || null;
-  await processBaseMove({ token, updateToken, repo, baseRef, baseSha });
+  // A CI completion runs on the default branch's ref and tip, so baseRef and
+  // baseSha still name `main`; only what the sweep may do changes.
+  const mode = process.env.GITHUB_EVENT_NAME === "workflow_run" ? "checks" : "push";
+  await processBaseMove({ token, updateToken, repo, baseRef, baseSha, mode });
 }
 
 if (isInvokedDirectly(import.meta.url)) {
