@@ -10,7 +10,11 @@ import { db, miss } from "../harness.mjs";
 //   - `{President}` → `{Member}`, and the target gains President;
 //   - `{President, Cabinet}` (Cabinet without `members:view`) → `{Cabinet, Member}`;
 //   - `{President, Treasurer}` keeps `{Treasurer}`: it already grants access;
-//   - a custom role whose capabilities carry `members:view` counts as access;
+//   - a legacy live role carrying `*` counts as access;
+//   - a custom role whose capabilities carry `members:view` counts as access,
+//     but not another chapter's;
+//   - a role id in upper case still matches, as the guard compares uuids;
+//   - a Member role stripped of `members:view` is not appended a second time;
 //   - another chapter's Member role id doesn't count, the way the guard reads it;
 //   - a chapter with no Member role still transfers, leaving `{}` as before;
 //   - a lost compare-and-set still returns nothing and changes nothing.
@@ -29,6 +33,8 @@ console.log(
   const PRES_B = "b3670000-0000-4000-8000-0000000000b1";
   const MEMBER_B = "b3670000-0000-4000-8000-0000000000b2";
   const CUSTOM_VIEW_A = "c3670000-0000-4000-8000-0000000000c1";
+  const CUSTOM_VIEW_B = "c3670000-0000-4000-8000-0000000000c2";
+  const LEGACY_WILD_A = "a3670000-0000-4000-8000-0000000000a5";
   const OUT = "e3670000-0000-4000-8000-000000000001";
   const IN = "e3670000-0000-4000-8000-000000000002";
   const U_OUT = "f3670000-0000-4000-8000-000000000001";
@@ -52,6 +58,7 @@ console.log(
     outRoles,
     outCustom = [],
     dropMemberRole = false,
+    memberWithoutView = false,
   }) {
     await db.exec(`
       begin;
@@ -61,10 +68,12 @@ console.log(
         ('${TREAS_A}', '${A}', 'Treasurer', '{billing:view,members:view}', true, 'TREASURER', 2),
         ('${MEMBER_A}', '${A}', 'Member', '{members:view,polls:create}', true, 'MEMBER', 5),
         ('${CABINET_A}', '${A}', 'Cabinet', '{channels:read:cabinet}', false, null, 21),
+        ('${LEGACY_WILD_A}', '${A}', 'Legacy', '{*}', false, null, 22),
         ('${PRES_B}', '${B}', 'President', '{*}', true, 'PRESIDENT', 1),
         ('${MEMBER_B}', '${B}', 'Member', '{members:view}', true, 'MEMBER', 5);
       insert into chapter_custom_roles (id, chapter_id, key, label, capabilities) values
-        ('${CUSTOM_VIEW_A}', '${A}', 'rush', 'Rush', '{members:view}');
+        ('${CUSTOM_VIEW_A}', '${A}', 'rush', 'Rush', '{members:view}'),
+        ('${CUSTOM_VIEW_B}', '${B}', 'rush', 'Rush', '{members:view}');
       insert into users (id, supabase_auth_id, email) values
         ('${U_OUT}', gen_random_uuid(), 'out@x.test'),
         ('${U_IN}', gen_random_uuid(), 'in@x.test');
@@ -72,6 +81,11 @@ console.log(
         ('${OUT}', '${U_OUT}', '${chapter}', '{${outRoles.join(",")}}', '{${outCustom.join(",")}}'),
         ('${IN}', '${U_IN}', '${chapter}', '{${chapter === A ? MEMBER_A : MEMBER_B}}', '{}');
     `);
+    if (memberWithoutView) {
+      await db.exec(
+        `update roles set permissions = '{polls:create}' where id = '${MEMBER_A}';`,
+      );
+    }
     if (dropMemberRole) {
       await db.exec(
         `update roles set system_key = null where chapter_id = '${chapter}' and system_key = 'MEMBER';`,
@@ -123,6 +137,37 @@ console.log(
     check(
       "a custom role carrying members:view counts as access",
       same(r.out, []),
+      r,
+    );
+
+    r = await scenario({ outRoles: [PRES_A, LEGACY_WILD_A] });
+    check(
+      "a legacy live role carrying * counts as access",
+      same(r.out, [LEGACY_WILD_A]),
+      r,
+    );
+
+    r = await scenario({ outRoles: [PRES_A], outCustom: [CUSTOM_VIEW_B] });
+    check(
+      "another chapter's custom role doesn't count as access",
+      same(r.out, [MEMBER_A]),
+      r,
+    );
+
+    r = await scenario({ outRoles: [PRES_A, TREAS_A.toUpperCase()] });
+    check(
+      "an upper-case role id still counts as access",
+      same(r.out, [TREAS_A.toUpperCase()]),
+      r,
+    );
+
+    r = await scenario({
+      outRoles: [PRES_A, MEMBER_A],
+      memberWithoutView: true,
+    });
+    check(
+      "Member is not appended twice when it lost members:view",
+      same(r.out, [MEMBER_A]),
       r,
     );
 

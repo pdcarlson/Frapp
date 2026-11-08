@@ -1,9 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  memberAccessRoleIds,
-  normalizeRoleOptions,
-  removesMemberAccess,
-} from "./roles";
+import { normalizeRoleOptions, roleAccessRows } from "./roles";
 
 describe("normalizeRoleOptions", () => {
   it("keeps well-formed roles and drops malformed entries", () => {
@@ -29,38 +25,19 @@ describe("normalizeRoleOptions", () => {
   });
 });
 
-describe("member access", () => {
-  const roles = [
-    { id: "member", name: "Member", permissions: ["members:view"] },
-    { id: "president", name: "President", permissions: ["*"] },
-    { id: "cabinet", name: "Cabinet", permissions: ["channels:read:cabinet"] },
-    { id: "bare", name: "Bare" },
-  ];
-  const custom = [
-    { id: "rush", capabilities: ["members:view"] },
-    { id: "wild", capabilities: ["*"] },
-  ];
-
-  it("collects live roles with members:view or *, and custom roles with members:view", () => {
-    expect([...memberAccessRoleIds(roles, custom)].sort()).toEqual([
-      "member",
-      "president",
-      "rush",
+describe("roleAccessRows", () => {
+  it("keeps id and string permissions, defaulting a missing list to none", () => {
+    expect(
+      roleAccessRows([
+        { id: "r1", name: "Member", permissions: ["members:view", 3] },
+        { id: "r2", name: "Bare" },
+        { name: "No id", permissions: ["*"] },
+        null,
+      ]),
+    ).toEqual([
+      { id: "r1", permissions: ["members:view"] },
+      { id: "r2", permissions: [] },
     ]);
-    expect(memberAccessRoleIds(undefined).size).toBe(0);
-  });
-
-  it("flags only the save that takes access away", () => {
-    const ids = memberAccessRoleIds(roles, custom);
-    expect(removesMemberAccess(["member", "cabinet"], ["cabinet"], ids)).toBe(
-      true,
-    );
-    expect(removesMemberAccess(["member"], ["cabinet", "rush"], ids)).toBe(
-      false,
-    );
-    expect(removesMemberAccess(["cabinet"], [], ids)).toBe(false);
-    expect(removesMemberAccess(["member"], ["member", "cabinet"], ids)).toBe(
-      false,
-    );
+    expect(roleAccessRows(undefined)).toEqual([]);
   });
 });

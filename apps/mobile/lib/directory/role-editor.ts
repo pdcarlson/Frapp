@@ -12,7 +12,11 @@
  * import, so the list is searched, and its order is fixed when the editor
  * opens (held roles first) so a row never jumps out from under a finger.
  */
-import { can, WILDCARD_PERMISSION } from "@repo/validation";
+import {
+  can,
+  removesMemberAccess,
+  WILDCARD_PERMISSION,
+} from "@repo/validation";
 import { records, str } from "../more/narrow";
 
 export interface RoleOption {
@@ -97,25 +101,33 @@ export function toggleRole(
     : [...unique, roleId];
 }
 
+/** The ids among `options` whose holder has member access. */
+function baseAccessIds(options: readonly RoleOption[]): Set<string> {
+  return new Set(options.filter((o) => o.grantsBase).map((o) => o.id));
+}
+
 export function hasBaseAccess(
   heldIds: readonly string[],
   options: readonly RoleOption[],
 ): boolean {
-  const held = new Set(heldIds);
-  return options.some((o) => o.grantsBase && held.has(o.id));
+  const access = baseAccessIds(options);
+  return heldIds.some((id) => access.has(id));
 }
 
 /**
  * True when this change is the one that takes away chat, the roster and
  * events. A member who already lacked base access is not warned again on
- * every tap.
+ * every tap. The rule is web's too (`removesMemberAccess` in
+ * `@repo/validation`); this editor sees live roles only, so a custom role
+ * that carries `members:view` doesn't count here and the officer may be
+ * asked when the member would keep access through it.
  */
 export function removesBaseAccess(
   before: readonly string[],
   after: readonly string[],
   options: readonly RoleOption[],
 ): boolean {
-  return hasBaseAccess(before, options) && !hasBaseAccess(after, options);
+  return removesMemberAccess(before, after, baseAccessIds(options));
 }
 
 export const ROLES_LOCKED_CAPTION = "Changes with Transfer presidency";

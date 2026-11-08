@@ -15,7 +15,11 @@ import {
   useRoles,
   useUpdateMemberRoles,
 } from "@repo/hooks";
-import { can } from "@repo/validation";
+import {
+  can,
+  memberAccessRoleIds,
+  removesMemberAccess,
+} from "@repo/validation";
 import { formatDay } from "@repo/formatting";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -33,11 +37,7 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import { memberLabel } from "@repo/hooks/display-names";
-import {
-  memberAccessRoleIds,
-  normalizeRoleOptions,
-  removesMemberAccess,
-} from "@/lib/roles";
+import { normalizeRoleOptions, roleAccessRows } from "@/lib/roles";
 
 type MemberRecord = Record<string, unknown>;
 
@@ -283,7 +283,13 @@ export function MemberDetailSheet({
   // #2484, from the Alumni tab. Disabled while the permission read is pending,
   // the same as a failed read.
   const myPermissions = myPermissionsQuery.data?.permissions;
-  const canEditRoles = canMutate && can("roles:manage", myPermissions);
+  // Saving waits for the roles list: until it loads, the rows are
+  // placeholders and the member-access check can't tell which roles grant
+  // access, so a lockout would save without the question (#3670).
+  const canEditRoles =
+    canMutate &&
+    rolesQuery.data !== undefined &&
+    can("roles:manage", myPermissions);
   const canRemove = canMutate && can("members:remove", myPermissions);
 
   async function handleSaveRoles() {
@@ -291,8 +297,11 @@ export function MemberDetailSheet({
     // Taking away the last role with member access locks the member out of
     // chat, the roster and events, the way the 2026-11-07 testers were
     // (#3670). The API allows it, so ask first, as mobile's editor does.
-    // Custom roles count only when their list loaded; otherwise the save
-    // leaves them unchanged, so they sit on both sides.
+    // Custom roles count only when their list loaded. Otherwise the save
+    // leaves them unchanged, and a custom role that does carry
+    // `members:view` can't be seen, so the officer may be asked even though
+    // the member keeps access through it: a harmless extra question, where
+    // skipping it could let a real lockout through.
     const customBefore = memberCustomRoleIds;
     const customAfter = customRolesQuery.isSuccess
       ? selectedCustomRoleIds
@@ -301,7 +310,10 @@ export function MemberDetailSheet({
       removesMemberAccess(
         [...memberRoleIds, ...customBefore],
         [...selectedRoleIds, ...customAfter],
-        memberAccessRoleIds(rolesQuery.data, customRolesQuery.data),
+        memberAccessRoleIds(
+          roleAccessRows(rolesQuery.data),
+          customRolesQuery.data ?? [],
+        ),
       )
     ) {
       const confirmed = await confirm({

@@ -19,7 +19,9 @@
 -- own, because a seeded role's permissions are editable. Member is appended,
 -- not prepended: web's Members list labels a member by their first role.
 -- A chapter with no Member role (`system_key` unset by the legacy backfill
--- gap) is left as before rather than failing the transfer.
+-- gap) is left as before rather than failing the transfer; on 2026-11-08 no
+-- production chapter lacked one. A member who already holds Member (a chapter
+-- that took `members:view` off it) is not given a second copy.
 --
 -- No repair ships with this: on 2026-11-08 neither staging nor production had a
 -- `presidency_transferred` audit row or a member without member access.
@@ -92,7 +94,13 @@ begin
        and r.system_key = 'MEMBER'
      limit 1;
 
-    if v_member_role_id is not null then
+    -- Skip it when they already hold Member: a chapter that took
+    -- `members:view` off its Member role gets nothing back from a second copy
+    -- of the id.
+    if v_member_role_id is not null
+       and not (v_member_role_id = any (
+         select lower(x) from unnest(v_current.role_ids) as x
+       )) then
       update members
          set role_ids = array_append(role_ids, v_member_role_id)
        where id = p_current_member_id

@@ -23,7 +23,7 @@ const {
     mockCurrentUserId: { current: "viewer-1" as string | null },
     mockCurrentUserLoading: { current: false },
     mockPermissions: { current: ["*"] as string[] },
-    mockRoles: { current: [] as unknown[] },
+    mockRoles: { current: [] as unknown[] | undefined },
   }));
 
 // The sheet pulls live data + mutations from @repo/hooks; stub them so the
@@ -338,6 +338,35 @@ describe("MemberDetailSheet member-access warning", () => {
       role_ids: ["r-cabinet"],
       custom_role_ids: [],
     });
+  });
+
+  it("counts a custom role carrying members:view as access", async () => {
+    customRolesState.data = [
+      { id: "cr-rush", key: "rush", label: "Rush", rank: 5, capabilities: ["members:view"], core: false },
+    ];
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        member={{ ...baseMember, role_ids: ["r-cabinet"], custom_role_ids: ["cr-rush"] }}
+      />,
+    );
+    untick("Rush");
+    fireEvent.click(screen.getByRole("button", { name: "Save role changes" }));
+
+    expect(
+      await screen.findByText("Take away Jane Smith's access?"),
+    ).toBeInTheDocument();
+    expect(updateRolesMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("doesn't let a save through before the roles list loads", () => {
+    mockRoles.current = undefined;
+    renderHolding(["r-member"]);
+    expect(
+      screen.getByRole("button", { name: "Save role changes" }),
+    ).toBeDisabled();
   });
 
   it("saves without asking when the member keeps access", async () => {

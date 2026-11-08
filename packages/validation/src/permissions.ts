@@ -131,3 +131,47 @@ export const CHAPTER_PROFILE_PERMISSIONS = [
   "chapter-config:view",
   "chapter-config:manage",
 ] as const;
+
+/**
+ * The ids, live and custom, whose holder can open chat, the roster and events
+ * (#3670): a live role whose permissions grant `members:view` (so `*` counts),
+ * or a custom role whose capabilities carry `members:view` itself, since the
+ * server's `PermissionsGuard` drops `*` from custom roles. The seeded flag
+ * doesn't count on its own, because a seeded role's permissions are editable.
+ * Live and custom ids are both uuids, so one set holds them without
+ * collisions. Shared by web's member sheet and mobile's roles sheet so the two
+ * editors can't drift; `transfer_presidency` applies the same rule in SQL.
+ */
+export function memberAccessRoleIds(
+  roles: readonly {
+    id: string;
+    permissions?: readonly string[] | null;
+  }[],
+  customRoles: readonly {
+    id: string;
+    capabilities?: readonly string[] | null;
+  }[] = [],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const role of roles) {
+    if (can("members:view", role.permissions)) ids.add(role.id);
+  }
+  for (const role of customRoles) {
+    if (role.capabilities?.includes("members:view")) ids.add(role.id);
+  }
+  return ids;
+}
+
+/**
+ * True when a role change is the one that takes away member access: some id
+ * in `before` grants it and none in `after` does. A member who already lacked
+ * it is not warned again on every save.
+ */
+export function removesMemberAccess(
+  before: readonly string[],
+  after: readonly string[],
+  accessIds: ReadonlySet<string>,
+): boolean {
+  const grants = (ids: readonly string[]) => ids.some((id) => accessIds.has(id));
+  return grants(before) && !grants(after);
+}
