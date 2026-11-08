@@ -335,8 +335,9 @@ on `main` before its first fire. Then `list_triggers` should show each one enabl
 After each routine's first fire, check:
 
 - **Every routine:** the run adds exactly one [run record](#run-record-all-routines) to #2966,
-  `outcome=done` unless the run really stopped, and the owner saw a post only if the skill called
-  for one.
+  `outcome=done` unless the run really stopped, and the run's final message opens with what needs
+  the owner only when the skill calls for it, otherwise with "Nothing needs you this run."
+  (Board Sweep: "Needs you: nothing.").
 - **Every routine:** nothing reaches Linear, and a second run (fire one by hand with
   `fire_trigger`) files no duplicates.
 - **Beta Watch:** new issues are titled `[beta] …`, carry `triage` + `suggestion` + one `area:*` +
