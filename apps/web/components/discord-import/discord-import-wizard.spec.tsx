@@ -622,6 +622,58 @@ describe("ImportWizard — the bot path", () => {
     expect(setChannelMapping).not.toHaveBeenCalled();
   });
 
+  it("sends imported channels postable, read-only only where Discord made them so, and says which (#3697)", async () => {
+    discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          discord_channel_id: "c1",
+          discord_channel_name: "academics",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+          read_only_in_discord: false,
+        },
+        {
+          discord_channel_id: "c2",
+          discord_channel_name: "announcements",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+          read_only_in_discord: true,
+        },
+      ],
+      roles: [],
+      warnings: [],
+    });
+
+    await renderAtChannels();
+    await screen.findByText(/Nothing needs attention/);
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => expect(setDiscoveredMapping).toHaveBeenCalled());
+    const { channels } = setDiscoveredMapping.mock.calls[0]![0] as {
+      channels: {
+        discord_channel_id: string;
+        new_channel_is_read_only?: boolean;
+      }[];
+    };
+    expect(
+      channels.map((row) => [
+        row.discord_channel_id,
+        row.new_channel_is_read_only,
+      ]),
+    ).toEqual([
+      ["c1", false],
+      ["c2", true],
+    ]);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^1 read-only channel/ }),
+    );
+    expect(screen.getByText("#announcements")).toBeInTheDocument();
+  });
+
   it("keeps Discord's categories as channel groups only when asked, and only the ones still ticked", async () => {
     discoverChannels.mockResolvedValue({
       channels: [

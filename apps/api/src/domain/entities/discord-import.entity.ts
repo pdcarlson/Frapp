@@ -247,6 +247,15 @@ export interface DiscordImportChannel {
    */
   discord_reader_role_ids: string[] | null;
   /**
+   * Whether the channel was read-only in Discord: it took Send Messages away
+   * from a reader the server otherwise let talk (see `readOnlyInDiscord`,
+   * #3697). It is the default for `new_channel_is_read_only`: an imported
+   * channel is postable by whoever can read it unless this is true. Recorded
+   * by the scan for a top-level channel; null for a thread, when the roles
+   * could not be read, and always on the upload path.
+   */
+  read_only_in_discord: boolean | null;
+  /**
    * The admin chose "Same as Discord" for the channel `create_new` makes:
    * `ROLE_GATED` on the read permissions of the Frapp roles mapped from
    * `discord_reader_role_ids`. The permissions are resolved into

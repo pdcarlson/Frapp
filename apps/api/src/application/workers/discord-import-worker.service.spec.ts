@@ -178,6 +178,7 @@ function channelMapping(
     readable: null,
     private_in_discord: null,
     discord_reader_role_ids: null,
+    read_only_in_discord: null,
     new_channel_same_as_discord: false,
     new_channel_group: null,
     discord_category_position: null,

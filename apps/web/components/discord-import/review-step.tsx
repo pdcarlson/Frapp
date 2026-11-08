@@ -10,7 +10,11 @@ import { Label } from "@/components/ui/label";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { asArray, cn } from "@/lib/utils";
 import type { ChannelChoice } from "./channel-mapping-step";
-import { isImportTarget, type ExistingChannel } from "./mapping-issues";
+import {
+  choiceIsReadOnly,
+  isImportTarget,
+  type ExistingChannel,
+} from "./mapping-issues";
 import type { StagedChannel, StagedExport, StagedRole } from "./upload-step";
 import type { ImportSource } from "./source-step";
 import type { RoleChoice, SameAsDiscordReaders } from "./role-matching";
@@ -119,6 +123,15 @@ export function ReviewStep({
   const skipped = staged.channels.filter(
     (channel) => !importing.includes(channel),
   );
+  // New channels only: a merge keeps the existing channel's own setting.
+  // Read-only lets only members who can post announcements post (#3697).
+  const readOnlyNames = importing.flatMap((channel) => {
+    const choice = channelChoices[channel.channelId];
+    if (choice?.action !== "create_new" || !choiceIsReadOnly(channel, choice)) {
+      return [];
+    }
+    return [`#${choice.newName?.trim() || channel.channelName}`];
+  });
   const unreadable = skipped.filter(
     (channel) => channel.readable === false,
   ).length;
@@ -299,6 +312,15 @@ export function ReviewStep({
           meta="Same-name ones are reused; deleting the import removes new ones once empty"
         >
           <ChipList names={sidebarGroups} />
+        </SummarySection>
+      ) : null}
+
+      {readOnlyNames.length > 0 ? (
+        <SummarySection
+          title={`${readOnlyNames.length} read-only channel${readOnlyNames.length === 1 ? "" : "s"}`}
+          meta="Members couldn't send messages there in Discord, so only members who can post announcements can post. Change it in chat admin afterwards."
+        >
+          <ChipList names={readOnlyNames} />
         </SummarySection>
       ) : null}
 

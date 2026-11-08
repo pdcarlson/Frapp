@@ -21,6 +21,7 @@ import {
   parseOverwrites,
   openToEveryone,
   readerRoleIds,
+  readOnlyInDiscord,
   type DiscordPermissionSubject,
   type DiscordRolePermissions,
 } from '#domain/utils/discord-permissions';
@@ -336,6 +337,14 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
               access.named.map((role) => role.id),
             )
           : null;
+      const readOnly = access.roles
+        ? readOnlyInDiscord(
+            guildId,
+            access.roles,
+            overwrites,
+            access.named.map((role) => role.id),
+          )
+        : null;
       // A forum IS offered as a destination — `#questions` is what an admin
       // recognises, and its posts inherit whatever they choose for it. What it
       // is not is message-fetchable, so it carries `holdsOnlyThreads` and the
@@ -358,6 +367,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
         readable,
         privateInDiscord,
         readerRoleIds: readers,
+        readOnlyInDiscord: readOnly,
       };
       channels.push(ref);
       // Discord lists every channel to a bot, readable or not. Asking one it
@@ -704,6 +714,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       privateInDiscord: thread.type === ChannelType.PrivateThread ? true : null,
       // A thread is mapped through its parent, whose readers are what count.
       readerRoleIds: null,
+      readOnlyInDiscord: null,
     };
   }
 
@@ -765,6 +776,7 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
       readable: true,
       privateInDiscord: null,
       readerRoleIds: null,
+      readOnlyInDiscord: null,
     };
   }
 

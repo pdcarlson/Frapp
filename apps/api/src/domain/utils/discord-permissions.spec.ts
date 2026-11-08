@@ -1,6 +1,7 @@
 import {
   ADMINISTRATOR,
   READ_MESSAGE_HISTORY,
+  SEND_MESSAGES,
   VIEW_CHANNEL,
   basePermissions,
   canReadHistory,
@@ -8,6 +9,7 @@ import {
   parseOverwrites,
   openToEveryone,
   readerRoleIds,
+  readOnlyInDiscord,
   type DiscordPermissionOverwrite,
   type DiscordRolePermissions,
 } from './discord-permissions';
@@ -208,5 +210,90 @@ describe('Discord channel permissions', () => {
       { id: BOT, type: 1, allow: '0', deny: '0' },
     ]);
     expect(parseOverwrites(undefined)).toEqual([]);
+  });
+});
+
+// #3697: an imported channel is read-only in Frapp only when Discord took Send
+// Messages away from the people who could otherwise talk there.
+describe('readOnlyInDiscord', () => {
+  const MUTED = '600000000000000006';
+  const TALK = String(VIEW_CHANNEL | READ_MESSAGE_HISTORY | SEND_MESSAGES);
+  const SEND = String(SEND_MESSAGES);
+  const deny = (id: string, bits: string): DiscordPermissionOverwrite => ({
+    id,
+    type: 0,
+    allow: '0',
+    deny: bits,
+  });
+
+  /** The common shape: everyone can read and talk server-wide. */
+  const open: DiscordRolePermissions[] = [
+    { id: GUILD, permissions: TALK },
+    { id: CABINET, permissions: '0' },
+    { id: MUTED, permissions: '0' },
+  ];
+  /** Only "Brothers" can talk; @everyone can read but not send anywhere. */
+  const brothersTalk: DiscordRolePermissions[] = [
+    { id: GUILD, permissions: READ },
+    { id: BROTHER, permissions: TALK },
+    { id: CABINET, permissions: TALK },
+  ];
+  const candidates = [BROTHER, CABINET, MUTED];
+
+  it('leaves a general-purpose channel postable', () => {
+    expect(readOnlyInDiscord(GUILD, open, [], candidates)).toBe(false);
+    expect(readOnlyInDiscord(GUILD, brothersTalk, [], candidates)).toBe(false);
+  });
+
+  it('is read-only when @everyone is denied Send Messages, whoever exec are allowed', () => {
+    expect(
+      readOnlyInDiscord(
+        GUILD,
+        open,
+        [deny(GUILD, SEND), allow(CABINET, SEND)],
+        candidates,
+      ),
+    ).toBe(true);
+  });
+
+  it('is read-only when the role that talks server-wide is denied Send Messages here', () => {
+    expect(
+      readOnlyInDiscord(
+        GUILD,
+        brothersTalk,
+        [deny(BROTHER, SEND), allow(CABINET, SEND)],
+        candidates,
+      ),
+    ).toBe(true);
+  });
+
+  it('ignores a deny on a role that grants no Send Messages itself (a Muted role)', () => {
+    expect(
+      readOnlyInDiscord(GUILD, open, [deny(MUTED, SEND)], candidates),
+    ).toBe(false);
+  });
+
+  it('keeps a private channel postable for the roles that read it', () => {
+    // Exec-only: hidden from @everyone, read and talked in by Cabinet.
+    expect(
+      readOnlyInDiscord(
+        GUILD,
+        brothersTalk,
+        [everyoneDenied, allow(CABINET)],
+        candidates,
+      ),
+    ).toBe(false);
+  });
+
+  it('does not count a role that cannot read the channel', () => {
+    // Send denied on a role the channel also hides from: it was never a reader.
+    expect(
+      readOnlyInDiscord(
+        GUILD,
+        brothersTalk,
+        [deny(BROTHER, String(VIEW_CHANNEL | SEND_MESSAGES))],
+        candidates,
+      ),
+    ).toBe(false);
   });
 });

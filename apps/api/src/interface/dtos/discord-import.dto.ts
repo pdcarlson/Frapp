@@ -77,7 +77,7 @@ export class DiscordDiscoveredRoleDto {
 export class DiscordDiscoveryResponseDto {
   @ApiProperty({
     description:
-      'Every channel in the server, and the threads of each channel the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. Each row carries `readable` (whether the bot can read its history; false rows can only be skipped, null means the scan could not tell) and `private_in_discord` (some member could not read its history in Discord; a thread is true when it is a private thread or its channel is private; null means the scan could not tell). A channel that is private, holds a private thread, or whose privacy is null needs an explicit `new_channel_visibility` to be created. A top-level channel that was private also carries `discord_reader_role_ids`: the Discord roles (from `roles`) that could read it, each on its own, which is what `new_channel_visibility: discord` copies. Empty when `@everyone` alone could read it (a deny hid it from someone); null when unknown. A top-level channel in a Discord category carries `discord_category` (its name) and `discord_category_position` (its place in the server), which is how the admin keeps categories as channel groups (`new_channel_group`).',
+      'Every channel in the server, and the threads of each channel the bot can read, all recorded as `skip` until the admin says otherwise. Threads carry `parent_discord_channel_id` and are not mapped separately — they follow their parent. Each row carries `readable` (whether the bot can read its history; false rows can only be skipped, null means the scan could not tell) and `private_in_discord` (some member could not read its history in Discord; a thread is true when it is a private thread or its channel is private; null means the scan could not tell). A channel that is private, holds a private thread, or whose privacy is null needs an explicit `new_channel_visibility` to be created. A top-level channel also carries `read_only_in_discord`: true when Discord took Send Messages away from a reader the server otherwise let talk (an announcements-style channel), which is the default for `new_channel_is_read_only`; null when unknown. A top-level channel that was private also carries `discord_reader_role_ids`: the Discord roles (from `roles`) that could read it, each on its own, which is what `new_channel_visibility: discord` copies. Empty when `@everyone` alone could read it (a deny hid it from someone); null when unknown. A top-level channel in a Discord category carries `discord_category` (its name) and `discord_category_position` (its place in the server), which is how the admin keeps categories as channel groups (`new_channel_group`).',
     type: 'array',
     items: { type: 'object', additionalProperties: true },
   })
@@ -193,7 +193,11 @@ export class DiscordChannelMappingDto {
   @MaxLength(255)
   new_channel_name?: string;
 
-  @ApiPropertyOptional({ type: Boolean, default: true })
+  @ApiPropertyOptional({
+    type: Boolean,
+    description:
+      'Whether the channel `create_new` makes is read-only (only `announcements:post` holders post). Omitted means as in Discord: read-only only when the scan saw Discord take Send Messages away from its readers (`read_only_in_discord`), otherwise postable by whoever can read it. On an uploaded export, which carries no permissions, omitted means postable.',
+  })
   @IsOptional()
   @IsStrictBoolean()
   new_channel_is_read_only?: boolean;

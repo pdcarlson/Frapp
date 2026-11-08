@@ -881,6 +881,26 @@ channel that reports a different one fails the import rather than being skipped.
   the same choice; the "Who can read" control on a category, or on the whole
   server, answers all its new channels in one go, and shows their shared
   answer, or Mixed when they differ.
+- **Whoever could talk in a Discord channel can talk in the imported one.**
+  *2026-11-08, #3697: until then every channel an import created was
+  read-only, where only an `announcements:post` holder can post, so a chapter
+  moved off Discord with channels its members could read and not use.* A new
+  channel is postable by everyone who can read it, unless Discord made it
+  read-only: the channel took Send Messages away from a reader the server
+  otherwise lets talk (`@everyone`, or a role whose own permissions grant
+  Send Messages). That is the `#announcements` shape: `@everyone` denied
+  Send Messages there (an allow for exec doesn't change it, because in Frapp
+  the exec hold `announcements:post`), or, on a server where only a
+  "Brothers" role can talk, Brothers denied there. A deny on a role that
+  grants nothing itself, like a "Muted" role, doesn't count. The scan records
+  this per top-level channel (`read_only_in_discord`); a thread lands in its
+  parent's channel and takes its answer. An uploaded export carries no
+  permissions, so its channels are postable. The review step lists the
+  channels that will be read-only and why, and a chapter changes either
+  default in chat admin afterwards. Discord answers Send Messages per role
+  and Frapp has only read-only or not, so a channel where some readers
+  could talk and others could not comes out postable by all its readers
+  unless a reader the server lets talk was silenced there.
 - **The bot reads only what its roles can see.** Discord lists every channel to
   a bot, including ones hidden from it, so the scan works out the bot's own
   access per channel from Discord's permission overwrites rather than finding

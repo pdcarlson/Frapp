@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   asNewChannel,
+  choiceIsReadOnly,
   defaultChoice,
   defaultChoices,
   mappingIssues,
@@ -245,7 +246,8 @@ describe("mappingIssues", () => {
     );
 
     const readOnly = defaultChoices(channels);
-    readOnly["2"] = { ...readOnly["2"]!, newName: "memes", readOnly: false };
+    // The default is postable (#3697), so read-only is the one that differs.
+    readOnly["2"] = { ...readOnly["2"]!, newName: "memes", readOnly: true };
     expect(
       mappingIssues(channels, readOnly, []).map((issue) => issue.channelId),
     ).toEqual(["1", "2"]);
@@ -576,5 +578,22 @@ describe("normaliseChannelName", () => {
   it("compares names the way an admin reads them", () => {
     expect(normaliseChannelName("  #General ")).toBe("general");
     expect(normaliseChannelName("##x")).toBe("x");
+  });
+});
+
+// #3697: every imported channel used to be sent read-only.
+describe("choiceIsReadOnly", () => {
+  it("is postable unless Discord made the channel read-only", () => {
+    expect(choiceIsReadOnly({}, {})).toBe(false);
+    expect(choiceIsReadOnly({ readOnlyInDiscord: null }, {})).toBe(false);
+    expect(choiceIsReadOnly({ readOnlyInDiscord: false }, {})).toBe(false);
+    expect(choiceIsReadOnly({ readOnlyInDiscord: true }, {})).toBe(true);
+  });
+
+  it("follows the admin's own choice over Discord's", () => {
+    expect(
+      choiceIsReadOnly({ readOnlyInDiscord: true }, { readOnly: false }),
+    ).toBe(false);
+    expect(choiceIsReadOnly({}, { readOnly: true })).toBe(true);
   });
 });

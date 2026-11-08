@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-08: Discord-imported channels are postable
+
+### 20261108163000_discord_import_read_only_in_discord.sql
+
+- **Purpose**: Adds one nullable column to `discord_import_channels`: `read_only_in_discord` (the scan's record that Discord took Send Messages away from the channel's readers, an announcements-style channel; null for a thread, when the roles could not be read, and on the upload path). It becomes the default for `new_channel_is_read_only`, which until now was true for every channel an import created, so only `announcements:post` holders could post in them (#3697). The rule is in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#imported-archive-messages) § Imported archive messages. No backfill, and channels already imported are not changed: repairing them is a separate data fix that needs the owner's OK.
+- **Checks**: After `db push`, `select column_name, is_nullable from information_schema.columns where table_name = 'discord_import_channels' and column_name = 'read_only_in_discord';` returns one row, `YES`. A new scan then fills it on each top-level channel.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API never names the column, so it is unaffected. The newer API names it on every scan and every channel-mapping write, so against an unmigrated database those fail on the unknown column; don't deploy the API first. Deploy the web app with the API: until the web from this PR is out, the wizard keeps sending every new channel read-only. Existing rows read as null, which means postable unless the admin chooses otherwise, so an import mapped before this release keeps the read-only choice it saved, and remapping it makes its channels postable. `add column if not exists` makes re-applying idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-discord-import-read_only_in_discord-20261108163000) § Rollback Discord import read_only_in_discord.
+
 ## 2026-11-07: Database functions callable only by who needs them
 
 ### 20261107160000_function_grants_and_search_path.sql

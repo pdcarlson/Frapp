@@ -20,6 +20,8 @@
 
 /** View Channels (1 << 10). */
 export const VIEW_CHANNEL = 1n << 10n;
+/** Send Messages (1 << 11). */
+export const SEND_MESSAGES = 1n << 11n;
 /** Read Message History (1 << 16). */
 export const READ_MESSAGE_HISTORY = 1n << 16n;
 /** Administrator (1 << 3): every permission, and overwrites do not apply. */
@@ -207,6 +209,56 @@ export function readerRoleIds(
     (roleId) =>
       roleId !== guildId && readsAs({ userId: null, roleIds: [roleId] }),
   );
+}
+
+/**
+ * Whether the channel is read-only in Discord: it takes Send Messages away
+ * from a reader the server otherwise lets talk (#3697). This is what makes an
+ * imported channel read-only in Frapp, where only an `announcements:post`
+ * holder can post in one; every other imported channel is postable by
+ * whoever can read it.
+ *
+ * The readers asked are `@everyone`, and each of `candidates` on its own
+ * whose own guild permissions grant Send Messages. A reader counts when it
+ * can read the channel's history and could send at the server level, but
+ * cannot send here. So:
+ *
+ *  - `#announcements` denying Send Messages to `@everyone` is read-only, and
+ *    so is one denying it to "Brothers" on a server where only that role can
+ *    talk. An allow for exec does not change it: in Frapp the exec hold
+ *    `announcements:post`.
+ *  - A deny on a "Muted" role that grants nothing itself does not count, so a
+ *    moderation role does not turn every channel read-only.
+ *  - A channel where nobody could talk at the server level is not read-only
+ *    here: the channel itself did not take anything away.
+ *
+ * Like `readerRoleIds`, one role at a time approximates Discord, which
+ * answers per combination of roles; the wizard says which channels come out
+ * read-only and a chapter can change it in chat admin afterwards.
+ */
+export function readOnlyInDiscord(
+  guildId: string,
+  roles: readonly DiscordRolePermissions[],
+  overwrites: readonly DiscordPermissionOverwrite[],
+  candidates: readonly string[],
+): boolean {
+  const ownPermissions = new Map(
+    roles.map((role) => [role.id, bits(role.permissions)]),
+  );
+  const silenced = (subject: DiscordPermissionSubject): boolean => {
+    const base = basePermissions(guildId, roles, subject);
+    if ((base & SEND_MESSAGES) === 0n) return false;
+    const here = channelPermissions(base, guildId, overwrites, subject);
+    return canReadHistory(here) && (here & SEND_MESSAGES) === 0n;
+  };
+  if (silenced({ userId: null, roleIds: [] })) return true;
+  return candidates.some((roleId) => {
+    if (roleId === guildId) return false;
+    if (((ownPermissions.get(roleId) ?? 0n) & SEND_MESSAGES) === 0n) {
+      return false;
+    }
+    return silenced({ userId: null, roleIds: [roleId] });
+  });
 }
 
 /** Parse `permission_overwrites` off a raw channel, dropping malformed rows. */

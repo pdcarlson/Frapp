@@ -163,6 +163,12 @@ export interface DiscoveredDiscordChannel {
    * when unknown or not private.
    */
   discord_reader_role_ids?: string[] | null;
+  /**
+   * For a top-level channel: Discord took Send Messages away from its readers
+   * there (an announcements-style channel), so the channel it creates is
+   * read-only by default (#3697). Null when unknown; absent from an older API.
+   */
+  read_only_in_discord?: boolean | null;
 }
 
 export interface DiscordDiscoveryResult {

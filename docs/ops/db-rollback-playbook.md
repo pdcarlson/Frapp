@@ -3137,3 +3137,19 @@ alter table public.chat_message_attachments
 ```
 
 Dropping them loses each photo's blur and the link to its preview copy; photos still draw, from the original. The preview objects stay in the `chat` bucket under each original's `preview/` folder, unreferenced, until a sweep removes them (#2197).
+
+## Rollback Discord import read_only_in_discord (20261108163000)
+
+* **Migration**: `20261108163000_discord_import_read_only_in_discord.sql`
+
+One nullable column on `discord_import_channels`, `read_only_in_discord`. The API from the same PR writes it on every scan and channel-mapping write, so roll the API back first: dropping the column under the new API fails every scan and mapping save. Roll the web app back with the API. The older web sends every new channel read-only, which is the bug this release fixed (#3697), so a rollback brings back channels members can read but not post in.
+
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). After the API is back on the earlier version:
+
+```sql
+alter table public.discord_import_channels
+  drop column if exists read_only_in_discord;
+```
+
+Dropping it loses only the scan's record. Each mapped row keeps the `new_channel_is_read_only` it saved, and the channels an import already created keep their own `is_read_only`.
+
