@@ -156,7 +156,10 @@ function rehypeTextFlow({
  * hooks, and calling it here, not rendering it, is what lets the links
  * collected during the parse reach the row's accessibility actions.
  */
-export function parseMessageMarkdown(content: string): ParsedMessageMarkdown {
+export function parseMessageMarkdown(
+  content: string,
+  chips?: (token: string) => boolean,
+): ParsedMessageMarkdown {
   // Decided from the source, before remark sees it: see
   // `skipsMarkdownParse` (#2209, #2664).
   const flatten = skipsMarkdownParse(content);
@@ -177,9 +180,13 @@ export function parseMessageMarkdown(content: string): ParsedMessageMarkdown {
       remarkBreaks,
       // The RAW body, not the text remark decoded: `&#64;Jane` notifies
       // nobody, so it must not draw as a mention (`markdown-mentions.ts`).
-      [remarkMentionChips, { content }],
+      // `chips` keeps a token that pinged nobody from drawing as a mention
+      // (`mentionChipFilter` in `@repo/validation`).
+      [remarkMentionChips, { content, chips }],
     ],
-    rehypePlugins: [[rehypeTextFlow, { result, source: flatten ? "" : content }]],
+    rehypePlugins: [
+      [rehypeTextFlow, { result, source: flatten ? "" : content }],
+    ],
     allowedElements: ALLOWED_ELEMENTS,
     unwrapDisallowed: true,
     components: COMPONENTS,
@@ -200,7 +207,8 @@ const MarkdownContext = createContext<MarkdownContextValue | null>(null);
 
 function useMarkdownContext(): MarkdownContextValue {
   const context = useContext(MarkdownContext);
-  if (!context) throw new Error("A markdown element rendered outside MessageMarkdown");
+  if (!context)
+    throw new Error("A markdown element rendered outside MessageMarkdown");
   return context;
 }
 
@@ -297,7 +305,9 @@ const COMPONENTS: Components = {
   code: ({ children }) => <Code>{children}</Code>,
   // hast ends a block's text with a newline; the layout breaks the line itself.
   pre: ({ node }) => (
-    <Code>{textOf((node ?? { type: "root" }) as HastNode).replace(/\n$/, "")}</Code>
+    <Code>
+      {textOf((node ?? { type: "root" }) as HastNode).replace(/\n$/, "")}
+    </Code>
   ),
   br: () => "\n",
   mark: ({ children }) => <Mention>{children}</Mention>,

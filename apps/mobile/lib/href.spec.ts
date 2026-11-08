@@ -6,7 +6,12 @@ import { goBackTo, isTabHref, openHref } from "./href";
  * target) pushes a screen but pops down to a tab, so it never stacks a second
  * tab bar over a pushed screen (`spec/ui/mobile/navigation.md` § Going back).
  */
-const router = () => ({ push: vi.fn(), navigate: vi.fn(), dismissTo: vi.fn() });
+const router = () => ({
+  push: vi.fn(),
+  replace: vi.fn(),
+  navigate: vi.fn(),
+  dismissTo: vi.fn(),
+});
 const TABS = ["/", "/events", "/tasks", "/more", "/tasks?focus=1"];
 
 describe("openHref", () => {
@@ -24,6 +29,17 @@ describe("openHref", () => {
     openHref(r, { pathname: "/event-details", params: { id: "e1" } } as never);
     expect(r.push).toHaveBeenCalledTimes(2);
     expect(r.dismissTo).not.toHaveBeenCalled();
+  });
+
+  it("replaces the screen on top when the link is the same kind of screen", () => {
+    // A push for a channel while a channel is open replaces it, so back
+    // still reaches chat home rather than a second channel (2026-11-07).
+    const r = router();
+    openHref(r, "/chat-thread?channelId=c2" as never, "/chat-thread");
+    expect(r.replace).toHaveBeenCalledWith("/chat-thread?channelId=c2");
+    expect(r.push).not.toHaveBeenCalled();
+    openHref(r, "/chat-thread?channelId=c2" as never, "/profile");
+    expect(r.push).toHaveBeenCalledTimes(1);
   });
 
   it("reads the object form's pathname", () => {
