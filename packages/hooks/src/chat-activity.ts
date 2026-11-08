@@ -64,11 +64,11 @@ export interface ChatActivityHandlerOptions {
   /** `users.id` of the signed-in member, read at the time of each message. */
   viewerId: () => string | null;
   /**
-   * Is the member looking at `channelId` right now: its thread on screen, and
-   * the app or tab in front of them? Only then does a message there count as
-   * read.
+   * The channel the member is looking at right now (its thread on screen, and
+   * the app or tab in front of them), or `null`. Only there does a message
+   * count as read.
    */
-  isViewing: (channelId: string) => boolean;
+  viewing: () => string | null;
   /** `POST /v1/channels/{id}/read`; its result is not read. */
   markRead: (channelId: string) => Promise<unknown>;
   delayMs?: number;
@@ -90,11 +90,15 @@ export interface ChatActivityHandler {
  *   Without the stamp the next count would light up the very channel the
  *   member is reading (the cursor was stamped when it opened, before this
  *   message). One stamp per channel per burst, not one per message.
- * - Anything else, and every `resync`, reads both summaries again.
+ * - Anything else reads both summaries again.
+ * - A `resync` reads both again, and first re-stamps the channel being looked
+ *   at: whatever arrived in it while the app was away, the member is now
+ *   looking at, and nothing else would stamp it until they leave.
  *
- * Rounds run one after another, never overlapping: a round re-reads only after
- * every stamp before it has landed, so a slow stamp can't be overtaken by a
- * later round's read that would count the message as unread.
+ * A round's stamps wait for every earlier round's, so a slow stamp can't be
+ * overtaken by a later round's re-read that would count the message as unread.
+ * The re-reads themselves aren't waited on: a slow or retrying summary read
+ * must not hold back the next message's update.
  *
  * Invalidates those two keys exactly, never the `["channels"]` prefix, which
  * would also re-read the channel list, its categories and every open channel's
@@ -108,8 +112,8 @@ export function createChatActivityHandler(
   let refresh = false;
   const stamps = new Set<string>();
   let disposed = false;
-  /** The round in flight, which the next one waits on. */
-  let running: Promise<void> = Promise.resolve();
+  /** The stamps in flight, which the next round's stamps wait on. */
+  let stamping: Promise<void> = Promise.resolve();
 
   const round = async () => {
     const toStamp = [...stamps];
@@ -120,34 +124,34 @@ export function createChatActivityHandler(
     // answer, which is better than a badge left stale.
     await Promise.allSettled(toStamp.map((id) => options.markRead(id)));
     if (disposed || !shouldRefresh) return;
-    await Promise.allSettled([
-      options.queryClient.invalidateQueries({
-        queryKey: CHANNEL_UNREAD_COUNTS_KEY,
-        exact: true,
-      }),
-      options.queryClient.invalidateQueries({
-        queryKey: CHANNEL_LATEST_MESSAGES_KEY,
-        exact: true,
-      }),
-    ]);
+    void options.queryClient.invalidateQueries({
+      queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+      exact: true,
+    });
+    void options.queryClient.invalidateQueries({
+      queryKey: CHANNEL_LATEST_MESSAGES_KEY,
+      exact: true,
+    });
   };
 
   const flush = () => {
     timer = null;
     // Taken now, at the end of the coalescing window; what arrives while the
     // previous round is still running joins this round.
-    running = running.then(round, round);
+    stamping = stamping.then(round, round);
   };
 
   const handle = (activity: ChatActivity) => {
     if (disposed) return;
     if (activity.type === "resync") {
       refresh = true;
+      const viewed = options.viewing();
+      if (viewed) stamps.add(viewed);
     } else {
       const viewerId = options.viewerId();
       const fromSomeoneElse =
         activity.senderId !== null && activity.senderId !== viewerId;
-      if (fromSomeoneElse && options.isViewing(activity.channelId)) {
+      if (fromSomeoneElse && options.viewing() === activity.channelId) {
         stamps.add(activity.channelId);
       } else {
         refresh = true;
@@ -196,8 +200,7 @@ export function useChatActivityHandler(
     const handler = createChatActivityHandler({
       queryClient,
       viewerId: () => viewerRef.current,
-      isViewing: (channelId) =>
-        viewedChannelId() === channelId && foregroundRef.current(),
+      viewing: () => (foregroundRef.current() ? viewedChannelId() : null),
       markRead: async (id) => {
         const { error } = await client.POST("/v1/channels/{id}/read", {
           params: { path: { id } },

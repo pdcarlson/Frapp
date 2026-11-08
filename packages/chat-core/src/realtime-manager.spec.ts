@@ -6,7 +6,7 @@ import { CHAT_SINCE_NOT_FOUND_CODE } from "@repo/validation";
 import {
   BACKFILL_PAGE_LIMIT,
   INBOX_TOPIC,
-  RESUME_RECONNECT_AFTER_MS,
+  RESUME_PROBE_MS,
   chatRealtime,
   createBackfillFetcher,
   POLL_DEGRADE_AFTER_MS,
@@ -1600,7 +1600,7 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
   let socket: {
     isConnected: ReturnType<typeof vi.fn>;
     connect: ReturnType<typeof vi.fn>;
-    disconnect: ReturnType<typeof vi.fn>;
+    sendHeartbeat: ReturnType<typeof vi.fn>;
   };
   let offline: boolean;
   let netListener: ((online: boolean) => void) | null;
@@ -1616,7 +1616,7 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
     socket = {
       isConnected: vi.fn(() => true),
       connect: vi.fn(),
-      disconnect: vi.fn(async () => "ok"),
+      sendHeartbeat: vi.fn(async () => undefined),
     };
     (supabase as unknown as { realtime: typeof socket }).realtime = socket;
     activity = vi.fn() as ReturnType<typeof vi.fn> &
@@ -1805,35 +1805,42 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
       expect(backfill).toHaveBeenCalledTimes(1);
     });
 
-    test("after a long absence, drops a socket that still reads open and rejoins everything on a fresh one", async () => {
-      chatRealtime.subscribe("c1");
-      const thread = channels.get("chat:channel:c1")!;
-      thread.trigger("SUBSCRIBED");
-      const inboxBefore = inbox();
-      inboxBefore.trigger("SUBSCRIBED");
-      const actionsBefore = channels.get("chat:actions:global")!;
-      // Disconnected from here on: a release's leave resolves at once.
-      socket.disconnect.mockImplementation(async () => {
-        socket.isConnected.mockReturnValue(false);
-        return "ok";
-      });
-
-      chatRealtime.resume(RESUME_RECONNECT_AFTER_MS);
-      await vi.advanceTimersByTimeAsync(0);
-
-      expect(socket.disconnect).toHaveBeenCalledTimes(1);
-      expect(channels.get("chat:channel:c1")).not.toBe(thread);
-      expect(inbox()).not.toBe(inboxBefore);
-      expect(channels.get("chat:actions:global")).not.toBe(actionsBefore);
-      expect(socket.connect).toHaveBeenCalled();
-      expect(activity).toHaveBeenCalledWith({ type: "resync" });
-    });
-
-    test("a short absence trusts a socket that reads open", () => {
+    test("probes a socket that reads open: a heartbeat now, a second after the probe window", async () => {
       chatRealtime.subscribe("c1");
       channels.get("chat:channel:c1")!.trigger("SUBSCRIBED");
-      chatRealtime.resume(RESUME_RECONNECT_AFTER_MS - 1);
-      expect(socket.disconnect).not.toHaveBeenCalled();
+      inbox().trigger("SUBSCRIBED");
+
+      chatRealtime.resume();
+      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(1);
+
+      // The second is Realtime's own heartbeat timeout when the first went
+      // unanswered, and harmless when it was answered. Nothing is torn down by
+      // the manager, so other consumers of the shared socket are untouched.
+      await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS);
+      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(2);
+      expect(socket.connect).not.toHaveBeenCalled();
+    });
+
+    test("a resume after the manager is torn down sends no late heartbeat", async () => {
+      chatRealtime.resume();
+      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(1);
+      chatRealtime.destroy();
+      await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS);
+      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(1);
+    });
+
+    test("an inbox that isn't live reports its resync from its rejoin, not twice", async () => {
+      const before = inbox();
+      before.trigger("SUBSCRIBED");
+      before.trigger("CLOSED");
+
+      chatRealtime.resume();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(activity).not.toHaveBeenCalled();
+
+      inbox().trigger("SUBSCRIBED");
+      expect(activity).toHaveBeenCalledTimes(1);
+      expect(activity).toHaveBeenCalledWith({ type: "resync" });
     });
 
     test("reconnects a socket known to be down and reopens what isn't live", async () => {
@@ -1849,6 +1856,7 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
       await vi.advanceTimersByTimeAsync(0);
 
       expect(socket.connect).toHaveBeenCalledTimes(1);
+      expect(socket.sendHeartbeat).not.toHaveBeenCalled();
       // Reopened now, not at the end of the backoff.
       expect(channels.get("chat:channel:c1")).not.toBe(before);
       expect(inbox()).not.toBe(inboxBefore);

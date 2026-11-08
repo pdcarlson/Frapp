@@ -224,18 +224,13 @@ describe("ChatProvider rebinds the realtime manager without tearing it down (#30
       liveViewerId.current = "user-live";
       const { unmount } = renderProvider();
 
-      const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
       visibility = "hidden";
       document.dispatchEvent(new Event("visibilitychange"));
       expect(chatRealtime.resume).not.toHaveBeenCalled();
 
-      now.mockReturnValue(31_000);
       visibility = "visible";
       document.dispatchEvent(new Event("visibilitychange"));
       expect(chatRealtime.resume).toHaveBeenCalledTimes(1);
-      // How long it was hidden, which decides whether the socket is trusted.
-      expect(chatRealtime.resume).toHaveBeenLastCalledWith(30_000);
-      now.mockRestore();
 
       unmount();
       document.dispatchEvent(new Event("visibilitychange"));

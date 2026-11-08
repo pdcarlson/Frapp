@@ -88,6 +88,18 @@ describe("useChatActivityHandler (#3698)", () => {
     });
   });
 
+  test("a resync in the foreground re-stamps the claimed thread", async () => {
+    release = claimViewedChannel("c1");
+    const { result } = render();
+
+    act(() => result.current({ type: "resync" }));
+    await act(() => vi.advanceTimersByTimeAsync(CHAT_ACTIVITY_COALESCE_MS));
+
+    expect(post).toHaveBeenCalledWith("/v1/channels/{id}/read", {
+      params: { path: { id: "c1" } },
+    });
+  });
+
   test("keeps one identity across renders, and does nothing once unmounted", async () => {
     release = claimViewedChannel("c1");
     const { result, rerender, unmount } = render();

@@ -119,16 +119,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     the next heartbeat (#3698). The online edge is the manager's own.
   */
   useEffect(() => {
-    let hiddenAt: number | null = isTabVisible() ? null : Date.now();
     const onVisibility = () => {
-      if (!isTabVisible()) {
-        hiddenAt ??= Date.now();
-        return;
-      }
-      // How long it was hidden decides whether a socket that still reads open
-      // is trusted (`RESUME_RECONNECT_AFTER_MS`).
-      chatRealtime.resume(hiddenAt === null ? 0 : Date.now() - hiddenAt);
-      hiddenAt = null;
+      if (isTabVisible()) chatRealtime.resume();
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);

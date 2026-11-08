@@ -92,9 +92,10 @@ function isForeground(): boolean {
 /**
  * Binds the chat realtime manager to the app's clients, once, for the life of
  * the process (#3698). Mounted from `components/app-runtime.tsx`, above the
- * auth gate, so it runs before the member reaches any screen. It binds once a
- * member is signed in and their `users.id` has resolved, never before, and a
- * different member's `configure` rejoins every channel for them.
+ * auth gate, so it runs before the member reaches any screen. It first binds
+ * once a member is signed in and their `users.id` has resolved, never before;
+ * after that every viewer change rebinds it, a sign-out (`null`) included, and
+ * `configure` rejoins the inbox under the new session.
  *
  * What it adds over the per-thread wiring this replaced:
  *
@@ -106,8 +107,9 @@ function isForeground(): boolean {
  *   Bound per screen, none of this ran until a thread was opened.
  * - **Resume on foreground.** iOS and Android suspend the socket in the
  *   background, and the client finds out only at its next heartbeat. Coming
- *   back from the background calls `chatRealtime.resume()`, which reads every
- *   open thread since its cursor and the summaries again at once.
+ *   back from the background calls `chatRealtime.resume()`, which probes the
+ *   socket, reads every open thread since its cursor, and re-reads the
+ *   summaries at once.
  */
 export function useChatRealtimeBinding(): void {
   const queryClient = useQueryClient();
@@ -119,12 +121,18 @@ export function useChatRealtimeBinding(): void {
   const signedIn = useIsApiAuthenticated();
   const viewerId = useViewerUserId({ enabled: signedIn });
   const onMessageActivity = useChatActivityHandler(viewerId, isForeground);
+  /**
+   * Once bound, the manager is rebound on every viewer change, sign-out
+   * included: `configure({ viewerId: null })` rejoins the inbox under the
+   * signed-out session, so a signed-out device stops receiving the member's
+   * messages, and the next sign-in (even the same member's) rejoins it under
+   * theirs.
+   */
+  const boundRef = useRef(false);
 
   useEffect(() => {
-    // No member, no binding: nothing is joined under a signed-out session.
-    // Signing out leaves the manager bound; the next member's `configure`
-    // rejoins every channel for them.
-    if (!supabase || !viewerId) return;
+    // Before the first member is known, nothing is joined at all.
+    if (!supabase || (!viewerId && !boundRef.current)) return;
     let cancelled = false;
 
     void bootChatAdapters().then(() => {
@@ -138,6 +146,7 @@ export function useChatRealtimeBinding(): void {
         backfill: createBackfillFetcher(apiClient),
         onMessageActivity,
       });
+      boundRef.current = true;
     });
 
     return () => {
@@ -147,20 +156,13 @@ export function useChatRealtimeBinding(): void {
 
   useEffect(() => {
     let previous: AppStateStatus | null = AppState.currentState;
-    let backgroundedAt: number | null = null;
     const subscription = AppState.addEventListener("change", (next) => {
       // `background`, not `inactive`: a permission prompt or the notification
       // shade passes through `inactive` with the socket still up. The same
       // line `lib/connection/monitor.ts` draws.
-      if (next === "background") backgroundedAt ??= Date.now();
       if (next === "active" && previous === "background") {
-        // How long it was gone decides whether a socket that still reads open
-        // is trusted (`RESUME_RECONNECT_AFTER_MS`).
-        chatRealtime.resume(
-          backgroundedAt === null ? 0 : Date.now() - backgroundedAt,
-        );
+        chatRealtime.resume();
       }
-      if (next === "active") backgroundedAt = null;
       previous = next;
     });
     return () => subscription.remove();

@@ -193,13 +193,13 @@ export type MessageActivity =
   | { type: "resync" };
 
 /**
- * How long the app may have been away before `resume()` stops trusting a socket
- * that still reads open. Realtime heartbeats every 25s and only notices a dead
- * socket when one goes unanswered, so after an absence longer than a heartbeat
- * a socket the OS cut can still read open for up to another 50s. Shorter than
- * that, the socket was very likely never cut.
+ * How long `resume()` gives the socket to answer the heartbeat it sends before
+ * a second heartbeat declares it dead. Realtime only notices a socket the OS
+ * cut when a heartbeat goes unanswered, and on its own schedule that is up to
+ * 50s after the app is back; probing brings it to this. Generous enough that a
+ * slow but live mobile link answers in time.
  */
-export const RESUME_RECONNECT_AFTER_MS = 25_000;
+export const RESUME_PROBE_MS = 4_000;
 
 /**
  * The one topic carrying every new message the viewer may read, whichever
@@ -271,6 +271,8 @@ class ChatRealtimeManager {
   private inboxOwesResync = false;
   private inboxBackoffStep = 0;
   private inboxRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The second heartbeat of a `resume()` probe, pending. */
+  private probeTimer: ReturnType<typeof setTimeout> | null = null;
   private statusListeners = new Set<(status: ConnectionStatus) => void>();
   private offline = false;
   /** Unsubscribe for the `NetworkState` connectivity subscription. */
@@ -342,9 +344,10 @@ class ChatRealtimeManager {
     const before = previous ? (previous.viewerId ?? null) : null;
     const after = ctx.viewerId ?? null;
     // The inbox's rows are filtered by RLS against the session that joined.
-    // A viewer resolving or changing usually means a new session (mobile binds
-    // the manager before sign-in), so rejoin rather than trust the token
-    // refresh to re-scope a subscription made under the old one.
+    // A viewer resolving or changing usually means a new session (a sign-out
+    // rebinds with `null`, a sign-in with the member), so rejoin rather than
+    // trust the token refresh to re-scope a subscription made under the old
+    // one.
     if (previous !== null && before !== after) this.reopenInbox();
     for (const state of this.channels.values()) {
       if (state.attachSeq === 0) {
@@ -375,6 +378,8 @@ class ChatRealtimeManager {
     }
     if (this.inboxRetryTimer) clearTimeout(this.inboxRetryTimer);
     this.inboxRetryTimer = null;
+    if (this.probeTimer) clearTimeout(this.probeTimer);
+    this.probeTimer = null;
     if (this.inboxChannel) {
       void this.ctx?.supabase.removeChannel(this.inboxChannel);
       this.inboxChannel = null;
@@ -438,79 +443,64 @@ class ChatRealtimeManager {
 
   /**
    * The app is back in front of the member: a mobile app returning from the
-   * background, a web tab becoming visible (#3698). `awayMs` is how long it was
-   * gone, when the caller knows.
+   * background, a web tab becoming visible (#3698).
    *
-   * The socket may have died while nobody was looking, and the client may not
-   * notice until a heartbeat goes unanswered, tens of seconds later, so this
-   * does not wait on Realtime to say so:
+   * The socket may have died while nobody was looking, and the client only
+   * notices when a heartbeat goes unanswered, on its own schedule up to 50s
+   * later. So this does not wait on Realtime to say so:
    *
-   * - A socket known to be down is reconnected. One that reads open after an
-   *   absence of `RESUME_RECONNECT_AFTER_MS` or more is dropped and every
-   *   channel reopened on a fresh one (`reconnectSocket`), because it may be a
-   *   socket the OS cut that hasn't noticed; each rejoin backfills.
-   * - Otherwise each live channel is read since its cursor over REST now (the
-   *   idempotent backfill a reconnect runs, so a row that also arrives live
-   *   collapses to one), and any channel or inbox that isn't live is reopened,
-   *   which backfills when it lands.
-   * - A `resync` is reported so the channel summaries are read again too.
+   * - A socket known to be down is reconnected. One that reads open is probed
+   *   (`probeSocket`): a heartbeat now, and a second after `RESUME_PROBE_MS`,
+   *   which on a socket that never answered the first is Realtime's own
+   *   heartbeat timeout. That errors every channel on the socket, chat's and
+   *   everyone else's, and Realtime reconnects and rejoins them; each chat
+   *   rejoin backfills. A live socket just answers, and nothing is torn down,
+   *   so the other consumers sharing it (web's notification and event pings,
+   *   presence) never see a gap.
+   * - Each live channel is read since its cursor over REST now (the idempotent
+   *   backfill a reconnect runs, so a row that also arrives live collapses to
+   *   one), and any channel that isn't live is reopened, which backfills when
+   *   it lands.
+   * - The channel summaries are read again: by the inbox's rejoin when it isn't
+   *   live, otherwise by a `resync` reported now.
    *
    * Offline it does nothing; the online edge reopens everything when the
    * network returns.
    */
-  resume(awayMs = 0): void {
+  resume(): void {
     if (!this.ctx || this.offline) return;
     const realtime = this.ctx.supabase.realtime;
-    let reconnecting = false;
     try {
-      if (realtime && !realtime.isConnected()) {
-        realtime.connect();
-      } else if (realtime && awayMs >= RESUME_RECONNECT_AFTER_MS) {
-        reconnecting = true;
-        void this.reconnectSocket();
-      }
+      if (realtime && !realtime.isConnected()) realtime.connect();
+      else if (realtime) this.probeSocket(realtime);
     } catch {
       // A socket that won't come back is the backoff's and polling's to cover.
     }
-    if (!reconnecting) {
-      for (const state of this.channels.values()) {
-        if (state.status === "live") void this.runBackfill(state.channelId);
-        else this.reopenChannel(state);
-      }
-      if (!this.inboxLive) this.reopenInbox();
+    for (const state of this.channels.values()) {
+      if (state.status === "live") void this.runBackfill(state.channelId);
+      else this.reopenChannel(state);
     }
-    this.reportActivity({ type: "resync" });
+    // A rejoin reports its own resync; reporting one here too would read the
+    // summaries twice.
+    if (this.inboxLive) this.reportActivity({ type: "resync" });
+    else this.reopenInbox();
     this.emitStatus();
   }
 
   /**
-   * Drops the socket and rejoins everything on a fresh one.
-   *
-   * Order matters. A socket that died without telling anyone may never fire
-   * its close, so its channels never error and would sit "joined" on the new
-   * socket, receiving nothing. So every channel is reopened by the manager
-   * itself, after the disconnect: with the socket down, each release's leave
-   * resolves at once instead of waiting out its timeout on a dead link
-   * (`releaseTopic`). The first new `subscribe()` connects the socket; the
-   * `connect()` after is for a manager with nothing to rejoin.
+   * Asks a socket that reads open whether it is. Both calls are Realtime's
+   * public `sendHeartbeat()`: the second, while the first is still unanswered,
+   * runs the client's own heartbeat timeout and recovery, so a dead socket is
+   * handled exactly as a missed scheduled heartbeat would be, only sooner.
    */
-  private async reconnectSocket(): Promise<void> {
-    const realtime = this.ctx?.supabase.realtime;
-    if (!realtime) return;
-    try {
-      await realtime.disconnect();
-    } catch {
-      // Reopening below still replaces every channel.
-    }
-    if (!this.ctx || this.offline) return;
-    for (const state of this.channels.values()) this.reopenChannel(state);
-    this.reopenInbox();
-    void this.attachActionsChannel();
-    try {
-      realtime.connect();
-    } catch {
-      // The channels' reconnect backoff and polling cover a socket that won't.
-    }
+  private probeSocket(realtime: SupabaseClient["realtime"]): void {
+    void realtime.sendHeartbeat();
+    if (this.probeTimer) clearTimeout(this.probeTimer);
+    this.probeTimer = setTimeout(() => {
+      this.probeTimer = null;
+      if (this.ctx?.supabase.realtime !== realtime) return;
+      void realtime.sendHeartbeat();
+    }, RESUME_PROBE_MS);
   }
 
   subscribeStatus(cb: (status: ConnectionStatus) => void): () => void {

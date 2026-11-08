@@ -57,7 +57,7 @@ describe("createChatActivityHandler (#3698)", () => {
     createChatActivityHandler({
       queryClient,
       viewerId: () => VIEWER,
-      isViewing: (channelId) => viewing === channelId,
+      viewing: () => viewing,
       markRead,
     });
 
@@ -166,6 +166,32 @@ describe("createChatActivityHandler (#3698)", () => {
     await vi.advanceTimersByTimeAsync(0);
     // The first round's re-read, then the second's.
     expect(invalidate).toHaveBeenCalledTimes(4);
+  });
+
+  test("a slow re-read holds back nothing after it", async () => {
+    viewing = "c1";
+    // The first round's summary reads never settle (a retrying or hung fetch).
+    invalidate.mockImplementation(() => new Promise<void>(() => {}));
+    const { handle } = handler();
+    handle(message("c2", OTHER));
+    await vi.advanceTimersByTimeAsync(CHAT_ACTIVITY_COALESCE_MS);
+    expect(invalidate).toHaveBeenCalledTimes(2);
+
+    handle(message("c1", OTHER));
+    await vi.advanceTimersByTimeAsync(CHAT_ACTIVITY_COALESCE_MS);
+    expect(markRead).toHaveBeenCalledWith("c1");
+    expect(invalidate).toHaveBeenCalledTimes(4);
+  });
+
+  test("a resync re-stamps the channel being looked at, then re-reads", async () => {
+    // Back from the background on the thread the member was reading: what
+    // arrived meanwhile is on screen now.
+    viewing = "c1";
+    const { handle } = handler();
+    handle({ type: "resync" });
+    await vi.advanceTimersByTimeAsync(CHAT_ACTIVITY_COALESCE_MS);
+    expect(markRead).toHaveBeenCalledWith("c1");
+    expect(invalidate).toHaveBeenCalledTimes(2);
   });
 
   test("a resync re-reads both summaries", async () => {

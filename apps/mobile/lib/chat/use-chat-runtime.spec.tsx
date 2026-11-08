@@ -138,6 +138,27 @@ describe("useChatRealtimeBinding", () => {
     );
   });
 
+  it("once bound, rebinds on sign-out so the inbox rejoins under the signed-out session", async () => {
+    const { rerender } = renderHook(() => useChatRealtimeBinding(), {
+      wrapper: queryWrapper(),
+    });
+    await waitFor(() =>
+      expect(chatRealtime.configure).toHaveBeenLastCalledWith(
+        expect.objectContaining({ viewerId: "viewer-1" }),
+      ),
+    );
+
+    auth.signedIn = false;
+    viewer.id = null;
+    rerender();
+
+    await waitFor(() =>
+      expect(chatRealtime.configure).toHaveBeenLastCalledWith(
+        expect.objectContaining({ viewerId: null }),
+      ),
+    );
+  });
+
   it("hands the manager the activity handler that keeps chat home live (#3698)", async () => {
     renderHook(() => useChatRealtimeBinding(), { wrapper: queryWrapper() });
 
@@ -148,8 +169,7 @@ describe("useChatRealtimeBinding", () => {
     );
   });
 
-  it("resumes the manager on the way back from the background, not from inactive, with the time it was away (#3698)", () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
+  it("resumes the manager on the way back from the background, not from inactive (#3698)", () => {
     const { unmount } = renderHook(() => useChatRealtimeBinding(), {
       wrapper: queryWrapper(),
     });
@@ -160,10 +180,8 @@ describe("useChatRealtimeBinding", () => {
     expect(chatRealtime.resume).not.toHaveBeenCalled();
 
     setAppState("background");
-    vi.advanceTimersByTime(40_000);
     setAppState("active");
     expect(chatRealtime.resume).toHaveBeenCalledTimes(1);
-    expect(chatRealtime.resume).toHaveBeenLastCalledWith(40_000);
 
     unmount();
     setAppState("background");
