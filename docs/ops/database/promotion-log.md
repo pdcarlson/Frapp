@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-08: Event check-in opens before the start
+
+### 20261108210000_event_check_in_opens_minutes.sql
+
+- **Purpose**: Adds `events.check_in_opens_minutes integer not null default 10`, checked to `0–120` (`events_check_in_opens_minutes_range`): how many minutes before `start_time` an event's check-in opens. Check-in used to open at the start exactly, and at a real chapter event members arriving early were turned away (#3703). The rule is in [`spec/behavior/events.md`](../../../spec/behavior/events.md#check-in) § Check-In. The default fills every existing row, so **every event, including ones already scheduled, opens check-in ten minutes early from this release on**. That is the intended change.
+- **Checks**: After `db push`, `select column_name, is_nullable, column_default from information_schema.columns where table_name = 'events' and column_name = 'check_in_opens_minutes';` returns one row, `NO`, `10`, and `select count(*) from events where check_in_opens_minutes <> 10;` returns 0 until an officer changes one.
+- **Promoter notes**: Ship it before, or with, the API from the same PR. A deploy applies migrations first. The older API never names the column, so it is unaffected and keeps the old zero-minute window. The newer API writes it on every event create and series occurrence and reads it in event search, so against an unmigrated database those fail on the unknown column; don't deploy the API first. Mobile reads the field with 10 as the fallback, so a build ahead of or behind the API still works. The constraint is dropped and re-added and the column added `if not exists`, so re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-event-check_in_opens_minutes-20261108210000) § Rollback event check_in_opens_minutes.
+
 ## 2026-11-08: Discord-imported channels are postable
 
 ### 20261108163000_discord_import_read_only_in_discord.sql
