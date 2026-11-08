@@ -176,6 +176,27 @@ constraints web habits most often break:
 - **State:** the active chapter lives in a Zustand store (`apps/web/lib/stores/chapter-store.ts`,
   persisted to localStorage). Server state lives in TanStack Query. There is no other global store.
 
+## Proposing a UI change
+
+Owner rule, 2026-11-08, after a proposal page drew its screens from memory: placeholder phones and
+an invented Profile left nothing to judge. A proposal is a mock, but a mock of the real app.
+
+- **Audit the screen first.** Capture it as it is now. The running app on the seeded demo chapter
+  is the best source ([`demo-data.md` § Capture screenshots](../../../docs/guides/demo-data.md#capture-screenshots)
+  has the mobile setup). Where a capture isn't possible, read the screen's
+  code. Then list the design-system values the change touches (the control step, spacing, glass,
+  badge, type role, motion) from `spec/ui/design-system/` and `@repo/theme`, and put that list on
+  the page so the reader can check the mock against it.
+- **Draw only the change.** Everything that doesn't change is the real screen. The changed part is
+  drawn in the audited values, and a direction that departs from one says which and why.
+- **Real or labeled.** Every screen on the page is either the real one or plainly labeled as a stand-in
+  ("Profile page"). Never invent a screen's contents.
+- **A mock stays a mock.** Don't build the change in the app to show it. Code comes after the pick.
+- **Show the states.** Empty and full, unread and none, and the motion between them when motion is
+  part of the idea.
+- **Say what's approximate.** A capture from the sandbox has no iPhone system font, and web glass
+  isn't iOS 26's Liquid Glass. Name the stand-ins in one line.
+
 ## Verifying UI changes
 
 Run `npm run dev -w apps/web` (http://localhost:3000) or `npm run dev -w apps/landing`

@@ -950,7 +950,10 @@ build an unattended flow on `send_later`**, which asks the owner each time. **Co
 2026-11-06:** `create_trigger` *is* now the scheduled path. Called from a Frapp project thread's
 session without `create_new_session_on_fire`, it makes a task bound to that session, so each fire
 resumes it with its repository and connectors, and the three routines run that way
-([`routines.md`](routines.md), ADR-16 amendment 11). The rest of this section is the earlier
+([`routines.md`](routines.md), ADR-16 amendment 11). **Corrected 2026-11-08:** since the move to the
+Team organization, which has no projects, the routines are bound with `persistent_session_id` to a
+plain session, *Frapp scheduled tasks*; `create_new_session_on_fire` stored no repository and no
+connectors there. The rest of this section is the earlier
 record. In a session the owner was attending (2026-09-22), `list_triggers`, `create_trigger` and `update_trigger`
 worked within the limits below; the rest of the family wasn't tried. See [`routines.md`](routines.md). Not an account-side
 Routines gate (disproven 2026-08-08: the owner's Routines page was healthy and scheduled Routines
