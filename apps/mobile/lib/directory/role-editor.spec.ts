@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   filterRoleOptions,
-  hasBaseAccess,
   orderRoleOptions,
   parseRoleOptions,
   customRolesCaption,
@@ -118,14 +117,16 @@ describe("base access", () => {
   const options = parseRoleOptions(ROLES);
 
   it("counts roles carrying members:view, not Discord channel roles or the seeded flag", () => {
-    expect(hasBaseAccess(["r-brothers", "r-cabinet"], options)).toBe(false);
-    expect(hasBaseAccess(["r-brothers", "r-member"], options)).toBe(true);
-    expect(hasBaseAccess(["r-rush"], options)).toBe(true);
+    const grants = (id: string) => options.find((o) => o.id === id)?.grantsBase;
+    expect(grants("r-brothers")).toBe(false);
+    expect(grants("r-cabinet")).toBe(false);
+    expect(grants("r-member")).toBe(true);
+    expect(grants("r-rush")).toBe(true);
     // A seeded role whose members:view was edited away grants nothing.
     const edited = parseRoleOptions([
       { id: "r-new", name: "New Member", is_system: true, permissions: [] },
     ]);
-    expect(hasBaseAccess(["r-new"], edited)).toBe(false);
+    expect(edited[0]?.grantsBase).toBe(false);
   });
 
   it("warns only on the change that takes basic access away", () => {
