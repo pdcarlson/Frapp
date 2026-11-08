@@ -169,6 +169,23 @@ export class ChannelMemberDto {
       "The `display_order` of the member's highest role (lower ranks higher), or null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`.",
   })
   role_rank: number | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The id of that highest role, which the list groups readers under, or null when they hold no role.',
+  })
+  role_id: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "That role's name, the group's heading, or null when they hold no role.",
+  })
+  role_name: string | null;
 }
 
 export class CreateGroupDmDto {
@@ -247,6 +264,39 @@ export class MessageAttachmentDto {
   @IsInt()
   @Min(0)
   byte_size?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Photo width in pixels, so readers draw the bubble at its shape before the photo loads. A size out of range (1 to 20000), or one without the other, is dropped rather than refused, so a bad size never blocks a send.',
+  })
+  @IsOptional()
+  @IsInt()
+  width?: number;
+
+  @ApiPropertyOptional({ description: 'Photo height in pixels; see `width`.' })
+  @IsOptional()
+  @IsInt()
+  height?: number;
+
+  @ApiPropertyOptional({
+    maxLength: 64,
+    description:
+      'ThumbHash of the photo, base64: the blurred placeholder readers draw until it loads.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  thumbhash?: string;
+
+  @ApiPropertyOptional({
+    maxLength: 1024,
+    description:
+      'The `preview_storage_path` the upload-url call returned, once the preview copy is uploaded.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1024)
+  preview_storage_path?: string;
 }
 
 export class SendMessageDto {
@@ -385,6 +435,14 @@ export class RequestChatUploadUrlDto {
   @IsInt()
   @Min(0)
   size_bytes?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Also mint an upload URL for a smaller JPEG copy of this photo, which readers draw in the timeline. Ignored unless content_type is an image.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  with_preview?: boolean;
 }
 
 export class ChatUploadUrlResponseDto {
@@ -403,6 +461,45 @@ export class ChatUploadUrlResponseDto {
     description: 'Server-allocated message id embedded in storage_path.',
   })
   message_id: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Only when with_preview was asked for an image: PUT the preview JPEG here, as image/jpeg.',
+  })
+  preview_upload_url?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Only with preview_upload_url: send back as the attachment preview_storage_path.',
+  })
+  preview_storage_path?: string;
+}
+
+/**
+ * A chapter role as the caller's `@`-mention picker offers it (2026-11-06).
+ * Membership is not sent: the picker needs the name to insert and whether the
+ * caller may ping it, and the server expands the role when the message lands.
+ */
+export class MentionRoleDto {
+  @ApiProperty({ format: 'uuid' })
+  role_id: string;
+
+  @ApiProperty({ description: 'The role name; the picker inserts it folded.' })
+  name: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'The role’s palette color, or null.',
+  })
+  color: string | null;
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'Whether the caller may `@` this role: its own switch (`mentionable` on the role, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming a role the sender may not ping reaches nobody.',
+  })
+  mentionable: boolean;
 }
 
 export class ChannelUnreadCountDto {
@@ -422,6 +519,56 @@ export class ChannelUnreadCountDto {
       'Subset of unread_count that mentions the caller. Mentions are resolved server-side at send time.',
   })
   mention_count: number;
+}
+
+/**
+ * `GET /v1/channels/latest`: one readable channel's latest message, for Chat
+ * home's row preview. A channel with no message has no row.
+ */
+export class ChannelLatestMessageDto {
+  @ApiProperty({ format: 'uuid' })
+  channel_id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  message_id: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      "The sender's `users.id`, or null for an imported archive message, which carries `author_name` instead.",
+  })
+  sender_id: string | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  author_name: string | null;
+
+  @ApiProperty({
+    description:
+      'The message body, cut to its first 500 characters. Empty for a card or a file-only message.',
+  })
+  content: string;
+
+  @ApiProperty({
+    description: 'The message kind (`text`, `event`, `system_audit`, ...).',
+  })
+  kind: string;
+
+  @ApiProperty({
+    type: 'object',
+    additionalProperties: true,
+    nullable: true,
+    description:
+      'The audit payload, set only when `kind` is `system_audit`; null for every other kind.',
+  })
+  payload: Record<string, unknown> | null;
+
+  @ApiProperty({ type: Number })
+  attachment_count: number;
+
+  @ApiProperty({ format: 'date-time' })
+  created_at: string;
 }
 
 /**

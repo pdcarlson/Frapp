@@ -24,6 +24,7 @@ import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-modera
 import type { ChatChannel, ChatMessage } from '#domain/entities/chat.entity';
 import { memberFixture } from './entity-fixtures';
 import { ChatService } from '../../src/application/services/chat.service';
+import { ChatMentionService } from '../../src/application/services/chat-mention.service';
 import { ChatAttachmentService } from '../../src/application/services/chat-attachment.service';
 import { ChatNotificationPreferenceService } from '../../src/application/services/chat-notification-preference.service';
 import { ChatCategoryService } from '../../src/application/services/chat-category.service';
@@ -116,6 +117,7 @@ export async function createChatServiceFixture() {
   const mockMessageRepo: jest.Mocked<IChatMessageRepository> = {
     findById: jest.fn(),
     findByChannel: jest.fn(),
+    findLatestPerChannel: jest.fn().mockResolvedValue([]),
     findPinnedByChannel: jest.fn(),
     countPinnedByChannel: jest.fn(),
     findPollsByChapter: jest.fn(),
@@ -218,6 +220,8 @@ export async function createChatServiceFixture() {
 
   const mockRbac = {
     getEffectivePermissions: jest.fn(),
+    // The chapter's roles, for `@`-role resolution (`ChatMentionService`).
+    findByChapter: jest.fn().mockResolvedValue([]),
     // Active (non-alumni) member by default; alumni posting is covered in
     // channel-access.service.spec.ts.
     hasAlumniRole: jest.fn().mockResolvedValue(false),
@@ -234,6 +238,7 @@ export async function createChatServiceFixture() {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       ChatService,
+      ChatMentionService,
       ChatAttachmentService,
       ChatNotificationPreferenceService,
       ChatCategoryService,

@@ -17,6 +17,7 @@ import { TaskStatus } from '#domain/entities/task.entity';
 import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
 import { ChatService } from './chat.service';
+import { formatDueDate, joinFacts } from './push-copy';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 const VALID_ASSIGNEE_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -102,6 +103,17 @@ export class TaskService {
     return toDisplayStatus(task);
   }
 
+  /** A member's display name for a push, or null when it cannot be read. */
+  private async displayNameOf(userId: string): Promise<string | null> {
+    try {
+      const [user] = await this.userRepo.findByIds([userId]);
+      const name = user?.display_name?.trim();
+      return name ? name : null;
+    } catch {
+      return null;
+    }
+  }
+
   async list(
     chapterId: string,
     userId: string,
@@ -141,19 +153,30 @@ export class TaskService {
       confirmed_at: null,
     });
 
-    await this.safeNotifyUser(
-      input.assignee_id,
-      input.chapter_id,
-      {
-        title: 'Task Assigned',
-        body: `You have been assigned: ${task.title}`,
-        priority: 'NORMAL',
-        category: 'tasks',
-        data: { target: { screen: 'tasks', taskId: task.id } },
-      },
-      task.id,
-      'assignment',
-    );
+    // Assigning yourself a task is a note to self; the push would only echo
+    // the tap that made it.
+    if (input.assignee_id !== input.created_by) {
+      const assigner = await this.displayNameOf(input.created_by);
+      await this.safeNotifyUser(
+        input.assignee_id,
+        input.chapter_id,
+        {
+          // Named for the task, like every task push (notifications.md § What
+          // a push says): "Book the venue" / "From Paul · due Fri, Nov 14".
+          title: task.title,
+          body: joinFacts(
+            assigner ? `From ${assigner}` : 'Assigned to you',
+            `due ${formatDueDate(task.due_date)}`,
+            task.point_reward ? `${task.point_reward} points` : null,
+          ),
+          priority: 'NORMAL',
+          category: 'tasks',
+          data: { target: { screen: 'tasks', taskId: task.id } },
+        },
+        task.id,
+        'assignment',
+      );
+    }
 
     // The `/task` slash command asks us to surface an interactive assignment
     // card in chat. The card is server-originated (a client cannot forge
@@ -267,6 +290,20 @@ export class TaskService {
       );
     }
 
+    // The assignee taking back their own "done" before an officer confirms it
+    // (a stray tap, or a second look). It is the reject write without the
+    // reject: same compare-and-set, so a confirm that lands first wins and
+    // this refuses rather than un-completing a task whose points were paid.
+    // Only the assignee: an officer moving someone else's completed task back
+    // is a rejection, which notifies them, and goes through its own endpoint.
+    if (
+      task.status === TaskStatus.COMPLETED &&
+      newStatus === TaskStatus.IN_PROGRESS &&
+      task.assignee_id === userId
+    ) {
+      return this.reopenOwnCompletion(task, chapterId);
+    }
+
     const allowed = VALID_ASSIGNEE_TRANSITIONS[task.status];
     if (!allowed?.includes(newStatus)) {
       if (
@@ -295,6 +332,26 @@ export class TaskService {
       await this.notifyTaskCompleted(updated, userId, chapterId);
     }
 
+    return toDisplayStatus(updated);
+  }
+
+  private async reopenOwnCompletion(
+    task: Task,
+    chapterId: string,
+  ): Promise<TaskView> {
+    if (task.points_awarded) {
+      throw new BadRequestException(
+        'An officer already confirmed this task, so it stays done',
+      );
+    }
+    const updated = await this.taskRepo.reopenCompletion(task.id, chapterId);
+    if (!updated) {
+      // Null is any write that moved it first: an officer's confirm, their
+      // reject, or this member's own take-back from another device.
+      throw new BadRequestException(
+        'This task is no longer waiting on confirmation',
+      );
+    }
     return toDisplayStatus(updated);
   }
 
@@ -339,8 +396,10 @@ export class TaskService {
       task.created_by,
       chapterId,
       {
-        title: 'Task Completed',
-        body: `"${task.title}" was marked complete and needs your confirmation.`,
+        title: task.title,
+        body: `${
+          (await this.displayNameOf(task.assignee_id)) ?? 'The assignee'
+        } marked it done. Confirm it to award the points.`,
         priority: 'NORMAL',
         category: 'tasks',
         data: { target: { screen: 'tasks', taskId: task.id } },
@@ -408,8 +467,10 @@ export class TaskService {
       task.assignee_id,
       chapterId,
       {
-        title: 'Task Confirmed',
-        body: `Your task "${task.title}" has been confirmed`,
+        title: task.title,
+        body: updated.point_reward
+          ? `Confirmed · +${updated.point_reward} points`
+          : 'Confirmed',
         priority: 'NORMAL',
         category: 'tasks',
         data: { target: { screen: 'tasks', taskId: task.id } },
@@ -441,19 +502,23 @@ export class TaskService {
       );
     }
 
-    const updated = await this.taskRepo.update(id, chapterId, {
-      status: TaskStatus.IN_PROGRESS,
-      completed_at: null,
-    });
+    // Compare-and-set, so a confirm (or the assignee taking it back) that
+    // lands between the guards above and this write is not overwritten.
+    const updated = await this.taskRepo.reopenCompletion(id, chapterId);
+    if (!updated) {
+      throw new BadRequestException(
+        'Task is no longer waiting on confirmation — it was confirmed or moved back already',
+      );
+    }
 
     await this.safeNotifyUser(
       task.assignee_id,
       chapterId,
       {
-        title: 'Task Completion Rejected',
+        title: task.title,
         body: comment
-          ? `Your task "${task.title}" was rejected: ${comment}`
-          : `Your task "${task.title}" was rejected and moved back to in progress.`,
+          ? `Sent back: ${comment}`
+          : 'Sent back to in progress. It needs more before it counts.',
         priority: 'NORMAL',
         category: 'tasks',
         data: { target: { screen: 'tasks', taskId: task.id } },

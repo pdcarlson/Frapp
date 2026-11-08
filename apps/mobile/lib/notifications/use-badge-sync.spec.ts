@@ -6,20 +6,35 @@ function notificationRow(
   readAt: string | null,
   screen = "tasks",
 ): { id: string; read_at: string | null; data: unknown } {
-  return { id: `n-${Math.random()}`, read_at: readAt, data: { target: { screen } } };
+  return {
+    id: `n-${Math.random()}`,
+    read_at: readAt,
+    data: { target: { screen } },
+  };
 }
 
 const mockState = vi.hoisted(() => ({
   chapterId: "chapter-1" as string | null,
   notifications: [] as { id: string; read_at: string | null; data: unknown }[],
-  channelUnread: [] as { channel_id: string; unread_count: number }[],
+  channelUnread: [] as {
+    channel_id: string;
+    unread_count: number;
+    mention_count?: number;
+  }[],
+  channels: [] as { id: string; name: string; type: string }[],
   channelUnreadOptions: [] as ({ enabled?: boolean } | undefined)[],
   setBadgeCount: vi.fn(async (count: number) => {
     void count;
   }),
+  clearRead: vi.fn(async (ids: ReadonlySet<string>) => {
+    void ids;
+  }),
 }));
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  addressedUnreadTotal: (await importOriginal<typeof import("@repo/hooks")>())
+    .addressedUnreadTotal,
+  useChannels: () => ({ data: mockState.channels }),
   useActiveChapterId: () => mockState.chapterId,
   useNotifications: () => ({ data: mockState.notifications }),
   useChannelUnreadCounts: (options?: { enabled?: boolean }) => {
@@ -30,6 +45,8 @@ vi.mock("@repo/hooks", () => ({
 
 vi.mock("./push", () => ({
   setBadgeCount: (count: number) => mockState.setBadgeCount(count),
+  clearReadChatNotifications: (ids: ReadonlySet<string>) =>
+    mockState.clearRead(ids),
 }));
 
 const { useBadgeSyncRuntime } = await import("./use-badge-sync");
@@ -39,7 +56,9 @@ beforeEach(() => {
   mockState.notifications = [];
   mockState.channelUnread = [];
   mockState.channelUnreadOptions = [];
+  mockState.channels = [];
   mockState.setBadgeCount.mockClear();
+  mockState.clearRead.mockClear();
 });
 
 afterEach(() => {
@@ -52,21 +71,30 @@ describe("useBadgeSyncRuntime", () => {
     expect(mockState.setBadgeCount).toHaveBeenCalledWith(0);
   });
 
-  it("sums unread notifications and unread chat across channels", () => {
+  it("counts mentions and unread direct messages, not plain channel unread", () => {
     mockState.notifications = [
       notificationRow(null),
       notificationRow("2026-08-01T00:00:00.000Z"),
       notificationRow(null),
     ];
+    mockState.channels = [
+      { id: "c1", name: "general", type: "TEXT" },
+      { id: "c2", name: "academics", type: "TEXT" },
+      { id: "d1", name: "dm-a-b", type: "DM" },
+    ];
     mockState.channelUnread = [
-      { channel_id: "c1", unread_count: 2 },
-      { channel_id: "c2", unread_count: 5 },
+      // A busy channel nobody addressed the member in adds nothing.
+      { channel_id: "c1", unread_count: 30, mention_count: 0 },
+      // A channel counts its mentions, not its messages.
+      { channel_id: "c2", unread_count: 5, mention_count: 2 },
+      // A direct message counts every unread message.
+      { channel_id: "d1", unread_count: 3, mention_count: 0 },
     ];
 
     renderHook(() => useBadgeSyncRuntime());
 
-    // 2 unread notifications (the second is read) + 7 unread chat messages.
-    expect(mockState.setBadgeCount).toHaveBeenCalledWith(9);
+    // 2 unread notifications + 2 mentions + 3 unread DM messages.
+    expect(mockState.setBadgeCount).toHaveBeenCalledWith(7);
   });
 
   // ChatService writes a notifications row (target.screen: "chat") for every
@@ -78,11 +106,12 @@ describe("useBadgeSyncRuntime", () => {
       notificationRow(null, "chat"),
       notificationRow(null, "tasks"),
     ];
+    mockState.channels = [{ id: "c1", name: "dm-a-b", type: "DM" }];
     mockState.channelUnread = [{ channel_id: "c1", unread_count: 4 }];
 
     renderHook(() => useBadgeSyncRuntime());
 
-    // 1 non-chat unread notification (the chat one is excluded) + 4 unread chat.
+    // 1 non-chat unread notification (the chat one is excluded) + 4 unread DM.
     expect(mockState.setBadgeCount).toHaveBeenCalledWith(5);
   });
 
@@ -115,5 +144,21 @@ describe("useBadgeSyncRuntime", () => {
     rerender();
 
     expect(mockState.setBadgeCount).toHaveBeenLastCalledWith(1);
+  });
+
+  it("clears the tray for channels that read as fully read", () => {
+    mockState.channelUnread = [
+      { channel_id: "read", unread_count: 0 },
+      { channel_id: "unread", unread_count: 2 },
+    ];
+    renderHook(() => useBadgeSyncRuntime());
+    expect(mockState.clearRead).toHaveBeenCalledWith(new Set(["read"]));
+  });
+
+  it("clears nothing without an active chapter", () => {
+    mockState.chapterId = null;
+    mockState.channelUnread = [{ channel_id: "read", unread_count: 0 }];
+    renderHook(() => useBadgeSyncRuntime());
+    expect(mockState.clearRead).not.toHaveBeenCalled();
   });
 });

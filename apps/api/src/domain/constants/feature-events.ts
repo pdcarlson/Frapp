@@ -139,12 +139,12 @@ export const FEATURE_EVENTS = {
     feature: 'members',
     properties: ['invite_method', 'count'],
   },
-  'invite-redeemed': { feature: 'members', properties: [] },
+  'invite-redeemed': { feature: 'members', properties: ['sign_in_method'] },
   'member-onboarding-completed': { feature: 'members', properties: [] },
   'profile-photo-updated': { feature: 'members', properties: [] },
   'chapter-onboarded': {
     feature: 'chapter-settings',
-    properties: ['archetype', 'from_directory'],
+    properties: ['archetype', 'from_directory', 'sign_in_method'],
   },
   'semester-rolled-over': {
     feature: 'chapter-settings',

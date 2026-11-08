@@ -287,9 +287,8 @@ describe("BackworkPage disabled-query handling", () => {
     render(<BackworkPage />);
 
     expect(screen.queryByText("Loading backwork")).not.toBeInTheDocument();
-    expect(screen.getByText("No chapter selected")).toBeInTheDocument();
     expect(
-      screen.getByText(/pick a chapter from the switcher/i),
+      screen.getByText("Pick a chapter to browse its backwork."),
     ).toBeInTheDocument();
   });
 
@@ -698,7 +697,7 @@ describe("BackworkPage upload allowlist", () => {
     );
   });
 
-  it("shows the storage status when the bucket refuses the file", async () => {
+  it("never names the storage status when the bucket refuses the file", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: false, status: 400 } as Response),
@@ -720,7 +719,7 @@ describe("BackworkPage upload allowlist", () => {
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Couldn't upload backwork",
-          description: "Storage rejected upload (400).",
+          description: "The file didn't upload.",
         }),
       ),
     );
@@ -752,7 +751,7 @@ describe("BackworkPage upload allowlist", () => {
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Couldn't upload backwork",
-          description: "Upload URL response missing signed URL or storage path.",
+          description: "Try the upload again.",
         }),
       ),
     );
@@ -1002,7 +1001,7 @@ describe("BackworkPage library (2026-11-05 redesign)", () => {
     render(<BackworkPage />);
 
     await user.type(screen.getByLabelText(/^search backwork$/i), "organic chemistry");
-    expect(await screen.findByText("No files match")).toBeInTheDocument();
+    expect(await screen.findByText("No files match.")).toBeInTheDocument();
 
     await user.click(
       screen.getByRole("button", { name: /clear search and filters/i }),

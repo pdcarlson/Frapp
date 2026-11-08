@@ -1,10 +1,12 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Eye, EyeOff, Loader2, Pause, Play, Square } from "lucide-react";
 import { StudyZonesGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
   useGeofences,
+  useMyPermissions,
   usePauseStudySession,
   useResumeStudySession,
   useStartStudySession,
@@ -12,6 +14,8 @@ import {
   useStudyHeartbeat,
   useStudySessions,
 } from "@repo/hooks";
+import Link from "next/link";
+import { can } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -25,7 +29,10 @@ import {
   studySessionStatusKind,
   studySessionStatusLabel,
 } from "@/components/study/study-status";
-import { NestedEmpty } from "@/components/shared/nested-states";
+import {
+  InlineNote,
+  inlineNoteActionClassName,
+} from "@/components/shared/inline-note";
 import { SectionLabel } from "@/components/shared/section-label";
 import { denseListClassName } from "@/components/shared/table-controls";
 import {
@@ -170,6 +177,11 @@ export function StudyPage() {
   const pauseSession = usePauseStudySession();
   const resumeSession = useResumeStudySession();
   const stopSession = useStopStudySession();
+  const { data: permissionsPayload } = useMyPermissions();
+  const canManageZones = can(
+    "geofences:manage",
+    permissionsPayload?.permissions ?? [],
+  );
 
   const geofences = useMemo(
     () => asArray<Geofence>(geofencesQuery.data).filter((g) => g.is_active),
@@ -302,7 +314,7 @@ export function StudyPage() {
       setGeolocationError(
         getErrorMessage(
           error,
-          "Couldn't reach your device location. The session will expire if heartbeats keep failing.",
+          "Couldn't read your location. Your session ends if this keeps happening.",
         ),
       );
     }
@@ -484,7 +496,7 @@ export function StudyPage() {
         title: "Couldn't stop session",
         description: getErrorMessage(
           error,
-          "Retry in a moment. The server may have already expired the session.",
+          "Try again in a moment. The session may have already ended.",
         ),
         variant: "destructive",
       });
@@ -548,7 +560,9 @@ export function StudyPage() {
       <>
         <ErrorState
           title="Couldn't load study data"
-          description="Confirm your chapter access and retry."
+          description={describeLoadFailure(
+            geofencesQuery.error ?? sessionsQuery.error,
+          )}
           onRetry={() => {
             void geofencesQuery.refetch();
             void sessionsQuery.refetch();
@@ -683,10 +697,19 @@ export function StudyPage() {
         <section aria-labelledby="study-start-label" className="space-y-3">
           <SectionLabel id="study-start-label">Start a session</SectionLabel>
           {geofences.length === 0 ? (
-            <NestedEmpty
-              title="No active study zones"
-              description="Ask an officer who manages study zones to add one."
-            />
+            // One line, not a card (empty-states plan rule 7). The nav hides
+            // Study while no zone is active, so this is reached by a saved
+            // link; an officer who can add zones gets the way there.
+            <InlineNote>
+              No study zones yet.{" "}
+              {canManageZones ? (
+                <Link href="/geofences" className={inlineNoteActionClassName}>
+                  Add a study zone
+                </Link>
+              ) : (
+                "An officer adds them."
+              )}
+            </InlineNote>
           ) : (
             <div className="space-y-2">
               <div className="grid gap-3 sm:grid-cols-[minmax(0,20rem)_auto] sm:items-end sm:justify-start">
@@ -749,10 +772,10 @@ export function StudyPage() {
           Session history
         </SectionLabel>
         {sessions.length === 0 ? (
-          <NestedEmpty
-            title="No sessions logged yet"
-            description="Start a tracked session inside a study zone to start earning study points."
-          />
+          <InlineNote>
+            No sessions yet. Start one inside a study zone to earn study
+            points.
+          </InlineNote>
         ) : (
           <ul className={denseListClassName}>
             {sessions.map((session) => {

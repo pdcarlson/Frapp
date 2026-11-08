@@ -82,7 +82,7 @@
 - **Quiet hours:** Per-user configurable time window; NORMAL notifications silenced during quiet hours.
 - **Grouping:** Multiple notifications from the same source collapsed into one.
 - **Per-channel mute:** Users can mute individual chat channels.
-- **Badge count:** Total unread across notifications and chat.
+- **Badge count:** Unread notifications plus what addresses the member in chat: @-mentions and unread direct messages ([`notifications.md`](../behavior/notifications.md) § Badge Count).
 - **Triggers:** Chat mentions, DMs, announcements, event reminders, point changes, study session events, billing alerts, admin notifications.
 - **In-app history:** All notifications stored in `notifications` table; viewable and dismissable.
 - **Preferences:** Per-category opt-in/opt-out.
@@ -105,8 +105,8 @@
 
 - Admins create events with name, description, location, start/end time, point value, mandatory flag, and optional recurrence rule.
 - **Recurring events:** Weekly, biweekly, or monthly. Auto-generates individual event instances.
-- **Role-based required attendance:** Events can target specific roles (e.g. exec meeting for officers only). Only members with matching roles are required; others can optionally attend.
-- Members check in via the mobile app (self-service, during event time window + grace period). For role-targeted events, only members with required roles can check in.
+- **Attendance by role:** an event is required, optional or not invited for everyone, and per role where a role differs (e.g. required for officers, optional for everyone else; or required for everyone but new members). Behavior: [`events.md` § Event Creation](../behavior/events.md#event-creation).
+- Members check in via the mobile app (self-service, during event time window + grace period). Only members the event invites can check in.
 - Check-in atomically creates an attendance record AND awards the event's point value.
 - **Excuse workflow (admin-only):** Admins mark members as EXCUSED with an optional reason. Members cannot self-submit excuses. Excused members are not penalized.
 - Admins can view full attendance for any event and mark EXCUSED/ABSENT/LATE after the fact.
@@ -131,7 +131,7 @@
 
 ## Activity Feed
 
-- Unified feed showing recent chapter activity — the item set is owned by [`../behavior/activity-feed.md`](../behavior/activity-feed.md) and not restated here. **Specified, not built on any surface today** — the web home screen was removed in the chat-first redesign, and mobile's `(tabs)/index.tsx` is no longer a Home tab at all: the Signet rebuild ([#937](https://github.com/pdcarlson/Frapp/issues/937)) made it `ChatHomeScreen`, chat's own home route. Web's chat catch-up surfaces a separate, action-oriented pulse card instead ([`spec/behavior/chat/catch-up.md`](../behavior/chat/catch-up.md)).
+- Unified feed showing recent chapter activity — the item set is owned by [`../behavior/activity-feed.md`](../behavior/activity-feed.md) and not restated here. **Specified, not built on any surface today** — the web home screen was removed in the chat-first redesign, and mobile's `(app)/(tabs)/index.tsx` is no longer a Home tab at all: the Signet rebuild ([#937](https://github.com/pdcarlson/Frapp/issues/937)) made it `ChatHomeScreen`, chat's own home route. Web's chat catch-up surfaces a separate, action-oriented pulse card instead ([`spec/behavior/chat/catch-up.md`](../behavior/chat/catch-up.md)).
 - Read-only aggregation from existing data sources.
 
 ## Global Search
@@ -261,7 +261,7 @@ Officers get one **Set up your chapter** list instead of an officer half on ever
 | Upload the bylaws | `chapter_docs:upload` | `documents` | the library has a document |
 | Send the first dues | `billing:manage` and `billing:view` (only `view` reads the whole chapter's invoices) | `dues` | the chapter has an invoice |
 
-A line shows only to an officer who can do it, and only while the module the server gates its action on is on (switching a module on is the ops nudge's job, above). The list draws nothing until every read it needs has loaded, so it never flashes in half-checked, and a read that fails leaves it undrawn rather than guessing a line. It is worked out from live counts, so it goes away while every line it shows is done and comes back if one comes undone, say the only event is deleted or a module is switched on. An officer can hide it for good; like a nudge, the hide is stored per user per chapter, as `setup-checklist` in `members.dismissed_ops_nudges`. The rule, the copy and each line's web page are shared by both clients (`useChapterSetupChecklist` and `SETUP_CHECKLIST_WEB_PATH` in `@repo/hooks`). The phone can upload a document and schedule an event, so those lines open Documents and Events in the app: Documents' + opens the upload sheet, and Events' empty state points at the tab bar's +, where New event is; it has no screen for inviting or study zones, so those lines say "Web", done or not, and open the same page of the web app in the in-app browser. Closing the browser re-reads the lists, since the step may just have been done there, and so does chat home's pull to refresh. The web page opens in whichever chapter the web session has active, not necessarily the phone's ([#3575](https://github.com/pdcarlson/Frapp/issues/3575)).
+A line shows only to an officer who can do it, and only while the module the server gates its action on is on (switching a module on is the ops nudge's job, above). The list draws nothing until every read it needs has loaded, so it never flashes in half-checked, and a read that fails leaves it undrawn rather than guessing a line. It is worked out from live counts, so it goes away while every line it shows is done and comes back if one comes undone, say the only event is deleted or a module is switched on. An officer can hide it for good; like a nudge, the hide is stored per user per chapter, as `setup-checklist` in `members.dismissed_ops_nudges`. The rule, the copy and each line's web page are shared by both clients (`useChapterSetupChecklist` and `SETUP_CHECKLIST_WEB_PATH` in `@repo/hooks`). The phone can invite, upload a document and schedule an event, so those lines open Invite members, Documents and Events in the app (Invite members since 2026-11-06, [`navigation.md` § Inviting members](../ui/mobile/navigation.md#inviting-members)): Documents' + opens the upload sheet, and Events' empty state points at the tab bar's +, where New event is; it has no screen for study zones, so that line says "Web", done or not, and opens the same page of the web app in the in-app browser. Closing the browser re-reads the lists, since the step may just have been done there, and so does chat home's pull to refresh. The web page opens in whichever chapter the web session has active, not necessarily the phone's ([#3575](https://github.com/pdcarlson/Frapp/issues/3575)).
 
 ## Not-set-up features
 

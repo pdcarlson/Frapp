@@ -233,10 +233,10 @@ The two hooks cannot share one function. A transaction carries its trace payload
   - **Every other crumb** keeps none, so a `console` crumb's raw `arguments` never reach native.
 
   A JS event still drops `data` at send time. `apps/mobile/lib/sentry/recorded-breadcrumbs.spec.ts` drives the SDK's real `fetch`, `XMLHttpRequest` and console handlers through `@sentry/core` and the native sync to show it ([#3104](https://github.com/pdcarlson/Frapp/issues/3104)).
-- **Mobile turns off native breadcrumb data no JS hook can reach.** The native SDKs' own breadcrumbs never pass through JS. Read from sentry-cocoa 9.29.0 and sentry-android 8.57.0, the versions `@sentry/react-native` 8.28 pins. Since 2026-11-03 the repo runs 8.33, which pins 9.32.0 and 8.62.0, and those have not been re-read yet (#3342):
+- **Mobile turns off native breadcrumb data no JS hook can reach.** The native SDKs' own breadcrumbs never pass through JS. Read from sentry-cocoa 9.32.0 and sentry-android 8.62.0, the versions `@sentry/react-native` 8.33 pins (re-read 2026-11-07 against 9.29.0 and 8.57.0, which 8.28 pinned: the only new crumb is the hinge one below, and the React Native bridge's native code adds none, [#3342](https://github.com/pdcarlson/Frapp/issues/3342)). The pins live in the package's `RNSentry.podspec` (`sentry_cocoa_version`) and `android/build.gradle` (`sentryAndroidVersion`). Any `@sentry/react-native` bump fails `apps/mobile/lib/sentry/options.spec.ts`, which locks the package's own version and both pins, until this is re-read: the bridge's native code, and each SDK's crumb sources when its pin moves, diffed between the old version and the new. What the read found:
   - **iOS `http` crumbs:** sentry-cocoa keeps the request's query string as `http.query`, so `enableNetworkBreadcrumbs` is `false`. For a request made from JS the native crumb only duplicates the JS one. A request React Native makes natively, such as an `<Image>` loading a chat attachment, a profile photo or the chapter logo, has no JS crumb, so a native crash report no longer shows it. That is accepted: a chat attachment's URL is a signed storage URL whose query is the token.
   - **iOS `touch` crumbs:** a UIControl's would carry its `accessibilityIdentifier`, which is React Native's `testID`, so `reportAccessibilityIdentifier` is `false`.
-  - **What the native SDKs still record** is device and code state: app and screen lifecycle, system events (battery, storage, memory, orientation, screen on and off), connectivity, and a UIControl action's selector with a sanitized view description and a native `UIButton`'s title (iOS), or a tapped view's class and resource ID (Android).
+  - **What the native SDKs still record** is device and code state: app and screen lifecycle, system events (battery, storage, memory, orientation, screen on and off, and since sentry-cocoa 9.32.0 a foldable iPhone's hinge opening or closing), connectivity, and a UIControl action's selector with a sanitized view description and a native `UIButton`'s title (iOS), or a tapped view's class and resource ID (Android).
   - **Android has no request crumbs of its own.** OkHttp is instrumented only by the Sentry Android Gradle Plugin, which the app doesn't apply, so re-check this rule before turning that plugin on.
 
   **One known limit:** iOS's `ui.lifecycle` crumb carries each screen's `navigationItem.title`. Every mobile route's title is a static string today, but a route titled from data (a member's or a channel's name) would put that name in native crash reports, and no option turns off that one field: `enableAutoBreadcrumbTracking: false` drops the app-lifecycle crumbs too.
@@ -434,14 +434,50 @@ Like Outbox Telemetry above, `search-completed` carries no dedicated Frapp-owned
 
 ## Push Prompt Telemetry
 
-Mobile asks for notification permission only after the member taps "Turn on", on the C7 primer card or s16 Settings' push row ([`patterns.md` § Push notifications](../ui/mobile/patterns.md#push-notifications)). Whether members say yes decides whether chat pushes reach anyone, and the server can't see the answer: `POST /push-tokens` follows only an "allowed", and repeats on every launch. So mobile sends one client event, `push-prompt-answered` (defined in `apps/mobile/lib/notifications/push-analytics.ts`), through `AnalyticsContext` `track`, once per answer:
+Mobile asks for notification permission only after the member taps "Turn on", on onboarding's notifications step, the chat home's one reminder, or s16 Settings' push row ([`patterns.md` § Push notifications](../ui/mobile/patterns.md#push-notifications)). Whether members say yes decides whether chat pushes reach anyone, and the server can't see the answer: `POST /push-tokens` follows only an "allowed", and repeats on every launch. So mobile sends one client event, `push-prompt-answered` (defined in `apps/mobile/lib/notifications/push-analytics.ts`), through `AnalyticsContext` `track`, once per answer:
 
 | Property | Meaning |
 | --- | --- |
-| `answer` | `allowed` or `denied`, what the OS prompt returned after "Turn on" (a prompt the OS didn't show, as on iOS after one answer, reads as `denied`); or `not_now`, the primer card's "Not now", where no OS prompt was shown |
-| `surface` | `primer` (the card, `use-push-primer.ts`) or `settings` (the push row, `app/(tabs)/preferences.tsx`) |
+| `answer` | `allowed` or `denied`, what the OS prompt returned after "Turn on" (a prompt the OS didn't show, as on iOS after one answer, reads as `denied`); or `not_now`, onboarding's "Not now" or the reminder closed, where no OS prompt was shown. A tap that opened the phone's settings instead (no prompt could appear) sends no event, since the answer happens outside the app |
+| `surface` | `primer` (onboarding's step, `use-push-primer.ts`), `reminder` (the chat home's reminder, same file) or `settings` (the push row, `app/(app)/preferences.tsx`) |
 
 Neither property is content. The allow rate is a Trends insight: events with `answer = allowed` over all `push-prompt-answered` events, broken down by `surface`.
+
+## Member Onboarding Funnel
+
+The activation funnel follows a chapter. This one follows a member, from the
+invite to their first message, so a drop between joining and talking shows up
+per sign-in method and per app. Every step is an event recorded elsewhere in
+this file; this section only names the steps and the two properties added for
+it (2026-11-07).
+
+| Step | Event | Recorded by |
+| --- | --- | --- |
+| 1 | `invite-redeemed` | API ([§ Feature Events](#feature-events)) |
+| 2 | `onboarding-profile-answered` (mobile only, and only for a member s03 asked for a photo or name) | Mobile client |
+| 3 | `push-prompt-answered` with `surface = primer` (mobile only, and only when the build can push and push was off) | Mobile client ([§ Push Prompt Telemetry](#push-prompt-telemetry)) |
+| 4 | `member-onboarding-completed` | API |
+| 5 | `message-sent` | API |
+
+- **`sign_in_method`** on `invite-redeemed` and `chapter-onboarded`: `apple`,
+  `google`, `email` (password or magic link) or `other`, read from the
+  session user's `app_metadata.provider` (`signInMethodOf`,
+  `apps/api/src/interface/http/sign-in-method.ts`); `null` when the request
+  carried no Supabase user. A closed set the server derives, never the email.
+- **`onboarding-profile-answered`** is sent once when the member leaves s03's
+  profile beat (`apps/mobile/lib/onboarding/profile-step.ts`), through
+  `AnalyticsContext` `track`. `photo` is `had` (a photo before the beat),
+  `added` (chosen on it) or `none`; `name_step` is `added` (there was no real
+  name, the `Member` stand-in or empty), `edited` (a real one was changed) or
+  `kept`. Never the name itself. A save that fails sends nothing, since the
+  member stays on the beat.
+- **`onboarding-tour-finished`** is sent once when the first-run tour over chat
+  ends (`apps/mobile/lib/onboarding/tour.ts`): `outcome` is `done` (the last
+  stop) or `skipped`, `stop` is the 1-based stop it ended on, and `stops` how
+  many this member was shown (a stop whose control wasn't on screen is left
+  out). Not a funnel step: a tour that ran is read off it on its own.
+- Steps 2 and 3 are optional, so the funnel in PostHog marks them optional.
+  Break it down by `sign_in_method` (on step 1) and `app`.
 
 ## Feature Events
 
@@ -556,10 +592,10 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 | Event | Recorded when | Properties |
 | --- | --- | --- |
 | `invite-created` | An officer creates invites. `invite_method` is `link`, `batch` or `email`; `count` is the invites created, never the addresses | `invite_method`, `count` |
-| `invite-redeemed` | Someone joins by redeeming an invite | — |
+| `invite-redeemed` | Someone joins by redeeming an invite. `sign_in_method` is how they signed in ([§ Member Onboarding Funnel](#member-onboarding-funnel)) | `sign_in_method` |
 | `member-onboarding-completed` | A member finishes onboarding. Counts requests that set it, not first completions | — |
 | `profile-photo-updated` | A member confirms a new profile photo upload (`POST /users/me/avatar`). Removing a photo records nothing, since that route has no chapter | — |
-| `chapter-onboarded` | The onboarding wizard creates a chapter (feature `chapter-settings`). `archetype` is the stored archetype key | `archetype`, `from_directory` |
+| `chapter-onboarded` | The onboarding wizard creates a chapter (feature `chapter-settings`). `archetype` is the stored archetype key; `sign_in_method` is how the founder signed in | `archetype`, `from_directory`, `sign_in_method` |
 | `semester-rolled-over` | An officer rolls the chapter into a new semester (`chapter-settings`) | `promote_new_members` |
 | `chapter-config-updated` | An officer saves a chapter setting (`chapter-settings`). `section` is the field the save changed (`enabled_modules`, `branding`, `dues`, and so on), or `multiple`; never the values. An empty save records nothing | `section` |
 | `checkout-started` | Stripe issues a checkout session (`billing`) | — |

@@ -45,11 +45,18 @@ export interface ArchiveMediaCopyResult {
  * import: every attachment in the batch is in an unknown state, and treating
  * each as a skipped file would let an import finish with no media while
  * reporting success.
+ *
+ * `retryable` says whether the service was having a bad moment (a 5xx, a
+ * timeout, no route to it) rather than refusing the request, so the worker
+ * pauses the import and tries again later instead of failing it (#1692).
  */
 export class ArchiveMediaCopyError extends Error {
-  constructor(message: string) {
+  readonly retryable: boolean;
+
+  constructor(message: string, options: { retryable?: boolean } = {}) {
     super(message);
     this.name = 'ArchiveMediaCopyError';
+    this.retryable = options.retryable ?? false;
   }
 }
 

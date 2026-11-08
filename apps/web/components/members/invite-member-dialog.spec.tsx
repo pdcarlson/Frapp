@@ -1,19 +1,17 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { beyondGrace, chapterSubscription } from "@/tests/chapter-subscription";
-import {
-  expectClearingEntriesEmpty,
-  expectRefusedEntriesKeep,
-} from "@/tests/numeric-input";
 
 const {
   mockCurrentChapter,
   mockOrgConfig,
   mockRoles,
   mockToast,
-  mockBatchCreate,
   mockCreateInvite,
+  mockEmailInvites,
+  mockRevoke,
+  mockInvites,
   mockRefetchRoles,
   mockRefetchInvites,
   activeChapterId,
@@ -22,19 +20,26 @@ const {
   mockRefetchRoles: vi.fn(),
   mockRefetchInvites: vi.fn(),
   mockCurrentChapter: vi.fn(),
-  mockBatchCreate: vi.fn(),
   mockCreateInvite: vi.fn(),
+  mockEmailInvites: vi.fn(),
+  mockRevoke: vi.fn(),
+  mockInvites: vi.fn(),
   mockOrgConfig: vi.fn(),
   mockRoles: vi.fn(),
   mockToast: vi.fn(),
 }));
 
+const NOW = Date.now();
 const INVITE = {
   id: "inv-1",
-  token: "ABC123",
+  token: "8f0c2a5e-0000-4000-8000-00000000c123",
   role: "Member",
-  expires_at: "2026-12-01T00:00:00Z",
+  email: "pledge@school.edu",
+  status: "pending" as const,
+  expires_at: new Date(NOW + 20 * 3600_000).toISOString(),
   used_at: null,
+  revoked_at: null,
+  created_at: new Date(NOW - 4 * 3600_000).toISOString(),
 };
 
 vi.mock("@repo/hooks", () => ({
@@ -43,19 +48,13 @@ vi.mock("@repo/hooks", () => ({
   useRoles: () => ({ refetch: mockRefetchRoles, ...mockRoles() }),
   useOrgConfig: () => mockOrgConfig(),
   useInvites: () => ({
-    data: [INVITE],
+    data: mockInvites(),
     isError: false,
     refetch: mockRefetchInvites,
   }),
-  useCreateInvite: () => ({
-    mutateAsync: mockCreateInvite,
-    isPending: false,
-  }),
-  useBatchCreateInvites: () => ({
-    mutateAsync: mockBatchCreate,
-    isPending: false,
-  }),
-  useRevokeInvite: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCreateInvite: () => ({ mutateAsync: mockCreateInvite, isPending: false }),
+  useEmailInvites: () => ({ mutateAsync: mockEmailInvites, isPending: false }),
+  useRevokeInvite: () => ({ mutateAsync: mockRevoke, isPending: false }),
   useCurrentChapter: () => mockCurrentChapter(),
   useMyPermissions: () => ({
     data: { permissions: ["billing:manage"] },
@@ -69,27 +68,33 @@ vi.mock("@/lib/stores/chapter-store", () => ({
     selector({ activeChapterId: "chap-1" }),
 }));
 
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: mockToast }),
+}));
 
-const { InviteMemberDialog } = await import("./invite-member-dialog");
+const { InviteMemberDialog, listedInvites, sentLabel } =
+  await import("./invite-member-dialog");
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
 async function openDialog() {
-  render(<InviteMemberDialog trigger={<button>Invite</button>} />);
+  const view = render(<InviteMemberDialog trigger={<button>Invite</button>} />);
   await userEvent.click(screen.getByRole("button", { name: /^invite$/i }));
+  return view;
 }
 
-const generate = () => screen.getByRole("button", { name: /generate/i });
-const revoke = () => screen.getByRole("button", { name: /revoke/i });
+const copyLink = () => screen.getByRole("button", { name: /copy link/i });
+const emailField = () => screen.getByLabelText(/invite by email/i);
+const send = () => screen.getByRole("button", { name: /^send/i });
 
-/**
- * `POST /invites` and `POST /invites/batch` are the repo's only two
- * `@FreeTier` + `@GraceBlocked` routes (`invite.controller.ts:46,60`). That
- * combination behaves unlike anything else in the entitlement sweep, and it is
- * the case #841's acceptance criteria call out by name: free-tier writes keep
- * working during the `past_due` grace window, and only invites are blocked.
- */
+/** Opens the ⋯ menu on the pledge@ row and returns its Revoke item. */
+async function revoke() {
+  await userEvent.click(
+    screen.getByRole("button", { name: `More for ${INVITE.email}` }),
+  );
+  return screen.findByRole("menuitem", { name: /revoke invite/i });
+}
+
 /** Default hook state every test starts from; individual tests override. */
 function primeHooks() {
   mockRoles.mockReturnValue({
@@ -97,8 +102,17 @@ function primeHooks() {
     isError: false,
   });
   mockOrgConfig.mockReturnValue({ data: {}, isError: false });
+  mockInvites.mockReturnValue([INVITE]);
 }
 
+/**
+ * `POST /invites` and `POST /invites/email` are `@FreeTier` + `@GraceBlocked`.
+ * That combination behaves unlike anything else in the entitlement sweep, and
+ * it is the case #841's acceptance criteria call out by name: free-tier writes
+ * keep working during the `past_due` grace window, and only invites are
+ * blocked. Copy link is the control every state can check, since Send also
+ * waits for an address.
+ */
 describe("InviteMemberDialog subscription gating", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -112,7 +126,7 @@ describe("InviteMemberDialog subscription gating", () => {
     chapter.incomplete();
     await openDialog();
 
-    expect(generate()).toBeEnabled();
+    expect(copyLink()).toBeEnabled();
     expect(
       screen.queryByText(/subscription is not active/i),
     ).not.toBeInTheDocument();
@@ -122,7 +136,7 @@ describe("InviteMemberDialog subscription gating", () => {
     chapter.pastDue();
     await openDialog();
 
-    expect(generate()).toBeDisabled();
+    expect(copyLink()).toBeDisabled();
     expect(screen.getByText(/new invites are blocked/i)).toBeInTheDocument();
   });
 
@@ -133,17 +147,17 @@ describe("InviteMemberDialog subscription gating", () => {
     chapter.pastDue();
     await openDialog();
 
-    expect(revoke()).toBeEnabled();
+    expect(await revoke()).not.toHaveAttribute("data-disabled");
   });
 
   it("locks invites once the grace window closes", async () => {
     chapter.pastDue(beyondGrace());
     await openDialog();
 
-    expect(generate()).toBeDisabled();
+    expect(copyLink()).toBeDisabled();
     // Revoke locks here too — `@FreeTier` survives grace, not past it — so both
     // notices render the same sentence.
-    expect(revoke()).toBeDisabled();
+    expect(await revoke()).toHaveAttribute("data-disabled");
     expect(
       screen.getAllByText(/write actions are blocked/i).length,
     ).toBeGreaterThan(0);
@@ -155,9 +169,9 @@ describe("InviteMemberDialog subscription gating", () => {
     chapter.canceled();
     await openDialog();
 
-    expect(generate()).toBeDisabled();
+    expect(copyLink()).toBeDisabled();
     // `canceled` is checked above the free-tier carve-out, so revoke goes too.
-    expect(revoke()).toBeDisabled();
+    expect(await revoke()).toHaveAttribute("data-disabled");
     expect(screen.getAllByText(/read-only/i).length).toBeGreaterThan(0);
   });
 
@@ -165,7 +179,7 @@ describe("InviteMemberDialog subscription gating", () => {
     chapter.active();
     await openDialog();
 
-    expect(generate()).toBeEnabled();
+    expect(copyLink()).toBeEnabled();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
@@ -173,7 +187,7 @@ describe("InviteMemberDialog subscription gating", () => {
     chapter.unreadable();
     await openDialog();
 
-    expect(generate()).toBeEnabled();
+    expect(copyLink()).toBeEnabled();
   });
 });
 
@@ -190,7 +204,19 @@ describe("InviteMemberDialog default role", () => {
     { id: "role-pledge", name: "New Member" },
   ];
 
-  const rolePicker = () => screen.getByRole("combobox") as HTMLSelectElement;
+  // The trigger reads "Joins as <role>"; its value is the role after that.
+  const rolePicker = () => {
+    const trigger = screen.getByRole("combobox", {
+      name: /role they join as/i,
+    });
+    return { value: trigger.textContent?.replace(/^Joins as/, "") ?? "" };
+  };
+  async function pick(name: string) {
+    await userEvent.click(
+      screen.getByRole("combobox", { name: /role they join as/i }),
+    );
+    await userEvent.click(await screen.findByRole("option", { name }));
+  }
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -220,7 +246,7 @@ describe("InviteMemberDialog default role", () => {
   it("adopts the default when the config query resolves after the roles query", async () => {
     mockRoles.mockReturnValue({ data: ROLES, isError: false });
     mockOrgConfig.mockReturnValue({ data: undefined, isError: false });
-    await openDialog();
+    const view = await openDialog();
     // The no-default fallback, and not what the chapter configured.
     expect(rolePicker().value).toBe("Member");
 
@@ -228,10 +254,9 @@ describe("InviteMemberDialog default role", () => {
       data: { default_invite_role_id: "role-pledge" },
       isError: false,
     });
-    // Any state change re-renders the dialog, which re-reads the (now
-    // resolved) config hook — the same sequence a settled query produces,
-    // without needing a real query client.
-    await userEvent.type(screen.getByRole("spinbutton"), "2");
+    // A re-render re-reads the (now resolved) config hook — the same
+    // sequence a settled query produces, without needing a real query client.
+    view.rerender(<InviteMemberDialog trigger={<button>Invite</button>} />);
 
     expect(rolePicker().value).toBe("New Member");
   });
@@ -243,7 +268,7 @@ describe("InviteMemberDialog default role", () => {
       isError: false,
     });
     await openDialog();
-    await userEvent.selectOptions(rolePicker(), "Alumni");
+    await pick("Alumni");
 
     expect(rolePicker().value).toBe("Alumni");
   });
@@ -323,7 +348,7 @@ describe("InviteMemberDialog default role", () => {
       isError: false,
     });
     await openDialog();
-    await userEvent.selectOptions(rolePicker(), "Alumni");
+    await pick("Alumni");
     expect(rolePicker().value).toBe("Alumni");
 
     // The panel's X is its only close control now that the Done footer is
@@ -337,9 +362,8 @@ describe("InviteMemberDialog default role", () => {
   /*
    * `on delete set null` clears a deleted role's id server-side, but a client
    * holding a stale config read can still name one the catalog no longer has.
-   * Falling through to the existing behaviour beats rendering a select whose
-   * value matches no option, which React logs and browsers resolve by
-   * silently selecting the first entry anyway.
+   * Falling through to the existing behaviour beats a picker whose value
+   * matches no option.
    */
   it("ignores a configured default that no longer exists", async () => {
     mockRoles.mockReturnValue({ data: ROLES, isError: false });
@@ -393,7 +417,90 @@ describe("InviteMemberDialog live data", () => {
   });
 });
 
-describe("InviteMemberDialog copy payload", () => {
+describe("InviteMemberDialog sending by email", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    primeHooks();
+    chapter.active();
+    mockEmailInvites.mockResolvedValue({ invites: [], failed: [] });
+  });
+
+  it("sends every address in the field, including one still being typed, as the picked role", async () => {
+    await openDialog();
+    await userEvent.type(
+      emailField(),
+      "a@school.edu, b@school.edu c@school.edu",
+    );
+
+    expect(send()).toHaveTextContent("Send 3 invites");
+    await userEvent.click(send());
+
+    expect(mockEmailInvites).toHaveBeenCalledWith({
+      role: "Member",
+      emails: ["a@school.edu", "b@school.edu", "c@school.edu"],
+    });
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith({ title: "3 invites sent" }),
+    );
+  });
+
+  it("splits a pasted list into chips and drops repeats", async () => {
+    await openDialog();
+    await userEvent.click(emailField());
+    await userEvent.paste("a@school.edu\nA@School.edu; b@school.edu");
+
+    expect(screen.getByText("a@school.edu")).toBeInTheDocument();
+    expect(screen.getByText("b@school.edu")).toBeInTheDocument();
+    expect(send()).toHaveTextContent("Send 2 invites");
+  });
+
+  it("waits for a send to check addresses, then holds a bad one in red", async () => {
+    await openDialog();
+    await userEvent.type(emailField(), "not-an-email");
+    // Typing alone says nothing (validate on commit, not per keystroke).
+    expect(
+      screen.queryByText(/isn't an email address/i),
+    ).not.toBeInTheDocument();
+
+    await userEvent.type(emailField(), "{Enter}");
+
+    expect(
+      screen.getByText(
+        "One address in red isn't an email address. Fix or remove it.",
+      ),
+    ).toBeInTheDocument();
+    expect(send()).toBeDisabled();
+    expect(mockEmailInvites).not.toHaveBeenCalled();
+  });
+
+  it("keeps addresses the server couldn't email, so Send tries them again", async () => {
+    mockEmailInvites.mockResolvedValue({
+      invites: [],
+      failed: ["b@school.edu"],
+    });
+    await openDialog();
+    await userEvent.type(emailField(), "a@school.edu b@school.edu{Enter}");
+    await userEvent.click(send());
+
+    expect(
+      await screen.findByText(/couldn't email this address/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText("b@school.edu")).toBeInTheDocument();
+    expect(screen.queryByText("a@school.edu")).not.toBeInTheDocument();
+    expect(mockToast).toHaveBeenCalledWith({
+      title: "Invite sent to a@school.edu",
+    });
+  });
+
+  it("takes the last chip back into the field on Backspace, to fix it", async () => {
+    await openDialog();
+    await userEvent.type(emailField(), "a@school.edu{Enter}{Backspace}");
+
+    expect(emailField()).toHaveValue("a@school.edu");
+  });
+});
+
+describe("InviteMemberDialog share link and list", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     primeHooks();
@@ -404,83 +511,125 @@ describe("InviteMemberDialog copy payload", () => {
     });
   });
 
-  it("copies a /join?token= URL with role and expiry, not a bare code", async () => {
+  it("mints a fresh link on Copy link and copies only the join URL", async () => {
+    mockCreateInvite.mockResolvedValue({ ...INVITE, token: "fresh-token" });
     await openDialog();
-    // Icon-only (components.md § Icon-only actions): the label names the
-    // invite by its token's tail, and no word is drawn beside the glyph.
-    const copyButton = screen.getAllByRole("button", {
-      name: /^copy the .* invite link ending C123$/i,
-    })[0];
-    if (!copyButton) {
-      throw new Error("expected a copy-link button on an active invite");
-    }
-    expect(copyButton.textContent).toBe("");
-    expect(revoke().textContent).toBe("");
-    expect(revoke()).toHaveAccessibleName(/ending C123$/);
-    await userEvent.click(copyButton);
+    await userEvent.click(copyLink());
 
-    expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
-    const payload = vi.mocked(navigator.clipboard.writeText).mock.calls[0]?.[0];
-    expect(payload).toEqual(expect.stringContaining(`/join?token=${INVITE.token}`));
-    expect(payload).toEqual(expect.stringContaining(`Role: ${INVITE.role}`));
-    expect(payload).toEqual(expect.stringContaining("Expires:"));
-    expect(payload).not.toMatch(/Invite code:/);
-    expect(mockToast).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "Invite link copied" }),
+    expect(mockCreateInvite).toHaveBeenCalledWith({ role: "Member" });
+    await waitFor(() =>
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        `${window.location.origin}/join?token=fresh-token`,
+      ),
     );
+    expect(await screen.findByText("Copied")).toBeInTheDocument();
+  });
+
+  it("never shows a token: rows name the address, role, when, and status", async () => {
+    await openDialog();
+    const list = screen.getByRole("list");
+
+    expect(within(list).getByText(INVITE.email)).toBeInTheDocument();
+    expect(within(list).getByText("Pending")).toBeInTheDocument();
+    expect(within(list).getByText(/^Member · Sent /)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(INVITE.token);
+  });
+
+  it("copies a pending invite's link from its menu", async () => {
+    await openDialog();
+    await userEvent.click(
+      screen.getByRole("button", { name: `More for ${INVITE.email}` }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /copy link/i }),
+    );
+
+    await waitFor(() =>
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        `${window.location.origin}/join?token=${INVITE.token}`,
+      ),
+    );
+  });
+
+  it("sends a pending invite again without revoking it first", async () => {
+    // The server retires the old invite once the new one is delivered, so a
+    // failed resend can't leave the address with no live link.
+    mockEmailInvites.mockResolvedValue({ invites: [], failed: [] });
+    await openDialog();
+    await userEvent.click(
+      screen.getByRole("button", { name: `More for ${INVITE.email}` }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /send again/i }),
+    );
+
+    await waitFor(() =>
+      expect(mockEmailInvites).toHaveBeenCalledWith({
+        role: "Member",
+        emails: [INVITE.email],
+      }),
+    );
+    expect(mockRevoke).not.toHaveBeenCalled();
+  });
+
+  it("revokes an invite from its menu", async () => {
+    mockRevoke.mockResolvedValue({ success: true });
+    await openDialog();
+    await userEvent.click(await revoke());
+
+    await waitFor(() => expect(mockRevoke).toHaveBeenCalledWith(INVITE.id));
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Invite revoked" }),
+    );
+  });
+
+  it("tells share links apart by when they were made", async () => {
+    mockInvites.mockReturnValue([{ ...INVITE, email: null }]);
+    await openDialog();
+
+    expect(
+      screen.getByRole("button", { name: /^More for Invite link, sent / }),
+    ).toBeInTheDocument();
   });
 });
 
-describe("InviteMemberDialog invite count guard (#2206)", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    primeHooks();
-    chapter.active();
-    mockBatchCreate.mockResolvedValue([]);
-    mockCreateInvite.mockResolvedValue([]);
+describe("listedInvites", () => {
+  const now = new Date("2026-11-20T12:00:00Z");
+  const row = (
+    status: typeof INVITE.status | "joined" | "expired" | "revoked",
+    created_at: string,
+  ) => ({
+    ...INVITE,
+    id: `${status}-${created_at}`,
+    status,
+    created_at,
   });
 
-  const countInput = () => screen.getByLabelText(/invite count/i);
+  it("keeps every pending invite, recent joined and expired ones, and no revoked ones", () => {
+    const rows = [
+      row("pending", "2026-10-01T00:00:00Z"),
+      row("joined", "2026-11-19T00:00:00Z"),
+      row("joined", "2026-11-01T00:00:00Z"),
+      row("expired", "2026-11-18T00:00:00Z"),
+      row("revoked", "2026-11-19T00:00:00Z"),
+    ];
 
-  it("keeps the last whole count through a negative or a decimal", async () => {
-    await openDialog();
-    expectRefusedEntriesKeep(countInput(), "5");
+    expect(listedInvites(rows, now).map((r) => r.id)).toEqual([
+      "pending-2026-10-01T00:00:00Z",
+      "joined-2026-11-19T00:00:00Z",
+      "expired-2026-11-18T00:00:00Z",
+    ]);
   });
+});
 
-  it("keeps an emptied count empty, so the next digit isn't appended to a 1", async () => {
-    await openDialog();
-    expectClearingEntriesEmpty(countInput(), "5");
-    // Before #2206 an emptied field snapped to 1, so typing 3 produced 13.
-    fireEvent.change(countInput(), { target: { value: "3" } });
-    expect(countInput()).toHaveValue(3);
-  });
-
-  it("shows a count over the batch limit as the limit of 50", async () => {
-    await openDialog();
-    fireEvent.change(countInput(), { target: { value: "120" } });
-    expect(countInput()).toHaveValue(50);
-  });
-
-  it.each(["", "0"])(
-    "generates one invite for a count of %j, as it always has",
-    async (count) => {
-      await openDialog();
-      fireEvent.change(countInput(), { target: { value: "5" } });
-      fireEvent.change(countInput(), { target: { value: count } });
-      await userEvent.click(generate());
-
-      await waitFor(() => expect(mockCreateInvite).toHaveBeenCalledTimes(1));
-      expect(mockBatchCreate).not.toHaveBeenCalled();
-    },
-  );
-
-  it("asks for the kept whole count, never a fraction of an invite", async () => {
-    await openDialog();
-    fireEvent.change(countInput(), { target: { value: "5" } });
-    fireEvent.change(countInput(), { target: { value: "2.5" } });
-    await userEvent.click(generate());
-
-    await waitFor(() => expect(mockBatchCreate).toHaveBeenCalledTimes(1));
-    expect(mockBatchCreate.mock.calls[0]![0].count).toBe(5);
+describe("sentLabel", () => {
+  it("says when, in words", () => {
+    const now = new Date(2026, 10, 6, 18, 0);
+    expect(sentLabel(new Date(2026, 10, 6, 16, 46).toISOString(), now)).toMatch(
+      /^Sent today at 4:46/,
+    );
+    expect(sentLabel(new Date(2026, 10, 5, 9, 0).toISOString(), now)).toMatch(
+      /^Sent yesterday at 9:00/,
+    );
   });
 });

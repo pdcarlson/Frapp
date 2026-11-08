@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Pencil, Plus, Power, PowerOff, Trash2 } from "lucide-react";
 import { StudyZonesGlyph } from "@/components/events/chapter-ops-glyphs";
@@ -33,11 +34,7 @@ import {
   anyReadUncached,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedOffline,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { PageActions } from "@/components/layout/page-actions";
 import { StudyZonesSettingsDrawer } from "@/components/geofences/study-zones-settings-drawer";
@@ -57,6 +54,7 @@ import {
   parseGuardedInt,
 } from "@/lib/utils";
 import { GeofenceRowsSkeleton } from "@/components/geofences/geofences-skeleton";
+import { InlineNote } from "@/components/shared/inline-note";
 
 type Geofence = {
   id: string;
@@ -624,15 +622,13 @@ export function GeofencesAdminPage() {
             <NestedError
               sole
               title="Couldn't load study zones"
-              description="Confirm your chapter access and retry."
+              description={describeLoadFailure(geofencesQuery.error)}
               onRetry={() => void geofencesQuery.refetch()}
             />
           ) : geofences.length === 0 ? (
-            <NestedEmpty
-              sole
-              title="No study zones yet"
-              description="Create your first zone to let members start tracked study sessions for points."
-            />
+            <InlineNote>
+              No study zones yet. Add the first one above.
+            </InlineNote>
           ) : (
             /*
               A flush list, one row per zone. The polygon's vertices used to

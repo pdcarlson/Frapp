@@ -199,8 +199,8 @@ cluster replaces its own as it rebuilds; there is no separate icon migration.
 The tab bar's quick-actions panel (`apps/mobile/components/quick-actions/quick-actions-panel.tsx`,
 [`navigation.md` § Quick actions](../mobile/navigation.md#quick-actions)) draws
 each action at 26px on a 58pt glass disc, in `text.foreground`, with the nav
-shape of the place it leads: New event `events`, New task `tasks`, Message
-`chat`, Check in `checkIn` (Phosphor `map-pin`, added for it), Host check-in
+shape of the place it leads: New event `events`, New task `tasks`, Invite
+`invite` (Phosphor `user-plus`), Message `chat`, Check in `checkIn` (Phosphor `map-pin`, added for it), Host check-in
 `hostCheckIn`, Log hours `service`, Study `study`, Upload `documents`. The
 active tab in the pill sits on a soft capsule (white at 8%) under its accent
 glyph and bold label, as iOS 26's own bars draw it, since 2026-11-06.
@@ -221,13 +221,14 @@ until 2026-11-05).
 | Directory | `directory`, `users-three` | `DirectoryGlyph` |
 | Settings | `settings`, `gear-six` | `SettingsGlyph` |
 | Switch chapter, Create a chapter | `chapter`, `bank` (the columned chapter house) | none |
+| Invite members (Admin) | `invite`, `user-plus` (`InviteGlyph`) | `InviteGlyph` |
 | Host check-in (Admin) | `hostCheckIn`, `qr-code` | none |
 
 The same file's `NotificationsGlyph` (bell, clapper stroke-only, still in the
 §1 stroke recipe; s09 and web `NotificationsGlyph`) is drawn by Chat home's inbox bell
 (`components/chat/notifications-bell.tsx`), in `text.foreground` with the
 neutral fill, since the More row it was drawn for moved there (#3362).
-The More screens' empty-state tiles (`EmptyState` in `components/state-block.tsx`) reuse the same file's glyphs for the screen they sit on, in the chapter accent: `DocumentsGlyph` on s12, `DirectoryGlyph` on s13 and the Blocked members sheet, `NotificationsGlyph` on s14's inbox, and `ChapterGlyph` on the no-chapter card. A search or filter that finds nothing draws `SearchGlyph`, there and on Chat home's filtered channel list (s04): `components/search-glyph.tsx`, web's search geometry drawn with the same file's recipe (its exported `paint` and `Frame`). s15's avatar badge draws s20's camera (`CameraGlyph`, `components/service-hours/camera-glyph.tsx`) in the accent's on-colour, its body at §1's emphasis fill.
+The More screens' empty states drew these glyphs in a tile until 2026-11-07, when every empty state became one line with no glyph ([components.md](components.md) §10). s15's avatar badge draws s20's camera (`CameraGlyph`, `components/service-hours/camera-glyph.tsx`) in the accent's on-colour, its body at §1's emphasis fill.
 
 ### 6.1.3 Mobile chat cards (Signet duotone, shipped)
 
@@ -280,11 +281,12 @@ the chapter accent in a back-row slot (2026-11-05).
 
 | Semantic intent | Glyph | Drawn by | Web counterpart |
 |---|---|---|---|
-| Dismiss, close, remove | `CloseGlyph` (an ×) | the network banner, the thread's error banner, the composer's reply and attachment chips (16px), the image viewer (24px), the service-hours proof row, Chat home's setup-checklist hide (16px) | Lucide `X` |
+| Dismiss, close, remove | `CloseGlyph` (an ×) | the network banner, the thread's error banner, the composer's reply strip (16px) and photo thumbnails (12px on a dark disc), the image viewer (24px), the service-hours proof row, Chat home's setup-checklist hide (16px) | Lucide `X` |
+| Try again | `RetryGlyph` (a circling arrow) | a chat photo that didn't upload, in the composer tray (22px, destructive ink) | Lucide `RotateCw` |
 | Edit | `PencilGlyph` | Profile's back row | Lucide `Pencil` |
 | Mark all read | `CheckAllGlyph` (two checks) | the Notifications screen header | Lucide `CheckCheck` |
-| Share | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark (moved here from the image viewer's own file, 2026-11-06) | the image viewer (24px), chapter setup's `Share invite` gold button, in the button's ink | Lucide `Share` |
-| Invite link | `LinkGlyph` (two joined links) | chapter setup's invite step: its link card, in `gold.askText` on the ask tile, and each shared row (16px) | Lucide `Link` |
+| Share | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark (moved here from the image viewer's own file, 2026-11-06) | the image viewer (24px), chapter setup's `Share invite` gold button and Invite members' accent one, in the button's ink | Lucide `Share` |
+| Invite link | `LinkGlyph` (two joined links) | chapter setup's invite step: its link card, in `gold.askText` on the ask tile, and each shared row (16px); Invite members (`(app)/invite.tsx`) draws the same card in the chapter accent on its subtle tile | Lucide `Link` |
 | Back | `BackGlyph` (a left chevron, stroke 2.2, heavier than the recipe), in the chapter accent or the house gold | the chat thread header at 20 (2026-11-06; it was a typed `‹`), every back-row capsule at 18 | Lucide `ChevronLeft` |
 
 ### 6.2 Web Dashboard shell (Signet duotone)
@@ -373,12 +375,12 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Attach a file | `AttachGlyph` |
 | Add a reaction | `ReactionGlyph` |
 | Slash commands | `SlashCommandGlyph` |
+| Send a message: an up arrow, stroke only at 2.4 on the accent-filled round button, the web face of mobile's `↑` (2026-11-06) | `SendArrowGlyph` |
 | Announcement | `AnnouncementGlyph` |
 | `#chapter-audit` / audit row | `AuditGlyph` |
 | Private / role-gated channel | `LockGlyph` |
 | Show or hide the channel member list (#3536), filled while shown | `MembersGlyph` (the nav set's `DirectoryGlyph`, re-exported); mobile's thread header draws the same shape, `NAV_GLYPHS.directory`, through `NavGlyph` |
 | Direct or group message | `DirectMessageGlyph` |
-| Connection lost | `OfflineGlyph` |
 | Reply to a message | `ThreadGlyph` |
 | Per-channel notification level / mute: a speaker (box and cone, split by a detail stroke) with two waves, an × for the waves when muted. Not a bell, since #3362: the bell is the notification inbox's. The box, split and second wave keep it apart from `AnnouncementGlyph`'s single horn and wave | `MuteGlyph` |
 | Event location | `LocationGlyph` |

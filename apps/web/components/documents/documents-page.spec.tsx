@@ -9,7 +9,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import { networkMock } from "@/tests/network";
-import { OfflineBanner } from "@/components/shared/offline-banner";
+import { ConnectionPill } from "@/components/shared/connection-pill";
 
 const {
   mockCurrentChapter,
@@ -77,8 +77,15 @@ const BYLAWS = {
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => mockCurrentChapter(),
+  useMyPermissions: () => ({
+    data: {
+      permissions: canGate.granted ? ["chapter_docs:upload"] : [],
+    },
+  }),
   useDocuments: (options?: { search?: string }) => {
-    documentsArgs.value = options;
+    // The upload panel's unsearched library read passes no options; only the
+    // page's own list call carries the search being asserted on.
+    if (options) documentsArgs.value = options;
     return documentsQuery;
   },
   useDocumentFolders: () => foldersQuery,
@@ -405,6 +412,7 @@ describe("DocumentsPage upload metadata", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     chapter.active();
+    resolvedDocumentsQuery();
     mockRequestUpload.mockResolvedValue({
       upload_url: "https://storage.example/put",
       storage_path: "chapters/chap-1/documents/doc-1/bylaws.pdf",
@@ -417,28 +425,36 @@ describe("DocumentsPage upload metadata", () => {
     vi.unstubAllGlobals();
   });
 
-  it("sends content type, size, document type and effective date on confirm", async () => {
+  const pickFile = (dialog: HTMLElement, name: string) => {
+    const file = new File(["%PDF-1.4"], name, { type: "application/pdf" });
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), {
+      target: { files: [file] },
+    });
+    return file;
+  };
+
+  it("fills title and type from the file name and sends them with the date", async () => {
     render(<DocumentsPage />);
     await userEvent.click(uploadTrigger());
 
     const dialog = screen.getByRole("dialog");
-    await userEvent.type(
-      within(dialog).getByLabelText(/title/i),
-      "Bylaws 2026",
+    const file = pickFile(dialog, "fall-2026-bylaws-revision.pdf");
+
+    expect(within(dialog).getByLabelText(/title/i)).toHaveValue(
+      "Fall 2026 bylaws revision",
     );
-    await userEvent.type(
-      within(dialog).getByLabelText(/document type/i),
-      "Bylaws",
+    expect(within(dialog).getByRole("button", { name: "Bylaws" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await userEvent.click(
+      within(dialog).getByRole("button", {
+        name: /add a description or effective date/i,
+      }),
     );
     fireEvent.change(within(dialog).getByLabelText(/effective date/i), {
       target: { value: "2026-01-01" },
-    });
-
-    const file = new File(["%PDF-1.4"], "bylaws.pdf", {
-      type: "application/pdf",
-    });
-    fireEvent.change(within(dialog).getByLabelText(/^file$/i), {
-      target: { files: [file] },
     });
 
     const submit = within(dialog).getByRole("button", { name: /^upload$/i });
@@ -448,6 +464,7 @@ describe("DocumentsPage upload metadata", () => {
     await waitFor(() => expect(mockConfirmUpload).toHaveBeenCalledTimes(1));
     expect(mockConfirmUpload).toHaveBeenCalledWith(
       expect.objectContaining({
+        title: "Fall 2026 bylaws revision",
         content_type: "application/pdf",
         byte_size: file.size,
         document_type: "Bylaws",
@@ -456,19 +473,12 @@ describe("DocumentsPage upload metadata", () => {
     );
   });
 
-  it("omits document type and effective date when left blank", async () => {
+  it("omits document type and effective date when nothing points at one", async () => {
     render(<DocumentsPage />);
     await userEvent.click(uploadTrigger());
 
     const dialog = screen.getByRole("dialog");
-    await userEvent.type(within(dialog).getByLabelText(/title/i), "Agenda");
-
-    const file = new File(["%PDF-1.4"], "agenda.pdf", {
-      type: "application/pdf",
-    });
-    fireEvent.change(within(dialog).getByLabelText(/^file$/i), {
-      target: { files: [file] },
-    });
+    pickFile(dialog, "scan_0042.pdf");
 
     const submit = within(dialog).getByRole("button", { name: /^upload$/i });
     await waitFor(() => expect(submit).toBeEnabled());
@@ -477,9 +487,102 @@ describe("DocumentsPage upload metadata", () => {
     await waitFor(() => expect(mockConfirmUpload).toHaveBeenCalledTimes(1));
     expect(mockConfirmUpload).toHaveBeenCalledWith(
       expect.objectContaining({
+        title: "Scan 0042",
         document_type: undefined,
         effective_date: undefined,
       }),
+    );
+  });
+
+  it("keeps a typed title and a picked type when the file is replaced", async () => {
+    render(<DocumentsPage />);
+    await userEvent.click(uploadTrigger());
+
+    const dialog = screen.getByRole("dialog");
+    pickFile(dialog, "exec-minutes.pdf");
+    const title = within(dialog).getByLabelText(/title/i);
+    await userEvent.clear(title);
+    await userEvent.type(title, "Exec minutes, Oct 12");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Policy" }));
+
+    pickFile(dialog, "budget-final.pdf");
+
+    expect(title).toHaveValue("Exec minutes, Oct 12");
+    expect(within(dialog).getByRole("button", { name: "Policy" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("files a fresh upload into the folder on screen", async () => {
+    render(<DocumentsPage />);
+    await userEvent.click(screen.getByRole("button", { name: /^rush/i }));
+    await userEvent.click(uploadTrigger());
+
+    const dialog = screen.getByRole("dialog");
+    pickFile(dialog, "rush-schedule.pdf");
+    await userEvent.click(within(dialog).getByRole("button", { name: /^upload$/i }));
+
+    await waitFor(() => expect(mockConfirmUpload).toHaveBeenCalledTimes(1));
+    expect(mockConfirmUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ folder: "Rush" }),
+    );
+  });
+
+  it("files a bylaws upload from All files into the folder that says Bylaws", async () => {
+    foldersQuery.data = [
+      { id: "f-1", name: "Bylaws & Governance", sort_order: 0 },
+      { id: "f-2", name: "Rush", sort_order: 1 },
+    ];
+    render(<DocumentsPage />);
+    await userEvent.click(uploadTrigger());
+
+    const dialog = screen.getByRole("dialog");
+    pickFile(dialog, "fall-2026-bylaws.pdf");
+    await userEvent.click(within(dialog).getByRole("button", { name: /^upload$/i }));
+
+    await waitFor(() => expect(mockConfirmUpload).toHaveBeenCalledTimes(1));
+    expect(mockConfirmUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ folder: "Bylaws & Governance" }),
+    );
+  });
+
+  it("re-files into the corrected type's folder when the guess was wrong", async () => {
+    foldersQuery.data = [
+      { id: "f-1", name: "Meeting Minutes", sort_order: 0 },
+      { id: "f-2", name: "Finance", sort_order: 1 },
+    ];
+    render(<DocumentsPage />);
+    await userEvent.click(uploadTrigger());
+
+    const dialog = screen.getByRole("dialog");
+    pickFile(dialog, "finance-committee-minutes.pdf");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Budget" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: /^upload$/i }));
+
+    await waitFor(() => expect(mockConfirmUpload).toHaveBeenCalledTimes(1));
+    expect(mockConfirmUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ document_type: "Budget", folder: "Finance" }),
+    );
+  });
+
+  it("opens the panel with a file dropped anywhere on the page", async () => {
+    render(<DocumentsPage />);
+    const file = new File(["%PDF-1.4"], "chapter-budget.pdf", {
+      type: "application/pdf",
+    });
+    const dataTransfer = { types: ["Files"], files: [file] };
+
+    fireEvent.dragEnter(window, { dataTransfer });
+    expect(screen.getByText(/drop to upload/i)).toBeInTheDocument();
+    fireEvent.drop(window, { dataTransfer });
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("chapter-budget.pdf")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/title/i)).toHaveValue("Chapter budget");
+    expect(within(dialog).getByRole("button", { name: "Budget" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
     );
   });
 
@@ -520,8 +623,7 @@ describe("DocumentsPage upload metadata", () => {
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Couldn't upload document",
-          description:
-            "Storage rejected upload (413). Retry or check file size.",
+          description: "That file is too large.",
         }),
       ),
     );
@@ -595,7 +697,7 @@ describe("DocumentsPage state ordering", () => {
     // TanStack does not clear `data` when the link goes; README §4 scopes the
     // offline state to "no cached data" and §10 keeps stale content in place.
     // An unconditional `isOffline` branch threw away a list the member could
-    // still read, on a WiFi blip. The shell's OfflineBanner states the
+    // still read, on a WiFi blip. The shell's ConnectionPill states the
     // connection on every route, so the screen owes no state here.
     mockOffline.value = true;
 
@@ -726,16 +828,24 @@ describe("DocumentsPage title search (#402)", () => {
     render(<DocumentsPage />);
 
     // No query yet: the library really is empty, so invite an upload.
-    expect(screen.getByText("No documents here yet")).toBeInTheDocument();
+    expect(screen.getByText(/^No documents yet\./)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Upload a file" }),
+    ).toBeInTheDocument();
 
     await user.type(screen.getByLabelText("Search documents"), "zzz");
 
     await waitFor(() =>
-      expect(
-        screen.getByText("No documents match that search"),
-      ).toBeInTheDocument(),
+      expect(screen.getByText(/No documents match “zzz”/)).toBeInTheDocument(),
     );
-    expect(screen.queryByText("No documents here yet")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^No documents yet/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Upload a file" })).toBeNull();
+
+    // The miss offers the way back, and the way back is the library.
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    await waitFor(() =>
+      expect(screen.getByText(/^No documents yet\./)).toBeInTheDocument(),
+    );
   });
 
   it("composes with the folder tab", async () => {
@@ -752,8 +862,13 @@ describe("DocumentsPage title search (#402)", () => {
     // empty state rather than the row.
     await user.click(screen.getByRole("button", { name: /^Rush$/ }));
     expect(
-      screen.getByText("No documents match that search"),
+      screen.getByText(/Nothing in Rush matches “bylaws”/),
     ).toBeInTheDocument();
+    expect(documentsArgs.value).toEqual({ search: "bylaws" });
+
+    // The way out of a folder miss is the whole library, search kept.
+    await user.click(screen.getByRole("button", { name: "Search all files" }));
+    expect(screen.queryByText(/Nothing in Rush matches/)).toBeNull();
     expect(documentsArgs.value).toEqual({ search: "bylaws" });
   });
 });
@@ -1091,7 +1206,7 @@ describe("DocumentsPage search and folder resilience", () => {
     // match and must show the search-aware empty state.
     await waitFor(() =>
       expect(
-        screen.getByText("No documents match that search"),
+        screen.getByText("No documents outside a folder match “bylaws”."),
       ).toBeInTheDocument(),
     );
     expect(documentsArgs.value).toEqual({ search: "bylaws" });
@@ -1202,7 +1317,7 @@ describe("DocumentsPage offline write gating", () => {
     const user = userEvent.setup();
     const { rerender } = render(
       <>
-        <OfflineBanner />
+        <ConnectionPill />
         <DocumentsPage />
       </>,
     );
@@ -1215,7 +1330,7 @@ describe("DocumentsPage offline write gating", () => {
     mockOffline.value = true;
     rerender(
       <>
-        <OfflineBanner />
+        <ConnectionPill />
         <DocumentsPage />
       </>,
     );
@@ -1233,7 +1348,7 @@ describe("DocumentsPage offline write gating", () => {
     const user = userEvent.setup();
     const { rerender } = render(
       <>
-        <OfflineBanner />
+        <ConnectionPill />
         <DocumentsPage />
       </>,
     );
@@ -1244,7 +1359,7 @@ describe("DocumentsPage offline write gating", () => {
     mockOffline.value = true;
     rerender(
       <>
-        <OfflineBanner />
+        <ConnectionPill />
         <DocumentsPage />
       </>,
     );
@@ -1254,7 +1369,7 @@ describe("DocumentsPage offline write gating", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
-    expect(screen.getByRole("alert")).toHaveFocus();
+    expect(screen.getByRole("button", { name: /You're offline/ })).toHaveFocus();
     expect(document.body).not.toHaveFocus();
   });
 });

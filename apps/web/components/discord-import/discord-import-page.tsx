@@ -1,5 +1,7 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
+import { DISCORD_ROUTES_WRITE_FOR_MEMBERS } from "@/lib/discord-error-copy";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -264,15 +266,14 @@ function DiscordImportView({
   }
   // `data === undefined`, not `isError` alone: a failed background read keeps
   // what TanStack already holds, and while a deletion is being polled an admin
-  // is watching it count down. Swapping that for an error that blames their
-  // chapter access, over a read that will likely succeed on the next poll,
-  // hid the meter and the controls.
+  // is watching it count down. Swapping that for an error state, over a read
+  // that will likely succeed on the next poll, hid the meter and the controls.
   if (imports.isError && imports.data === undefined) {
     return (
       <NestedError
         sole
         title="Couldn't load the import"
-        description="Confirm your chapter access and retry."
+        description={describeLoadFailure(imports.error)}
         onRetry={() => void imports.refetch()}
       />
     );
@@ -288,7 +289,11 @@ function DiscordImportView({
     } catch (error) {
       toast({
         variant: "destructive",
-        description: getErrorMessage(error, "Could not stop the import."),
+        description: getErrorMessage(
+          error,
+          "Could not stop the import.",
+          DISCORD_ROUTES_WRITE_FOR_MEMBERS,
+        ),
       });
     }
   }
@@ -302,7 +307,11 @@ function DiscordImportView({
     } catch (error) {
       toast({
         variant: "destructive",
-        description: getErrorMessage(error, "Could not resume the import."),
+        description: getErrorMessage(
+          error,
+          "Could not resume the import.",
+          DISCORD_ROUTES_WRITE_FOR_MEMBERS,
+        ),
       });
     }
   }
@@ -313,7 +322,11 @@ function DiscordImportView({
     } catch (error) {
       toast({
         variant: "destructive",
-        description: getErrorMessage(error, "Could not clear the import."),
+        description: getErrorMessage(
+          error,
+          "Could not clear the import.",
+          DISCORD_ROUTES_WRITE_FOR_MEMBERS,
+        ),
       });
     }
   }
@@ -328,7 +341,11 @@ function DiscordImportView({
     } catch (error) {
       toast({
         variant: "destructive",
-        description: getErrorMessage(error, "Could not delete the import."),
+        description: getErrorMessage(
+          error,
+          "Could not delete the import.",
+          DISCORD_ROUTES_WRITE_FOR_MEMBERS,
+        ),
       });
     }
   }

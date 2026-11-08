@@ -237,8 +237,8 @@ describe("Directory on the greenfield shell", () => {
 
     Object.assign(membersRead, read([]));
     const { unmount } = render(<MembersDirectory />);
-    expect(screen.getByText("No actives yet")).toBeInTheDocument();
-    // The state carries no CTA because the toolbar row above it still does.
+    expect(screen.getByText("No actives yet.")).toBeInTheDocument();
+    // The line carries no CTA because the toolbar row above it still does.
     expect(screen.getByTestId("invite-trigger")).toBeInTheDocument();
     expect(
       within(
@@ -259,8 +259,14 @@ describe("Directory on the greenfield shell", () => {
       "r-1",
     );
     expect(
-      screen.getByText("No actives match the filters"),
+      screen.getByText(/No actives match these filters\./),
     ).toBeInTheDocument();
+
+    // The line offers the way back, and the way back is every filter.
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.queryByText(/No actives match/)).toBeNull();
+    expect(screen.getByLabelText("Filter members by status")).toHaveValue("all");
+    expect(screen.getByLabelText("Filter members by role")).toHaveValue("all");
   });
 
   it("names the cohort filter with the chapter's word from the member view", () => {
@@ -279,8 +285,13 @@ describe("Directory on the greenfield shell", () => {
 
     // The board's no-results state names what was asked for, rather than
     // reusing the empty state's claim about the roster.
-    expect(await screen.findByText(/No match for/)).toHaveTextContent("pigg");
-    expect(screen.queryByText("No actives yet")).toBeNull();
+    expect(
+      await screen.findByText(/No actives match “pigg”\./),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("No actives yet.")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(screen.getByLabelText("Search members")).toHaveValue("");
   });
 
   it("lets an async state replace the sheet rather than strand it on a missing member", async () => {

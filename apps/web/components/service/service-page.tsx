@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Loader2, Plus, XCircle } from "lucide-react";
 import {
@@ -10,9 +11,11 @@ import {
   useOrgConfig,
   useRequestServiceProofUploadUrl,
   useReviewServiceEntry,
+  useMyPermissions,
   useServiceEntries,
   putSignedUpload,
 } from "@repo/hooks";
+import { can } from "@repo/validation";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +35,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { NestedEmpty } from "@/components/shared/nested-states";
+import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import { SectionLabel } from "@/components/shared/section-label";
 import { denseListClassName } from "@/components/shared/table-controls";
 import {
@@ -63,6 +66,7 @@ import {
   acceptAttribute,
   inspectUploadFile,
   readSignedUpload,
+  statusLabel,
 } from "@repo/validation";
 import {
   formatDay,
@@ -186,6 +190,8 @@ export function ServiceHoursPage() {
   );
 
   const logDialog = useGatedDialog(gate);
+  const { data: permissionsPayload } = useMyPermissions();
+  const canLog = can("service:log", permissionsPayload?.permissions ?? []);
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [draft, setDraft] = useState({
     date: localIsoDate(new Date()),
@@ -265,8 +271,8 @@ export function ServiceHoursPage() {
           body: proofFile,
           contentType,
           upsert: true,
-          describeRejection: (status) =>
-            `Storage rejected upload (${status}). Proof accepts images/PDF up to ${MAX_UPLOAD_LABEL}.`,
+          describeRejection: () =>
+            `The proof didn't upload. Use a photo or PDF up to ${MAX_UPLOAD_LABEL}.`,
         });
         proofPath = storagePath;
       }
@@ -397,7 +403,7 @@ export function ServiceHoursPage() {
         title: "Couldn't withdraw entry",
         description: getErrorMessage(
           error,
-          "Only PENDING entries can be withdrawn.",
+          "Only hours that haven't been reviewed can be withdrawn.",
         ),
         variant: "destructive",
       });
@@ -442,7 +448,7 @@ export function ServiceHoursPage() {
       <>
         <ErrorState
           title="Couldn't load service entries"
-          description="Confirm your chapter access and retry."
+          description={describeLoadFailure(entriesQuery.error)}
           onRetry={() => void entriesQuery.refetch()}
         />
       </>
@@ -604,10 +610,7 @@ export function ServiceHoursPage() {
             Review queue
           </SectionLabel>
           {pending.length === 0 ? (
-            <NestedEmpty
-              title="No pending entries"
-              description="Approved or rejected entries appear under History."
-            />
+            <InlineNote>Nothing waiting for review.</InlineNote>
           ) : (
             <ul className={denseListClassName}>
               {pending.map((entry) => {
@@ -741,10 +744,23 @@ export function ServiceHoursPage() {
             a member who cannot approve sees their pending entries only in the
             section below. */}
         {history.length === 0 && pending.length === 0 ? (
-          <NestedEmpty
-            title="No service activity yet"
-            description="Log your first service entry to build up chapter service hours."
-          />
+          // One line where the rows go (empty-states plan rule 7); the
+          // first entry starts from the line, through the toolbar's gated
+          // Log service dialog.
+          <InlineNote>
+            No service logged yet.
+            {canLog ? (
+              <>
+                {" "}
+                <InlineNoteAction
+                  onClick={() => logDialog.setOpen(true)}
+                  {...gate.controlProps()}
+                >
+                  Log the first hours
+                </InlineNoteAction>
+              </>
+            ) : null}
+          </InlineNote>
         ) : history.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing reviewed yet.</p>
         ) : (
@@ -774,7 +790,7 @@ export function ServiceHoursPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant={serviceStatusKind(entry.status)}>
-                      {entry.status}
+                      {statusLabel("serviceEntry", entry.status)}
                     </Badge>
                     {entry.points_awarded ? (
                       <Badge variant="outline">Points awarded</Badge>

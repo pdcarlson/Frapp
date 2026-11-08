@@ -730,90 +730,77 @@ describe("the archetype card, at the call site", () => {
   });
 });
 
-describe("the invite step's bulk-email path (#238)", () => {
+describe("the invite step (#238)", () => {
   beforeEach(() => {
     onboardMutate.mockReset();
     onboardMutate.mockResolvedValue({ id: "ch-1" });
     emailInvitesMutate.mockReset();
+    createInviteMutate.mockReset();
   });
 
-  it("sends one invite per address and reports the sent count", async () => {
-    emailInvitesMutate.mockResolvedValue({
-      invites: [{ token: "t1" }, { token: "t2" }],
-      failed: [],
-    });
+  it("uses the Members panel's composer: addresses become chips and send as Member", async () => {
+    emailInvitesMutate.mockResolvedValue({ invites: [], failed: [] });
 
     render(<ChapterWizard onComplete={() => {}} />);
     await gotoInviteStep();
+    expect(
+      screen.getByRole("button", { name: "Skip for now" }),
+    ).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Or invite by email"), {
+    const field = screen.getByLabelText("Invite by email");
+    fireEvent.change(field, {
       target: { value: "a@example.com, b@example.com" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Send invites" }));
-
-    await waitFor(() => expect(emailInvitesMutate).toHaveBeenCalledTimes(1));
-    expect(emailInvitesMutate).toHaveBeenCalledWith({
-      role: "Member",
-      emails: ["a@example.com", "b@example.com"],
-    });
-    await waitFor(() =>
-      expect(screen.getByText("Sent 2 invites.")).toBeInTheDocument(),
-    );
-  });
-
-  it("de-dupes addresses case-insensitively before sending", async () => {
-    emailInvitesMutate.mockResolvedValue({
-      invites: [{ token: "t1" }],
-      failed: [],
-    });
-
-    render(<ChapterWizard onComplete={() => {}} />);
-    await gotoInviteStep();
-
-    fireEvent.change(screen.getByLabelText("Or invite by email"), {
-      target: { value: "Same@Example.com\nsame@example.com" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send invites" }));
-
-    await waitFor(() => expect(emailInvitesMutate).toHaveBeenCalledTimes(1));
-    expect(emailInvitesMutate).toHaveBeenCalledWith({
-      role: "Member",
-      emails: ["Same@Example.com"],
-    });
-  });
-
-  it("reports per-address delivery failures without hiding that the tokens were still created", async () => {
-    emailInvitesMutate.mockResolvedValue({
-      invites: [{ token: "t1" }, { token: "t2" }],
-      failed: ["bad@example.com"],
-    });
-
-    render(<ChapterWizard onComplete={() => {}} />);
-    await gotoInviteStep();
-
-    fireEvent.change(screen.getByLabelText("Or invite by email"), {
-      target: { value: "ok@example.com, bad@example.com" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send invites" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send 2 invites" }));
 
     await waitFor(() =>
-      expect(
-        screen.getByText("1 invite could not be emailed"),
-      ).toBeInTheDocument(),
+      expect(emailInvitesMutate).toHaveBeenCalledWith({
+        role: "Member",
+        emails: ["a@example.com", "b@example.com"],
+      }),
     );
-    expect(screen.getByText("bad@example.com")).toBeInTheDocument();
+    // Something went out, so the footer finishes rather than skips.
+    expect(
+      await screen.findByRole("button", { name: "Finish" }),
+    ).toBeInTheDocument();
   });
 
-  it("rejects an invalid address client-side without calling the API", async () => {
+  it("mints a link only when Copy link is pressed, then offers Finish", async () => {
+    createInviteMutate.mockResolvedValue({ token: "tok-1" });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
     render(<ChapterWizard onComplete={() => {}} />);
     await gotoInviteStep();
 
-    fireEvent.change(screen.getByLabelText("Or invite by email"), {
-      target: { value: "not-an-email" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send invites" }));
+    expect(screen.queryByText(/join\?token=/)).not.toBeInTheDocument();
+    expect(createInviteMutate).not.toHaveBeenCalled();
 
-    expect(emailInvitesMutate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+
+    await waitFor(() =>
+      expect(createInviteMutate).toHaveBeenCalledWith({ role: "Member" }),
+    );
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        `${window.location.origin}/join?token=tok-1`,
+      ),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Finish" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/join\?token=/)).not.toBeInTheDocument();
+  });
+
+  it("still discloses usage analytics (spec/behavior/settings)", async () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    await gotoInviteStep();
+
+    expect(
+      screen.getByText(/pseudonymous usage analytics \(on by default\)/),
+    ).toBeInTheDocument();
   });
 });
 

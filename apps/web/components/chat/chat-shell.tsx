@@ -1,13 +1,20 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  CHANNELS_ROLE_REFUSAL_TITLE,
+  channelsRoleRefusalBody,
+  isRoleRefusal,
+} from "@repo/chat-core/channels-refused-copy";
 import { createPortal } from "react-dom";
 import { MembersGlyph } from "./chat-glyphs";
 import { ChannelMemberList } from "./channel-member-list";
 import { channelDescription } from "@repo/hooks/channel-start";
+import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { ChannelHeaderTitle } from "./channel-header-title";
 import { ChannelStart } from "./channel-start";
-import { EmptyState, ErrorState } from "@/components/shared/async-states";
+import { ErrorState } from "@/components/shared/async-states";
 import {
   canHideConversation,
   directChannelDisplayName,
@@ -27,6 +34,7 @@ import {
   useCategories,
   useChapterRoster,
   useMemberDisplayNames,
+  useMentionRoles,
   useMyPermissions,
   useBookmarks,
   useBookmarkedMessageIds,
@@ -44,7 +52,13 @@ import {
   useSidebarPreferences,
   landingChannelId,
 } from "@repo/hooks";
-import { can, isAnnouncementChannel } from "@repo/validation";
+import {
+  can,
+  isAnnouncementChannel,
+  type MentionCandidate,
+  type MentionChipTargets,
+} from "@repo/validation";
+import { MentionChipTargetsContext } from "@repo/hooks/mention-chips";
 import { ChevronLeft, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
@@ -59,6 +73,8 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
 import { asArray, cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
+import { chatDeepLink } from "@/lib/chat/chat-links";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import {
   useMaskedRefresh,
@@ -71,6 +87,7 @@ import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { vocab } from "@repo/org-archetypes";
 import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { useDeleteChannelFlow } from "./use-delete-channel-flow";
 import {
   classifyMessage,
   hiddenQuoteText,
@@ -111,9 +128,9 @@ import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
 import { SetupChecklistSection } from "./setup-checklist";
 import { ChannelMenu } from "./channel-menu";
+import type { ChannelRowActions } from "./channel-row-menu";
 import type { ChatSearchHit } from "./chat-search-popover";
 import type { BookmarkEntry } from "./bookmarks-popover";
-import { ReconnectPill } from "./reconnect-pill";
 import { BlockListNotice } from "./block-list-notice";
 import { useUnblockFlow } from "./use-unblock-flow";
 import { useBlockFlow } from "./use-block-flow";
@@ -129,6 +146,7 @@ import {
 } from "@/components/layout/nav-face";
 import type { SlashCommand } from "@repo/chat-core/integrations";
 import type { ChatNotificationLevel } from "@repo/hooks";
+import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 
 interface DirectoryMember {
   user_id: string;
@@ -695,12 +713,29 @@ export function ChatShell({
   // only ever touches `user_id` and `display_name`, so the fat profile put every
   // member's email, bio and city on the chat page to match a name (#986).
   const membersQuery = useChapterRoster();
+  // Which `@`-tokens in the timeline really pinged someone (`useMentionChips`):
+  // the roster above and the chapter's role names.
+  const mentionRoles = useMentionRoles();
+  const mentionChipTargets = useMemo<MentionChipTargets>(
+    () => ({
+      members: membersQuery.data
+        ? asArray<MentionCandidate>(membersQuery.data)
+        : undefined,
+      roleNames: mentionRoles.data?.map((role) => role.name),
+    }),
+    [membersQuery.data, mentionRoles.data],
+  );
   const resolveMember = useMemo<ResolveMember>(() => {
     const list = asArray<DirectoryMember>(membersQuery.data);
     return (token: string) => matchMember(list, token);
   }, [membersQuery.data]);
 
   const channel = useChatChannel(activeChannelId);
+  // The top bar's connection pill says what this channel's realtime transport
+  // is doing, folded with the app's own connection state, so the header no
+  // longer draws a pill of its own (`spec/ui/resilience/connection-state.md`
+  // § One indicator).
+  useReportOpenChatTransport(activeChannelId ? channel.connection : null);
   const { toast } = useToast();
 
   // The member's own arrangement of the rail (#2877): pins, folds, filters.
@@ -1018,8 +1053,9 @@ export function ChatShell({
   const reopenDm = useGetOrCreateDm();
 
   // Opening a channel stamps the read cursor, and so does hiding a DM (#2303:
-  // a hidden row must leave no badge). Those are the only things that move
-  // it, and the only things that clear the badges above. Without it the rail lights up
+  // a hidden row must leave no badge), and so does the rail's right-click
+  // Mark as read. Those are the only things that move it, and the only things
+  // that clear the badges above. Without it the rail lights up
   // on first load and never goes out, which is worse than the dead badge this
   // slice replaced: it would show every channel as permanently unread.
   // `spec/behavior/chat/README.md` § Read Receipts: opening stamps to server
@@ -1033,6 +1069,73 @@ export function ChatShell({
     // was open do not resurface as unread. Mobile does the same on blur.
     return () => markReadMutate(activeChannelId);
   }, [activeChannelId, markReadMutate]);
+
+  // The rail row's right-click menu (owner, 2026-11-06). Which rows a channel
+  // offers is `channelRowActions`' call in `@repo/hooks`, scoped to the
+  // member's permissions; these are what each one does.
+  const router = useRouter();
+  const deleteChannelFlow = useDeleteChannelFlow(confirm);
+  // Its own mutation instance, not the header's: sharing one moved the
+  // header's `isError`/`variables` to whichever channel the rail last changed
+  // (clearing the open channel's "not saved" alert) and locked the header
+  // while a rail write was pending.
+  const setRailNotificationLevelAsync =
+    useSetChannelNotificationLevel().mutateAsync;
+  const rowActions = useMemo<ChannelRowActions>(
+    () => ({
+      permissions: permissionsPayload?.permissions,
+      onMarkRead: (channelId) => markReadMutate(channelId),
+      notificationLevelFor: (channelId) => levelByChannelId.get(channelId),
+      // The header's alert only shows on the open channel, and a rail change
+      // is usually to one that isn't, so a failure toasts. Per call, because
+      // `mutate`'s per-call `onError` runs only for the latest call.
+      onSetNotificationLevel: (channelId, level) =>
+        void setRailNotificationLevelAsync({ channelId, level }).catch(() =>
+          toast({
+            variant: "destructive",
+            description: "Couldn't change notifications. Try again.",
+          }),
+        ),
+      onCopyLink: (channelId) => {
+        const url = `${window.location.origin}${chatDeepLink({ channelId })}`;
+        void (async () => {
+          try {
+            // Inside the try: without a secure context `navigator.clipboard`
+            // is undefined and the call throws before any promise exists.
+            await navigator.clipboard.writeText(url);
+            toast({ description: "Link copied" });
+          } catch {
+            toast({
+              variant: "destructive",
+              title: "Copy failed",
+              description: "Open the channel and copy the address bar.",
+            });
+          }
+        })();
+      },
+      onEdit: (channelId) =>
+        router.push(`/chat-admin?channel=${encodeURIComponent(channelId)}`),
+      onDelete: (channelId) => {
+        const name =
+          channels.find((c) => c.id === channelId)?.name ?? "this channel";
+        void deleteChannelFlow({ id: channelId, name }, () =>
+          setSelectedChannelId((current) =>
+            current === channelId ? null : current,
+          ),
+        );
+      },
+    }),
+    [
+      permissionsPayload?.permissions,
+      markReadMutate,
+      levelByChannelId,
+      setRailNotificationLevelAsync,
+      toast,
+      router,
+      channels,
+      deleteChannelFlow,
+    ],
+  );
 
   // Unread and mention counts come from `GET /v1/channels/unread`, never from a
   // local re-derivation: the server excludes the viewer's own and deleted
@@ -1664,6 +1767,7 @@ export function ChatShell({
             unreadByChannelId={unreadByChannelId}
             activeChannelId={activeChannelId}
             onHide={hideFromRail}
+            rowActions={rowActions}
             sidebar={sidebarControls}
             onPick={(ch) => {
               if (ch.hidden) {
@@ -1832,7 +1936,6 @@ export function ChatShell({
             description={activeChannelDescription}
           />
           <div className="flex shrink-0 items-center gap-2">
-            <ReconnectPill status={channel.connection} />
             {showMemberList ? (
               <Button
                 variant="ghost"
@@ -1997,44 +2100,55 @@ export function ChatShell({
               chapter, so "Pick an active chapter" is true in both where "you
               have no chapter" would be a confident falsehood in one.
             */}
-            <EmptyState
-              title="No chapter selected"
-              description="Pick an active chapter to load its channels."
-            />
+            <InlineNote>
+              Pick an active chapter to load its channels.
+            </InlineNote>
           </div>
         ) : null}
         {channelsPaneState === "error" ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            {/*
+              A refusal by role is not a load failure (2026-11-07: testers
+              invited as a Discord-imported role with only a channel
+              permission). The words are shared with mobile Chat home.
+            */}
             <ErrorState
-              title="Couldn't load channels"
-              description="Check your chapter access."
+              title={
+                isRoleRefusal(channelsQuery.error)
+                  ? CHANNELS_ROLE_REFUSAL_TITLE
+                  : "Couldn't load channels"
+              }
+              description={
+                isRoleRefusal(channelsQuery.error)
+                  ? channelsRoleRefusalBody(null)
+                  : describeLoadFailure(channelsQuery.error)
+              }
               onRetry={() => void channelsQuery.refetch()}
             />
           </div>
         ) : null}
         {channelsPaneState === "empty" ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            <EmptyState
-              title="No channels yet"
-              description="Onboarding seeds them. Ask an admin."
-            />
+            <InlineNote>No channels yet. Ask an admin to add one.</InlineNote>
           </div>
         ) : null}
         {channelsPaneState === "ready" && requestedChannelMissing ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            <EmptyState
-              title="Channel not found"
-              description="That link points somewhere you can't reach."
-              actionLabel="Browse channels"
-              onAction={() => {
-                setChannelTargetDismissed(true);
-                // Below `lg` the list is a separate pane, so a control named
-                // "Browse channels" has to actually show it. Dismissing alone
-                // resolved the #general fallback and painted a timeline, which
-                // is a different channel rather than a list.
-                setNarrowPane("channels");
-              }}
-            />
+            <InlineNote>
+              {"That link points to a channel you can't reach. "}
+              <InlineNoteAction
+                onClick={() => {
+                  setChannelTargetDismissed(true);
+                  // Below `lg` the list is a separate pane, so a control named
+                  // "Browse channels" has to actually show it. Dismissing alone
+                  // resolved the #general fallback and painted a timeline, which
+                  // is a different channel rather than a list.
+                  setNarrowPane("channels");
+                }}
+              >
+                Browse channels
+              </InlineNoteAction>
+            </InlineNote>
           </div>
         ) : null}
         {channelsPaneState === "loading" ? (
@@ -2134,90 +2248,92 @@ export function ChatShell({
                 FOCUS_RING,
               )}
             >
-              <MessageTimeline
-                ref={timeline}
-                channelId={activeChannel?.id}
-                nameFor={nameFor}
-                roleColorFor={roleColorFor}
-                avatarFor={avatarFor}
-                messages={channel.messages}
-                blockList={{ blockState, thread }}
-                onUnblock={handleUnblock}
-                onReloadMasked={handleReloadMasked}
-                maskedRefresh={maskedRefresh}
-                viewerId={userId}
-                isLoading={channel.isLoading}
-                loadError={channel.loadError}
-                hasOlder={channel.hasOlder}
-                isLoadingOlder={channel.isLoadingOlder}
-                olderError={channel.olderError}
-                onLoadOlder={loadOlderHistory}
-                channelStart={channelStartNode}
-                // Only while the jump is still working. Once it has settled on a
-                // notice the target stays pending (so a late arrival still lands),
-                // but holding follow through that would stop new messages
-                // scrolling into view until the member dismissed it.
-                holdFollow={
-                  pendingMessageId !== null &&
-                  (pendingJumpChannelId === null ||
-                    pendingJumpChannelId === activeChannelId) &&
-                  !showUnreachableNotice
-                }
-                onReact={channel.react}
-                onUnreact={channel.unreact}
-                onReply={canReplyHere ? startReply : undefined}
-                // The quote above a reply scrolls to the message it quotes. It used
-                // to open `ThreadPanel` in the Details rail; #2142 deleted both, and
-                // this is the same machinery pins and saved messages already use.
-                onJumpToParent={(message) => jumpToMessage(message.id)}
-                onRetry={channel.retry}
-                onDiscard={channel.discard}
-                // Heavy-command rows bypass the outbox, so `channel.retry` above
-                // cannot reach them. This replays the original request under its
-                // original idempotency key and toasts the outcome through the same
-                // three-way channel a first dispatch uses (#1733).
-                onRetryUnconfirmed={async (replay) => {
-                  // Every path here must end in a toast. The first dispatch gets
-                  // that guarantee from `runDispatch` in the composer (which also
-                  // tags Sentry); this control sits in the timeline and had
-                  // neither, so a throw produced a blinking spinner, no message,
-                  // and no telemetry — and an officer who concludes Retry is broken
-                  // re-types the command, mints a fresh key and double-grants.
-                  try {
-                    const result = await channel.retryUnconfirmed(replay);
-                    notifyDispatchOutcome(toast, replay.command, result);
-                  } catch (error) {
-                    Sentry.captureException(error, {
-                      tags: { slash_command: `${replay.command}_retry` },
-                    });
-                    // Non-destructive on purpose: the retry failing says nothing
-                    // about whether the original attempt committed, and a red
-                    // "failed" is what invites the re-type.
-                    toast({
-                      title: "Couldn't retry that command",
-                      description:
-                        "The retry didn't go through. Check the points ledger before running the command again. A second run would record the points twice.",
-                    });
+              <MentionChipTargetsContext.Provider value={mentionChipTargets}>
+                <MessageTimeline
+                  ref={timeline}
+                  channelId={activeChannel?.id}
+                  nameFor={nameFor}
+                  roleColorFor={roleColorFor}
+                  avatarFor={avatarFor}
+                  messages={channel.messages}
+                  blockList={{ blockState, thread }}
+                  onUnblock={handleUnblock}
+                  onReloadMasked={handleReloadMasked}
+                  maskedRefresh={maskedRefresh}
+                  viewerId={userId}
+                  isLoading={channel.isLoading}
+                  loadError={channel.loadError}
+                  hasOlder={channel.hasOlder}
+                  isLoadingOlder={channel.isLoadingOlder}
+                  olderError={channel.olderError}
+                  onLoadOlder={loadOlderHistory}
+                  channelStart={channelStartNode}
+                  // Only while the jump is still working. Once it has settled on a
+                  // notice the target stays pending (so a late arrival still lands),
+                  // but holding follow through that would stop new messages
+                  // scrolling into view until the member dismissed it.
+                  holdFollow={
+                    pendingMessageId !== null &&
+                    (pendingJumpChannelId === null ||
+                      pendingJumpChannelId === activeChannelId) &&
+                    !showUnreachableNotice
                   }
-                }}
-                onAct={(messageId, actionType, payload) =>
-                  void channel.act(messageId, actionType, payload)
-                }
-                // An edit authorizes as a post (`spec/behavior/chat/README.md`
-                // § Channels → Channel-access enforcement), so a member who can't
-                // post here, such as an alumnus in an ordinary channel, isn't
-                // offered one (#2775).
-                onEdit={
-                  activeChannel?.can_post !== false ? channel.edit : undefined
-                }
-                onDelete={handleDeleteMessage}
-                bookmarkedMessageIds={bookmarkedMessageIds}
-                onToggleBookmark={handleToggleBookmark}
-                canManageChannel={canManageChannel}
-                onReport={handleReport}
-                onBlock={handleBlock}
-                isMember={isMember}
-              />
+                  onReact={channel.react}
+                  onUnreact={channel.unreact}
+                  onReply={canReplyHere ? startReply : undefined}
+                  // The quote above a reply scrolls to the message it quotes. It used
+                  // to open `ThreadPanel` in the Details rail; #2142 deleted both, and
+                  // this is the same machinery pins and saved messages already use.
+                  onJumpToParent={(message) => jumpToMessage(message.id)}
+                  onRetry={channel.retry}
+                  onDiscard={channel.discard}
+                  // Heavy-command rows bypass the outbox, so `channel.retry` above
+                  // cannot reach them. This replays the original request under its
+                  // original idempotency key and toasts the outcome through the same
+                  // three-way channel a first dispatch uses (#1733).
+                  onRetryUnconfirmed={async (replay) => {
+                    // Every path here must end in a toast. The first dispatch gets
+                    // that guarantee from `runDispatch` in the composer (which also
+                    // tags Sentry); this control sits in the timeline and had
+                    // neither, so a throw produced a blinking spinner, no message,
+                    // and no telemetry — and an officer who concludes Retry is broken
+                    // re-types the command, mints a fresh key and double-grants.
+                    try {
+                      const result = await channel.retryUnconfirmed(replay);
+                      notifyDispatchOutcome(toast, replay.command, result);
+                    } catch (error) {
+                      Sentry.captureException(error, {
+                        tags: { slash_command: `${replay.command}_retry` },
+                      });
+                      // Non-destructive on purpose: the retry failing says nothing
+                      // about whether the original attempt committed, and a red
+                      // "failed" is what invites the re-type.
+                      toast({
+                        title: "Couldn't retry that command",
+                        description:
+                          "The retry didn't go through. Check the points ledger before running the command again. A second run would record the points twice.",
+                      });
+                    }
+                  }}
+                  onAct={(messageId, actionType, payload) =>
+                    void channel.act(messageId, actionType, payload)
+                  }
+                  // An edit authorizes as a post (`spec/behavior/chat/README.md`
+                  // § Channels → Channel-access enforcement), so a member who can't
+                  // post here, such as an alumnus in an ordinary channel, isn't
+                  // offered one (#2775).
+                  onEdit={
+                    activeChannel?.can_post !== false ? channel.edit : undefined
+                  }
+                  onDelete={handleDeleteMessage}
+                  bookmarkedMessageIds={bookmarkedMessageIds}
+                  onToggleBookmark={handleToggleBookmark}
+                  canManageChannel={canManageChannel}
+                  onReport={handleReport}
+                  onBlock={handleBlock}
+                  isMember={isMember}
+                />
+              </MentionChipTargetsContext.Provider>
             </div>
             {/*
           Directly above the composer, which is where Discord and Slack both put
@@ -2308,7 +2424,9 @@ export function ChatShell({
             // Never `disabled` while offline: the send path enqueues to the
             // Dexie outbox before it touches the network, so gating the
             // composer would defeat the queue built to make composing-while-
-            // offline work (`spec/ui/resilience/connection-state.md`). It is labelled instead.
+            // offline work (`spec/ui/resilience/connection-state.md`). The
+            // top bar's connection pill says so; this flag only refuses the
+            // queueless slash commands.
             isOffline={channel.connection === "offline"}
             replyTo={replyTo}
             onCancelReply={cancelReply}

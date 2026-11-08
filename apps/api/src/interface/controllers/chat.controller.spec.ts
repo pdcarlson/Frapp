@@ -10,6 +10,7 @@ import { ChatCategoryService } from '../../application/services/chat-category.se
 import { ChatReactionService } from '../../application/services/chat-reaction.service';
 import type { MaskedChatMessage } from '../../application/services/chat-block-mask';
 import { RbacService } from '../../application/services/rbac.service';
+import { ChatMentionService } from '../../application/services/chat-mention.service';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 
@@ -39,6 +40,7 @@ describe('ChatController', () => {
   >;
   let reactions: jest.Mocked<Pick<ChatReactionService, 'recordMessageAction'>>;
   let rbacService: jest.Mocked<Pick<RbacService, 'memberHasAnyPermission'>>;
+  let mentions: jest.Mocked<Pick<ChatMentionService, 'listMentionRoles'>>;
 
   beforeEach(async () => {
     rbacService = { memberHasAnyPermission: jest.fn() };
@@ -59,6 +61,19 @@ describe('ChatController', () => {
       sendMessage: jest.fn(),
     };
 
+    mentions = {
+      listMentionRoles: jest.fn().mockResolvedValue([
+        {
+          role_id: 'r-1',
+          name: 'Officers',
+          color: null,
+          member_ids: ['u-1'],
+          open_to_all: true,
+          mentionable: true,
+        },
+      ]),
+    };
+
     const module: TestingModule = await createUnguardedTestingModule({
       controllers: [ChatController],
       providers: [
@@ -68,10 +83,25 @@ describe('ChatController', () => {
         { provide: ChatCategoryService, useValue: categories },
         { provide: ChatReactionService, useValue: reactions },
         { provide: RbacService, useValue: rbacService },
+        { provide: ChatMentionService, useValue: mentions },
       ],
     }).compile();
 
     controller = module.get<ChatController>(ChatController);
+  });
+
+  describe('getMentionRoles', () => {
+    it('answers the picker without the role membership', async () => {
+      await expect(
+        controller.getMentionRoles('chapter-1', 'user-1'),
+      ).resolves.toEqual([
+        { role_id: 'r-1', name: 'Officers', color: null, mentionable: true },
+      ]);
+      expect(mentions.listMentionRoles).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+      );
+    });
   });
 
   // The delete route used to hardcode `hasManagePermission = false`, so the
@@ -343,11 +373,48 @@ describe('ChatController', () => {
         dto.filename,
         dto.content_type,
         undefined,
+        false,
       );
       expect(result).toEqual({
         upload_url: 'https://storage.example/put',
         storage_path: 'chapters/ch-1/chat/chan-1/msg-1/photo.png',
         message_id: 'msg-1',
+      });
+    });
+
+    it("passes the preview flag through and maps a photo's preview upload onto the wire", async () => {
+      (attachments.requestChatUploadUrl as jest.Mock).mockResolvedValue({
+        signedUrl: 'https://storage.example/put',
+        storagePath: 'chapters/ch-1/chat/chan-1/msg-1/photo.png',
+        messageId: 'msg-1',
+        previewSignedUrl: 'https://storage.example/put-preview',
+        previewStoragePath:
+          'chapters/ch-1/chat/chan-1/msg-1/preview/preview.jpg',
+      });
+
+      const result = await controller.requestUploadUrl(
+        'chan-1',
+        'ch-1',
+        'user-1',
+        { ...dto, with_preview: true },
+      );
+
+      expect(attachments.requestChatUploadUrl).toHaveBeenCalledWith(
+        'chan-1',
+        'ch-1',
+        'user-1',
+        dto.filename,
+        dto.content_type,
+        undefined,
+        true,
+      );
+      expect(result).toEqual({
+        upload_url: 'https://storage.example/put',
+        storage_path: 'chapters/ch-1/chat/chan-1/msg-1/photo.png',
+        message_id: 'msg-1',
+        preview_upload_url: 'https://storage.example/put-preview',
+        preview_storage_path:
+          'chapters/ch-1/chat/chan-1/msg-1/preview/preview.jpg',
       });
     });
 

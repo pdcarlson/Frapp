@@ -6,7 +6,8 @@ import {
   canReadCardTask,
   readLiveTask,
   taskCardControls,
-  taskCardStatusLabel,
+  TASK_ACTION_LABELS,
+  taskStatusLabel,
   useMyPermissions,
   useTask,
   useUpdateTaskStatus,
@@ -67,7 +68,7 @@ export const STATUS_BADGE: Record<TaskStatus, "default" | "outline" | "destructi
  * mutating the message row. Server-originated (a client cannot forge
  * `kind:"task"` — see `ChatService.SERVER_ONLY_KINDS`).
  *
- * Interactive: the assignee can Start / Mark complete and an admin
+ * Interactive: the assignee can Start / Mark done and an admin
  * (`tasks:manage`) can Confirm / Reject inline. Buttons fire the existing task
  * REST endpoints with optimistic cache writes; the server stays the trust
  * boundary, so the gating here is UX-only. Which controls show, and when the
@@ -122,7 +123,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // `TODO` forever, so drawing it before (or instead of) a live read would call
   // a finished task "To do".
   const status: TaskStatus | null = live?.status ?? null;
-  const statusLabel = live ? taskCardStatusLabel(live) : null;
+  const statusLabel = live ? taskStatusLabel(live) : null;
   // No control until the live task is read (#2065): acting on the snapshot
   // offered Start on tasks already in progress or done.
   const controls = taskCardControls({ live, isAssignee, canManage });
@@ -216,7 +217,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
                 )
               }
             >
-              Start
+              {TASK_ACTION_LABELS.start}
             </Button>
           ) : null}
           {controls.includes("complete") ? (
@@ -229,12 +230,12 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
                   { id: payload.task_id, body: { status: "COMPLETED" } },
                   onFailure(
                     "Couldn't complete task",
-                    "The API rejected the transition.",
+                    "Try again in a moment.",
                   ),
                 )
               }
             >
-              Mark complete
+              {TASK_ACTION_LABELS.complete}
             </Button>
           ) : null}
           {managerControls.length > 0 ? (
@@ -260,8 +261,8 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
                 >
                   <CheckCircle2 className="h-4 w-4" />
                   {managerControls.includes("confirmed")
-                    ? "Confirmed"
-                    : "Confirm"}
+                    ? TASK_ACTION_LABELS.confirmed
+                    : TASK_ACTION_LABELS.confirm}
                 </Button>
               ) : null}
               {managerControls.includes("reject") ? (
@@ -280,7 +281,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
                   }
                 >
                   <Undo2 className="h-4 w-4" />
-                  Reject
+                  {TASK_ACTION_LABELS.reject}
                 </Button>
               ) : null}
             </Can>

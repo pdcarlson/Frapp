@@ -30,6 +30,7 @@ import {
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { SIGNET_ENGINE_VERSION } from '@repo/chapter-theme';
 import { isBetaOffModule } from '@repo/validation';
+import { formatDueDate, joinFacts } from '../services/push-copy';
 import {
   buildChapterPalette,
   chapterPaletteColumns,
@@ -646,8 +647,14 @@ export class ScheduledJobsService {
             event,
           )
         ).map((member) => member.user_id),
-      title: 'Event starting soon',
-      body: `"${event.name}" ${this.startsInPhrase(event.start_time, now)}.`,
+      // Named for the event, like every event push (notifications.md § What a
+      // push says). Only required members get a reminder, so it says so.
+      title: event.name,
+      body: joinFacts(
+        this.startsInPhrase(event.start_time, now),
+        event.location?.trim(),
+        'Required',
+      ),
       category: 'events',
       target: { screen: 'events', eventId: event.id },
     });
@@ -670,9 +677,9 @@ export class ScheduledJobsService {
     const minutes = Math.round(
       (new Date(startTime).getTime() - now.getTime()) / 60_000,
     );
-    if (minutes < 1) return 'is starting now';
-    if (minutes === 1) return 'starts in 1 minute';
-    return `starts in ${minutes} minutes`;
+    if (minutes < 1) return 'Starting now';
+    if (minutes === 1) return 'Starts in 1 minute';
+    return `Starts in ${minutes} minutes`;
   }
 
   /**
@@ -888,8 +895,8 @@ export class ScheduledJobsService {
       threshold: 'OVERDUE',
       dueDate: task.due_date,
       recipients,
-      title: 'Task overdue',
-      body: `"${task.title}" is past its due date.`,
+      title: task.title,
+      body: `Overdue · was due ${formatDueDate(task.due_date)}`,
       category: 'tasks',
       target: { screen: 'tasks', taskId: task.id },
     });

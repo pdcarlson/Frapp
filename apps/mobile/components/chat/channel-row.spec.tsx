@@ -166,13 +166,10 @@ describe("ChannelRow badge colour", () => {
     expect(findBadgeStyle(renderRow({}))).toBeNull();
   });
 
-  it("uses the neutral fill for plain unread — never red, never accent", () => {
-    const style = findBadgeStyle(renderRow({ unreadCount: 7 }));
-
-    expect(style?.backgroundColor).toBe(signetDarkTokens.color.border.input);
-    expect(style?.backgroundColor).not.toBe(
-      signetDarkTokens.color.semantic.mention,
-    );
+  it("draws no number for a channel that is merely unread", () => {
+    // 2026-11-07: only what addresses the member carries a count; the bold
+    // name says the channel is unread, as on Discord.
+    expect(findBadgeStyle(renderRow({ unreadCount: 7 }))).toBeNull();
   });
 
   it("uses the fixed mention red when the viewer is addressed", () => {
@@ -183,19 +180,6 @@ describe("ChannelRow badge colour", () => {
     expect(style?.backgroundColor).toBe(
       signetDarkTokens.color.semantic.mention,
     );
-  });
-
-  it("keeps one badge geometry across both states", () => {
-    // "fill and text are the only difference, so badge geometry stays one
-    // recipe" — a regression here means the two states drifted apart.
-    const neutral = findBadgeStyle(renderRow({ unreadCount: 7 }));
-    const mention = findBadgeStyle(
-      renderRow({ unreadCount: 7, mentionCount: 1 }),
-    );
-
-    expect(neutral?.minWidth).toBe(mention?.minWidth);
-    expect(neutral?.height).toBe(mention?.height);
-    expect(neutral?.borderRadius).toBe(mention?.borderRadius);
   });
 
   it("treats a mention with a zero unread total as an unread row", () => {
@@ -280,14 +264,16 @@ describe("ChannelRow pin and DM badge (#2877)", () => {
 
   // foundations.md §6 "Where the accent goes" (2026-11-05): a row icon is
   // neutral, so a pinned row's `#` stays muted like any other row's.
-  it("keeps a pinned row's sigil muted, never the chapter accent", () => {
+  it("keeps a pinned row's sigil neutral, never the chapter accent", () => {
     for (const isPinned of [true, false]) {
       const sigil = renderRow({ isPinned, onTogglePin: vi.fn() }).root.find(
         (node) =>
           (node.type as unknown) === "Text" && node.props.children === "#",
       );
       const flat = JSON.stringify(sigil.props.style);
-      expect(flat).toContain(`"color":"${signetDarkTokens.color.text.muted}"`);
+      expect(flat).toContain(
+        `"color":"${signetDarkTokens.color.text.mutedForeground}"`,
+      );
       expect(flat).not.toContain("#CB9FFF");
     }
   });
@@ -313,9 +299,7 @@ describe("ChannelRow pin and DM badge (#2877)", () => {
     expect(dmStyle?.backgroundColor).toBe(
       signetDarkTokens.color.semantic.mention,
     );
-    expect(channelStyle?.backgroundColor).toBe(
-      signetDarkTokens.color.border.input,
-    );
+    expect(channelStyle).toBeNull();
   });
 });
 
@@ -340,14 +324,38 @@ describe("ChannelRow unread emphasis and press feedback", () => {
     return flatten(title.props.style);
   }
 
-  it("draws an unread title bold and bright, a read one lighter and muted", () => {
+  // A read name stays bright (owner, 2026-11-07): weight alone tells them apart.
+  it("draws an unread title bold, a read one regular, both bright", () => {
     const unread = titleStyle(renderRow({ unreadCount: 7 }));
     const read = titleStyle(renderRow({}));
 
     expect(unread.fontFamily).toBe("Figtree_700Bold");
     expect(unread.color).toBe(signetDarkTokens.color.text.foreground);
-    expect(read.fontFamily).toBe("Figtree_600SemiBold");
-    expect(read.color).toBe(signetDarkTokens.color.text.mutedForeground);
+    expect(read.fontFamily).toBe("Figtree_400Regular");
+    expect(read.color).toBe(signetDarkTokens.color.text.foreground);
+  });
+
+  it("draws a muted unread row's title quiet, with the crossed-out bell", () => {
+    const tree = renderRow({ unreadCount: 7, isMuted: true });
+    const title = titleStyle(tree);
+    expect(title.fontFamily).toBe("Figtree_400Regular");
+    expect(title.color).toBe(signetDarkTokens.color.text.muted);
+    expect(
+      tree.root.findAll((node) => (node.type as unknown) === "Svg"),
+    ).toHaveLength(1);
+    expect(
+      renderRow({ unreadCount: 7 }).root.findAll(
+        (node) => (node.type as unknown) === "Svg",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("lets a mention past a mute, as push does", () => {
+    const title = titleStyle(
+      renderRow({ unreadCount: 2, mentionCount: 1, isMuted: true }),
+    );
+    expect(title.fontFamily).toBe("Figtree_700Bold");
+    expect(title.color).toBe(signetDarkTokens.color.text.foreground);
   });
 
   it("gives an unread row no fill at rest", () => {
@@ -404,13 +412,14 @@ describe("ChannelListSkeleton", () => {
     // Chat home would sound blank while it loads.
     expect(list.props.accessible).toBe(true);
 
-    // A skeleton row is a `ChannelRow` row: same padding, same direction.
+    // A skeleton row is a one-line `ChannelRow` row: same height, same
+    // direction.
     const rows = tree.root.findAll(
       (node) =>
         (node.type as unknown as string) === "View" &&
         flatten(node.props.style).flexDirection === "row" &&
-        flatten(node.props.style).paddingVertical ===
-          signetDarkTokens.spacing.md,
+        flatten(node.props.style).paddingVertical === 0 &&
+        flatten(node.props.style).minHeight === signetDarkTokens.touch.minimum,
     );
     expect(rows).toHaveLength(4);
     expect(
@@ -434,6 +443,7 @@ describe("ChannelListSkeleton", () => {
         </FrappThemeProvider>,
       );
     });
+    // The caption, then a sigil and a title per row.
     expect(tree.root.findAllByType(SkeletonBlock)).toHaveLength(11);
     expect(
       listeners.mock.calls.filter(
@@ -441,5 +451,32 @@ describe("ChannelListSkeleton", () => {
       ),
     ).toHaveLength(1);
     expect(vi.mocked(withRepeat)).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("accessibilityLabelFor, muted and previewed rows", () => {
+  it("says muted after the name and reads the preview last", () => {
+    expect(
+      accessibilityLabelFor({
+        name: "social",
+        isDirect: false,
+        unreadCount: 3,
+        mentionCount: 0,
+        isMuted: true,
+        preview: "Jake: see you at 6",
+      }),
+    ).toBe("#social, muted, 3 unread, Jake: see you at 6");
+  });
+
+  it("reads nothing for a held, blank preview line", () => {
+    expect(
+      accessibilityLabelFor({
+        name: "social",
+        isDirect: false,
+        unreadCount: 0,
+        mentionCount: 0,
+        preview: "",
+      }),
+    ).toBe("#social");
   });
 });

@@ -534,6 +534,7 @@ describe('SearchService', () => {
         point_value: 10,
         is_mandatory: false,
         required_role_ids: ['role-officer'],
+        others_invited: false,
       };
 
       it('drops a role-targeted event for a viewer without a matching role', async () => {
@@ -592,7 +593,11 @@ describe('SearchService', () => {
       });
 
       it('does not look up roles at all when no matched event is role-targeted', async () => {
-        const untargeted = { ...targetedEvent, required_role_ids: null };
+        const untargeted = {
+          ...targetedEvent,
+          required_role_ids: null,
+          others_invited: true,
+        };
         repo.searchEvents.mockResolvedValue([untargeted]);
 
         const result = await service.search('ch-1', 'user-1', 'exec');

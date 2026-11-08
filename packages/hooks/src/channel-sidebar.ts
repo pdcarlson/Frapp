@@ -75,6 +75,11 @@ export interface ArrangedSidebarSection<C extends SidebarChannelLike> {
   mentionCount: number;
   /** Some row here addresses the member: an @-mention, or an unread DM. */
   addressed: boolean;
+  /**
+   * The numbers the rows here would draw, summed (`addressedCount`): what the
+   * folded header's badge counts, so a busy channel adds nothing to it.
+   */
+  addressedCount: number;
 }
 
 export interface ArrangedSidebar<C extends SidebarChannelLike> {
@@ -200,6 +205,42 @@ export function isAddressed(
   return countsAddressMember(isDirectChannel(channel), counts);
 }
 
+/**
+ * The number a channel's badge draws, or 0 for none (owner decision
+ * 2026-11-07, after a tester: "do I care how many messages got sent"): its
+ * mentions, or a direct message's unread count. A channel that is merely
+ * unread draws no number; its bold name says so.
+ */
+export function addressedCount(
+  isDirect: boolean,
+  counts: SidebarUnreadCounts,
+): number {
+  if (counts.mentionCount > 0) return counts.mentionCount;
+  return isDirect ? counts.unreadCount : 0;
+}
+
+/**
+ * The chat half of the app icon badge: the sum of the numbers the channel rows
+ * draw (`addressedCount`), so the icon never counts what no row shows.
+ */
+export function addressedUnreadTotal(
+  rows: readonly {
+    channel_id: string;
+    unread_count: number;
+    mention_count: number;
+  }[],
+  isDirect: (channelId: string) => boolean,
+): number {
+  let total = 0;
+  for (const row of rows) {
+    total += addressedCount(isDirect(row.channel_id), {
+      unreadCount: row.unread_count,
+      mentionCount: row.mention_count,
+    });
+  }
+  return total;
+}
+
 /** `isAddressed` for a caller that knows only whether the row is a DM. */
 export function countsAddressMember(
   isDirect: boolean,
@@ -276,11 +317,13 @@ export function arrangeChannelSidebar<C extends SidebarChannelLike>(
     let unreadCount = 0;
     let mentionCount = 0;
     let addressed = false;
+    let addressedTotal = 0;
     for (const channel of kept) {
       const counts = countsOf(channel);
       unreadCount += counts.unreadCount;
       mentionCount += counts.mentionCount;
       addressed ||= isAddressed(channel, counts);
+      addressedTotal += addressedCount(isDirectChannel(channel), counts);
     }
     const folded = collapsed.has(key);
     return {
@@ -293,6 +336,7 @@ export function arrangeChannelSidebar<C extends SidebarChannelLike>(
       unreadCount,
       mentionCount,
       addressed,
+      addressedCount: addressedTotal,
     };
   };
 
@@ -321,6 +365,10 @@ export const UNPIN_FROM_TOP_LABEL = "Unpin from top";
 
 export const UNREAD_ONLY_LABEL = "Unread only";
 export const HIDE_MUTED_LABEL = "Hide muted";
+
+/** The control both clients keep the two filters behind (mobile since 2026-11-06). */
+export const FILTER_CHANNELS_LABEL = "Filter channels";
+export const FILTER_CHANNELS_ON_LABEL = "Filter channels, filters on";
 
 export const NO_MATCHING_CHANNELS = "No channels match your filters.";
 export const SHOW_ALL_CHANNELS_LABEL = "Show all channels";

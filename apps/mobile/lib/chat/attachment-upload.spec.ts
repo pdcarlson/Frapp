@@ -3,11 +3,30 @@ import { ImageManipulator } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  pickAndUploadPhoto,
+  CHAT_PHOTO_LIMIT,
+  PHOTO_JPEG_QUALITY,
+  PHOTO_MAX_EDGE,
+  pickChatPhotos,
   resolveUploadable,
+  uploadChatPhoto,
+  type RequestUploadUrl,
   safeBasename,
   uploadFailureReason,
 } from "./attachment-upload";
+import { describeChatPhoto } from "./photo-preview";
+
+// The size, placeholder and preview copy are `photo-preview.spec.ts`'s; here
+// only how the upload carries them. Nothing described unless a test says so.
+vi.mock("./photo-preview", () => ({
+  describeChatPhoto: vi.fn(),
+}));
+const describePhoto = vi.mocked(describeChatPhoto);
+const NOT_DESCRIBED = {
+  width: null,
+  height: null,
+  thumbhash: null,
+  previewUri: null,
+};
 
 /**
  * These pin the two decisions that are easy to get wrong and expensive to get
@@ -17,9 +36,27 @@ import {
  * default, so each happy-path test opts in explicitly.
  */
 
+/**
+ * One photo through the whole chat path, pick then upload: what the composer
+ * runs for each photo in the tray, in the order it runs them.
+ */
+async function pickAndUploadPhoto(
+  channelId: string,
+  requestUploadUrl: RequestUploadUrl,
+) {
+  const result = await pickChatPhotos();
+  if (result.status !== "picked") return result;
+  return uploadChatPhoto(channelId, result.photos[0]!, requestUploadUrl);
+}
+
 const picker = vi.mocked(ImagePicker);
 const fs = vi.mocked(FileSystem);
 const manipulator = vi.mocked(ImageManipulator);
+
+beforeEach(() => {
+  describePhoto.mockReset();
+  describePhoto.mockResolvedValue(NOT_DESCRIBED);
+});
 
 const TICKET = {
   upload_url: "https://storage.example/put",
@@ -121,7 +158,9 @@ describe("resolveUploadable", () => {
       mimeType: "image/heic",
     });
 
-    expect(manipulator.manipulate).toHaveBeenCalledWith("file:///IMG_0001.HEIC");
+    expect(manipulator.manipulate).toHaveBeenCalledWith(
+      "file:///IMG_0001.HEIC",
+    );
     expect(result.contentType).toBe("image/jpeg");
     expect(result.filename).toBe("IMG_0001.jpg");
     expect(result.uri).toBe("file:///out.jpg");
@@ -195,6 +234,91 @@ describe("resolveUploadable", () => {
   });
 });
 
+describe("resolveUploadable — camera photos are shrunk", () => {
+  function lastContext() {
+    return manipulator.manipulate.mock.results.at(-1)?.value as {
+      resize: ReturnType<typeof vi.fn>;
+      renderAsync: ReturnType<typeof vi.fn>;
+    };
+  }
+
+  it("shrinks a full-size camera JPEG to the long-edge cap", async () => {
+    const result = await resolveUploadable({
+      uri: "file:///IMG_0002.jpg",
+      fileName: "IMG_0002.jpg",
+      mimeType: "image/jpeg",
+      width: 4032,
+      height: 3024,
+      fileSize: 4.1 * 1024 * 1024,
+    });
+
+    expect(manipulator.manipulate).toHaveBeenCalledWith("file:///IMG_0002.jpg");
+    expect(lastContext().resize).toHaveBeenCalledWith({
+      width: PHOTO_MAX_EDGE,
+    });
+    const rendered = await lastContext().renderAsync.mock.results[0]?.value;
+    expect(rendered.saveAsync).toHaveBeenCalledWith({
+      format: "jpeg",
+      compress: PHOTO_JPEG_QUALITY,
+    });
+    expect(result).toEqual({
+      uri: "file:///out.jpg",
+      filename: "IMG_0002.jpg",
+      contentType: "image/jpeg",
+    });
+  });
+
+  it("caps the height of a portrait photo", async () => {
+    await resolveUploadable({
+      uri: "file:///IMG_0003.HEIC",
+      fileName: "IMG_0003.HEIC",
+      mimeType: "image/heic",
+      width: 3024,
+      height: 4032,
+    });
+
+    expect(lastContext().resize).toHaveBeenCalledWith({
+      height: PHOTO_MAX_EDGE,
+    });
+  });
+
+  it("re-encodes a large JPEG of unknown size, but leaves a small one alone", async () => {
+    await resolveUploadable({
+      uri: "file:///big.jpg",
+      fileName: "big.jpg",
+      mimeType: "image/jpeg",
+      fileSize: 3 * 1024 * 1024,
+    });
+    expect(manipulator.manipulate).toHaveBeenCalledTimes(1);
+    expect(lastContext().resize).not.toHaveBeenCalled();
+
+    const small = await resolveUploadable({
+      uri: "file:///small.jpg",
+      fileName: "small.jpg",
+      mimeType: "image/jpeg",
+      width: 1200,
+      height: 900,
+      fileSize: 300 * 1024,
+    });
+    expect(manipulator.manipulate).toHaveBeenCalledTimes(1);
+    expect(small.uri).toBe("file:///small.jpg");
+  });
+
+  it("never shrinks a PNG, whatever its size", async () => {
+    const result = await resolveUploadable({
+      uri: "file:///scan.png",
+      fileName: "scan.png",
+      mimeType: "image/png",
+      width: 5000,
+      height: 7000,
+      fileSize: 20 * 1024 * 1024,
+    });
+
+    expect(manipulator.manipulate).not.toHaveBeenCalled();
+    expect(result.uri).toBe("file:///scan.png");
+  });
+});
+
 describe("pickAndUploadPhoto — size accounting", () => {
   it("measures the TRANSCODED file, not the picked one", async () => {
     // The decisive case: a quality-1.0 JPEG re-encode of a large HEIC is
@@ -244,7 +368,11 @@ describe("pickAndUploadPhoto — size accounting", () => {
     // getInfoAsync reject. Escaping here would become an unhandled rejection:
     // no chip, no hint, a spinner that just stops.
     grantedLibrary();
-    picked({ uri: "file:///gone.jpg", fileName: "gone.jpg", mimeType: "image/jpeg" });
+    picked({
+      uri: "file:///gone.jpg",
+      fileName: "gone.jpg",
+      mimeType: "image/jpeg",
+    });
     fs.getInfoAsync.mockRejectedValue(new Error("ENOENT") as never);
 
     const result = await pickAndUploadPhoto("channel-1", vi.fn());
@@ -290,7 +418,9 @@ describe("pickAndUploadPhoto", () => {
 
   it("reports a cancel as a cancel, not a failure", async () => {
     grantedLibrary();
-    picker.launchImageLibraryAsync.mockResolvedValue({ canceled: true } as never);
+    picker.launchImageLibraryAsync.mockResolvedValue({
+      canceled: true,
+    } as never);
 
     const result = await pickAndUploadPhoto("channel-1", vi.fn());
 
@@ -301,7 +431,11 @@ describe("pickAndUploadPhoto", () => {
     // Gate before minting: a 40 MB pick should cost no round trip and read as
     // a sentence, not as the bucket's raw non-JSON 400.
     grantedLibrary();
-    picked({ uri: "file:///big.jpg", fileName: "big.jpg", mimeType: "image/jpeg" });
+    picked({
+      uri: "file:///big.jpg",
+      fileName: "big.jpg",
+      mimeType: "image/jpeg",
+    });
     fs.getInfoAsync.mockResolvedValue({
       exists: true,
       size: 40 * 1024 * 1024,
@@ -373,6 +507,9 @@ describe("pickAndUploadPhoto", () => {
         filename: "Café.jpg",
         contentType: "image/jpeg",
         byteSize: 2048,
+        width: null,
+        height: null,
+        thumbhash: null,
       },
     });
   });
@@ -397,6 +534,8 @@ describe("pickAndUploadPhoto", () => {
       expect.objectContaining({
         httpMethod: "PUT",
         headers: { "Content-Type": "image/jpeg" },
+        // Not the default background session, which iOS runs slowly.
+        sessionType: FileSystem.FileSystemSessionType.FOREGROUND,
       }),
     );
     expect(result).toEqual({
@@ -406,8 +545,135 @@ describe("pickAndUploadPhoto", () => {
         filename: "photo.jpg",
         contentType: "image/jpeg",
         byteSize: 2048,
+        width: null,
+        height: null,
+        thumbhash: null,
       },
     });
+  });
+
+  it("uploads the preview copy beside the photo and claims it with the size and placeholder", async () => {
+    grantedLibrary();
+    picked({
+      uri: "file:///photo.jpg",
+      fileName: "photo.jpg",
+      mimeType: "image/jpeg",
+      fileSize: 2048,
+    });
+    describePhoto.mockResolvedValue({
+      width: 2560,
+      height: 1920,
+      thumbhash: "3OcRJYB4d3h/iIeHeEh3eIhw+j3A",
+      previewUri: "file:///preview.jpg",
+    });
+    const requestUploadUrl = vi.fn().mockResolvedValue({
+      ...TICKET,
+      preview_upload_url: "https://storage.example/put-preview",
+      preview_storage_path: "chapters/c/chat/m/preview/preview.jpg",
+    });
+
+    const result = await pickAndUploadPhoto("channel-1", requestUploadUrl);
+
+    expect(requestUploadUrl).toHaveBeenCalledWith({
+      id: "channel-1",
+      body: expect.objectContaining({ with_preview: true }),
+    });
+    expect(fs.uploadAsync).toHaveBeenCalledWith(
+      "https://storage.example/put-preview",
+      "file:///preview.jpg",
+      expect.objectContaining({ headers: { "Content-Type": "image/jpeg" } }),
+    );
+    expect(result).toEqual({
+      status: "attached",
+      attachment: expect.objectContaining({
+        storagePath: "chapters/c/chat/m/photo.jpg",
+        previewStoragePath: "chapters/c/chat/m/preview/preview.jpg",
+        width: 2560,
+        height: 1920,
+        thumbhash: "3OcRJYB4d3h/iIeHeEh3eIhw+j3A",
+      }),
+    });
+  });
+
+  it("still sends the photo, without a preview, when only the preview PUT fails", async () => {
+    grantedLibrary();
+    picked({
+      uri: "file:///photo.jpg",
+      fileName: "photo.jpg",
+      mimeType: "image/jpeg",
+      fileSize: 2048,
+    });
+    describePhoto.mockResolvedValue({
+      ...NOT_DESCRIBED,
+      previewUri: "file:///preview.jpg",
+    });
+    fs.uploadAsync.mockImplementation((async (url: string) => ({
+      status: url.endsWith("put-preview") ? 500 : 200,
+    })) as never);
+
+    const result = await pickAndUploadPhoto(
+      "channel-1",
+      vi.fn().mockResolvedValue({
+        ...TICKET,
+        preview_upload_url: "https://storage.example/put-preview",
+        preview_storage_path: "chapters/c/chat/m/preview/preview.jpg",
+      }),
+    );
+
+    expect(result).toMatchObject({ status: "attached" });
+    expect(
+      result.status === "attached" && result.attachment.previewStoragePath,
+    ).toBeUndefined();
+  });
+
+  it("still sends the photo when the preview PUT throws (a dropped connection)", async () => {
+    grantedLibrary();
+    picked({
+      uri: "file:///photo.jpg",
+      fileName: "photo.jpg",
+      mimeType: "image/jpeg",
+      fileSize: 2048,
+    });
+    describePhoto.mockResolvedValue({
+      ...NOT_DESCRIBED,
+      previewUri: "file:///preview.jpg",
+    });
+    fs.uploadAsync.mockImplementation((async (url: string) => {
+      if (url.endsWith("put-preview")) throw new Error("network lost");
+      return { status: 200 };
+    }) as never);
+
+    const result = await pickAndUploadPhoto(
+      "channel-1",
+      vi.fn().mockResolvedValue({
+        ...TICKET,
+        preview_upload_url: "https://storage.example/put-preview",
+        preview_storage_path: "chapters/c/chat/m/preview/preview.jpg",
+      }),
+    );
+
+    expect(result).toMatchObject({ status: "attached" });
+    expect(
+      result.status === "attached" && result.attachment.previewStoragePath,
+    ).toBeUndefined();
+  });
+
+  it("asks for no preview upload when the photo needs none", async () => {
+    grantedLibrary();
+    picked({
+      uri: "file:///photo.jpg",
+      fileName: "photo.jpg",
+      mimeType: "image/jpeg",
+      fileSize: 2048,
+    });
+    const requestUploadUrl = vi.fn().mockResolvedValue(TICKET);
+
+    await pickAndUploadPhoto("channel-1", requestUploadUrl);
+
+    expect(requestUploadUrl.mock.calls[0]![0].body).not.toHaveProperty(
+      "with_preview",
+    );
+    expect(fs.uploadAsync).toHaveBeenCalledTimes(1);
   });
 
   it("refuses rather than staging a chip when the PUT fails", async () => {
@@ -455,30 +721,32 @@ describe("pickAndUploadPhoto", () => {
 });
 
 describe("uploadFailureReason", () => {
-  it("reads the API's reason off a thrown 4xx body", () => {
-    expect(uploadFailureReason({ statusCode: 400, message: "Too big" })).toBe(
-      "Too big",
-    );
-    // class-validator answers with a list.
+  it("words a thrown 4xx body through the shared map, never its field names", () => {
     expect(
       uploadFailureReason({
         statusCode: 400,
-        message: ["filename must be a string"],
+        message: 'Content type "image/tiff" is not allowed',
       }),
-    ).toBe("filename must be a string");
-    // Every reason, joined, as web shows the same body (#2199).
+    ).toBe("That file type isn't supported.");
+    // class-validator answers with a list, written for a developer.
     expect(
       uploadFailureReason({
         statusCode: 400,
         message: ["filename must be a string", "content_type is not allowed"],
       }),
-    ).toBe("filename must be a string, content_type is not allowed");
+    ).not.toMatch(/filename|content_type/);
   });
 
   it.each([
-    ["a 500's framework text", { statusCode: 500, message: "Internal server error" }],
+    [
+      "a 500's framework text",
+      { statusCode: 500, message: "Internal server error" },
+    ],
     ["a body with no status", { message: "something" }],
-    ["a native Error, which is platform jargon", new Error("NSURLErrorDomain -1009")],
+    [
+      "a native Error, which is platform jargon",
+      new Error("NSURLErrorDomain -1009"),
+    ],
     ["nothing at all", undefined],
   ])("shows the generic sentence for %s", (_label, err) => {
     expect(uploadFailureReason(err)).toBe(
@@ -487,37 +755,43 @@ describe("uploadFailureReason", () => {
   });
 
   it("tells a member to wait a minute after a 429, whatever its body says", () => {
-    expect(uploadFailureReason({ statusCode: 429, message: "Too Many Requests" })).toBe(
-      "Too many requests in a short time. Wait a minute, then try again.",
-    );
+    expect(
+      uploadFailureReason({ statusCode: 429, message: "Too Many Requests" }),
+    ).toBe("Too many requests in a short time. Wait a minute, then try again.");
   });
 
   it("reaches the chat composer too: a refused mint reads as the API's reason", async () => {
-    vi.mocked(ImagePicker).requestMediaLibraryPermissionsAsync.mockResolvedValue({
+    vi.mocked(
+      ImagePicker,
+    ).requestMediaLibraryPermissionsAsync.mockResolvedValue({
       granted: true,
       canAskAgain: true,
     } as never);
     vi.mocked(ImagePicker).launchImageLibraryAsync.mockResolvedValue({
       canceled: false,
-      assets: [{ uri: "file:///p.png", fileName: "p.png", mimeType: "image/png" }],
+      assets: [
+        { uri: "file:///p.png", fileName: "p.png", mimeType: "image/png" },
+      ],
     } as never);
 
     const result = await pickAndUploadPhoto(
       "channel-1",
       vi.fn().mockRejectedValue({
         statusCode: 403,
-        message: "You can't post in this channel",
+        message: "You do not have access to this channel",
       }),
     );
 
     expect(result).toEqual({
       status: "refused",
-      reason: "You can't post in this channel",
+      reason: "You don't have access to this channel.",
     });
   });
 
   it("never crops a chat attachment: that re-encodes and drops GIF frames", async () => {
-    vi.mocked(ImagePicker).requestMediaLibraryPermissionsAsync.mockResolvedValue({
+    vi.mocked(
+      ImagePicker,
+    ).requestMediaLibraryPermissionsAsync.mockResolvedValue({
       granted: true,
       canAskAgain: true,
     } as never);
@@ -528,5 +802,69 @@ describe("uploadFailureReason", () => {
       .calls[0] as [Record<string, unknown>];
     expect(options).not.toHaveProperty("allowsEditing");
     expect(options).not.toHaveProperty("aspect");
+  });
+});
+
+describe("pickChatPhotos", () => {
+  it("opens the library for several photos, in the order tapped", async () => {
+    grantedLibrary();
+    picked({ uri: "file:///a.jpg", width: 3024, height: 4032 });
+
+    await pickChatPhotos();
+
+    const [options] = picker.launchImageLibraryAsync.mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+    expect(options).toMatchObject({
+      allowsMultipleSelection: true,
+      selectionLimit: CHAT_PHOTO_LIMIT,
+      orderedSelection: true,
+    });
+  });
+
+  it("asks only for the room left in the tray", async () => {
+    grantedLibrary();
+    picked({ uri: "file:///a.jpg" });
+    await pickChatPhotos(3);
+    const [options] = picker.launchImageLibraryAsync.mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+    expect(options).toMatchObject({ selectionLimit: 3 });
+  });
+
+  it("hands back the picker's own file to draw, and uploads nothing yet", async () => {
+    grantedLibrary();
+    picker.launchImageLibraryAsync.mockResolvedValue({
+      canceled: false,
+      assets: [
+        { uri: "file:///a.HEIC", width: 3024, height: 4032 },
+        { uri: "file:///b.jpg", width: 0, height: 0 },
+      ],
+    } as never);
+
+    const result = await pickChatPhotos();
+
+    expect(result.status).toBe("picked");
+    if (result.status !== "picked") return;
+    expect(
+      result.photos.map(({ previewUri, width, height }) => ({
+        previewUri,
+        width,
+        height,
+      })),
+    ).toEqual([
+      { previewUri: "file:///a.HEIC", width: 3024, height: 4032 },
+      // A size the picker could not read is unknown, not zero.
+      { previewUri: "file:///b.jpg", width: null, height: null },
+    ]);
+    expect(fs.uploadAsync).not.toHaveBeenCalled();
+    expect(manipulator.manipulate).not.toHaveBeenCalled();
+  });
+
+  it("reads a picker that throws as a sentence, never a rejection", async () => {
+    grantedLibrary();
+    picker.launchImageLibraryAsync.mockRejectedValue(new Error("busy"));
+    const result = await pickChatPhotos();
+    expect(result.status).toBe("refused");
   });
 });

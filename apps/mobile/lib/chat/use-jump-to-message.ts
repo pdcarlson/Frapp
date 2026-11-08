@@ -26,7 +26,7 @@ export const JUMP_RETRY_MS = 100;
  * nothing catches it. A channel switch (`resetKey`), which also gives the
  * thread a fresh list, or unmount cancels a pending retry.
  *
- * Kept out of `app/(tabs)/chat-thread.tsx` so it can be tested.
+ * Kept out of `app/(app)/chat-thread.tsx` so it can be tested.
  */
 export function useJumpToMessage<L extends JumpableList>(
   rows: readonly { message: { id: string } }[],

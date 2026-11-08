@@ -2,7 +2,7 @@
  * What the s05 composer is doing besides an ordinary send: answering a
  * message (Reply) or rewriting one of the viewer's own (Edit), #2775.
  *
- * Kept out of `app/(tabs)/chat-thread.tsx` so it can be tested: everything
+ * Kept out of `app/(app)/chat-thread.tsx` so it can be tested: everything
  * under `app/` ships as a route module, so a spec cannot sit beside the screen.
  *
  * **Both are kept per channel.** `chat-thread` is a `Tabs.Screen` that stays
@@ -36,6 +36,7 @@
  * refusal in the hint.
  */
 
+import { errorCopy } from "@repo/hooks/error-copy";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { hiddenQuoteText, type BlockState } from "@repo/chat-core/blocks";
 import {
@@ -189,8 +190,11 @@ export function useComposerStaging({
   onSending,
 }: ComposerStagingInput): ComposerStaging {
   // One staged reply and one open edit per channel, keyed by channel id: the
-  // screen stays mounted across channels, and what a member left staged or
-  // half-typed in #general is still there when they come back from #dues.
+  // screen can be handed a new channel in place, and what a member left
+  // staged or half-typed in #general is still there if they come back to it
+  // before the thread is closed. Going back closes the thread (it is popped
+  // off the stack), which drops both; the typed text itself is a draft and
+  // outlives that (`draft-store.ts`).
   const [replies, setReplies] = useState<
     Readonly<Record<string, StagedTarget>>
   >({});
@@ -351,10 +355,7 @@ export function useComposerStaging({
         .catch((error: unknown) => {
           // The edit stays open with the member's text, so nothing is lost;
           // its hint says why it didn't save. Dropped if they moved on.
-          const reason =
-            error instanceof Error && error.message
-              ? error.message
-              : "Couldn't edit message. Try again.";
+          const reason = errorCopy(error, "Couldn't edit message. Try again.");
           setEdits((current) =>
             updateEdit(current, channel, messageId, (open) => ({
               ...open,

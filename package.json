@@ -16,6 +16,7 @@
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "supabase": "bash -c '. scripts/lib/supabase-cli.sh && frapp_supabase \"$@\"' supabase",
     "eas": "node scripts/eas.mjs",
+    "release-notes": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/release-notes.mjs",
     "check-types": "turbo run check-types",
     "test:cov": "turbo run test:cov",
     "check:dep-cruiser": "node scripts/check-dep-cruiser.mjs",
@@ -38,6 +39,7 @@
     "rasterize:brand-assets": "node scripts/rasterize-brand-assets.mjs",
     "check:brand-assets": "node scripts/check-brand-assets.mjs && node --test scripts/lib/__tests__/*.test.mjs",
     "check:staging-conformance": "node scripts/ci/staging-conformance.mjs",
+    "build:chapter-directory": "node scripts/chapter-directory/build-from-wikipedia.mjs",
     "check:chapter-directory-seed": "node scripts/check-chapter-directory-seed.mjs",
     "check:expo-sdk-line": "node scripts/check-expo-sdk-line.mjs",
     "check:mobile-native-declarations": "node scripts/check-mobile-native-declarations.mjs",
@@ -50,8 +52,8 @@
     "prepare": "node -e \"try{const fs=require('fs');if(fs.existsSync('scripts/setup-git-hooks.mjs'))require('child_process').execFileSync(process.execPath,['scripts/setup-git-hooks.mjs'],{stdio:'inherit'})}catch{}\""
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.14",
-    "@electric-sql/pglite-pgvector": "^0.0.15",
+    "@electric-sql/pglite": "^0.5.15",
+    "@electric-sql/pglite-pgvector": "^0.0.16",
     "@typescript/native": "npm:typescript@7.0.2",
     "@vitest/coverage-v8": "4.1.12",
     "concurrently": "^10.0.6",
@@ -65,7 +67,7 @@
     "typescript": "npm:@typescript/typescript6@6.0.2"
   },
   "optionalDependencies": {
-    "@infisical/cli": "0.44.12"
+    "@infisical/cli": "0.44.14"
   },
   "overrides": {
     "react": "19.2.3",

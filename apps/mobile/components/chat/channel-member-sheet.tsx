@@ -1,15 +1,22 @@
-import { forwardRef, useMemo } from "react";
+import { forwardRef, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import {
+  BottomSheetModal,
+  BottomSheetScrollView,
+  BottomSheetTextInput,
+} from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import {
-  compareChannelMembers,
+  MEMBER_SEARCH_THRESHOLD,
+  filterChannelMembers,
+  groupChannelMembersByRole,
   memberLabel,
   useChannelMembers,
   useMemberDisplayNames,
 } from "@repo/hooks";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
+import { MemberAvatar } from "@/components/member-avatar";
 import { initialsFor } from "@/lib/chat/display-name";
 import {
   ErrorState,
@@ -35,16 +42,19 @@ import {
  * Who can read the open channel (#3536), as a tall sheet from the thread
  * header: the mobile face of web's member column
  * (`apps/web/components/chat/channel-member-list.tsx`), from the same read
- * (`GET /v1/channels/{id}/members`) and in the same order
- * (`compareChannelMembers`).
+ * (`GET /v1/channels/{id}/members`), in the same role groups
+ * (`groupChannelMembersByRole`) and with the same search past
+ * `MEMBER_SEARCH_THRESHOLD` readers.
  *
- * **One group, no presence.** Mobile does not join the chapter presence topic
- * (`spec/behavior/chat/README.md` § Online/offline presence), so the sheet
- * draws what web draws before presence resolves: one list, and no member
- * called Offline on the strength of a join this app never made.
+ * **No presence.** Mobile does not join the chapter presence topic
+ * (`spec/behavior/chat/README.md` § Online/offline presence), so rows carry
+ * no dot, and no member is called Offline on the strength of a join this app
+ * never made.
  *
- * Read-only rows, as on web: nothing here is a control yet, so a row is 32pt
- * rather than the 44pt touch floor (`components.md` § Chat member list).
+ * A row opens that member's profile (the directory's sheet, stacked over
+ * this one), the same as tapping their name in the thread. As a control it
+ * takes the Small step's 44pt touch height (`components.md` § Chat member
+ * list).
  *
  * The reads live in {@link MemberRows}, a child of the modal, because gorhom
  * mounts a modal's children only while it is presented: the list is fetched
@@ -52,12 +62,14 @@ import {
  */
 export interface ChannelMemberSheetProps {
   channelId: string | null;
+  /** Opens a member's profile by `users.id`; without it rows are read-only. */
+  onOpenProfile?: (userId: string) => void;
 }
 
 export const ChannelMemberSheet = forwardRef<
   BottomSheetModal,
   ChannelMemberSheetProps
->(function ChannelMemberSheet({ channelId }, ref) {
+>(function ChannelMemberSheet({ channelId, onOpenProfile }, ref) {
   const closeSheet = useSheetClose(ref);
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -82,7 +94,7 @@ export const ChannelMemberSheet = forwardRef<
         <View style={styles.stickyHeader}>
           <TallSheetHeader title="Members" onClose={closeSheet} />
         </View>
-        <MemberRows channelId={channelId} />
+        <MemberRows channelId={channelId} onOpenProfile={onOpenProfile} />
       </BottomSheetScrollView>
     </BottomSheetModal>
   );
@@ -118,30 +130,49 @@ export function ChannelMembersButton({ onPress }: { onPress: () => void }) {
 export interface ChannelMemberSheetRow {
   userId: string;
   name: string;
+  /** Their profile photo, or `null` for initials. */
+  avatarUrl: string | null;
   roleColor: string | null;
   roleRank: number | null;
+  roleId: string | null;
+  roleName: string | null;
 }
 
-export function MemberRows({ channelId }: { channelId: string | null }) {
+export function MemberRows({
+  channelId,
+  onOpenProfile,
+}: {
+  channelId: string | null;
+  onOpenProfile?: (userId: string) => void;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const membersQuery = useChannelMembers(channelId);
   const roster = useMemberDisplayNames();
-  const { byId, roleColorFor } = roster;
+  const { byId, avatarFor, roleColorFor } = roster;
+
+  const [query, setQuery] = useState("");
 
   const rows = useMemo<ChannelMemberSheetRow[]>(
     () =>
-      (membersQuery.data ?? [])
-        .map((member) => ({
-          userId: member.user_id,
-          // `memberLabel`, never a drop: a member who never set a name still
-          // reads the channel, so they are listed as "Member 2f4a1c" (#2422).
-          name: memberLabel(byId[member.user_id], member.user_id),
-          roleColor: roleColorFor(member.user_id),
-          roleRank: member.role_rank,
-        }))
-        .sort(compareChannelMembers),
-    [membersQuery.data, byId, roleColorFor],
+      (membersQuery.data ?? []).map((member) => ({
+        userId: member.user_id,
+        // `memberLabel`, never a drop: a member who never set a name still
+        // reads the channel, so they are listed as "Member 2f4a1c" (#2422).
+        name: memberLabel(byId[member.user_id], member.user_id),
+        avatarUrl: avatarFor(member.user_id),
+        roleColor: roleColorFor(member.user_id),
+        roleRank: member.role_rank,
+        roleId: member.role_id ?? null,
+        roleName: member.role_name ?? null,
+      })),
+    [membersQuery.data, byId, avatarFor, roleColorFor],
+  );
+  const searchable = rows.length > MEMBER_SEARCH_THRESHOLD;
+  const trimmed = searchable ? query.trim() : "";
+  const groups = useMemo(
+    () => groupChannelMembersByRole(filterChannelMembers(rows, trimmed)),
+    [rows, trimmed],
   );
 
   // Names come from the roster, so a list without them isn't ready either.
@@ -174,30 +205,64 @@ export function MemberRows({ channelId }: { channelId: string | null }) {
 
   return (
     <View>
-      <SectionHeader>
-        {rows.length === 1 ? "1 member" : `${rows.length} members`}
-      </SectionHeader>
-      {rows.map((row) => (
-        <View
-          key={row.userId}
-          style={styles.row}
-          accessible
-          accessibilityLabel={row.name}
-        >
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initialsFor(row.name)}</Text>
+      {searchable ? (
+        <BottomSheetTextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder={`Search ${rows.length} members`}
+          placeholderTextColor={tokens.color.text.muted}
+          accessibilityLabel="Search members"
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+          style={styles.search}
+        />
+      ) : null}
+      {groups.length === 0 && trimmed ? (
+        <Text style={styles.noMatch} accessibilityLiveRegion="polite">
+          {`No one named \u201c${trimmed}\u201d`}
+        </Text>
+      ) : (
+        groups.map((group) => (
+          <View key={group.key}>
+            <SectionHeader>{`${group.label} ${group.rows.length}`}</SectionHeader>
+            {group.rows.map((row) => (
+              <Pressable
+                key={row.userId}
+                style={({ pressed }) => [
+                  styles.row,
+                  pressed && onOpenProfile ? styles.rowPressed : null,
+                ]}
+                accessibilityRole={onOpenProfile ? "button" : undefined}
+                accessibilityLabel={row.name}
+                accessibilityHint={
+                  onOpenProfile ? "Opens their profile" : undefined
+                }
+                disabled={!onOpenProfile}
+                onPress={() => onOpenProfile?.(row.userId)}
+              >
+                <MemberAvatar
+                  uri={row.avatarUrl}
+                  initials={initialsFor(row.name)}
+                  size={AVATAR_SIZE}
+                  style={styles.avatar}
+                  textStyle={styles.avatarText}
+                />
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.name,
+                    row.roleColor ? { color: row.roleColor } : null,
+                  ]}
+                >
+                  {row.name}
+                </Text>
+              </Pressable>
+            ))}
           </View>
-          <Text
-            numberOfLines={1}
-            style={[
-              styles.name,
-              row.roleColor ? { color: row.roleColor } : null,
-            ]}
-          >
-            {row.name}
-          </Text>
-        </View>
-      ))}
+        ))
+      )}
     </View>
   );
 }
@@ -237,7 +302,8 @@ function MemberRowsSkeleton() {
 }
 
 /** 32pt rows with a 24pt avatar: web's numbers, Paul's for this list. */
-const ROW_HEIGHT = 32;
+/** `--touch-min`: a row that opens a profile is a control (foundations.md §9). */
+const TOUCH_ROW_HEIGHT = 44;
 const AVATAR_SIZE = 24;
 
 function createStyles(tokens: SignetTokens) {
@@ -263,10 +329,14 @@ function createStyles(tokens: SignetTokens) {
       paddingBottom: tokens.spacing.xl,
     },
     row: {
-      height: ROW_HEIGHT,
+      // A control now: the touch floor, not web's 32pt read-only row.
+      minHeight: TOUCH_ROW_HEIGHT,
       flexDirection: "row",
       alignItems: "center",
       gap: tokens.spacing.sm,
+    },
+    rowPressed: {
+      opacity: 0.6,
     },
     avatar: {
       width: AVATAR_SIZE,
@@ -279,6 +349,23 @@ function createStyles(tokens: SignetTokens) {
     avatarText: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+    },
+    search: {
+      borderRadius: tokens.radius.control,
+      borderWidth: 1,
+      borderColor: tokens.color.border.input,
+      backgroundColor: tokens.color.surface.surface1,
+      paddingHorizontal: tokens.spacing.md,
+      minHeight: tokens.touch.minimum,
+      marginTop: tokens.spacing.sm,
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
+    },
+    noMatch: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      textAlign: "center",
+      paddingVertical: tokens.spacing.lg,
     },
     // Role color or the foreground, never the chapter accent
     // (foundations.md §6), as the timeline paints the same names.

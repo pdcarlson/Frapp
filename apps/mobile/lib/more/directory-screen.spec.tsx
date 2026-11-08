@@ -2,6 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
+import { useRouter } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getSignetTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, typeRole } from "@/lib/theme";
@@ -18,7 +19,7 @@ import type { DirectoryRow } from "@/lib/more/directory";
  * filtered-alumni case below is what tells the Alumni tab reading `useAlumni`
  * apart from one splitting `useMembers` on the flag.
  *
- * It renders `app/(tabs)/directory.tsx` but lives here: a spec under `app/`
+ * It renders `app/(app)/directory.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -74,7 +75,11 @@ function read(data: unknown, refetch = vi.fn()) {
   };
 }
 
-const state = vi.hoisted(() => ({ search: [] as unknown[], pending: false }));
+const state = vi.hoisted(() => ({
+  search: [] as unknown[],
+  pending: false,
+  permissions: [] as string[],
+}));
 
 // One refetch per read, so a pull can be checked against each of them.
 const refetches = vi.hoisted(() => ({
@@ -86,6 +91,7 @@ const refetches = vi.hoisted(() => ({
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => "c-1",
+  usePermissionList: () => state.permissions,
   useMembers: () => read(MEMBERS, refetches.members),
   useAlumni: (filters?: { company?: string }) =>
     read(filters?.company === "Acme" ? [CHARLES] : ALUMNI, refetches.alumni),
@@ -116,11 +122,9 @@ vi.mock("@/components/directory/member-detail-sheet", () => ({
 import DirectoryScreen, {
   MemberListSkeleton,
   MemberRow,
-} from "@/app/(tabs)/directory";
+} from "@/app/(app)/directory";
 import { signetDarkTokens } from "@repo/theme/signet";
-import { DirectoryGlyph } from "@/components/more/more-glyphs";
-import { SearchGlyph } from "@/components/search-glyph";
-import { EmptyState } from "@/components/state-block";
+import { InlineNote } from "@/components/inline-note";
 import {
   FilterChips as FilterChipsStandIn,
   SearchField as SearchFieldStandIn,
@@ -213,6 +217,7 @@ function countOf(tree: ReactTestRenderer, value: string) {
 beforeEach(() => {
   state.search = [];
   state.pending = false;
+  state.permissions = [];
   for (const refetch of Object.values(refetches)) {
     refetch.mockReset().mockResolvedValue(undefined);
   }
@@ -288,26 +293,30 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
     expect(listed(tree)).toEqual(["Charles Whitmore III"]);
   });
 
-  it("draws the More hub's glyphs on its empty states, and doesn't narrate", () => {
+  it("says an empty list or a filter miss in one line, with Clear filters (rule 7)", () => {
     const tree = render();
     const body = () =>
       list(tree).props.ListEmptyComponent as React.ReactElement<{
-        children: React.ReactElement<Record<string, unknown>>;
+        children: React.ReactElement<{
+          children: React.ReactNode;
+          action?: { label: string; onPress: () => void };
+        }>;
       }>;
-    expect(body().props.children.type).toBe(EmptyState);
-    expect(body().props.children.props).toEqual({
-      glyph: DirectoryGlyph,
-      title: "No actives yet",
-    });
+    expect(body().props.children.type).toBe(InlineNote);
+    expect(body().props.children.props.children).toBe("No actives yet.");
 
     act(() => chips(tree).onSelect("alumni"));
     act(() => chips(tree).trailing!.props.onPress());
     act(() => alumniField(tree, "Filter alumni by city")!.onChangeText("Troy"));
-    expect(body().props.children.props).toEqual({
-      glyph: SearchGlyph,
-      title: "No alumni match the filters",
-      body: "Clear a filter to see more.",
-    });
+    expect(body().props.children.props.children).toBe(
+      "No alumni match these filters.",
+    );
+    expect(body().props.children.props.action!.label).toBe("Clear filters");
+
+    act(() => body().props.children.props.action!.onPress());
+    expect(body().props.children.props.children).toBe(
+      "No alumni yet. Graduated members appear here.",
+    );
   });
 
   async function pull(tree: ReturnType<typeof render>) {
@@ -553,5 +562,54 @@ describe("s13's back row (#3022)", () => {
     expect(screenText(header).startsWith("Directory")).toBe(true);
     header.unmount();
     tree.unmount();
+  });
+});
+
+/** Owner ask 2026-11-06: the phone had no way in to invite. */
+describe("s13's Invite members button", () => {
+  function inviteButton(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Invite members",
+    );
+  }
+
+  it("is drawn only for a role that can invite", () => {
+    const member = render();
+    expect(inviteButton(member)).toHaveLength(0);
+    member.unmount();
+
+    state.permissions = ["members:invite"];
+    const president = render();
+    expect(inviteButton(president)).toHaveLength(1);
+    president.unmount();
+  });
+
+  it("opens Invite members with ‹ Directory under it", () => {
+    state.permissions = ["*"];
+    const tree = render();
+    const push = vi.mocked(useRouter().push);
+    push.mockClear();
+    act(() => inviteButton(tree)[0].props.onPress());
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/invite",
+      params: { from: "directory" },
+    });
+    tree.unmount();
+  });
+
+  it("pads the list so the last row clears the button", () => {
+    const without = render();
+    const bottom = (tree: ReactTestRenderer) =>
+      (
+        list(tree).props.contentContainerStyle as { paddingBottom?: number }[]
+      ).reduce((sum, style) => sum + (style?.paddingBottom ?? 0), 0);
+    const plain = bottom(without);
+    without.unmount();
+    state.permissions = ["members:invite"];
+    const withButton = render();
+    expect(bottom(withButton)).toBeGreaterThan(plain);
+    withButton.unmount();
   });
 });

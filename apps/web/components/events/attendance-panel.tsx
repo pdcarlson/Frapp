@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useMemo, useState } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { DirectoryGlyph } from "@/components/events/chapter-ops-glyphs";
@@ -20,11 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedLoading,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedLoading } from "@/components/shared/nested-states";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -39,6 +36,7 @@ import {
 } from "@/components/events/attendance-status";
 import type { AttendanceStatus } from "@/components/events/attendance-status";
 import { checkInLabel } from "@/components/events/event-labels";
+import { InlineNote } from "@/components/shared/inline-note";
 
 type AttendanceRow = {
   id?: string;
@@ -237,7 +235,7 @@ export function AttendancePanel({
       <div role="status" aria-live="polite">
         <NestedError
           title="Attendance unavailable"
-          description="Couldn't load attendance for this event. Confirm your chapter access and retry."
+          description={`Couldn't load attendance for this event. ${describeLoadFailure(attendanceQuery.error)}`}
           onRetry={() => void attendanceQuery.refetch()}
         />
       </div>
@@ -266,10 +264,7 @@ export function AttendancePanel({
   if (rows.length === 0) {
     return (
       <div role="status" aria-live="polite">
-        <NestedEmpty
-          title="No attendance records yet"
-          description="Once members check in, or you record attendance manually, they'll show up here."
-        />
+        <InlineNote>No attendance recorded yet.</InlineNote>
       </div>
     );
   }

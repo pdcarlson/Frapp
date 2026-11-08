@@ -63,6 +63,25 @@
 // is the trusted copy's; the real step runs the deployed commit's, so a commit
 // that changed the rule is checked by today's.
 //
+// ── The minimum app version (#3123) ──────────────────────────────────────────
+// `validateEnv` checks only that `MOBILE_MIN_VERSION_*` is shaped like a
+// version, so `0.9.1` passed while every recorded build was `0.9.0`, and the
+// client check after the deploy (`smoke-deployed-api.mjs`) caught it only with
+// the new API already serving it and every install of that platform on the
+// blocking update screen. Infisical's sync copies a changed value to Render,
+// and a running service keeps the value it booted with until it restarts
+// (AGENTS.md § Credentials and secrets), so a bad minimum usually goes live
+// with the next API deploy. Not always: a restart outside a deploy run (a
+// crash, a manual one, a sync set to redeploy) turns it on with no run to stop
+// it, and only the next run's client check sees it. When this run deploys the
+// API, each platform's minimum is put to the same probe that check sends
+// (`clientProbes`, from the TRUSTED ref, as there) and judged by a copy of the
+// API's own rule (`lib/client-version.mjs`). A
+// minimum that would answer that probe `update_required: true` fails a
+// production run and warns on staging, where a minimum above the current
+// version is how the update gate is tested. The client check stays, as the
+// live confirmation of whatever value Render really holds.
+//
 // What it checked, and anything it skipped, goes to the step summary too, so a
 // dry run's summary can point at it rather than restate it.
 //
@@ -72,6 +91,8 @@
 //   DEPLOYS_FUNCTIONS  — `true` when this run deploys the Edge Functions
 //   VERIFIES_API       — `true` when this run checks the commit the API serves
 //   ENV_BASELINE       — the file `record-env-baseline.mjs` wrote
+//   TRUSTED_SHA        — the trusted ref (`github.sha`), whose mobile files name
+//                        the builds the minimum is checked against
 // A flag that is neither `true` nor `false` fails the check, so a typo in the
 // workflow can't switch one off.
 //
@@ -84,7 +105,14 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { listFunctions, validateInputs } from "./deploy-edge-functions.mjs";
-import { apiBaseFrom } from "./smoke-deployed-api.mjs";
+import { wouldRequireUpdate } from "./lib/client-version.mjs";
+import {
+  MINIMUM_VERSION_VARIABLES,
+  SHIPPED_BUILDS,
+  apiBaseFrom,
+  clientProbes,
+  gitFileReader,
+} from "./smoke-deployed-api.mjs";
 import { getEnvironment } from "./lib/environments.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import { parseEnvBaseline } from "./lib/vercel-build-env.mjs";
@@ -96,10 +124,18 @@ export const BOOT_CHECK_BUILD = join("apps", "api", "dist", "config", "env.valid
 const FLAGS = ["CHECK_API_BOOT", "DEPLOYS_FUNCTIONS", "VERIFIES_API"];
 
 /** This step's own inputs. Not part of the store, so neither checked nor redacted. */
-export const OWN_INPUTS = Object.freeze([...FLAGS, "TARGET_ENVIRONMENT", "ENV_BASELINE", "TRUSTED_CI"]);
+export const OWN_INPUTS = Object.freeze([...FLAGS, "TARGET_ENVIRONMENT", "ENV_BASELINE", "TRUSTED_CI", "TRUSTED_SHA"]);
 
 /** Shorter values are left alone: masking `1` would garble every version number. */
 const MIN_REDACTED_LENGTH = 4;
+
+/**
+ * Injected names whose values are not secret and are short, common words or
+ * version numbers, which masking would garble every line with: `staging`, or
+ * a minimum of `0.9.0` hiding the probe `ios/0.9.0+14`. Their values are
+ * documented in ENV_REFERENCE.md, and no line here quotes one.
+ */
+export const NOT_REDACTED = Object.freeze(["NODE_ENV", "MOBILE_MIN_VERSION_IOS", "MOBILE_MIN_VERSION_ANDROID"]);
 
 /** The argument that makes this file the child, and the fd its verdict goes to. */
 const CHILD_FLAG = "--run-boot-check";
@@ -238,11 +274,65 @@ export function runBootCheck({ root, config, childEnv, exists = existsSync, spaw
 }
 
 /**
+ * Each platform's `MOBILE_MIN_VERSION_*` against the build the client check
+ * will probe. Returns `{ problems, warnings, passed }`. An unset minimum is no
+ * minimum; a malformed one is the boot check's to refuse, and the API treats
+ * it as none. Probes that can't be read fail the check in both environments,
+ * as they fail the client check: one that silently doesn't run reads as a pass.
+ */
+export function checkMinimumVersions({ env, readTrustedFile }) {
+  const problems = [];
+  const warnings = [];
+  const passed = [];
+  const production = env.TARGET_ENVIRONMENT === "production";
+  let probes;
+  try {
+    probes = clientProbes(readTrustedFile);
+  } catch (error) {
+    problems.push(
+      `Could not read which mobile builds to check the minimum app versions against: ${error.message.trim()} ` +
+        `The client check after the deploy reads the same files.`,
+    );
+    return { problems, warnings, passed };
+  }
+  for (const probe of probes) {
+    const variable = MINIMUM_VERSION_VARIABLES[probe.platform];
+    if (probe.error) {
+      problems.push(`Could not read which ${probe.platform} build to check ${variable} against: ${probe.error.message.trim()}`);
+      continue;
+    }
+    if (!wouldRequireUpdate(probe.header, env[variable])) {
+      passed.push(`${variable} still serves ${probe.header}, ${probe.source}.`);
+      continue;
+    }
+    const message =
+      `${variable} is above ${probe.header}, ${probe.source}, so once this API deploys every ${probe.platform} ` +
+      `install opens on the blocking "Update Frapp" screen. If a newer build has shipped, record it in ` +
+      `${SHIPPED_BUILDS} (apps/mobile/store/README.md); otherwise lower the minimum in Infisical.`;
+    if (production) problems.push(message);
+    else {
+      warnings.push(
+        `${message} A warning on staging only: a staging minimum above the current version is how the update gate ` +
+          `is tested with a preview build (ENV_REFERENCE.md § API-Only Settings).`,
+      );
+    }
+  }
+  return { problems, warnings, passed };
+}
+
+/**
  * Every check, collected rather than stopping at the first, so one run names
  * every problem. Returns `{ problems, warnings, passed }`, each a list of
  * one-line messages that name variables and rules, never values.
  */
-export function checkDeployConfig({ env, root, baselineNames, functions, runBoot = runBootCheck }) {
+export function checkDeployConfig({
+  env,
+  root,
+  baselineNames,
+  functions,
+  runBoot = runBootCheck,
+  readTrustedFile = gitFileReader(env.TRUSTED_SHA),
+}) {
   const problems = [];
   const warnings = [];
   const passed = [];
@@ -257,8 +347,13 @@ export function checkDeployConfig({ env, root, baselineNames, functions, runBoot
     const { injected, before } = splitByBaseline(env, baselineNames);
     const result = runBoot({ root, config: injected, childEnv: before });
     if (result.status === "failed") problems.push(result.message);
-    else if (result.status === "skipped") warnings.push(result.message);
+    else if (result.status === "skipped") warnings.push(`Not checked: ${result.message}`);
     else passed.push(result.message);
+
+    const minimums = checkMinimumVersions({ env, readTrustedFile });
+    problems.push(...minimums.problems);
+    warnings.push(...minimums.warnings);
+    passed.push(...minimums.passed);
   }
 
   if (flags.DEPLOYS_FUNCTIONS && functions.length > 0) {
@@ -307,11 +402,11 @@ const annotation = (level, message) =>
 
 const NOTHING_TO_CHECK = "Nothing to check: this run deploys no API or function and verifies no API.";
 
-/** The step summary's section: what passed, what was skipped, what failed. Names only. */
+/** The step summary's section: what passed, what it warns about or skipped, what failed. Names only. */
 export function formatSummary({ problems, warnings, passed }) {
   const lines = [
     ...passed.map((line) => `- ✅ ${line}`),
-    ...warnings.map((line) => `- ⚠️ Not checked: ${line}`),
+    ...warnings.map((line) => `- ⚠️ ${line}`),
     ...problems.map((line) => `- ❌ ${line}`),
   ];
   return `### Config check, before anything is written\n\n${lines.length ? lines.join("\n") : NOTHING_TO_CHECK}\n\n`;
@@ -340,7 +435,9 @@ function main() {
     functions: listFunctions(),
   });
   // Every line, not only the boot check's: `validateInputs` quotes the project ref.
-  const secretValues = Object.values(splitByBaseline(process.env, baselineNames).injected);
+  const secretValues = Object.entries(splitByBaseline(process.env, baselineNames).injected)
+    .filter(([name]) => !NOT_REDACTED.includes(name))
+    .map(([, value]) => value);
   const clean = (lines) => lines.map((line) => redact(line, secretValues));
   const report = { problems: clean(problems), warnings: clean(warnings), passed: clean(passed) };
 

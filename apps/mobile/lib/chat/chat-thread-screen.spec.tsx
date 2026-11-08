@@ -45,8 +45,10 @@ import { jumpToLatestLabel } from "@/components/chat/jump-to-latest-button";
 import { reactionActionType } from "@repo/chat-core/types";
 import type { UseChatChannelResult } from "@/lib/chat/use-chat-channel";
 import { FrappThemeProvider } from "@/lib/theme";
+import { stackScreen } from "@/test/stack-screen";
 import { flatStyle } from "@/test/flat-style";
 import { screenText } from "@/test/screen-text";
+import { useOpenChatTransport } from "@repo/hooks/open-chat-transport";
 
 /**
  * s05, the chat thread, rendered: the wiring its rows, overlays and list rely
@@ -68,7 +70,7 @@ import { screenText } from "@/test/screen-text";
  * `RenderingFlatList`, so the rows render inside the screen's tree, under the
  * provider the screen wraps the list in.
  *
- * It renders `app/(tabs)/chat-thread.tsx` but lives here: a spec under `app/`
+ * It renders `app/(app)/chat-thread.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -113,6 +115,24 @@ vi.mock("@/components/chat/message-actions-sheet", async () => {
         dismiss: () => dismissSheet(),
       }));
       return createElement("MessageActionsSheet", props);
+    }),
+  };
+});
+
+const presentProfileSheet = vi.fn();
+vi.mock("@/components/directory/member-detail-sheet", async () => {
+  const { createElement, forwardRef, useImperativeHandle } =
+    await import("react");
+  return {
+    MemberDetailSheet: forwardRef(function MemberDetailSheet(
+      props: Record<string, unknown>,
+      ref,
+    ) {
+      useImperativeHandle(ref, () => ({
+        present: presentProfileSheet,
+        dismiss: vi.fn(),
+      }));
+      return createElement("MemberDetailSheet", props);
     }),
   };
 });
@@ -206,9 +226,10 @@ function channelState(
     react: vi.fn(async () => {}),
     unreact: vi.fn(async () => {}),
     act: vi.fn(async () => {}),
-    attachments: [],
-    addAttachment: vi.fn(),
-    removeAttachment: vi.fn(),
+    photos: [],
+    addPhotos: vi.fn(),
+    removePhoto: vi.fn(),
+    retryPhoto: vi.fn(),
     draft: "",
     setDraft: vi.fn(),
     sendError: null,
@@ -258,6 +279,7 @@ const ROSTER = {
 
 /** The chapter roster the composer's `@` offers. */
 const MENTION_ROSTER = [{ user_id: "u-paul", display_name: "Paul Carlson" }];
+const MENTION_ROLES = [{ role_id: "r-1", name: "Officers", color: null, mentionable: true }];
 
 const NOTIFICATION_PREFS = [
   { channel_id: CHANNEL, level: "all" as const },
@@ -294,6 +316,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCurrentUser: () => viewerQuery,
   useMemberDisplayNames: () => ROSTER,
   useChapterRoster: () => ({ data: MENTION_ROSTER }),
+  useMentionRoles: () => ({ data: MENTION_ROLES }),
+  // No imported authors with avatars in these fixtures.
+  useAuthorAvatars: () => ({ data: undefined }),
   usePermissionList: () => [],
   useMarkChannelRead: () => markRead,
   useRequestChatUploadUrl: () => requestUploadUrl,
@@ -316,7 +341,7 @@ vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
 let params: { channelId?: string } = { channelId: CHANNEL };
 vi.mocked(expoRouter.useLocalSearchParams).mockImplementation(() => params);
 
-import ChatThreadScreen from "@/app/(tabs)/chat-thread";
+import ChatThreadScreen from "@/app/(app)/chat-thread";
 
 const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
 
@@ -408,7 +433,7 @@ function openImageViewer(tree: ReactTestRenderer, messageId = "m1") {
   expect(
     tree.root.findAll(
       (node) =>
-        node.type === ("Animated.Image" as never) &&
+        node.props.accessibilityRole === "image" &&
         node.props.accessibilityLabel === IMAGE.filename,
     ).length,
   ).toBeGreaterThan(0);
@@ -426,6 +451,34 @@ beforeEach(() => {
   channelRow = "found";
   channelType = "PUBLIC";
   queryClient = new QueryClient();
+});
+
+describe("chat thread way back", () => {
+  // `spec/ui/mobile/navigation.md` § Going back: ‹ pops the stack, exactly as
+  // the edge swipe does, and names what is under the thread.
+  it("pops to the screen it was opened from, and names it", () => {
+    const { element, navigation } = stackScreen(
+      [{ name: "(tabs)" }, { name: "directory" }],
+      <Screen />,
+    );
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(element);
+    });
+    act(() => byLabel(tree, "Back to directory").props.onPress());
+    expect(navigation.goBack).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(expoRouter.useRouter)().dismissTo).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("goes to Chat home with nothing under it", () => {
+    const tree = render();
+    act(() => byLabel(tree, "Back to chat").props.onPress());
+    expect(vi.mocked(expoRouter.useRouter)().dismissTo).toHaveBeenCalledWith(
+      "/",
+    );
+    act(() => tree.unmount());
+  });
 });
 
 describe("chat thread identity gate (#2250)", () => {
@@ -1596,6 +1649,9 @@ describe("chat thread @-mentions", () => {
     expect(tree.root.findByType(ChatComposer).props.mentionCandidates).toBe(
       MENTION_ROSTER,
     );
+    expect(tree.root.findByType(ChatComposer).props.mentionRoles).toBe(
+      MENTION_ROLES,
+    );
     act(() => tree.unmount());
   });
 });
@@ -1654,6 +1710,23 @@ describe("chat thread channel start", () => {
 
     const edge = lists(tree)[0]!.findByType(ThreadHistoryEdge);
     expect(edge.props.start).toBeTruthy();
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread member profile", () => {
+  it("opens the profile sheet for whoever a row names, from a name, photo or @ chip", () => {
+    const tree = render();
+    const row = rows(tree)[0]!;
+    act(() => (row.props.onOpenProfile as (id: string) => void)("user-42"));
+    expect(presentProfileSheet).toHaveBeenCalled();
+    const sheet = tree.root.findByType("MemberDetailSheet" as never);
+    expect(sheet.props.member).toEqual({ userId: "user-42" });
+    expect(sheet.props.openChannelId).toBe(CHANNEL);
+    // The member list opens the same sheet.
+    expect(
+      tree.root.findByType("ChannelMemberSheet" as never).props.onOpenProfile,
+    ).toBe(row.props.onOpenProfile);
     act(() => tree.unmount());
   });
 });
@@ -1721,5 +1794,46 @@ describe("chat thread member list (#3536)", () => {
     const tree = render();
     expect(membersButtons(tree)).toHaveLength(0);
     act(() => tree.unmount());
+  });
+});
+
+/*
+ * The thread hands its realtime transport to the app-wide connection pill
+ * (`connection-state.md` § One indicator), but only while it is focused: this
+ * tab screen stays mounted after the member leaves, and a hidden thread's
+ * "messages you send go out when you reconnect" must not reach Events or More.
+ */
+describe("chat thread reports its transport to the connection pill", () => {
+  const blur = (expoRouter as unknown as { __blur: () => void }).__blur;
+  const seen = vi.fn<(status: string | null) => void>();
+  function Reader() {
+    seen(useOpenChatTransport());
+    return null;
+  }
+  const reported = () => seen.mock.lastCall?.[0];
+
+  beforeEach(() => {
+    channel = channelState({ connection: "polling" });
+    params = { channelId: CHANNEL };
+  });
+
+  it("reports while focused and clears on blur", () => {
+    const tree = render();
+    let reader!: ReactTestRenderer;
+    act(() => {
+      reader = create(<Reader />);
+    });
+    expect(reported()).toBe("polling");
+
+    act(() => blur());
+    expect(reported()).toBeNull();
+
+    act(() => refocus());
+    expect(reported()).toBe("polling");
+
+    act(() => {
+      tree.unmount();
+      reader.unmount();
+    });
   });
 });

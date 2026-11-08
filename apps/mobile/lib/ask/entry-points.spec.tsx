@@ -5,6 +5,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { ASK_FLAG_ENV_KEY } from "@/lib/ask/flag";
+import { useRouter } from "expo-router";
 
 /**
  * #2259 — every Ask entry point hangs off `isAskAvailable()`.
@@ -38,6 +39,7 @@ vi.mock("@repo/hooks", () => {
     useChannels: () => empty,
     useCategories: () => empty,
     useChannelUnreadCounts: () => empty,
+    useChannelLatestMessages: () => empty,
     useEvents: () => empty,
     // s06 draws its New event button for an officer; a member here.
     usePermissionList: () => [],
@@ -46,8 +48,9 @@ vi.mock("@repo/hooks", () => {
     useCurrentUser: () => empty,
     useTasks: () => empty,
     useViewerUserId: () => "viewer-1",
-    useMemberDisplayNames: () => ({ byId: {} }),
+    useMemberDisplayNames: () => ({ byId: {}, nameFor: () => null }),
     useChapterRoster: () => empty,
+    useMentionRoles: () => empty,
     useChapterSetupChecklist: () => ({
       checklist: null,
       hide: vi.fn(),
@@ -55,6 +58,10 @@ vi.mock("@repo/hooks", () => {
     }),
     useSidebarPreferencesRefetch: () => ({ refetch: vi.fn() }),
     useLeaveChannel: () => ({ mutateAsync: vi.fn() }),
+    useMarkChannelRead: () => ({ mutate: vi.fn() }),
+    useSetChannelNotificationLevel: () => ({ mutate: vi.fn() }),
+    useDeleteChannel: () => ({ mutateAsync: vi.fn() }),
+    channelRowActions: () => ({ member: [], officer: [] }),
     useGetOrCreateDm: () => ({ mutate: vi.fn() }),
     canHideConversation: () => false,
     otherMemberId: () => null,
@@ -94,9 +101,9 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import ChatHomeScreen from "@/app/(tabs)/index";
-import EventsScreen from "@/app/(tabs)/events";
-import AskScreen from "@/app/(tabs)/ask";
+import ChatHomeScreen from "@/app/(app)/(tabs)/index";
+import EventsScreen from "@/app/(app)/(tabs)/events";
+import AskScreen from "@/app/(app)/ask";
 
 type Node = ReactTestRenderer["root"];
 
@@ -133,13 +140,10 @@ function sheets(root: Node): Node[] {
   return root.findAll((node) => (node.type as unknown) === "BottomSheetModal");
 }
 
-function redirects(root: Node): Node[] {
-  return root.findAll((node) => (node.type as unknown) === "Redirect");
-}
-
 beforeEach(() => {
   delete process.env[ASK_FLAG_ENV_KEY];
   present.mockClear();
+  vi.mocked(vi.mocked(useRouter)().dismissTo).mockClear();
 });
 
 afterEach(() => {
@@ -181,25 +185,29 @@ describe.each([
   });
 });
 
-// #3362: Chat home's notifications bell shares the title row with the pill,
-// and is drawn whether or not the build has Ask.
-describe("Chat home (s04) notifications bell", () => {
+// Chat home's header pair (owner, 2026-11-07): the Messages door and the
+// account avatar share the title row with the pill, and are drawn whether or
+// not the build has Ask. The notification bell folded into the avatar.
+describe("Chat home (s04) header controls", () => {
   const screen = () => <ChatHomeScreen />;
+  const labelled = (tree: ReactTestRenderer, label: string) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === label,
+    );
 
   it.each([
     ["off", undefined],
     ["on", "1"],
-  ])("draws the notifications bell with Ask %s", (_state, flag) => {
+  ])("draws Messages and Your account with Ask %s", (_state, flag) => {
     if (flag) process.env[ASK_FLAG_ENV_KEY] = flag;
     const tree = render(screen());
 
-    expect(
-      tree.root.findAll(
-        (node) =>
-          (node.type as unknown) === "Pressable" &&
-          node.props.accessibilityLabel === "Notifications",
-      ),
-    ).toHaveLength(1);
+    expect(labelled(tree, "Messages")).toHaveLength(1);
+    expect(labelled(tree, "Your account")).toHaveLength(1);
+    // The bell is gone: Notifications lives in the account menu.
+    expect(labelled(tree, "Notifications")).toHaveLength(0);
   });
 });
 
@@ -207,9 +215,9 @@ describe("the ask route (frapp://ask)", () => {
   it("redirects to Chat home in a build without Ask", () => {
     const tree = render(<AskScreen />);
 
-    const found = redirects(tree.root);
-    expect(found).toHaveLength(1);
-    expect(found[0].props.href).toBe("/");
+    // Popped down to, not replaced: a replace would stack a second tab
+    // navigator over the first.
+    expect(vi.mocked(useRouter)().dismissTo).toHaveBeenCalledWith("/");
     // No Ask shell behind the redirect, and nothing presented.
     expect(askPills(tree.root)).toHaveLength(0);
     expect(sheets(tree.root)).toHaveLength(0);
@@ -220,7 +228,7 @@ describe("the ask route (frapp://ask)", () => {
     process.env[ASK_FLAG_ENV_KEY] = "true";
     const tree = render(<AskScreen />);
 
-    expect(redirects(tree.root)).toHaveLength(0);
+    expect(vi.mocked(useRouter)().dismissTo).not.toHaveBeenCalled();
     expect(askPills(tree.root)).toHaveLength(1);
     expect(sheets(tree.root)).toHaveLength(1);
     expect(present).toHaveBeenCalledTimes(1);

@@ -9,32 +9,73 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { flatStyle } from "@/test/flat-style";
 
 /**
- * #2299. s03 is the first screen after joining a chapter, for a new member and
- * for an App Reviewer alike. In a build that cannot push (`isPushAvailable()`
- * false; `spec/ui/mobile/patterns.md` § Push notifications lists the causes)
- * it used to show the push primer with "Turn on" disabled and a build-status
- * apology under it. These pin that the card is not drawn there, and that it
- * still is, with a working "Turn on", when push can be turned on. `lib/notifications/primer.spec.ts` covers the
- * rule itself; this covers the screen wiring it.
+ * s03 is what comes right after joining a chapter, for a new member and for an
+ * App Reviewer alike, in up to two beats, each only when it has something to
+ * ask: the profile beat (no photo or no real name), then "Turn on
+ * notifications" when this build can push and push is off. In a build that
+ * cannot push (#2299; `isPushAvailable()` false, `spec/ui/mobile/patterns.md`
+ * § Push notifications lists the causes) there is no notifications beat at
+ * all, rather than a dead "Turn on" and an apology. With nothing to ask, s03
+ * goes straight to chat, where the first-run tour takes over
+ * (`lib/onboarding/tour.ts`); the static "You're in." card is gone.
+ * `lib/notifications/primer.spec.ts` covers the rules; this covers the screen
+ * wiring them.
  *
  * It renders `app/(auth)/welcome.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
  */
 
+interface Permission {
+  granted: boolean;
+  canAskAgain: boolean;
+  status: string;
+}
 let pushAvailable = false;
-let permission: { granted: boolean } | null = null;
+let permission: Permission | null = null;
+const OFF: Permission = {
+  granted: false,
+  canAskAgain: true,
+  status: "undetermined",
+};
 
 vi.mock("@/lib/notifications/push", () => ({
   isPushAvailable: () => pushAvailable,
   getPushPermission: () => Promise.resolve(permission),
+  isPushChannelBlocked: () => Promise.resolve(false),
   requestPushPermission: vi.fn().mockResolvedValue(true),
 }));
+
+/** `Linking` isn't in the suite's `react-native` stub; this spec adds it. */
+const { openSettings } = vi.hoisted(() => ({
+  openSettings: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("react-native", async () => {
+  const { reactNativeStub } = await import("@/test/react-native-stub");
+  return { ...reactNativeStub, Linking: { openSettings } };
+});
 
 vi.mock("@/lib/auth-session", () => ({
   useAuthSession: () => ({ status: "authenticated", chapterId: null }),
 }));
 
 const completeOnboarding = vi.fn().mockResolvedValue(undefined);
+const updateUser = vi.fn().mockResolvedValue({});
+/** `/v1/users/me`. A full profile by default, so the profile beat is skipped. */
+const COMPLETE_USER = {
+  id: "u-1",
+  display_name: "Ada Lovelace",
+  avatar_url: "https://example.test/ada.jpg",
+};
+let currentUser: Record<string, unknown> | undefined = COMPLETE_USER;
+
+const track = vi.fn();
+vi.mock("@/lib/use-latest-track", () => ({ useLatestTrack: () => track }));
+
+/** The photo control has its own spec; here it only has to be there. */
+vi.mock("@/components/profile/profile-photo", () => ({
+  ProfilePhoto: (props: { initials: string }) =>
+    React.createElement("ProfilePhoto", props),
+}));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -51,11 +92,19 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useChannels: () => ({ isPending: false, isError: false, data: [] }),
   useUpdateOnboarding: () => ({ mutateAsync: completeOnboarding }),
+  useCurrentUser: () => ({ data: currentUser, dataUpdatedAt: 1 }),
+  useUpdateUser: () => ({ mutateAsync: updateUser }),
 }));
 
 import { useRouter } from "expo-router";
 import Welcome from "@/app/(auth)/welcome";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { requestPushPermission } from "@/lib/notifications/push";
+import {
+  PUSH_PRIMER_DECLINED_AT_KEY,
+  PUSH_PRIMER_STORAGE_KEY,
+} from "@/lib/notifications/primer";
+import { TOUR_DUE_STORAGE_KEY } from "@/lib/onboarding/tour";
 
 type Node = ReactTestRenderer["root"];
 
@@ -96,122 +145,218 @@ const turnOn = (root: Node) =>
         pressable.props.accessibilityLabel === "Turn on notifications",
     );
 
-describe("s03 welcome, push primer (#2299)", () => {
-  beforeEach(() => {
-    pushAvailable = false;
-    permission = null;
+const pressables = (root: Node) =>
+  root.findAllByType("Pressable" as never, { deep: true });
+
+/** The Pressable whose own text reads `label`. */
+const button = (root: Node, label: string) =>
+  pressables(root).find((pressable) =>
+    pressable
+      .findAllByType("Text" as never, { deep: true })
+      .some((text) => text.props.children === label),
+  );
+
+async function press(target: Node | undefined) {
+  await act(async () => {
+    await target?.props.onPress();
+    await new Promise((resolve) => setTimeout(resolve, 10));
   });
+}
 
-  it("draws no primer card when push is unavailable", async () => {
-    const { root } = await render();
-
-    expect(turnOn(root)).toBeUndefined();
-    expect(texts(root).some((t) => t.includes("miss @channel"))).toBe(false);
-    // Nor the reason line the dead card used to print.
-    expect(texts(root).some((t) => t.includes("Notifications"))).toBe(false);
-    // The rest of the screen is intact.
-    expect(texts(root).some((t) => t.includes("in."))).toBe(true);
-  });
-
-  it("draws the card with a working Turn on when push can be turned on", async () => {
-    pushAvailable = true;
-    permission = { granted: false };
-
-    const { root } = await render();
-
-    expect(texts(root).some((t) => t.includes("miss @channel"))).toBe(true);
-    const button = turnOn(root);
-    expect(button).toBeDefined();
-    expect(button?.props.disabled).toBe(false);
-  });
-
-  it("hides the card once Turn on is answered, even with Don't Allow", async () => {
-    // A denial leaves the permission not granted, so only the recorded
-    // decision hides the card. Left up, it would offer a "Turn on" that iOS
-    // now ignores, until the screen remounted.
-    pushAvailable = true;
-    permission = { granted: false };
-    vi.mocked(requestPushPermission).mockClear().mockResolvedValueOnce(false);
-
-    const { root } = await render();
-    await act(async () => {
-      turnOn(root)?.props.onPress();
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
-
-    expect(requestPushPermission).toHaveBeenCalledTimes(1);
-    expect(turnOn(root)).toBeUndefined();
-    expect(texts(root).some((t) => t.includes("miss @channel"))).toBe(false);
-  });
-});
-
-/**
- * #3352. "You're in." follows the #3348 screen rules: the chapter named under
- * the title, and one button pinned under the scroll, where a Skip that did
- * the same thing used to sit beside it.
- */
-describe("s03 welcome, screen rules (#3352)", () => {
+describe("s03 welcome, notifications step", () => {
   beforeEach(() => {
     pushAvailable = false;
     permission = null;
     completeOnboarding.mockClear();
+    openSettings.mockClear();
+    vi.mocked(requestPushPermission).mockClear().mockResolvedValue(true);
+    vi.mocked(vi.mocked(useRouter)().replace).mockClear();
   });
 
-  it("names the chapter and pins one button, Go to chat, outside the scroll", async () => {
+  it("has no notifications step when push is unavailable", async () => {
+    permission = OFF;
     const { root } = await render();
 
-    expect(
-      texts(root).some((t) =>
-        t.includes("FIJI Tau Nu · Rensselaer Polytechnic Institute"),
-      ),
-    ).toBe(true);
-    const buttons = root
-      .findAllByType("Pressable" as never, { deep: true })
-      .filter((p) => p.props.accessibilityRole === "button");
-    expect(buttons).toHaveLength(1);
-    expect(
-      root
-        .findByType("ScrollView" as never)
-        .findAllByType("Pressable" as never, { deep: true }),
-    ).toHaveLength(0);
-    expect(texts(root).some((t) => t.includes("Skip"))).toBe(false);
+    expect(turnOn(root)).toBeUndefined();
+    expect(requestPushPermission).not.toHaveBeenCalled();
+    // Nothing to ask: straight to chat.
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
 
-    await act(async () => {
-      await buttons[0]?.props.onPress();
-    });
+  it("has no notifications step when push is already on", async () => {
+    pushAvailable = true;
+    permission = { granted: true, canAskAgain: true, status: "granted" };
+    const { root } = await render();
+
+    expect(turnOn(root)).toBeUndefined();
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
+
+  it("opens on the notifications beat when it's the only thing to ask", async () => {
+    pushAvailable = true;
+    permission = OFF;
+    const { root } = await render();
+
+    // No "You're in." card first: the tour over chat says that now.
+    expect(texts(root).some((t) => t.includes("in."))).toBe(false);
+    // Its own title, both answers pinned under the scroll.
+    expect(texts(root).some((t) => t.includes("Turn on notifications"))).toBe(
+      true,
+    );
+    const scroll = root.findByType("ScrollView" as never);
+    expect(
+      scroll.findAllByType("Pressable" as never, { deep: true }),
+    ).toHaveLength(0);
+    expect(button(root, "Turn on notifications")).toBeDefined();
+    expect(button(root, "Not now")).toBeDefined();
+    expect(completeOnboarding).not.toHaveBeenCalled();
+  });
+
+  it("shows the OS prompt on Turn on, then goes to chat", async () => {
+    pushAvailable = true;
+    permission = OFF;
+    const { root } = await render();
+
+    await press(button(root, "Turn on notifications"));
+
+    expect(requestPushPermission).toHaveBeenCalledTimes(1);
     expect(completeOnboarding).toHaveBeenCalledWith({
       has_completed_onboarding: true,
     });
-    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/(tabs)");
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
   });
 
-  it("draws the primer inside the scroll, so Go to chat stays the one pinned control", async () => {
+  it("goes to chat after a Don't Allow too", async () => {
     pushAvailable = true;
-    permission = { granted: false };
+    permission = OFF;
+    vi.mocked(requestPushPermission).mockResolvedValueOnce(false);
     const { root } = await render();
 
-    const scroll = root.findByType("ScrollView" as never);
+    await press(button(root, "Turn on notifications"));
+
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
+
+  it("goes to chat on Not now, with no OS prompt, and keeps when it was said", async () => {
+    pushAvailable = true;
+    permission = OFF;
+    const { root } = await render();
+
+    await press(button(root, "Not now"));
+
+    expect(requestPushPermission).not.toHaveBeenCalled();
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      PUSH_PRIMER_STORAGE_KEY,
+      "declined",
+    );
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      PUSH_PRIMER_DECLINED_AT_KEY,
+      expect.any(String),
+    );
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
+
+  // iOS after an earlier Don't Allow, or Android after
+  // a second one: no dialog can appear, so the button says where it goes.
+  it("opens the phone's settings when no prompt can appear", async () => {
+    pushAvailable = true;
+    permission = { granted: false, canAskAgain: false, status: "denied" };
+    const { root } = await render();
+
+    expect(button(root, "Turn on notifications")).toBeUndefined();
+    await press(button(root, "Open Settings"));
+
+    expect(requestPushPermission).not.toHaveBeenCalled();
+    expect(openSettings).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
+
+  it("takes Android 13+ granted-but-blocked as off", async () => {
+    pushAvailable = true;
+    permission = { granted: true, canAskAgain: false, status: "denied" };
+    const { root } = await render();
+
+    expect(button(root, "Open Settings")).toBeDefined();
+  });
+  // The decision is stored before the OS prompt and before the PATCH that
+  // ends onboarding. Neither may drop the member back on an earlier beat with
+  // a live Continue while the answer finishes.
+  it("keeps the step, with its buttons off, while an answer finishes", async () => {
+    pushAvailable = true;
+    permission = OFF;
+    let finishPatch!: () => void;
+    completeOnboarding.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finishPatch = resolve)),
+    );
+    const { root } = await render();
+
+    await press(button(root, "Not now"));
+
+    expect(completeOnboarding).toHaveBeenCalledTimes(1);
+    expect(button(root, "Continue")).toBeUndefined();
+    expect(button(root, "Not now")?.props.disabled).toBe(true);
+    await press(button(root, "Not now"));
+    expect(completeOnboarding).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      finishPatch();
+    });
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
+
+  it("leaves Android back alone when it's the first beat", async () => {
+    const { BackHandler } = await import("react-native");
+    const listen = vi.mocked(BackHandler.addEventListener);
+    listen.mockClear();
+    pushAvailable = true;
+    permission = OFF;
+    const { root } = await render();
+
+    expect(button(root, "Not now")).toBeDefined();
     expect(
-      scroll
-        .findAllByType("Pressable" as never, { deep: true })
-        .some((p) => p.props.accessibilityLabel === "Turn on notifications"),
-    ).toBe(true);
-    const outside = root
-      .findAllByType("Pressable" as never, { deep: true })
-      .filter(
-        (p) =>
-          !scroll
-            .findAllByType("Pressable" as never, { deep: true })
-            .includes(p),
-      );
-    expect(outside).toHaveLength(1);
+      listen.mock.calls.filter(([event]) => event === "hardwareBackPress"),
+    ).toHaveLength(0);
   });
 });
 
 /**
- * One gold button on s03. While the primer asks, its "Turn on" is the gold
- * one and "Go to chat" is the outlined Secondary under it, as the board draws
- * s03; with no primer, "Go to chat" is the step forward and takes the gold.
+ * A member with a name, a photo and push on has nothing to answer, so s03
+ * draws no beat and hands straight over to chat, marking the first-run tour
+ * due for that member on the way out.
+ */
+describe("s03 welcome, nothing to ask", () => {
+  beforeEach(() => {
+    pushAvailable = false;
+    permission = null;
+    currentUser = COMPLETE_USER;
+    completeOnboarding.mockClear();
+    vi.mocked(AsyncStorage.setItem).mockClear();
+    vi.mocked(vi.mocked(useRouter)().replace).mockClear();
+  });
+
+  it("goes straight to chat and marks the tour due for this member", async () => {
+    const { root } = await render();
+
+    expect(
+      root
+        .findAllByType("Pressable" as never, { deep: true })
+        .filter((p) => p.props.accessibilityRole === "button"),
+    ).toHaveLength(0);
+    expect(completeOnboarding).toHaveBeenCalledWith({
+      has_completed_onboarding: true,
+    });
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      TOUR_DUE_STORAGE_KEY,
+      "u-1",
+    );
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
+});
+
+/**
+ * One gold button on each beat of s03: Continue or Go to chat on the profile
+ * beat, Turn on notifications on the notifications beat, with Not now as a
+ * quiet line.
  */
 describe("s03 welcome, one gold button", () => {
   const goToChat = (root: Node) =>
@@ -230,15 +375,25 @@ describe("s03 welcome, one gold button", () => {
   beforeEach(() => {
     pushAvailable = false;
     permission = null;
+    // No photo, so there is a profile beat to hold the button.
+    currentUser = { ...COMPLETE_USER, avatar_url: null };
   });
 
-  it("outlines Go to chat while the primer's Turn on is the gold button", async () => {
+  it("makes Turn on notifications the gold button on the second beat", async () => {
     pushAvailable = true;
-    permission = { granted: false };
+    permission = OFF;
     const { root } = await render();
+    expect(fill(button(root, "Continue"))).toBe(
+      signetDarkTokens.color.gold.house,
+    );
+    await press(button(root, "Continue"));
 
-    expect(fill(turnOn(root))).toBe(signetDarkTokens.color.gold.house);
-    expect(fill(goToChat(root))).toBe(signetDarkTokens.color.surface.card);
+    expect(fill(button(root, "Turn on notifications"))).toBe(
+      signetDarkTokens.color.gold.house,
+    );
+    expect(fill(button(root, "Not now"))).not.toBe(
+      signetDarkTokens.color.gold.house,
+    );
   });
 
   it("makes Go to chat the gold button when there is no primer", async () => {
@@ -263,27 +418,125 @@ describe("s03 welcome, one gold button", () => {
     });
     expect(texts(root).some((t) => t.includes("Opening chat"))).toBe(false);
   });
+});
 
-  it("spins under the same label as the outlined button, while the primer shows", async () => {
-    pushAvailable = true;
-    permission = { granted: false };
-    completeOnboarding.mockReturnValueOnce(new Promise(() => {}));
+/**
+ * The profile beat: shown when the member has no photo or no real name, before
+ * the notifications beat. The name is checked on Continue and
+ * saved only when it changed; the photo is optional.
+ */
+describe("s03 welcome, profile beat", () => {
+  const field = (root: Node) =>
+    root
+      .findAllByType("TextInput" as never, { deep: true })
+      .find((input) => input.props.accessibilityLabel === "Your name");
+
+  beforeEach(() => {
+    pushAvailable = false;
+    permission = null;
+    currentUser = COMPLETE_USER;
+    completeOnboarding.mockClear();
+    updateUser.mockClear().mockResolvedValue({});
+    track.mockClear();
+    vi.mocked(vi.mocked(useRouter)().replace).mockClear();
+  });
+
+  const profileEvents = () =>
+    track.mock.calls.filter(
+      ([event]) => event === "onboarding-profile-answered",
+    );
+
+  it("is skipped for a member with a name and a photo", async () => {
     const { root } = await render();
-    act(() => {
-      void goToChat(root)?.props.onPress();
-    });
 
-    const button = root
-      .findAllByType("Pressable" as never, { deep: true })
-      .find((pressable) => pressable.props.accessibilityLabel === "Go to chat");
-    // Still the outlined one: Turn on keeps the gold.
-    expect(fill(button)).toBe(signetDarkTokens.color.surface.card);
-    expect(button?.props.accessibilityState).toEqual({
-      disabled: true,
-      busy: true,
-    });
     expect(
-      button?.findAllByType("ActivityIndicator" as never, { deep: true }),
-    ).toHaveLength(1);
+      texts(root).some((t) => t.includes("How the chapter sees you")),
+    ).toBe(false);
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
+
+  it("asks for a photo with the name filled in, and doesn't resend the name", async () => {
+    currentUser = { ...COMPLETE_USER, avatar_url: null };
+    const { root } = await render();
+
+    expect(
+      texts(root).some((t) => t.includes("How the chapter sees you")),
+    ).toBe(true);
+    expect(root.findAllByType("ProfilePhoto" as never)).toHaveLength(1);
+    expect(field(root)?.props.value).toBe("Ada Lovelace");
+
+    await press(button(root, "Go to chat"));
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+    expect(profileEvents()).toEqual([
+      ["onboarding-profile-answered", { photo: "none", name_step: "kept" }],
+    ]);
+  });
+
+  it("never pre-fills the Member stand-in, and needs a name before moving on", async () => {
+    currentUser = { ...COMPLETE_USER, display_name: "Member" };
+    const { root } = await render();
+
+    expect(field(root)?.props.value).toBe("");
+    await press(button(root, "Go to chat"));
+    expect(
+      texts(root).some((t) => t.includes("so the chapter knows who")),
+    ).toBe(true);
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(completeOnboarding).not.toHaveBeenCalled();
+
+    act(() => field(root)?.props.onChangeText("  Grace Hopper "));
+    expect(
+      texts(root).some((t) => t.includes("so the chapter knows who")),
+    ).toBe(false);
+    await press(button(root, "Go to chat"));
+
+    expect(updateUser).toHaveBeenCalledWith({ display_name: "Grace Hopper" });
+    // Shape only: never the name itself.
+    expect(profileEvents()).toEqual([
+      ["onboarding-profile-answered", { photo: "had", name_step: "added" }],
+    ]);
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
+
+  it("stays, with the reason, when the name can't be saved", async () => {
+    currentUser = { ...COMPLETE_USER, display_name: "" };
+    updateUser.mockRejectedValueOnce(new Error("offline"));
+    const { root } = await render();
+    act(() => field(root)?.props.onChangeText("Grace Hopper"));
+
+    await press(button(root, "Go to chat"));
+
+    expect(texts(root).some((t) => t.includes("Couldn't save your name"))).toBe(
+      true,
+    );
+    expect(completeOnboarding).not.toHaveBeenCalled();
+    expect(field(root)?.props.value).toBe("Grace Hopper");
+    expect(profileEvents()).toEqual([]);
+  });
+
+  it("comes before the notifications beat, and Android back walks back through it", async () => {
+    const { BackHandler } = await import("react-native");
+    const listen = vi.mocked(BackHandler.addEventListener);
+    listen.mockClear();
+    pushAvailable = true;
+    permission = OFF;
+    currentUser = { ...COMPLETE_USER, avatar_url: null };
+    const { root } = await render();
+
+    expect(field(root)).toBeDefined();
+    await press(button(root, "Continue"));
+    expect(button(root, "Not now")).toBeDefined();
+
+    const back = () => {
+      const calls = listen.mock.calls as unknown as [string, () => boolean][];
+      const handler = calls.filter(([e]) => e === "hardwareBackPress").at(-1);
+      act(() => {
+        handler![1]();
+      });
+    };
+    back();
+    expect(field(root)).toBeDefined();
+    expect(button(root, "Not now")).toBeUndefined();
   });
 });

@@ -39,12 +39,13 @@ import {
   SheetBackToClose,
   useSheetClose,
 } from "@/components/sheet-scaffold";
+import * as Clipboard from "expo-clipboard";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import {
-  BLOCK_ROW_DESCRIPTION,
-  confirmBlockMember,
-  useBlockActions,
-} from "@/lib/chat/block-actions";
+import { selectionHaptic } from "@/lib/haptics";
+import { confirmBlockMember, useBlockActions } from "@/lib/chat/block-actions";
+import { AddReactionGlyph } from "@/components/control-glyphs";
+import { EmojiPickerSheet } from "@/components/chat/emoji-picker-sheet";
+import { canonicalEmoji } from "@/lib/chat/emoji-search";
 import {
   REPORT_ALREADY_BODY,
   REPORT_ALREADY_TITLE,
@@ -61,33 +62,55 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * The actions on one message: react to it, reply to it, edit or delete it
- * (#2775), and the member-safety pair, report it or block its sender (#2257,
- * App Store Guideline 1.2). Opened by long-pressing a message or card in s05,
- * by the `+` chip after its reactions, or by the "Message actions"
- * accessibility action.
+ * (#2775), mention its sender, and the member-safety pair, report it or block
+ * its sender (#2257, App Store Guideline 1.2). Opened by long-pressing a
+ * message or card in s05, by the `+` chip after its reactions, or by the
+ * "Message actions" accessibility action.
+ *
+ * **Laid out the way Discord's long-press is**, because that is the menu the
+ * chapters moving off Discord already know: the reaction row, then the
+ * conversation actions (Reply, Edit), then the copy-and-reference ones (Copy
+ * text, Mention), then Report and Delete last. Rows are bare labels: a menu
+ * row says what it does, and a sentence under it explaining the button is
+ * noise (Paul, 2026-11-07).
+ *
+ * **Block is one step in, not on the menu.** It is a rare, heavy action that
+ * sat as a red row on every long-press of someone else's message. It now
+ * lives on the report form and its "Report sent" screen, and on the member's
+ * profile (`member-detail-sheet.tsx`), which keeps it reachable for App Store
+ * Guideline 1.2 without putting it in front of every reaction.
  *
  * **Quick reactions come first.** The thread draws no reaction control on a
  * message nobody has reacted to (`ReactionRow` in `message-item.tsx`), so this
  * row is where the first reaction starts, as it does in every messenger's
  * long-press. The four picks are web's (`QUICK_REACTIONS` in
- * `apps/web/components/chat/reaction-bar.tsx`). One the viewer already used is
- * drawn selected, and tapping it takes the reaction back off, the toggle
- * `spec/behavior/chat/README.md` § Reactions describes. Either way the sheet
- * closes: the chip under the message is the confirmation.
+ * `apps/web/components/chat/reaction-bar.tsx`), and the last cell opens every
+ * emoji (`EmojiPickerSheet`), so any reaction is two taps away. One the viewer
+ * already used is drawn selected, and tapping it takes the reaction back off,
+ * the toggle `spec/behavior/chat/README.md` § Reactions describes. Either way
+ * the sheet closes: the chip under the message is the confirmation.
  *
- * **Reply, Edit and Delete hand off to the thread.** Reply and Edit stage in
- * the composer and Delete asks for confirmation in a native alert, so each row
- * closes the sheet and tells the screen which message it was for.
+ * **Copy text** copies the message's text as written, for a card-free message
+ * with a body (`copyableText`). The row turns to "Copied" in place, then the
+ * sheet closes.
  *
- * **Two sheets, not one with panes.** The menu is the quick reactions and at
- * most four rows (Reply, Edit and Delete on your own message; Reply, Delete,
- * Report and Block on someone else's) and sizes to its content; the report form is seven reasons, a text field and a button, which
+ * **Reply, Edit, Mention and Delete hand off to the thread.** Reply and Edit
+ * stage in the composer, Mention puts `@Name` in the draft, and Delete asks for
+ * confirmation in a native alert, so each row closes the sheet and tells the
+ * screen which message it was for.
+ *
+ * **Separate sheets, not one with panes.** The menu is the quick reactions and
+ * at most five rows (Reply, Edit, Copy text and Delete on your own message;
+ * Reply, Copy text, Mention, Report and Delete on someone else's) and sizes to
+ * its content; the emoji picker and the report form each scroll. The report
+ * form is seven reasons, a text field and a button, which
  * on a small phone with the keyboard up is taller than the screen. A bounded
  * sheet takes `enableDynamicSizing`, and one with a scrollable body takes a
  * fixed detent with the sheet-aware scroll view as its direct child
  * (`spec/ui/mobile/patterns.md` § Bottom sheets) — one sheet cannot be both, so
- * the report form is its own sheet that replaces the menu (gorhom's
- * `stackBehavior="replace"`), where s19 stacks its assignee picker on top.
+ * the report form and the emoji picker are their own sheets that replace the
+ * menu (gorhom's `stackBehavior="replace"`), where s19 stacks its assignee
+ * picker on top.
  *
  * **Which rows show is decided by the caller**, from `messageActionsFor` in
  * `@repo/chat-core/message-actions`: Report and Block never show on the viewer's own
@@ -107,6 +130,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 
 const REPORT_SNAP_POINTS = ["85%"];
 
+/** The Copy text row's label once the text is on the clipboard. */
+export const COPIED_LABEL = "Copied";
+/** How long "Copied" shows before the sheet closes: long enough to read. */
+const COPIED_HOLD_MS = 700;
+
 /**
  * The sheet's quick reactions, in web's order (`QUICK_REACTIONS` in
  * `apps/web/components/chat/reaction-bar.tsx`). A copy rather than a shared
@@ -123,8 +151,19 @@ export function quickReactionLabel(emoji: string, mine: boolean): string {
 export interface MessageActionsTarget {
   /** Server id — the sheet only opens on confirmed rows. */
   messageId: string;
+  /**
+   * What "Copy text" copies (`copyableText` in `@repo/chat-core`), or `null`
+   * for a card, a photo-only message or a deleted one, where the row is not
+   * drawn.
+   */
+  copyText: string | null;
   canReply: boolean;
   canEdit: boolean;
+  /**
+   * Someone else's message in a channel the viewer can post in: Mention puts
+   * `@Name` in the draft.
+   */
+  canMention?: boolean;
   canDelete: boolean;
   /** False on the viewer's own message. */
   canReport: boolean;
@@ -154,6 +193,11 @@ export interface MessageActionsTarget {
    * open.
    */
   reactedWith: readonly string[];
+  /**
+   * Every emoji on the message, anyone's, so a pick from the picker joins an
+   * existing chip spelled without U+FE0F rather than starting a twin.
+   */
+  messageEmojis?: readonly string[];
 }
 
 /** What the report form shows once a request has come back. */
@@ -166,7 +210,10 @@ function announce(message: string) {
 
 export interface MessageActionsSheetHandle {
   present: () => void;
-  /** Closes the menu. The report form, once open, is the member's to close. */
+  /**
+   * Closes the menu and the emoji picker. The report form, once open, is the
+   * member's to close.
+   */
   dismiss: () => void;
 }
 
@@ -183,6 +230,8 @@ export interface MessageActionsSheetProps {
   onEdit?: (messageId: string) => void;
   /** Confirm, then delete, this message. */
   onDelete?: (messageId: string) => void;
+  /** Put `@Sender` in the composer's draft. */
+  onMention?: (messageId: string) => void;
   /**
    * Add a reaction from the quick row. Omit it, with `onUnreact`, and the row
    * is not drawn.
@@ -196,7 +245,16 @@ export const MessageActionsSheet = forwardRef<
   MessageActionsSheetHandle,
   MessageActionsSheetProps
 >(function MessageActionsSheet(
-  { target, onSenderDeparted, onReply, onEdit, onDelete, onReact, onUnreact },
+  {
+    target,
+    onSenderDeparted,
+    onReply,
+    onEdit,
+    onDelete,
+    onMention,
+    onReact,
+    onUnreact,
+  },
   ref,
 ) {
   const { tokens } = useFrappTheme();
@@ -205,6 +263,7 @@ export const MessageActionsSheet = forwardRef<
   const backgroundStyle = useSheetBackgroundStyle();
   const menuRef = useRef<BottomSheetModal>(null);
   const reportRef = useRef<BottomSheetModal>(null);
+  const pickerRef = useRef<BottomSheetModal>(null);
   const closeMenu = useSheetClose(menuRef);
   const closeReport = useSheetClose(reportRef);
 
@@ -212,7 +271,11 @@ export const MessageActionsSheet = forwardRef<
     ref,
     () => ({
       present: () => menuRef.current?.present(),
-      dismiss: () => menuRef.current?.dismiss(),
+      // The picker too: it replaced the menu and acts on the same message.
+      dismiss: () => {
+        menuRef.current?.dismiss();
+        pickerRef.current?.dismiss();
+      },
     }),
     [],
   );
@@ -260,6 +323,49 @@ export const MessageActionsSheet = forwardRef<
     [],
   );
 
+  /**
+   * Which message's text was just copied. "Copy text" confirms in place: the
+   * row reads "Copied" with a tick of haptics, then the sheet closes, so the
+   * member sees it worked without a toast landing over the thread.
+   */
+  const [copiedFor, setCopiedFor] = useState<string | null>(null);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    },
+    [],
+  );
+  /**
+   * However the menu closed (the timer, a swipe, Android back, another row),
+   * the next open starts on "Copy text", and a timer still pending can't
+   * close a sheet the member has opened since.
+   */
+  const resetCopy = useCallback(() => {
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    copyTimer.current = null;
+    setCopiedFor(null);
+  }, []);
+  const copyText = useCallback(() => {
+    const text = target?.copyText;
+    const messageId = target?.messageId;
+    if (!text || !messageId) return;
+    void Clipboard.setStringAsync(text)
+      .then(() => {
+        selectionHaptic();
+        setCopiedFor(messageId);
+        announce(COPIED_LABEL);
+        if (copyTimer.current) clearTimeout(copyTimer.current);
+        copyTimer.current = setTimeout(() => {
+          copyTimer.current = null;
+          menuRef.current?.dismiss();
+        }, COPIED_HOLD_MS);
+      })
+      .catch(() => {
+        Alert.alert("Couldn't copy", "Try again in a moment.");
+      });
+  }, [target]);
+
   const senderLabel = target?.senderName ?? UNNAMED_MEMBER;
   const canBlock = !!target?.blockUserId;
   const senderInDirectory = target?.senderInDirectory ?? false;
@@ -286,27 +392,46 @@ export const MessageActionsSheet = forwardRef<
     [onReact, onUnreact, target],
   );
 
+  /** Opens every emoji in place of the menu (`stackBehavior="replace"`). */
+  const openPicker = useCallback(() => {
+    pickerRef.current?.present();
+  }, []);
+  const pickFromPicker = useCallback(
+    (emoji: string, mine: boolean) => {
+      const messageId = target?.messageId;
+      pickerRef.current?.dismiss();
+      if (!messageId) return;
+      // The spelling already on the message or in the quick row, so a pick
+      // joins that chip rather than starting a twin (`canonicalEmoji`).
+      const spelled = canonicalEmoji(emoji, [
+        ...(target?.reactedWith ?? []),
+        ...(target?.messageEmojis ?? []),
+        ...QUICK_REACTIONS,
+      ]);
+      if (mine) onUnreact?.(messageId, spelled);
+      else onReact?.(messageId, spelled);
+    },
+    [onReact, onUnreact, target],
+  );
+
   // The report sheet's `stackBehavior="replace"` dismisses the menu as it
   // mounts, so closing the form returns to the thread, not to the menu.
   const openReport = useCallback(() => {
     reportRef.current?.present();
   }, []);
 
-  const startBlock = useCallback(
-    (sheet: "menu" | "report") => {
-      const userId = target?.blockUserId;
-      if (!userId) return;
-      confirmBlockMember({
-        name: target?.senderName ?? null,
-        inDirectory: senderInDirectory,
-        run: () => block(userId),
-        onDone: () =>
-          (sheet === "menu" ? menuRef : reportRef).current?.dismiss(),
-        onNotAMember: () => onSenderDeparted?.(userId),
-      });
-    },
-    [block, onSenderDeparted, senderInDirectory, target],
-  );
+  /** Block, from the report form or its "Report sent" screen. */
+  const startBlock = useCallback(() => {
+    const userId = target?.blockUserId;
+    if (!userId) return;
+    confirmBlockMember({
+      name: target?.senderName ?? null,
+      inDirectory: senderInDirectory,
+      run: () => block(userId),
+      onDone: () => reportRef.current?.dismiss(),
+      onNotAMember: () => onSenderDeparted?.(userId),
+    });
+  }, [block, onSenderDeparted, senderInDirectory, target]);
 
   const submitReport = useCallback(() => {
     if (!target || !reason) return;
@@ -353,6 +478,7 @@ export const MessageActionsSheet = forwardRef<
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
+        onDismiss={resetCopy}
       >
         <SheetBackToClose onClose={closeMenu} />
         <BottomSheetView onAccessibilityEscape={closeMenu} style={styles.body}>
@@ -392,9 +518,23 @@ export const MessageActionsSheet = forwardRef<
                   </Pressable>
                 );
               })}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Add a reaction"
+                onPress={openPicker}
+                style={({ pressed }) => [
+                  styles.reaction,
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <AddReactionGlyph
+                  color={tokens.color.text.mutedForeground}
+                  size={22}
+                />
+              </Pressable>
             </View>
           ) : null}
-          {target?.canReply || target?.canEdit || target?.canDelete ? (
+          {target?.canReply || target?.canEdit ? (
             <ListSection>
               {target.canReply ? (
                 <ListRow
@@ -410,30 +550,44 @@ export const MessageActionsSheet = forwardRef<
                   onPress={() => handOff(onEdit)}
                 />
               ) : null}
+            </ListSection>
+          ) : null}
+          {target?.copyText || (target?.canMention && onMention) ? (
+            <ListSection>
+              {target.copyText ? (
+                <ListRow
+                  label={
+                    copiedFor === target.messageId ? COPIED_LABEL : "Copy text"
+                  }
+                  action
+                  onPress={copyText}
+                />
+              ) : null}
+              {target.canMention && onMention ? (
+                <ListRow
+                  label="Mention"
+                  action
+                  onPress={() => handOff(onMention)}
+                />
+              ) : null}
+            </ListSection>
+          ) : null}
+          {target?.canReport || target?.canDelete ? (
+            <ListSection>
+              {target.canReport ? (
+                <ListRow
+                  label={REPORT_FORM_TITLE}
+                  action
+                  destructive
+                  onPress={openReport}
+                />
+              ) : null}
               {target.canDelete ? (
                 <ListRow
                   label="Delete message"
                   action
                   destructive
                   onPress={() => handOff(onDelete)}
-                />
-              ) : null}
-            </ListSection>
-          ) : null}
-          {target?.canReport ? (
-            <ListSection>
-              <ListRow
-                label={REPORT_FORM_TITLE}
-                description="Your chapter's officers will be able to see it."
-                onPress={openReport}
-              />
-              {canBlock ? (
-                <ListRow
-                  label={blockActionLabel(senderLabel)}
-                  description={BLOCK_ROW_DESCRIPTION}
-                  action
-                  destructive
-                  onPress={() => startBlock("menu")}
                 />
               ) : null}
             </ListSection>
@@ -474,10 +628,9 @@ export const MessageActionsSheet = forwardRef<
                 <ListSection>
                   <ListRow
                     label={blockActionLabel(senderLabel)}
-                    description={BLOCK_ROW_DESCRIPTION}
                     action
                     destructive
-                    onPress={() => startBlock("report")}
+                    onPress={startBlock}
                   />
                 </ListSection>
               ) : null}
@@ -552,10 +705,30 @@ export const MessageActionsSheet = forwardRef<
                 accent={accent}
                 onAccent={tokens.color.gold.onHouse}
               />
+              {/* Block lives here rather than on the menu: one step in,
+                  beside the report it usually goes with. */}
+              {canBlock ? (
+                <ListSection>
+                  <ListRow
+                    label={blockActionLabel(senderLabel)}
+                    action
+                    destructive
+                    onPress={startBlock}
+                  />
+                </ListSection>
+              ) : null}
             </>
           )}
         </BottomSheetScrollView>
       </BottomSheetModal>
+
+      {onReact && onUnreact ? (
+        <EmojiPickerSheet
+          ref={pickerRef}
+          selected={target?.reactedWith ?? []}
+          onPick={pickFromPicker}
+        />
+      ) : null}
     </>
   );
 });
@@ -587,7 +760,7 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
-    // Four equal 44pt cells across the sheet, in the ListSection's surface
+    // Five equal 44pt cells across the sheet (four picks and the picker), in the ListSection's surface
     // recipe so the row reads as part of the same menu. A selected one swaps
     // in the chapter's quiet fill and border at render, the reacted chip's
     // recipe under the message (components.md §11).

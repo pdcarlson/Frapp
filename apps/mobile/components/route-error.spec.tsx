@@ -27,6 +27,7 @@ import {
   RouteErrorBoundary,
   SCREEN_ERROR_COPY,
   screenErrorLayout,
+  stackScreenLayout,
 } from "./route-error";
 
 /**
@@ -224,7 +225,7 @@ describe("a screen's boundary", () => {
 
     expect(buttonLabels(tree)).toEqual([BACK_LABEL, SCREEN_ERROR_COPY.retry]);
     press(tree, BACK_LABEL);
-    expect(vi.mocked(useRouter)().navigate).toHaveBeenCalledWith("/");
+    expect(vi.mocked(useRouter)().dismissTo).toHaveBeenCalledWith("/");
   });
 
   it("draws no back row where the tab bar is the way out", () => {
@@ -244,29 +245,32 @@ describe("when a screen's boundary tries again", () => {
     params: object | undefined,
     Bomb: () => React.ReactElement,
     navigation = fakeNavigation(),
-    options: { tabBarStyle?: { display: "none" } } = {},
+    navigator: "tabs" | "stack" = "tabs",
   ) {
-    return screenErrorLayout({
+    const props = {
       route: { name: "event-details", params },
       navigation,
-      options,
       children: <Bomb />,
-    });
+    };
+    return navigator === "stack"
+      ? stackScreenLayout(props)
+      : screenErrorLayout(props);
   }
 
-  it("draws the back row only on a screen whose options hide the tab bar", () => {
+  it("draws the back row on a pushed screen and none on a tab", () => {
+    // A pushed screen covers the tab bar; a tab has the bar as its way out.
     const { Bomb } = makeBomb();
-    const hidden = renderInTheme(
-      layout(undefined, Bomb, fakeNavigation(), { tabBarStyle: { display: "none" } }),
+    const pushed = renderInTheme(
+      layout(undefined, Bomb, fakeNavigation(), "stack"),
     );
-    const shown = renderInTheme(layout(undefined, Bomb));
+    const tab = renderInTheme(layout(undefined, Bomb));
 
-    expect(buttonLabels(hidden)).toEqual([BACK_LABEL, SCREEN_ERROR_COPY.retry]);
-    expect(buttonLabels(shown)).toEqual([SCREEN_ERROR_COPY.retry]);
+    expect(buttonLabels(pushed)).toEqual([BACK_LABEL, SCREEN_ERROR_COPY.retry]);
+    expect(buttonLabels(tab)).toEqual([SCREEN_ERROR_COPY.retry]);
   });
 
   it("clears a fallback when the screen is opened for something else", () => {
-    // Tab screens stay mounted, so a failed event must not keep its fallback
+    // A screen can stay mounted while its params change, so a failed event must not keep its fallback
     // when the member opens a different one on the same screen.
     const { Bomb, state } = makeBomb();
     const navigation = fakeNavigation();
@@ -409,7 +413,7 @@ describe("the layouts mount the boundaries", () => {
   });
 
   it("the tab layout exports one and wraps every screen in its own", () => {
-    const tabs = source("(tabs)/_layout.tsx");
+    const tabs = source("(app)/(tabs)/_layout.tsx");
     expect(tabs).toMatch(
       /^export function ErrorBoundary\([^)]*\)\s*\{\s*return <AppErrorScreen \{\.\.\.props\} boundary="tabs" \/>;/m,
     );

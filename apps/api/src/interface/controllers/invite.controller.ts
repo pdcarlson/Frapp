@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -38,6 +39,8 @@ import {
   RedeemInviteDto,
   PreviewInviteDto,
   InvitePreviewResponseDto,
+  InviteListItemDto,
+  BulkEmailInviteResponseDto,
 } from '../dtos/invite.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
@@ -61,12 +64,13 @@ export class InviteController {
   @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
   @GraceBlocked()
   @ApiOperation({ summary: 'Generate an invite token' })
+  @ApiCreatedResponse({ type: InviteListItemDto })
   @FeatureEvent('invite-created', () => ({ invite_method: 'link', count: 1 }))
   async create(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: CreateInviteDto,
-  ) {
+  ): Promise<InviteListItemDto> {
     return this.inviteService.create(chapterId, userId, dto.role);
   }
 
@@ -104,6 +108,7 @@ export class InviteController {
   @ApiOperation({
     summary: 'Generate invite tokens and email each address a join link',
   })
+  @ApiCreatedResponse({ type: BulkEmailInviteResponseDto })
   @FeatureEvent(
     'invite-created',
     ({
@@ -117,7 +122,7 @@ export class InviteController {
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: BulkEmailInviteDto,
-  ) {
+  ): Promise<BulkEmailInviteResponseDto> {
     return this.inviteService.createWithEmails(
       chapterId,
       userId,
@@ -143,12 +148,18 @@ export class InviteController {
   @Post('redeem')
   @ThrottleFanOutWrite()
   @ApiOperation({ summary: 'Redeem an invite token to join a chapter' })
-  @FeatureEvent('invite-redeemed', undefined, {
-    chapterId: ({
-      result,
-    }: FeatureEventInput<RedeemInviteDto, { chapterId: string }>) =>
-      result.chapterId,
-  })
+  @FeatureEvent(
+    'invite-redeemed',
+    ({ signInMethod }: FeatureEventInput) => ({
+      sign_in_method: signInMethod ?? null,
+    }),
+    {
+      chapterId: ({
+        result,
+      }: FeatureEventInput<RedeemInviteDto, { chapterId: string }>) =>
+        result.chapterId,
+    },
+  )
   async redeem(
     @CurrentUser('id') userId: string,
     @Body() dto: RedeemInviteDto,
@@ -163,8 +174,11 @@ export class InviteController {
   @Get()
   @UseGuards(ChapterGuard, PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
-  @ApiOperation({ summary: 'List chapter invites' })
-  async list(@CurrentChapterId() chapterId: string) {
+  @ApiOperation({ summary: 'List chapter invites, newest first' })
+  @ApiOkResponse({ type: InviteListItemDto, isArray: true })
+  async list(
+    @CurrentChapterId() chapterId: string,
+  ): Promise<InviteListItemDto[]> {
     return this.inviteService.findByChapter(chapterId);
   }
 

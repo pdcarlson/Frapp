@@ -4,6 +4,8 @@ import type {
   FeatureEventPropertyKey,
 } from '#domain/constants/feature-events';
 
+import type { SignInMethod } from '../http/sign-in-method';
+
 export const FEATURE_EVENT_KEY = 'feature_event';
 
 /**
@@ -24,6 +26,11 @@ export interface FeatureEventInput<TBody = unknown, TResult = unknown> {
   params: Record<string, string | string[]>;
   query: Record<string, unknown>;
   result: TResult;
+  /**
+   * How the caller signed in (`signInMethodOf`), for the events that mark a
+   * member's first steps. Optional so a describer test can leave it out.
+   */
+  signInMethod?: SignInMethod | null;
 }
 
 /**

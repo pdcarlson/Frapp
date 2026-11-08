@@ -1,3 +1,4 @@
+import { MemberFacingError } from "@repo/hooks/error-copy";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -71,13 +72,26 @@ describe("checkInFailure", () => {
     });
   });
 
-  it("relays anything else, a thrown permission copy included", () => {
+  it("words anything else through the shared map, a thrown permission copy included", () => {
     expect(
-      checkInFailure({ statusCode: 400, message: "You're outside the zone." }),
-    ).toMatchObject({ kind: "error", message: "You're outside the zone." });
-    expect(checkInFailure(new Error("Allow location access."))).toMatchObject({
+      checkInFailure({
+        statusCode: 400,
+        message: "Location is outside the geofence",
+      }),
+    ).toMatchObject({
+      kind: "error",
+      message: "You're outside the zone. Move inside it and try again.",
+    });
+    expect(
+      checkInFailure(new MemberFacingError("Allow location access.")),
+    ).toMatchObject({
       kind: "error",
       message: "Allow location access.",
+    });
+    // A plain Error was written for the console, not the member.
+    expect(checkInFailure(new Error("NSURLErrorDomain -1009"))).toMatchObject({
+      kind: "error",
+      message: "Couldn't check you in.",
     });
     expect(checkInFailure(undefined)).toMatchObject({
       kind: "error",
@@ -97,7 +111,10 @@ describe("checkInFailure", () => {
 
     it("marks a refusal of the code itself", () => {
       expect(
-        attemptOnly({ statusCode: 403, message: CHECK_IN_CODE_REFUSED_MESSAGE }),
+        attemptOnly({
+          statusCode: 403,
+          message: CHECK_IN_CODE_REFUSED_MESSAGE,
+        }),
       ).toBe(true);
       // The API's validation of the scanned token: a QR that is ours in
       // shape but carries no code the server could check.
@@ -152,7 +169,10 @@ describe("checkInFailure", () => {
       ).toBe(false);
       expect(attemptOnly(new Error(CHECK_IN_LOCATION_DENIED_COPY))).toBe(false);
       expect(
-        attemptOnly({ statusCode: 400, message: ["lat must be a latitude string or number"] }),
+        attemptOnly({
+          statusCode: 400,
+          message: ["lat must be a latitude string or number"],
+        }),
       ).toBe(false);
       expect(attemptOnly({ statusCode: 404, message: "Event not found" })).toBe(
         false,

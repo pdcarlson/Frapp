@@ -3,7 +3,12 @@
 import type { ChatNotificationLevel } from "@repo/validation";
 
 import { useEffect, useMemo, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { putSignedUpload } from "./put-signed-upload";
@@ -11,7 +16,7 @@ import { putSignedUpload } from "./put-signed-upload";
 /** The query key `useChannels` caches the channel list under. */
 export const CHANNEL_LIST_KEY = ["channels"] as const;
 
-export function useChannels() {
+export function useChannels(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: CHANNEL_LIST_KEY,
@@ -21,6 +26,7 @@ export function useChannels() {
       return data;
     },
     staleTime: 60_000,
+    enabled: options?.enabled ?? true,
   });
 }
 
@@ -56,6 +62,33 @@ export function useChannelUnreadCounts(options?: { enabled?: boolean }) {
     },
     // Deliberately shorter than the 60s on `useChannels`: a badge that lags a
     // read is the most visible staleness in the app.
+    staleTime: 15_000,
+    enabled: options?.enabled ?? true,
+  });
+}
+
+/** The query key `useChannelLatestMessages` caches under. */
+export const CHANNEL_LATEST_MESSAGES_KEY = ["channels", "latest"] as const;
+
+/**
+ * Each readable channel's latest message, for mobile Chat home's row
+ * previews and times (`GET /v1/channels/latest`). A channel with no message
+ * has no row. Draw the line with `channelPreviewLine` in
+ * `@repo/chat-core/channel-preview`.
+ *
+ * Under the `["channels"]` prefix and on the unread counts' 15s staleness, so
+ * a preview refreshes whenever its row's badge does: the same invalidations
+ * (opening a channel marks it read) and the same refetch on focus.
+ */
+export function useChannelLatestMessages(options?: { enabled?: boolean }) {
+  const client = useFrappClient();
+  return useQuery({
+    queryKey: CHANNEL_LATEST_MESSAGES_KEY,
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/channels/latest");
+      if (error) throw error;
+      return data ?? [];
+    },
     staleTime: 15_000,
     enabled: options?.enabled ?? true,
   });
@@ -535,7 +568,12 @@ export function useRequestChatUploadUrl() {
       body,
     }: {
       id: string;
-      body: { filename: string; content_type: string; size_bytes?: number };
+      body: {
+        filename: string;
+        content_type: string;
+        size_bytes?: number;
+        with_preview?: boolean;
+      };
     }) => {
       const { data, error } = await client.POST(
         "/v1/channels/{id}/upload-url",
@@ -556,7 +594,14 @@ export interface MessageAttachment {
   byte_size: number | null;
   width: number | null;
   height: number | null;
+  /** ThumbHash, base64: draw it (`thumbhash` package) until the photo loads. */
+  thumbhash?: string | null;
   download_url: string;
+  /**
+   * Signed URL of the photo's smaller copy, for the timeline; open
+   * `download_url` full screen. Null or absent: draw `download_url`.
+   */
+  preview_url?: string | null;
 }
 
 /**
@@ -668,6 +713,10 @@ export function useAuthorAvatars(
   return useQuery({
     queryKey: ["channels", channelId, "avatars", messageIdsByDistinctPath],
     enabled: !!channelId && messageIdsByDistinctPath.length > 0,
+    // The key grows as history pages in and new authors appear; keeping the
+    // previous map while the larger one loads stops every avatar already on
+    // screen dropping back to initials for a round-trip.
+    placeholderData: keepPreviousData,
     // Comfortably inside the API's signed-URL TTL, so a URL handed to the DOM
     // is still live when it renders.
     staleTime: 10 * 60_000,

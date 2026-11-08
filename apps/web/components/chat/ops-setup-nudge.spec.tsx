@@ -237,7 +237,7 @@ describe("OpsSetupNudge", () => {
 
   // Not a live region. The nudge is standing advice that is equally true on the
   // member's tenth visit; announcing it would talk over what they opened chat
-  // to read. `offline-banner.tsx` is the contrasting case and takes role=alert.
+  // to read. `connection-pill.tsx` is the contrasting case and takes role=alert.
   it("is a region rather than an alert", () => {
     render(<OpsSetupNudge />);
 

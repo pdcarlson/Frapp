@@ -32,6 +32,8 @@ const state = vi.hoisted(() => ({
   retryBlockList: vi.fn(),
   mutateAsync: vi.fn(),
   dmOptions: [] as unknown[],
+  permissions: [] as string[],
+  roles: [] as unknown[],
 }));
 
 function profile(userId: string, name: string) {
@@ -51,20 +53,20 @@ function profile(userId: string, name: string) {
   };
 }
 
-// Keyed by member id, the id `GET /v1/members/{id}` takes: a sheet that
-// fetched by user id would find nothing here, as it found a 404 on the API.
+// Keyed by user id, the id `GET /v1/members/by-user/{userId}` takes: chat
+// opens the sheet with a sender or mention id, which is never a member row id.
 const PROFILES: Record<string, ReturnType<typeof profile>> = Object.fromEntries(
   [
     profile(ADA, "Ada"),
     profile(BOB, "Bob"),
     profile(SYSTEM_SENDER_ID, "Frapp"),
     profile(VIEWER, "Me"),
-  ].map((p) => [p.id, p]),
+  ].map((p) => [p.user_id, p]),
 );
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useMember: (id: string) => ({
+  useMemberByUserId: (id: string) => ({
     data: PROFILES[id],
     isPending: false,
     isError: false,
@@ -72,9 +74,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isFetching: false,
     refetch: vi.fn(),
   }),
-  useRoles: () => ({ data: [], isPending: false }),
+  useRoles: () => ({ data: state.roles, isPending: false, isSuccess: true }),
   useCustomRoles: () => ({ data: [], isPending: false }),
-  usePermissionList: () => [],
+  usePermissionList: () => state.permissions,
+  useCurrentChapter: () => ({ data: undefined }),
+  useUpdateMemberRoles: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useViewerUserId: () => state.viewer,
   useBlockedUserIds: () => ({
     ids: state.blocked,
@@ -105,6 +109,7 @@ import { SheetHeader } from "@/components/sheet-scaffold";
 import { MemberDetailSheet } from "./member-detail-sheet";
 
 const dismiss = vi.fn();
+const present = vi.fn();
 
 // The directory hands the sheet a ref, and the sheet dismisses itself through
 // it; one ref across re-renders, as the directory's `useRef` is.
@@ -116,7 +121,7 @@ function sheet(userId: string | null) {
     <FrappThemeProvider>
       <MemberDetailSheet
         ref={sheetRef}
-        member={userId ? { memberId: `m-${userId}`, userId } : null}
+        member={userId ? { userId } : null}
       />
     </FrappThemeProvider>
   );
@@ -129,7 +134,7 @@ function render(userId: string | null): ReactTestRenderer {
       // The sheet dismisses itself through its ref; the stand-in modal is a
       // host string, so hand it an instance that records the call.
       createNodeMock: (element) =>
-        element.type === "BottomSheetModal" ? { dismiss } : null,
+        element.type === "BottomSheetModal" ? { dismiss, present } : null,
     });
   });
   return tree;
@@ -161,7 +166,8 @@ describe("MemberDetailSheet as a tall sheet", () => {
 
   it("opens full height, with no Member title or Done, and closes from its X", () => {
     const tree = render(ADA);
-    const modal = tree.root.findByType("BottomSheetModal" as never);
+    // The first modal is the profile; the role editor stacks after it.
+    const modal = tree.root.findAllByType("BottomSheetModal" as never)[0];
     expect(modal.props.snapPoints).toEqual(["100%"]);
     expect(modal.props.enableDynamicSizing).toBe(false);
     // Stops under the status bar, so the X is never in the unsafe area.
@@ -229,7 +235,13 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     expect(unblock.props.action).toBe(true);
     // The member's name heads the sheet (components.md § Chrome weight).
     expect(tree.root.findAllByType(SheetHeader)).toHaveLength(0);
-    expect(JSON.stringify(tree.toJSON())).not.toContain('"Done"');
+    // The role editor's list header is a React element prop, which links
+    // back to its fiber; skip those links.
+    expect(
+      JSON.stringify(tree.toJSON(), (key, value) =>
+        key === "_owner" || key === "_store" ? undefined : value,
+      ),
+    ).not.toContain('"Done"');
     act(() => tree.unmount());
   });
 
@@ -269,7 +281,7 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     const tree = render(ADA);
     const [row] = messageRows(tree);
     expect(row.props.disabled).toBe(true);
-    expect(row.props.description).toBe(MESSAGE_CHECKING_BLOCK_LIST);
+    expect(row.props.accessibilityHint).toBe(MESSAGE_CHECKING_BLOCK_LIST);
     act(() => tree.unmount());
   });
 
@@ -279,7 +291,7 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     const tree = render(ADA);
     const [row] = messageRows(tree);
     expect(row.props.disabled).toBe(true);
-    expect(row.props.description).toBe(
+    expect(row.props.accessibilityHint).toBe(
       "Couldn't check your block list first. Retries when you're back online.",
     );
     act(() => tree.unmount());
@@ -290,7 +302,7 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     const tree = render(ADA);
     const [row] = messageRows(tree);
     expect(row.props.disabled).toBe(false);
-    expect(row.props.description).toBe(
+    expect(row.props.accessibilityHint).toBe(
       "Couldn't check your block list first. Tap to try again.",
     );
 
@@ -306,7 +318,7 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     const tree = render(ADA);
     const [row] = messageRows(tree);
     expect(row.props.disabled).toBe(true);
-    expect(row.props.description).toBe(MESSAGE_CHECKING_BLOCK_LIST);
+    expect(row.props.accessibilityHint).toBe(MESSAGE_CHECKING_BLOCK_LIST);
     act(() => tree.unmount());
   });
 
@@ -521,7 +533,7 @@ describe("MemberDetailSheet fact rows", () => {
     state.blockStatus = "ready";
     state.blocked = new Set();
     state.blockPaused = false;
-    PROFILES[`m-${CARA}`] = {
+    PROFILES[CARA] = {
       ...profile(CARA, "Cara"),
       custom_fields: [
         {
@@ -534,21 +546,83 @@ describe("MemberDetailSheet fact rows", () => {
     };
   });
 
-  it("draws Email, Role, Joined and each custom field as detail rows", () => {
+  it("draws Email, Member since and each custom field as detail rows", () => {
     const tree = render(CARA);
     const rows = tree.root.findAllByType(ListRow);
-    const variantOf = (label: string) =>
-      rows.find((row) => row.props.label === label)?.props.variant;
+    const rowOf = (label: string) =>
+      rows.find((row) => row.props.label === label);
 
-    expect(variantOf("Email")).toBe("detail");
-    expect(variantOf("Role")).toBe("detail");
-    expect(variantOf("Joined")).toBe("detail");
-    expect(variantOf(LONG_LABEL)).toBe("detail");
-    expect(
-      rows.find((row) => row.props.label === LONG_LABEL)?.props.value,
-    ).toBe("Jordan Lee, 555-0100");
-    // The actions stay default rows: their label names what a tap does.
-    expect(variantOf("Message")).toBeUndefined();
+    expect(rowOf("Email")?.props.variant).toBe("detail");
+    // Tapping the address starts an email to them.
+    expect(rowOf("Email")?.props.onPress).toBeTypeOf("function");
+    expect(rowOf("Member since")?.props.variant).toBe("detail");
+    // Written out: no abbreviated month in the UI.
+    expect(rowOf("Member since")?.props.value).toMatch(/August/);
+    expect(rowOf(LONG_LABEL)?.props.variant).toBe("detail");
+    expect(rowOf(LONG_LABEL)?.props.value).toBe("Jordan Lee, 555-0100");
     act(() => tree.unmount());
+  });
+});
+
+describe("MemberDetailSheet roles", () => {
+  beforeEach(() => {
+    state.viewer = VIEWER;
+    state.blockStatus = "ready";
+    state.blocked = new Set();
+    state.roles = [
+      { id: "r-member", name: "Member", is_system: true, permissions: [] },
+    ];
+  });
+
+  function editButton(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) =>
+        node.props.accessibilityLabel === "Edit Ada's roles" &&
+        typeof node.props.onPress === "function",
+    )[0];
+  }
+
+  it("draws the member's roles as chips, top-ranked first", () => {
+    state.roles = [
+      { id: "r-b", name: "Brothers", color: "#5CC8F0", display_order: 5 },
+      { id: "r-p", name: "President", color: "#F2994A", display_order: 1 },
+    ];
+    PROFILES[ADA] = { ...profile(ADA, "Ada"), role_ids: ["r-b", "r-p"] as never[] };
+    const tree = render(ADA);
+    const text = tree.root
+      .findAllByType("Text" as never)
+      .map((node) => node.props.children)
+      .filter((child) => child === "President" || child === "Brothers");
+    expect(text).toEqual(["President", "Brothers"]);
+    act(() => tree.unmount());
+    PROFILES[ADA] = profile(ADA, "Ada");
+  });
+
+  it("offers no Edit to a viewer without roles:manage", () => {
+    state.permissions = ["members:view"];
+    const tree = render(ADA);
+    expect(editButton(tree)).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("opens the role editor for this member when the viewer holds roles:manage", () => {
+    state.permissions = ["members:view", "roles:manage"];
+    const tree = render(ADA);
+    const button = editButton(tree);
+    expect(button?.props.onPress).toBeTypeOf("function");
+    act(() => button?.props.onPress());
+    const editor = tree.root.find(
+      (node) =>
+        typeof node.type !== "string" && node.props.session !== undefined,
+    );
+    expect(present).toHaveBeenCalled();
+    expect(editor.props.session).toEqual({
+      memberId: `m-${ADA}`,
+      name: "Ada",
+      heldIds: [],
+      customRoleNames: [],
+    });
+    act(() => tree.unmount());
+    state.permissions = [];
   });
 });

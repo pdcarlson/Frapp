@@ -368,6 +368,11 @@ calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111
    build until it was listed. Fix it on `main` before the next production ship, or waive a route
    no shipped binary calls ([`apps/mobile/store/README.md` § Shipped builds and the API contract](../../../apps/mobile/store/README.md#shipped-builds-and-the-api-contract)).
    Don't merge around it.
+   Once that PR merges, the **Mobile release tags** workflow tags the build's commit
+   `mobile-vX.Y.Z` (the store version) with its own GitHub Release, never marked latest
+   (`scripts/ci/mint-mobile-release-tags.mjs`). The plain `vX.Y.Z` tags count web and API
+   deploys and don't match the store numbers; `mobile-v*` doesn't match the `v*` glob anything
+   here reads. Run that workflow by hand to retry or backfill; it only adds what is missing.
 3. **`confirm`** waits out Expo's queue beside `record`
    (`scripts/ci/confirm-store-submissions.mjs`). It polls each submission through EAS's GraphQL
    API with `EXPO_TOKEN`, from the trusted ref with nothing installed. `eas submit:view --json`

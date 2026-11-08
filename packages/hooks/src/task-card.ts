@@ -1,3 +1,4 @@
+import { STATUS_LABELS } from "@repo/validation";
 import type { TaskStatus } from "./use-tasks";
 
 /**
@@ -10,24 +11,69 @@ import type { TaskStatus } from "./use-tasks";
  * and who may confirm (#1056). Pure, so both renderers' specs can drive them.
  */
 
-/** The member-facing word for each status, on every task card. */
-export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  TODO: "To do",
-  IN_PROGRESS: "In progress",
-  COMPLETED: "Awaiting confirmation",
-  OVERDUE: "Overdue",
-};
+/**
+ * The member-facing word for each status, on every task surface: the web
+ * board's columns, the mobile board's rows and detail sheet, and both chat
+ * cards. One table, so a task never reads one way on web and another on mobile.
+ *
+ * `COMPLETED` is the assignee's half of the job, not the end of it: an officer
+ * still has to confirm before points move. It says who the task is waiting on,
+ * so a member doesn't read it as settled while the officer reads it as theirs
+ * to act on. "Done" alone was what mobile said, and it meant the opposite of
+ * web's "Awaiting confirmation" to the member reading it.
+ */
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> =
+  STATUS_LABELS.task;
+
+/** The word for a completion an officer has confirmed. */
+export const TASK_CONFIRMED_LABEL = "Confirmed";
 
 /**
- * The word a task card's status badge shows.
+ * The verbs every task surface puts on its controls, so web's buttons, the
+ * mobile sheet and both chat cards name each move the same way.
+ */
+export const TASK_ACTION_LABELS = {
+  start: "Start",
+  complete: "Mark done",
+  /** The assignee taking back their own "done" before an officer confirms it. */
+  reopen: "Mark not done",
+  confirm: "Confirm",
+  confirmed: TASK_CONFIRMED_LABEL,
+  reject: "Reject",
+} as const;
+
+/**
+ * The word a task's status shows, wherever it is drawn.
  *
  * `TASK_STATUS_LABELS` by status, except a confirmed completion: confirming
  * leaves `status` at `COMPLETED` and sets `points_awarded`, so the label alone
- * would go on calling a confirmed task "Awaiting confirmation" forever.
+ * would go on saying "Waiting on an officer" forever.
  */
-export function taskCardStatusLabel(live: LiveTask): string {
-  if (live.status === "COMPLETED" && live.points_awarded) return "Confirmed";
-  return TASK_STATUS_LABELS[live.status];
+export function taskStatusLabel(task: {
+  status: TaskStatus;
+  points_awarded: boolean;
+}): string {
+  if (task.status === "COMPLETED" && task.points_awarded) {
+    return TASK_CONFIRMED_LABEL;
+  }
+  return TASK_STATUS_LABELS[task.status];
+}
+
+/**
+ * Whether the assignee can take back their own "done": the task is completed
+ * and no officer has confirmed it. The server allows `COMPLETED → IN_PROGRESS`
+ * for the assignee only in that window (`task.service.ts`), as a
+ * compare-and-set against a confirm, so this is the client's offer, never the
+ * grant.
+ */
+export function canReopenOwnTask(input: {
+  stored: TaskStatus | undefined;
+  pointsAwarded: boolean;
+  isAssignee: boolean;
+}): boolean {
+  return (
+    input.isAssignee && input.stored === "COMPLETED" && !input.pointsAwarded
+  );
 }
 
 /** The task as `GET /v1/tasks/{id}` returns it, as much as a card reads. */
@@ -113,11 +159,7 @@ export function actionStatus(
  * confirmed, and the card never shows a live Confirm for it twice.
  */
 export type TaskCardControl =
-  | "start"
-  | "complete"
-  | "confirm"
-  | "confirmed"
-  | "reject";
+  "start" | "complete" | "confirm" | "confirmed" | "reject";
 
 /**
  * Whether the viewer may read the card's task at all. `GET /v1/tasks/{id}`

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { MISSING_SIGNED_UPLOAD, readSignedUpload } from "./signed-upload";
+import {
+  MISSING_SIGNED_UPLOAD,
+  readPreviewUpload,
+  readSignedUpload,
+} from "./signed-upload";
 
 describe("readSignedUpload", () => {
   it("reads the snake_case upload-URL contract", () => {
@@ -51,5 +55,34 @@ describe("readSignedUpload", () => {
         storage_path: "chapters/c/backwork/r/notes.pdf",
       }),
     ).toThrow(MISSING_SIGNED_UPLOAD);
+  });
+});
+
+describe("readPreviewUpload", () => {
+  it("reads the preview half of a chat photo's ticket", () => {
+    expect(
+      readPreviewUpload({
+        upload_url: "https://storage.example/put",
+        storage_path: "chapters/c/chat/ch/m/IMG.jpg",
+        preview_upload_url: "https://storage.example/put-preview",
+        preview_storage_path: "chapters/c/chat/ch/m/preview/preview.jpg",
+      }),
+    ).toEqual({
+      signedUrl: "https://storage.example/put-preview",
+      storagePath: "chapters/c/chat/ch/m/preview/preview.jpg",
+    });
+  });
+
+  it("answers null, not an error, for a ticket with no preview", () => {
+    expect(
+      readPreviewUpload({
+        upload_url: "https://storage.example/put",
+        storage_path: "chapters/c/chat/ch/m/IMG.jpg",
+      }),
+    ).toBeNull();
+    expect(readPreviewUpload(null)).toBeNull();
+    expect(
+      readPreviewUpload({ preview_upload_url: "", preview_storage_path: "x" }),
+    ).toBeNull();
   });
 });

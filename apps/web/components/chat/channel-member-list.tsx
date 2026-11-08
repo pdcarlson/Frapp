@@ -1,13 +1,17 @@
 "use client";
 
-import { useId, useMemo } from "react";
+import { useId, useMemo, useState } from "react";
 import {
-  compareChannelMembers,
+  MEMBER_SEARCH_THRESHOLD,
+  filterChannelMembers,
+  groupChannelMembersByRole,
   memberLabel,
   useChannelMembers,
   useMemberDisplayNames,
+  type ChannelMemberRoleGroup,
 } from "@repo/hooks";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
 import { EYEBROW } from "@/components/ui/typography";
 import { Skeleton } from "@/components/shared/async-states";
 import { AvatarPresenceDot } from "@/components/members/presence-dot";
@@ -22,56 +26,28 @@ export interface ChannelMemberRow {
   avatarUrl: string | null;
   roleColor: string | null;
   roleRank: number | null;
+  /** The highest role's id, the group this row sits in. */
+  roleId: string | null;
+  roleName: string | null;
   /** `null` until presence has resolved: no dot, and no claim of Offline. */
   status: PresenceStatus | null;
 }
 
-export interface ChannelMemberGroup {
-  key: PresenceStatus | "all";
-  label: string;
-  rows: ChannelMemberRow[];
-}
+export type ChannelMemberGroup = ChannelMemberRoleGroup<ChannelMemberRow>;
 
-const GROUP_LABELS: Record<PresenceStatus, string> = {
+const STATUS_LABELS: Record<PresenceStatus, string> = {
   online: "Online",
   idle: "Idle",
   offline: "Offline",
 };
 
 /**
- * Online, then Idle, then Offline, each sorted by `compareChannelMembers` (`@repo/hooks`, shared with mobile); empty
- * groups are dropped. Before presence resolves every status is `null`, and the
- * rows come back as one unlabelled-by-status "Members" group rather than all
- * claiming Offline, which would be a statement about each member sourced from
- * our own unfinished join (`presence-dot.tsx`).
- */
-export function groupChannelMembers(
-  rows: readonly ChannelMemberRow[],
-): ChannelMemberGroup[] {
-  if (rows.every((row) => row.status === null)) {
-    return rows.length
-      ? [
-          {
-            key: "all",
-            label: "Members",
-            rows: [...rows].sort(compareChannelMembers),
-          },
-        ]
-      : [];
-  }
-  return (["online", "idle", "offline"] as const).flatMap((status) => {
-    const inGroup = rows
-      .filter((row) => (row.status ?? "offline") === status)
-      .sort(compareChannelMembers);
-    return inGroup.length
-      ? [{ key: status, label: GROUP_LABELS[status], rows: inGroup }]
-      : [];
-  });
-}
-
-/**
- * Who can read the open channel, Discord-style (#3536): grouped by presence,
- * officers first within each group, names in their role color.
+ * Who can read the open channel, Discord-style (#3536): grouped under each
+ * reader's highest role, in role order, names A to Z and in their role color
+ * (`groupChannelMembersByRole`, shared with the mobile sheet). Presence only
+ * paints the dot and dims an offline avatar: it never moves a row, so the list
+ * holds still when presence arrives (principles.md P4.4). Past
+ * {@link MEMBER_SEARCH_THRESHOLD} readers a search field filters by name.
  *
  * Read-only rows. Nothing here is a control yet, so the rows are list items
  * rather than buttons, and the list is announced by its heading.
@@ -94,9 +70,19 @@ export function ChannelMemberList({
   const { byId, avatarFor, roleColorFor } = roster;
   const presence = useChapterPresenceContext();
 
-  const groups = useMemo(() => {
-    const rows: ChannelMemberRow[] = (membersQuery.data ?? []).map(
-      (member) => ({
+  const [query, setQuery] = useState("");
+  // A search belongs to the channel it was typed in: switching channels
+  // starts the next list unfiltered (adjusting state on a prop change during
+  // render, not in an effect, so no frame draws the old filter).
+  const [queryFor, setQueryFor] = useState(channelId);
+  if (queryFor !== channelId) {
+    setQueryFor(channelId);
+    setQuery("");
+  }
+
+  const rows = useMemo<ChannelMemberRow[]>(
+    () =>
+      (membersQuery.data ?? []).map((member) => ({
         userId: member.user_id,
         // `memberLabel`, never a drop: a member who never set a name (or whose
         // roster row is missing) still reads the channel, so they are listed
@@ -105,11 +91,18 @@ export function ChannelMemberList({
         avatarUrl: avatarFor(member.user_id),
         roleColor: roleColorFor(member.user_id),
         roleRank: member.role_rank,
+        roleId: member.role_id ?? null,
+        roleName: member.role_name ?? null,
         status: presence.isReady ? presence.statusOf(member.user_id) : null,
-      }),
-    );
-    return groupChannelMembers(rows);
-  }, [membersQuery.data, byId, avatarFor, roleColorFor, presence]);
+      })),
+    [membersQuery.data, byId, avatarFor, roleColorFor, presence],
+  );
+  const searchable = rows.length > MEMBER_SEARCH_THRESHOLD;
+  const trimmed = searchable ? query.trim() : "";
+  const groups = useMemo(
+    () => groupChannelMembersByRole(filterChannelMembers(rows, trimmed)),
+    [rows, trimmed],
+  );
 
   // Names come from the roster, so a list without them is not ready either.
   // A read fails the list only when it has nothing to draw: TanStack keeps
@@ -130,6 +123,25 @@ export function ChannelMemberList({
       <h2 id={headingId} className="sr-only">
         Members
       </h2>
+      {searchable && !failed && !loading ? (
+        <div className="px-2 pt-3">
+          <Input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && query) {
+                event.preventDefault();
+                event.stopPropagation();
+                setQuery("");
+              }
+            }}
+            placeholder={`Search ${rows.length} members`}
+            aria-label="Search members"
+            className="h-8 px-2.5 pointer-coarse:h-11"
+          />
+        </div>
+      ) : null}
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
         {failed ? (
           <div className="space-y-2 px-2 py-4 text-center text-caption text-muted-foreground">
@@ -147,6 +159,13 @@ export function ChannelMemberList({
           </div>
         ) : loading ? (
           <MemberListSkeleton />
+        ) : groups.length === 0 && trimmed ? (
+          <p
+            role="status"
+            className="px-2 py-4 text-center text-caption text-muted-foreground"
+          >
+            No one named &ldquo;{trimmed}&rdquo;
+          </p>
         ) : (
           groups.map((group) => <MemberGroup key={group.key} group={group} />)
         )}
@@ -212,7 +231,7 @@ function MemberRow({ row }: { row: ChannelMemberRow }) {
         {row.name}
       </span>
       {row.status ? (
-        <span className="sr-only">, {GROUP_LABELS[row.status]}</span>
+        <span className="sr-only">, {STATUS_LABELS[row.status]}</span>
       ) : null}
     </li>
   );

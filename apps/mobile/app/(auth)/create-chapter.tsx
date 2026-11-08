@@ -1,4 +1,11 @@
-import { useEffect, useState, type ReactNode, type Ref } from "react";
+import { errorCopy } from "@repo/hooks/error-copy";
+import {
+  useEffect,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { Redirect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -31,7 +38,6 @@ import {
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import { SignetTokens } from "@repo/theme/signet";
-import { serverMessageOf } from "@repo/api-sdk";
 import {
   CHAPTER_SHORT_NAME_MAX_LENGTH,
   resolveChapterMark,
@@ -40,7 +46,11 @@ import { useAuthSession } from "@/lib/auth-session";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { ChoiceRow } from "@/components/auth/choice-row";
 import { AccentPicker } from "@/components/chapter/accent-picker";
-import { PushPrimerCard } from "@/components/notifications/push-primer-card";
+import {
+  PUSH_ASK_TITLE,
+  PushAskActions,
+  PushAskBody,
+} from "@/components/notifications/push-ask";
 import { BackRow } from "@/components/back-row";
 import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
 import {
@@ -68,10 +78,14 @@ import {
   type ChapterIdentityForm,
 } from "@repo/hooks/chapter-identity";
 import { onboardedChapterId } from "@/lib/onboarding/chapter-wizard/invite-link";
-import { useInviteShares } from "@/lib/onboarding/chapter-wizard/use-invite-shares";
+import {
+  INVITE_ROLE,
+  useInviteShares,
+} from "@/lib/onboarding/chapter-wizard/use-invite-shares";
 import { pickAndSetChapterLogo } from "@/lib/onboarding/chapter-wizard/chapter-logo";
 import { useSelectChapter } from "@/lib/select-chapter";
 import { usePushPrimer } from "@/lib/notifications/use-push-primer";
+import { useHoldSwipeBack } from "@/lib/back-target";
 import { useBackToClose } from "@/lib/overlay";
 import { successHaptic } from "@/lib/haptics";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
@@ -84,7 +98,8 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * Three steps make the chapter: **Find** it in the directory, **Confirm** the
  * match (or describe it by hand), and pick its **Color**. Creating it opens
  * three more: the **live** moment with its channels and an optional logo, the
- * push primer when this build can push, and the **invite** link. Then chat.
+ * notifications step when this build can push and push is off, and the
+ * **invite** link. Then chat.
  *
  * One route, with the steps as state: `POST /v1/chapters/onboard` flips the
  * membership count to 1 mid-flow, and every gate exempts `/create-chapter` by
@@ -114,7 +129,7 @@ export const SETUP_TITLES = {
   confirmMatch: "Is this your chapter?",
   confirmManual: "Tell us about your chapter",
   color: "Pick your color",
-  primer: "Stay in the loop",
+  primer: PUSH_ASK_TITLE,
   invite: "Invite your chapter",
 } as const;
 
@@ -220,6 +235,7 @@ export default function CreateChapter() {
   const invite = useInviteShares({
     active: step === "invite",
     chapterName: displayName,
+    role: INVITE_ROLE,
     onError: setError,
   });
 
@@ -283,12 +299,16 @@ export default function CreateChapter() {
   }
 
   function finish() {
-    router.replace("/(tabs)");
+    router.dismissTo("/");
   }
 
   // Android back steps back through setup, and once the chapter exists it
   // leaves for chat: there is no going back to before the chapter was made.
   useBackToClose(step === "confirm" || step === "color", goBack);
+  // The iOS swipe can't step back through these steps, which are one route,
+  // and popping the flow would drop what was entered (navigation.md § Going
+  // back).
+  useHoldSwipeBack(step === "confirm" || step === "color");
   useBackToClose(created, finish);
 
   async function submitChapter() {
@@ -318,8 +338,10 @@ export default function CreateChapter() {
       successHaptic();
     } catch (caught) {
       setError(
-        serverMessageOf(caught) ??
+        errorCopy(
+          caught,
           "Couldn't create that chapter. Check the details and try again.",
+        ),
       );
     }
   }
@@ -357,17 +379,14 @@ export default function CreateChapter() {
   }
 
   async function answerPrimer(answer: "on" | "not-now") {
-    try {
-      if (answer === "on") {
-        await primer.turnOn();
-      } else {
-        await primer.notNow();
-      }
-    } finally {
-      // Either answer moves on, even when the OS prompt failed: the primer
-      // step has no other way forward.
-      afterPrimer();
-    }
+    // `null` / `false`: another answer is already on its way, and it moves on.
+    const moved =
+      answer === "on"
+        ? (await primer.turnOn()) !== null
+        : await primer.notNow();
+    // Either answer moves on, even when the OS prompt failed: the step has no
+    // other way forward.
+    if (moved) afterPrimer();
   }
 
   if (status === "unauthenticated") {
@@ -575,7 +594,7 @@ export default function CreateChapter() {
                       <Text style={styles.body}>
                         Your channels are ready. Invite your members next.
                       </Text>
-                      <JoinedChannelsCard trailing="ready" />
+                      <JoinedChannelsCard />
                     </>
                   ) : (
                     <Text style={styles.body}>
@@ -619,18 +638,10 @@ export default function CreateChapter() {
                 </View>
               ) : null}
 
-              {/* No line over the card: the card makes its own case. */}
+              {/* The same step a joining member sees on s03. */}
               {step === "primer" ? (
                 <View style={styles.stack}>
-                  <PushPrimerCard
-                    isRequesting={primer.isRequesting}
-                    onTurnOn={() => {
-                      void answerPrimer("on");
-                    }}
-                    onNotNow={() => {
-                      void answerPrimer("not-now");
-                    }}
-                  />
+                  <PushAskBody />
                 </View>
               ) : null}
 
@@ -676,6 +687,16 @@ export default function CreateChapter() {
               void invite.share();
             }}
             onFinish={finish}
+            primer={{
+              action: primer.action,
+              busy: primer.isRequesting,
+              onTurnOn: () => {
+                void answerPrimer("on");
+              },
+              onNotNow: () => {
+                void answerPrimer("not-now");
+              },
+            }}
             styles={styles}
           />
         </View>
@@ -688,8 +709,8 @@ type Styles = ReturnType<typeof createStyles>;
 
 /**
  * The one primary button, pinned under the scroll. The find step has none
- * (a result or "Not in our directory?" moves on) and the primer has its own
- * pair of answers.
+ * (a result or "Not in our directory?" moves on). The notifications step pins
+ * its own pair, `PushAskActions`, as s03 does.
  *
  * On the invite step the gold button is the thing the step is for: `Share
  * invite`, with the platform's share mark, which sends a fresh link each press
@@ -711,6 +732,7 @@ function Footer({
   onLeaveLive,
   onShare,
   onFinish,
+  primer,
   styles,
 }: {
   step: Step;
@@ -726,8 +748,16 @@ function Footer({
   onLeaveLive: () => void;
   onShare: () => void;
   onFinish: () => void;
+  primer: ComponentProps<typeof PushAskActions>;
   styles: Styles;
 }) {
+  if (step === "primer") {
+    return (
+      <View style={styles.footer}>
+        <PushAskActions {...primer} />
+      </View>
+    );
+  }
   if (step === "invite") {
     return (
       <View style={styles.footer}>

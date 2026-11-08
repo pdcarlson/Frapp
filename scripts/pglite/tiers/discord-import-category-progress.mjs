@@ -86,8 +86,8 @@ console.log("\n=== Functional: an import's progress per Discord category ===");
       wrongChapter,
     });
 
-    // As in the other Discord tiers: a forgotten revoke is checked against the
-    // roles the harness has; hosted default privileges are not replayed.
+    // As in the other Discord tiers: hosted's default privileges are installed
+    // by `run.mjs`, so a forgotten revoke from either role fails here.
     const guard = await q(`
       select has_function_privilege('authenticated', 'public.discord_import_category_progress(uuid, uuid)', 'execute') as authed,
              has_function_privilege('anon', 'public.discord_import_category_progress(uuid, uuid)', 'execute') as anon

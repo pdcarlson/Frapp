@@ -118,7 +118,9 @@ constraints web habits most often break:
 - The theme is dark-only. The context is `{ tokens: SignetTokens }`, with no light/dark preference,
   no `resolvedTheme`, and no `useColorScheme`.
 - Don't put raw hex or hand-set type in screen code. Set type only through
-  `typeRole(tokens.typography.role.X)`, which carries the per-weight Figtree family.
+  `typeRole(tokens.typography.role.X)`, which carries the per-weight Figtree family, and on a
+  single-line `TextInput` through `fieldTypeRole(...)`, which leaves out the line height that
+  draws iOS field text below center ([`components.md` § Text input](../../../spec/ui/design-system/components.md#text-input)).
   `fontSize`/`fontWeight` literals, or arithmetic on a role token, are defects. Use `tint(hue)` for
   semantic fills (0.13 default, 0.3 for borders), `MONO_FONT_FAMILY` for mono, and
   `avatarRadius(size)` for avatars. All of these live in `lib/theme.tsx`.
@@ -135,10 +137,12 @@ constraints web habits most often break:
   (`@/lib/payments/stripe`, `@/lib/notifications/push`, `@/lib/keyboard`, `@/lib/apple-auth`,
   `@/lib/google-auth`), which check the runtime and degrade. ESLint `no-restricted-imports` rejects
   a direct import.
-- Seven files are frozen: `app/_layout.tsx`, `app/(tabs)/_layout.tsx`, `lib/theme.tsx`,
-  `components/screen-shell.tsx`, `lib/href.ts`, `package.json`, `app.json`. Every planned route
-  is already registered hidden (`href: null`) with a stub file, so building a screen means filling
-  in the stub. A change that needs one of the seven (a dependency, including an internal `@repo/*`
+- Eight files are frozen: `app/_layout.tsx`, `app/(app)/_layout.tsx`, `app/(app)/(tabs)/_layout.tsx`,
+  `lib/theme.tsx`, `components/screen-shell.tsx`, `lib/href.ts`, `package.json`, `app.json`. Every
+  planned route is already registered on the stack in `app/(app)/_layout.tsx` with a backing file,
+  so building a screen means filling in the file. A new route goes in `app/(app)/`, never in
+  `app/(app)/(tabs)/` (that would be a fifth tab), and must go back by the platform gesture
+  ([`navigation.md`](../../../spec/ui/mobile/navigation.md) § Going back). A change that needs one of the eight (a dependency, including an internal `@repo/*`
   package, a config plugin, a shared prop) is a separate integrator PR. See
   [`navigation.md`](../../../spec/ui/mobile/navigation.md) § Hotspot freeze.
 - Route strings aren't compile-checked in CI, because typed-route output is gitignored and only

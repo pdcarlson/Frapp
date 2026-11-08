@@ -369,8 +369,8 @@ export class ChapterService {
     // No contrast gate here any more, and its removal is the point rather than
     // an oversight. `accent_color` is now a mirror of `branding.colors.accent`,
     // which is deliberately not contrast-gated (spec/behavior/branding.md): it
-    // is the accent engine's seed, and gating it would reject 49 of the 50 real
-    // chapters in the directory seed.
+    // is the accent engine's seed, and gating it would reject most organizations'
+    // colors (49 of the 50 chapters in the first directory seed).
     //
     // Keeping the gate on only this path made the column reachable in a state
     // it then refused to accept: onboarding, the config PATCH, and the backfill

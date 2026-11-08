@@ -33,8 +33,8 @@ export type ChatReportTab = {
   label: string;
   /** "Dismissed by …" on a resolved row. Unused on `open`. */
   resolvedVerb: string;
-  emptyTitle: string;
-  emptyDescription: string;
+  /** The tab at zero, as one line (empty-states plan rule 7). */
+  empty: string;
 };
 
 /** Open first: it is the queue, and the other three are its history. */
@@ -43,30 +43,25 @@ export const CHAT_REPORT_TABS: readonly ChatReportTab[] = [
     status: "open",
     label: "Open",
     resolvedVerb: "",
-    emptyTitle: "No open reports",
-    emptyDescription:
-      "When a member reports a message, it lands here for officers to review.",
+    empty: "No open reports.",
   },
   {
     status: "reviewed",
     label: "Reviewed",
     resolvedVerb: "Reviewed",
-    emptyTitle: "No reviewed reports",
-    emptyDescription: "Reports marked reviewed are kept here.",
+    empty: "No reviewed reports.",
   },
   {
     status: "actioned",
     label: "Actioned",
     resolvedVerb: "Actioned",
-    emptyTitle: "No actioned reports",
-    emptyDescription: "Reports whose message was removed are kept here.",
+    empty: "No actioned reports.",
   },
   {
     status: "dismissed",
     label: "Dismissed",
     resolvedVerb: "Dismissed",
-    emptyTitle: "No dismissed reports",
-    emptyDescription: "Reports you dismiss are kept here.",
+    empty: "No dismissed reports.",
   },
 ];
 
@@ -98,11 +93,9 @@ export const chatReportCopy = {
   errorTitle: "Couldn't load reports",
   /** Over rows a failed background refetch left on screen. */
   stale: "Couldn't refresh the reports. These are the last ones that loaded.",
-  errorDescription: "Confirm your chapter access and retry.",
   offlineTitle: "Reports unavailable offline",
   offlineDescription: "Reconnect to review reported messages.",
-  noChapterTitle: "No chapter selected",
-  noChapterDescription: "Pick an active chapter to review its reports.",
+  noChapter: "Pick an active chapter to review its reports.",
   /**
    * Restates `CHAT_REPORT_QUEUE_PERMISSIONS` (`@repo/validation`) in words;
    * `chat-report-copy.spec.ts` fails if it stops naming one of them.

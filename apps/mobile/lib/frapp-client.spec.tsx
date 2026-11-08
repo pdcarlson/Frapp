@@ -14,6 +14,7 @@ vi.mock("./auth-session", () => ({
 // Forces the store-build path: the suite-wide `expo-constants` mock in
 // `vitest.setup.ts` runs as Expo Go. The header value itself is
 // `client-version.spec.ts`'s.
+vi.mock("./supabase", () => ({ getSupabaseClient: () => null }));
 vi.mock("./expo-go", () => ({ isExpoGo: () => false }));
 
 vi.mock("./auth-token", () => ({

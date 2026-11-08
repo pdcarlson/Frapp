@@ -8,10 +8,9 @@ import { OnboardingPressable } from "./onboarding-pressable";
 /**
  * The outlined button beside `OnboardingPrimaryButton`: components.md
  * § Buttons' Secondary, a card fill under the input border's 14% white, the
- * way the board draws s01's "Continue with Apple" and s03's "Go to chat". For
- * the action next to the one step forward, never a second gold one: s01's
- * second provider and "Continue with email", setup's logo button, and s03's
- * "Go to chat" while the push primer's "Turn on" is the gold one.
+ * way the board draws s01's "Continue with Apple". For the action next to the
+ * one step forward, never a second gold one: s01's second provider and
+ * "Continue with email", and setup's logo button.
  *
  * `leading` sits before the label (a provider's mark, or its spinner while
  * that provider's sign-in runs). `busy` swaps the label for a spinner.

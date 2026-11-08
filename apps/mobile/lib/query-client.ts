@@ -1,5 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { createReportingCaches } from "@/lib/sentry/query-errors";
+import { forgetDuesMemory } from "@/lib/dues/visit-memory";
+import { forgetCachedChatPhotos } from "@/lib/chat/photo-cache";
 
 /**
  * `networkMode: "offlineFirst"` is load-bearing, not a tuning knob.
@@ -71,4 +73,8 @@ export const queryClient = new QueryClient({
  */
 export function clearProductQueryCache(): void {
   queryClient.clear();
+  // Dues' captured payments outlive its screen, so they go with the cache.
+  forgetDuesMemory();
+  // So do chat photos cached on disk, which outlive the session entirely.
+  forgetCachedChatPhotos();
 }

@@ -14,7 +14,12 @@ import { ChannelMemberSheet, MemberRows } from "./channel-member-sheet";
 
 const state = vi.hoisted(() => ({
   members: {} as {
-    data?: { user_id: string; role_rank: number | null }[];
+    data?: {
+      user_id: string;
+      role_rank: number | null;
+      role_id?: string | null;
+      role_name?: string | null;
+    }[];
     isPending?: boolean;
     isError?: boolean;
     refetch?: () => void;
@@ -71,10 +76,16 @@ function render(element: React.ReactElement): ReactTestRenderer {
   return tree;
 }
 
-/** The member rows, by the accessible name each row carries. */
+/** The member rows (or the skeleton), by the accessible name each carries. */
 const rowNames = (tree: ReactTestRenderer) =>
   tree.root
-    .findAll((node) => node.type === ("View" as never) && node.props.accessible)
+    .findAll(
+      (node) =>
+        (node.type === ("View" as never) && node.props.accessible) ||
+        // A row is a Pressable, which opens that member's profile.
+        (typeof node.props.accessibilityLabel === "string" &&
+          typeof node.props.onPress === "function"),
+    )
     .map((node) => node.props.accessibilityLabel as string);
 
 const text = (tree: ReactTestRenderer) =>
@@ -87,10 +98,25 @@ const text = (tree: ReactTestRenderer) =>
 beforeEach(() => {
   state.members = {
     data: [
-      { user_id: "u-member", role_rank: 5 },
-      { user_id: "u-officer", role_rank: 2 },
-      { user_id: "u-blank", role_rank: null },
-      { user_id: "u-pres", role_rank: 0 },
+      {
+        user_id: "u-member",
+        role_rank: 5,
+        role_id: "r-mem",
+        role_name: "Member",
+      },
+      {
+        user_id: "u-officer",
+        role_rank: 2,
+        role_id: "r-off",
+        role_name: "Treasurer",
+      },
+      { user_id: "u-blank", role_rank: null, role_id: null, role_name: null },
+      {
+        user_id: "u-pres",
+        role_rank: 0,
+        role_id: "r-pres",
+        role_name: "President",
+      },
     ],
   };
   state.roster = {};
@@ -98,7 +124,7 @@ beforeEach(() => {
 });
 
 describe("MemberRows", () => {
-  it("lists readers officers first, a member with no role last", () => {
+  it("groups readers under their highest role, a member with no role last", () => {
     const tree = render(<MemberRows channelId="chan-1" />);
 
     expect(state.channelIds).toContain("chan-1");
@@ -109,7 +135,38 @@ describe("MemberRows", () => {
       // A member who never set a name is listed under the fallback, not dropped.
       expect.stringMatching(/^Member u-bla/),
     ]);
-    expect(text(tree)).toContain("4 members");
+    expect(text(tree)).toMatch(
+      /President 1 .*Treasurer 1 .*Member 1 .*No role 1/,
+    );
+    // Four readers need no search field.
+    expect(
+      tree.root.findAll(
+        (node) => node.props.accessibilityLabel === "Search members",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("searches by name past 12 readers", () => {
+    state.members = {
+      data: Array.from({ length: 13 }, (_, index) => ({
+        user_id:
+          index === 0 ? "u-pres" : `u-x${String(index).padStart(6, "0")}`,
+        role_rank: 5,
+        role_id: "r-mem",
+        role_name: "Member",
+      })),
+    };
+    const tree = render(<MemberRows channelId="chan-1" />);
+    const search = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Search members" &&
+        typeof node.props.onChangeText === "function",
+    );
+    expect(search.props.placeholder).toBe("Search 13 members");
+    act(() => search.props.onChangeText("zed"));
+    expect(rowNames(tree)).toEqual(["Zed President"]);
+    act(() => search.props.onChangeText("nobody"));
+    expect(text(tree)).toContain("No one named \u201cnobody\u201d");
   });
 
   it("paints a name in its role color, and the rest in the foreground", () => {

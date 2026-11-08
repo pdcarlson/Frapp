@@ -19,7 +19,7 @@ import { screenText } from "@/test/screen-text";
  *
  * This pins that all three move on the shared ticking clock.
  *
- * It renders `app/(tabs)/more.tsx` but lives here: a spec under `app/` ships
+ * It renders `app/(app)/(tabs)/more.tsx` but lives here: a spec under `app/` ships
  * as a route module (`lib/routes.spec.ts`).
  */
 
@@ -87,7 +87,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
 }));
 
-import MoreScreen from "@/app/(tabs)/more";
+import MoreScreen from "@/app/(app)/(tabs)/more";
 import { ListRow, ListSection } from "@/components/list-section";
 import { signetDarkTokens } from "@repo/theme/signet";
 
@@ -502,6 +502,41 @@ describe("More hub anatomy (#1048)", () => {
     expect(text).toContain("Admin");
     expect(text).toContain("Host check-in");
     expect(text).toContain("No upcoming event");
+  });
+
+  it("gives a member who can invite an Invite members row, first in Admin", () => {
+    permissions = ["members:invite"];
+    const sections = render()
+      .root.findAllByType(ListSection)
+      .map((section) =>
+        section.findAllByType(ListRow).map((row) => row.props.label),
+      );
+    expect(sections.at(-1)).toEqual(["Invite members"]);
+
+    permissions = ["*"];
+    const tree = render();
+    const labels = tree.root
+      .findAllByType(ListSection)
+      .at(-1)
+      ?.findAllByType(ListRow)
+      .map((row) => row.props.label);
+    expect(labels).toEqual(["Invite members", "Host check-in"]);
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Invite members",
+    );
+    const push = vi.mocked(useRouter().push);
+    push.mockClear();
+    act(() => {
+      row.props.onPress();
+    });
+    expect(push).toHaveBeenCalledWith("/invite");
+  });
+
+  it("draws no Invite members row for a role that can't invite", () => {
+    permissions = ["members:view", "events:update"];
+    expect(screenText(render())).not.toContain("Invite members");
   });
 
   it("tells the chapter picker that More opened it, so it draws ‹ More", () => {

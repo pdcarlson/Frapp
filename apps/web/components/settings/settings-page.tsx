@@ -1,5 +1,6 @@
 "use client";
 
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -244,7 +245,7 @@ function SettingsPageContent() {
     stateBanner = (
       <ErrorState
         title="Couldn't load chapter settings"
-        description="Confirm your chapter access and retry. Changes here update every surface in the dashboard."
+        description={`${describeLoadFailure(chapterQuery.error)} Changes here update every surface in the dashboard.`}
         onRetry={() => void chapterQuery.refetch()}
       />
     );
@@ -410,7 +411,7 @@ function SettingsPageContent() {
         title: "Couldn't save settings",
         description: getErrorMessage(
           error,
-          "The API rejected the update. Retry in a moment.",
+          "Your change wasn't saved. Try again in a moment.",
         ),
         variant: "destructive",
       });
@@ -571,7 +572,6 @@ function SettingsPageContent() {
           */}
           <TabsContent value="roles" className="mt-0">
             <SettingsRolesTab
-              archetypeKey={archetypeKey}
               canManage={canManage}
               catalog={permissionsCatalog}
               // Pending as well as error. `renderConfigGated` used to block on

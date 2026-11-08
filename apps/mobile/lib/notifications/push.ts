@@ -3,6 +3,7 @@ import Constants from "expo-constants";
 import { isWebOrExpoGo } from "../expo-go";
 import { createIsolatedModule } from "../isolated-module";
 import { requireNotifications } from "./push-module";
+import { chatChannelIdFrom } from "./targets";
 import type {
   NotificationsModule,
   PushNotificationResponse,
@@ -104,8 +105,9 @@ export function isPushAvailable(): boolean {
  * `spec/ui/design-system/writing.md` § Push availability.
  *
  * Its one reader is Settings (s16), which keeps a push row in every build and
- * states this in place of the switch. The s03 primer card is not drawn at all when
- * push is unavailable (`primer.ts`, #2299), so it never needs a reason.
+ * states this in place of the switch. Onboarding's notifications step and the
+ * chat home's reminder are skipped when push is unavailable (`primer.ts`,
+ * #2299), so they never need a reason.
  */
 export function pushUnavailableReason(): string | null {
   if (loadNotifications() === null) {
@@ -300,6 +302,37 @@ export async function clearLocalNotification(identifier: string) {
     mod.cancelScheduledNotificationAsync(identifier),
     mod.dismissNotificationAsync(identifier),
   ]);
+}
+
+/**
+ * Takes chat pushes for channels the member has read out of the tray
+ * (`spec/behavior/notifications.md` § Notification Grouping).
+ *
+ * `readChannelIds` is every channel the server counts as fully read. A push for
+ * a channel not in the set (unread, another chapter's, or not a chat push) is
+ * left alone, so a stale or partial list can only fail to clear, never clear a
+ * message the member hasn't seen. Best-effort like `clearLocalNotification`:
+ * a tray that stays full is cosmetic.
+ */
+export async function clearReadChatNotifications(
+  readChannelIds: ReadonlySet<string>,
+): Promise<void> {
+  const mod = localOnlyModule();
+  if (!mod || readChannelIds.size === 0) return;
+  try {
+    const presented = await mod.getPresentedNotificationsAsync();
+    await Promise.allSettled(
+      presented
+        .filter((n) => {
+          const channelId = chatChannelIdFrom(n.request.content.data);
+          return channelId !== null && readChannelIds.has(channelId);
+        })
+        .map((n) => mod.dismissNotificationAsync(n.request.identifier)),
+    );
+  } catch {
+    // An older native build without the call, or the OS refusing: leave the
+    // tray as it is.
+  }
 }
 
 /**

@@ -183,69 +183,95 @@ describe("app/ is the shipped route graph", () => {
   });
 });
 
-describe("tab bar", () => {
-  const layout = readFileSync(
-    path.join(appDir, "(tabs)", "_layout.tsx"),
-    "utf8",
-  );
-
-  // Split on the element start rather than matching a whole element. The
-  // previous pattern (`<Tabs.Screen\s+name="…"([\s\S]*?)/>`) required `name=` to
-  // be the first prop and ended its options capture at the first `/>` — which is
-  // the nested `<ChatGlyph />` on every visible tab. Either quirk dropped a
-  // registration from this list entirely, and a dropped registration silently
-  // passes the very check that exists to catch it.
-  //
-  // Splitting bounds each chunk at the next registration, so a chunk holds
-  // exactly one `Tabs.Screen` plus the whitespace and comments trailing it —
-  // no end-marker to guess at, and `name` may sit anywhere among the element's
-  // own attributes.
-  const registrations = layout
-    .split("<Tabs.Screen")
+/**
+ * Splits a layout's source into its `<X.Screen` registrations. Split on the
+ * element start rather than matching a whole element. The previous pattern
+ * (`<Tabs.Screen\s+name="…"([\s\S]*?)/>`) required `name=` to be the first
+ * prop and ended its options capture at the first `/>`, which is the nested
+ * `<ChatGlyph />` on every visible tab. Either quirk dropped a registration
+ * from this list entirely, and a dropped registration silently passes the very
+ * check that exists to catch it.
+ *
+ * Splitting bounds each chunk at the next registration, so a chunk holds
+ * exactly one registration plus the whitespace and comments trailing it, and
+ * `name` may sit anywhere among the element's own attributes. `name` is read
+ * only from the element's own attributes, everything up to the first nested
+ * tag: a `tabBarIcon` renders a glyph component, and `<Ionicons name="home" />`
+ * inside one would otherwise be picked up as the registration's name.
+ */
+function registrationsIn(
+  layoutPath: string,
+  element: "Tabs.Screen" | "Stack.Screen",
+): { name: string; options: string }[] {
+  return readFileSync(layoutPath, "utf8")
+    .split(`<${element}`)
     .slice(1)
     .map((options) => ({
-      // Read `name` only from this element's own attributes — everything up to
-      // the first nested tag. A `tabBarIcon` renders a glyph component, and
-      // `<Ionicons name="home" />` inside one would otherwise be picked up as
-      // the registration's name.
       name: /name="([^"]+)"/.exec(options.split("<")[0])?.[1],
       options,
     }))
     .filter((r): r is { name: string; options: string } => Boolean(r.name));
+}
 
-  it("registers exactly the four locked tabs as visible", () => {
-    const visible = registrations
-      .filter((r) => !/href:\s*null/.test(r.options))
-      .map((r) => r.name);
+/** The route files directly in `dir`, by route name. */
+function routesDirectlyIn(dir: string): string[] {
+  return routeFiles
+    .filter((f) => path.dirname(f) === dir)
+    .map((f) => path.basename(f, ".tsx"));
+}
 
-    // spec/ui/mobile/navigation.md — 4 tabs, locked, in this order.
-    expect(visible).toEqual(["index", "events", "tasks", "more"]);
-  });
+describe("tab bar", () => {
+  const tabsDir = path.join(appDir, "(app)", "(tabs)");
+  const registrations = registrationsIn(
+    path.join(tabsDir, "_layout.tsx"),
+    "Tabs.Screen",
+  );
 
-  it("backs every registration with a real route file", () => {
-    const missing = registrations.filter(
-      (r) => !routeFiles.some((f) => path.basename(f, ".tsx") === r.name),
+  it("registers exactly the four locked tabs, all visible", () => {
+    // spec/ui/mobile/navigation.md — 4 tabs, locked, in this order. Nothing
+    // hides in the tab bar any more (`href: null`): a screen reached by
+    // navigation is pushed on the stack above it, so it can be swiped back.
+    expect(registrations.map((r) => r.name)).toEqual([
+      "index",
+      "events",
+      "tasks",
+      "more",
+    ]);
+    expect(registrations.filter((r) => /href:\s*null/.test(r.options))).toEqual(
+      [],
     );
-
-    // expo-router throws at runtime for a Tabs.Screen with no file, and the
-    // pre-registered cluster routes are exactly the case that invites it.
-    expect(missing.map((m) => m.name)).toEqual([]);
   });
 
-  it("registers every route file in (tabs)", () => {
-    // The other half-deletion. expo-router's Tabs renders every child route,
-    // registered or not (`TabsClient` leaves `useOnlyUserDefinedScreens`
-    // false), so a file with no `Tabs.Screen` is a fifth visible tab and a live
-    // deep link. Removing `sheet-demo`'s registration without its file (#2301)
-    // would have passed every other test here. Only files directly in (tabs)
-    // are checked: a nested directory registers under a different name, and
-    // there is none today.
-    const tabsDir = path.join(appDir, "(tabs)");
-    const unregistered = routeFiles
-      .filter((f) => path.dirname(f) === tabsDir)
-      .map((f) => path.basename(f, ".tsx"))
-      .filter((name) => !registrations.some((r) => r.name === name));
+  it("holds no route file but the four tabs", () => {
+    // expo-router's Tabs renders every child route, registered or not
+    // (`TabsClient` leaves `useOnlyUserDefinedScreens` false), so a fifth file
+    // here is a fifth visible tab. A new screen goes in `app/(app)/`, on the
+    // stack.
+    expect(routesDirectlyIn(tabsDir).sort()).toEqual(
+      ["events", "index", "more", "tasks"],
+    );
+  });
+});
 
-    expect(unregistered).toEqual([]);
+/**
+ * Every screen outside the four tabs is pushed on the stack in
+ * `app/(app)/_layout.tsx`, so it slides in over the tabs and goes back by the
+ * platform's own gesture (`spec/ui/mobile/navigation.md` § Going back).
+ */
+describe("app stack", () => {
+  const appGroupDir = path.join(appDir, "(app)");
+  const layout = path.join(appGroupDir, "_layout.tsx");
+  const registrations = registrationsIn(layout, "Stack.Screen");
+
+  it("registers the tabs and every pushed screen, each with a real route", () => {
+    const names = registrations.map((r) => r.name);
+    expect(names[0]).toBe("(tabs)");
+    expect(names.slice(1).sort()).toEqual(routesDirectlyIn(appGroupDir).sort());
+  });
+
+  it("never turns the back gesture off in the layout", () => {
+    // A screen that must hold the swipe for a moment does it where it holds,
+    // with its reason (`useHoldSwipeBack`), never for a whole route.
+    expect(readFileSync(layout, "utf8")).not.toMatch(/gestureEnabled/);
   });
 });

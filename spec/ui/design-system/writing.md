@@ -76,7 +76,9 @@ Example:
 
 `Unable to load members. This view requires an authenticated chapter context. Sign in and retry.`
 
-Copy never shows a permission key such as `roles:manage`. A permission-denied line names what the role can't do (`Your role can't manage roles.`) and who can change that; an error that may be an access problem says `Confirm your chapter access and retry.`; a toast with no server message says `Try again in a moment.` Where a screen has to name a permission, it uses the words in [`permission-labels.ts`](../../../apps/web/lib/permission-labels.ts) (2026-11-05).
+**One map for failures (2026-11-06).** A failed call reaches the member through one shared map, never as the server's own text: `errorCopy` in `@repo/hooks` (web's `getErrorMessage` and mobile both call it), over the strings in [`packages/validation/src/error-copy.ts`](../../../packages/validation/src/error-copy.ts), which `@repo/chat-core` uses for chat refusals too. The screen's toast title says what failed; the map says why and what next. A server sentence shows only when the map rewrites it (`Role name already exists in this chapter` becomes `A role with that name already exists. Pick another name.`); anything else falls back to what the status means (`403`: `Your role can't do this. Ask an officer if you need it.`) or the screen's own sentence. A message client code wrote for members is thrown as `MemberFacingError`; a plain `Error`'s message is never shown. The one exception is a screen whose routes already write for the officer (the Discord import): it opts in with `serverWritesForMembers`, and an unmapped 400, 403, 409 or 503 sentence then shows when it names no permission key or route. A new API refusal a member can act on gets a line in the map in the same change.
+
+Copy never shows a permission key such as `roles:manage`. A permission-denied line names what the role can't do (`Your role can't manage roles.`) and who can change that; a screen's load error names the cause it can see, never a guess: the **load-failure line** (`describeLoadFailure` in `packages/hooks/src/error-copy.ts`, imported from `@repo/hooks/error-copy`, shared by web and mobile, 2026-11-07) reads the same map as `errorCopy` above, so a load and an action say the same words for the same cause: the offline line when no response came back, the status line for a 401, 403 or 404 (module off and subscription lapsed get their own lines), and `Something went wrong on our side. Retry in a moment.` for any other failure. A session the API refuses signs the member out with one notice (§ Sign in, `Session ended`), a lost active chapter shows the switcher's `Chapter unavailable` card, and a one-chapter member whose roles grant nothing lands on `/no-access` (2026-11-06); [#3637](https://github.com/pdcarlson/Frapp/issues/3637) tracks routing a revoked membership to one state instead of each screen's 403 line; a toast with no server message says `Try again in a moment.` Where a screen has to name a permission, it uses the words in [`permission-labels.ts`](../../../apps/web/lib/permission-labels.ts) (2026-11-05).
 
 ## 3a. Form copy
 
@@ -92,40 +94,40 @@ Copy never shows a permission key such as `roles:manage`. A permission-denied li
 
 ## 4. Empty state pattern
 
-Every empty state MUST include:
+Rewritten 2026-11-07 when the last empty cards went ([#3429](https://github.com/pdcarlson/Frapp/issues/3429)). An empty screen is still the screen: it keeps its layout and says what it has in one line. Seven rules, on web and mobile alike:
 
-- A clear title, except a state inside a list or panel that already sits under its own heading, which may say what is missing in its explanation alone: [§ Arrange the channel list](#arrange-the-channel-list-mobile-and-web)'s `Filtered to nothing` row, the [Notifications (dashboard)](#notifications-dashboard) drawer's `Empty` row and [Discord Import](#discord-import-dashboard)'s `Empty (channel panel)` row
-- A short explanation **only when it tells the member something the title doesn't**: why the view is empty, or what to do next. Never one that restates what the screen is for; without one the title stands alone.
-- A next-step CTA when possible
+1. **Keep the real layout.** The toolbar, the headings, the filters and the cards around a list stay where they are when the list is empty. Nothing is swapped for a centered card.
+2. **Put the first action where the first item goes.** When a next step exists, it sits where the first row would be: the line ends in a link (web), or names the + that already creates it (mobile, `Tap + to upload one.`). Mobile lines never create anything themselves.
+3. **Zero is data.** A count, a balance or a board at 0 renders as itself (`0 min · 0 sessions`), not as an empty state.
+4. **Hide features that aren't set up.** A module that is off, or has nothing configured, leaves the navigation rather than drawing an explanation; a saved link that still reaches it gets one line.
+5. **The officer setup checklist** carries the first-run steps (Chat home and the web channel rail, [§ Chat](#chat-dashboard)), so empty screens don't each pitch them.
+6. **A channel starts with its channel start** ([§ Chat](#chat-dashboard)), not an empty line.
+7. **Done states, search misses and blocked states are one line.** `Nothing waiting for review.`, `Nothing in Rush matches “bylaws”.`, `Pick a chapter to browse alumni.`, `Your role can't send invites. Ask an officer to send each person their own link.` A miss offers the way back as its link: **Clear search**, **Clear filters**, **Search all files**.
 
-Example (the Events surface, from the tables below):
+The line itself: one sentence, two at most, ending in a period, in muted text. It says the fact and, when there is one, what to do next. It never narrates what the screen is for ("Documents the chapter uploads show up here."), because the member is already on the screen (owner review of the Android build, 2026-11-04: "we don't need to narrate stuff"). A search line may name its query when the field showing it is out of sight; a line under the field offers **Clear search** instead. A no-chapter line says where to pick one.
 
-`No events yet`
-`Create your first chapter event to unlock attendance and point automation.`
-`[Create first event]`
+Errors and offline keep their cards ([components.md](components.md) §10), because there the screen really can't show anything. They are not empty states, and a failed read never says a list is empty.
 
-**Amended 2026-11-05**, after the owner's review of the Android build (2026-11-04): "we don't need to narrate stuff". The explanation used to be required on every empty state, which is how empty cards came to describe their own screen ("Documents the chapter uploads show up here.", "Members appear here once they join the chapter."). The rule above governs new and changed copy, for the reason [`../mobile/patterns.md` § Screen headers](../mobile/patterns.md#screen-headers) took the line under each screen title away: the member is already on the screen. The change that amended it removed those lines from the mobile screens it touched: Documents (s12), Directory (s13) and the notifications inbox (s14). Chat home's no-channels card (s04) swapped its line for what to do next: `No channels yet` / `Ask an admin to add one.` (mobile has no way to create one). A line that carries a fact stays: a search names its query, a filtered view says how to widen it, and the no-chapter state says where to pick a chapter.
-
-Lines that still narrate are follow-up ([#3429](https://github.com/pdcarlson/Frapp/issues/3429)), not changed by the amendment: the second sentence of mobile Dues' empty body, `Anything they send will show up here.` ([Dues (mobile, s11)](#dues-mobile-s11)); and on web the empty rows of [Members](#members-dashboard) (`Actives appear here once they join.`), [Alumni](#alumni-dashboard) (`Graduated members appear here.`), [Notifications](#notifications-dashboard) (`… will appear here.`) and [Points](#points-dashboard)' empty transactions (`Your attendance, study sessions, and adjustments will appear here.`).
-
-The skeleton/empty/error state variants themselves — layout, structure, when each renders — are component-level and owned by [components.md](components.md). This document owns the words inside them.
+The component that draws the line, and where it sits, is [components.md](components.md) §10's; this document owns the words inside it.
 
 ## 5. Status labels
 
-Status terms MUST match backend domain language:
+Status terms MUST match backend domain language, and render as words, not tokens:
 
-- `ACTIVE`
-- `PAID`
-- `OPEN`
-- `OVERDUE`
-- `PENDING`
-- `FAILED` (for transient action states)
+- `ACTIVE` → Active
+- `PAID` → Paid
+- `OPEN` → Open
+- `OVERDUE` → Overdue
+- `PENDING` → Pending
+- `FAILED` → Failed (for transient action states)
 
 Do not invent alternate terms for the same state on different platforms. Status labels render with the semantic status colors defined in [foundations.md](foundations.md) — status color is never decorative.
 
-**Render the server's own token, not a re-cased version of it.** `OVERDUE` put through `.toLowerCase()` and a `capitalize` class comes out as "Overdue", which is an alternate term for the same state by another route — and `/billing` was doing exactly that in its member-facing table while the admin card one file over rendered the token. The web mapping from state to badge kind lives in one place, [`apps/web/components/billing/invoice-status.ts`](../../../apps/web/components/billing/invoice-status.ts), for both invoice and subscription state; `DRAFT` is the one state that takes the Hairline kind rather than a semantic one, because it is the absence of a status rather than a status.
+**One label map (amended 2026-11-06).** Every stored status's word lives once, in `STATUS_LABELS` ([`packages/validation/src/status-labels.ts`](../../../packages/validation/src/status-labels.ts)): tasks, service entries, attendance, study sessions and invoices. Web and mobile both read it, and `statusLabel(vocabulary, token)` words a token the map doesn't know yet (`NEW_STATE` → "New state") instead of printing it. A surface that needs its own phrasing builds it from the map (the chat hours card's "Pending review").
 
-**One mapper per domain vocabulary, not one mapper.** Billing's two states share a file because both are billing's; Chapter Ops added four more vocabularies — attendance, service review, study-session close and study-zone enablement — with no overlapping members, so each has its own module rather than one widened to `string`. Where a vocabulary needs a *label* as well as a kind is decided by this section: states §5 names above render their token (`PENDING` stays `PENDING`), and a vocabulary with no row here maps to plain language **once**, in its mapper, which is why `attendance-status.ts` carries `attendanceStatusLabel` and `service-status.ts` deliberately does not.
+This replaces the rule that §5's tokens render as the server sends them (`PENDING`, `OVERDUE` in capitals). That rule was how the web Service hours history came to print `APPROVED` while mobile said "Approved" for the same entry, and a list that reads `PENDING` beside "Approved" looks broken (principles.md P2.1). The words above are still the only terms; only the casing changed.
+
+**Badge colour stays per app.** The mapping from state to badge kind is the design system's, so it stays in each app: on web, [`apps/web/components/billing/invoice-status.ts`](../../../apps/web/components/billing/invoice-status.ts) for billing, and one module per domain vocabulary for the rest (attendance, service review, study-session close, study-zone enablement). `DRAFT` is the one state that takes the Hairline kind rather than a semantic one, because it is the absence of a status rather than a status.
 
 ## 6. Trust copy rules
 
@@ -158,18 +160,21 @@ The tables below are the canonical strings for high-frequency state messages, so
 - **Loading rows on web are announcements, not captions** (2026-11-05). Dashboard loading states are skeletons shaped like their page, and a skeleton shows no text; its string is the screen-reader status line, written without the trailing `...` (`Loading chapter tasks`). Mobile follows the same rule for screen-level loading states (2026-11-05): each screen's skeleton shows no text, and the row's string without the ellipsis is the skeleton's accessible name (`SkeletonRegion`'s `label`); a mobile state with no row here (event details, the chapter picker, the joined-channels card) names what loads in the same form, such as `Loading your chapters`. A loading line drawn in place beside content that is already up (`Loading earlier messages…` above a thread, a settings row's own loading line) stays visible, since nothing else on screen says what that spot is doing. The rows below keep their visible-caption form only for the few web regions inside a loaded page still on the generic loading state ([`components.md`](components.md) §10).
 - The chat catch-up pulse deliberately does **not** use these states: a section that fails to read is omitted, never rendered as a zero or a generic error row. See [catch-up.md](../../behavior/chat/catch-up.md).
 
-### Connection banner (global)
+### Connection indicator (global)
 
-| State | Title | Description | Mobile pill (drawn) |
-|---|---|---|---|
-| Degraded | — | `Slow connection. Some features may be delayed.` | `Slow connection` |
-| Offline | — | `You're offline. Showing cached data.` | `Offline` |
+| State | Label (drawn) | Sentence (accessible name, web title, mobile tap) |
+|---|---|---|
+| Degraded | `Slow connection` | `Slow connection. Some features may be delayed.` |
+| Offline | `Offline` | `You're offline. Showing cached data.` |
+| Offline, chat open | `Offline` | `You're offline. Messages you send go out when you reconnect. Photos and files need a connection.` |
+| Chat polling, connection healthy | `Live updates paused` | `Real-time updates paused. Polling for new messages.` |
+| Chat reconnecting, connection healthy | `Reconnecting…` | `Reconnecting to live updates.` |
 
-Mobile's floating pill draws the last column so it fits over a header, and its accessible name is the Description (2026-11-06, `connectionPillLabel` in `apps/mobile/lib/connection/state.ts`).
+One pill on every screen, web and mobile, says exactly one of these (2026-11-06; the rule that picks the row is [connection-state.md § One indicator](../resilience/connection-state.md#one-indicator), the strings live in `connectionIndicator`, `@repo/validation`). The label is short so it fits a top bar or a phone header.
 
 **The closing clause was removed in #1707 and MUST NOT be re-added to the global banner.** The rule it replaces read: *"The offline string MUST keep its closing clause — a member who edited or posted while offline needs to be told the work is queued, not lost."* The intent was right and the placement was wrong. Only the chat composer has an outbox, so "changes will sync" was true on exactly one surface and false on every other route this global banner renders on — dashboard writes are queueless and now reject rather than pausing. Promising a queue that does not exist is the §1 principle 1 violation ("actions must never appear to succeed when they haven't") that the clause was meant to prevent.
 
-**The promise moves to the control that can keep it**, which is where a member acting on it is looking: the composer renders `You're offline — messages send when you reconnect.` and the chat header pill `Offline — messages will send when you reconnect`. Queue-backed surfaces MUST still say so at the control. [resilience](../resilience/README.md) carries the connection-state indicator strings alongside the detection thresholds and banner behavior; where the two differ, the wording above is approved.
+**The promise is said only where a queue exists**: the indicator's sentence carries it while a chat is open, and on no other screen. Until 2026-11-06 the composer said it in a line of its own and the chat header pill said it again, so with the global banner a chat screen showed offline three times; they were folded into the one indicator. [resilience](../resilience/README.md) carries the detection thresholds and indicator behavior; where the two differ, the wording above is approved.
 
 ### Permission check offline (global)
 
@@ -197,42 +202,67 @@ The API's throttler sets this sentence (`THROTTLED_MESSAGE`, `custom-throttler.g
 |---|---|---|
 | Loading | — | `Loading chapter members...` |
 | Loading (supporting queries) | — | `Loading chapter members...` — the roles-and-points load uses the *same* string. A second, differently-worded loading state for one screen is what this table exists to prevent. |
-| Empty | `No actives yet` | `Actives appear here once they join.` |
-| No results (filters) | `No actives match the filters` | `Clear a filter to see more.` |
-| No results (search) | `No match for “<query>”` | `Check the spelling, or widen the filters.` |
-| Error | `Couldn't load members` | `Confirm your chapter access and retry.` |
+| Empty | — | `No actives yet.` (one line) |
+| No results (filters) | — | `No actives match these filters.` then a **Clear filters** link (one line) |
+| No results (search) | — | `No actives match “<query>”.` then a **Clear search** link (one line) |
+| Empty and no results, mobile s13 | — | `No actives yet.`; a search, which spans both tabs, `Nobody matches “<query>”.` then **Clear search** (one line each; the alumni rows are [Alumni](#alumni-dashboard)'s) |
+| Error | `Couldn't load members` | the load-failure line (§ copy rules) |
 | Error (roles and points) | `Couldn't load roles and points` | `Filtering, sorting and assignment need both.` |
 | Offline | `Members unavailable offline` | `Reconnect to load the roster.` |
+
+The empty and no-results rows are one line, an `InlineNote`, where the rows go, with the way back as a link in the line (empty-states plan rule 7, 2026-11-07). The split the paragraphs below argue for still holds; only the card went.
 
 **Rewritten by the greenfield Directory lane ([#2146](https://github.com/pdcarlson/Frapp/issues/2146)), and the row count is the change.** Five rows became seven for two reasons, both from the framework board's state rule (`3b`): *"Empty = accent tile + tinted CTA. No results = neutral tile, names the query"*, under a section eyebrow that budgets a status line at **six words**.
 
 - **Empty and no-results were one row doing two jobs.** `No members match this view` / `Try a broader search or invite your first members to populate this directory.` had to cover a chapter with no roster *and* a search that matched nothing, so it asserted neither and instructed the reader in both. The split is the one the Points table below already makes between an empty leaderboard and a search that matched nothing, for the same reason: a filtered view that matches nothing is not a claim about the data.
 - **The descriptions state a fact instead of giving an instruction**, except in the no-results hint slot, where the board's own drawn hint is an instruction (`Check the spelling`).
-- **`actives`, not `members`,** in the two titles about the list itself: it is the word the tab and the section label above the list already use, and the shipped mobile Directory's empty title is the same `No actives yet` (`apps/mobile/app/(tabs)/directory.tsx`). Mobile draws that title alone, without this row's description, under §4 as amended 2026-11-05 *(corrected 2026-11-05: this said mobile renders the same state, which stopped being true of the description)*. Mobile's Actives tab has no filters, so the filters row has no mobile twin. The error and offline rows keep `members`, because those are about the *records*, not about the tab.
+- **`actives`, not `members`,** in the two titles about the list itself: it is the word the tab and the section label above the list already use, and the shipped mobile Directory's empty title is the same `No actives yet` (`apps/mobile/app/(app)/directory.tsx`). Mobile draws that title alone, without this row's description, under §4 as amended 2026-11-05 *(corrected 2026-11-05: this said mobile renders the same state, which stopped being true of the description)*. Mobile's Actives tab has no filters, so the filters row has no mobile twin. The error and offline rows keep `members`, because those are about the *records*, not about the tab.
 - **The old error string named a concept that no longer exists.** "The members workflow no longer falls back to preview data" described the removal of a preview mode to a member who never saw one; `stateMicrocopy.members.preview*` had already lost both its readers.
 
 Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assembled at the call site because it quotes the live query.
+
+### Invite members (dashboard panel and setup wizard)
+
+The composer is shared by the Members panel and the web setup wizard's last step, so its copy is one set ([`members.md` § Invite Flow](../../behavior/members.md#invite-flow)). No string anywhere shows a token. (2026-11-06: replaced `Role` / `Invite count` / `Generate`, `Freshly generated tokens` and `Active invite tokens`, which listed raw UUIDs.)
+
+| Element | Copy |
+|---|---|
+| Email field | Label `Invite by email`, placeholder `name@school.edu` |
+| Role picker | `Joins as <role>` (panel only; the wizard invites as Member) |
+| Send | `Send invite`, or `Send N invites` for more than one address |
+| Not an address | `One address in red isn't an email address. Fix or remove it.` / `N addresses in red aren't email addresses. Fix or remove them.` |
+| Too many | `Up to 50 addresses at a time. Remove some, then send.` |
+| Couldn't email | `Couldn't email this address. Send again, or copy a link for them.` / `Couldn't email these N addresses. Send again, or copy links for them.` |
+| Sent (toast) | `Invite sent to <address>` / `N invites sent` |
+| Link row | `Or share a link` over `Paste it in a group chat. Each link lets one person join, for 24 hours.`; the button reads `Copy link`, then `Copied` for two seconds |
+| List | Section `Invited`; a row is the address or `Invite link`, then `<role> · Sent today at 4:46 PM`, then `Pending`, `Joined` or `Expired`. Empty: `Nobody yet. People you invite show up here until they join.` |
+| Row menu | `Copy link`, `Send again`, `Revoke invite`; revoked toast `Invite revoked` / `<address> can't join with it now.` |
 
 ### Events (dashboard)
 
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading chapter events...` |
-| Empty | `No events yet` | `Create your first chapter event to unlock attendance and point automation.` |
-| Empty (filtered) | `No events match the filters` | `Clear a filter to see more.` |
-| Empty (search) | `No match for “{query}”` | `Check the spelling, or widen the filters.` |
-| Error | `Couldn't load chapter events` | `Confirm your chapter access and retry.` |
+| No events, calendar, can create | — | `Pick a day to schedule the first event.` (one line under the month) |
+| No events, calendar, can't create | — | `Nothing on the calendar yet.` (one line under the month) |
+| No events, List tab | — | `No events yet.` (one line) |
+| Time window empty | — | `No upcoming events.` or `No past events.` then a **Show all events** link (one line) |
+| Attendance or cadence filter matched nothing | — | `No events match these filters.` then a **Clear filters** link (one line) |
+| Search matched nothing | — | `No events match that search.` then a **Clear search** link (one line) |
+| Error | `Couldn't load chapter events` | the load-failure line (§ copy rules) |
 | Offline | `Events workspace unavailable offline` | `Reconnect to load event schedules and attendance updates.` |
 
-`No events yet` shows only when the chapter has no events at all. Under a filter that hides every event (the default Upcoming, once every event is past), the page says the filters matched nothing instead (2026-11-05).
+A chapter with no events opens on the Calendar tab rather than an empty list, and a viewer with `events:create` gets a dashed `+` on today's square, where the first event will go. The choice is made once, when the events first load, so making that first event doesn't move the officer to the list. A viewer without `events:create` sees the dates as text, with no New event button and nothing to press on a day (2026-11-06). The time-window line is its own row because the default window (Upcoming) hides every past event without the officer touching a filter, and "No events yet" there would be false (2026-11-05). The lines are `InlineNote`s, like [Points (dashboard)](#points-dashboard); error and offline keep their cards.
+
+Mobile's Events tab (s06) has no calendar, so with nothing scheduled its list is one line where the rows go: `Nothing scheduled yet. Tap + to add the first event.` for a viewer the tab bar's + offers New event to, and `Nothing scheduled yet.` for everyone else (2026-11-07). It is mobile's `InlineNote` (`components/inline-note.tsx`), which replaced the `Nothing scheduled` card.
 
 ### Attendance (dashboard)
 
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading attendance...` |
-| Empty | `No attendance records yet` | `Once members check in, or you record attendance manually, they'll show up here.` |
-| Error | `Attendance unavailable` | `Couldn't load attendance for this event. Confirm your chapter access and retry.` |
+| Empty | — | `No attendance recorded yet.` (one line) |
+| Error | `Attendance unavailable` | `Couldn't load attendance for this event. ` + the load-failure line (§ copy rules) |
 
 ### Points (dashboard)
 
@@ -244,7 +274,7 @@ Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assem
 | Leaderboard search matched nothing | — | `No members match that search.` then a **Clear search** link (one line) |
 | Empty transactions | — | `No points in this period yet.` (one line) |
 | Transaction filters matched nothing | — | `No transactions match these filters.` then a **Clear filters** link (one line) |
-| Error | `Couldn't load the points ledger` | `Standings and transactions are unavailable, so none are shown. Confirm your chapter access and retry.` |
+| Error | `Couldn't load the points ledger` | `Standings and transactions are unavailable, so none are shown. ` + the load-failure line (§ copy rules) |
 | Offline | `Points ledger unavailable offline` | `Reconnect to refresh leaderboard standings and transaction history.` |
 
 The board lists the whole roster, at 0 until a member earns points ([`points.md` § Leaderboard](../../behavior/points.md#leaderboard)), so a new chapter sees its members tied for first with the one line above rather than a card. The empty and no-match states are single lines (`InlineNote`, `apps/web/components/shared/inline-note.tsx`) where the rows would be, not cards; error and offline keep theirs (2026-11-06).
@@ -254,9 +284,9 @@ The board lists the whole roster, at 0 until a member earns points ([`points.md`
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading audit transactions...` |
-| Empty (flagged only) | `No flagged transactions in this window` | `Single adjustments of \|amount\| ≥ {threshold} are flagged here automatically.`, or `Large single adjustments are flagged here automatically.` when the chapter's threshold can't be read |
-| Empty (filtered) | `No transactions match this filter` | `Try relaxing the category or member filter.` |
-| Error | `Audit unavailable` | `Couldn't load chapter transactions. Confirm your chapter access and retry.` |
+| Empty (flagged only) | — | `Nothing flagged in this window.`, then `Single adjustments of \|amount\| ≥ {threshold} are flagged here automatically.` when the chapter's threshold is known (one line) |
+| Empty (filtered) | — | `No transactions match these filters.` then a **Clear filters** link, which resets the category and the member (one line) |
+| Error | `Audit unavailable` | `Couldn't load chapter transactions. ` + the load-failure line (§ copy rules) |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can view the chapter's transaction log.` |
 | Permission denied | `Audit` (the section label) | `Your role can't see every transaction.` |
 
@@ -265,15 +295,15 @@ The board lists the whole roster, at 0 until a member earns points ([`points.md`
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading roles and permissions...` |
-| Empty | `No roles yet` | `Chapters always start with default system roles. Refresh to reload or create a new custom role.` |
-| Error | `Couldn't load roles` | `Confirm your chapter access and retry.` |
+| Empty | — | `No roles yet. Refresh to reload them.` (one line; every chapter starts with system roles, so this is a read that came back short) |
+| Error | `Couldn't load roles` | the load-failure line (§ copy rules) |
 | Permission denied | — | `Your role can't manage roles. Ask your chapter president for access.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage roles.` |
 | Offline | `Roles unavailable offline` | `Reconnect to load the chapter's roles and edit their permissions.` |
 | Delete role confirmation | `Delete <name>?` | `Members assigned this role lose its permissions immediately. This cannot be undone.` · confirm `Delete role` |
 | Transfer presidency confirmation | `Transfer presidency?` | `The President role moves to the selected member immediately and is removed from you. Only the current president can undo it.` · confirm `Transfer presidency` |
 | Custom roles offline | `Custom roles unavailable offline` | `Reconnect to load this chapter's custom roles and edit their capabilities.` |
-| Custom roles empty | `No custom roles yet` | `Create one below to extend the permission matrix.` |
+| Custom roles empty | — | `No custom roles yet.` (one line; the create form sits right under it) |
 | Custom roles error | `Couldn't load custom roles` | `Retry to fetch this chapter's custom roles.` |
 
 The confirmation rows below and under Roles & Permissions are the five `window.confirm` strings the Settings & Roles slice converted to [`confirm-dialog.tsx`](../../../apps/web/components/shared/confirm-dialog.tsx). A browser dialog's text was never in this table because it was never the product's; an in-product one is, and `writing.md` §2's verb-plus-object CTA rule governs the button. The rollover is the one that is **not** destructive-toned — it archives rather than deletes, and a red button would state a loss the API does not perform.
@@ -283,9 +313,11 @@ The confirmation rows below and under Roles & Permissions are the five `window.c
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading chapter settings...` |
-| Error | `Couldn't load chapter settings` | `Confirm your chapter access and retry. Changes you make here update every surface in the dashboard.` |
+| Error | `Couldn't load chapter settings` | the load-failure line (§ copy rules), then `Changes you make here update every surface in the dashboard.` |
 | No chapter | `Chapter settings` | `Select an active chapter to edit its branding, semester state, or billing configuration.` |
-| Semester empty | `No archived semesters yet` | `After you run your first rollover, the history appears here.` |
+| Semester empty | — | `No archived semesters yet. Each rollover adds one.` (one line) |
+| Custom fields empty | — | `No custom fields yet.` (one line; the add form sits right under it) |
+| Nothing for this role (the settings rail) | — | `Nothing in Settings for your role. Officer tools come with an officer role; ask your chapter president if you need one.` (one line) |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can start a new semester.` |
 | Accent hex needed | — | `Enter a hex code like #5AA9E6 to save an accent color.` (muted on an empty field, warning once something unsavable is typed) |
 | Accent preview fallback | — | `This color is hard to read on the card, so the preview shows <hex> instead. Saving stores the color you entered, and the palette is derived from it.` |
@@ -294,7 +326,7 @@ The confirmation rows below and under Roles & Permissions are the five `window.c
 | Rollover confirmation | `Start a new semester labelled "<label>"?` | `The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.` · confirm `Start new semester` |
 | Delete field confirmation | `Delete the field "<label>"?` | `Members lose the values they have entered for it, and the column disappears from the directory. This cannot be undone.` · confirm `Delete field` |
 | Delete custom role confirmation | `Delete the custom role "<label>"?` | `Members holding it lose its capabilities on their next request. This cannot be undone.` · confirm `Delete custom role` |
-| Number field refused at save | `<Field> needs a number` (empty) · `<Field> starts at <min>` (under its floor) | `Enter a whole number of <min> or more.` Dues grace days and installment count, a workflow threshold, a custom role's rank (#3050). `<Field>` is the input's own label, or `The threshold for “<workflow>”` for a workflow threshold. |
+| Number field refused at save | `<Field> needs a number` (empty) · `<Field> starts at <min>` (under its floor) | `Enter a whole number of <min> or more.` Dues grace days and installment count, a workflow threshold. `<Field>` is the input's own label, or `The threshold for “<workflow>”` for a workflow threshold. |
 | Dues amount refused at save | `<Field> needs an amount` | `Enter an amount in dollars, like 425 or 42.50.` Amounts are typed in dollars and stored in cents (2026-11-05; they were typed in cents). |
 
 The **Accent label illegible** row answers a different question from the **Accent preview fallback** row above it, and the pair is easy to collapse by mistake. The fallback fires when the accent is unreadable *as text on the card*, which is what `resolveChapterAccentColor` checks. This one fires when text is unreadable *on the accent* — which is what a primary button is, and what that card's own description promises the colour will be used for. They diverge: `#0086FE` passes the first and fails the second (both figures pinned in [`settings-contrast.spec.ts`](../../../apps/web/components/settings/settings-contrast.spec.ts)). Both are about the draft preview only, and each ends by saying what a save does instead, because saving differs from the preview in both cases: the entered color is stored rather than the substitute, and the saved palette's label (`on-primary`) always clears 4.5:1 ([`accent-engine.md`](accent-engine.md) §8; [#2543](https://github.com/pdcarlson/Frapp/issues/2543)). Neither says what the saved accent paints, which the engine derives (the row's "the palette is derived from it"). The **Accent hex needed** example, `#5AA9E6`, clears both checks, so following it raises neither.
@@ -306,18 +338,25 @@ The **Accent server contrast disclosure** row is independent of every row above 
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading chapter tasks...` |
-| Empty | `No tasks yet` | `Admins can create the first chapter task to assign ownership and award points.` |
-| Error | `Couldn't load tasks` | `Confirm your chapter access and retry.` |
+| Nothing assigned (member) | — | `Nothing on your plate.` then, when an event is ahead and Events is on, `Next up: {event}, {when}.` (one line, in place of the board) |
+| Add row (officer) | — | `Add a task`, at the top of To do |
+| Add row, required field left out | — | `Pick an assignee.` / `Pick a due date.` (under the field, on submit only) |
+| Error | `Couldn't load tasks` | the load-failure line (§ copy rules) |
 | Offline | `Tasks unavailable offline` | `Reconnect to load the chapter board and move tasks through it.` |
+
+The board keeps its four columns at zero for a `tasks:manage` holder, and the add row at the top of To do is its one way to create a task: it replaced the New task button and dialog (2026-11-06). Pressing it opens the row in place; Enter in the title creates the task once it has an assignee and a due date, which `POST /v1/tasks` requires, and the row stays open for the next one. A member without `tasks:manage` reads only their own tasks, so with none the four empty columns give way to the one line above; `{when}` is `formatRelativeDayTime`'s shape (`Tomorrow · 7:00 PM`).
+
+Mobile's Tasks tab (s08) is a personal board for everyone, so with nothing assigned it writes the same line under the points card, from the same `nextUpLine` (`@repo/formatting`), and a `tasks:manage` holder reads ` Tap + to assign a task.` after it, since New task lives in the tab bar's + (2026-11-07). It replaced the `You're all clear` card.
 
 ### Service Hours (dashboard)
 
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading service entries...` |
-| Empty queue | `No pending entries` | `Approved or rejected entries appear under History.` |
-| Empty history | `No service activity yet` | `Log your first service entry to build up chapter service hours.` |
-| Error | `Couldn't load service entries` | `Confirm your chapter access and retry.` |
+| Empty queue | — | `Nothing waiting for review.` (one line) |
+| Empty history | — | `No service logged yet.` then, for a viewer with `service:log`, a **Log the first hours** link that opens Log service (one line) |
+| Empty history, mobile | — | `No service logged yet.`; for a viewer with `service:log`, `No service logged yet. Tap + to log your first hours.`, the screen's own + (one line) |
+| Error | `Couldn't load service entries` | the load-failure line (§ copy rules) |
 | Offline | `Service hours unavailable offline` | `Reconnect to log hours and review the approval queue.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can review submitted hours.` |
 
@@ -326,12 +365,12 @@ The **Accent server contrast disclosure** row is independent of every row above 
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading chapter documents...` |
-| Empty | `No documents here yet` | `Upload chapter files like bylaws, agendas, and meeting minutes so everyone can find them.` |
-| Empty (search, all files) | `No documents match that search` | `Nothing in the chapter library has "{query}" in its title.` |
-| Empty (search, inside a folder) | `No documents match that search` | `No match in this folder. Try "All files" to search the whole library.` |
-| Empty (search, all files), mobile s12 | `No matches` | `No document title matches “{query}”.` |
-| Empty (search, inside a folder), mobile s12 | `No matches` | `Nothing in {folder} matches “{query}”.` Mobile's search stays inside the picked folder chip, so the line names the folder it searched |
-| Error | `Couldn't load documents` | `Confirm your chapter access and retry.` |
+| Empty | — | `No documents yet.`, `Nothing in {folder} yet.`, or on No folder `Every document is in a folder.`; for a viewer with `chapter_docs:upload` then **Upload a file** `or drop one anywhere on this page.` (one line) |
+| Empty (search, all files) | — | `No documents match “{query}”.` then a **Clear search** link (one line) |
+| Empty (search, inside a folder) | — | `Nothing in {folder} matches “{query}”.` (on No folder, `No documents outside a folder match “{query}”.`) then a **Search all files** link, which keeps the search (one line) |
+| Empty, mobile s12 | — | `No documents yet.` or `Nothing in {folder} yet.`; for a viewer with `chapter_docs:upload` then `Tap + to upload one.`, the screen's own + (one line) |
+| Empty (search), mobile s12 | — | The web lines and links: `No documents match “{query}”.` with **Clear search**, or inside a folder chip `Nothing in {folder} matches “{query}”.` with **Search all files** (one line) |
+| Error | `Couldn't load documents` | the load-failure line (§ copy rules) |
 | Offline | `Documents unavailable offline` | `Reconnect to browse the chapter library and download files.` |
 | Offline (search active) | `Search needs a connection` | `Clear the search to browse the documents already on this device.` |
 | Folder list failed (inline, under the rail) | — | `Couldn't load the folder list, so these are read from the documents shown. Empty folders and folder management are unavailable until it loads.` |
@@ -362,10 +401,10 @@ Three of these exist to keep one state from impersonating another:
 
 | State | Title | Description |
 |---|---|---|
-| Idle | `No report generated yet` | `Generate a report to see a preview here.` |
+| Idle | — | `Generate a report to preview it here.` (one line) |
 | Loading | — | `Generating report...` |
-| Empty filter | `Report returned no rows` | `The filters matched nothing in the active chapter.` |
-| Error | `Couldn't generate <kind> report` | the API's own message, or `Confirm your chapter access and retry.` |
+| Empty filter | — | `Nothing in this chapter matches these filters.` (one line) |
+| Error | `Couldn't generate <kind> report` | the API's own message, or the load-failure line (§ copy rules) |
 | Truncated | `Incomplete report` (badge) | `<cap summary> This preview and the CSV built from it are not a complete record of the chapter.` |
 | Permission denied | — | `Your role can't export chapter data. Ask your chapter president for access.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can export chapter data.` |
@@ -379,10 +418,12 @@ Three of these exist to keep one state from impersonating another:
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading backwork` (the skeleton's status line) |
-| Empty (no files at all) | `No backwork yet` | `Upload the first exam, homework or study guide to start the library.` |
-| Empty (search or filters match nothing) | `No files match` | `Try fewer words, or clear a filter.` Action: `Clear search and filters` |
+| Empty (no files at all) | — | `No backwork yet.` (one line; Upload sits in the toolbar above it) |
+| Empty (search or filters match nothing) | — | `No files match.` then a **Clear search and filters** link (one line) |
+| No chapter | — | `Pick a chapter to browse its backwork.` (one line); bulk upload's reads `Pick a chapter to upload backwork to it.` |
+| Can't upload (bulk upload) | — | `Your role can't upload backwork. Ask an officer who manages roles.` (one line) |
 | Truncated (the list hit the server's 1,000-row cap, #3525) | — | `Showing the newest 1,000 files. Search and filters look only at these for now.` |
-| Error | `Couldn't load backwork` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load backwork` | the load-failure line (§ copy rules) |
 | Offline | `Backwork unavailable offline` | `Reconnect to browse the coursework archive and download a resource.` |
 
 ### Study session (dashboard)
@@ -390,9 +431,9 @@ Three of these exist to keep one state from impersonating another:
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading study zones...` |
-| Empty zones | `No active study zones` | `Ask an officer who manages study zones to add one.` |
-| Empty history | `No sessions logged yet` | `Start a tracked session inside a study zone to start earning study points.` |
-| Error | `Couldn't load study data` | `Confirm your chapter access and retry.` |
+| Empty zones | — | `No study zones yet.` then, for a viewer with `geofences:manage`, an **Add a study zone** link to `/geofences`, and for everyone else `An officer adds them.` (one line; the nav hides Study until a zone is active, so a saved link is the way here) |
+| Empty history | — | `No sessions yet. Start one inside a study zone to earn study points.` (one line) |
+| Error | `Couldn't load study data` | the load-failure line (§ copy rules) |
 | Offline | `Study hours unavailable offline` | `Reconnect to start a session. Tracking needs a live location check.` |
 | Paused (tab hidden) | `Paused (tab hidden)` (badge) | Surfaced live while the timer is paused by the Page Visibility API. |
 
@@ -418,7 +459,7 @@ bind every one of them, and both are the point rather than style:
 |---|---|
 | New event (sheet from the tab bar's +) | `Your chapter's subscription isn't active, so new events can't be saved. An officer can sort this out for the chapter.` |
 | New task (s19) | `Your chapter's subscription isn't active, so new tasks can't be saved. An officer can sort this out for the chapter.` |
-| Task status (s08 toggle, chat task card) | `Your chapter's subscription isn't active, so task updates can't be saved. An officer can sort this out for the chapter.` Shown on the board, and on a mobile chat task card for Start, Mark complete, Confirm and Reject (one copy for both, `taskStatusGateRefusal` in `apps/mobile/lib/tasks/status-refusal.ts`). On either, the controls stay withdrawn until the member comes back to the screen or to the app ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
+| Task status (s08 toggle, chat task card) | `Your chapter's subscription isn't active, so task updates can't be saved. An officer can sort this out for the chapter.` Shown on the board, and on a mobile chat task card for Start, Mark done, Confirm and Reject (one copy for both, `taskStatusGateRefusal` in `apps/mobile/lib/tasks/status-refusal.ts`). On either, the controls stay withdrawn until the member comes back to the screen or to the app ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
 | Event check-in | `Your chapter's subscription isn't active, so check-in isn't available. An officer can sort this out for the chapter.` |
 | Log service hours (s20) | `Your chapter's subscription isn't active, so service hours can't be logged. An officer can sort this out for the chapter.` |
 | Upload document (s21) | `Your chapter's subscription isn't active, so documents can't be uploaded. An officer can sort this out for the chapter.` |
@@ -463,7 +504,7 @@ the state with `pollsGateOf` in `@repo/chat-core/polls`.
 The member's study screen has states the dashboard's *Study session* rows
 above don't cover (a session running on a phone, a pause, the location check,
 a refused write), and its error rows say which read failed rather than the
-dashboard's "Confirm your chapter access and retry".
+dashboard's load-failure line (§ copy rules).
 Per §"Do not rewrite equivalent state text ad hoc per screen unless the
 workflow intent is materially different", the member surface gets its own rows
 rather than inline strings. Where a state is the same for both, the row says
@@ -472,12 +513,13 @@ so and uses web's line, as *No zones* does.
 | State | Title | Description |
 |---|---|---|
 | Loading | — | Skeleton (`components/card-list-skeleton.tsx` around `StartCardSkeleton`, the start card and the list it becomes); no visible copy, and `Loading study zones` as its accessible name. |
-| Module off | `Study hours are turned off` | `Your chapter isn't tracking study hours right now. An officer can turn the module back on.` The same sentence is what a failed Start renders when the module gate refuses it — recognised by the guard's exact message, because `code: chapter.module.disabled` didn't reach a client until #1020, which left a code-keyed path dead until #2393 (moving to the code first is #2995) — the empty state is unreachable while `useCurrentChapter` is disabled (no claim on the token), so the error path has to carry the member-facing wording rather than relaying the guard's officer instructions ("Re-enable it in Settings → Modules"). |
-| Module off (session running) | — | `Your chapter isn't tracking study hours right now, so that didn't save. An officer can turn the module back on — study time tracked now may not be credited.` Rendered when an officer switches `hours` off under a running session: pause, resume, heartbeat and stop are refused by the same gate. It hedges for the reason the *Subscription refused (session running)* row gives. Seen until the member's cached chapter payload catches up: the refusal itself refetches it, and once it says off, the screen below replaces the session. With no payload (no chapter claim on the token) the screen fails open, and this line stays the explanation. |
-| Module off (session running, screen) | `Study hours are turned off` | `Your chapter isn't tracking study hours right now, so your running session can't be updated or ended. An officer can turn the module back on — study time tracked now may not be credited.` The *Module off* empty state's body when a session is still running under it. The screen replaces the session's card, because every write on it is refused while the module is off and nothing expires a stale session in the meantime, so this line is the only place the member learns the session exists. No failure line is stacked above it. A session write that gets through under it (an officer turned `hours` back on) refetches the payload. Within ten minutes of an unpaused session's last banked heartbeat (or a paused one's grace window) that brings the card back; past that, the write settles the session (`EXPIRED` with nothing credited, or `PAUSED_EXPIRED` with its pre-pause time) and the screen goes to Start ([#2718](https://github.com/pdcarlson/Frapp/issues/2718)). |
+| Module off | — | One line: `Your chapter isn't tracking study hours right now. An officer can turn the module back on.` The same sentence is what a failed Start renders when the module gate refuses it — recognised by the guard's exact message, because `code: chapter.module.disabled` didn't reach a client until #1020, which left a code-keyed path dead until #2393 (moving to the code first is #2995) — the empty state is unreachable while `useCurrentChapter` is disabled (no claim on the token), so the error path has to carry the member-facing wording rather than relaying the guard's officer instructions ("Re-enable it in Settings → Modules"). |
+| Module off (session running) | — | `Your chapter isn't tracking study hours right now, so that didn't save. An officer can turn the module back on. Study time tracked now may not be credited.` Rendered when an officer switches `hours` off under a running session: pause, resume, heartbeat and stop are refused by the same gate. It hedges for the reason the *Subscription refused (session running)* row gives. Seen until the member's cached chapter payload catches up: the refusal itself refetches it, and once it says off, the screen below replaces the session. With no payload (no chapter claim on the token) the screen fails open, and this line stays the explanation. |
+| Module off (session running, screen) | — | `Your chapter isn't tracking study hours right now, so your running session can't be updated or ended. An officer can turn the module back on. Study time tracked now may not be credited.` The *Module off* empty state's body when a session is still running under it. The screen replaces the session's card, because every write on it is refused while the module is off and nothing expires a stale session in the meantime, so this line is the only place the member learns the session exists. No failure line is stacked above it. A session write that gets through under it (an officer turned `hours` back on) refetches the payload. Within ten minutes of an unpaused session's last banked heartbeat (or a paused one's grace window) that brings the card back; past that, the write settles the session (`EXPIRED` with nothing credited, or `PAUSED_EXPIRED` with its pre-pause time) and the screen goes to Start ([#2718](https://github.com/pdcarlson/Frapp/issues/2718)). |
 | Subscription refused (start) | — | `Your chapter's subscription isn't active, so study sessions can't be recorded. An officer can sort this out for the chapter.` Rendered when `POST /study-sessions` is refused by the subscription gate; the two rules binding it are in § *Subscription refused (mobile, cross-surface)* above. |
 | Subscription refused (session running) | — | `Your chapter's subscription isn't active, so that didn't save. An officer needs to sort it out — study time tracked now may not be credited.` Deliberately **not** the row above. Pause, resume, heartbeat and stop all leave the session active server-side and the End button on screen, so telling the member study "can't be recorded" would be false and would cost them the banked time if they walked away. It must not promise the time is safe either: `stop` is refused too, and a session whose heartbeats are refused goes stale and closes as `EXPIRED` with no points after 10 minutes. The reasoning is kept on `SUBSCRIPTION_REFUSAL_COPY.studySession`. *(Corrected 2026-09-27: this row still quoted the earlier "its time is safe" string after the code dropped it.)* |
-| No zones | `No study zones yet` | `Ask an officer who manages study zones to add one.` Web's *Empty zones* line, word for word. *(Corrected 2026-11-05: the earlier body quoted the `geofences:manage` permission key to a member, who can't act on it, [#3422](https://github.com/pdcarlson/Frapp/issues/3422).)* |
+| No zones | — | `No study zones yet. An officer adds them.`, or for a viewer with `geofences:manage` `No study zones yet. Add one from Frapp on the web.`, since zones are drawn on a map only web has (one line, 2026-11-07). *(Corrected 2026-11-05: an earlier body quoted the `geofences:manage` permission key to a member, who can't act on it, [#3422](https://github.com/pdcarlson/Frapp/issues/3422).)* |
+| No sessions yet | — | `No sessions yet.` under the `RECENT SESSIONS` heading, which stays (one line) |
 | Location off, OS won't ask again | `Location check` (primer) | `Location is turned off for Frapp. Turn it on in <path>, then start your session.` · `Open Settings` The button opens the app's own settings page. `<path>` is the member's own OS's and OS version's, from `locationSettingsPath` (`apps/mobile/lib/study/location-settings-path.ts`): `Settings → Frapp → Location` below iOS 18, `Settings → Apps → Frapp → Location` from iOS 18 (which put app pages under an Apps row; the app installs from iOS 16.4), `Settings → Apps → Frapp → Permissions → Location` on Android. Never another OS's or iOS version's path, which sends the member looking for a row that isn't there. |
 | Location off, web build | `Location check` (primer) | `Location is turned off for Frapp. Allow location for this site in your browser, then start your session.` No button: a browser has no settings page an app can open, and location there is the site's permission, not a Settings path. The Start card's failure line ends the same way: `… so it needs location while you study. Allow location for this site in your browser.` |
 | Location refused or unreadable (Start) | — (Start card failure line) | `Frapp confirms you're in the study zone, so it needs location while you study. Turn it on in <path>.` The same `<path>` as the row above, from the same helper; this line has no button, so the path is the whole way forward. |
@@ -498,8 +540,8 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading study zones...` |
-| Empty | `No study zones yet` | `Create your first zone to let members start tracked study sessions for points.` |
-| Error | `Couldn't load study zones` | `Confirm your chapter access and retry.` |
+| Empty | — | `No study zones yet. Add the first one above.` (one line; the zone form is above it) |
+| Error | `Couldn't load study zones` | the load-failure line (§ copy rules) |
 | Offline | `Study zones unavailable offline` | `Reconnect to draw a zone or change its reward rate.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage study zones.` |
 | Permission denied | — | `Your role can't manage study zones. Ask your chapter president for access.` |
@@ -509,8 +551,8 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading chapter polls...` |
-| Empty | `No polls match this view` | `Create a poll inside a chat channel and it will appear here. Loosen the filters if you're expecting results.` |
-| Error | `Couldn't load polls` | `Confirm your chapter access and retry.` |
+| Empty | — | `No polls here. Start one in a chat channel.` (one line) |
+| Error | `Couldn't load polls` | the load-failure line (§ copy rules) |
 | Offline | `Polls unavailable offline` | `Reconnect to load the chapter's polls and cast a vote.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can see the chapter's polls.` |
 | Permission denied | `Polls` (the page title) | `Your role can't see every poll. You can still vote in chat.` |
@@ -532,16 +574,17 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Jump into a channel whose messages failed to load | — | `Couldn't load this channel's messages to reach that message.` · `Dismiss` |
 | Jump to latest (mobile: a `↓` over the thread once the reader is back in history; `components/chat/jump-to-latest-button.tsx`, `jumpToLatestLabel`) | — | Read `Jump to latest`, or `New messages. Jump to latest` once something new lands out of sight |
 | Setup checklist (web, top of the channel rail; mobile, chat home under UP NEXT; officers only, [`modules.md` § Setup checklist](../../product/modules.md#setup-checklist)) | `Set up your chapter` · `<done> of <total>` | One line per step: `Invite members`, `Schedule the first event`, `Add a study zone`, `Upload the bylaws`, `Send the first dues`; a done line is struck through and muted. The hide control is an icon, labelled `Hide the setup list`. On mobile (no dues line) a line the phone can't do ends in a muted `Web`, has the hint `Opens this step in the web app.`, and if the browser won't open shows `Couldn't open the web app` / `Sign in at <web host> on a computer to finish this step.` |
-| No channels | `No channels yet` | `Onboarding seeds them. Ask an admin.` It names no channel: which ones a new chapter gets is [`chat/README.md` § Channels](../../behavior/chat/README.md#channels). |
+| No channels | — | `No channels yet. Ask an admin to add one.` (one line, both clients). It names no channel: which ones a new chapter gets is [`chat/README.md` § Channels](../../behavior/chat/README.md#channels). |
+| Link to a channel the reader can't reach (web) | — | `That link points to a channel you can't reach.` then a **Browse channels** link that opens the channel list (one line) |
 | Channel start (both clients, `@repo/hooks/channel-start`; an empty channel draws it just above the composer, and a channel with history draws it above its oldest message) | `Welcome to #<name>`; a DM's is the other member's name | `This is the start of #<name>.`, or `This is the start of the private #<name> channel.` for a private one (a role-gated channel takes the plain line, since who reads it depends on its permissions and the seeded `#alumni` is open to every member), `This is the start of your conversation with <name>.` for a DM and `This is the start of your group conversation.` for a group DM; then the channel's own description, when it has one. Web officers (`channels:manage`) get `Edit channel`, or `Add a description` when it is blank, opening Chat admin on that channel |
 | Channel header (web: `# <name> • <description>` on one line, the description muted and truncated; mobile: the description on a muted line under the name) | — | The channel's own description. The four default channels start with `The whole chapter. Plans, questions, whatever's going on.` (#general), `News from officers. Everyone gets notified.` (#announcements), `Officer changes to dues, roles and settings, posted automatically.` (#chapter-audit) and `Alumni and actives keeping in touch.` (#alumni), from `DEFAULT_CHANNELS` |
-| Error | `Couldn't load channels` / `Couldn't load messages` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load channels` / `Couldn't load messages` | the load-failure line (§ copy rules) |
+| Channel list refused by role (a 403 with no `chapter.*` code; both clients, `@repo/chat-core/channels-refused-copy`) | `Chat isn't open to you yet` | `Your role in <chapter> doesn't include chat. Ask an officer to give you the Member role.` (`this chapter` until the name loads). A `chapter.*` 403 keeps the error row above |
 | Read-only channel | — | `This channel is read-only for your role.` (mobile still quotes the permission key, [#3422](https://github.com/pdcarlson/Frapp/issues/3422)) |
 | Alumni-restricted channel | — | `Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.` |
 | Archived conversation (mobile only: a Group DM everyone else left, #348; web's channel list leaves archived channels out) | — | `This conversation is archived because everyone else left. You can still read it.` |
-| No chapter selected | `No chapter selected` | `Pick an active chapter to load its channels and messages.` |
-| Composer placeholder (mobile; `app/(tabs)/chat-thread.tsx`) | — | `Message <title>`, the header's title (`Message #general`, `Message Casey`); plain `Message` while the title is blank or falls back to `Thread`. The input's accessible name is the same string |
-| Offline (composer) | — | `You're offline — messages send when you reconnect.` |
+| No chapter selected | — | `Pick an active chapter to load its channels.` (one line) |
+| Composer placeholder (mobile; `app/(app)/chat-thread.tsx`) | — | `Message <title>`, the header's title (`Message #general`, `Message Casey`); plain `Message` while the title is blank or falls back to `Thread`. The input's accessible name is the same string |
 | Composer mounted before the channels resolve (#2176); visible after Enter, announced from the first render | — | `Still opening your channels. You can keep typing.` |
 | Send refused by the outbox, message put back (toast, #1728) | `Message not sent` | `It couldn't be queued for delivery. It's back in the composer.` |
 | Send refused by the outbox, composer changed since (toast, #1728) | `Message not sent` | `It couldn't be queued for delivery and was discarded. Re-enter it to try again.` |
@@ -572,18 +615,18 @@ The channel structure below the report queue on `/chat-admin`. Its states stand 
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading channels...` |
-| Empty (channels) | `No channels yet` | `Create the first channel to get chapter chat structured.` |
-| Empty (categories) | `No categories yet` | `Channels without a category show up as uncategorized.` |
-| Nothing selected (edit pane) | `No channel selected` | `Pick a channel to edit its details, notifications and pins.` |
+| Empty (channels) | — | `No channels yet. Create the first one above.` (one line) |
+| Empty (categories) | — | `No categories yet. Channels without one show as uncategorized.` (one line) |
+| Nothing selected (edit pane) | — | `Pick a channel to edit it.` (one line) |
 | Loading (pins) | — | `Loading pins...` |
-| Empty (pins) | `Nothing pinned` | `Officers can pin key messages from the channel timeline.` |
+| Empty (pins) | — | `Nothing pinned. Pin a message from the channel.` (one line) |
 | Stale (pins) | — | `Couldn't refresh the pins. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded pins stay) |
-| Error (pins) | `Couldn't load pins` | `Confirm your chapter access and retry.` (never `Nothing pinned`: a failed read is not an empty list) |
+| Error (pins) | `Couldn't load pins` | the load-failure line (§ copy rules) (never `Nothing pinned`: a failed read is not an empty list) |
 | Offline (pins) | `Pins unavailable offline` | `Reconnect to load this channel's pins.` (whether the read paused or failed while offline) |
 | Loading (permission grid) | — | `Loading permissions…` |
 | Unavailable (permission grid) | — | `Couldn't load the permission list, which needs a role that can see the full directory. Your current selections are unaffected.` (nothing loaded; a failed refresh keeps the loaded grid) |
 | Offline (permission grid) | — | `Can't load the permission list while offline. Existing selections are unaffected; reconnect to change them.` |
-| Error | `Couldn't load channels` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load channels` | the load-failure line (§ copy rules) |
 | Stale | — | `Couldn't refresh the channels. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded channels and categories stay) |
 | Offline | `Channels unavailable offline` | `Reconnect to manage channels, categories and pins.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage chat channels.` |
@@ -600,11 +643,11 @@ The officer report queue ([`../../behavior/chat/README.md`](../../behavior/chat/
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading reports...` |
-| Empty (Open) | `No open reports` | `When a member reports a message, it lands here for officers to review.` |
-| Empty (Reviewed / Actioned / Dismissed) | `No reviewed reports` · `No actioned reports` · `No dismissed reports` | `Reports marked reviewed are kept here.` · `Reports whose message was removed are kept here.` · `Reports you dismiss are kept here.` |
-| Error | `Couldn't load reports` | `Confirm your chapter access and retry.` |
+| Empty (Open) | — | `No open reports.` (one line) |
+| Empty (Reviewed / Actioned / Dismissed) | — | `No reviewed reports.` · `No actioned reports.` · `No dismissed reports.` (one line each; the tab already names the queue) |
+| Error | `Couldn't load reports` | the load-failure line (§ copy rules) |
 | Stale | — | `Couldn't refresh the reports. These are the last ones that loaded.` · `Try again` (a background refresh failed; the loaded reports stay, and so does an empty tab, which says it too) |
-| No chapter | `No chapter selected` | `Pick an active chapter to review its reports.` |
+| No chapter | — | `Pick an active chapter to review its reports.` (one line) |
 | Offline | `Reports unavailable offline` | `Reconnect to review reported messages.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can review reported messages.` |
 | Permission denied | `Reported messages` | `Reviewing reported messages needs a role that can see the full directory and manage channels and pins. Ask your chapter president for access.` |
@@ -639,6 +682,7 @@ Implementation: `apps/web/components/chat-admin/chat-report-copy.ts`.
 | Last import deleted | — | `The import from <server> was deleted.` (`your Discord server` when it has no name) · `Dismiss` |
 | Set up, not started | — | `An import from <server> was set up and not started. Delete it to remove anything uploaded for it.` (`from <server>` left out when it has no name) · `Delete` (opens the delete confirmation) |
 | Importing | `<n> messages in so far` (eyebrow `Importing · <server>`, or `Waiting to start · <server>` while queued) | `<done> of <total> channels and threads done. You can close this tab. You'll get a notification when it finishes.` (the first sentence only once the counts are known), the percent under the meter · `Stop import`. On a bot import: `Now importing #<channel> · <n> messages` (a thread reads `#<channel> › <thread>`), then a tile per Discord category, `<name>` over `<done>/<total>` (` · <n> failed` when any did; `No category` for channels in none; past eight, the last reads `+ <n> more`), labelled `Progress by Discord category` |
+| Paused (importing or deleting) | — | `The import hit a temporary problem and paused. Try <n> of 5 starts in about <a minute / n minutes>.` (`Deleting hit a temporary problem …` while deleting), in place of the leave-it line or the deletion's count, while the worker waits out a temporary error ([#1692](https://github.com/pdcarlson/Frapp/issues/1692)). On the fifth try in a row the import fails, and the finished state's error reads `Stopped after 5 tries that each hit a temporary error. The last one: <error>` |
 | Stopping (toast) | — | `Stopping the import.`, or the API's message, or `Could not stop the import.` |
 | Finished | `Your Discord history is in Frapp` (completed) · `The import stopped on an error` (failed) · `The import was stopped` (cancelled) · `The deletion stopped on an error` (a deletion that failed part-way) · `The import stopped` (any other) | `<server> · messages since <day> · finished <day, time>`, the parts it has (a nameless server's part is left out), and the import's own error under it when it failed. Figures: `messages` · `files` · `channels` and `threads` (a completed bot import, once its categories load) or `channels and threads` (completed otherwise) or `channels and threads done` (stopped part-way). A completed bot import also lists `By Discord category`, one row per category (`<name>` and its count of channels and threads; `No category` for channels outside one; past eight, `+ N more`). `Open chat` once it completed. On a failed import: `Resume import`, with `It picks up where it stopped. Nothing already imported comes in twice.` |
 | Resuming (toast) | — | `Resuming the import.`, or the API's message, or `Could not resume the import.` |
@@ -648,7 +692,7 @@ Implementation: `apps/web/components/chat-admin/chat-report-copy.ts`.
 | Finish notification | `Discord import finished` · `Discord import stopped` (failed) | `<n> messages from <server> are now in Frapp chat.` (`1 message … is`; without a server name, `from` and the name are left out) · `The import from <server> stopped on an error. Open the Discord import page to see why.` |
 | One import (API, 409) | — | `Your chapter already has a Discord import. Delete it before starting another.` |
 | Cutoff (wizard, review step) | `How far back should we go?` | `Older messages and their files are never read or stored. You can't change this once the import starts.` Choices: `Everything` · `Last 4 years` · `Last 2 years` · `Last year` · `Pick a date` (opens `Import messages from`). Under them: `Your server was made in <Mon YYYY>.` (bot path, read from the server's id), then `Messages before <Mon D, YYYY> are left out.` or `The server's whole history comes over.` Problems: `Pick a date, or choose Everything.` · `Enter a whole date, or choose Everything.` · `Pick a date in the past, or choose Everything.` |
-| Error | `Couldn't load the import` | `Confirm your chapter access and retry.` |
+| Error | `Couldn't load the import` | the load-failure line (§ copy rules) |
 | Stale | — | `Couldn't refresh the import. This is the last update that loaded.` · `Try again` (a background refresh failed; the import as it last loaded, and its meter, stay) |
 | Offline | `Import unavailable offline` | `Reconnect to load your chapter's Discord import.` |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can import Discord history.` |
@@ -683,9 +727,10 @@ Implementation: the page's read states inline in `apps/web/components/discord-im
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading billing overview...` |
-| Empty | `No invoices yet` | `Create your first invoice to start chapter dues collection.` |
-| Error | `Couldn't load invoices` | `Confirm your chapter access and retry.` |
-| Empty (filtered) | `No invoices match this filter` | `Try a different status, or clear the filter to see every invoice.` |
+| Empty, `billing:manage` | — | `No invoices yet.` then a **Create the first invoice** link that opens Create invoice (one line) |
+| Empty, member | — | `You have no invoices.` (one line) |
+| Error | `Couldn't load invoices` | the load-failure line (§ copy rules) |
+| Empty (filtered) | — | `No invoices match these filters.` then a **Clear filters** link (one line) |
 | Loading (plan panel) | — | `Loading plan...` |
 | Offline | `Billing unavailable offline` | `Reconnect to sync subscription status and invoice balances.` |
 | Billing-status read failed | — | `Couldn't load this chapter's Stripe details.` (with a Retry; shown only to a `billing:view` holder, for whom the error is a failure rather than the ordinary 403) |
@@ -714,7 +759,7 @@ word "subscription"**, which is the chapter's own bill with a different payer
 | State | Title | Description |
 |---|---|---|
 | Loading | — | Skeleton (`components/card-list-skeleton.tsx` around `BalanceCardSkeleton`, the balance card and the list it becomes); no visible copy, and `Loading your dues` as its accessible name. |
-| Empty | `No dues yet` | `Your chapter hasn't billed you. Anything they send will show up here.` |
+| Empty | — | `You have no invoices.` (one line, web's member line) |
 | Error | `Couldn't load your dues` | `Your invoices are still on record — this was a problem fetching them.` |
 | Nothing owed | `You're all paid up` (balance label) | — |
 | Payment captured, unsettled | — (balance card caption) | `Payment received, confirmation pending. This updates as soon as your chapter's records catch up.` With two or more open: `Payment received for <invoice title>, confirmation pending. This updates as soon as your chapter's records catch up.`, because the label then only counts them and a live `Pay now` pays that invoice. Re-reading until PAID is [`billing.md`](../../behavior/billing.md) § Member payment flow's rule (it owns it). The hold ends when the invoice list reads the invoice as no longer OPEN (PAID, VOID, or dropped from the list: the rows below), on a chapter switch, or when the app closes; nothing else ends it. Meanwhile the card stays on the paid invoice with the chip `Pending`, and with two or more open, that invoice's OPEN row reads `Pending` and the others wait. For the poll's budget after the sheet (about 24s, whether or not the poll has answered) the CTA is disabled as `Confirming payment…`; after that `Pay now` is live under this line, and with two or more open its accessibility hint is the footnote, `Pays <invoice title> — <amount> of your balance.`. Leaving the screen or the app and coming back re-reads the list, and so does a tick every 10s while the screen is up and the app in the foreground. The poll saying PAID ends nothing, because the list hasn't caught up yet. On Android a list read that never answers keeps the hold, because nothing times the request out yet ([#3433](https://github.com/pdcarlson/Frapp/issues/3433)). Pay stays live because nothing Dues reads says a payment failed: one that sat in processing and then failed leaves the invoice OPEN, and the member hears of it from the `Payment declined` push and the row it writes in Notifications (s14), neither of which Dues reads (the row carries no invoice id); a member who turned billing notifications off gets neither. A tap on a payment that failed since opens the sheet on the same intent; one the server already has as succeeded gets its refusal below. |
@@ -733,13 +778,58 @@ client cannot read (`GET /v1/invoices/overdue` is `billing:view`-only). §Status
 labels reserves the backend's own labels for states the client can actually
 confirm.
 
+### Profile step (mobile s03)
+
+s03's first beat, shown when the member has no photo or no real name yet
+(`apps/mobile/lib/onboarding/profile-step.ts`). The name field never pre-fills
+the API's `Member` stand-in. The name is checked when the member presses the
+button, not while typing.
+
+| State | Title | Copy |
+|---|---|---|
+| Step | `How the chapter sees you` | `Your photo and name go on every message you send.` The profile photo control (tap to choose, as on Profile), then the field labelled `Your name`, placeholder `First and last name`. Gold `Continue` when the notifications beat follows, else `Go to chat`. |
+| No name | as above | Under the field: `Add your name so the chapter knows who's talking.` |
+| Save failed | as above | Under the field: `Couldn't save your name. Check your connection and try again.` The member stays on the beat with what they typed. |
+
+### First-run tour (mobile)
+
+The three stops over chat after s03 (`apps/mobile/lib/onboarding/tour.ts`).
+One line each, in a popover card beside the lit spot, with the count and the
+action under it. No title: the lit control is the subject.
+
+| Stop | Line |
+|---|---|
+| Top channel section | `You're in <chapter>. Tap a channel to start talking.` (`your chapter` when the name isn't loaded) |
+| The tab bar's + | `Shortcuts live under the +. Hold it to pick your own.` |
+| The More tab | `The directory, your hours and settings are in More.` |
+
+Under each line: the count, `1 of 3`, muted, and `Next` in the chapter accent
+(`Done` on the last stop). `Skip` in the top corner, white on the dim, read
+out as `Skip the tour`.
+
+### Push opt-in (mobile)
+
+Onboarding's notifications step (s03's last beat, and chapter setup's step) and the
+chat home's one reminder (`components/notifications/push-ask.tsx`,
+`push-reminder.tsx`). The rows name what pushes by default, in the app's nouns: every message in a DM,
+#general and #announcements, and a mention anywhere. The footnote names where each is
+changed: chat per conversation from its menu (Settings has no chat switch), events and
+tasks in Settings ([`../mobile/patterns.md`](../mobile/patterns.md#push-notifications) § Push
+notifications).
+
+| State | Title | Copy |
+|---|---|---|
+| Step | `Turn on notifications` | `Chapter plans move fast. Get a ping when something is for you.` Rows: `DMs, mentions, #general, and #announcements` (chat glyph), `New events, reminders, and changes` (events glyph), `Tasks assigned to you or coming due` (tasks glyph). Footnote: `Mute any chat from its menu. Event and task alerts, and quiet hours, are in Settings.` Gold `Turn on notifications`, quiet `Not now`. |
+| Step, no prompt left | `Turn on notifications` | As above, with the gold button reading `Open Settings`. Stored as a deferral, so the chat home's reminder can still ask once. |
+| Chat home reminder | `Notifications are off` | `You won't hear about mentions or new events until you open the app.` Action `Turn on` (`Open Settings` when no prompt is left), and a close. |
+
 ### Push availability (mobile, s16)
 
 The reason Settings states on its push row, in place of the switch, when this build
 can't push (`pushUnavailableReason()` in `apps/mobile/lib/notifications/push.ts`).
 One sentence per cause, because each cause has a different remedy
 ([`../mobile/patterns.md`](../mobile/patterns.md#push-notifications) § Push
-notifications). The s03 primer card never shows these: it isn't drawn when push
+notifications). Onboarding's notifications step never shows these: it is skipped when push
 is unavailable ([#2299](https://github.com/pdcarlson/Frapp/issues/2299)).
 
 | State | Title | Description |
@@ -752,7 +842,7 @@ is unavailable ([#2299](https://github.com/pdcarlson/Frapp/issues/2299)).
 ### Notification preferences (mobile, s16)
 
 The status footnote under Settings' notification switches (`notificationsMeta` in
-`apps/mobile/app/(tabs)/preferences.tsx`). It shows the first row that applies,
+`apps/mobile/app/(app)/preferences.tsx`). It shows the first row that applies,
 in this order, so a write in flight reads as saving even while the first read is
 still out. Once synced it shows nothing: the steady state needs no line.
 
@@ -786,10 +876,10 @@ names a control only one client has lives with that client, under `apps/mobile/`
 | Block failed | `Couldn't block <name>` | `Nothing changed. Check your connection and try again.` Also any 404 other than the one below (an alert on mobile, a toast on web) | `block-copy` (`blockFailedTitle`, `BLOCK_FAILURE_BODY`) |
 | Unblock failed | `Couldn't unblock <name>` | `Nothing changed. Check your connection and try again.` (an alert on mobile, a toast on web) | `block-copy` (`unblockFailedTitle`, `BLOCK_FAILURE_BODY`) |
 | Block refused, not a member | `Couldn't block <name>` | `This member is no longer in your chapter, so there's nothing to block.` Only for a 404 whose message is `Member not found` (`isMemberNotFound`) | `block-copy` (`BLOCK_NOT_A_MEMBER_BODY`) |
-| Actions sheet, Report row | — | `Report message` · `Your chapter's officers will be able to see it.` | mobile `components/chat/message-actions-sheet.tsx` |
+| Actions sheet rows | — | `Reply`, `Edit message`, `Copy text` (`Copied`), `Mention`, `Report message`, `Delete message`: bare labels, no line explaining a row (owner, 2026-11-07). The add-reaction cell is named `Add a reaction`; the picker's field reads `Search emoji` | mobile `components/chat/message-actions-sheet.tsx`, `emoji-picker-sheet.tsx` |
 | Action bar More menu (web) | — | `More actions` (the button's name) · `Report message`; `Block <name>` (destructive) | web `components/chat/message-item.tsx`; the Block label is `block-copy` (`blockActionLabel`) on every surface |
 | Report form | `Report message` | `Why are you reporting it?` · the reasons · `Details (optional)` · `Send report`. Mobile's field placeholder reads `Add details (optional)` | `report-copy` (`REPORT_FORM_TITLE`, `REPORT_FORM_PROMPT`, `REPORT_SEND_LABEL`, `REPORT_REASON_LABELS`); the details field's label is each client's own |
-| Block / Unblock rows (message actions sheet and the directory's member sheet) | — | `Block <name>` · `Hides their messages from you in this chapter's chat. They aren't told.`; `Unblock <name>` · `Their messages in this chapter's chat show again.` (directory only) | mobile `lib/chat/block-actions.ts` (`BLOCK_ROW_DESCRIPTION`, `UNBLOCK_ROW_DESCRIPTION`) |
+| Block / Unblock rows (the report form, Report sent, and the directory's member sheet) | — | `Block <name>`; `Unblock <name>` (directory only). No line under either: what a block does is said in its confirmation (2026-11-07) | `block-copy` (`blockActionLabel`, `blockConfirmBody`) |
 | Report sent | `Report sent` | `Your chapter's officers can see this report. The member you reported isn't told.` · then `Block <name>` where the sender can be blocked, and `Done` | `report-copy` (`REPORT_SENT_TITLE`, `REPORT_SENT_BODY`) |
 | Already reported | `Already reported` | `You already reported this message, and that report is still open. Your chapter's officers can see it.` | `report-copy` (`REPORT_ALREADY_TITLE`, `REPORT_ALREADY_BODY`) |
 | Report failed, form open | — | `Your report didn't send. Check your connection and try again.` — no response, a 5xx, or any status the next row doesn't list | `report-copy` (`reportFailureBody`) |
@@ -831,7 +921,7 @@ clients import it from `@repo/hooks`.
 
 | State | Title | Description | Where |
 |---|---|---|---|
-| The control | — | `Hide conversation`: a choice in a 1:1 DM row's long-press menu (since #2877; before it, the long press asked directly), and the row's accessibility action of the same name (mobile); a control on a 1:1 DM row in the rail, named `Hide conversation with <name>`, and a row in the open DM's `⋯` menu (web) | `HIDE_CONVERSATION_LABEL` |
+| The control | — | `Hide conversation`: a choice in a 1:1 DM row's long-press menu (since #2877; before it, the long press asked directly), and the row's accessibility action of the same name (mobile); a choice in a 1:1 DM row's right-click menu in the rail, and a row in the open DM's `⋯` menu (web) | `HIDE_CONVERSATION_LABEL` |
 | Confirmation | `Hide your conversation with <name>?` | `It leaves your list, and nothing in it is deleted. They aren't told. It comes back when there's something new in it, and you can open it from Hidden conversations anytime.` · confirm `Hide`. A native alert on mobile; on web, the shell's confirm dialog from the rail and the `⋯` menu's panel from the header | `hideConversationConfirmTitle`, `HIDE_CONVERSATION_CONFIRM_BODY` |
 | Hidden group | `Hidden conversations (<n>)` | A collapsed group at the end of the list, on both clients; opening a row from it brings that DM back | `HIDDEN_CONVERSATIONS_LABEL` |
 | Hide failed | `Couldn't hide the conversation` | `Nothing changed. Check your connection and try again.` A mobile alert; a toast on web, because a rail hide can fail for a DM that is not open | `HIDE_CONVERSATION_FAILED_TITLE`, `HIDE_CONVERSATION_FAILED_BODY` |
@@ -856,9 +946,10 @@ and both import it from `@repo/hooks`. The filter note below is web's alone and 
 
 | State | Title | Description | Where |
 |---|---|---|---|
-| Pin | — | `Pin to top`, and `Unpin from top` on a pinned row: a long-press choice and a named accessibility action (mobile); a control on the rail row, named `Pin to top: <title>`, and a row in the channel menu (web) | `PIN_TO_TOP_LABEL`, `UNPIN_FROM_TOP_LABEL` |
+| Pin | — | `Pin to top`, and `Unpin from top` on a pinned row: a row in the long-press menu and a named accessibility action (mobile); a row in the rail row's right-click menu and in the channel menu (web) | `PIN_TO_TOP_LABEL`, `UNPIN_FROM_TOP_LABEL` |
+| Row menu (web right-click, mobile long press) | — | `Mark as read`, `Pin to top`, `Notifications` (with the level, `All`, `Mentions` or `Muted`, before the chevron; its choices are the channel menu's `Every message`, `Only @mentions`, `Mute`), `Copy link` (toast `Link copied`), `Hide conversation`; then `Edit channel` (web) and `Delete channel` for `channels:manage`; mobile has no `Copy link` or `Edit channel`. Delete asks `Delete #<name>?` with `Every message, attachment, and pin in this channel is removed. This cannot be undone.`, the same words as Chat settings | `MARK_AS_READ_LABEL`, `CHANNEL_NOTIFICATIONS_LABEL`, `COPY_CHANNEL_LINK_LABEL`, `DELETE_CHANNEL_LABEL`, `deleteChannelConfirmTitle`, `DELETE_CHANNEL_CONFIRM_BODY` |
 | Pinned section | `Pinned` | The section header above everything else | `PINNED_SECTION_LABEL` |
-| Filters | — | `Unread only`, `Hide muted`: toggle chips above the list (mobile); two switches behind the Channels header's filter control, named `Filter channels`, or `Filter channels, filters on` while one is on (web) | `UNREAD_ONLY_LABEL`, `HIDE_MUTED_LABEL` |
+| Filters | — | `Unread only`, `Hide muted`: two switches in a menu behind the first section heading's filter button, named `Filter channels`, or `Filter channels, filters on` while one is on, with `Showing unread only.`, `Muted channels hidden.` or `Showing unread only, muted hidden.` and `Show all` under the heading (mobile, 2026-11-06); two switches behind the Channels header's filter control, named `Filter channels`, or `Filter channels, filters on` while one is on (web) | `UNREAD_ONLY_LABEL`, `HIDE_MUTED_LABEL`, `FILTER_CHANNELS_LABEL`, `FILTER_CHANNELS_ON_LABEL` |
 | Filtered to nothing | — | `No channels match your filters.` with the action `Show all channels`, which turns both filters off | `NO_MATCHING_CHANNELS`, `SHOW_ALL_CHANNELS_LABEL` |
 | Save failed | `Couldn't save your channel list` | `Nothing changed. Check your connection and try again.` A mobile alert; a toast on web | `SIDEBAR_SAVE_FAILED_TITLE`, `SIDEBAR_SAVE_FAILED_BODY` |
 
@@ -892,6 +983,26 @@ Reply, Edit and Delete on a message (#2775). Who is offered which is owned by
 | Link wouldn't open | `Couldn't open that link` | `Check the address in the message, or copy it into your browser.` (an alert) | mobile `lib/chat/open-link.ts` |
 | Link, to a screen reader | — | `Open <link text>` as a named action on the message; a quote's jump reads `Go to the original message` | mobile `components/chat/message-markdown.tsx`, `components/chat/message-item.tsx` |
 
+### Edit roles (mobile s13)
+
+The role editor behind the directory member sheet's Roles row, the one place on mobile
+roles are edited. Who gets it, and what it changes, is owned by
+[`../mobile/screens.md`](../mobile/screens.md) s13.
+
+| State | Title | Description | Home |
+|---|---|---|---|
+| The sheet | `<name>'s roles` | Search field `Search roles`; under it one fixed-height status line, blank until `Saving…` and `Saved` (it said `Tap a role to add or remove it.` until 2026-11-07) | mobile `components/directory/member-roles-sheet.tsx` |
+| President's row | — | `Changes with Transfer presidency` under the name; the row can't be tapped | mobile `lib/directory/role-editor.ts` (`ROLES_LOCKED_CAPTION`) |
+| Custom roles held | — | `<names> is a custom role, changed on the web.` (`are custom roles` for several) | mobile `lib/directory/role-editor.ts` (`customRolesCaption`) |
+| Empty | — | `This chapter has no roles yet.`, or `No roles match that search.` while searching | mobile `components/directory/member-roles-sheet.tsx` |
+| Removing the last role carrying `members:view` | `Take away <name>'s access?` | `Without a role like Member, <name> can't open chat, the member list or events.` Buttons `Cancel` and `Remove <role>` | mobile `lib/directory/role-editor.ts` (`removeBaseAccessTitle`, `removeBaseAccessBody`) |
+| Save failed: a role was deleted (400) | `Couldn't save roles` | `One of those roles was just deleted. The change was put back and the list refreshed.` | mobile `lib/directory/role-editor.ts` (`rolesSaveFailedBody`) |
+| Save failed: not allowed (403) | `Couldn't save roles` | `The change isn't allowed any more, so it was put back.` | same |
+| Save failed: anything else | `Couldn't save roles` | `The change didn't reach the server, so it was put back. Try again.` | same |
+
+When the officer has already opened someone else, a failed save still alerts, and
+`The change` reads `Your change to <name>'s roles`, so no change is lost without a word.
+
 ### Start a DM (mobile s13)
 
 The directory member sheet's Message action (#2773). The behavior is owned by
@@ -918,17 +1029,17 @@ no reason and no way back.
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading alumni directory...` |
-| Empty | `No alumni yet` | `Graduated members appear here.` |
-| No results (filters) | `No alumni match the filters` | `Clear a field to see more.` |
-| No results (filters), mobile s13 | `No alumni match the filters` | `Clear a filter to see more.` The fields sit behind a chip named Filters there, so the line names that |
-| Error | `Couldn't load alumni` | `Check your chapter access.` |
+| Empty | — | `No alumni yet. Graduated members appear here.` (one line) |
+| No results (filters) | — | `No alumni match these filters.` then a **Clear filters** link (one line) |
+| Empty and no results, mobile s13 | — | The web lines and link, word for word (one line each) |
+| Error | `Couldn't load alumni` | the load-failure line (§ copy rules) |
 | Offline | `Alumni unavailable offline` | `Reconnect to load alumni records.` |
-| No chapter selected | `No chapter selected` | `Pick a chapter to browse alumni.` |
+| No chapter selected | — | `Pick a chapter to browse alumni.` (one line) |
 
 Rewritten by the same lane and on the same rule as the Members table above; the reasoning is not repeated here. Two things specific to this half:
 
-- **The no-chapter state changed shape, not just wording.** It was the one state on this route rendered as a bare `<Card>` with a title and a sentence rather than through the §10 state family, and on a page the lane left with no cards it would have been the only card on the screen. It is an `EmptyState` now, so its title names the condition (`No chapter selected`) rather than the screen (`Alumni directory`).
-- **The error description dropped a true sentence on purpose.** "Alumni visibility respects the same permission checks as the member directory" is a fact about the API, offered to a member who is looking at a failure they cannot diagnose. `Check your chapter access.` is the half they can act on.
+- **The no-chapter state changed shape, not just wording.** It was the one state on this route rendered as a bare `<Card>` with a title and a sentence rather than through the §10 state family, and on a page the lane left with no cards it would have been the only card on the screen. It went to the §10 empty card then, titled for the condition (`No chapter selected`) rather than the screen (`Alumni directory`), and became one line on 2026-11-07 (§4).
+- **The error description dropped a true sentence on purpose.** "Alumni visibility respects the same permission checks as the member directory" is a fact about the API, offered to a member who is looking at a failure they cannot diagnose. The load-failure line is the half they can act on; access itself is answered above the screen (§ copy rules, 2026-11-06).
 
 ### Profile (dashboard)
 
@@ -954,6 +1065,7 @@ The Quiet hours section (the Preferences card until 2026-11-05) is a **second qu
 | Submitting | — | The primary reads `Continue` throughout and disables; no separate copy. |
 | Auth error | `Unable to sign in` | The Supabase message, verbatim. It is deliberately non-enumerating ("Invalid login credentials" whether or not the address exists), so passing it through leaks nothing and says more than a generic line would. |
 | Email me a magic link instead (web) | — | A text link under Continue rather than a third full-width button (2026-11-05). After Continue in tab order, so Tab from the password never lands a keyboard user on it by accident. |
+| Session ended | `You've been signed out` | `This account no longer exists or its session ended. Sign in to continue.` Shown once on arrival when the API refused the session (a 401) and Supabase Auth agreed it is over, usually an account deleted on another device. Web: a toast on `/sign-in?signedOut=session_ended` (`apps/web/lib/auth/rejected-session.ts`). Mobile: an alert over the sign-in screen (`apps/mobile/lib/rejected-session.ts`). Every screen used to render its own failure for this instead (2026-11-06). |
 | Magic link sent | `Magic link sent` | `Check your inbox to continue signing in.` |
 | Magic link, no email | `Email required` | `Enter your email address to request a magic link.` |
 | Continue with Apple / Google | — | Button labels. Each carries the official brand mark at 20px (Apple silhouette in `currentColor`, Google four-color G) beside the label. Web: equal Secondary size, Apple first, side by side since 2026-11-05; half the column cannot hold the full label, so each shows `Apple` or `Google` and keeps `Continue with Apple` / `Continue with Google` as its accessible name. Mobile s01 (#3349): the phone's own account leads as the one filled button (Apple on iOS with Google beside it, Google elsewhere), and off iOS Apple sits behind `Other ways to sign in`. The board's equal-size, Apple-first pair is superseded on mobile, not drift. |
@@ -982,7 +1094,7 @@ The Quiet hours section (the Preferences card until 2026-11-05) is a **second qu
 | Checking the session | — | `Verifying your session…` (announced, not drawn) |
 | Session check failed, offline | `Can't check your session` | `Reconnect to confirm you're signed in, then redeem the invite.` |
 | Session check failed, error | `Couldn't check your session` | `Frapp couldn't be reached to confirm you're signed in. Try again in a moment.` |
-| Redeemed | `Chapter joined` | `You're in. Opening chat.` Mobile goes to s03, `You're in.` over `<chapter> · <school>`, with one pinned `Go to chat`, which spins under the same label while it runs. |
+| Redeemed | `Chapter joined` | `You're in. Opening chat.` Mobile goes to s03, which asks only for what is missing (photo and name, then notifications) and otherwise goes straight to chat, where the first-run tour's first stop says `You're in <chapter>.` ([§ First-run tour (mobile)](#first-run-tour-mobile)). |
 | Mobile s02, the question (#3350) | `How are you getting in?` | No line under the title: the two answers say it. The rows above are web `/join`'s, except Unparseable paste, which mobile shares word for word; mobile s02 asks this first and offers two answers instead of a field. |
 | Mobile s02 answers | — | `I have an invite` + `Use the link your officer sent.`, then `I'm starting our chapter` + `Set it up, then invite everyone.` |
 | Mobile s02 invite step | `Join with an invite` | `Paste the invite link or code your officer sent. Invites work once and expire after 24 hours.` The membership hint ([§ Sign in (pre-auth)](#sign-in-pre-auth)) sits under the field, and the pinned button is `Continue`, which opens the confirm step. |
@@ -1062,9 +1174,20 @@ Mobile's first-officer setup, `(auth)/create-chapter.tsx` (#3351). Titles are `S
 | Live | `<name> is live` | `Your channels are ready. Invite your members next.` Then the seeded public channels, each marked `ready`. |
 | Live, chapter not made active | `<name> is live` | `Your chapter is ready. Open chat to see its channels and invite your members.` No channel list, no invite step: both act on the active chapter. |
 | Live, logo | — | `Add your chapter's logo` (`Change logo` once set) + `Optional. A logo stands in for your letter mark everywhere.` A refusal shows `uploadFailureReason`'s sentence, or `Logos can be JPEG, PNG, GIF or WebP.` / `Logos can be up to <limit>.` When the new chapter couldn't be made active: `You can add a logo later from the web dashboard's Settings.` |
-| Primer | `Stay in the loop` | No line under the title; the push primer card says it. Only when this build can push. |
+| Notifications | `Turn on notifications` | The same step s03 shows a joining member: see § Push opt-in (mobile). Only when this build can push and push is off. |
 | Invite | `Invite your chapter` | `Send each person their own link. A link lets one person in and lasts 24 hours.` No link is ever drawn: a card reads `A new link for each person` over `<host>, good for 24 hours`. The gold primary is `Share invite` with the platform's share mark; each press shares a fresh link under the line `Join <name> on Frapp` (owner pick 2026-11-06, "Share first"). Links shared list under a `Shared` caption, newest first, as `Link <n>` with `Not used yet` or `Joined`. Leaving is the quiet line under the primary: `Skip for now`, then `Go to chat` once a link has gone out. |
 | Invite failed | — | The server's message, else `Couldn't create an invite. You can invite members from the web dashboard.` When the share sheet won't open: `Couldn't open the share sheet. Try again, or invite members from the web dashboard.` |
+
+### Invite members (mobile)
+
+`(app)/invite.tsx`, setup's invite step inside the chapter (2026-11-06; [`navigation.md` § Inviting members](../mobile/navigation.md#inviting-members)). The body, the card, the `Shared` list and both failure sentences are the setup Invite rows' above, word for word; the share message reads `Join <chapter name> on Frapp`, and Share waits until the chapter's name has loaded rather than send a placeholder.
+
+| State | Title | Copy |
+|---|---|---|
+| Can invite | `Invite members` | Setup's line, card and list. The primary is `Share invite` with the platform's share mark, in the chapter accent. Its screen-reader hint: `Makes a new link and opens the share sheet.` |
+| Can't invite | `Invite members` | One line: `Your role can't send invites. Ask an officer to send each person their own link.` No button. |
+| Role didn't load | `Invite members` | Error state `Couldn't load your role` + `Whether you can send invites depends on it, so it has to load first.`, with `Try again`. |
+| Doors | — | More's row and the Directory's + read `Invite members`; the quick action reads `Invite`; Chat home's checklist line keeps its own `Invite members`. The first three carry the hint `Opens invite links to share with new members.`; the checklist line, like its other in-app lines, carries none. |
 
 ### Chapter picker (mobile)
 
@@ -1170,14 +1293,14 @@ failed.
 
 | State | Title | Description | Action |
 |---|---|---|---|
-| A tab screen failed (screen row) | `Couldn't load this screen` | `The error has been reported. Retrying usually clears it.` | `Retry`, with a `‹ Chat` back row above the card on a screen that hides the tab bar |
+| A screen failed (screen row) | `Couldn't load this screen` | `The error has been reported. Retrying usually clears it.` | `Retry`, with a back row above the card on a screen pushed over the tabs |
 | The app failed: the root layout or the tab group's (app row) | `Something broke on our side.` | `The error has been reported. Retrying usually clears it.` | `Retry` |
 
 - **The screen row is web's degraded segment, on a phone.** Each tab screen has its own boundary, so
   the tab bar and the other tabs still work and the title names the screen, as web's names the page.
-  Where the screen hides the tab bar, the way out is a `‹ Chat` back row above the card, not a second
-  action on it, because on iOS a member there would otherwise have only a Retry that keeps failing.
-  Elsewhere the tab bar is the way out. Which screens get the row is
+  On a screen pushed over the tabs, the way out is a back row above the card (naming the screen it
+  pops to, `‹ Chat` with nothing under it), not a second action on it, because a member there would
+  otherwise have only the swipe and a Retry that keeps failing. On a tab the tab bar is the way out. Which screens get the row is
   [`../mobile/navigation.md` § Back rows](../mobile/navigation.md#back-rows)'s to say.
 - **The app row is web's route error (`500`), on a phone.** It replaces a layout, so there is nothing
   left to go back to, and Retry, which mounts the layout again, is the only action.

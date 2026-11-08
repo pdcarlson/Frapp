@@ -203,6 +203,20 @@ describe("a confirmation after a create", () => {
     expect(latest.notice).toBe("“Bylaws” is in the library.");
   });
 
+  it("carries an upload the sheet closed on in the notice, and its failure", () => {
+    const tree = render();
+    run("upload");
+    const onPending = sheetProps(tree, "UploadDocumentSheet").onPending as (
+      pending: { title: string; failed: string | null } | null,
+    ) => void;
+    act(() => onPending({ title: "Bylaws", failed: null }));
+    expect(latest.notice).toBe("Uploading “Bylaws”…");
+    act(() => onPending({ title: "Bylaws", failed: "Couldn't upload." }));
+    expect(latest.notice).toBe(
+      "“Bylaws” didn't upload. Tap + then Upload to try again.",
+    );
+  });
+
   it("goes away after a few seconds, counted from the latest", () => {
     vi.useFakeTimers();
     try {
@@ -244,12 +258,14 @@ describe("a sheet that fails to render", () => {
 });
 
 describe("where the rest go", () => {
-  it("sends Message to the directory and Study to study", () => {
+  it("sends Message to the directory, Invite to invites and Study to study", () => {
     render();
     run("message");
+    run("invite");
     run("study");
     expect(vi.mocked(router.push).mock.calls).toEqual([
       ["/directory"],
+      ["/invite"],
       ["/study"],
     ]);
   });

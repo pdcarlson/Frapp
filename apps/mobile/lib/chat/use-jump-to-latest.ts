@@ -136,7 +136,7 @@ function arrivedSince(
  *
  * Per channel (`channelKey`): the thread reuses one screen across channels,
  * and a reader back in history in one channel is not in the next. Kept out of
- * `app/(tabs)/chat-thread.tsx` so it can be tested.
+ * `app/(app)/chat-thread.tsx` so it can be tested.
  */
 export function useJumpToLatest<L extends LatestScrollableList>({
   listRef,

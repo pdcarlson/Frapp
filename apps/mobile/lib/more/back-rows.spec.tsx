@@ -75,8 +75,8 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import DuesScreen from "@/app/(tabs)/dues";
-import DocumentsScreen from "@/app/(tabs)/documents";
+import DuesScreen from "@/app/(app)/dues";
+import DocumentsScreen from "@/app/(app)/documents";
 
 const mounted: ReactTestRenderer[] = [];
 

@@ -12,7 +12,11 @@ import {
 } from "@repo/chat-core/block-copy";
 import type { MaskedRefreshState } from "@repo/chat-core/blocks";
 import { italicFontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
-import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
+import { useChatDensity } from "@/lib/chat/chat-density";
+import {
+  type ChapterBranding,
+  useChapterBranding,
+} from "@/lib/chapter-branding";
 
 /**
  * What the thread draws in place of a message from a member the viewer blocked
@@ -77,6 +81,9 @@ export function BlockedMessageTombstone({
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand);
+  // Compact (§11 § Density) has no gutter and starts a run 4 below, so the
+  // line stays in the body column beside the rows around it.
+  const compact = useChatDensity() === "compact";
   const text = canUnblock ? TOMBSTONE_TEXT : TOMBSTONE_STALE_TEXT;
   const hiddenFrom = senderName
     ? `hidden messages from ${senderName}`
@@ -87,8 +94,17 @@ export function BlockedMessageTombstone({
     // (`components.md` §11 § What rides the row). It used to sit in an
     // incoming-bubble outline; the compact layout has no bubble to borrow, and
     // a line that names no author needs no frame.
-    <View style={[styles.row, startsRun ? styles.rowStartsRun : styles.rowFollows]}>
-      <View style={styles.gutter} />
+    <View
+      style={[
+        styles.row,
+        startsRun
+          ? compact
+            ? styles.rowStartsRunCompact
+            : styles.rowStartsRun
+          : styles.rowFollows,
+      ]}
+    >
+      {compact ? null : <View style={styles.gutter} />}
       <Text style={styles.text}>{text}</Text>
       {canUnblock ? (
         <Pressable
@@ -135,6 +151,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       minHeight: 25,
     },
     rowStartsRun: { paddingTop: tokens.spacing.lg },
+    rowStartsRunCompact: { paddingTop: tokens.spacing.xs },
     rowFollows: { paddingTop: 2 },
     gutter: { width: 32 },
     text: {

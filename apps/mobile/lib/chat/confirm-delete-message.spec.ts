@@ -1,3 +1,4 @@
+import { MemberFacingError } from "@repo/hooks/error-copy";
 import { Alert, type AlertButton } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -49,7 +50,9 @@ describe("confirmDeleteMessage", () => {
   it("says why when the delete fails", async () => {
     const remove = vi
       .fn()
-      .mockRejectedValue(new Error("You can only delete your own messages"));
+      .mockRejectedValue(
+        new MemberFacingError("You can only delete your own messages."),
+      );
     confirmDeleteMessage(remove);
     buttons()
       .find((button) => button.style === "destructive")
@@ -57,7 +60,7 @@ describe("confirmDeleteMessage", () => {
     await flush();
     expect(Alert.alert).toHaveBeenLastCalledWith(
       DELETE_MESSAGE_FAILED_TITLE,
-      "You can only delete your own messages",
+      "You can only delete your own messages.",
     );
   });
 });

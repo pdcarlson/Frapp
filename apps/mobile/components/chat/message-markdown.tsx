@@ -83,6 +83,11 @@ export interface ParsedMessageMarkdown {
    * says which blocks, for both clients).
    */
   trailingOnOwnLine: boolean;
+  /**
+   * The body opens with a code block, a list or a quote, so compact density's
+   * lead takes a line of its own above it (`MessageBodyLayout.startsOnOwnLine`).
+   */
+  leadOnOwnLine: boolean;
 }
 
 /**
@@ -136,6 +141,7 @@ function rehypeTextFlow({
       source,
     });
     result.trailingOnOwnLine = layout.endsOnOwnLine;
+    result.leadOnOwnLine = layout.startsOnOwnLine;
     root.children = layout.children;
     result.links = collectLinks(root);
     result.empty = textOf(root).trim() === "";
@@ -150,7 +156,10 @@ function rehypeTextFlow({
  * hooks, and calling it here, not rendering it, is what lets the links
  * collected during the parse reach the row's accessibility actions.
  */
-export function parseMessageMarkdown(content: string): ParsedMessageMarkdown {
+export function parseMessageMarkdown(
+  content: string,
+  chips?: (token: string) => boolean,
+): ParsedMessageMarkdown {
   // Decided from the source, before remark sees it: see
   // `skipsMarkdownParse` (#2209, #2664).
   const flatten = skipsMarkdownParse(content);
@@ -158,6 +167,7 @@ export function parseMessageMarkdown(content: string): ParsedMessageMarkdown {
     links: [],
     empty: false,
     trailingOnOwnLine: false,
+    leadOnOwnLine: false,
   };
   const body = Markdown({
     children: flatten ? "" : content,
@@ -170,9 +180,13 @@ export function parseMessageMarkdown(content: string): ParsedMessageMarkdown {
       remarkBreaks,
       // The RAW body, not the text remark decoded: `&#64;Jane` notifies
       // nobody, so it must not draw as a mention (`markdown-mentions.ts`).
-      [remarkMentionChips, { content }],
+      // `chips` keeps a token that pinged nobody from drawing as a mention
+      // (`mentionChipFilter` in `@repo/validation`).
+      [remarkMentionChips, { content, chips }],
     ],
-    rehypePlugins: [[rehypeTextFlow, { result, source: flatten ? "" : content }]],
+    rehypePlugins: [
+      [rehypeTextFlow, { result, source: flatten ? "" : content }],
+    ],
     allowedElements: ALLOWED_ELEMENTS,
     unwrapDisallowed: true,
     components: COMPONENTS,
@@ -183,6 +197,8 @@ export function parseMessageMarkdown(content: string): ParsedMessageMarkdown {
 interface MarkdownContextValue {
   styles: ReturnType<typeof createStyles>;
   onLongPress?: () => void;
+  /** Opens the profile of whoever an `@handle` names; see `MessageMarkdown`. */
+  onMentionPress?: (handle: string) => void;
   bold: boolean;
   italic: boolean;
 }
@@ -191,7 +207,8 @@ const MarkdownContext = createContext<MarkdownContextValue | null>(null);
 
 function useMarkdownContext(): MarkdownContextValue {
   const context = useContext(MarkdownContext);
-  if (!context) throw new Error("A markdown element rendered outside MessageMarkdown");
+  if (!context)
+    throw new Error("A markdown element rendered outside MessageMarkdown");
   return context;
 }
 
@@ -259,9 +276,21 @@ function Code({ children }: { children?: ReactNode }) {
  * where web pads it by a few pixels and rounds it by 5.
  */
 function Mention({ children }: { children?: ReactNode }) {
-  const { styles, bold, italic } = useMarkdownContext();
+  const { styles, bold, italic, onMentionPress, onLongPress } =
+    useMarkdownContext();
+  const handle = typeof children === "string" ? children : null;
   return (
-    <Text style={[styles.mention, { fontFamily: faceFor(bold, italic) }]}>
+    <Text
+      style={[styles.mention, { fontFamily: faceFor(bold, italic) }]}
+      // Tapping a mention opens that member's profile, as on Discord. A nested
+      // `Text` with `onPress` claims the touch, so it forwards the row's
+      // long-press as a link does.
+      onPress={
+        onMentionPress && handle ? () => onMentionPress(handle) : undefined
+      }
+      onLongPress={onMentionPress && handle ? onLongPress : undefined}
+      suppressHighlighting
+    >
       {children}
     </Text>
   );
@@ -276,7 +305,9 @@ const COMPONENTS: Components = {
   code: ({ children }) => <Code>{children}</Code>,
   // hast ends a block's text with a newline; the layout breaks the line itself.
   pre: ({ node }) => (
-    <Code>{textOf((node ?? { type: "root" }) as HastNode).replace(/\n$/, "")}</Code>
+    <Code>
+      {textOf((node ?? { type: "root" }) as HastNode).replace(/\n$/, "")}
+    </Code>
   ),
   br: () => "\n",
   mark: ({ children }) => <Mention>{children}</Mention>,
@@ -309,12 +340,20 @@ const COMPONENTS: Components = {
 export function MessageMarkdown({
   parsed,
   style,
+  lead,
   trailing,
   onLongPress,
+  onMentionPress,
 }: {
   /** `parseMessageMarkdown(message.content)`, memoized by the caller. */
   parsed: ParsedMessageMarkdown;
   style: StyleProp<TextStyle>;
+  /**
+   * Compact density's time and name, nested ahead of the body so its first
+   * line starts with them and the rest wraps back under (`components.md` §11
+   * § Density).
+   */
+  lead?: ReactNode;
   /**
    * `(edited)` and Pinned, nested after the body so they sit on its last line,
    * or on a line of their own after a last block that isn't a paragraph
@@ -322,6 +361,11 @@ export function MessageMarkdown({
    */
   trailing?: ReactNode;
   onLongPress?: () => void;
+  /**
+   * Called with a chip's text (`@Handle`) when it is tapped. The row resolves
+   * the handle against the message's own server-resolved `mentions`.
+   */
+  onMentionPress?: (handle: string) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
@@ -333,18 +377,28 @@ export function MessageMarkdown({
     longPress.current = onLongPress;
   });
   const hasLongPress = onLongPress !== undefined;
+  const mentionPress = useRef(onMentionPress);
+  useLayoutEffect(() => {
+    mentionPress.current = onMentionPress;
+  });
+  const hasMentionPress = onMentionPress !== undefined;
   const context = useMemo<MarkdownContextValue>(
     () => ({
       styles,
       onLongPress: hasLongPress ? () => longPress.current?.() : undefined,
+      onMentionPress: hasMentionPress
+        ? (handle: string) => mentionPress.current?.(handle)
+        : undefined,
       bold: false,
       italic: false,
     }),
-    [styles, hasLongPress],
+    [styles, hasLongPress, hasMentionPress],
   );
   return (
     <MarkdownContext.Provider value={context}>
       <Text style={style}>
+        {lead}
+        {lead && parsed.leadOnOwnLine ? "\n" : null}
         {parsed.body}
         {trailing && parsed.trailingOnOwnLine ? "\n" : null}
         {trailing}

@@ -30,9 +30,9 @@ It holds only while every run is grounded, whole-pattern, verified, reviewed, an
 - Never change `apps/landing` visuals. The page is built to binding boards
   (`spec/ui/landing/reference/`) and its open items are owner decisions, so a visual change there is
   design work. Dead code and correctness there are fair game.
-- Never edit the seven frozen mobile files, which change only through a single integrator PR so
+- Never edit the eight frozen mobile files, which change only through a single integrator PR so
   parallel slices don't collide ([`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md)
-  § Hotspot freeze). Under `apps/mobile/`: `app/_layout.tsx`, `app/(tabs)/_layout.tsx`,
+  § Hotspot freeze). Under `apps/mobile/`: `app/_layout.tsx`, `app/(app)/_layout.tsx`, `app/(app)/(tabs)/_layout.tsx`,
   `lib/theme.tsx`, `components/screen-shell.tsx`, `lib/href.ts`, `package.json`, `app.json`.
 - Never edit `spec/behavior/**` or `spec/product/**` prose: it is intent, never "corrected" to match
   code. Only a path citation there may change, when a fix moves a file.

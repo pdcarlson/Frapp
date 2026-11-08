@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CLIENT_VERSION_HEADER,
+  TIME_ZONE_HEADER,
   REQUEST_ID_HEADER,
   createFrappClient,
   mintRequestId,
@@ -160,5 +161,84 @@ describe("createFrappClient client version", () => {
     await client.GET("/v1/client-policy");
 
     expect(sentRequest().headers.has(CLIENT_VERSION_HEADER)).toBe(false);
+  });
+
+  it("sends the device's zone so pushes can name local times", async () => {
+    stubFetch();
+    const client = createFrappClient({
+      baseUrl: "http://api.test",
+      getTimeZone: () => "America/Chicago",
+    });
+
+    await client.GET("/v1/client-policy");
+
+    expect(sentRequest().headers.get(TIME_ZONE_HEADER)).toBe("America/Chicago");
+  });
+
+  it("defaults the zone to the runtime's own", async () => {
+    stubFetch();
+    const client = createFrappClient({ baseUrl: "http://api.test" });
+
+    await client.GET("/v1/client-policy");
+
+    expect(sentRequest().headers.get(TIME_ZONE_HEADER)).toBe(
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+    );
+  });
+});
+
+describe("createFrappClient onUnauthorized", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function stubStatus(status: number) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("{}", { status })),
+    );
+  }
+
+  it("reports a 401 for a request that carried a token", async () => {
+    stubStatus(401);
+    const onUnauthorized = vi.fn();
+    const client = createFrappClient({
+      baseUrl: "http://api.test",
+      getAuthToken: () => "token",
+      onUnauthorized,
+    });
+
+    await client.GET("/v1/client-policy");
+
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not report a 401 for a request sent without a token", async () => {
+    stubStatus(401);
+    const onUnauthorized = vi.fn();
+    const client = createFrappClient({
+      baseUrl: "http://api.test",
+      getAuthToken: () => null,
+      onUnauthorized,
+    });
+
+    await client.GET("/v1/client-policy");
+
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it("does not report a 403, which is a refusal, not a dead session", async () => {
+    stubStatus(403);
+    const onUnauthorized = vi.fn();
+    const client = createFrappClient({
+      baseUrl: "http://api.test",
+      getAuthToken: () => "token",
+      onUnauthorized,
+    });
+
+    await client.GET("/v1/client-policy");
+
+    expect(onUnauthorized).not.toHaveBeenCalled();
   });
 });

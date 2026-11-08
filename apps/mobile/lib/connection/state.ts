@@ -27,46 +27,11 @@ export {
 export type { ConnectionInput, ConnectionState } from "@repo/validation";
 
 /**
- * Banner copy, verbatim from `spec/ui/resilience/connection-state.md` — minus the leading
- * ⚡ / 📡.
- *
- * Those emoji are a web-era artifact of a spec written before Signet had an
- * iconography rule. `spec/ui/design-system/iconography.md` governs glyphs on
- * these surfaces and does not admit emoji, and the semantic tint already
- * carries the severity the emoji were standing in for. The spec has been
- * corrected rather than left disagreeing with what ships.
- *
- * `null` for ONLINE: there is no banner, and returning an empty string would
- * invite a caller to render an empty bar.
+ * The pill's copy lives with the rule that picks it: `connectionIndicator` in
+ * `@repo/validation`, shared with web, folds this state and the open chat's
+ * transport into the one thing worth saying
+ * (`spec/ui/resilience/connection-state.md` § One indicator).
  */
-export function connectionBannerCopy(state: ConnectionState): string | null {
-  switch (state) {
-    case "OFFLINE":
-      return "You're offline. Showing cached data.";
-    case "DEGRADED":
-      return "Slow connection. Some features may be delayed.";
-    case "ONLINE":
-      return null;
-  }
-}
-
-/**
- * What mobile's floating pill shows: the banner copy's first clause. The pill
- * floats over the header (it never moves the layout), so it stays short enough
- * to sit between a back capsule and the right-hand controls on a phone; the
- * full sentence from `connectionBannerCopy` is its accessible name
- * (`spec/ui/design-system/writing.md` § Connection banner).
- */
-export function connectionPillLabel(state: ConnectionState): string | null {
-  switch (state) {
-    case "OFFLINE":
-      return "Offline";
-    case "DEGRADED":
-      return "Slow connection";
-    case "ONLINE":
-      return null;
-  }
-}
 
 /**
  * Why a write control is disabled, or `null` when it is not.
@@ -76,7 +41,7 @@ export function connectionPillLabel(state: ConnectionState): string | null {
  * It must not be applied to the chat composer: `sendMessage` enqueues to the
  * outbox and returns before touching the network, so gating it would defeat the
  * queue built to make composing-while-offline work (see the comment above the
- * composer in `app/(tabs)/chat-thread.tsx`). Surfaces with a queue label; the
+ * composer in `app/(app)/chat-thread.tsx`). Surfaces with a queue label; the
  * rest disable. `spec/ui/resilience/connection-state.md` records the split.
  */
 export function writeBlockedReason(state: ConnectionState): string | null {

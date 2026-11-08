@@ -172,6 +172,14 @@ const mockBookmarkIsError = vi.fn(() => false);
 const mockLeaveMutateAsync = vi.fn();
 const mockReopenMutate = vi.fn();
 const mockToast = vi.fn();
+// The rail's right-click menu (owner, 2026-11-06): what the shell hands it.
+const mockDeleteChannel = vi.fn();
+const mockSetRailLevel = vi.fn();
+const mockRouterPush = vi.fn();
+const railRowActions = vi.hoisted(() => ({
+  value: undefined as
+    import("./channel-row-menu").ChannelRowActions | undefined,
+}));
 const mockSetChannelPinned = vi.fn();
 const mockSetSectionCollapsed = vi.fn();
 const mockSetSidebarFilter = vi.fn();
@@ -267,7 +275,13 @@ vi.mock("@repo/hooks", async () => ({
         SETUP_CHECKLIST_WEB_PATH,
         sidebarMutedChannelIds,
         sidebarUnreadCounts,
+        deleteChannelConfirmTitle,
+        DELETE_CHANNEL_CONFIRM_BODY,
+        DELETE_CHANNEL_LABEL,
       }) => ({
+        deleteChannelConfirmTitle,
+        DELETE_CHANNEL_CONFIRM_BODY,
+        DELETE_CHANNEL_LABEL,
         HIDE_SETUP_CHECKLIST_LABEL,
         landingChannelId,
         lastChannelStorageKey,
@@ -305,8 +319,10 @@ vi.mock("@repo/hooks", async () => ({
     variables: undefined,
     reset: vi.fn(),
     mutate: vi.fn(),
+    mutateAsync: mockSetRailLevel,
   }),
   useMarkChannelRead: () => ({ mutate: vi.fn() }),
+  useDeleteChannel: () => ({ mutateAsync: mockDeleteChannel }),
   useChannelUnreadCounts: () => ({
     data: [{ channel_id: "chan-general", unread_count: 2, mention_count: 1 }],
     isError: sidebarState.unreadError,
@@ -343,6 +359,7 @@ vi.mock("@repo/hooks", async () => ({
           refetch: vi.fn(),
         },
   useChapterRoster: () => ({ data: [] }),
+  useMentionRoles: () => ({ data: [] }),
   useMyPermissions: () => mockUseMyPermissions(),
   // Read by `OpsSetupNudge`, which the shell renders above the timeline
   // (#492). Left deliberately inert: `useOrgConfig` above returns no
@@ -429,6 +446,10 @@ vi.mock("@repo/hooks", async () => ({
 
 // Captured so the hide failure (#2303) is observable; no other case here
 // asserts on a toast.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: mockRouterPush }),
+}));
+
 vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
@@ -487,7 +508,9 @@ vi.mock("./channel-list", () => ({
     categories,
     sidebar,
     unreadByChannelId,
+    rowActions,
   }: {
+    rowActions?: import("./channel-row-menu").ChannelRowActions;
     unreadByChannelId?: Map<string, unknown>;
     sidebar?: {
       mutedChannelIds: ReadonlySet<string> | undefined;
@@ -503,7 +526,10 @@ vi.mock("./channel-list", () => ({
     onHide?: (ch: { id: string; name: string; type: string }) => void;
     categories?: { id: string; name: string }[];
   }) => (
-    <div data-testid="channel-list">
+    <div
+      data-testid="channel-list"
+      ref={() => void (railRowActions.value = rowActions)}
+    >
       {/* The rail's pin control and the muted set it filters with (#2877). */}
       <button
         data-testid="rail-pin"
@@ -778,9 +804,6 @@ vi.mock("./channel-menu", () => ({
     </div>
   ),
 }));
-vi.mock("./reconnect-pill", () => ({
-  ReconnectPill: () => null,
-}));
 vi.mock("./message-timeline", async () => {
   const React = await import("react");
   const MessageTimeline = React.forwardRef<
@@ -856,6 +879,7 @@ vi.mock("./message-timeline", async () => {
 });
 
 import { blockClearance } from "@repo/chat-core/blocks";
+import { useOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { ChatShell } from "./chat-shell";
 import {
   NavFaceContext,
@@ -1149,7 +1173,7 @@ describe("ChatShell deep-link targets", () => {
   it("shows an explicit empty state for a channel id that matches nothing, instead of silently falling back", () => {
     render(<ChatShell initialChannelId="does-not-exist" />);
 
-    expect(screen.getByText("Channel not found")).toBeTruthy();
+    expect(screen.getByText(/channel you can.t reach/)).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Browse channels" }),
     ).toBeTruthy();
@@ -2757,6 +2781,35 @@ describe("ChatShell greenfield grammar (#2142)", () => {
       screen.getByRole("region", { name: "Channels" }),
     ).toBeInTheDocument();
   });
+
+  it("says a refusal by role is about the member's role, not access in general", () => {
+    channelsQueryState.value = {
+      isError: true,
+      data: undefined,
+      error: Object.assign(new Error("Forbidden"), { status: 403 }),
+    };
+    render(<ChatShell />);
+
+    expect(screen.getByText("Chat isn't open to you yet")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Ask an officer to give you the Member role/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Couldn't load channels")).toBeNull();
+  });
+
+  it("keeps the generic copy for the chapter guard's 403", () => {
+    channelsQueryState.value = {
+      isError: true,
+      data: undefined,
+      error: Object.assign(new Error("Forbidden"), {
+        status: 403,
+        code: "chapter.context.mismatch",
+      }),
+    };
+    render(<ChatShell />);
+
+    expect(screen.getByText("Couldn't load channels")).toBeInTheDocument();
+  });
 });
 
 /**
@@ -2864,7 +2917,7 @@ describe("ChatShell with no chapter and no channels (#2145)", () => {
 
     // Phrased as an instruction, not a claim about the account —
     // `profile-panel.tsx` owns that reasoning for the same window.
-    expect(screen.getByText("No chapter selected")).toBeInTheDocument();
+    expect(screen.getByText("Pick an active chapter to load its channels.")).toBeInTheDocument();
     expect(
       screen.getByRole("region", { name: "Channels" }),
     ).toBeInTheDocument();
@@ -3841,5 +3894,129 @@ describe("ChatShell member list", () => {
     stubWide(false);
     rerender(<ChatShell />);
     expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
+  });
+});
+
+describe("ChatShell rail row menu (owner, 2026-11-06)", () => {
+  beforeEach(() => {
+    railRowActions.value = undefined;
+    mockDeleteChannel.mockReset();
+    mockSetRailLevel.mockReset();
+    mockRouterPush.mockReset();
+    mockToast.mockClear();
+  });
+
+  it("scopes the menu by the member's own permissions", () => {
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["channels:manage"] },
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(railRowActions.value?.permissions).toEqual(["channels:manage"]);
+  });
+
+  it("asks before deleting, and deletes only on yes", async () => {
+    mockDeleteChannel.mockResolvedValue(undefined);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    act(() => railRowActions.value!.onDelete("chan-random"));
+    await waitFor(() => {
+      expect(screen.getByText("Delete #random?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(screen.queryByText("Delete #random?")).toBeNull();
+    });
+    expect(mockDeleteChannel).not.toHaveBeenCalled();
+
+    act(() => railRowActions.value!.onDelete("chan-random"));
+    await waitFor(() => {
+      expect(screen.getByText("Delete #random?")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delete channel" }));
+    await waitFor(() => {
+      expect(mockDeleteChannel).toHaveBeenCalledWith("chan-random");
+    });
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith({
+        description: "#random deleted.",
+      });
+    });
+  });
+
+  it("opens Chat settings on the channel for Edit", () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    railRowActions.value!.onEdit("chan-random");
+    expect(mockRouterPush).toHaveBeenCalledWith(
+      "/chat-admin?channel=chan-random",
+    );
+  });
+
+  it("toasts each failed level change, not only the latest", async () => {
+    mockSetRailLevel.mockRejectedValue(new Error("offline"));
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    railRowActions.value!.onSetNotificationLevel("chan-random", "off");
+    railRowActions.value!.onSetNotificationLevel("chan-general", "mentions");
+    await waitFor(() => {
+      expect(
+        mockToast.mock.calls.filter(
+          ([arg]) =>
+            arg.description === "Couldn't change notifications. Try again.",
+        ),
+      ).toHaveLength(2);
+    });
+  });
+
+  it("copies the channel's link, and says so when the clipboard is missing", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    railRowActions.value!.onCopyLink("chan-random");
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith({ description: "Link copied" });
+    });
+    expect(writeText).toHaveBeenCalledWith(
+      `${window.location.origin}/chat?channel=chan-random`,
+    );
+
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: undefined,
+    });
+    railRowActions.value!.onCopyLink("chan-random");
+    await waitFor(() => {
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Copy failed" }),
+      );
+    });
+  });
+});
+
+/*
+ * The header no longer draws its own transport pill: the shell hands the
+ * channel's transport to the top bar's connection pill
+ * (`connection-state.md` § One indicator), and takes it back on unmount.
+ */
+describe("ChatShell reports its transport to the connection pill", () => {
+  it("reports the open channel's transport and clears it on unmount", () => {
+    let reported: string | null = "unset";
+    function Reader() {
+      reported = useOpenChatTransport();
+      return null;
+    }
+    mockUseChatChannel.mockReturnValue({
+      ...chatChannelResult(),
+      connection: "polling",
+    });
+    const reader = render(<Reader />);
+    const shell = render(<ChatShell />);
+    expect(reported).toBe("polling");
+    shell.unmount();
+    expect(reported).toBeNull();
+    reader.unmount();
   });
 });

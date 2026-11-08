@@ -36,17 +36,14 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { BlockedMembersCard } from "@/components/profile/blocked-members-card";
 import { DiscordHistoryCard } from "@/components/profile/discord-history-card";
 import { ProfileSection } from "@/components/profile/profile-section";
+import { ChatDensityControl } from "@/components/profile/chat-density-control";
 import { ProfilePhotoControl } from "@/components/profile/profile-photo-control";
 import {
   DELETE_ACCOUNT_FAILED,
   useDeleteAccountFlow,
 } from "@/components/profile/use-delete-account-flow";
 import { anyReadUncached } from "@/components/shared/async-states";
-import {
-  NestedEmpty,
-  NestedError,
-  NestedOffline,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { Switch } from "@/components/ui/switch";
 import { useNetwork } from "@/lib/providers/network-provider";
@@ -58,6 +55,7 @@ import {
   ProfilePageSkeleton,
   QuietHoursSkeleton,
 } from "@/components/profile/profile-skeleton";
+import { InlineNote } from "@/components/shared/inline-note";
 
 type CurrentUser = {
   id?: string;
@@ -470,10 +468,7 @@ export function ProfilePanel() {
   let categoriesState: React.ReactNode = null;
   if (!chapterId) {
     categoriesState = (
-      <NestedEmpty
-        title="Select a chapter"
-        description="Notification categories are set per chapter, so these switches appear once a chapter is active."
-      />
+      <InlineNote>Pick a chapter to set its notifications.</InlineNote>
     );
   } else if (isOffline && anyReadUncached(preferencesQuery)) {
     categoriesState = (
@@ -979,7 +974,7 @@ export function ProfilePanel() {
                 preference gate (#1041), so a switch would suppress nothing.
 
                 Deliberately NOT claiming this is the only unswitchable
-                category — `admin` ("New Member Joined", `invite.service.ts`)
+                category — `admin` (the member-joined push, `invite.service.ts`)
                 is NORMAL priority with no catalog entry either. This names the
                 one a member is most likely to go looking for, and does not
                 pretend the grid is exhaustive.
@@ -998,6 +993,18 @@ export function ProfilePanel() {
               )}
             </div>
           )}
+        </ProfileSection>
+
+        {/*
+          How tightly the thread draws (§11 § Density). Kept on the device, so
+          the hint says so: a phone can stay cozy while a laptop goes compact.
+        */}
+        <ProfileSection
+          id="chat-density"
+          title="Chat density"
+          hint="Applies on this browser."
+        >
+          <ChatDensityControl />
         </ProfileSection>
 
         {/*

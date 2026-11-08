@@ -19,7 +19,7 @@ import { tint } from "@/lib/theme";
  *
  * `paint`, `Frame` and `STROKE_WIDTH` are the older stroke recipe (a 1.6px
  * stroke on a 24px grid, silhouette at 16% of the hue or 6% white when
- * neutral). The bell and `components/search-glyph.tsx` still draw in it.
+ * neutral). The bell still draws in it.
  */
 
 export const MORE_GLYPH_SIZE = 20;
@@ -42,7 +42,7 @@ export type MoreGlyphProps = {
   neutral?: boolean;
   /**
    * Another §2 size, for a stroke-recipe glyph drawn outside the hub, such
-   * as `components/search-glyph.tsx`.
+   * as the bell.
    */
   size?: number;
 };
@@ -50,7 +50,7 @@ export type MoreGlyphProps = {
 /**
  * The recipe's strokes and fills: `body` for the primary silhouette, `detail`
  * for a secondary stroke. Exported, with {@link Frame}, so a glyph drawn in
- * this recipe outside the hub (`components/search-glyph.tsx`) uses this one
+ * this recipe outside the hub (the bell) uses this one
  * definition rather than a copy.
  */
 export function paint({ color, neutral = false }: MoreGlyphProps) {
@@ -165,4 +165,9 @@ export function ChapterGlyph(props: HubGlyphProps) {
 
 export function HostCheckInGlyph(props: HubGlyphProps) {
   return <HubGlyph name="hostCheckIn" {...props} />;
+}
+
+/** Invite members: the nav set's user-plus, web's Invite beside Directory. */
+export function InviteGlyph(props: HubGlyphProps) {
+  return <HubGlyph name="invite" {...props} />;
 }

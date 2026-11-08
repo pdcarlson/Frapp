@@ -2,6 +2,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
+import { describeChatPhoto } from "./photo-preview";
 import { definitiveRefusalMessage } from "@repo/chat-core/chat-client";
 import {
   MAX_UPLOAD_LABEL,
@@ -9,13 +10,13 @@ import {
   isAllowedUploadExtension,
   isAllowedUploadMime,
   mimeForUploadFile,
+  readPreviewUpload,
   readSignedUpload,
   type UploadKind,
 } from "@repo/validation";
 
 /**
- * Pick a photo and put it in the bucket, returning the claim the next send
- * carries.
+ * Pick photos and put each in the bucket, returning the claim a send carries.
  *
  * This is the mobile half of the upload path web has had since the chat
  * rework; `apps/web/components/chat/composer.tsx`'s `handleAttach` is the
@@ -33,12 +34,14 @@ import {
  * That keeps this module a plain async function: testable without a renderer,
  * and callable from a handler rather than only from a component body.
  *
- * ## The bytes land before the message exists
+ * ## The bytes land before the message is queued
  *
- * The object is in the bucket the moment this resolves, which is why the
- * return value is a *claim* and not a file. Dropping the chip before sending
- * drops the claim, not the object, and an abandoned composer leaves the object
- * unreferenced. Nothing collects an upload that no message ever claimed, so it
+ * The object is in the bucket the moment an upload resolves, which is why the
+ * return value is a *claim* and not a file. A send can go up while its photos
+ * still upload (the optimistic row waits on the claims, `use-chat-channel.ts`),
+ * but nothing reaches the outbox or the server without them. Removing an
+ * uploaded photo from the tray drops the claim, not the object, and an
+ * abandoned composer leaves the object unreferenced. Nothing collects an upload that no message ever claimed, so it
  * stays there as an orphan until #2197's sweep exists. Web took this trade
  * deliberately (`composer.tsx`, "Files uploaded and waiting to be claimed by
  * the next send") because the alternative it replaced was worse: the only
@@ -65,12 +68,25 @@ import {
  * storage-api). Declaring `image/jpeg` over HEIC bytes would therefore be
  * accepted, stored, and served — and then render as a broken image in
  * `message-attachments.tsx`. Re-encoding means the header is true.
+ *
+ * ## Camera photos are shrunk
+ *
+ * The one re-encode that is not about the type: a camera photo (a JPEG, or the
+ * HEIC transcode) larger than `PHOTO_MAX_EDGE` is brought down to it at
+ * `PHOTO_JPEG_QUALITY`. A full-size phone photo is 4 MB and up, and sending it
+ * was most of a slow upload. PNG, GIF and WebP are never touched, for the
+ * reasons above.
  */
 
 /** The mutation the screen already holds, narrowed to what this needs. */
 export type RequestUploadUrl = (args: {
   id: string;
-  body: { filename: string; content_type: string; size_bytes?: number };
+  body: {
+    filename: string;
+    content_type: string;
+    size_bytes?: number;
+    with_preview?: boolean;
+  };
 }) => Promise<unknown>;
 
 export type AttachmentPickResult =
@@ -128,6 +144,10 @@ export async function resolveUploadable(
     uri: string;
     fileName?: string | null;
     mimeType?: string;
+    /** The picked photo's pixel size and bytes, when the picker reports them. */
+    width?: number;
+    height?: number;
+    fileSize?: number;
   },
   /**
    * The allowlist the upload is checked against. Chat attachments are
@@ -158,19 +178,79 @@ export async function resolveUploadable(
   // no `fileName` at all both land here; iOS returns a null `fileName` for a
   // limited-permission library pick, which is not a rare path.
   if (declared && isAllowedUploadExtension(kind, filename)) {
+    // A camera JPEG is the one allowlisted type worth shrinking: no
+    // transparency or animation to lose, and a phone's 12-48 MP original is
+    // most of what made an upload slow (see `PHOTO_MAX_EDGE`).
+    if (declared === "image/jpeg" && isOversizedPhoto(asset)) {
+      const shrunk = await encodeJpeg(asset);
+      return { uri: shrunk, filename, contentType: "image/jpeg" };
+    }
     return { uri: asset.uri, filename, contentType: declared };
   }
 
   // Nothing allowlisted matched — HEIC from the iOS library is the case this
-  // exists for. Re-encode so the bytes match what we are about to declare.
-  const rendered = await ImageManipulator.manipulate(asset.uri).renderAsync();
-  const jpeg = await rendered.saveAsync({ format: SaveFormat.JPEG });
+  // exists for. Re-encode so the bytes match what we are about to declare,
+  // shrunk on the way like any other camera photo.
+  const jpeg = await encodeJpeg(asset);
   const base = filename.replace(/\.[^.]*$/, "");
   return {
-    uri: jpeg.uri,
+    uri: jpeg,
     filename: `${base.length > 0 ? base : "photo"}.jpg`,
     contentType: "image/jpeg",
   };
+}
+
+/**
+ * The longest edge, in pixels, a picked camera photo is uploaded at.
+ *
+ * A phone photo is 12 to 48 MP. Re-encoded at full size and quality 1.0, as
+ * the HEIC transcode used to, it came to 4 MB and more, every byte of it sent
+ * before the member saw anything happen. 2560 px is sharper than any screen
+ * Frapp draws it on and keeps a photographed page of minutes legible when
+ * zoomed, at a few hundred KB. Chat apps send smaller still.
+ */
+export const PHOTO_MAX_EDGE = 2560;
+
+/** JPEG quality for a re-encoded photo: no visible loss at this size. */
+export const PHOTO_JPEG_QUALITY = 0.8;
+
+/** A JPEG this many bytes or more is re-encoded even when its size is unknown. */
+const PHOTO_MAX_BYTES = 1.5 * 1024 * 1024;
+
+function isOversizedPhoto(asset: {
+  width?: number;
+  height?: number;
+  fileSize?: number;
+}): boolean {
+  const edge = Math.max(asset.width ?? 0, asset.height ?? 0);
+  return edge > PHOTO_MAX_EDGE || (asset.fileSize ?? 0) > PHOTO_MAX_BYTES;
+}
+
+/**
+ * Re-encode a photo as JPEG, its longest edge brought down to
+ * {@link PHOTO_MAX_EDGE} when it is larger, at {@link PHOTO_JPEG_QUALITY}.
+ * Returns the new file's URI.
+ */
+async function encodeJpeg(asset: {
+  uri: string;
+  width?: number;
+  height?: number;
+}): Promise<string> {
+  const width = asset.width ?? 0;
+  const height = asset.height ?? 0;
+  const context = ImageManipulator.manipulate(asset.uri);
+  // One side is enough: the manipulator keeps the aspect ratio.
+  if (Math.max(width, height) > PHOTO_MAX_EDGE) {
+    context.resize(
+      width >= height ? { width: PHOTO_MAX_EDGE } : { height: PHOTO_MAX_EDGE },
+    );
+  }
+  const rendered = await context.renderAsync();
+  const saved = await rendered.saveAsync({
+    format: SaveFormat.JPEG,
+    compress: PHOTO_JPEG_QUALITY,
+  });
+  return saved.uri;
 }
 
 /** The byte size of `uri`: `hinted` when the caller has one for these exact bytes, else read from disk. */
@@ -213,6 +293,8 @@ export type RequestSignedUpload = (body: {
   filename: string;
   content_type: string;
   size_bytes: number;
+  /** Also mint a URL for a preview copy (chat photos only). */
+  with_preview?: boolean;
 }) => Promise<unknown>;
 
 /**
@@ -237,6 +319,8 @@ export interface UploadedImage {
   filename: string;
   contentType: string;
   byteSize: number;
+  /** Where the preview copy landed, when one was asked for and arrived. */
+  previewStoragePath?: string;
 }
 
 export type ImageUploadResult =
@@ -266,10 +350,22 @@ export function uploadFailureReason(err: unknown): string {
   return definitiveRefusalMessage(err) ?? UPLOAD_FAILED;
 }
 
-async function pickImageUnguarded(
+/** A library asset as the picker hands it back, narrowed to what is read. */
+type LibraryAsset = ImagePicker.ImagePickerAsset;
+
+/**
+ * Ask for library access and open the picker. `limit` above 1 turns on
+ * multi-select, in the order the member tapped.
+ */
+async function launchLibrary(
   options: ImagePickOptions,
-): Promise<ImagePickResult> {
-  const { kind, copy } = options;
+  limit: number,
+): Promise<
+  | { status: "cancelled" }
+  | { status: "refused"; reason: string }
+  | { status: "picked"; assets: LibraryAsset[] }
+> {
+  const { copy } = options;
   const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!permission.granted) {
     return {
@@ -284,13 +380,33 @@ async function pickImageUnguarded(
     // re-encodes, which would defeat the conditional transcode above. On for a
     // profile photo, which every surface draws in a circle.
     ...(options.cropSquare ? { allowsEditing: true, aspect: [1, 1] } : {}),
-    allowsMultipleSelection: false,
+    ...(limit > 1
+      ? {
+          allowsMultipleSelection: true,
+          selectionLimit: limit,
+          orderedSelection: true,
+        }
+      : { allowsMultipleSelection: false }),
   });
   if (picked.canceled) return { status: "cancelled" };
+  const assets = (picked.assets ?? []).slice(0, limit);
+  if (assets.length === 0) return { status: "cancelled" };
+  return { status: "picked", assets };
+}
 
-  const asset = picked.assets?.[0];
-  if (!asset) return { status: "cancelled" };
-
+/**
+ * Turn one picked asset into the bytes to PUT: transcode or shrink when
+ * `resolveUploadable` says to, then gate type and size. Throws only from the
+ * native calls; {@link pickImage} and {@link uploadChatPhoto} guard it.
+ */
+async function preparePickedAsset(
+  asset: LibraryAsset,
+  options: ImagePickOptions,
+): Promise<
+  | { status: "picked"; image: PickedImage }
+  | { status: "refused"; reason: string }
+> {
+  const { kind, copy } = options;
   let uploadable: Awaited<ReturnType<typeof resolveUploadable>>;
   try {
     uploadable = await resolveUploadable(asset, kind);
@@ -299,9 +415,9 @@ async function pickImageUnguarded(
   }
 
   // `asset.fileSize` describes what the member picked. If `resolveUploadable`
-  // transcoded, the bytes about to be PUT are a *different file* — a
-  // quality-1.0 JPEG re-encode of a 48MP HEIC is routinely larger than the
-  // HEIC — so trusting the hint there would gate on the wrong number, declare
+  // transcoded or shrank it, the bytes about to be PUT are a *different file*
+  // (a re-encode can come out larger than the original as well as smaller),
+  // so trusting the hint there would gate on the wrong number, declare
   // the wrong `size_bytes`, and record the wrong `byteSize` on every iOS photo.
   const size = await byteSizeOf(
     uploadable.uri,
@@ -331,6 +447,14 @@ async function pickImageUnguarded(
       byteSize: size,
     },
   };
+}
+
+async function pickImageUnguarded(
+  options: ImagePickOptions,
+): Promise<ImagePickResult> {
+  const launched = await launchLibrary(options, 1);
+  if (launched.status !== "picked") return launched;
+  return preparePickedAsset(launched.assets[0]!, options);
 }
 
 /**
@@ -369,6 +493,12 @@ export async function pickImage(
 export async function uploadPickedImage(
   image: PickedImage,
   requestUploadUrl: RequestSignedUpload,
+  /**
+   * A local JPEG to upload beside the image as its preview copy (chat photos,
+   * `photo-preview.ts`). Best effort: a preview that fails to upload is left
+   * out of the result, and the image is still uploaded.
+   */
+  previewUri: string | null = null,
 ): Promise<Exclude<ImageUploadResult, { status: "cancelled" }>> {
   try {
     const ticket = await requestUploadUrl({
@@ -377,19 +507,22 @@ export async function uploadPickedImage(
       // Declared so the API's own 25 MB check runs and answers with a
       // readable 400 instead of the bucket's raw one.
       size_bytes: image.byteSize,
+      ...(previewUri ? { with_preview: true } : {}),
     });
     const { signedUrl, storagePath } = readSignedUpload(ticket);
+    const previewTicket = previewUri ? readPreviewUpload(ticket) : null;
 
-    // `useUploadSignedUrl` in `@repo/hooks` is not reachable from here: it
-    // PUTs a DOM `File`, which React Native has no equivalent of for a
-    // `file://` URI. `uploadAsync` with BINARY_CONTENT is the same request
-    // — raw bytes, one Content-Type header — made from a URI instead.
-    const response = await FileSystem.uploadAsync(signedUrl, image.uri, {
-      httpMethod: "PUT",
-      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-      headers: { "Content-Type": image.contentType },
-    });
-    if (response.status < 200 || response.status >= 300) {
+    // Both PUTs at once: the preview is a fraction of the original's bytes,
+    // so it adds next to nothing to the wait.
+    const [ok, previewOk] = await Promise.all([
+      putFile(signedUrl, image.uri, image.contentType),
+      previewTicket && previewUri
+        ? putFile(previewTicket.signedUrl, previewUri, "image/jpeg").catch(
+            () => false,
+          )
+        : false,
+    ]);
+    if (!ok) {
       return { status: "refused", reason: UPLOAD_FAILED };
     }
 
@@ -400,6 +533,9 @@ export async function uploadPickedImage(
         filename: image.filename,
         contentType: image.contentType,
         byteSize: image.byteSize,
+        ...(previewOk && previewTicket
+          ? { previewStoragePath: previewTicket.storagePath }
+          : {}),
       },
     };
   } catch (err) {
@@ -407,12 +543,42 @@ export async function uploadPickedImage(
   }
 }
 
+
+/** PUT the file at `uri` to a signed upload URL; true on a 2xx. */
+async function putFile(
+  signedUrl: string,
+  uri: string,
+  contentType: string,
+): Promise<boolean> {
+  // `useUploadSignedUrl` in `@repo/hooks` is not reachable from here: it
+  // PUTs a DOM `File`, which React Native has no equivalent of for a
+  // `file://` URI. `uploadAsync` with BINARY_CONTENT is the same request
+  // — raw bytes, one Content-Type header — made from a URI instead.
+  const response = await FileSystem.uploadAsync(signedUrl, uri, {
+    httpMethod: "PUT",
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    headers: { "Content-Type": contentType },
+    // `uploadAsync` defaults to a BACKGROUND session, which on iOS hands
+    // the request to the system's background transfer daemon: it is built
+    // to survive the app being suspended, not to be quick, and it added
+    // seconds to every upload while the member watched. The trade: a
+    // foreground task stops if the app is suspended mid-PUT, and the caller
+    // reports a failure the member can retry (s12's pending row does). With
+    // photos shrunk first (`PHOTO_MAX_EDGE`) a PUT is a second or two.
+    sessionType: FileSystem.FileSystemSessionType.FOREGROUND,
+  });
+  return response.status >= 200 && response.status < 300;
+}
+
 /**
  * Pick one photo from the library and PUT it to a freshly minted signed URL:
- * the pipeline chat attachments ({@link pickAndUploadPhoto}), the profile
- * photo and the chapter logo ({@link pickUploadAndConfirmImage}) share, so a
- * fix to one reaches all of them. It is {@link pickImage} then
- * {@link uploadPickedImage}, and like both it never throws.
+ * the pipeline the profile photo and the chapter logo
+ * ({@link pickUploadAndConfirmImage}) share. It is {@link pickImage} then
+ * {@link uploadPickedImage}, and like both it never throws. Chat picks several
+ * at once ({@link pickChatPhotos}) and uploads each in the background
+ * ({@link uploadChatPhoto}); all of them share `launchLibrary`,
+ * `preparePickedAsset` and {@link uploadPickedImage}, so a fix to a step there
+ * reaches every caller.
  */
 export async function pickAndUploadImage(
   options: ImageUploadOptions,
@@ -451,22 +617,105 @@ export async function pickUploadAndConfirmImage(
   }
 }
 
-/** Pick a photo and put it in the bucket, returning the claim the next send carries. */
-export async function pickAndUploadPhoto(
+/** The most photos one chat pick stages: iMessage and Discord both stop at 10. */
+export const CHAT_PHOTO_LIMIT = 10;
+
+const CHAT_COPY: ImagePickOptions["copy"] = {
+  askAccess: "Frapp needs access to your photos to send one.",
+  settingsAccess: "Allow photo access for Frapp in Settings to send a photo.",
+  type: TYPE_REFUSAL,
+  size: SIZE_REFUSAL,
+};
+
+/**
+ * A photo the member picked for chat, still only on the device.
+ *
+ * `previewUri` is the picker's own file, which the composer tray and the
+ * sender's own message draw at once. Nothing is transcoded, shrunk or
+ * uploaded yet: that is {@link uploadChatPhoto}, run in the background so
+ * the tray shows the picture the moment the picker closes.
+ */
+export interface PickedChatPhoto {
+  previewUri: string;
+  width: number | null;
+  height: number | null;
+  /** The picker's asset, handed back to {@link uploadChatPhoto}. */
+  asset: LibraryAsset;
+}
+
+export type ChatPhotoPickResult =
+  | { status: "cancelled" }
+  | { status: "picked"; photos: PickedChatPhoto[] }
+  | { status: "refused"; reason: string };
+
+/**
+ * Open the library for up to `limit` photos. Never throws. Uploads nothing:
+ * a photo removed from the tray before its upload starts costs no request.
+ */
+export async function pickChatPhotos(
+  limit: number = CHAT_PHOTO_LIMIT,
+): Promise<ChatPhotoPickResult> {
+  if (limit < 1) return { status: "cancelled" };
+  try {
+    const launched = await launchLibrary(
+      { kind: "document", copy: CHAT_COPY },
+      limit,
+    );
+    if (launched.status !== "picked") return launched;
+    return {
+      status: "picked",
+      photos: launched.assets.map((asset) => ({
+        previewUri: asset.uri,
+        width: asset.width > 0 ? asset.width : null,
+        height: asset.height > 0 ? asset.height : null,
+        asset,
+      })),
+    };
+  } catch {
+    return { status: "refused", reason: PICK_FAILED };
+  }
+}
+
+/**
+ * Prepare one picked photo (transcode or shrink, then gate) and PUT it to a
+ * signed URL minted for `channelId`, returning the claim a send carries.
+ * Never throws: every failure is a sentence for the tray.
+ */
+export async function uploadChatPhoto(
   channelId: string,
+  photo: PickedChatPhoto,
   requestUploadUrl: RequestUploadUrl,
 ): Promise<AttachmentPickResult> {
-  const result = await pickAndUploadImage({
-    kind: "document",
-    requestUploadUrl: (body) => requestUploadUrl({ id: channelId, body }),
-    copy: {
-      askAccess: "Frapp needs access to your photos to send one.",
-      settingsAccess:
-        "Allow photo access for Frapp in Settings to send a photo.",
-      type: TYPE_REFUSAL,
-      size: SIZE_REFUSAL,
-    },
-  });
+  let prepared: Awaited<ReturnType<typeof preparePickedAsset>>;
+  try {
+    prepared = await preparePickedAsset(photo.asset, {
+      kind: "document",
+      copy: CHAT_COPY,
+    });
+  } catch {
+    return { status: "refused", reason: PICK_FAILED };
+  }
+  if (prepared.status !== "picked") return prepared;
+  // Size, placeholder and preview copy, from the exact bytes being uploaded
+  // (after any shrink or transcode). Never throws; anything it could not make
+  // is simply not sent, and readers fall back to the original.
+  const described = await describeChatPhoto(
+    prepared.image.uri,
+    prepared.image.contentType,
+  );
+  const result = await uploadPickedImage(
+    prepared.image,
+    (body) => requestUploadUrl({ id: channelId, body }),
+    described.previewUri,
+  );
   if (result.status !== "uploaded") return result;
-  return { status: "attached", attachment: result.image };
+  return {
+    status: "attached",
+    attachment: {
+      ...result.image,
+      width: described.width,
+      height: described.height,
+      thumbhash: described.thumbhash,
+    },
+  };
 }

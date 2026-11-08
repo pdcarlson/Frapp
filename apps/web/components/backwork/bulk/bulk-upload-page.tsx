@@ -28,7 +28,7 @@ import {
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { EmptyState, PermissionsOfflineSurface } from "@/components/shared/async-states";
+import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
   SubscriptionNotice,
@@ -58,6 +58,7 @@ import {
   takeStagedBulkUpload,
 } from "@/lib/backwork-bulk/handoff";
 import { getBulkSession, type Prepared, type Submission } from "@/lib/backwork-bulk/session";
+import { InlineNote } from "@/components/shared/inline-note";
 
 /**
  * Backwork bulk upload (#3499): drop PDFs or folders, redact and describe each
@@ -78,10 +79,7 @@ export function BulkUploadPage() {
   if (!activeChapterId) {
     return (
       <div className="space-y-6">
-        <EmptyState
-          title="No chapter selected"
-          description="Pick a chapter from the switcher to upload backwork to it."
-        />
+        <InlineNote>Pick a chapter to upload backwork to it.</InlineNote>
       </div>
     );
   }
@@ -96,10 +94,9 @@ export function BulkUploadPage() {
       )}
       deniedFallback={
         <div className="space-y-6">
-          <EmptyState
-            title="You can't upload backwork"
-            description="Uploading backwork needs the backwork upload permission. Ask an officer who manages roles."
-          />
+          <InlineNote>
+            Your role can&apos;t upload backwork. Ask an officer who manages roles.
+          </InlineNote>
         </div>
       }
     >

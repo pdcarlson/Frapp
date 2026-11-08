@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, FolderOpen, WifiOff } from "lucide-react";
+import { AlertTriangle, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SkeletonText, StateTile } from "@/components/shared/async-states";
 import { useNetwork } from "@/lib/providers/network-provider";
@@ -98,48 +98,6 @@ export function NestedLoading({
   );
 }
 
-export function NestedEmpty({
-  sole = false,
-  title,
-  description,
-  actionLabel,
-  onAction,
-  actionProps,
-}: {
-  /** This is the page's only async state — see the note above `NestedLoading`. */
-  sole?: boolean;
-  title: string;
-  description: string;
-  actionLabel?: string;
-  onAction?: () => void;
-  actionProps?: {
-    disabled?: boolean;
-    title?: string;
-    "aria-describedby"?: string;
-  };
-}) {
-  return (
-    <div className={`${NESTED_BOX} border-border`}>
-      <StateTile tone="accent">
-        <FolderOpen className="h-6 w-6" />
-      </StateTile>
-      {sole ? (
-        <h2 className="text-base font-bold">{title}</h2>
-      ) : (
-        <p className="text-base font-bold">{title}</p>
-      )}
-      <p className="max-w-[220px] text-sm text-muted-foreground">
-        {description}
-      </p>
-      {actionLabel && onAction ? (
-        <Button variant="tinted" size="sm" onClick={onAction} {...actionProps}>
-          {actionLabel}
-        </Button>
-      ) : null}
-    </div>
-  );
-}
-
 /**
  * `title` and `description` are required rather than defaulted. The top-level
  * `ErrorState` defaults to "Unable to load data" / "Please retry in a moment.",
@@ -162,7 +120,7 @@ export function NestedError({
   description: string;
   onRetry?: () => void;
   /**
-   * Passed through to the Retry button, mirroring `NestedEmpty`'s
+   * Passed through to the Retry button, mirroring the old empty state's
    * `actionProps` — so a surface whose retry re-enters a mutation that is
    * already in flight can disable it rather than hide it (§5 rule 4). Hiding
    * would also drop the row a keyboard user may already be on.

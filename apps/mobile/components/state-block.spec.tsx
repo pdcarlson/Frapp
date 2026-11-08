@@ -2,7 +2,7 @@
 import React from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
-import { AccessibilityInfo, Text } from "react-native";
+import { AccessibilityInfo } from "react-native";
 import {
   cancelAnimation,
   useReducedMotion,
@@ -10,7 +10,6 @@ import {
 } from "react-native-reanimated";
 import { NavigationContext } from "expo-router/react-navigation";
 import { describe, expect, it, vi } from "vitest";
-import { ChapterGlyph, DocumentsGlyph } from "@/components/more/more-glyphs";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, tint } from "@/lib/theme";
 
@@ -31,8 +30,6 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import {
-  EmptyState,
-  EmptyStateAction,
   ErrorState,
   NoChapterState,
   SkeletonBlock,
@@ -138,57 +135,11 @@ describe("ErrorState", () => {
   });
 });
 
-describe("EmptyState", () => {
-  it("stays on neutral chrome — empty is not a fault", () => {
-    const tree = render(<EmptyState title="Nothing yet" body="Add one." />);
-    const style = cardStyle(tree);
-
-    expect(style.borderColor).toBe(signetDarkTokens.color.border.hairline);
-    expect(String(style.borderColor)).not.toContain("248, 81, 73");
-  });
-
-  it("renders its copy and an optional action", () => {
-    const tree = render(
-      <EmptyState
-        title="No documents"
-        body="Nothing has been uploaded yet."
-        action={<Text>Upload</Text>}
-      />,
-    );
-    expect(texts(tree)).toEqual(
-      expect.arrayContaining([
-        "No documents",
-        "Nothing has been uploaded yet.",
-        "Upload",
-      ]),
-    );
-  });
-
-  // writing.md gives some empty states no title (Chat home's filtered-to-
-  // nothing state). The card then draws tile glyph, body and action, with no
-  // empty title line holding a gap open between them.
-  it("draws no title line when given no title", () => {
-    const tree = render(
-      <EmptyState
-        glyph="⌕"
-        body="No channels match."
-        action={<Text>Show all</Text>}
-      />,
-    );
-    expect(texts(tree)).toEqual(["⌕", "No channels match.", "Show all"]);
-    // An empty `Text` would still take a slot in the card's gap.
-    expect(
-      tree.root.findAllByType("Text" as unknown as React.ComponentType),
-    ).toHaveLength(3);
-  });
-});
-
 describe("the glyph tiles", () => {
   // The tile's character stands in for a drawn glyph, so a screen reader
   // skips it and starts at the words ("plus", "exclamation mark" otherwise).
   it("hides the empty and error tiles from screen readers", () => {
     for (const tree of [
-      render(<EmptyState glyph="⌕" body="No channels match." />),
       render(<ErrorState title="Couldn't load" body="Try again." />),
     ]) {
       const glyph = tree.root
@@ -204,34 +155,22 @@ describe("the glyph tiles", () => {
 });
 
 describe("the state buttons", () => {
-  // §10 gives empty and error the same anatomy, so the CTA and the retry share
-  // one geometry and differ only in colour.
-  it("draws the empty CTA and the error retry on one geometry", () => {
-    const pressableStyle = (tree: ReactTestRenderer) => {
-      const button = tree.root.find(
-        (node) => (node.type as unknown) === "Pressable",
-      );
-      return flatten(button.props.style({ pressed: false }));
-    };
-    const geometry = (style: Record<string, unknown>) => ({
+  it("draws the error retry at the 44pt floor", () => {
+    const tree = render(
+      <ErrorState title="Couldn't load" body="Gone." onRetry={vi.fn()} />,
+    );
+    const button = tree.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    const style = flatten(button.props.style({ pressed: false }));
+    expect({
       marginTop: style.marginTop,
       minHeight: style.minHeight,
       justifyContent: style.justifyContent,
       borderRadius: style.borderRadius,
       borderWidth: style.borderWidth,
       paddingHorizontal: style.paddingHorizontal,
-    });
-    const cta = pressableStyle(
-      render(<EmptyStateAction label="Show all" onPress={vi.fn()} />),
-    );
-    const retry = pressableStyle(
-      render(
-        <ErrorState title="Couldn't load" body="Gone." onRetry={vi.fn()} />,
-      ),
-    );
-
-    expect(geometry(cta)).toEqual(geometry(retry));
-    expect(geometry(retry)).toEqual({
+    }).toEqual({
       marginTop: signetDarkTokens.spacing.xs,
       minHeight: signetDarkTokens.touch.minimum,
       justifyContent: "center",
@@ -239,33 +178,15 @@ describe("the state buttons", () => {
       borderWidth: 1,
       paddingHorizontal: signetDarkTokens.spacing.lg,
     });
-    expect(cta.borderColor).not.toBe(retry.borderColor);
   });
 });
 
-describe("EmptyStateAction", () => {
-  // §10's CTA is the Tinted button: the chapter accent's soft fill, border and
-  // text, at the 44pt floor. A neutral outlined button there reads as the
-  // error card's retry.
-  it("draws the Tinted button at 44pt and calls back on press", () => {
-    const onPress = vi.fn();
-    const tree = render(<EmptyStateAction label="Show all" onPress={onPress} />);
-    const button = tree.root.find(
-      (node) => (node.type as unknown) === "Pressable",
+describe("NoChapterState", () => {
+  it("says where to pick a chapter in one line", () => {
+    const tree = render(<NoChapterState noun="the directory" />);
+    expect(texts(tree).join("")).toBe(
+      "Choose a chapter from More → Switch chapter to see the directory.",
     );
-    const style = flatten(button.props.style({ pressed: false }));
-
-    expect(style.minHeight).toBe(signetDarkTokens.touch.minimum);
-    expect(style.backgroundColor).toBe("#3A2F14");
-    expect(style.borderColor).toBe("#6E5523");
-    const label = tree.root.find(
-      (node) =>
-        (node.type as unknown) === "Text" &&
-        node.props.children === "Show all",
-    );
-    expect(flatten(label.props.style).color).toBe("#F4CB63");
-    act(() => button.props.onPress());
-    expect(onPress).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -277,7 +198,6 @@ describe("NoChapterState", () => {
     const tree = render(<NoChapterState noun="the directory" />);
     const copy = texts(tree).join(" ");
 
-    expect(copy).toContain("No chapter selected");
     expect(copy).toContain("More → Switch chapter");
     expect(copy).toContain("the directory");
   });
@@ -356,9 +276,6 @@ describe("SkeletonLines", () => {
     const list = cardStyle(render(<SkeletonLines tone="list" />));
     expect(list.backgroundColor).toBe(card);
     expect(list.borderRadius).toBe(radius.card);
-    expect(cardStyle(render(<EmptyState title="None" />)).backgroundColor).toBe(
-      card,
-    );
     expect(
       cardStyle(render(<ErrorState title="Failed" body="Retry." />))
         .backgroundColor,
@@ -585,26 +502,3 @@ describe("SkeletonBlock's pulse", () => {
   });
 });
 
-describe("EmptyState's glyph", () => {
-  // The More hub's duotone glyphs, in the chapter accent, rather than a
-  // character Figtree doesn't carry.
-  it("draws a glyph component in the chapter accent", () => {
-    const tree = render(<EmptyState glyph={DocumentsGlyph} title="Nothing yet" />);
-    const glyph = tree.root.findByType(DocumentsGlyph);
-
-    expect(glyph.props.color).toBe("#F4CB63");
-    expect(texts(tree)).toEqual(["Nothing yet"]);
-  });
-
-  it("draws a title alone, with no body line, when it is given no body", () => {
-    const tree = render(<EmptyState glyph={DocumentsGlyph} title="Nothing yet" />);
-    expect(
-      tree.root.findAllByType("Text" as unknown as React.ComponentType),
-    ).toHaveLength(1);
-  });
-
-  it("points the no-chapter state at the Switch chapter row's glyph", () => {
-    const tree = render(<NoChapterState noun="the directory" />);
-    expect(tree.root.findAllByType(ChapterGlyph)).toHaveLength(1);
-  });
-});

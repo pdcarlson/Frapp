@@ -24,7 +24,11 @@ const {
 // usingPreviewData renders from the `event` prop and gates out AttendancePanel;
 // stub the live hooks so the sheet renders without a query client / API.
 vi.mock("@repo/hooks", () => ({
-  useEvent: () => ({ data: undefined, isLoading: eventQueryState.isLoading, isError: false }),
+  useEvent: () => ({
+    data: undefined,
+    isLoading: eventQueryState.isLoading,
+    isError: false,
+  }),
   useDeleteEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDownloadEventIcs: () => ({
     mutateAsync: mockDownloadIcs,
@@ -74,25 +78,30 @@ beforeEach(() => {
   mockIcsState.isPending = false;
 });
 
-describe("EventDetailSheet role targeting", () => {
-  it("resolves and renders required role names for a targeted event", () => {
+describe("EventDetailSheet who's coming", () => {
+  it("names each role set apart, with its answer", () => {
     render(
       <EventDetailSheet
         open
         onOpenChange={() => {}}
         usingPreviewData
-        event={{ ...baseEvent, required_role_ids: ["r1"] }}
+        event={{
+          ...baseEvent,
+          required_role_ids: ["r1"],
+          others_invited: false,
+        }}
         onRequestEdit={() => {}}
         onEventDeleted={() => {}}
       />,
     );
 
-    expect(screen.getByText("Required roles")).toBeInTheDocument();
+    expect(screen.getByText("Who's coming")).toBeInTheDocument();
+    expect(screen.getByText("Only the roles below")).toBeInTheDocument();
     expect(screen.getByText("Exec")).toBeInTheDocument();
-    expect(screen.queryByText("All members")).not.toBeInTheDocument();
+    expect(screen.getByText("Required")).toBeInTheDocument();
   });
 
-  it("shows 'All members' when the event targets no roles", () => {
+  it("says the default alone when no role is set apart", () => {
     render(
       <EventDetailSheet
         open
@@ -104,7 +113,7 @@ describe("EventDetailSheet role targeting", () => {
       />,
     );
 
-    expect(screen.getByText("All members")).toBeInTheDocument();
+    expect(screen.getByText("Optional for everyone")).toBeInTheDocument();
   });
 });
 
@@ -203,7 +212,9 @@ describe("EventDetailSheet subscription gating", () => {
     renderSheet();
 
     expect(screen.getByRole("button", { name: /edit event/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /delete event/i })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /delete event/i }),
+    ).toBeDisabled();
     expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
   });
 
@@ -264,7 +275,7 @@ describe("EventDetailSheet header actions", () => {
 });
 
 describe("EventDetailSheet check-in zone", () => {
-  it("names the zone and counts its points when one is set", () => {
+  it("names the zone, never its corner count, when one is set", () => {
     render(
       <EventDetailSheet
         open
@@ -285,8 +296,10 @@ describe("EventDetailSheet check-in zone", () => {
       />,
     );
 
-    expect(screen.getByText("Great Hall")).toBeInTheDocument();
-    expect(screen.getByText(/4 points/)).toBeInTheDocument();
+    expect(
+      screen.getByText("Check in from inside the Great Hall zone."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/4 points/)).not.toBeInTheDocument();
   });
 
   it("says check-in is unrestricted when no zone is set", () => {
@@ -385,9 +398,7 @@ describe("EventDetailSheet Add to calendar", () => {
       />,
     );
 
-    await user.click(
-      screen.getByRole("button", { name: /add to calendar/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /add to calendar/i }));
 
     await waitFor(() => {
       expect(mockDownloadIcs).toHaveBeenCalledWith("e1");
@@ -412,15 +423,13 @@ describe("EventDetailSheet Add to calendar", () => {
       />,
     );
 
-    await user.click(
-      screen.getByRole("button", { name: /add to calendar/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /add to calendar/i }));
 
     await waitFor(() => {
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Could not export calendar file",
-          description: "network down",
+          description: "Something went wrong. Please retry.",
           variant: "destructive",
         }),
       );
@@ -494,9 +503,7 @@ describe("EventDetailSheet Add to calendar", () => {
       />,
     );
 
-    await user.click(
-      screen.getByRole("button", { name: /add to calendar/i }),
-    );
+    await user.click(screen.getByRole("button", { name: /add to calendar/i }));
 
     await waitFor(() => {
       expect(clickSpy).toHaveBeenCalledTimes(1);
@@ -589,9 +596,7 @@ describe("EventDetailSheet schedule and policy", () => {
     renderSheet(baseEvent);
 
     expect(screen.queryByText(/review scheduling details/i)).toBeNull();
-    expect(screen.getByRole("dialog")).not.toHaveAttribute(
-      "aria-describedby",
-    );
+    expect(screen.getByRole("dialog")).not.toHaveAttribute("aria-describedby");
   });
 });
 
@@ -620,10 +625,10 @@ describe("EventDetailSheet loading", () => {
   });
 });
 
-describe("EventDetailSheet Mandatory badge", () => {
+describe("EventDetailSheet required badge", () => {
   // A status, so danger as the events list and mobile draw it, never the
   // chapter accent (components.md §5).
-  it("draws Mandatory as the danger badge", () => {
+  it("draws required-for-everyone as the danger badge", () => {
     render(
       <EventDetailSheet
         open
@@ -634,7 +639,7 @@ describe("EventDetailSheet Mandatory badge", () => {
         onEventDeleted={() => {}}
       />,
     );
-    const badge = screen.getByText("Mandatory");
+    const badge = screen.getByText("Required for everyone");
     expect(badge.className).toContain("text-destructive-text");
     expect(badge.className).not.toContain("text-accent-text");
   });

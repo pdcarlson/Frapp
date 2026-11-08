@@ -15,11 +15,14 @@
     "./polls": "./src/polls.ts",
     "./cards": "./src/cards.ts",
     "./reply-preview": "./src/reply-preview.ts",
+    "./channel-preview": "./src/channel-preview.ts",
     "./blocks": "./src/blocks.ts",
     "./block-copy": "./src/block-copy.ts",
+    "./channels-refused-copy": "./src/channels-refused-copy.ts",
     "./message-actions": "./src/message-actions.ts",
     "./report-copy": "./src/report-copy.ts",
     "./grouping": "./src/grouping.ts",
+    "./density": "./src/density.ts",
     "./links": "./src/links.ts",
     "./markdown": "./src/markdown.ts",
     "./test/markdown-parse-budget.fixtures": "./src/test/markdown-parse-budget.fixtures.ts",
@@ -35,7 +38,7 @@
     "@repo/api-sdk": "*",
     "@repo/formatting": "*",
     "@repo/validation": "*",
-    "@supabase/supabase-js": "^2.118.0",
+    "@supabase/supabase-js": "^2.119.0",
     "@tanstack/react-query": "^5.105.0"
   },
   "devDependencies": {

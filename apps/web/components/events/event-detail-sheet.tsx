@@ -1,5 +1,6 @@
 "use client";
 
+import { checkInZoneLine } from "@repo/validation";
 import { useEffect, useMemo } from "react";
 import {
   AlertTriangle,
@@ -23,6 +24,11 @@ import {
   useRoles,
 } from "@repo/hooks";
 import { useToast } from "@/lib/hooks/use-toast";
+import {
+  EVENT_ATTENDANCE_LABELS,
+  attendanceFieldsOf,
+  attendanceFromEvent,
+} from "@repo/validation";
 import { Badge } from "@/components/ui/badge";
 import { IconButton } from "@/components/ui/icon-button";
 import {
@@ -97,10 +103,11 @@ export function EventDetailSheet({
     typeof resolvedEvent?.name === "string" && resolvedEvent.name.length > 0
       ? resolvedEvent.name
       : "Untitled event";
-  const isMandatory =
-    typeof resolvedEvent?.is_mandatory === "boolean"
-      ? resolvedEvent.is_mandatory
-      : false;
+  // Who's coming, by role (`spec/behavior/events.md` § Attendance by role).
+  const attendance = attendanceFromEvent(
+    attendanceFieldsOf(resolvedEvent ?? {}),
+  );
+  const isMandatory = attendance.everyone === "required";
   // `null` for a one-time event, which then shows no cadence badge at all.
   const cadence = recurrenceLabel(resolvedEvent?.recurrence_rule);
   const schedule = formatDayTimeRange(
@@ -150,10 +157,6 @@ export function EventDetailSheet({
       ? resolvedEvent.check_in_zone_name.trim()
       : "";
 
-  const rawRequiredRoleIds = resolvedEvent?.required_role_ids;
-  const requiredRoleIds = Array.isArray(rawRequiredRoleIds)
-    ? rawRequiredRoleIds.filter((id): id is string => typeof id === "string")
-    : [];
   const roleNameById = useMemo(
     () =>
       new Map(
@@ -317,47 +320,43 @@ export function EventDetailSheet({
 
           <div className="mt-5 grid gap-3">
             <div className="rounded-lg border border-border p-3">
-              <p className="mb-2 text-caption text-muted-foreground">
-                Attendance policy
+              <p className="mb-2 flex items-center gap-1 text-caption text-muted-foreground">
+                <RolesGlyph className="h-3.5 w-3.5" />
+                Who&apos;s coming
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant={isMandatory ? "destructive" : "secondary"}>
-                  {isMandatory ? "Mandatory" : "Optional"}
+                  {attendance.everyone === "not_invited"
+                    ? "Only the roles below"
+                    : `${EVENT_ATTENDANCE_LABELS[attendance.everyone]} for everyone`}
                 </Badge>
                 {cadence ? <Badge variant="outline">{cadence}</Badge> : null}
               </div>
-              <div className="mt-3">
-                <p className="mb-1 flex items-center gap-1 text-caption text-muted-foreground">
-                  <RolesGlyph className="h-3.5 w-3.5" />
-                  Required roles
-                </p>
-                {requiredRoleIds.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">All members</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {requiredRoleIds.map((id) => (
-                      <Badge key={id} variant="outline">
-                        {roleNameById.get(id) ?? `Role ${id.slice(0, 8)}`}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
+              {Object.keys(attendance.roles).length > 0 ? (
+                <ul className="mt-2 grid gap-1">
+                  {Object.entries(attendance.roles).map(([id, status]) => (
+                    <li
+                      key={id}
+                      className="flex items-center justify-between gap-3 text-sm"
+                    >
+                      <span className="truncate">
+                        {roleNameById.get(id) ??
+                          (rolesQuery.isSuccess ? "Removed role" : "Role")}
+                      </span>
+                      <span className="shrink-0 text-muted-foreground">
+                        {EVENT_ATTENDANCE_LABELS[status]}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               <div className="mt-3">
                 <p className="mb-1 flex items-center gap-1 text-caption text-muted-foreground">
                   <StudyZonesGlyph className="h-3.5 w-3.5" />
                   Check-in zone
                 </p>
                 {hasCheckInZone ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="default">
-                      {checkInZoneName ? checkInZoneName : "Zone set"}
-                    </Badge>
-                    <span className="text-sm text-muted-foreground">
-                      {checkInZonePoints} points. Members must be inside to
-                      check in
-                    </span>
-                  </div>
+                  <p className="text-sm">{checkInZoneLine(checkInZoneName)}</p>
                 ) : checkInZoneIsMalformed ? (
                   <div className="flex items-start gap-2 rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />

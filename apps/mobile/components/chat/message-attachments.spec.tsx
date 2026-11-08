@@ -38,6 +38,12 @@ vi.mock("@repo/hooks", async () => {
 import * as WebBrowser from "expo-web-browser";
 import { ImageViewerContext } from "./image-viewer";
 import { MessageAttachments } from "./message-attachments";
+import {
+  attachmentMatchKey,
+  clearLocalPhotosForTest,
+  rememberLocalPhotos,
+} from "@/lib/chat/local-photos";
+import { chatPhotoCacheKey } from "@/lib/chat/photo-cache";
 
 /**
  * The behaviours this file exists for, all from #1229.
@@ -145,12 +151,13 @@ describe("rendering", () => {
 
     const tree = render();
     const images = tree.root.findAllByType(
-      "Image" as unknown as React.ElementType,
+      "ExpoImage" as unknown as React.ElementType,
     );
 
     expect(images).toHaveLength(1);
     expect(images[0]!.props.source).toEqual({
       uri: "https://example.test/signed/composite.png",
+      cacheKey: chatPhotoCacheKey("att-1", "original"),
     });
   });
 
@@ -173,6 +180,32 @@ describe("rendering", () => {
     expect(JSON.stringify(row.props.style)).toContain('"aspectRatio":2');
   });
 
+  it("sizes a photo with no stored size from the image once it loads, against the start of the column", () => {
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: [attachment({ content_type: "image/jpeg", filename: "old.jpg" })],
+    };
+
+    const tree = render();
+    const row = () =>
+      tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityRole === "button",
+      );
+    expect(JSON.stringify(row().props.style)).not.toContain("aspectRatio");
+
+    const image = tree.root.findAllByType(
+      "ExpoImage" as unknown as React.ElementType,
+    )[0]!;
+    act(() => image.props.onLoad({ source: { width: 600, height: 800 } }));
+
+    const style = JSON.stringify(row().props.style);
+    expect(style).toContain('"aspectRatio":0.75');
+    expect(style).toContain('"alignSelf":"flex-start"');
+  });
+
   it("caps a tall preview so it cannot push the thread off screen", () => {
     // A 400x2000 phone screenshot is the ordinary case, not a pathological one:
     // width:100% plus its aspect ratio would derive a height many times the
@@ -187,7 +220,7 @@ describe("rendering", () => {
 
     const tree = render();
     const image = tree.root.findAllByType(
-      "Image" as unknown as React.ElementType,
+      "ExpoImage" as unknown as React.ElementType,
     )[0]!;
     const row = tree.root.find(
       (node) =>
@@ -256,8 +289,11 @@ describe("rendering", () => {
       expect(rowStyle).toContain('"width":"100%"');
       expect(rowStyle).toContain(`"maxWidth":${maxWidth}`);
       expect(rowStyle).toContain(`"aspectRatio":${aspect}`);
+      // Without the row's own height cap, Yoga sizes a portrait row's height
+      // from the full column width and leaves an empty block under the photo.
+      expect(rowStyle).toContain('"maxHeight":256');
       const image = tree.root.findAllByType(
-        "Image" as unknown as React.ElementType,
+        "ExpoImage" as unknown as React.ElementType,
       )[0]!;
       const imageStyle = JSON.stringify(image.props.style);
       expect(imageStyle).toContain('"height":"100%"');
@@ -276,7 +312,7 @@ describe("rendering", () => {
 
     const tree = render();
     const image = tree.root.findAllByType(
-      "Image" as unknown as React.ElementType,
+      "ExpoImage" as unknown as React.ElementType,
     )[0]!;
     const style = JSON.stringify(image.props.style);
 
@@ -309,11 +345,11 @@ describe("the loading tiles", () => {
         node.props.testID === "attachment-loading-tile",
     );
 
-  it("reserves a bare preview's room and an unsized preview's height per file", () => {
+  it("reserves a bare preview's room and an unsized preview's height for one file", () => {
     hookState.result = { isPending: true, isError: false, data: undefined };
-    const tree = render({ count: 2 });
+    const tree = render({ count: 1 });
 
-    expect(tiles(tree)).toHaveLength(2);
+    expect(tiles(tree)).toHaveLength(1);
     // No caption line to grow out of.
     expect(tree.root.findAllByType("Text" as never)).toHaveLength(0);
 
@@ -366,7 +402,7 @@ describe("the loading tiles", () => {
     };
     const loaded = render({ count: 1 });
     const image = loaded.root.findAllByType(
-      "Image" as unknown as React.ElementType,
+      "ExpoImage" as unknown as React.ElementType,
     )[0]!;
 
     const height = (style: unknown) =>
@@ -402,7 +438,7 @@ describe("the loading tiles", () => {
 
     expect(tiles(tree)).toHaveLength(0);
     expect(
-      tree.root.findAllByType("Image" as unknown as React.ElementType),
+      tree.root.findAllByType("ExpoImage" as unknown as React.ElementType),
     ).toHaveLength(0);
     const [row] = tree.root.findAllByProps({ accessibilityRole: "button" });
     expect(row!.props.accessibilityLabel).toBe("Open minutes.pdf");
@@ -484,11 +520,184 @@ describe("opening an image", () => {
     const tree = render({}, openViewer);
 
     expect(
-      tree.root.findAllByType("Image" as unknown as React.ElementType),
+      tree.root.findAllByType("ExpoImage" as unknown as React.ElementType),
     ).toHaveLength(0);
     expect(textOf(tree)).toContain("logo.svg");
     const [row] = tree.root.findAllByProps({ accessibilityRole: "button" });
     act(() => row!.props.onPress());
     expect(openViewer).not.toHaveBeenCalled();
+  });
+});
+
+describe("several photos and the sender's own", () => {
+  const photo = (id: string, extra: Record<string, unknown> = {}) =>
+    attachment({
+      id,
+      filename: `${id}.jpg`,
+      content_type: "image/jpeg",
+      byte_size: 1000,
+      download_url: `https://example.test/signed/${id}.jpg`,
+      ...extra,
+    });
+  const uris = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAll(
+        (node) =>
+          (node.type as unknown) === "ExpoImage" &&
+          typeof node.props.source?.uri === "string",
+      )
+      .map((node) => node.props.source.uri as string);
+
+  beforeEach(() => {
+    clearLocalPhotosForTest();
+  });
+
+  it("draws two or more photos as one grid, four tiles, the last saying +N", () => {
+    hookState.result = {
+      isPending: false,
+      isError: false,
+      data: ["a", "b", "c", "d", "e", "f"].map((id) => photo(id)),
+    };
+    const tree = render({ count: 6 }, vi.fn());
+    expect(uris(tree)).toHaveLength(4);
+    const texts = tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map((node) => [node.props.children].flat().join(""));
+    expect(texts).toContain("+2");
+    expect(
+      tree.root.findAll(
+        (node) => node.props.accessibilityLabel === "View 6 photos",
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("reserves a grid, not a stack, while several photos load", () => {
+    hookState.result = { isPending: true };
+    const tree = render({ count: 6 });
+    expect(
+      tree.root.findAll(
+        (node) =>
+          node.props.testID === "attachment-loading-tile" &&
+          (node.type as unknown) === "View",
+      ),
+    ).toHaveLength(4);
+  });
+
+  it("draws the sender's photos from the phone while the message sends, fetching nothing", () => {
+    rememberLocalPhotos("c-1", [
+      { uri: "file:///a.jpg", width: 3, height: 4, match: null },
+      { uri: "file:///b.jpg", width: 4, height: 3, match: null },
+    ]);
+    hookState.result = { isPending: true };
+    const tree = render({ count: 2, clientMessageId: "c-1", confirmed: false });
+    expect(uris(tree)).toEqual(["file:///a.jpg", "file:///b.jpg"]);
+    expect(hookState.calls.at(-1)?.enabled).toBe(false);
+  });
+
+  it("keeps drawing the sender's own file once the message is confirmed", () => {
+    rememberLocalPhotos("c-1", [
+      {
+        uri: "file:///a.jpg",
+        width: 3,
+        height: 4,
+        match: attachmentMatchKey("a.jpg", 1000),
+      },
+    ]);
+    hookState.result = { isPending: false, isError: false, data: [photo("a")] };
+    const tree = render({ count: 1, clientMessageId: "c-1" }, vi.fn());
+    expect(uris(tree)).toEqual(["file:///a.jpg"]);
+  });
+
+  describe("previews (2026-11-07)", () => {
+    const THUMBHASH = "3OcRJYB4d3h/iIeHeEh3eIhw+j3A";
+    const photoRow = attachment({
+      filename: "IMG_1.jpg",
+      content_type: "image/jpeg",
+      width: 2560,
+      height: 1920,
+      thumbhash: THUMBHASH,
+      download_url: "https://example.test/signed/IMG_1.jpg",
+      preview_url: "https://example.test/signed/preview.jpg",
+    });
+    const images = (tree: ReactTestRenderer) =>
+      tree.root.findAllByType("ExpoImage" as unknown as React.ElementType);
+
+    it("draws the preview copy, keyed by file, over a blur of the photo", () => {
+      hookState.result = { isPending: false, isError: false, data: [photoRow] };
+
+      const tree = render();
+      const [picture] = images(tree);
+
+      expect(picture!.props.source).toEqual({
+        uri: "https://example.test/signed/preview.jpg",
+        cacheKey: chatPhotoCacheKey("att-1", "preview"),
+      });
+      expect(picture!.props.placeholder).toEqual({ thumbhash: THUMBHASH });
+      expect(picture!.props.cachePolicy).toBe("disk");
+    });
+
+    it("hits the cache when the same photo comes back with a freshly signed URL", () => {
+      hookState.result = { isPending: false, isError: false, data: [photoRow] };
+      const first = images(render())[0]!.props.source.cacheKey;
+      hookState.result = {
+        isPending: false,
+        isError: false,
+        data: [
+          { ...photoRow, preview_url: "https://example.test/signed/again.jpg" },
+        ],
+      };
+      const second = images(render())[0]!.props.source.cacheKey;
+
+      expect(second).toBe(first);
+    });
+
+    it("crops a grid tile's blur like the photo, and fills a lone photo's box", () => {
+      hookState.result = { isPending: false, isError: false, data: [photoRow] };
+      expect(images(render())[0]!.props.placeholderContentFit).toBe("fill");
+
+      hookState.result = {
+        isPending: false,
+        isError: false,
+        data: [photoRow, { ...photoRow, id: "att-2" }],
+      };
+      expect(images(render({ count: 2 }))[0]!.props.placeholderContentFit).toBe(
+        "cover",
+      );
+    });
+
+    it("falls back to the original when the preview fails to load", () => {
+      hookState.result = { isPending: false, isError: false, data: [photoRow] };
+      const tree = render();
+
+      act(() => images(tree).at(-1)!.props.onError());
+
+      expect(images(tree).at(-1)!.props.source).toEqual({
+        uri: "https://example.test/signed/IMG_1.jpg",
+        cacheKey: chatPhotoCacheKey("att-1", "original"),
+      });
+    });
+
+    it("draws an older photo, with no preview or hash, from the original with no blur", () => {
+      hookState.result = {
+        isPending: false,
+        isError: false,
+        data: [
+          attachment({
+            filename: "old.jpg",
+            content_type: "image/jpeg",
+            download_url: "https://example.test/signed/old.jpg",
+          }),
+        ],
+      };
+
+      const tree = render();
+
+      expect(images(tree)).toHaveLength(1);
+      expect(images(tree)[0]!.props.source).toEqual({
+        uri: "https://example.test/signed/old.jpg",
+        cacheKey: chatPhotoCacheKey("att-1", "original"),
+      });
+      expect(images(tree)[0]!.props.placeholder).toBeNull();
+    });
   });
 });

@@ -156,24 +156,33 @@ export function selectNextTask(
   return open[0]?.task ?? null;
 }
 
-/** Today shows a clock time; anything further out shows the day instead. */
+/**
+ * The day in words, never abbreviated (owner, 2026-11-07): "Today",
+ * "Tomorrow", a weekday inside the coming week ("Sunday"), else the full date
+ * ("November 14"). Exported for the strip's due line too.
+ */
+export function formatDayWord(at: Date, now: Date): string {
+  const days = dayDelta(now, at);
+  if (days === 0) return "Today";
+  if (days === 1) return "Tomorrow";
+  if (days > 1 && days < 7) {
+    return at.toLocaleDateString(undefined, { weekday: "long" });
+  }
+  return at.toLocaleDateString(undefined, { month: "long", day: "numeric" });
+}
+
+/** The day in words, then the clock time while it is inside the coming week. */
 export function formatEventTime(startTime: string, now: Date): string {
   const start = parseInstant(startTime);
   if (!start) return "";
+  const day = formatDayWord(start, now);
   const days = dayDelta(now, start);
+  if (days < 0 || days >= 7) return day;
   const clock = start.toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",
   });
-  if (days === 0) return clock;
-  if (days === 1) return `tmrw ${clock}`;
-  if (days < 7) {
-    return `${start.toLocaleDateString(undefined, { weekday: "short" })} ${clock}`;
-  }
-  return start.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
+  return `${day} ${clock}`;
 }
 
 /**
@@ -199,13 +208,10 @@ export function formatDueDate(dueDate: string, now: Date): string {
   const due = parseDueInstant(dueDate);
   if (!due) return "";
   const days = dayDelta(now, due);
-  if (days < 0) return "overdue";
-  if (days === 0) return "due today";
-  if (days === 1) return "due tmrw";
-  if (days < 7) {
-    return `due ${due.toLocaleDateString(undefined, { weekday: "short" })}`;
-  }
-  return `due ${due.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+  if (days < 0) return "Overdue";
+  if (days === 0) return "Due today";
+  if (days === 1) return "Due tomorrow";
+  return `Due ${formatDayWord(due, now)}`;
 }
 
 /** Due today, tomorrow, or already past — the states drawn in red. */
@@ -282,7 +288,7 @@ export function UpNextStrip({
           accessibilityRole="button"
           accessibilityLabel={`${task.title}, ${formatDueDate(task.due_date, at)}`}
           accessibilityHint="Open the task board."
-          onPress={() => router.push("/tasks")}
+          onPress={() => router.navigate("/tasks")}
           style={styles.row}
         >
           <TasksGlyph

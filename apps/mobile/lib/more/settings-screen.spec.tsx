@@ -15,7 +15,7 @@ import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
 
 /**
- * s16 Settings, rendered. It renders `app/(tabs)/preferences.tsx` but lives
+ * s16 Settings, rendered. It renders `app/(app)/preferences.tsx` but lives
  * here: a spec under `app/` ships as a route module (`lib/routes.spec.ts`).
  *
  * Everything below the screen is stubbed at its own seam: the preference
@@ -126,6 +126,18 @@ vi.mock("@/components/settings/blocked-members-sheet", () => ({
   BlockedMembersSheet: "BlockedMembersSheet",
 }));
 
+// The density sheet as a stand-in whose `present` a spec can see.
+const densitySheet = vi.hoisted(() => ({ present: vi.fn() }));
+vi.mock("@/components/settings/chat-density-sheet", async () => {
+  const { forwardRef, useImperativeHandle } = await import("react");
+  return {
+    ChatDensitySheet: forwardRef(function ChatDensitySheet(_props, ref) {
+      useImperativeHandle(ref, () => densitySheet);
+      return null;
+    }),
+  };
+});
+
 // A purple chapter, so a control painted house gold fails.
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
@@ -137,7 +149,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import SettingsScreen from "@/app/(tabs)/preferences";
+import SettingsScreen from "@/app/(app)/preferences";
 import { AnalyticsContext } from "@/lib/analytics-provider";
 
 const mounted: ReactTestRenderer[] = [];
@@ -325,6 +337,21 @@ describe("Settings copy", () => {
     );
   });
 
+  it("names the chat density on its row, which opens the density sheet", () => {
+    densitySheet.present.mockClear();
+    const tree = render();
+    expect(screenText(tree)).toContain("Chat density");
+    expect(screenText(tree)).toContain("Cozy");
+    const row = tree.root.find(
+      (node) =>
+        node.props.accessibilityHint ===
+          "Choose how tightly messages are drawn in chat." &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => row.props.onPress());
+    expect(densitySheet.present).toHaveBeenCalled();
+  });
+
   it("gives an editor's accent row no narration, and no web footnote", () => {
     state.permissions = ["*"];
     const text = screenText(render());
@@ -406,7 +433,7 @@ describe("Settings push switch", () => {
 
   it("records the primer decision before it shows the OS prompt", async () => {
     // So an app killed while the prompt is up still counts as asked, and the
-    // s03 card isn't offered again with a "Turn on" the OS would ignore.
+    // onboarding step isn't offered again with a "Turn on" the OS would ignore.
     state.getPushPermission = async () => ({
       granted: false,
       canAskAgain: true,

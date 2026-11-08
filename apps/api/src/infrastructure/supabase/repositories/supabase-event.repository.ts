@@ -59,6 +59,22 @@ export class SupabaseEventRepository implements IEventRepository {
     return created;
   }
 
+  /**
+   * One array insert: PostgREST sends it as a single `INSERT`, so a series'
+   * occurrences land together or not at all (#3235).
+   */
+  async createMany(rows: TablesInsert<'events'>[]): Promise<Event[]> {
+    if (rows.length === 0) return [];
+
+    const { data: created, error } = await this.supabase
+      .from('events')
+      .insert(rows)
+      .select();
+
+    if (error) throw new SupabaseQueryError(error);
+    return created ?? [];
+  }
+
   async update(
     id: string,
     chapterId: string,

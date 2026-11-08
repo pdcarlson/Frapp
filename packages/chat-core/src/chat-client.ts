@@ -70,7 +70,13 @@ import {
 } from "./heavy-command-notices";
 import { memberFacingRefusal } from "./polls";
 import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
-import type { AnalyticsProperties } from "@repo/validation";
+import {
+  OFFLINE_COPY,
+  refusalCopy,
+  STATUS_ERROR_COPY,
+  TRY_AGAIN,
+  type AnalyticsProperties,
+} from "@repo/validation";
 
 export interface ToastFn {
   (input: {
@@ -192,6 +198,27 @@ function serverReasonOf(error: unknown): string | null {
 }
 
 /**
+ * What a member reads for a chat call that failed (principles.md P2.3): the
+ * polls-off row, then the shared refusal map in `@repo/validation`, then what
+ * the status means. The server's own sentence never reaches the screen unless
+ * the map rewrote it, so "Forbidden resource" or a class-validator line can't
+ * land in a toast or a failed row's inline error.
+ */
+function chatRefusalCopy(
+  reason: string | null,
+  status: number | undefined,
+): string {
+  if (reason) {
+    const pollsOff = memberFacingRefusal(reason);
+    if (pollsOff !== reason) return pollsOff;
+  }
+  const mapped = refusalCopy({ status, message: reason });
+  if (mapped) return mapped;
+  if (status === undefined) return OFFLINE_COPY;
+  return STATUS_ERROR_COPY[status] ?? TRY_AGAIN;
+}
+
+/**
  * Distinguishes terminal client errors (4xx — bad request / forbidden) from
  * transient ones (network, 5xx). 4xx → `failed` + toast; transient → keep the
  * message pending in the outbox for the reconnect flush.
@@ -242,9 +269,7 @@ export function classifyChatError(error: unknown): {
       status = (resp as { status?: number }).status;
     }
   }
-  const message = memberFacingRefusal(
-    serverReasonOf(error) ?? "Couldn't reach chat server",
-  );
+  const message = chatRefusalCopy(serverReasonOf(error), status);
   const terminal =
     typeof status === "number" && isDefinitiveClientError(status);
   return { terminal, status, message };
@@ -282,7 +307,7 @@ export function definitiveRefusalMessage(error: unknown): string | null {
   if (status === 429) return RATE_LIMITED_COPY;
   if (!terminal) return null;
   const reason = serverReasonOf(error);
-  return reason === null ? null : memberFacingRefusal(reason);
+  return reason === null ? null : chatRefusalCopy(reason, status);
 }
 
 /**
@@ -315,6 +340,22 @@ export interface SendMessageArgs {
    * claim, not an instruction.
    */
   attachments?: OutboxAttachment[] | null;
+  /**
+   * Claims still uploading when the member pressed Send (mobile's photo tray).
+   * The optimistic row goes up at once, carrying `attachmentCount`; the
+   * outbox write and the POST wait for this to resolve, and the claims it
+   * resolves to are sent in place of `attachments`. A rejection leaves the
+   * row in place, failed with the rejection's message, and rejects with
+   * {@link AttachmentsNotReadyError}. Nothing is in the outbox yet, so the
+   * caller owns Retry and Discard for that row: it sends again under the same
+   * `clientMessageId`, or removes the row.
+   *
+   * Until it resolves the message lives only in memory: an app killed while
+   * photos upload loses it. The window is the upload time of shrunk photos.
+   */
+  attachmentsReady?: Promise<OutboxAttachment[]> | null;
+  /** How many files the optimistic row shows while `attachmentsReady` runs. */
+  attachmentCount?: number;
   /** Reuse a previously-generated id (outbox flush, idempotent retry). */
   clientMessageId?: string;
   /**
@@ -326,6 +367,17 @@ export interface SendMessageArgs {
    * value. Omitted (a first-time compose send) reads as `0`.
    */
   priorAttempts?: number;
+}
+
+/**
+ * `sendMessage`'s `attachmentsReady` rejected. The optimistic row is still in
+ * the cache, marked failed with this message; nothing was queued.
+ */
+export class AttachmentsNotReadyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AttachmentsNotReadyError";
+  }
 }
 
 /**
@@ -398,29 +450,49 @@ export async function sendMessage(
     kind: args.kind,
     payload: args.payload,
     replyToId: args.replyToId ?? null,
-    attachmentCount: args.attachments?.length ?? 0,
+    attachmentCount: args.attachmentCount ?? args.attachments?.length ?? 0,
   });
 
   patchCache(ctx.queryClient, args.channelId, (cache) =>
     upsertOptimistic(cache, optimistic),
   );
 
-  const intent = {
-    kind: args.kind ?? "text",
-    payload: args.payload ?? null,
-    replyToId: args.replyToId ?? null,
-    attachments: args.attachments ?? null,
-  } as const;
-
   // Draft clear is a Dexie drafts-table op that happens to sit on this
   // path. Failing it must not fail a send that can still enqueue — a flush
   // of an already-queued row would otherwise abandon a message that was
-  // never this attempt's to drop.
+  // never this attempt's to drop. Before any wait for uploads below, so a
+  // draft the member types meanwhile is never the one cleared.
   try {
     await ctx.outbox.clearDraft(args.channelId);
   } catch {
     // Best-effort.
   }
+
+  let attachments = args.attachments ?? null;
+  if (args.attachmentsReady) {
+    try {
+      attachments = await args.attachmentsReady;
+    } catch (err) {
+      // The row stays, failed, with the reason: the caller holds what a
+      // retry needs (no outbox row exists yet) and the member sees which
+      // message didn't go, in whatever channel it was sent from.
+      const reason =
+        err instanceof Error && err.message
+          ? err.message
+          : "A photo didn't upload.";
+      patchCache(ctx.queryClient, args.channelId, (cache) =>
+        markFailed(cache, clientId, reason),
+      );
+      throw new AttachmentsNotReadyError(reason);
+    }
+  }
+
+  const intent = {
+    kind: args.kind ?? "text",
+    payload: args.payload ?? null,
+    replyToId: args.replyToId ?? null,
+    attachments,
+  } as const;
 
   let enqueued: OutboxRow;
   try {
@@ -461,12 +533,17 @@ export async function sendMessage(
           kind: args.kind ?? "text",
           payload: (args.payload ?? undefined) as unknown as undefined,
           reply_to_id: args.replyToId ?? undefined,
-          attachments: args.attachments?.length
-            ? args.attachments.map((attachment) => ({
+          attachments: attachments?.length
+            ? attachments.map((attachment) => ({
                 storage_path: attachment.storagePath,
                 filename: attachment.filename,
                 content_type: attachment.contentType,
                 byte_size: attachment.byteSize ?? undefined,
+                width: attachment.width ?? undefined,
+                height: attachment.height ?? undefined,
+                thumbhash: attachment.thumbhash ?? undefined,
+                preview_storage_path:
+                  attachment.previewStoragePath ?? undefined,
               }))
             : undefined,
         },

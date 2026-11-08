@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, FolderOpen, WifiOff } from "lucide-react";
+import { AlertTriangle, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useNetwork } from "@/lib/providers/network-provider";
@@ -26,8 +26,8 @@ import { useNetwork } from "@/lib/providers/network-provider";
  * 3. **Empty is accent + neutral; error is semantic; neither borrows the
  *    other's colour.** `OfflineState` painted itself in `--primary` — the
  *    chapter accent stating a fact about the network. It now takes the
- *    destructive tint, matching `offline-banner.tsx` so the same condition
- *    reads the same whether it is announced in the banner or in the panel.
+ *    destructive tint, the same danger hue `connection-pill.tsx` draws as its
+ *    dot, so the same condition reads the same in the pill and in the panel.
  */
 
 /**
@@ -154,50 +154,6 @@ export function StateTile({
       )}
     >
       {children}
-    </div>
-  );
-}
-
-export function EmptyState({
-  title,
-  description,
-  actionLabel,
-  onAction,
-  actionProps,
-}: {
-  title: string;
-  description: string;
-  actionLabel?: string;
-  onAction?: () => void;
-  /**
-   * Extra props for the action button — shaped to take `controlProps()` from
-   * `useSubscriptionGate` directly, so an empty-state CTA that starts a gated
-   * write can be disabled and described rather than hidden (§5 rule 4). An
-   * empty state is exactly where hiding reads worst: the screen already has
-   * nothing on it, so a vanished CTA looks like a broken page.
-   */
-  actionProps?: {
-    disabled?: boolean;
-    title?: string;
-    "aria-describedby"?: string;
-  };
-}) {
-  return (
-    <div className="flex min-h-52 flex-col items-center justify-center gap-3 rounded-xl border border-border bg-card p-4 text-center">
-      <StateTile tone="accent">
-        <FolderOpen className="h-6 w-6" />
-      </StateTile>
-      <h2 className="text-base font-bold">{title}</h2>
-      <p className="max-w-[220px] text-sm text-muted-foreground">
-        {description}
-      </p>
-      {actionLabel && onAction ? (
-        // §10: the empty-state CTA is the Tinted button — accent-soft, inviting,
-        // never alarming and never semantic.
-        <Button variant="tinted" size="sm" onClick={onAction} {...actionProps}>
-          {actionLabel}
-        </Button>
-      ) : null}
     </div>
   );
 }
@@ -423,8 +379,8 @@ export function OfflineState({
  * foreground` row is indistinguishable from an ordinary `deniedFallback` like
  * the attendance sheet's "View only", which is the exact conflation of
  * "hidden because denied" and "hidden because we could not check" this whole
- * change exists to end. So the glyph carries the destructive tone, as it does
- * in `offline-banner.tsx` one layer up, and the caption stays on
+ * change exists to end. So the glyph carries the destructive tone, as the
+ * dot does in `connection-pill.tsx` one layer up, and the caption stays on
  * `--muted-foreground` because it is a sentence rather than a status.
  *
  * The glyph is the **solid** `--destructive`, not `--destructive-text`. §5's
@@ -435,7 +391,7 @@ export function OfflineState({
  * in the Chapter Ops slice already had to make.
  *
  * 16px, not 14: `iconography.md` §2 puts inline metadata rows at 16, which is
- * what `offline-banner.tsx` — the precedent this borrows — already draws. 14
+ * what the connection banner, the precedent this borrowed, drew. 14
  * is the badge-companion carve-out, and this glyph leads the notice rather
  * than trailing a badge.
  *

@@ -28,7 +28,10 @@ import { clampListLimit } from '#domain/constants/list-query-limits';
 import { ID_CHUNK_SIZE, chunkIds } from '#domain/utils/chunk-ids';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
-import { isNotificationCategoryKey } from '@repo/validation';
+import {
+  isNotificationCategoryKey,
+  isSupportedTimeZone,
+} from '@repo/validation';
 import { ChatBlockService } from './chat-block.service';
 
 /**
@@ -75,13 +78,65 @@ function summarizeForLog(value: string): string {
   return JSON.stringify(clipped);
 }
 
+/**
+ * Who a notification is being written for, as far as its wording needs to know:
+ * the recipient and the zone their clock reads in. `timeZone` is null when the
+ * member has never reported one (see {@link recipientTimeZone}).
+ */
+export type NotifyRecipient = {
+  userId: string;
+  timeZone: string | null;
+};
+
 export type NotifyPayload = {
   title: string;
   body: string;
   data?: Record<string, unknown>;
   priority?: 'URGENT' | 'NORMAL' | 'SILENT';
   category?: string;
+  /** The push's iOS stack (`PushPayload.threadId`). Not stored on the in-app row. */
+  threadId?: string;
+  /**
+   * Per-recipient wording. When set, it replaces `title` and `body` for each
+   * recipient, in both the in-app row and the push, so a push can name a time
+   * in the recipient's own zone or say whether an event is required for *them*
+   * (`spec/behavior/notifications.md` § What a push says). `title` and `body`
+   * stay the fallback for a caller that cannot personalize.
+   */
+  personalize?: (recipient: NotifyRecipient) => { title: string; body: string };
 };
+
+/**
+ * The zone a member's clock reads in: the one their app last reported
+ * (`user_settings.time_zone`, sent on every request as `x-time-zone`), else the
+ * zone their quiet hours run in, else null. A stored value this runtime cannot
+ * resolve counts as none, so formatting never throws on a legacy row.
+ */
+export function recipientTimeZone(
+  settings:
+    | (Pick<UserSettings, 'quiet_hours_tz'> & { time_zone?: string | null })
+    | null,
+): string | null {
+  if (!settings) return null;
+  if (isSupportedTimeZone(settings.time_zone)) return settings.time_zone;
+  if (isSupportedTimeZone(settings.quiet_hours_tz))
+    return settings.quiet_hours_tz;
+  return null;
+}
+
+/** The payload as one recipient reads it: `personalize` applied, then dropped. */
+function payloadFor(
+  payload: NotifyPayload,
+  userId: string,
+  settings: UserSettings | null,
+): NotifyPayload {
+  const { personalize, ...rest } = payload;
+  if (!personalize) return rest;
+  return {
+    ...rest,
+    ...personalize({ userId, timeZone: recipientTimeZone(settings) }),
+  };
+}
 
 /**
  * Whether the in-app list withholds this row from a caller with `blocked`: a
@@ -200,6 +255,8 @@ export class NotificationService {
       effectivePriority = 'SILENT';
     }
 
+    payload = payloadFor(payload, userId, settings);
+
     const notification = await this.notificationRepo.create(
       inAppRow(userId, chapterId, payload),
     );
@@ -231,6 +288,20 @@ export class NotificationService {
   }
 
   /**
+   * The zone `userId`'s clock reads in (see {@link recipientTimeZone}), or null
+   * when they have none or the read fails. For a sender whose zone stands in
+   * for a recipient who has never reported one: chapter members share a
+   * campus, so the person who scheduled an event is the best guess for it.
+   */
+  async timeZoneFor(userId: string): Promise<string | null> {
+    try {
+      return recipientTimeZone(await this.settingsRepo.findByUser(userId));
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Notify every member of a chapter.
    *
    * There is no audience filter. Its one caller, `ChatService`'s announcement
@@ -245,7 +316,26 @@ export class NotificationService {
     payload: NotifyPayload,
   ): Promise<void> {
     const members = await this.memberRepo.findByChapter(chapterId);
-    const userIds = [...new Set(members.map((member) => member.user_id))];
+    await this.notifyMembers(
+      chapterId,
+      members.map((member) => member.user_id),
+      payload,
+    );
+  }
+
+  /**
+   * Notify a chosen set of a chapter's members, with the batched reads
+   * `notifyChapter` uses (a few chunked queries, not ~4 per member). For a
+   * caller that picks its own audience, such as an event announcement that
+   * leaves out its creator and members its roles do not invite. The caller owns
+   * that the ids are members of `chapterId`.
+   */
+  async notifyMembers(
+    chapterId: string,
+    memberUserIds: readonly string[],
+    payload: NotifyPayload,
+  ): Promise<void> {
+    const userIds = [...new Set(memberUserIds)];
     if (userIds.length === 0) return;
 
     const category = payload.category ?? 'default';
@@ -273,10 +363,11 @@ export class NotificationService {
     }
 
     // URGENT ignores quiet hours, so the settings read is only for NORMAL /
-    // SILENT payloads. `notifyUser` still reads settings for URGENT and then
-    // skips the window — this path just does not pay for that lookup.
+    // SILENT payloads, or for a personalized one that needs each recipient's
+    // zone. `notifyUser` still reads settings for URGENT and then skips the
+    // window — this path just does not pay for that lookup.
     let settingsByUser = new Map<string, UserSettings>();
-    if (priority !== 'URGENT') {
+    if (priority !== 'URGENT' || payload.personalize) {
       const { rows: settingsRows, failedIds } = await this.loadInChunks(
         eligible,
         (chunk) => this.settingsRepo.findByUserIds(chunk),
@@ -303,6 +394,13 @@ export class NotificationService {
       return { userId, effectivePriority };
     });
 
+    const payloadByUser = new Map(
+      recipients.map(({ userId }) => [
+        userId,
+        payloadFor(payload, userId, settingsByUser.get(userId) ?? null),
+      ]),
+    );
+
     const created: Notification[] = [];
     let insertFailures = 0;
     const recipientChunks: (typeof recipients)[] = [];
@@ -312,7 +410,9 @@ export class NotificationService {
     const insertResults = await Promise.allSettled(
       recipientChunks.map((chunk) =>
         this.notificationRepo.createMany(
-          chunk.map(({ userId }) => inAppRow(userId, chapterId, payload)),
+          chunk.map(({ userId }) =>
+            inAppRow(userId, chapterId, payloadByUser.get(userId) ?? payload),
+          ),
         ),
       ),
     );
@@ -370,7 +470,7 @@ export class NotificationService {
         await this.sendPushAndPrune(
           userTokens,
           notification.id,
-          payload,
+          payloadByUser.get(notification.user_id) ?? payload,
           priorityByUser.get(notification.user_id) ?? 'NORMAL',
           category,
         );
@@ -418,6 +518,7 @@ export class NotificationService {
         // Forwarded for delivery telemetry only — lets `push_delivery`
         // records be sliced by category (see the Expo provider).
         category,
+        threadId: payload.threadId,
       },
     );
 

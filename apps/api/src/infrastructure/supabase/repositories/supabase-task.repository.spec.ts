@@ -94,4 +94,52 @@ describe('SupabaseTaskRepository — tenant scope', () => {
 
     expect(harness.rpcCalls[0].args).toMatchObject({ p_chapter_id: CHAPTER_B });
   });
+
+  it('reopenCompletion moves an unconfirmed completion back and clears completed_at', async () => {
+    harness = createTenantHarness({
+      tables: {
+        tasks: seed().tasks.map((row) => ({
+          ...row,
+          status: 'COMPLETED',
+          completed_at: '2026-08-30T00:00:00Z',
+          points_awarded: false,
+        })),
+      },
+    });
+    repo = new SupabaseTaskRepository(harness.client);
+
+    const reopened = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.reopenCompletion(TASK_B, CHAPTER_B),
+    );
+
+    expect(reopened).toMatchObject({
+      id: TASK_B,
+      status: 'IN_PROGRESS',
+      completed_at: null,
+    });
+    expect(harness.rows('tasks').find((r) => r.id === TASK_A)?.status).toBe(
+      'COMPLETED',
+    );
+  });
+
+  it('reopenCompletion leaves a confirmed task alone', async () => {
+    harness = createTenantHarness({
+      tables: {
+        tasks: seed().tasks.map((row) => ({
+          ...row,
+          status: 'COMPLETED',
+          completed_at: '2026-08-30T00:00:00Z',
+          points_awarded: true,
+        })),
+      },
+    });
+    repo = new SupabaseTaskRepository(harness.client);
+
+    const reopened = await repo.reopenCompletion(TASK_B, CHAPTER_B);
+
+    expect(reopened).toBeNull();
+    expect(harness.rows('tasks').find((r) => r.id === TASK_B)?.status).toBe(
+      'COMPLETED',
+    );
+  });
 });

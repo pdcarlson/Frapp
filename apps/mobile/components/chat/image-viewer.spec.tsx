@@ -5,6 +5,7 @@ import { act } from "react";
 import { AccessibilityInfo, BackHandler, Keyboard, Text } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { stackScreen } from "@/test/stack-screen";
 
 const share = vi.hoisted(() => ({ result: true }));
 const attachments = vi.hoisted(() => ({
@@ -28,6 +29,7 @@ vi.mock("@/lib/chat/share-attachment", () => ({
 }));
 
 import { shareAttachment } from "@/lib/chat/share-attachment";
+import { chatPhotoCacheKey } from "@/lib/chat/photo-cache";
 import {
   ImageViewer,
   useImageViewer,
@@ -49,6 +51,7 @@ function image(n: number): ViewerImage {
     filename: `photo-${n}.png`,
     contentType: "image/png",
     url: `https://example.test/signed/photo-${n}.png`,
+    previewUrl: null,
   };
 }
 
@@ -127,8 +130,18 @@ function button(tree: ReactTestRenderer, label: string) {
     .find((node) => node.props.accessibilityLabel === label)!;
 }
 
+/** The photo itself: `expo-image`, drawn from disk when it has it. */
 function shownImage(tree: ReactTestRenderer) {
-  return tree.root.findByType("Animated.Image" as unknown as React.ElementType);
+  return tree.root.findByType("ExpoImage" as unknown as React.ElementType);
+}
+
+/** The view the gestures zoom and pan, which is also the a11y element. */
+function zoomed(tree: ReactTestRenderer) {
+  return tree.root.find(
+    (node) =>
+      node.props.accessibilityHint === "Pinch or double-tap to zoom" &&
+      typeof node.type === "string",
+  );
 }
 
 function textOf(tree: ReactTestRenderer): string {
@@ -151,9 +164,31 @@ describe("opening and closing", () => {
     const tree = render();
     openOn([image(1), image(2), image(3)], 1);
 
-    expect(shownImage(tree).props.source).toEqual({ uri: image(2).url });
+    expect(shownImage(tree).props.source).toMatchObject({ uri: image(2).url });
     expect(textOf(tree)).toContain("photo-2.png");
     expect(textOf(tree)).toContain('["2"," of ","3"]');
+  });
+
+  it("keys the photo by file, not URL, and shows the thread's preview while the original loads", () => {
+    const tree = render();
+    attachments.data = [
+      {
+        ...rows([image(1)])[0]!,
+        preview_url: "https://example.test/signed/preview-1.jpg",
+      },
+    ];
+    act(() =>
+      viewer.open({ channelId: "chan-1", messageId: "msg-1", imageId: "att-1" }),
+    );
+
+    expect(shownImage(tree).props.source).toEqual({
+      uri: image(1).url,
+      cacheKey: chatPhotoCacheKey("att-1", "original"),
+    });
+    expect(shownImage(tree).props.placeholder).toEqual({
+      uri: "https://example.test/signed/preview-1.jpg",
+      cacheKey: chatPhotoCacheKey("att-1", "preview"),
+    });
   });
 
   it("dismisses the keyboard, which would cover the image", () => {
@@ -189,6 +224,29 @@ describe("opening and closing", () => {
     });
 
     expect(tree.toJSON()).toBeNull();
+  });
+
+  it("holds the iOS edge swipe only while an image is open", () => {
+    // A pan on a zoomed photo that started near the edge must not pop the
+    // thread (`spec/ui/mobile/navigation.md` § Going back).
+    const { navigation } = stackScreen([{ name: "(tabs)" }], null);
+    const onStack = () =>
+      stackScreen([{ name: "(tabs)" }], screen(), "stack", navigation).element;
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(onStack());
+    });
+    expect(navigation.setOptions).not.toHaveBeenCalled();
+
+    openOn([image(1)], 0);
+    expect(navigation.setOptions).toHaveBeenLastCalledWith({
+      gestureEnabled: false,
+    });
+
+    act(() => button(tree, "Close image").props.onPress());
+    expect(navigation.setOptions).toHaveBeenLastCalledWith({
+      gestureEnabled: true,
+    });
   });
 
   it("holds the back button only while an image is open", () => {
@@ -271,8 +329,8 @@ describe("opening and closing", () => {
   it("makes the image an accessibility element, so focus can land on it", () => {
     const tree = render();
     openOn([image(1)], 0);
-    expect(shownImage(tree).props.accessible).toBe(true);
-    expect(shownImage(tree).props.accessibilityLabel).toBe("photo-1.png");
+    expect(zoomed(tree).props.accessible).toBe(true);
+    expect(zoomed(tree).props.accessibilityLabel).toBe("photo-1.png");
   });
 
   it("covers the container it is drawn in, and is modal to VoiceOver", () => {
@@ -312,7 +370,7 @@ describe("stepping through a message's images", () => {
     openOn([image(1), image(2), image(3)], 0);
 
     act(() => button(tree, "Next image").props.onPress());
-    expect(shownImage(tree).props.source).toEqual({ uri: image(2).url });
+    expect(shownImage(tree).props.source).toMatchObject({ uri: image(2).url });
 
     // No control is ever disabled: disabling the one a screen reader is on
     // would drop its focus.
@@ -320,10 +378,10 @@ describe("stepping through a message's images", () => {
 
     act(() => button(tree, "Previous image").props.onPress());
     act(() => button(tree, "Previous image").props.onPress());
-    expect(shownImage(tree).props.source).toEqual({ uri: image(3).url });
+    expect(shownImage(tree).props.source).toMatchObject({ uri: image(3).url });
 
     act(() => button(tree, "Next image").props.onPress());
-    expect(shownImage(tree).props.source).toEqual({ uri: image(1).url });
+    expect(shownImage(tree).props.source).toMatchObject({ uri: image(1).url });
   });
 
   it("has no step controls for a single image", () => {
@@ -393,6 +451,7 @@ describe("fresh signed URLs", () => {
 
     expect(shownImage(tree).props.source).toEqual({
       uri: "https://example.test/signed/fresh.png",
+      cacheKey: chatPhotoCacheKey("att-1", "original"),
     });
   });
 
@@ -480,7 +539,7 @@ describe("the zoom gestures", () => {
   }
 
   function transform(tree: ReactTestRenderer) {
-    const [, zoom] = shownImage(tree).props.style as [
+    const [, zoom] = zoomed(tree).props.style as [
       unknown,
       { transform: Record<string, number>[] },
     ];
@@ -504,7 +563,7 @@ describe("the zoom gestures", () => {
     );
     if (natural) {
       act(() =>
-        shownImage(tree).props.onLoad({ nativeEvent: { source: natural } }),
+        shownImage(tree).props.onLoad({ source: natural }),
       );
     }
     return tree;

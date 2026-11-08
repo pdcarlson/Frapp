@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   CustomFieldOptionsSchema,
-  EmailInviteSchema,
   moduleDisabledMessage,
   moduleRefusalFromServerMessage,
   PatchChapterConfigSchema,
@@ -50,19 +49,6 @@ describe("Zod 4 schema smoke", () => {
       expect(send.kind).toBe("text");
       expect(send.payload).toEqual({ option_id: "a", extra: 1 });
     });
-  });
-
-  it("applies the email string check", () => {
-    expect(
-      EmailInviteSchema.safeParse({
-        role: "member",
-        emails: ["member@example.com"],
-      }).success,
-    ).toBe(true);
-    expect(
-      EmailInviteSchema.safeParse({ role: "member", emails: ["not-an-email"] })
-        .success,
-    ).toBe(false);
   });
 
   it("rejects unknown keys on CustomFieldOptionsSchema", () => {

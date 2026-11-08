@@ -43,6 +43,9 @@ describe('AttendanceService', () => {
     recurrence_rule: null,
     parent_event_id: null,
     required_role_ids: null,
+    optional_role_ids: null,
+    excluded_role_ids: null,
+    others_invited: true,
     notes: null,
     check_in_zone: null,
     check_in_zone_name: null,
@@ -73,6 +76,7 @@ describe('AttendanceService', () => {
       findById: jest.fn(),
       findByChapter: jest.fn(),
       create: jest.fn(),
+      createMany: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
       findChildren: jest.fn(),
@@ -146,6 +150,7 @@ describe('AttendanceService', () => {
       const alumniEvent: Event = {
         ...baseEvent,
         required_role_ids: ['role-alumni'],
+        others_invited: false,
       };
       const alumniMember: Member = memberFixture({
         role_ids: ['role-alumni'],
@@ -239,6 +244,56 @@ describe('AttendanceService', () => {
       role_ids: ['role-exec'],
     };
 
+    // Attendance by role: required for one role, optional for everyone
+    // else. Only the role's holders are required; the rest are invited.
+    it('requires only the listed role when everyone else is optional', async () => {
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        activeMember,
+        execMember,
+      ]);
+
+      const members = await service.resolveRequiredMembers('ch-1', {
+        is_mandatory: false,
+        required_role_ids: ['role-exec'],
+        others_invited: true,
+      });
+
+      expect(members.map((m) => m.user_id)).toEqual(['user-exec']);
+    });
+
+    it('drops a role marked optional from an everyone-required event, and alumni by default', async () => {
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        activeMember,
+        execMember,
+        alumniMember,
+      ]);
+      mockRbac.getAlumniRoleId.mockResolvedValue('role-alumni');
+
+      const members = await service.resolveRequiredMembers('ch-1', {
+        is_mandatory: true,
+        optional_role_ids: ['role-exec'],
+        others_invited: true,
+      });
+
+      expect(members.map((m) => m.user_id)).toEqual(['user-active']);
+    });
+
+    it('never requires a role that is not invited', async () => {
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        activeMember,
+        execMember,
+      ]);
+      mockRbac.getAlumniRoleId.mockResolvedValue(null);
+
+      const members = await service.resolveRequiredMembers('ch-1', {
+        is_mandatory: true,
+        excluded_role_ids: ['role-exec'],
+        others_invited: true,
+      });
+
+      expect(members.map((m) => m.user_id)).toEqual(['user-active']);
+    });
+
     it('returns nobody for an optional, untargeted event', async () => {
       const members = await service.resolveRequiredMembers('ch-1', {
         is_mandatory: false,
@@ -273,6 +328,7 @@ describe('AttendanceService', () => {
       const members = await service.resolveRequiredMembers('ch-1', {
         is_mandatory: false,
         required_role_ids: ['role-exec'],
+        others_invited: false,
       });
 
       expect(members.map((m) => m.user_id)).toEqual(['user-exec']);
@@ -290,6 +346,7 @@ describe('AttendanceService', () => {
       const members = await service.resolveRequiredMembers('ch-1', {
         is_mandatory: false,
         required_role_ids: ['role-alumni'],
+        others_invited: false,
       });
 
       expect(members.map((m) => m.user_id)).toEqual(['user-alumni']);
@@ -378,6 +435,7 @@ describe('AttendanceService', () => {
       const roleTargetedEvent: Event = {
         ...baseEvent,
         required_role_ids: ['role-exec'],
+        others_invited: false,
       };
       const member: Member = memberFixture({
         role_ids: ['role-member'],
@@ -390,6 +448,24 @@ describe('AttendanceService', () => {
       jest.setSystemTime(duringEvent);
       mockEventRepo.findById.mockResolvedValue(roleTargetedEvent);
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
+      jest.useRealTimers();
+    });
+
+    it('rejects check-in from a role the event does not invite', async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-02-26T18:30:00.000Z'));
+      mockEventRepo.findById.mockResolvedValue({
+        ...baseEvent,
+        excluded_role_ids: ['role-new-member'],
+      });
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(
+        memberFixture({ role_ids: ['role-new-member'] }),
+      );
 
       await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
         ForbiddenException,
@@ -644,6 +720,7 @@ describe('AttendanceService', () => {
         ...pastEvent,
         is_mandatory: false,
         required_role_ids: ['role-exec'],
+        others_invited: false,
       };
       mockEventRepo.findById.mockResolvedValue(roleEvent);
       mockMemberRepo.findByChapter.mockResolvedValue(members);

@@ -692,9 +692,23 @@ describe("ProfilePanel — the theme control is gone, not hidden", () => {
 });
 
 // #713: mobile already shipped a delete-account surface
-// (apps/mobile/app/(tabs)/preferences.tsx); this is the web half, gated
+// (apps/mobile/app/(app)/preferences.tsx); this is the web half, gated
 // behind the shared confirm dialog rather than `window.confirm`
 // (spec/ui/design-system/README.md §9's every-surface ban, #1198).
+describe("ProfilePanel — chat density (#2252)", () => {
+  beforeEach(resetQueries);
+
+  it("offers Cozy and Compact under a Chat density section", () => {
+    render(<ProfilePanel />);
+    expect(
+      screen.getByRole("heading", { name: "Chat density" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /cozy/i })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /compact/i })).not.toBeChecked();
+    expect(screen.getByText("Applies on this browser.")).toBeInTheDocument();
+  });
+});
+
 describe("ProfilePanel — delete account (#713)", () => {
   beforeEach(() => {
     resetQueries();
@@ -1153,7 +1167,7 @@ describe("ProfilePanel — notification categories (#564)", () => {
     mocks.chapterId = null;
     render(<ProfilePanel />);
 
-    expect(screen.getByText(/select a chapter/i)).toBeTruthy();
+    expect(screen.getByText(/pick a chapter to set its notifications/i)).toBeTruthy();
     expect(screen.queryByText(/no active chapter/i)).toBeNull();
     expect(screen.queryByText(/you have no chapter/i)).toBeNull();
     expect(categorySwitches()).toHaveLength(0);

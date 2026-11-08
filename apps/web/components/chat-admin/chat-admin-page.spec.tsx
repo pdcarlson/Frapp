@@ -280,8 +280,8 @@ describe("ChatAdminPage — the channel structure's states", () => {
     reads.categories = settled([]);
     const { container } = render(<ChatAdminPage />);
 
-    expect(screen.getByText("No channels yet")).toBeInTheDocument();
-    expect(screen.getByText("No categories yet")).toBeInTheDocument();
+    expect(screen.getByText("No channels yet. Create the first one above.")).toBeInTheDocument();
+    expect(screen.getByText(/^No categories yet\./)).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });
 
@@ -362,7 +362,7 @@ describe("ChatAdminPage — the channel structure's states", () => {
       screen.getByRole("heading", { name: "Couldn't load channels" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("Confirm your chapter access and retry."),
+      screen.getByText("Couldn't reach Frapp. Check your connection and try again."),
     ).toBeInTheDocument();
     expect(cardFilledContainers(container)).toEqual([]);
   });
@@ -411,7 +411,7 @@ describe("ChatAdminPage — a channel's pins", () => {
 
   it("says the pins are unavailable offline when the read failed offline", () => {
     // The API unreachable, or a page restored offline: the read fails rather
-    // than pausing, and must not blame the officer's chapter access.
+    // than pausing, and must say offline, not show a load error.
     mockOffline.value = true;
     reads.pins = empty({ isError: true });
     render(<ChatAdminPage />);
@@ -482,7 +482,7 @@ describe("ChatAdminPage — a channel's pins", () => {
     selectExec();
     expect(cardFilledContainers(container)).toEqual([]);
 
-    expect(screen.getByText("Nothing pinned")).toBeInTheDocument();
+    expect(screen.getByText("Nothing pinned. Pin a message from the channel.")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { level: 4, name: "Pinned messages (0)" }),
     ).toBeInTheDocument();

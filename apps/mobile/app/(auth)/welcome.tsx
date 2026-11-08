@@ -1,72 +1,225 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Redirect, useRouter } from "expo-router";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { BackHandler, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
-import { useListChapters, useUpdateOnboarding } from "@repo/hooks";
+import {
+  useCurrentUser,
+  useUpdateOnboarding,
+  useUpdateUser,
+} from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { PushPrimerCard } from "@/components/notifications/push-primer-card";
-import { JoinedChannelsCard } from "@/components/onboarding/joined-channels-card";
+import {
+  PUSH_ASK_TITLE,
+  PushAskActions,
+  PushAskBody,
+} from "@/components/notifications/push-ask";
+import { KeyboardAvoidingArea } from "@/lib/keyboard";
+import {
+  OnboardingFieldLabel,
+  OnboardingTextInput,
+} from "@/components/onboarding/onboarding-field";
+import { ProfilePhoto } from "@/components/profile/profile-photo";
 import {
   ONBOARDING_COLUMN_WIDTH,
   OnboardingPrimaryButton,
 } from "@/components/onboarding/onboarding-primary-button";
-import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { useAuthSession } from "@/lib/auth-session";
-import { selectOnboardingMembership } from "@/lib/onboarding/membership";
+import { initialsFor } from "@/lib/more/narrow";
+import { selectViewerProfile } from "@/lib/more/profile";
+import {
+  PROFILE_NAME_REQUIRED,
+  PROFILE_NAME_SAVE_FAILED,
+  PROFILE_STEP_SUBTITLE,
+  PROFILE_STEP_TITLE,
+  ONBOARDING_PROFILE_ANSWERED_EVENT,
+  initialNameField,
+  needsName,
+  onboardingProfileAnsweredProperties,
+  shouldOfferProfileStep,
+} from "@/lib/onboarding/profile-step";
+import { TOUR_DUE_ANYONE, markTourDue } from "@/lib/onboarding/tour";
 import { usePushPrimer } from "@/lib/notifications/use-push-primer";
+import { useLatestTrack } from "@/lib/use-latest-track";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * s03, "You're in." (`spec/ui/mobile/screens.md`).
+ * s03, the member's first-run steps (`spec/ui/mobile/screens.md`).
  *
- * The first screen after a member joins: the chapter and its school under the
- * title, read from the membership this time, not from the invite preview the
- * confirm step on `/join` showed (#3352). It shows the auto-joined public
- * channels and, when this
- * build can push, the C7 push primer card inline (`shouldOfferPrimer`,
- * #2299). Go to chat PATCHes `has_completed_onboarding`, so the gate will not
- * send the member here again.
+ * The screens right after a member joins, in up to two beats on one route,
+ * each shown only when it has something to ask:
  *
- * It follows the #3348 screen rules: one surface, with a card only for the
- * channel list and the primer, and one button pinned above the inset. It used
- * to carry a Skip under Go to chat that did the same thing. That button is
- * outlined while the primer shows, so the primer's "Turn on" is the one gold
- * action on screen.
+ * 1. **How the chapter sees you**, when the member has no photo or no real
+ *    name yet (`lib/onboarding/profile-step.ts`). The photo is optional; the
+ *    name is required only when there isn't one, and a real one comes
+ *    pre-filled. Every message carries both, so a member who skips this looks
+ *    like a stranger in every channel.
+ * 2. **Turn on notifications**, when this build can push and push isn't on
+ *    yet (`shouldOfferPrimer`, #2299). Either answer goes to chat; a "Not
+ *    now" comes back once, days later, on the chat home (`usePushReminder`).
+ *
+ * Then chat, with the first-run tour over it (`lib/onboarding/tour.ts`). The
+ * static "You're in." card that used to open s03 is gone (owner brief
+ * 2026-11-07): the tour's first stop says it, pointing at the real channels.
+ * A member with a photo, a name and push on sees no beat at all and goes
+ * straight to the tour.
+ *
+ * Which beat comes first waits on the profile and push reads; nothing is drawn
+ * until they're back, and a slow read is given up on after
+ * {@link DECIDE_TIMEOUT_MS} (the profile beat is then skipped; Profile in More
+ * still has both).
+ *
+ * Leaving PATCHes `has_completed_onboarding`, so the gate will not send the
+ * member here again. One surface and one gold button pinned above the inset
+ * on each beat (the #3348 screen rules).
  */
+const DECIDE_TIMEOUT_MS = 4_000;
+
 export default function Welcome() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
-  const { status, chapterId } = useAuthSession();
+  const { status } = useAuthSession();
   const queryClient = useQueryClient();
-  const chapters = useListChapters({ enabled: status === "authenticated" });
   const updateOnboarding = useUpdateOnboarding();
   const primer = usePushPrimer();
   const [leaving, setLeaving] = useState(false);
-
-  const membership = useMemo(() => {
-    const rows = Array.isArray(chapters.data) ? chapters.data : [];
-    return selectOnboardingMembership(rows, chapterId) ?? rows[0] ?? null;
-  }, [chapterId, chapters.data]);
-
-  const chapterName = membership?.chapter.name ?? "your chapter";
-  const university = membership?.chapter.university ?? null;
+  // The guard itself, since two taps in one frame both read `leaving` false.
+  const leavingRef = useRef(false);
+  // `deciding` until the profile and push reads are back (or given up on).
+  const [step, setStep] = useState<
+    "deciding" | "profile" | "notifications" | "none"
+  >("deciding");
+  const [waitedOut, setWaitedOut] = useState(false);
+  const userQuery = useCurrentUser();
+  const updateUser = useUpdateUser();
+  const profile = useMemo(
+    () => selectViewerProfile(userQuery.data),
+    [userQuery.data],
+  );
+  const offerProfile = shouldOfferProfileStep(profile);
+  // Latched when the profile beat opens, so the notifications beat's back
+  // returns to it only when it was shown. A photo chosen on it must not make
+  // it vanish under the member.
+  const [profileShown, setProfileShown] = useState(false);
+  // Whether there was a photo when the beat opened, so its event can tell a
+  // photo chosen on it from one the member already had.
+  const [hadPhoto, setHadPhoto] = useState(false);
+  const track = useLatestTrack();
+  // `null` until typed in: the field shows the loaded name until then.
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [savingName, setSavingName] = useState(false);
+  const nameValue = nameDraft ?? initialNameField(profile?.displayName ?? null);
 
   async function finish() {
-    if (leaving) return;
+    if (leavingRef.current) return;
+    leavingRef.current = true;
     setLeaving(true);
     try {
       await updateOnboarding.mutateAsync({ has_completed_onboarding: true });
     } catch {
       // Non-fatal — the next session re-offers s03 if the write never landed.
     }
+    // The tour over chat runs once, for the member who just came through here.
+    const userId = (userQuery.data as { id?: string } | undefined)?.id;
+    await markTourDue(userId ?? TOUR_DUE_ANYONE);
     await queryClient.invalidateQueries({ queryKey: ["chapters"] });
-    router.replace("/(tabs)");
+    router.replace("/");
   }
+
+  // Latched when Continue opens it, not re-derived from `showPrimer`: an
+  // answer is stored before the OS dialog opens and before the PATCH, and
+  // the step must stay on screen (busy) until the member has left for chat.
+  const asking = step === "notifications";
+  const answering = primer.isRequesting || leaving || savingName;
+
+  useEffect(() => {
+    const timer = setTimeout(() => setWaitedOut(true), DECIDE_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // The first beat, decided once both reads are back. Latched: a photo chosen
+  // on the profile beat, or push turned on in Settings meanwhile, must not
+  // move the member to another beat under their thumb.
+  const profileKnown =
+    userQuery.data !== undefined || userQuery.isError || waitedOut;
+  const primerKnown = primer.ready || waitedOut;
+  if (step === "deciding" && profileKnown && primerKnown) {
+    if (offerProfile) {
+      setHadPhoto(!!profile?.photoUrl);
+      setProfileShown(true);
+      setStep("profile");
+    } else {
+      setStep(primer.showPrimer ? "notifications" : "none");
+    }
+  }
+  // Nothing to ask: straight on to chat, and the tour.
+  useEffect(() => {
+    if (step === "none") void finish();
+    // `finish` is latched by its own guard; only the step decides.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
+  // Validated on Continue, not per keystroke. A name that didn't change isn't
+  // sent again; one that did is saved before the member moves on, so a
+  // failure keeps them here with the reason rather than losing the name.
+  async function leaveProfile() {
+    if (savingName || leaving) return;
+    const name = nameValue.trim();
+    if (needsName(name)) {
+      setNameError(PROFILE_NAME_REQUIRED);
+      return;
+    }
+    const nameChanged = name !== (profile?.displayName ?? "").trim();
+    if (nameChanged) {
+      setSavingName(true);
+      try {
+        await updateUser.mutateAsync({ display_name: name });
+      } catch {
+        setNameError(PROFILE_NAME_SAVE_FAILED);
+        return;
+      } finally {
+        setSavingName(false);
+      }
+    }
+    track(
+      ONBOARDING_PROFILE_ANSWERED_EVENT,
+      onboardingProfileAnsweredProperties({
+        hadPhoto,
+        hasPhoto: !!profile?.photoUrl,
+        hadName: !needsName(profile?.displayName),
+        nameChanged,
+      }),
+    );
+    if (primer.showPrimer) {
+      setStep("notifications");
+    } else {
+      void finish();
+    }
+  }
+
+  // Android's back on a later beat returns to the one before it, as a back
+  // gesture between two screens would; it never leaves onboarding half done.
+  // Held while an answer is on its way out.
+  // The first beat leaves Android's back alone, as the old first beat did.
+  useEffect(() => {
+    if (step !== "notifications" || !profileShown) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (!answering) setStep("profile");
+      return true;
+    });
+    return () => sub.remove();
+  }, [step, answering, profileShown]);
 
   if (status === "unauthenticated") {
     return <Redirect href="/(auth)/sign-in" />;
+  }
+
+  // Nothing drawn while the first beat is decided (usually a frame or two):
+  // no spinner, and no beat that the next read would swap out.
+  if (step === "deciding" || step === "none") {
+    return <View style={styles.container} testID="welcome-deciding" />;
   }
 
   return (
@@ -77,65 +230,96 @@ export default function Welcome() {
       style={styles.container}
       edges={["top", "right", "bottom", "left"]}
     >
-      <ScrollView
-        style={styles.flex}
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Text accessibilityRole="header" style={styles.title}>
-          You&apos;re in.
-        </Text>
-        <Text style={styles.subtitle}>
-          {university ? `${chapterName} · ${university}` : chapterName}
-        </Text>
+      {/* The profile beat's name field opens the keyboard, which must not
+          cover it or the pinned Continue (#3354). */}
+      <KeyboardAvoidingArea style={styles.flex}>
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+        >
+          {asking ? (
+            <>
+              <Text accessibilityRole="header" style={styles.title}>
+                {PUSH_ASK_TITLE}
+              </Text>
+              <View style={styles.channels}>
+                <PushAskBody />
+              </View>
+            </>
+          ) : (
+            <>
+              <Text accessibilityRole="header" style={styles.title}>
+                {PROFILE_STEP_TITLE}
+              </Text>
+              <Text style={styles.subtitle}>{PROFILE_STEP_SUBTITLE}</Text>
+              <View style={styles.photo}>
+                <ProfilePhoto
+                  photoUrl={profile?.photoUrl ?? null}
+                  fetchedAt={userQuery.dataUpdatedAt}
+                  initials={initialsFor(nameValue.trim() || null)}
+                />
+              </View>
+              <View style={styles.nameField}>
+                <OnboardingFieldLabel>Your name</OnboardingFieldLabel>
+                <OnboardingTextInput
+                  value={nameValue}
+                  onChangeText={(value) => {
+                    setNameDraft(value);
+                    setNameError(null);
+                  }}
+                  placeholder="First and last name"
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  autoComplete="name"
+                  textContentType="name"
+                  accessibilityLabel="Your name"
+                  editable={!savingName && !leaving}
+                  returnKeyType="done"
+                  onSubmitEditing={() => void leaveProfile()}
+                />
+                {nameError ? (
+                  <Text style={styles.error} accessibilityLiveRegion="polite">
+                    {nameError}
+                  </Text>
+                ) : null}
+              </View>
+            </>
+          )}
+        </ScrollView>
 
-        <View style={styles.channels}>
-          <JoinedChannelsCard />
-        </View>
-
-        {primer.showPrimer ? (
-          <View style={styles.primerWrap}>
-            <PushPrimerCard
-              isRequesting={primer.isRequesting}
+        {/*
+        One gold button per beat. On the profile beat it moves on: to the
+        notifications beat when there is one to show, else to chat. On the
+        notifications beat it asks, and Not now is the quiet line under it;
+        either answer leaves for chat, after the OS dialog closes.
+      */}
+        <View style={styles.footer}>
+          {asking ? (
+            <PushAskActions
+              action={primer.action}
+              busy={answering}
               onTurnOn={() => {
-                void primer.turnOn();
+                void primer.turnOn().then((outcome) => {
+                  if (outcome !== null) void finish();
+                });
               }}
               onNotNow={() => {
-                void primer.notNow();
+                void primer.notNow().then((answered) => {
+                  if (answered) void finish();
+                });
               }}
             />
-          </View>
-        ) : null}
-      </ScrollView>
-
-      {/*
-        One gold button on the screen. While the primer asks, its "Turn on" is
-        that button, so "Go to chat" is the outlined one under it, as the
-        board draws s03; once the primer is answered (or never shown), "Go to
-        chat" is the step forward and takes the gold. Leaving shows the
-        spinner every onboarding button uses, under the same label.
-      */}
-      <View style={styles.footer}>
-        {primer.showPrimer ? (
-          <OnboardingSecondaryButton
-            label="Go to chat"
-            disabled={leaving}
-            busy={leaving}
-            onPress={() => {
-              void finish();
-            }}
-          />
-        ) : (
-          <OnboardingPrimaryButton
-            label="Go to chat"
-            disabled={leaving}
-            busy={leaving}
-            onPress={() => {
-              void finish();
-            }}
-          />
-        )}
-      </View>
+          ) : (
+            <OnboardingPrimaryButton
+              label={primer.showPrimer ? "Continue" : "Go to chat"}
+              disabled={answering}
+              busy={answering}
+              onPress={() => void leaveProfile()}
+            />
+          )}
+        </View>
+      </KeyboardAvoidingArea>
     </SafeAreaView>
   );
 }
@@ -170,8 +354,17 @@ function createStyles(tokens: SignetTokens) {
     channels: {
       marginTop: tokens.spacing.lg,
     },
-    primerWrap: {
-      marginTop: tokens.spacing.md,
+    photo: {
+      marginTop: tokens.spacing.xl,
+      alignItems: "center",
+    },
+    nameField: {
+      marginTop: tokens.spacing.xl,
+      gap: tokens.spacing.xs,
+    },
+    error: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
     },
     footer: {
       paddingHorizontal: tokens.spacing.xl,

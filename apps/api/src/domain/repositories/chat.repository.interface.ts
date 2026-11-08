@@ -8,6 +8,7 @@ import {
   MessageReaction,
   ChannelReadReceipt,
   ChannelUnreadCount,
+  ChannelLatestMessage,
   ChatMessageBookmarkRef,
   StoredChatMessageBookmark,
 } from '../entities/chat.entity';
@@ -182,6 +183,16 @@ export interface IChatCategoryRepository {
 
 export interface IChatMessageRepository {
   findById(id: string): Promise<ChatMessage | null>;
+  /**
+   * Each channel's latest message in a chapter, for one viewer, through the
+   * `get_channel_latest_messages` RPC: deleted rows and members the viewer
+   * blocked are skipped. Rows for every channel, readable or not, as with
+   * the unread counts; the caller filters by access.
+   */
+  findLatestPerChannel(
+    chapterId: string,
+    userId: string,
+  ): Promise<ChannelLatestMessage[]>;
   /**
    * Newest first, at most `limit` rows. `before` keeps rows created strictly
    * before an instant. `since` keeps rows created after that message, and the
@@ -405,6 +416,8 @@ export interface NewChatMessageAttachment {
   byte_size: number | null;
   width?: number | null;
   height?: number | null;
+  thumbhash?: string | null;
+  preview_storage_path?: string | null;
   external_url?: string | null;
 }
 
@@ -448,6 +461,9 @@ export interface IChatMessageAttachmentRepository {
    * the Discord importer deliberately maps every reference to a deduplicated
    * export file onto the *same* object (`domain/utils/discord-export.ts`), so
    * two messages sharing one object is a supported state, not a corruption.
+   *
+   * A row points at an object through either column that names one: its
+   * `storage_path` or its photo `preview_storage_path` (2026-11-07).
    *
    * Only **undeleted** messages count. Soft delete leaves these rows in place,
    * so counting them would let two deleted messages spare each other's shared

@@ -20,7 +20,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import { FilterChips, ToggleChips } from "./filter-chips";
+import { FilterChips, SearchField } from "./filter-chips";
 
 /**
  * The chip row s12 and s13 draw (the owner's design review, 2026-11-04): one
@@ -204,26 +204,20 @@ describe("FilterChips", () => {
   });
 });
 
-describe("ToggleChips", () => {
-  it("draws each switch on the shared chip", () => {
-    const onToggle = vi.fn();
+describe("SearchField", () => {
+  it("sets no lineHeight, so iOS centers the typed text (components.md § Text input)", () => {
     const tree = render(
-      <ToggleChips
-        chips={[
-          { key: "unread", label: "Unread only", on: true },
-          { key: "muted", label: "Hide muted", on: false },
-        ]}
-        onToggle={onToggle}
+      <SearchField
+        value=""
+        onChangeText={vi.fn()}
+        placeholder="Search"
+        accessibilityLabel="Search"
       />,
     );
-    const [unread, muted] = chips(tree);
-
-    expect(unread!.props.accessibilityRole).toBe("switch");
-    expect(unread!.props.accessibilityState).toEqual({ checked: true });
-    expect(
-      flatten(unread!.props.style({ pressed: false })).backgroundColor,
-    ).toBe("#8E4EC6");
-    act(() => muted!.props.onPress());
-    expect(onToggle).toHaveBeenCalledWith("muted", true);
+    const field = tree.root.find((node) => (node.type as unknown) === "TextInput");
+    expect(flatten(field.props.style)).not.toHaveProperty("lineHeight");
+    expect(flatten(field.props.style).fontSize).toBe(
+      signetDarkTokens.typography.role.body.size,
+    );
   });
 });

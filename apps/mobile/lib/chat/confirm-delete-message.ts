@@ -1,3 +1,4 @@
+import { errorCopy } from "@repo/hooks/error-copy";
 import { Alert } from "react-native";
 import {
   DELETE_MESSAGE_CONFIRM_BODY,
@@ -15,7 +16,7 @@ export const DELETE_MESSAGE_FAILED_TITLE = "Couldn't delete message";
  * row does, and a failure gets an alert rather than leaving the message
  * looking as if the tap did nothing.
  *
- * Kept out of `app/(tabs)/chat-thread.tsx` so it can be tested: a spec
+ * Kept out of `app/(app)/chat-thread.tsx` so it can be tested: a spec
  * cannot sit beside a route module.
  */
 export function confirmDeleteMessage(remove: () => Promise<void>): void {
@@ -26,10 +27,7 @@ export function confirmDeleteMessage(remove: () => Promise<void>): void {
       style: "destructive",
       onPress: () => {
         remove().catch((error: unknown) => {
-          Alert.alert(
-            DELETE_MESSAGE_FAILED_TITLE,
-            error instanceof Error ? error.message : undefined,
-          );
+          Alert.alert(DELETE_MESSAGE_FAILED_TITLE, errorCopy(error));
         });
       },
     },

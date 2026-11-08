@@ -7,7 +7,7 @@
  *
  * ## Why this is a hook, and why `components/app-runtime.tsx` mounts it high
  *
- * `app/_layout.tsx` is one of the seven frozen hotspot files
+ * `app/_layout.tsx` is one of the eight frozen hotspot files
  * (`spec/ui/mobile/navigation.md` § Hotspot freeze), so the shape here follows
  * `lib/chat/use-chat-runtime.ts`: module singletons plus a once-per-process
  * boot, called from a hook rather than a provider.
@@ -16,9 +16,9 @@
  * from how chat wires itself, for two reasons that are specific to push:
  *
  * - **Tab screens mount lazily.** A tap that deep-links straight to
- *   `/chat-thread` need never mount `(tabs)/index.tsx`, so a runtime hosted
+ *   `/chat-thread` need never mount `(app)/(tabs)/index.tsx`, so a runtime hosted
  *   there would miss the very cold-start read it exists to perform.
- * - `(tabs)/index.tsx` deliberately does *not* call `useChatRuntime()`, because
+ * - `(app)/(tabs)/index.tsx` deliberately does *not* call `useChatRuntime()`, because
  *   that would reconfigure the realtime manager from a list screen. Hanging a
  *   second app-wide runtime off it would repeat exactly that mistake.
  *
@@ -55,7 +55,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useRouter } from "expo-router";
+import { usePathname, useRouter } from "expo-router";
 import {
   useMarkNotificationRead,
   useRegisterPushToken,
@@ -63,7 +63,7 @@ import {
 } from "@repo/hooks";
 import { useAuthSession } from "../auth-session";
 import { useIsApiAuthenticated } from "../use-is-api-authenticated";
-import { asRoute } from "../href";
+import { asRoute, openHref } from "../href";
 import {
   addNotificationResponseListener,
   addPushTokenListener,
@@ -81,6 +81,7 @@ import {
 } from "./push-registration";
 import {
   deregisterStoredPushToken,
+  onPushPermissionGranted,
   registerCurrentPushToken,
   sessionOwnsPushRegistration,
 } from "./push-token-lifecycle";
@@ -97,6 +98,13 @@ let handlerConfigured = false;
 
 export function usePushRuntime(): void {
   const router = useRouter();
+  // The focused screen's path, so a tap for a channel while one is open
+  // replaces it rather than stacking a second (`openHref`).
+  const pathname = usePathname();
+  const pathnameRef = useRef(pathname);
+  useLayoutEffect(() => {
+    pathnameRef.current = pathname;
+  }, [pathname]);
   const isAuthenticated = useIsApiAuthenticated();
   const { isChapterResolving, status } = useAuthSession();
   const registerToken = useRegisterPushToken();
@@ -151,9 +159,9 @@ export function usePushRuntime(): void {
     handlerConfigured = true;
     configureForegroundPresentation();
     // The Android channel is created here, not only inside
-    // `requestPushPermission()`. Its other callers are the primer's "Turn on"
-    // (`PushPrimerCard`, hosted on the welcome screen since #958) and
-    // Settings' push switch, which a member may never tap — so relying on that alone would leave the
+    // `requestPushPermission()`. Its other callers are onboarding's "Turn on
+    // notifications" (`components/notifications/push-ask.tsx`), the chat
+    // home's reminder, and Settings' push switch, which a member may never tap — so relying on that alone would leave the
     // `"default"` channel uncreated for them, while `app.json`'s plugin
     // config points FCM's `default_notification_channel_id` at it. The
     // study-pause notice (#1065) is a **local** notification that needs no
@@ -207,11 +215,11 @@ export function usePushRuntime(): void {
     const { target, notificationId } = pendingTap;
     setPendingTap(null);
     if (notificationId) markReadRef.current.mutate(notificationId);
-    // The same fallback check `app/(tabs)/notifications.tsx` makes: an
+    // The same fallback check `app/(app)/notifications.tsx` makes: an
     // unrecognized payload resolves to the notification list, and pushing that
     // from a tap that arrived *as* a notification stacks the list on itself.
     if (target.pathname !== NOTIFICATION_FALLBACK_PATHNAME || target.params) {
-      router.push(asRoute(notificationHref(target)));
+      openHref(router, asRoute(notificationHref(target)), pathnameRef.current);
     }
   }, [pendingTap, status, isChapterResolving, isAuthenticated, router]);
 
@@ -267,14 +275,15 @@ export function usePushRuntime(): void {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
   }, [isAuthenticated, status]);
 
-  // Mid-session token rotation. Auth edges above never see this: Expo can
-  // roll the token while the member stays signed in, and nothing in that
-  // path re-reads it. The listener is subscribed for the process lifetime;
-  // the handler no-ops unless the session currently owns a registration, so
-  // a rotation while signed out cannot POST a row for a signed-out member.
+  // Mid-session token rotation, and a permission grant (#2617). Auth edges
+  // above never see either: Expo can roll the token while the member stays
+  // signed in, and the s03 primer or Settings' push switch grants permission
+  // after the sign-in register already ran. Both listeners are subscribed for
+  // the process lifetime; the handler no-ops unless the session currently
+  // owns a registration, so neither can POST a row for a signed-out member.
   useEffect(() => {
     let cancelled = false;
-    const subscription = addPushTokenListener(() => {
+    const reregister = () => {
       if (cancelled) return;
       const auth = authRef.current;
       if (!sessionOwnsPushRegistration(auth.isAuthenticated, auth.status)) {
@@ -283,12 +292,24 @@ export function usePushRuntime(): void {
       if (!isPushAvailable()) return;
       void registerCurrentPushToken({
         ...tokenLifecycleDeps,
-        isCancelled: () => cancelled,
+        // Also cancelled by a sign-out that lands mid-register, so a POST that
+        // resolves after `deregisterStoredPushToken` cleared storage cannot
+        // write its row back.
+        isCancelled: () => {
+          const now = authRef.current;
+          return (
+            cancelled ||
+            !sessionOwnsPushRegistration(now.isAuthenticated, now.status)
+          );
+        },
       });
-    });
+    };
+    const subscription = addPushTokenListener(reregister);
+    const unsubscribeGrant = onPushPermissionGranted(reregister);
     return () => {
       cancelled = true;
       subscription?.remove();
+      unsubscribeGrant();
     };
     // Subscribe once; the handler reads authRef / mutation refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see above

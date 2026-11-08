@@ -1,3 +1,4 @@
+import { errorCopy } from "@repo/hooks/error-copy";
 import { serverMessageOf, statusOf } from "@repo/api-sdk";
 import { isTransientCheckInFailure } from "@repo/hooks";
 import {
@@ -8,7 +9,7 @@ import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 
 /**
  * What a member is told after a self check-in, on both surfaces that make one:
- * s18's scanner (`app/(tabs)/check-in.tsx`) and the chat event card
+ * s18's scanner (`app/(app)/check-in.tsx`) and the chat event card
  * (`components/chat/event-card.tsx`). One copy, so the two can't drift into
  * telling the same member two different things about the same refusal.
  */
@@ -112,8 +113,7 @@ function refusesTheCode(error: unknown): boolean {
     message.length > 0 &&
     message.every(
       (line) =>
-        typeof line === "string" &&
-        line.startsWith(`${CHECK_IN_TOKEN_FIELD} `),
+        typeof line === "string" && line.startsWith(`${CHECK_IN_TOKEN_FIELD} `),
     )
   );
 }
@@ -122,8 +122,8 @@ function refusesTheCode(error: unknown): boolean {
  * Whether a failure was of this attempt alone (see the `error` variant's
  * `attemptOnly`). A request with no HTTP status either never reached the
  * server, which `fetch` reports as a `TypeError`, or failed on the device
- * before it was sent, which is the location step: its refused-permission copy
- * and the location service's own errors are plain `Error`s, and those are
+ * before it was sent, which is the location step: its refused-permission and
+ * no-fix copy are `MemberFacingError`s, and those are
  * about the member's phone, so they stay. That is the one place this departs
  * from the shared rule, which counts every status-less failure as no answer.
  */
@@ -161,7 +161,7 @@ export function checkInFailure(
   }
   return {
     kind: "error",
-    message: serverMessageOf(error) ?? "Couldn't check you in.",
+    message: errorCopy(error, "Couldn't check you in."),
     attemptOnly: isAttemptOnly(error),
   };
 }
