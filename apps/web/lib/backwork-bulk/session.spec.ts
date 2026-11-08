@@ -26,6 +26,19 @@ vi.mock("@/lib/supabase/client", () => ({
   }),
 }));
 vi.mock("@repo/hooks", () => ({ putSignedUpload: async () => undefined }));
+// The real hash, with a hook a test can use to hold one call back.
+const hashGate = vi.hoisted(() => ({ hold: null as null | ((call: number) => Promise<void> | undefined), calls: 0 }));
+vi.mock("./finish", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./finish")>();
+  return {
+    ...actual,
+    sha256Hex: async (bytes: Uint8Array) => {
+      hashGate.calls += 1;
+      await hashGate.hold?.(hashGate.calls);
+      return actual.sha256Hex(bytes);
+    },
+  };
+});
 vi.mock("./pdf", () => ({
   loadPdf: async () => ({ numPages: 1, loadingTask: { destroy: async () => undefined } }),
   renderPagePreview: async () => ({ url: "blob:preview", width: 10, height: 10 }),
@@ -82,6 +95,8 @@ const fields = {
 };
 
 beforeEach(() => {
+  hashGate.hold = null;
+  hashGate.calls = 0;
   auth.userId = "u1";
   useChapterStore.setState({ activeChapterId: "c1" });
   toast.mockClear();
@@ -165,6 +180,41 @@ describe("bulk upload session", { timeout: TEST_TIMEOUT }, () => {
     session.queue.remove(idOf(session, "a.pdf"));
     session.queue.retry(idOf(session, "copy.pdf"));
     await vi.waitFor(() => expect(statusOf(session, "copy.pdf")).toBe("ready"), WAIT);
+  });
+
+  it("refuses the later copy even when the earlier copy's hash finishes last (#3665)", async () => {
+    let releaseFirst!: () => void;
+    const firstHeld = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    // Hold the first file's hash until the second file's has finished.
+    hashGate.hold = (call) => (call === 1 ? firstHeld : undefined);
+    const session = getBulkSession("u1", "c1");
+    session.queue.add([pdf("a.pdf", "same"), pdf("copy.pdf", "same")]);
+    await vi.waitFor(() => expect(hashGate.calls).toBe(2), WAIT);
+    await flush();
+    expect(statusOf(session, "a.pdf")).toBe("preparing");
+    expect(statusOf(session, "copy.pdf")).toBe("preparing");
+
+    releaseFirst();
+    await vi.waitFor(() => expect(statusOf(session, "copy.pdf")).toBe("failed"), WAIT);
+    await vi.waitFor(() => expect(statusOf(session, "a.pdf")).toBe("ready"), WAIT);
+  });
+
+  it("refuses the later copy when its hash finishes last, too (#3665)", async () => {
+    let releaseSecond!: () => void;
+    const secondHeld = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    hashGate.hold = (call) => (call === 2 ? secondHeld : undefined);
+    const session = getBulkSession("u1", "c1");
+    session.queue.add([pdf("a.pdf", "same"), pdf("copy.pdf", "same")]);
+    await vi.waitFor(() => expect(statusOf(session, "a.pdf")).toBe("ready"), WAIT);
+    expect(statusOf(session, "copy.pdf")).toBe("preparing");
+
+    releaseSecond();
+    await vi.waitFor(() => expect(statusOf(session, "copy.pdf")).toBe("failed"), WAIT);
+    expect(statusOf(session, "a.pdf")).toBe("ready");
   });
 
   it("ends another account's batch, and keeps the new account's", () => {
