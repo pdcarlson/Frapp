@@ -12,6 +12,8 @@ import {
   canAny,
   CHAPTER_PROFILE_PERMISSIONS,
   CHAT_REPORT_QUEUE_PERMISSIONS,
+  memberAccessRoleIds,
+  removesMemberAccess,
   WILDCARD_PERMISSION,
 } from "./permissions";
 
@@ -133,5 +135,36 @@ describe("CHAPTER_PROFILE_PERMISSIONS", () => {
         "billing:manage",
       ]),
     ).toBe(false);
+  });
+});
+
+describe("member access (#3670)", () => {
+  const roles = [
+    { id: "member", permissions: ["members:view"] },
+    { id: "president", permissions: ["*"] },
+    { id: "cabinet", permissions: ["channels:read:cabinet"] },
+    { id: "bare" },
+  ];
+  const custom = [
+    { id: "rush", capabilities: ["members:view"] },
+    // The guard drops `*` from custom roles, so it grants nothing here.
+    { id: "wild", capabilities: ["*"] },
+  ];
+
+  test("live roles with members:view or *, custom roles with members:view", () => {
+    expect([...memberAccessRoleIds(roles, custom)].sort()).toEqual([
+      "member",
+      "president",
+      "rush",
+    ]);
+    expect(memberAccessRoleIds([]).size).toBe(0);
+  });
+
+  test("flags only the change that takes access away", () => {
+    const ids = memberAccessRoleIds(roles, custom);
+    expect(removesMemberAccess(["member", "cabinet"], ["cabinet"], ids)).toBe(true);
+    expect(removesMemberAccess(["member"], ["cabinet", "rush"], ids)).toBe(false);
+    expect(removesMemberAccess(["cabinet"], [], ids)).toBe(false);
+    expect(removesMemberAccess(["member"], ["member", "cabinet"], ids)).toBe(false);
   });
 });

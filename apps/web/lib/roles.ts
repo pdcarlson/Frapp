@@ -26,3 +26,29 @@ export function normalizeRoleOptions(data: unknown): RoleOption[] {
     return [{ id: candidate.id, name: candidate.name }];
   });
 }
+
+/**
+ * The roles payload as `{ id, permissions }` rows, for the shared
+ * member-access rule (`memberAccessRoleIds` in `@repo/validation`).
+ * `GET /v1/roles` declares no response schema, so it is read defensively,
+ * like {@link normalizeRoleOptions}.
+ */
+export function roleAccessRows(
+  data: unknown,
+): { id: string; permissions: string[] }[] {
+  if (!Array.isArray(data)) return [];
+  return data.flatMap((role: unknown) => {
+    if (!role || typeof role !== "object") return [];
+    const candidate = role as Record<string, unknown>;
+    // Same rows as the checklist ({@link normalizeRoleOptions} drops a role
+    // without a name), so the access check never hinges on a role the
+    // officer can't see or untick.
+    if (typeof candidate.id !== "string" || typeof candidate.name !== "string") {
+      return [];
+    }
+    const permissions = Array.isArray(candidate.permissions)
+      ? candidate.permissions.filter((p): p is string => typeof p === "string")
+      : [];
+    return [{ id: candidate.id, permissions }];
+  });
+}
