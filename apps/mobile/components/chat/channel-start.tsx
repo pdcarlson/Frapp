@@ -6,6 +6,7 @@ import {
 } from "@repo/hooks/channel-start";
 import { SignetTokens } from "@repo/theme/signet";
 import { isDirectChannel } from "@repo/validation";
+import { MemberAvatar } from "@/components/member-avatar";
 import { AuditGlyph } from "@/components/chat/card-glyphs";
 import {
   type ChapterBranding,
@@ -37,8 +38,9 @@ function startType(type: string): ChannelStartType {
  * message once nothing earlier is left to load (`ThreadHistoryEdge`).
  *
  * The mark is a `#` for a channel and the audit shield for `#chapter-audit`.
- * A direct message takes the same initials its channel-list row draws
- * (`initialsFor`, `channel-row.tsx`), so one conversation has one mark.
+ * A direct message takes the same mark its channel-list row draws (the other
+ * member's photo, else their initials: `channel-row.tsx`), so one
+ * conversation has one mark.
  * Mobile has no Chat admin, so there is no Edit channel here.
  */
 export function ChannelStart({
@@ -46,6 +48,7 @@ export function ChannelStart({
   channelName,
   displayName,
   description,
+  photoUrl = null,
 }: {
   /** The channel's `type` as the row carries it. */
   type: string;
@@ -54,6 +57,8 @@ export function ChannelStart({
   /** The name the header shows, without `#`; a DM's is the other member. */
   displayName: string;
   description?: string | null;
+  /** A 1:1 DM's other member's photo, drawn over their initials. */
+  photoUrl?: string | null;
 }) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
@@ -76,10 +81,16 @@ export function ChannelStart({
             muted={brand.accent}
             size={32}
           />
+        ) : isDirect ? (
+          <MemberAvatar
+            uri={photoUrl}
+            initials={initialsFor(displayName)}
+            size={START_TILE_SIZE}
+            style={styles.photoTile}
+            textStyle={styles.mark}
+          />
         ) : (
-          <Text style={styles.mark}>
-            {isDirect ? initialsFor(displayName) : "#"}
-          </Text>
+          <Text style={styles.mark}>#</Text>
         )}
       </View>
       <Text accessibilityRole="header" style={styles.title}>
@@ -93,6 +104,8 @@ export function ChannelStart({
   );
 }
 
+const START_TILE_SIZE = 64;
+
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
     block: {
@@ -103,13 +116,21 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       paddingBottom: tokens.spacing.lg,
     },
     tile: {
-      width: 64,
-      height: 64,
+      width: START_TILE_SIZE,
+      height: START_TILE_SIZE,
       borderRadius: tokens.radius.cardLarge,
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: tint(brand.accent),
       marginBottom: tokens.spacing.xs,
+    },
+    // The DM mark fills the tile; the tile's own corners and fill carry over.
+    photoTile: {
+      width: START_TILE_SIZE,
+      height: START_TILE_SIZE,
+      borderRadius: tokens.radius.cardLarge,
+      alignItems: "center",
+      justifyContent: "center",
     },
     mark: {
       fontSize: 30,

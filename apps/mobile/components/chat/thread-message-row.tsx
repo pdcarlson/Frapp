@@ -74,6 +74,8 @@ export interface ThreadMessageRowProps {
   nameFor: (userId: string) => string | null;
   /** `users.id` → role color for the author line (#3485); `null` keeps it plain. */
   roleColorFor?: (userId: string) => string | null;
+  /** A row → its author's photo URL for the run's avatar; `null` draws initials. */
+  avatarFor?: (message: ChatMessage) => string | null;
   replyParent: ChatMessage | null | undefined;
   blockState: BlockState;
   onVote: (
@@ -121,6 +123,7 @@ function ThreadMessageRowBody({
   viewerId,
   nameFor,
   roleColorFor,
+  avatarFor,
   replyParent,
   blockState,
   onVote,
@@ -236,6 +239,7 @@ function ThreadMessageRowBody({
         viewerId={viewerId}
         nameFor={nameFor}
         roleColorFor={roleColorFor}
+        avatarFor={avatarFor}
         startsRun={startsRun}
         quote={quote}
         onOpenActions={openActions}
@@ -253,6 +257,7 @@ function ThreadMessageRowBody({
       viewerId={viewerId}
       nameFor={nameFor}
       roleColorFor={roleColorFor}
+      avatarFor={avatarFor}
       startsRun={startsRun}
       replyParent={quotedParent}
       replyParentHidden={replyParentHidden}
