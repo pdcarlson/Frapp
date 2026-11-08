@@ -19,7 +19,7 @@
  *   has no membership — production is in that state until the first onboard
  *   — and `docs/ops/db-rollback-playbook.md` still disables the hook as the first
  *   auth-incident mitigation, which returns every token to claim-absence.
- * - `ChapterGuard.resolveChapterContext` (apps/api) treats that as normal: with
+ * - `ChapterGuard.resolveSoleChapter` (apps/api) treats that as normal: with
  *   neither claim nor `x-chapter-id` it auto-resolves a sole membership
  *   server-side, which is why single-chapter members work with or without the
  *   claim.
