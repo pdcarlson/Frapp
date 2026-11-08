@@ -57,11 +57,12 @@ type ChapterRow = {
 /**
  * Process-wide, not per guard instance: Nest builds a guard per module, and
  * the requests a mobile resume fires together (#3728) hit several modules'
- * routes. Only lookups that decide no access are shared: the user's own row
- * id, and the chapter's subscription state and module toggles. Membership is
- * still read per request, because spec/behavior/multi-tenancy.md promises
- * that a revoked membership refuses every later request; a joiner's answer
- * can predate its request by up to `IN_FLIGHT_JOIN_WINDOW_MS`.
+ * routes. Only two reads are shared: the user's own row id, and the chapter's
+ * subscription state and module toggles, for which no spec promises
+ * same-instant freshness. A joiner's answer can predate its request by up to
+ * `IN_FLIGHT_JOIN_WINDOW_MS`. Membership is still read per request, because
+ * spec/behavior/multi-tenancy.md promises that a revoked membership refuses
+ * every later request.
  */
 const appUserLookups = new InFlightLookups<
   PostgrestMaybeSingleResponse<{ id: string }>

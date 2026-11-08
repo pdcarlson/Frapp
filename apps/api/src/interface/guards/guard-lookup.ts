@@ -62,10 +62,11 @@ export const IN_FLIGHT_JOIN_WINDOW_MS = 250;
  *
  * What a joiner gives up, and its bound: a request that joins gets an answer
  * whose query left up to `joinWindowMs` before the request arrived, so a
- * change committed inside that window is not seen by it. That is why only
- * lookups whose staleness grants no access use this (see `ChapterGuard`):
- * the specs promise that role, membership and session changes take effect on
- * the very next request. A request arriving after the window, or after the
+ * change committed inside that window is not seen by it. So it is used only
+ * where no spec promises same-instant freshness (see `ChapterGuard`):
+ * spec/behavior/rbac.md and multi-tenancy.md promise that role and membership
+ * changes take effect on the very next request, so those reads, and the
+ * session check, stay per request. A request arriving after the window, or after the
  * call settled, makes its own lookup. Nothing is cached beyond the call.
  *
  * Joiners share the call's fate. The Supabase client sets no fetch timeout,

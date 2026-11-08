@@ -31,8 +31,8 @@ Each refuses with a 4xx only on an answer; a lookup that failed is a `503`, stil
 `ChapterGuard` shares two of its reads between requests that arrive together (`InFlightLookups` in
 `guards/guard-lookup.ts`, #3728): the caller's `users` row id and the chapter's subscription and module state. A request
 joins such a read only within `IN_FLIGHT_JOIN_WINDOW_MS` of its start, so its answer can predate the request by at most
-that. Membership, roles and the session itself are still checked per request, as [`rbac.md`](../../spec/behavior/rbac.md)
-and [`multi-tenancy.md`](../../spec/behavior/multi-tenancy.md) promise.
+that. Membership and roles are still read per request, as [`rbac.md`](../../spec/behavior/rbac.md) and
+[`multi-tenancy.md`](../../spec/behavior/multi-tenancy.md) promise, and so is the session (`auth.getUser`).
 
 **The header is never trusted on its own.** `ChapterGuard` re-reads the membership row for whatever
 chapter was requested (`findMembership` in `chapter.guard.ts`), and a JWT/header disagreement is a hard
