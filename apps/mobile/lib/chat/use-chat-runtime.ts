@@ -122,17 +122,20 @@ export function useChatRealtimeBinding(): void {
   const viewerId = useViewerUserId({ enabled: signedIn });
   const onMessageActivity = useChatActivityHandler(viewerId, isForeground);
   /**
-   * Once bound, the manager is rebound on every viewer change, sign-out
-   * included: `configure({ viewerId: null })` rejoins the inbox under the
-   * signed-out session, so a signed-out device stops receiving the member's
-   * messages, and the next sign-in (even the same member's) rejoins it under
-   * theirs.
+   * Once bound, the manager is rebound on every viewer change and on sign-out:
+   * `configure({ viewerId: null })` rejoins the inbox under the signed-out
+   * session, so a signed-out device stops receiving the member's messages, and
+   * the next sign-in (even the same member's) rejoins it under theirs.
    */
   const boundRef = useRef(false);
 
   useEffect(() => {
-    // Before the first member is known, nothing is joined at all.
-    if (!supabase || (!viewerId && !boundRef.current)) return;
+    if (!supabase) return;
+    // Before the first member is known, nothing is joined at all. A `null`
+    // viewer while still signed in is a re-read in flight (a chapter switch
+    // clears the query cache), not a sign-out, and rebinding on it would
+    // rejoin everything twice for a member who never left.
+    if (!viewerId && (signedIn || !boundRef.current)) return;
     let cancelled = false;
 
     void bootChatAdapters().then(() => {
@@ -152,7 +155,7 @@ export function useChatRealtimeBinding(): void {
     return () => {
       cancelled = true;
     };
-  }, [queryClient, supabase, apiClient, viewerId, onMessageActivity]);
+  }, [queryClient, supabase, apiClient, viewerId, signedIn, onMessageActivity]);
 
   useEffect(() => {
     let previous: AppStateStatus | null = AppState.currentState;

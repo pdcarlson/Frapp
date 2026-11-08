@@ -1601,6 +1601,16 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
     isConnected: ReturnType<typeof vi.fn>;
     connect: ReturnType<typeof vi.fn>;
     sendHeartbeat: ReturnType<typeof vi.fn>;
+    pendingHeartbeatRef: string | null;
+  };
+  /**
+   * Plays phoenix's heartbeat as `realtime-heartbeat-contract.spec.ts` pins
+   * it: a heartbeat with none outstanding becomes pending, and one while
+   * another is pending is the heartbeat timeout, which errors every channel.
+   */
+  let heartbeats: number;
+  const answerHeartbeat = () => {
+    socket.pendingHeartbeatRef = null;
   };
   let offline: boolean;
   let netListener: ((online: boolean) => void) | null;
@@ -1613,10 +1623,22 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
       BackfillFetcher;
     queryClient = new QueryClient();
     ({ supabase, channels } = makeFakeSupabase());
+    heartbeats = 0;
     socket = {
       isConnected: vi.fn(() => true),
       connect: vi.fn(),
-      sendHeartbeat: vi.fn(async () => undefined),
+      pendingHeartbeatRef: null,
+      sendHeartbeat: vi.fn(async () => {
+        if (socket.pendingHeartbeatRef) {
+          socket.pendingHeartbeatRef = null;
+          for (const ch of channels.values()) {
+            if (ch.state === "joined") ch.trigger("CHANNEL_ERROR");
+          }
+          return;
+        }
+        heartbeats += 1;
+        socket.pendingHeartbeatRef = `hb-${heartbeats}`;
+      }),
     };
     (supabase as unknown as { realtime: typeof socket }).realtime = socket;
     activity = vi.fn() as ReturnType<typeof vi.fn> &
@@ -1805,20 +1827,75 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
       expect(backfill).toHaveBeenCalledTimes(1);
     });
 
-    test("probes a socket that reads open: a heartbeat now, a second after the probe window", async () => {
+    test("a socket that never answers the probe is recovered: every channel errors, rejoins and catches up", async () => {
       chatRealtime.subscribe("c1");
-      channels.get("chat:channel:c1")!.trigger("SUBSCRIBED");
-      inbox().trigger("SUBSCRIBED");
+      const thread = channels.get("chat:channel:c1")!;
+      thread.trigger("SUBSCRIBED");
+      const inboxBefore = inbox();
+      inboxBefore.trigger("SUBSCRIBED");
+      backfill.mockClear();
+      activity.mockClear();
 
       chatRealtime.resume();
       expect(socket.sendHeartbeat).toHaveBeenCalledTimes(1);
+      activity.mockClear();
 
-      // The second is Realtime's own heartbeat timeout when the first went
-      // unanswered, and harmless when it was answered. Nothing is torn down by
-      // the manager, so other consumers of the shared socket are untouched.
+      // Unanswered for the whole window: the probe's second call is the
+      // heartbeat timeout, and the manager rejoins what it errored.
       await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS);
-      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(2);
-      expect(socket.connect).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1_000);
+      const rejoined = channels.get("chat:channel:c1")!;
+      expect(rejoined).not.toBe(thread);
+      expect(inbox()).not.toBe(inboxBefore);
+
+      backfill.mockClear();
+      rejoined.trigger("SUBSCRIBED");
+      inbox().trigger("SUBSCRIBED");
+      expect(backfill).toHaveBeenCalledWith("c1", expect.any(Object));
+      expect(activity).toHaveBeenCalledWith({ type: "resync" });
+    });
+
+    test("a socket that answers is never touched", async () => {
+      chatRealtime.subscribe("c1");
+      const thread = channels.get("chat:channel:c1")!;
+      thread.trigger("SUBSCRIBED");
+
+      chatRealtime.resume();
+      answerHeartbeat();
+      await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS * 2);
+
+      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(1);
+      expect(channels.get("chat:channel:c1")).toBe(thread);
+    });
+
+    test("a heartbeat already in flight is waited on, not sent over (which would time it out at once)", async () => {
+      chatRealtime.subscribe("c1");
+      const thread = channels.get("chat:channel:c1")!;
+      thread.trigger("SUBSCRIBED");
+      socket.pendingHeartbeatRef = "scheduled";
+
+      chatRealtime.resume();
+      expect(socket.sendHeartbeat).not.toHaveBeenCalled();
+
+      // Its reply lands inside the window: nothing more happens.
+      socket.pendingHeartbeatRef = null;
+      await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS);
+      expect(socket.sendHeartbeat).not.toHaveBeenCalled();
+      expect(channels.get("chat:channel:c1")).toBe(thread);
+    });
+
+    test("a second resume during a probe doesn't send over the first one's heartbeat", () => {
+      chatRealtime.resume();
+      chatRealtime.resume();
+      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(1);
+    });
+
+    test("an inbox whose first join never landed still owes the resync its rejoin reports", async () => {
+      // Backgrounded before the first SUBSCRIBED.
+      chatRealtime.resume();
+      await vi.advanceTimersByTimeAsync(0);
+      inbox().trigger("SUBSCRIBED");
+      expect(activity).toHaveBeenCalledWith({ type: "resync" });
     });
 
     test("a resume after the manager is torn down sends no late heartbeat", async () => {

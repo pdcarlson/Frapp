@@ -159,6 +159,20 @@ describe("useChatRealtimeBinding", () => {
     );
   });
 
+  it("doesn't rebind while still signed in with the viewer re-reading (a chapter switch)", async () => {
+    const { rerender } = renderHook(() => useChatRealtimeBinding(), {
+      wrapper: queryWrapper(),
+    });
+    await waitFor(() => expect(chatRealtime.configure).toHaveBeenCalled());
+    vi.mocked(chatRealtime.configure).mockClear();
+
+    viewer.id = null;
+    rerender();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(chatRealtime.configure).not.toHaveBeenCalled();
+  });
+
   it("hands the manager the activity handler that keeps chat home live (#3698)", async () => {
     renderHook(() => useChatRealtimeBinding(), { wrapper: queryWrapper() });
 

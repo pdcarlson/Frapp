@@ -484,7 +484,7 @@ Every message is written to `chat_messages` in Postgres **first**, and reaches c
 
 ## Read Receipts
 
-Each user's last-read timestamp per channel is tracked in a `channel_read_receipts` table. Opening a channel stamps the cursor to server `now()`, and so do hiding a 1:1 DM (§ Direct Messages), Mark as read in the row menu (§ Sidebar arrangement), leaving the channel again, and a message from someone else arriving in the thread the member is looking at (its thread focused, the app or tab in front of them; once per burst, #3698, [§ Channel list previews](#channel-list-previews) "Freshness"); there is no mark-read-to-a-specific-message. A DM the member has hidden has no row in `GET /v1/channels/unread` at all while it stays hidden, so it lights no badge.
+Each user's last-read timestamp per channel is tracked in a `channel_read_receipts` table. Opening a channel stamps the cursor to server `now()`, and so do hiding a 1:1 DM (§ Direct Messages), Mark as read in the row menu (§ Sidebar arrangement), leaving the channel again, a message from someone else arriving in the thread the member is looking at (its thread focused, the app or tab in front of them; once per burst), and the app coming back to the foreground or its realtime connection recovering while they look at one (#3698, [§ Channel list previews](#channel-list-previews) "Freshness"); there is no mark-read-to-a-specific-message. A DM the member has hidden has no row in `GET /v1/channels/unread` at all while it stays hidden, so it lights no badge.
 
 Unread count per channel = messages created after that cursor, **excluding the cases that would otherwise make the badge wrong**:
 

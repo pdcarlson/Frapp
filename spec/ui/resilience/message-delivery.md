@@ -171,19 +171,22 @@ schedule up to 50 s later. So the return calls `chatRealtime.resume()`: on mobil
 edge from `background` to `active`, not from `inactive`; on web the tab becoming visible.
 `resume()`:
 
-- Reconnects a socket known to be down. It probes one that reads open: a heartbeat now and a
-  second after `RESUME_PROBE_MS` (4 s). On a socket that never answered the first, the second is
-  Realtime's own heartbeat timeout, which errors every channel on the socket and reconnects and
-  rejoins them. A live socket just answers, so nothing sharing it (web's notification and event
-  pings, presence) is disturbed.
+- Reconnects a socket known to be down. It probes one that reads open: it sends a heartbeat
+  through Realtime's public API (or waits on one already outstanding), and if that same heartbeat
+  is still unanswered after `RESUME_PROBE_MS` (5 s), it runs Realtime's own heartbeat timeout, which
+  errors every channel on the socket and reconnects and rejoins them. A socket that answers is
+  never touched, so nothing sharing it (web's notification and event pings, presence) is
+  disturbed.
 - Runs the gap-recovery read below for every live open thread at once, and reopens any thread
   channel that isn't live, whose join runs the same read.
-- Re-reads the summaries and re-stamps the thread the member is looking at, through the inbox's
-  rejoin when the inbox isn't live, otherwise through a `resync` reported at once.
+- Re-reads the summaries and re-stamps the thread the member is looking at, through a `resync`
+  reported at once when the inbox is live, otherwise through the one its rejoin reports.
 
-Offline it does nothing, and the online edge reopens everything instead. A message sent while a
-dead socket is still being found (up to about 5 s after the return) isn't lost: the threads'
-rejoin reads it and the inbox's rejoin reports a `resync`.
+Offline it does nothing, and the online edge reopens everything instead. Finding a dead socket
+takes the probe window, then Realtime's own teardown (about 1.5 s) and first reconnect step (1 s):
+up to about 8 s after the return, where the heartbeat schedule alone took up to 50 s. A message
+sent in that window isn't lost: the threads' rejoin reads it and the inbox's rejoin reports a
+`resync`.
 
 **Fallback:** If Supabase Realtime disconnects or fails, fall back to polling.
 

@@ -193,13 +193,13 @@ export type MessageActivity =
   | { type: "resync" };
 
 /**
- * How long `resume()` gives the socket to answer the heartbeat it sends before
- * a second heartbeat declares it dead. Realtime only notices a socket the OS
- * cut when a heartbeat goes unanswered, and on its own schedule that is up to
- * 50s after the app is back; probing brings it to this. Generous enough that a
- * slow but live mobile link answers in time.
+ * How long `resume()` lets one heartbeat go unanswered before declaring the
+ * socket dead. Realtime only notices a socket the OS cut when a heartbeat goes
+ * unanswered, and on its own schedule that is up to 50s after the app is back;
+ * probing brings it to this. A live link answers in well under a second, so
+ * this leaves a congested one room before it is treated as dead.
  */
-export const RESUME_PROBE_MS = 4_000;
+export const RESUME_PROBE_MS = 5_000;
 
 /**
  * The one topic carrying every new message the viewer may read, whichever
@@ -450,19 +450,19 @@ class ChatRealtimeManager {
    * later. So this does not wait on Realtime to say so:
    *
    * - A socket known to be down is reconnected. One that reads open is probed
-   *   (`probeSocket`): a heartbeat now, and a second after `RESUME_PROBE_MS`,
-   *   which on a socket that never answered the first is Realtime's own
-   *   heartbeat timeout. That errors every channel on the socket, chat's and
-   *   everyone else's, and Realtime reconnects and rejoins them; each chat
-   *   rejoin backfills. A live socket just answers, and nothing is torn down,
-   *   so the other consumers sharing it (web's notification and event pings,
-   *   presence) never see a gap.
+   *   (`probeSocket`): if the same heartbeat is still unanswered after
+   *   `RESUME_PROBE_MS`, Realtime's own heartbeat timeout runs, which errors
+   *   every channel on the socket, chat's and everyone else's, and reconnects
+   *   and rejoins them; each chat rejoin backfills. A socket that answers is
+   *   never touched, so the other consumers sharing it (web's notification and
+   *   event pings, presence) see no gap.
    * - Each live channel is read since its cursor over REST now (the idempotent
    *   backfill a reconnect runs, so a row that also arrives live collapses to
    *   one), and any channel that isn't live is reopened, which backfills when
    *   it lands.
-   * - The channel summaries are read again: by the inbox's rejoin when it isn't
-   *   live, otherwise by a `resync` reported now.
+   * - The channel summaries are read again, and the thread being looked at
+   *   re-stamped: by a `resync` reported now when the inbox is live, otherwise
+   *   by the one its rejoin reports.
    *
    * Offline it does nothing; the online edge reopens everything when the
    * network returns.
@@ -480,25 +480,39 @@ class ChatRealtimeManager {
       if (state.status === "live") void this.runBackfill(state.channelId);
       else this.reopenChannel(state);
     }
-    // A rejoin reports its own resync; reporting one here too would read the
-    // summaries twice.
-    if (this.inboxLive) this.reportActivity({ type: "resync" });
-    else this.reopenInbox();
+    // A rejoin reports its own resync, so reporting one here too would read the
+    // summaries twice. It must owe one, though: an inbox whose first join never
+    // landed would otherwise rejoin silently.
+    if (this.inboxLive) {
+      this.reportActivity({ type: "resync" });
+    } else {
+      this.inboxOwesResync = true;
+      this.reopenInbox();
+    }
     this.emitStatus();
   }
 
   /**
-   * Asks a socket that reads open whether it is. Both calls are Realtime's
-   * public `sendHeartbeat()`: the second, while the first is still unanswered,
-   * runs the client's own heartbeat timeout and recovery, so a dead socket is
-   * handled exactly as a missed scheduled heartbeat would be, only sooner.
+   * Asks a socket that reads open whether it is, through Realtime's public
+   * heartbeat API.
+   *
+   * It sends a heartbeat, unless one is already outstanding (a scheduled one
+   * that fired as the app woke): calling `sendHeartbeat()` while one is pending
+   * runs the client's heartbeat timeout at once, which would tear down a live
+   * socket whose reply is merely in flight. Then, after `RESUME_PROBE_MS`, only
+   * if that same heartbeat is still unanswered does the second call run the
+   * timeout, so a dead socket is handled exactly as a missed scheduled
+   * heartbeat would be, only sooner. A probe already running is left to finish.
    */
   private probeSocket(realtime: SupabaseClient["realtime"]): void {
-    void realtime.sendHeartbeat();
-    if (this.probeTimer) clearTimeout(this.probeTimer);
+    if (this.probeTimer) return;
+    if (!realtime.pendingHeartbeatRef) void realtime.sendHeartbeat();
+    const awaited = realtime.pendingHeartbeatRef;
+    if (!awaited) return;
     this.probeTimer = setTimeout(() => {
       this.probeTimer = null;
       if (this.ctx?.supabase.realtime !== realtime) return;
+      if (realtime.pendingHeartbeatRef !== awaited) return;
       void realtime.sendHeartbeat();
     }, RESUME_PROBE_MS);
   }
