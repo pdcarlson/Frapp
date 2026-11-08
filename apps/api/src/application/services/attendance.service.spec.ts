@@ -924,6 +924,34 @@ describe('AttendanceService', () => {
       );
     });
 
+    // The cutoff is the check-in window's close, end + 15 minutes, never its
+    // opening: marking absent while check-in is still open would refuse the
+    // members still arriving (their row would exist).
+    it('refuses until the check-in window closes, and runs once it has', async () => {
+      const endedEvent: Event = {
+        ...baseEvent,
+        is_mandatory: true,
+        start_time: '2026-02-26T18:00:00.000Z',
+        end_time: '2026-02-26T19:00:00.000Z',
+      };
+      mockEventRepo.findById.mockResolvedValue(endedEvent);
+      mockMemberRepo.findByChapter.mockResolvedValue([]);
+      jest.useFakeTimers();
+      try {
+        jest.setSystemTime(new Date('2026-02-26T19:14:00.000Z'));
+        await expect(service.markAutoAbsent('evt-1', 'ch-1')).rejects.toThrow(
+          'Cannot mark auto-absent before the grace period ends',
+        );
+
+        jest.setSystemTime(new Date('2026-02-26T19:16:00.000Z'));
+        await expect(service.markAutoAbsent('evt-1', 'ch-1')).resolves.toEqual({
+          marked: 0,
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('should do nothing for optional events', async () => {
       const optionalEvent: Event = {
         ...pastEvent,

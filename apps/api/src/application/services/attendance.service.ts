@@ -15,11 +15,9 @@ import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interf
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import type { EventAttendance } from '#domain/entities/event-attendance.entity';
 import { RbacService } from './rbac.service';
-import { attendanceFor, isInvited } from './event-role-targeting';
-import { SystemPermissions } from '#domain/constants/permissions';
+import { attendanceFor, isEventVisibleTo } from './event-role-targeting';
 import {
   checkInWindowBounds,
-  eventLimitsAudience,
   eventRequiresAnyone,
   eventSetsRolesApart,
   type EventAttendanceFields,
@@ -279,9 +277,7 @@ export class AttendanceService {
    * offering the scanner again (#3703).
    *
    * An event the caller can't see 404s exactly as a nonexistent id does,
-   * by the rule `GET /v1/events/:id` applies (`EventService.findById`): an
-   * event that leaves anyone out is visible to an `events:update` holder and
-   * to the members it invites. Answering `{ attendance: null }` instead would
+   * by the rule `GET /v1/events/:id` applies (`isEventVisibleTo`). Answering `{ attendance: null }` instead would
    * confirm a role-targeted event exists to someone it was hidden from.
    */
   async getMyAttendance(
@@ -290,32 +286,17 @@ export class AttendanceService {
     chapterId: string,
   ): Promise<EventAttendance | null> {
     const event = await this.eventRepo.findById(eventId, chapterId);
-    if (!event || !(await this.isVisibleTo(event, chapterId, userId))) {
+    if (
+      !event ||
+      !(await isEventVisibleTo(event, chapterId, userId, {
+        rbac: this.rbac,
+        memberRepo: this.memberRepo,
+      }))
+    ) {
       throw new NotFoundException('Event not found');
     }
 
     return this.attendanceRepo.findByEventAndUser(eventId, userId);
-  }
-
-  /** `EventService.isVisibleToViewer`'s rule; see `getMyAttendance`. */
-  private async isVisibleTo(
-    event: Parameters<typeof eventLimitsAudience>[0],
-    chapterId: string,
-    userId: string,
-  ): Promise<boolean> {
-    if (!eventLimitsAudience(event)) return true;
-    if (
-      await this.rbac.memberHasAnyPermission(chapterId, userId, [
-        SystemPermissions.EVENTS_UPDATE,
-      ])
-    ) {
-      return true;
-    }
-    const member = await this.memberRepo.findByUserAndChapter(
-      userId,
-      chapterId,
-    );
-    return !!member && isInvited(event, member.role_ids);
   }
 
   async getAttendance(

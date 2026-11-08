@@ -4422,7 +4422,7 @@ export interface components {
             check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
             /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
             check_in_zone_name?: string;
-            /** @description Minutes before start_time that check-in opens. Omitted on create, it is 10; the window closes 15 minutes after end_time. */
+            /** @description Minutes before start_time that check-in opens; the window closes 15 minutes after end_time. Omitted leaves it unchanged; null is refused. */
             check_in_opens_minutes?: number;
             /**
              * @description Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved.

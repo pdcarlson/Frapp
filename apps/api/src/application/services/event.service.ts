@@ -17,7 +17,7 @@ import {
   eventChangeOf,
 } from './event-announcement.service';
 import { SystemPermissions } from '#domain/constants/permissions';
-import { isInvited } from './event-role-targeting';
+import { isEventVisibleTo, isInvited } from './event-role-targeting';
 import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
   eventLimitsAudience,
@@ -68,20 +68,10 @@ export class EventService {
     chapterId: string,
     viewerId: string,
   ): Promise<boolean> {
-    if (!eventLimitsAudience(event)) return true;
-    if (
-      await this.rbac.memberHasAnyPermission(chapterId, viewerId, [
-        SystemPermissions.EVENTS_UPDATE,
-      ])
-    ) {
-      return true;
-    }
-    const member = await this.memberRepo.findByUserAndChapter(
-      viewerId,
-      chapterId,
-    );
-    if (!member) return false;
-    return isInvited(event, member.role_ids);
+    return isEventVisibleTo(event, chapterId, viewerId, {
+      rbac: this.rbac,
+      memberRepo: this.memberRepo,
+    });
   }
 
   async findById(

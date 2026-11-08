@@ -388,6 +388,11 @@ describe("Event details layout", () => {
     const tree = render();
     expect(textNode(tree, "Marked excused")).toBeDefined();
     expect(textNode(tree, "Scan QR to check in")).toBeUndefined();
+    // Nothing to do before a deadline: no "closes", no live dot.
+    expect(screenText(tree)).not.toMatch(/closes /);
+    expect(dotColor(tree, "Marked excused")).toBe(
+      signetDarkTokens.color.text.muted,
+    );
   });
 
   it("holds the scanner back while the member's own row is first read", () => {

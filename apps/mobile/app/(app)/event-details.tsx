@@ -348,7 +348,7 @@ function CheckInCard({
     ? event.point_value
       ? `+${event.point_value} pts`
       : null
-    : isOpen
+    : isOpen && !own
       ? `closes ${formatEventClock(window.closesAt)}`
       : null;
   const zone =
@@ -381,8 +381,10 @@ function CheckInCard({
           style={[
             styles.dot,
             {
+              // Green while there is a check-in to make, or one made; an
+              // officer's mark has nothing left to do, so it reads muted.
               backgroundColor:
-                isOpen || checkedInAt
+                checkedInAt || (isOpen && !own)
                   ? tokens.color.semantic.success
                   : tokens.color.text.muted,
             },

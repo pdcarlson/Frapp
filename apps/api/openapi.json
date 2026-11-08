@@ -14038,7 +14038,7 @@
             "type": "number",
             "minimum": 0,
             "maximum": 120,
-            "description": "Minutes before start_time that check-in opens. Omitted on create, it is 10; the window closes 15 minutes after end_time."
+            "description": "Minutes before start_time that check-in opens; the window closes 15 minutes after end_time. Omitted leaves it unchanged; null is refused."
           },
           "scope": {
             "type": "string",
