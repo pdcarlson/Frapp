@@ -31,9 +31,11 @@ on:
     types: [completed]
   # The backstop. A completion fires the moment a holder's last check finishes,
   # inside the grace that keeps it in flight (isInFlight), and nothing fires when
-  # that grace runs out. Every fifteen minutes the slot is re-read, so a holder
-  # that is green but never merges, or whose checks never start, can't hold the
-  # queue in a quiet repo. A sweep with no auto-merge PR makes one list call.
+  # that grace runs out. The schedule re-reads the slot, so a holder that is green
+  # but never merges, or whose checks never start, can't hold the queue for good
+  # in a quiet repo. A backstop, not a bound: GitHub runs `*/15` here far less
+  # often (ADR-24 measured a median gap of 3.1 h). A sweep with no auto-merge PR
+  # makes one list call.
   schedule:
     - cron: "*/15 * * * *"
 
@@ -54,8 +56,9 @@ permissions:
   pull-requests: write
   issues: write # the alert issue (and possibly the wake comments; see above)
   # The auto-merge slot reads each auto-merge PR's required checks (#3599).
-  # Without it every read fails, no PR can hold the slot, and the sweep falls
-  # back to updating every behind auto-merge PR: the pre-#3599 race, silently.
+  # Without it every read fails: up-to-date auto-merge PRs read as in flight and
+  # behind ones are tried in number order, so the slot degrades instead of
+  # working (pinned by pr-base-sync-workflow.test.mjs).
   checks: read
 
 # Only the newest sweep matters — it re-reads every open PR against the newest

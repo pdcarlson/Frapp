@@ -109,10 +109,6 @@ export function normalizeSha(value) {
  * Naming it is the fix that generalises. A cancelled run can be re-run from the
  * Actions UI for 30 days, which turns a dead end into one click.
  */
-// Re-exported: the check-runs read and the pass set live in lib/check-runs.mjs,
-// shared with pr-base-sync.mjs's update slot.
-export { ACCEPTED_CONCLUSIONS, fetchCheckRuns };
-
 export const CANCELLED_CONCLUSIONS = new Set(["cancelled", "timed_out", "stale"]);
 
 /**

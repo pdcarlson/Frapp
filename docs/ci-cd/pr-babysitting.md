@@ -235,7 +235,7 @@ introduces them (unit tests + this doc are the pre-merge verification).
 
 Branch protection on `main` sets `strict: true`, so every merge to `main` outdates every other
 open PR. `pr-base-sync.yml` fires on each push to `main` (and, for the auto-merge slot below, on
-each of this repo's PR CI completions and every 15 minutes) and sweeps open PRs targeting it —
+each of this repo's PR CI completions and on a 15-minute schedule) and sweeps open PRs targeting it —
 sequentially, capped at 20 per sweep with the remainder logged (never silently truncated), and
 listed **least-recently-updated first**: acting on a PR bumps its `updated_at` to the back of the
 next sweep's order, so a deferred PR rotates to the front instead of being starved behind the same
@@ -297,39 +297,52 @@ busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeabl
   next push sweep.
   - **Who holds it.** An up-to-date PR in flight keeps it, meaning one of three things. Its required
     checks ([`required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs)) are running. Or they
-    haven't reported yet and its head commit is under 15 minutes old: right after an update, the new
-    head has no check runs while CI cancels the old run, and that cancelled run's completion fires a
-    slot sweep. Or they all passed under 5 minutes ago, so auto-merge is about to act. Otherwise the
-    sweep tries the behind PRs in turn until one updates. First come those whose checks are still
-    running, which is almost always the holder knocked behind by a merge the queue didn't cause, so
-    it keeps the slot. Then the rest, lowest number first.
+    haven't reported yet and its head was pushed under 15 minutes ago, going by its earliest check
+    suite: right after an update, the new head has no check runs while CI cancels the old run, and
+    that cancelled run's completion fires a slot sweep. Or they all passed under 5 minutes ago, so
+    auto-merge is about to act. This check fails safe: an up-to-date PR whose mergeability, checks
+    or push time can't be read also counts as in flight, because right after an update all three
+    often can't be read yet. Otherwise the sweep tries the behind PRs in turn until one updates.
+    First come those whose checks are still running, which is almost always the holder knocked
+    behind by a merge the queue didn't cause, so it keeps the slot. Then the rest, lowest number
+    first.
   - **Who is queued.** A clean, same-repo auto-merge PR whose required checks haven't failed. A red PR
     (a failed or cancelled required check) isn't queued and is updated as before, so a fix on `main`
-    still reaches it. A PR whose checks can't be read, even after a retry, waits behind a holder but
-    never becomes one. Without `checks: read` that is every PR, and the sweep falls back to updating
-    them all. The slot governs up to 15 auto-merge PRs, lowest numbers first, assessed from every
+    still reaches it. A behind PR whose checks can't be read, even after a retry, waits behind a
+    holder and is tried only after every PR whose checks could be read. A PR whose compare call failed
+    is skipped for that sweep. Without `checks: read` every read fails, so up-to-date auto-merge PRs
+    hold the slot and behind ones are tried in number order. `pr-base-sync-workflow.test.mjs` pins
+    the permission. The slot governs up to 15 auto-merge PRs, lowest numbers first, assessed from every
     open PR, not only the 20-PR slice, because updating the holder moves it to the back of the list.
     Queued PRs take no place in that slice.
   - **When a PR can't take the slot**, it gets the per-PR treatment above (a wake, or alert evidence),
     and the sweep tries the next. So a holder nobody is watching can't block the queue. When none can
-    be updated, nothing is held: every behind PR gets its wake, as before #3599. A 422 whose message
+    be updated, nothing is held: every behind PR gets its wake, as before #3599. The push sweep fills
+    the slot before its pass over the other PRs, because that pass can take minutes. A 422 whose message
     says the head moved (`expected_head_sha` lost to a concurrent sweep or a push) keeps the slot and
     posts no wake. Any other 422 is a failure like the rest.
   - **The slot-only sweep.** A holder that goes red, or turns green without merging, never pushes. So
     the workflow also runs on `workflow_run: completed` of `CI` and `Migration drift gate` (together
-    they emit every required check), for this repository's PRs only, and every 15 minutes on a
+    they emit every required check), for this repository's PRs only, and on a 15-minute
     schedule. The schedule exists because the completion fires inside the grace that keeps a holder
-    in flight, and no event marks the end of that grace. In this mode (`mode: "checks"`) the sweep
-    fills the slot the same way, and its only other write is deleting the updated PR's stale wake.
-    It posts no wake, handles no conflict and touches no alert: the base did not move, and those
-    jobs belong to the push sweep. Push sweeps and slot sweeps run in separate concurrency groups,
-    so a slot sweep never cancels a push sweep midway through its wakes. Completions the job skips
-    (`main`'s own CI, a fork's) go to a third group. The two kinds can still overlap and pick the
-    same PR, which the head-moved rule absorbs.
+    in flight, and no event marks the end of that grace. It's a backstop, not a bound: ADR-24
+    measured a `*/15` schedule in this repo running at a median gap of 3.1 h. In this mode
+    (`mode: "checks"`) the sweep fills the slot the same way. It deletes the updated PR's stale
+    wake, wakes a PR it couldn't update if that PR has no base-sync comment yet (so a failure that
+    repeats on every completion wakes the session once), and closes an open token alert when an
+    update goes through. It never raises the alert and handles no conflict: the base did not move,
+    and those jobs belong to the push sweep. Push sweeps and slot sweeps run in separate concurrency
+    groups, so a slot sweep never cancels a push sweep midway through its wakes. Completions the job
+    skips (`main`'s own CI, a fork's) go to a third group. The two kinds can still overlap. When both
+    pick the same PR, the head-moved rule absorbs it. When they pick different PRs at the same
+    moment, two run CI at once, which is the narrow residue of the original race.
   - **The alert** isn't closed by a sweep whose behind PRs were all held, because it called
     update-branch on none of them, so "hit no failure" would prove nothing.
-  - **Known gap.** A PR made conflicted by a merge the sweep raced (the stale-`mergeable` read above)
-    is held rather than tried. Its conflict wake comes from the next push sweep, not this one.
+  - **Known gaps.** A PR made conflicted by a merge the sweep raced (the stale-`mergeable` read above)
+    is held rather than tried, so its conflict wake comes from the next push sweep, not this one. And
+    a green auto-merge PR that never merges (waiting on something outside the required-check roster)
+    takes the slot again whenever it is first in line, holding the queue for a CI run plus the merge
+    grace plus the wait for the next scheduled sweep, each time.
   - Merge queue is the platform version of this (option 3 in #3599). It needs a branch-protection
     change, which is the owner's call.
 - **Already in sync** → any stale base-sync wake comment is deleted and the sweep stays silent.
