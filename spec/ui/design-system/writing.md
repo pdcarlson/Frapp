@@ -209,6 +209,7 @@ The API's throttler sets this sentence (`THROTTLED_MESSAGE`, `custom-throttler.g
 | Error | `Couldn't load members` | the load-failure line (§ copy rules) |
 | Error (roles and points) | `Couldn't load roles and points` | `Filtering, sorting and assignment need both.` |
 | Offline | `Members unavailable offline` | `Reconnect to load the roster.` |
+| Member sheet: a role save that removes the last role carrying member access | `Take away <name>'s access?` | `Without a role like Member, <name> can't open chat, the member list or events.` Buttons `Cancel` and `Take away access`. Mobile s13 asks the same per tap with `Remove <role>` ([Edit roles](#edit-roles-mobile-s13)); one web save can remove several roles, so its button names the outcome. Set in `components/members/member-detail-sheet.tsx` (`handleSaveRoles`) |
 
 The empty and no-results rows are one line, an `InlineNote`, where the rows go, with the way back as a link in the line (empty-states plan rule 7, 2026-11-07). The split the paragraphs below argue for still holds; only the card went.
 
