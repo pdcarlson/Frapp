@@ -107,9 +107,9 @@ session hasn't pushed, so give repo-relative paths only. A card that depends on 
 until that work is pushed (the pre-push review gate applies); a SHA only this session holds can't be
 fetched.
 
-A card that starts a tracker issue opens with `/next <N>`, so the new session claims it. `/next`
-never claims a `triage` issue, so a follow-up filed moments ago gets its card once it's promoted;
-until then the issue is the record. A `continue` card carries on a claim this session hands off
+A card that starts a tracker issue opens with `/next <N>`, so the new session claims it. A follow-up
+filed moments ago can have its card now: the user starting the card names the issue, so that run
+promotes it out of `triage` as it claims it. A `continue` card carries on a claim this session hands off
 (`AGENT-HANDOFF` in [`/next`](../../commands/next.md)), and a `walkthrough` card claims nothing,
 because the user does the work.
 

@@ -55,7 +55,9 @@ GitHub Issues (canonical: planning, status, Triage intake)
   is born with the `triage` label and is accepted into the Backlog (label removed, priority set)
   before `/next` will auto-start it. One carve-out: a `/next` run that fixes a defect it discovered
   on its own branch may file the issue and claim it in the same breath — record-keeping for work
-  already underway, not auto-starting inbox work.
+  already underway, not auto-starting inbox work. And a human naming an issue (`/next <N>`) is the
+  triage decision, so that run promotes it as it claims it; ranked `/next` still never picks a
+  `triage` item.
 
 ### How agents reach the tracker
 
@@ -573,7 +575,8 @@ Unchanged in substance from the Linear era. The backlog routines split writes in
   read (`issue_read get_labels`), else SKIP. Human-filed work is never closed or re-bodied by a
   routine.
 - **Organizational writes** — priority labels, `area:*`, `Blocked by #N` lines, promoting
-  Triage → Backlog — are the triage routine's job **on any `triage` item**, whoever filed it.
+  Triage → Backlog — are the triage routine's job **on any `triage` item**, whoever filed it, and
+  `/next`'s on an issue a human named, which it promotes as it claims it.
   **Exception:** human-action holds (`[human]`/`[pr-followup][human]` titles or the
   `**Human action required — hold in triage` body opener) are never promoted — they get
   priority/estimate only and stay in Triage (see "Filing an issue" above). A
