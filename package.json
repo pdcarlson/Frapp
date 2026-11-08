@@ -16,6 +16,7 @@
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "supabase": "bash -c '. scripts/lib/supabase-cli.sh && frapp_supabase \"$@\"' supabase",
     "eas": "node scripts/eas.mjs",
+    "release-notes": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/release-notes.mjs",
     "check-types": "turbo run check-types",
     "test:cov": "turbo run test:cov",
     "check:dep-cruiser": "node scripts/check-dep-cruiser.mjs",

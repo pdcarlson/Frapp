@@ -499,6 +499,11 @@ export default function PreferencesScreen() {
             and Canvas draws this row as a value too. */}
         <ListRow label="Appearance" value="Dark" />
         <ListRow
+          label="What's new"
+          accessibilityHint="Shows the latest changes to the app."
+          onPress={() => router.push("/whats-new")}
+        />
+        <ListRow
           label={BLOCKED_MEMBERS_TITLE}
           value={blockedMembersValue}
           accessibilityHint="Shows the members you've blocked in chat, and lets you unblock them."

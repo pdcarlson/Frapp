@@ -43,6 +43,11 @@ export type BackTarget = {
 
 /** s10–s13, s15, s16 and Service hours, each opened from a More row. */
 export const BACK_TO_MORE: BackTarget = { label: "More", href: "/more" };
+/** What's new, opened from a Settings row. */
+export const BACK_TO_SETTINGS: BackTarget = {
+  label: "Settings",
+  href: "/preferences",
+};
 /** s07, opened from an Events row (and from Chat home's Up next). */
 export const BACK_TO_EVENTS: BackTarget = { label: "Events", href: "/events" };
 /**
