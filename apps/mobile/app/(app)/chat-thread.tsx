@@ -45,6 +45,7 @@ import {
   useMentionRoles,
   useChannelNotificationPreferences,
   useCurrentUser,
+  claimViewedChannel,
   useMarkChannelRead,
   useMemberDisplayNames,
   usePermissionList,
@@ -376,9 +377,12 @@ export default function ChatThreadScreen() {
   //    would not re-run when the member comes back to it, and a badge read
   //    meanwhile would stay stuck.
   //  - Messages arriving over realtime while the thread is open are read as they
-  //    land, but the cursor was stamped before them. Stamping again on blur
-  //    covers that burst in one request, where re-stamping per message would be
-  //    one POST per message.
+  //    land, but the cursor was stamped before them. While the thread is focused
+  //    and the app active, the activity handler bound app-wide re-stamps it once
+  //    per burst (#3698, `useChatActivityHandler`, for the channel claimed
+  //    below), so chat home's badge and the app badge never count what the
+  //    member is reading. Stamping again on blur covers whatever that missed.
+  //    Focus, not mount: this screen stays mounted under one pushed over it.
   const requestUploadUrl = useRequestChatUploadUrl();
 
   const markRead = useMarkChannelRead();
@@ -387,7 +391,11 @@ export default function ChatThreadScreen() {
     useCallback(() => {
       if (!channelId) return;
       markReadMutate(channelId);
-      return () => markReadMutate(channelId);
+      const releaseViewed = claimViewedChannel(channelId);
+      return () => {
+        releaseViewed();
+        markReadMutate(channelId);
+      };
     }, [channelId, markReadMutate]),
   );
   // The channel the next launch opens (`lib/chat/last-channel.ts`). On focus,

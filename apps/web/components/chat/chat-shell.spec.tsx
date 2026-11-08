@@ -267,6 +267,7 @@ vi.mock("@repo/hooks", async () => ({
     .importActual<typeof import("@repo/hooks")>("@repo/hooks")
     .then(
       ({
+        claimViewedChannel,
         HIDE_SETUP_CHECKLIST_LABEL,
         landingChannelId,
         lastChannelStorageKey,
@@ -279,6 +280,7 @@ vi.mock("@repo/hooks", async () => ({
         DELETE_CHANNEL_CONFIRM_BODY,
         DELETE_CHANNEL_LABEL,
       }) => ({
+        claimViewedChannel,
         deleteChannelConfirmTitle,
         DELETE_CHANNEL_CONFIRM_BODY,
         DELETE_CHANNEL_LABEL,
@@ -2917,7 +2919,9 @@ describe("ChatShell with no chapter and no channels (#2145)", () => {
 
     // Phrased as an instruction, not a claim about the account —
     // `profile-panel.tsx` owns that reasoning for the same window.
-    expect(screen.getByText("Pick an active chapter to load its channels.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Pick an active chapter to load its channels."),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("region", { name: "Channels" }),
     ).toBeInTheDocument();
@@ -4018,5 +4022,23 @@ describe("ChatShell reports its transport to the connection pill", () => {
     shell.unmount();
     expect(reported).toBeNull();
     reader.unmount();
+  });
+});
+
+/*
+ * The open channel is the one the member is looking at (#3698): the activity
+ * handler `ChatProvider` wires re-stamps it read when a message lands in it,
+ * so the rail never lights up the channel being read. The claim is what tells
+ * it which one that is.
+ */
+describe("ChatShell claims the open channel as viewed (#3698)", () => {
+  it("claims the active channel, and releases it when the shell goes", async () => {
+    const { viewedChannelId } =
+      await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+    const { unmount } = render(<ChatShell initialChannelId="chan-general" />);
+    expect(viewedChannelId()).toBe("chan-general");
+
+    unmount();
+    expect(viewedChannelId()).toBeNull();
   });
 });

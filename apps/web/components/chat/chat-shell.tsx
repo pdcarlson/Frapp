@@ -27,6 +27,7 @@ import {
   useGetOrCreateDm,
   useLeaveChannel,
   useChannelNotificationPreferences,
+  claimViewedChannel,
   useChannelUnreadCounts,
   useChannels,
   useSetChannelNotificationLevel,
@@ -1054,10 +1055,13 @@ export function ChatShell({
 
   // Opening a channel stamps the read cursor, and so does hiding a DM (#2303:
   // a hidden row must leave no badge), and so does the rail's right-click
-  // Mark as read. Those are the only things that move it, and the only things
-  // that clear the badges above. Without it the rail lights up
-  // on first load and never goes out, which is worse than the dead badge this
-  // slice replaced: it would show every channel as permanently unread.
+  // Mark as read. So does a message from someone else landing in the open
+  // channel while the tab is visible (#3698: `useChatActivityHandler`, which
+  // `ChatProvider` wires, re-stamps the channel claimed below). Those are the
+  // only things that move it, and the only things that clear the badges
+  // above. Without it the rail lights up on first load and never goes out,
+  // which is worse than the dead badge this slice replaced: it would show
+  // every channel as permanently unread.
   // `spec/behavior/chat/README.md` § Read Receipts: opening stamps to server
   // `now()`; there is no mark-read-to-a-message.
   const markRead = useMarkChannelRead();
@@ -1065,9 +1069,13 @@ export function ChatShell({
   useEffect(() => {
     if (!activeChannelId) return;
     markReadMutate(activeChannelId);
+    const releaseViewed = claimViewedChannel(activeChannelId);
     // Stamp again on the way out, so messages that arrived while the channel
     // was open do not resurface as unread. Mobile does the same on blur.
-    return () => markReadMutate(activeChannelId);
+    return () => {
+      releaseViewed();
+      markReadMutate(activeChannelId);
+    };
   }, [activeChannelId, markReadMutate]);
 
   // The rail row's right-click menu (owner, 2026-11-06). Which rows a channel

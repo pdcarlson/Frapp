@@ -18,9 +18,10 @@
  * - **Tab screens mount lazily.** A tap that deep-links straight to
  *   `/chat-thread` need never mount `(app)/(tabs)/index.tsx`, so a runtime hosted
  *   there would miss the very cold-start read it exists to perform.
- * - `(app)/(tabs)/index.tsx` deliberately does *not* call `useChatRuntime()`, because
- *   that would reconfigure the realtime manager from a list screen. Hanging a
- *   second app-wide runtime off it would repeat exactly that mistake.
+ * - `(app)/(tabs)/index.tsx` is a list screen with no chat runtime of its own;
+ *   the realtime manager is bound app-wide by `useChatRealtimeBinding`
+ *   (`lib/chat/use-chat-runtime.ts`, #3698), beside this runtime rather than
+ *   from a screen.
  *
  * Mounting above the auth gate means this starts before anyone is routed. That
  * is handled rather than avoided: a cold-start target is **held pending** until

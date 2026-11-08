@@ -1,16 +1,28 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+  type Mock,
+} from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createFrappClient } from "@repo/api-sdk";
 import { CHAT_SINCE_NOT_FOUND_CODE } from "@repo/validation";
 import {
   BACKFILL_PAGE_LIMIT,
+  INBOX_TOPIC,
+  RESUME_PROBE_LOOKS,
+  RESUME_PROBE_MS,
   chatRealtime,
   createBackfillFetcher,
   POLL_DEGRADE_AFTER_MS,
   POLL_INTERVAL_MS,
   type BackfillFetcher,
   type ConnectionStatus,
+  type MessageActivity,
 } from "./realtime-manager";
 import {
   chatMessagesKey,
@@ -1583,6 +1595,405 @@ describe("ChatRealtimeManager — a backfill that missed more than a page (#2807
     expect(backfill).toHaveBeenCalledTimes(1);
     expect(window.localStorage.getItem("chat:lastSeen:c1")).toBe("m3");
     expect(cachedIds()).toEqual(["m1", "m2", "m3"]);
+  });
+});
+
+describe("ChatRealtimeManager — inbox and resume keep every channel live (#3698)", () => {
+  const VIEWER = "11111111-1111-4111-8111-111111111111";
+  const OTHER = "44444444-4444-4444-8444-444444444444";
+  let backfill: ReturnType<typeof vi.fn> & BackfillFetcher;
+  let queryClient: QueryClient;
+  let channels: Map<string, FakeChannel>;
+  let supabase: SupabaseClient;
+  let activity: ReturnType<typeof vi.fn> & ((a: MessageActivity) => void);
+  let socket: {
+    isConnected: ReturnType<typeof vi.fn>;
+    connect: ReturnType<typeof vi.fn>;
+    sendHeartbeat: Mock<() => Promise<void>>;
+    pendingHeartbeatRef: string | null;
+  };
+  /**
+   * Plays phoenix's heartbeat as `realtime-heartbeat-contract.spec.ts` pins
+   * it: a heartbeat with none outstanding becomes pending, and one while
+   * another is pending is the heartbeat timeout, which errors every channel.
+   */
+  let heartbeats: number;
+  const answerHeartbeat = () => {
+    socket.pendingHeartbeatRef = null;
+  };
+  let offline: boolean;
+  let netListener: ((online: boolean) => void) | null;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    backfill = vi.fn(async (): Promise<RawChatMessage[]> => []) as ReturnType<
+      typeof vi.fn
+    > &
+      BackfillFetcher;
+    queryClient = new QueryClient();
+    ({ supabase, channels } = makeFakeSupabase());
+    heartbeats = 0;
+    socket = {
+      isConnected: vi.fn(() => true),
+      connect: vi.fn(),
+      pendingHeartbeatRef: null,
+      sendHeartbeat: vi.fn(async () => {
+        if (socket.pendingHeartbeatRef) {
+          socket.pendingHeartbeatRef = null;
+          for (const ch of channels.values()) {
+            if (ch.state === "joined") ch.trigger("CHANNEL_ERROR");
+          }
+          return;
+        }
+        heartbeats += 1;
+        socket.pendingHeartbeatRef = `hb-${heartbeats}`;
+      }),
+    };
+    (supabase as unknown as { realtime: typeof socket }).realtime = socket;
+    activity = vi.fn() as ReturnType<typeof vi.fn> &
+      ((a: MessageActivity) => void);
+    offline = false;
+    netListener = null;
+    chatRealtime.configure({
+      queryClient,
+      supabase,
+      backfill,
+      kv: memoryStore(),
+      viewerId: VIEWER,
+      onMessageActivity: activity,
+      net: {
+        isOffline: () => offline,
+        subscribe: (cb) => {
+          netListener = cb;
+          return () => {
+            netListener = null;
+          };
+        },
+      },
+    });
+  });
+
+  afterEach(() => {
+    chatRealtime.destroy();
+    queryClient.clear();
+    vi.useRealTimers();
+  });
+
+  const inbox = () => channels.get(INBOX_TOPIC)!;
+  const row = (channelId: string, extra: Partial<RawChatMessage> = {}) => ({
+    id: `m-${channelId}`,
+    channel_id: channelId,
+    sender_id: OTHER,
+    author_name: null,
+    author_avatar_path: null,
+    author_external_id: null,
+    created_at: "2026-11-08T00:00:00.000Z",
+    client_message_id: null,
+    ...extra,
+  });
+
+  test("joins one inbox listening for every new chat message, unfiltered (RLS does the scoping server-side)", () => {
+    const ch = inbox();
+    expect(ch).toBeDefined();
+    expect(ch.on).toHaveBeenCalledWith(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "chat_messages" },
+      expect.any(Function),
+    );
+  });
+
+  test("a new message is reported with its channel and sender", () => {
+    inbox().trigger("SUBSCRIBED");
+    inbox().emitPostgresChange({ eventType: "INSERT", new: row("elsewhere") });
+    expect(activity).toHaveBeenCalledWith({
+      type: "message",
+      channelId: "elsewhere",
+      senderId: OTHER,
+    });
+  });
+
+  test("an archive import is not activity", () => {
+    inbox().emitPostgresChange({
+      eventType: "INSERT",
+      new: row("c1", { kind: "imported" }),
+    });
+    expect(activity).not.toHaveBeenCalled();
+  });
+
+  test("a handler that throws never escapes the frame dispatch", () => {
+    activity.mockImplementation(() => {
+      throw new Error("boom");
+    });
+    expect(() =>
+      inbox().emitPostgresChange({ eventType: "INSERT", new: row("c1") }),
+    ).not.toThrow();
+  });
+
+  test("the first join reports nothing; a rejoin after a drop reports a resync", async () => {
+    const first = inbox();
+    first.trigger("SUBSCRIBED");
+    expect(activity).not.toHaveBeenCalled();
+
+    first.trigger("CHANNEL_ERROR");
+    await vi.advanceTimersByTimeAsync(1000);
+    const second = inbox();
+    expect(second).not.toBe(first);
+    second.trigger("SUBSCRIBED");
+    expect(activity).toHaveBeenCalledWith({ type: "resync" });
+  });
+
+  test("a first join that only lands after failing reports a resync", async () => {
+    const first = inbox();
+    first.trigger("TIMED_OUT");
+    await vi.advanceTimersByTimeAsync(1000);
+    const second = inbox();
+    expect(second).not.toBe(first);
+    second.trigger("SUBSCRIBED");
+    expect(activity).toHaveBeenCalledWith({ type: "resync" });
+  });
+
+  test("a replaced inbox's late status can't knock out the live one", async () => {
+    const first = inbox();
+    first.trigger("SUBSCRIBED");
+    first.trigger("CHANNEL_ERROR");
+    await vi.advanceTimersByTimeAsync(1000);
+    const second = inbox();
+    second.trigger("SUBSCRIBED");
+    activity.mockClear();
+
+    // The superseded channel reports its own teardown after the new one joined.
+    first.trigger("CLOSED");
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(inbox()).toBe(second);
+    expect(activity).not.toHaveBeenCalled();
+  });
+
+  test("coming back online rejoins the inbox, and its join reports a resync", async () => {
+    const first = inbox();
+    first.trigger("SUBSCRIBED");
+    offline = true;
+    netListener!(false);
+    first.trigger("CLOSED");
+    // Offline books no retry.
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(inbox()).toBe(first);
+
+    offline = false;
+    netListener!(true);
+    await vi.advanceTimersByTimeAsync(0);
+    const second = inbox();
+    expect(second).not.toBe(first);
+    second.trigger("SUBSCRIBED");
+    expect(activity).toHaveBeenCalledWith({ type: "resync" });
+  });
+
+  test("a viewer change rejoins the inbox under the new session", async () => {
+    const first = inbox();
+    first.trigger("SUBSCRIBED");
+    chatRealtime.configure({
+      queryClient,
+      supabase,
+      backfill,
+      kv: memoryStore(),
+      viewerId: OTHER,
+      onMessageActivity: activity,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(inbox()).not.toBe(first);
+  });
+
+  describe("resume()", () => {
+    test("reads every open thread since its cursor now, live or not, and reports a resync", () => {
+      chatRealtime.subscribe("c1");
+      channels.get("chat:channel:c1")!.trigger("SUBSCRIBED");
+      inbox().trigger("SUBSCRIBED");
+      backfill.mockClear();
+
+      chatRealtime.resume();
+
+      expect(backfill).toHaveBeenCalledTimes(1);
+      expect(backfill).toHaveBeenCalledWith("c1", expect.any(Object));
+      expect(activity).toHaveBeenCalledWith({ type: "resync" });
+      // A live channel and a live inbox are left joined.
+      expect(socket.connect).not.toHaveBeenCalled();
+    });
+
+    test("a channel that isn't live is reopened, and read once, by its own join", async () => {
+      chatRealtime.subscribe("c1");
+      const before = channels.get("chat:channel:c1")!;
+      before.trigger("SUBSCRIBED");
+      before.trigger("CHANNEL_ERROR");
+      backfill.mockClear();
+
+      chatRealtime.resume();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(backfill).not.toHaveBeenCalled();
+
+      const after = channels.get("chat:channel:c1")!;
+      expect(after).not.toBe(before);
+      after.trigger("SUBSCRIBED");
+      expect(backfill).toHaveBeenCalledTimes(1);
+    });
+
+    /** Realtime's scheduled heartbeat goes out (it is overdue when the app wakes). */
+    const scheduledHeartbeat = () => void socket.sendHeartbeat();
+
+    test("a heartbeat that stays unanswered is recovered: every channel errors, rejoins and catches up", async () => {
+      chatRealtime.subscribe("c1");
+      const thread = channels.get("chat:channel:c1")!;
+      thread.trigger("SUBSCRIBED");
+      const inboxBefore = inbox();
+      inboxBefore.trigger("SUBSCRIBED");
+
+      chatRealtime.resume();
+      scheduledHeartbeat();
+      activity.mockClear();
+      // The probe sends nothing of its own.
+      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(1);
+
+      // First look catches the scheduled heartbeat pending; the second sees the
+      // same one still unanswered and runs the timeout.
+      await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS * 2);
+      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1_000);
+      const rejoined = channels.get("chat:channel:c1")!;
+      expect(rejoined).not.toBe(thread);
+      expect(inbox()).not.toBe(inboxBefore);
+
+      backfill.mockClear();
+      rejoined.trigger("SUBSCRIBED");
+      inbox().trigger("SUBSCRIBED");
+      expect(backfill).toHaveBeenCalledWith("c1", expect.any(Object));
+      expect(activity).toHaveBeenCalledWith({ type: "resync" });
+    });
+
+    test("a heartbeat already pending at the return is the one watched", async () => {
+      chatRealtime.subscribe("c1");
+      const thread = channels.get("chat:channel:c1")!;
+      thread.trigger("SUBSCRIBED");
+      scheduledHeartbeat();
+
+      chatRealtime.resume();
+      await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS);
+      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(2);
+    });
+
+    test("a heartbeat answered inside the window leaves the socket alone", async () => {
+      chatRealtime.subscribe("c1");
+      const thread = channels.get("chat:channel:c1")!;
+      thread.trigger("SUBSCRIBED");
+
+      chatRealtime.resume();
+      scheduledHeartbeat();
+      await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS);
+      answerHeartbeat();
+      await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS * RESUME_PROBE_LOOKS);
+
+      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(1);
+      expect(channels.get("chat:channel:c1")).toBe(thread);
+    });
+
+    test("with no heartbeat out, the probe sends none and gives up after its looks", async () => {
+      chatRealtime.resume();
+      await vi.advanceTimersByTimeAsync(
+        RESUME_PROBE_MS * (RESUME_PROBE_LOOKS + 2),
+      );
+      expect(socket.sendHeartbeat).not.toHaveBeenCalled();
+    });
+
+    test("a second resume during a probe doesn't start another", async () => {
+      chatRealtime.resume();
+      chatRealtime.resume();
+      scheduledHeartbeat();
+      await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS * 2);
+      // One timeout call, from one probe.
+      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(2);
+    });
+
+    test("a blip before the inbox's first join still ends in a resync", async () => {
+      offline = true;
+      netListener!(false);
+      offline = false;
+      netListener!(true);
+      await vi.advanceTimersByTimeAsync(0);
+      inbox().trigger("SUBSCRIBED");
+      expect(activity).toHaveBeenCalledWith({ type: "resync" });
+    });
+
+    test("an inbox whose first join never landed still owes the resync its rejoin reports", async () => {
+      // Backgrounded before the first SUBSCRIBED.
+      chatRealtime.resume();
+      await vi.advanceTimersByTimeAsync(0);
+      inbox().trigger("SUBSCRIBED");
+      expect(activity).toHaveBeenCalledWith({ type: "resync" });
+    });
+
+    test("a resume after the manager is torn down runs no late timeout", async () => {
+      scheduledHeartbeat();
+      chatRealtime.resume();
+      chatRealtime.destroy();
+      await vi.advanceTimersByTimeAsync(RESUME_PROBE_MS * 3);
+      expect(socket.sendHeartbeat).toHaveBeenCalledTimes(1);
+    });
+
+    test("an inbox that isn't live reports its resync from its rejoin, not twice", async () => {
+      const before = inbox();
+      before.trigger("SUBSCRIBED");
+      before.trigger("CLOSED");
+
+      chatRealtime.resume();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(activity).not.toHaveBeenCalled();
+
+      inbox().trigger("SUBSCRIBED");
+      expect(activity).toHaveBeenCalledTimes(1);
+      expect(activity).toHaveBeenCalledWith({ type: "resync" });
+    });
+
+    test("reconnects a socket known to be down and reopens what isn't live", async () => {
+      chatRealtime.subscribe("c1");
+      const before = channels.get("chat:channel:c1")!;
+      before.trigger("SUBSCRIBED");
+      before.trigger("CHANNEL_ERROR");
+      const inboxBefore = inbox();
+      inboxBefore.trigger("CLOSED");
+      socket.isConnected.mockReturnValue(false);
+
+      chatRealtime.resume();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(socket.connect).toHaveBeenCalledTimes(1);
+      expect(socket.sendHeartbeat).not.toHaveBeenCalled();
+      // Reopened now, not at the end of the backoff.
+      expect(channels.get("chat:channel:c1")).not.toBe(before);
+      expect(inbox()).not.toBe(inboxBefore);
+    });
+
+    test("does nothing while offline; the online edge owns that", () => {
+      chatRealtime.subscribe("c1");
+      offline = true;
+      netListener!(false);
+      backfill.mockClear();
+
+      chatRealtime.resume();
+
+      expect(backfill).not.toHaveBeenCalled();
+      expect(activity).not.toHaveBeenCalled();
+    });
+
+    test("a socket that throws on reconnect still catches the threads up", () => {
+      chatRealtime.subscribe("c1");
+      channels.get("chat:channel:c1")!.trigger("SUBSCRIBED");
+      socket.isConnected.mockReturnValue(false);
+      socket.connect.mockImplementation(() => {
+        throw new Error("no socket");
+      });
+      backfill.mockClear();
+
+      expect(() => chatRealtime.resume()).not.toThrow();
+      expect(backfill).toHaveBeenCalledWith("c1", expect.any(Object));
+    });
   });
 });
 

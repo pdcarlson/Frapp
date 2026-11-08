@@ -170,7 +170,8 @@ export default function ChatHomeScreen() {
   const tasksQuery = useTasks();
   // A DM row's title is the *other* participant, so the list needs the viewer's
   // `users.id` to subtract. Deliberately not `useChatRuntime()`, which would
-  // reconfigure the realtime manager and boot the outbox flush from this screen.
+  // boot the outbox flush from this screen. The badges stay live without it:
+  // the realtime manager is bound app-wide (`useChatRealtimeBinding`, #3698).
   const viewerId = useViewerUserId();
   const { byId: memberNames } = useMemberDisplayNames();
 

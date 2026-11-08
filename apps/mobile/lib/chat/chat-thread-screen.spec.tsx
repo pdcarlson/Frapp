@@ -279,7 +279,9 @@ const ROSTER = {
 
 /** The chapter roster the composer's `@` offers. */
 const MENTION_ROSTER = [{ user_id: "u-paul", display_name: "Paul Carlson" }];
-const MENTION_ROLES = [{ role_id: "r-1", name: "Officers", color: null, mentionable: true }];
+const MENTION_ROLES = [
+  { role_id: "r-1", name: "Officers", color: null, mentionable: true },
+];
 
 const NOTIFICATION_PREFS = [
   { channel_id: CHANNEL, level: "all" as const },
@@ -1835,5 +1837,35 @@ describe("chat thread reports its transport to the connection pill", () => {
       tree.unmount();
       reader.unmount();
     });
+  });
+});
+
+/*
+ * The thread says it is the one on screen only while focused (#3698): the
+ * activity handler re-stamps the viewed channel read when a message lands in
+ * it, and this screen stays mounted under one pushed over it (another thread
+ * opened from the member sheet), where nothing it receives has been seen.
+ */
+describe("chat thread claims the viewed channel while focused (#3698)", () => {
+  const blur = (expoRouter as unknown as { __blur: () => void }).__blur;
+
+  beforeEach(() => {
+    params = { channelId: CHANNEL };
+  });
+
+  it("claims on focus, releases on blur, claims again on refocus", async () => {
+    const { viewedChannelId } =
+      await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+    const tree = render();
+    expect(viewedChannelId()).toBe(CHANNEL);
+
+    act(() => blur());
+    expect(viewedChannelId()).toBeNull();
+
+    act(() => refocus());
+    expect(viewedChannelId()).toBe(CHANNEL);
+
+    act(() => tree.unmount());
+    expect(viewedChannelId()).toBeNull();
   });
 });
