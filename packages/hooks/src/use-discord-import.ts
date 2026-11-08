@@ -253,9 +253,8 @@ export function useCreateDiscordImport() {
        * default; `bot` reads the chapter's connected server directly.
        *
        * Required in the contract, not optional: the DTO declares a default, so
-       * the generated type makes it non-optional — the same reason
-       * `new_channel_is_read_only` is stated explicitly below. Defaulted here so
-       * every existing caller keeps the phase-2 behaviour untouched.
+       * the generated type makes it non-optional. Defaulted here so every
+       * existing caller keeps the phase-2 behaviour untouched.
        */
       source?: "upload" | "bot";
     }) => {
@@ -337,8 +336,9 @@ export function useSetDiscordChannelMapping() {
         mapping_action: "create_new" | "use_existing" | "skip";
         target_channel_id?: string;
         new_channel_name?: string;
-        // Required, not optional: the DTO declares a default, so the generated
-        // contract type makes it non-optional. Callers state it explicitly.
+        // Optional in the contract (omitted means postable for an export), but
+        // required here so every caller decides it: the wizard's default
+        // (`choiceIsReadOnly`) is where the read-only rule lives (#3697).
         new_channel_is_read_only: boolean;
         // `discord` is typed for the wizard's shared payload; an export has
         // no roles to copy, so the API refuses it here with a sentence.

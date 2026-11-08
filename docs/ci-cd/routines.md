@@ -86,8 +86,10 @@ point here instead of restating these rules. Policy detail:
    re-body, a blocker can be reported but not enforced: comment it, then list the issue in the run
    report as needing an owner body edit.
 
-The triage phase alone may organize any `triage` item (priority, `Blocked by`, promotion), as its skill
-spells out. That doesn't widen destructive writes.
+The triage phase may organize any `triage` item (priority, `Blocked by`, promotion), as its skill
+spells out. The one other promoter is a `/next` run on an issue a human named, which promotes it as
+it claims it ([`github-pm.md`](github-pm.md#ownership-boundary-organize-broadly-destroy-narrowly)).
+That doesn't widen destructive writes.
 
 ## Tracker access (shared by all routines)
 
@@ -131,7 +133,8 @@ and keeps only the tracker rules built on these labels. Labels auto-create on fi
   `[pr-followup][human]` title prefix or the `**Human action required — hold in triage` body
   opener, per [`github-pm.md`](github-pm.md#labels-and-priority-lean-taxonomy), and `/next` §0.2
   checks those, not labels. So a `human`-labelled issue with no prefix is held by its `triage`
-  label alone, and promoting it exposes it to `/next`. Whether `human` should become a fourth
+  label alone, and promoting it exposes it to ranked `/next`; a named `/next` run won't promote
+  one, and asks instead. Whether `human` should become a fourth
   recognised hold form is the owner's call, not a routine's.
 - **Parked:** `parked`, off the beta and v1 path on purpose. The 2026-09-23 board recomposition
   put every open issue under the beta epic #2558 or the v1 epic #2523, parked it, or closed it.

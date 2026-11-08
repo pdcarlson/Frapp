@@ -649,12 +649,30 @@ export class RbacService {
     chapterId: string,
     permissions: readonly string[],
   ): Promise<string[]> {
+    return this.findUserIdsWithAnyPermissions(chapterId, [permissions]);
+  }
+
+  /**
+   * Like {@link findUserIdsWithPermissions}, for an audience that more than one
+   * route's requirement admits: the members who satisfy **all** of **any one**
+   * of `requirements` (an OR of ANDs), from one chapter-wide resolve rather
+   * than one per requirement. The member-joined push (#3656) goes to whoever
+   * can open the roster and either invite or give the new member a role.
+   * An empty `requirements` list admits nobody.
+   */
+  async findUserIdsWithAnyPermissions(
+    chapterId: string,
+    requirements: readonly (readonly string[])[],
+  ): Promise<string[]> {
+    if (requirements.length === 0) return [];
     const access = await this.getChapterMemberAccess(chapterId);
     return access
       .filter(
         ({ permissions: granted }) =>
           granted.has(WILDCARD) ||
-          permissions.every((permission) => granted.has(permission)),
+          requirements.some((permissions) =>
+            permissions.every((permission) => granted.has(permission)),
+          ),
       )
       .map(({ user_id }) => user_id);
   }

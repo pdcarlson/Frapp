@@ -124,6 +124,7 @@ function channel(
     new_channel_type: 'PUBLIC',
     new_channel_required_permissions: null,
     discord_reader_role_ids: null,
+    read_only_in_discord: null,
     new_channel_same_as_discord: false,
     new_channel_group: null,
     discord_category_position: null,

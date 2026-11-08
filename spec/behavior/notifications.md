@@ -369,7 +369,7 @@ A push is read on a lock screen, in a glance, next to iOS Calendar and Google Ca
 | Tasks         | Task completion confirmed (points awarded)                         | NORMAL                      |
 | Service       | Service hours approved                                             | NORMAL                      |
 | Service       | Service hours rejected                                             | NORMAL                      |
-| Admin         | New member joined                                                  | NORMAL                      |
+| Admin         | New member joined (to members who can open the roster and invite or assign roles: `members:view` with `members:invite` or `roles:manage`; never the joiner, #3656) | NORMAL |
 | Admin         | Invite accepted                                                    | SILENT                      |
 | Admin         | Role change on a member                                            | SILENT                      |
 | Admin         | Chat message reported (to report-queue officers; never the reported sender or the reporter; content-free) | NORMAL |
