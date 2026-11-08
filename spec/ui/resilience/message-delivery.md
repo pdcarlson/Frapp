@@ -145,6 +145,51 @@ The API used to emit a `new_message` broadcast that looked like a second deliver
 one; it was removed in #472 — see the ADR-11 amendment for why, and #1613 for whether a real
 sub-second path is wanted.
 
+**Every other channel: the inbox** (#3698). The per-channel subscription only exists while a
+thread is open, so on its own it leaves everything that summarizes *all* channels (unread
+badges and bold rows, the Messages order, the app badge) waiting for focus or staleness. The
+realtime manager therefore also holds one global Postgres Changes subscription on
+`chat_messages` INSERTs (`chat:inbox:global`), unfiltered and scoped by the `chat_messages` RLS
+policy that Realtime runs per subscriber, so a member is told about exactly the messages a REST
+read would return them, archive imports excluded. It carries no message into a timeline. It
+reports each new message to the client (`onMessageActivity`), which, coalescing a burst into one
+round, re-reads `GET /v1/channels/unread` and `/latest`. When the message landed in the thread
+the member is looking at, the client first re-stamps that channel read
+(`POST /v1/channels/{id}/read`) (`createChatActivityHandler` in `@repo/hooks`). "Looking at"
+means the thread has claimed it on focus (`claimViewedChannel`) and the app or tab is in front of
+them. Being subscribed is not enough, because a mobile thread stays mounted under a screen pushed
+over it. A round's stamps wait for the previous round's, so a slow stamp can't be overtaken by a
+later round's re-read, but no round waits on a re-read. A `resync` also re-stamps the channel being
+looked at, which covers what arrived in it while the app was away. Each rejoin of the inbox after a drop reports a
+`resync`, which re-reads both. Mobile binds the manager app-wide from `components/app-runtime.tsx`
+so the inbox runs from launch. Web binds it in `ChatProvider`, so off `/chat` the nav's chat
+badge still refreshes on focus and staleness only.
+
+**Back in the foreground** (#3698). A socket can die while the app is in the background (mobile)
+or the tab is hidden (web), and Realtime only notices when a heartbeat goes unanswered, on its own
+schedule up to 50 s later. So the return calls `chatRealtime.resume()`: on mobile the AppState
+edge from `background` to `active`, not from `inactive`; on web the tab becoming visible.
+`resume()`:
+
+- Reconnects a socket known to be down. It probes one that reads open, through Realtime's public
+  heartbeat API, without sending a heartbeat of its own (one sent while another is pending would
+  time out a live socket): every `RESUME_PROBE_MS` (4 s), up to three looks, it reads the
+  outstanding heartbeat, usually Realtime's scheduled one that fired as the app woke. The same one
+  pending at two looks in a row has gone unanswered for a whole window, and only then does it run
+  Realtime's own heartbeat timeout, which errors every channel on the socket and reconnects and
+  rejoins them. A socket that answers is never touched, so nothing sharing it (web's notification
+  and event pings, presence) is disturbed.
+- Runs the gap-recovery read below for every live open thread at once, and reopens any thread
+  channel that isn't live, whose join runs the same read.
+- Re-reads the summaries and re-stamps the thread the member is looking at, through a `resync`
+  reported at once when the inbox is live, otherwise through the one its rejoin reports.
+
+Offline it does nothing, and the online edge reopens everything instead. Finding a dead socket
+takes one or two probe windows, then Realtime's own teardown (about 1.5 s) and first reconnect
+step (1 s): up to about 11 s after the return, where the heartbeat schedule alone took up to 50 s. A message
+sent in that window isn't lost: the threads' rejoin reads it and the inbox's rejoin reports a
+`resync`.
+
 **Fallback:** If Supabase Realtime disconnects or fails, fall back to polling.
 
 ```

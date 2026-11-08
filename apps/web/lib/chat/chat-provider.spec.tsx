@@ -31,7 +31,9 @@ vi.mock("./use-first-chunk-cache", () => ({
     blockFloor: blockFloor.current,
   }),
 }));
+const onMessageActivity = vi.hoisted(() => vi.fn());
 vi.mock("@repo/hooks", () => ({
+  useChatActivityHandler: () => onMessageActivity,
   useFrappClient: () => ({ GET: vi.fn() }),
   useViewerUserId: () => liveViewerId.current,
   useCurrentUser: () => ({ isPending: liveViewerId.current === null }),
@@ -44,12 +46,14 @@ vi.mock("@/lib/auth/use-frapp-user", () => ({
 }));
 vi.mock("./chat-scope", () => ({ useChatOutboundScope: () => null }));
 vi.mock("./offline-queue", () => ({ createDexieOutboxStore: () => ({}) }));
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 vi.mock("@/lib/realtime/supabase-realtime", () => ({
   getRealtimeClient: () => ({}),
 }));
 vi.mock("@repo/chat-core/realtime-manager", () => ({
-  chatRealtime: { configure: vi.fn(), destroy: vi.fn() },
+  chatRealtime: { configure: vi.fn(), destroy: vi.fn(), resume: vi.fn() },
   createBackfillFetcher: vi.fn((client: unknown) => ({ readsWith: client })),
 }));
 vi.mock("@repo/chat-core/chat-client", () => ({
@@ -199,6 +203,41 @@ describe("ChatProvider rebinds the realtime manager without tearing it down (#30
     expect(chatRealtime.configure).toHaveBeenLastCalledWith(
       expect.objectContaining({ backfill: fetcher.mock.results.at(-1)?.value }),
     );
+  });
+
+  it("hands the manager the activity handler that keeps the rail's unread live (#3698)", () => {
+    liveViewerId.current = "user-live";
+    renderProvider();
+
+    expect(chatRealtime.configure).toHaveBeenLastCalledWith(
+      expect.objectContaining({ onMessageActivity }),
+    );
+  });
+
+  it("resumes the manager when the tab becomes visible again, and stops listening on unmount (#3698)", () => {
+    vi.mocked(chatRealtime.resume).mockClear();
+    let visibility: DocumentVisibilityState = "visible";
+    const spy = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockImplementation(() => visibility);
+    try {
+      liveViewerId.current = "user-live";
+      const { unmount } = renderProvider();
+
+      visibility = "hidden";
+      document.dispatchEvent(new Event("visibilitychange"));
+      expect(chatRealtime.resume).not.toHaveBeenCalled();
+
+      visibility = "visible";
+      document.dispatchEvent(new Event("visibilitychange"));
+      expect(chatRealtime.resume).toHaveBeenCalledTimes(1);
+
+      unmount();
+      document.dispatchEvent(new Event("visibilitychange"));
+      expect(chatRealtime.resume).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("destroys the manager when the chat surface unmounts", () => {
