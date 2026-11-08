@@ -102,19 +102,39 @@ function createSession(userId: string, chapterId: string): BulkSession {
   let ended = false;
   // Original hash -> the item holding it, for the in-batch duplicate check.
   const seenHashes = new Map<string, string>();
+  // The tail of the claim line: each prepare checks and claims its hash only
+  // after every prepare started before it has (#3665).
+  let claimLine: Promise<unknown> = Promise.resolve();
 
   const queue = new BulkUploadQueue<Prepared, Submission>({
     prepare: async (file, id) => {
-      const { loadPdf, renderPagePreview, destroyPdf } = await loadPdfModule();
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const hash = await sha256Hex(bytes);
-      // A duplicate only while the other copy is still in the batch: a
-      // removed item, or this item on a retry, doesn't count.
-      const owner = seenHashes.get(hash);
-      if (owner && owner !== id && queue.has(owner)) {
-        throw new MemberFacingError("This file is already in this batch.");
-      }
-      seenHashes.set(hash, id);
+      // Files read and hash side by side, but claim their hash one at a time
+      // in the order the queue started them, which is batch order. So of two
+      // copies, the later one in the batch is refused, whichever hash
+      // finishes first.
+      const pdfLib = loadPdfModule();
+      const hashing = file.arrayBuffer().then(async (buffer) => {
+        const bytes = new Uint8Array(buffer);
+        return { bytes, hash: await sha256Hex(bytes) };
+      });
+      // Both are awaited below; this only stops a failure that lands before
+      // they are from being reported as unhandled meanwhile.
+      pdfLib.catch(() => undefined);
+      hashing.catch(() => undefined);
+      const claimed = claimLine.then(async () => {
+        const read = await hashing;
+        // A duplicate only while the other copy is still in the batch: a
+        // removed item, or this item on a retry, doesn't count.
+        const owner = seenHashes.get(read.hash);
+        if (owner && owner !== id && queue.has(owner)) {
+          throw new MemberFacingError("This file is already in this batch.");
+        }
+        seenHashes.set(read.hash, id);
+        return read;
+      });
+      claimLine = claimed.catch(() => undefined);
+      const { bytes, hash } = await claimed;
+      const { loadPdf, renderPagePreview, destroyPdf } = await pdfLib;
       let doc: PDFDocumentProxy;
       try {
         doc = await loadPdf(bytes);

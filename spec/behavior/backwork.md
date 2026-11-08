@@ -40,7 +40,7 @@ Uploads accumulate junk departments and professors — typos, duplicate spelling
 
 Unique constraint on (chapter_id, file_hash). If the exact same file (by hash) has already been uploaded to the chapter, the API returns 409 Conflict with a reference to the existing resource.
 
-A flattened file is hashed as uploaded, after flattening (§ PDF Redaction). The PDF assembly adds nothing that varies (no timestamps or IDs), but the page images come from the browser's renderer and JPEG encoder, which differ between browsers and devices. So the same PDF flattened twice on the same browser is usually caught; the same PDF flattened on two different browsers, or boxed differently, is a different file and is not, and a flattened copy never matches an earlier as-is upload of the same original. Bulk upload also skips a file already in the same batch, by the original's hash.
+A flattened file is hashed as uploaded, after flattening (§ PDF Redaction). The PDF assembly adds nothing that varies (no timestamps or IDs), but the page images come from the browser's renderer and JPEG encoder, which differ between browsers and devices. So the same PDF flattened twice on the same browser is usually caught; the same PDF flattened on two different browsers, or boxed differently, is a different file and is not, and a flattened copy never matches an earlier as-is upload of the same original. Bulk upload also refuses a file already in the same batch, by the original's hash: of two copies, the later one in the batch is refused and the earlier one stays, however long each takes to hash (#3665).
 
 ## Storage
 
