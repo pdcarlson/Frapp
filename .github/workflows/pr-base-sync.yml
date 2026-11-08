@@ -8,12 +8,13 @@ name: PR base sync
 # strand required checks at "Expected") or, for conflicts and per-PR update
 # failures, posts one wake comment so the watching agent session merges main
 # itself. A missing/failed app token raises ONE alert issue instead of fanning a
-# comment out to every open PR.
+# comment out to every open PR. Auto-merge PRs are the exception: they share one
+# update slot (#3599), and a behind one that doesn't hold it is held, with no
+# update and no wake.
 #
 # Deliberately minimal action surface (checkout + the token mint, preinstalled
 # runner Node, no npm ci) and best-effort by design, matching ci-wake.yml: if
-# this run dies, the next push to main re-sweeps, and the babysitting agents'
-# scheduled self-wakes remain the durable fallback.
+# this run dies, the next push to main re-sweeps.
 
 on:
   push:
@@ -68,7 +69,7 @@ permissions:
 # the per-PR pass; the per-PR wakes themselves are written inline, and the next
 # merge to main re-sweeps and re-raises.
 #
-# Two groups. A CI completion (slot-only, posts nothing) must never cancel a push
+# Two groups. A slot sweep (a CI completion or the schedule) must never cancel a push
 # sweep midway through its wake comments, so push sweeps get their own. And only
 # completions the job will act on may share the slot group: a completion of
 # `main`'s own push CI, or of a fork PR's CI, is skipped by the job `if:` below,

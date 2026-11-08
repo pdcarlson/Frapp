@@ -36,7 +36,7 @@ describe("pr-base-sync.yml", () => {
     // ci.yml and migration-drift-gate.yml together emit ALL_REQUIRED_CHECKS
     // (scripts/ci/lib/required-checks.mjs). A renamed or mistyped name here
     // means workflow_run never fires, and a red holder stalls the queue.
-    assert.match(uncommented, /workflows: \[CI, "Migration drift gate"\]/);
+    assert.match(uncommented, /workflows: \[CI, "Migration drift gate"\]\n {4}types: \[completed\]/);
     const ci = readFileSync(join(dirname(WORKFLOW), "ci.yml"), "utf8");
     const drift = readFileSync(join(dirname(WORKFLOW), "migration-drift-gate.yml"), "utf8");
     assert.match(ci, /^name: CI$/m);
@@ -51,16 +51,19 @@ describe("pr-base-sync.yml", () => {
     // workflow_run fires in the BASE repo's context, and this job mints the App
     // token. Without the guard a fork could add a workflow named `CI` and fire
     // the job at will (docs/ci-cd/pr-babysitting.md, the security review).
-    assert.match(job.if, /github\.event\.workflow_run\.event == 'pull_request'/);
-    assert.match(job.if, /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/);
+    // Both conditions, joined by && (an || would let either alone through).
+    assert.match(
+      job.if.replace(/\s+/g, " "),
+      /\(github\.event\.workflow_run\.event == 'pull_request' && github\.event\.workflow_run\.head_repository\.full_name == github\.repository\)/,
+    );
     // Every other event the job accepts is named outright.
     const events = [...job.if.matchAll(/github\.event_name == '([a-z_]+)'/g)].map((m) => m[1]);
     assert.deepEqual(events.sort(), ["push", "schedule"]);
   });
 
   it("can read check runs", () => {
-    // Without it every checks read fails and the sweep silently falls back to
-    // updating every behind auto-merge PR: the race #3599 removed.
+    // Without it every checks read fails: up-to-date auto-merge PRs read as in
+    // flight and behind ones are tried in number order, so the slot degrades.
     assert.match(uncommented, /^ {2}checks: read$/m);
   });
 });

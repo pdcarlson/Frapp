@@ -1418,14 +1418,15 @@ test("a fork PR with auto-merge is not queued: it keeps its fork wake and never 
   assert.ok(!calls.some((c) => c.url.includes(`/commits/${"f".repeat(40)}/check-runs`)));
 });
 
-test("held PRs take no MAX_PRS place, so other PRs are not crowded out", async () => {
-  const held = Array.from({ length: MAX_PRS }, (_, i) => autoPr(400 + i));
-  const other = makePr(999, { mergeable: false, mergeable_state: "dirty" });
-  const { results } = await sweep({
-    routes: [...slotRoutes([...held, other])],
-    updateToken: "app",
-  });
-  assert.equal(byNumber(results)[999]?.verdict, "conflict", "the conflict wake still goes out");
+test("queued PRs share the MAX_PRS budget but always leave room for the rotation", async () => {
+  const held = Array.from({ length: MAX_AUTO_MERGE_PRS }, (_, i) => autoPr(400 + i));
+  const others = Array.from({ length: MAX_PRS }, (_, i) =>
+    makePr(600 + i, { mergeable: false, mergeable_state: "dirty" }),
+  );
+  const { results } = await sweep({ routes: slotRoutes([...held, ...others]), updateToken: "app" });
+  const processedOthers = results.filter((r) => r.number >= 600);
+  assert.equal(processedOthers.length, MAX_PRS - MAX_AUTO_MERGE_PRS, "the job's budget doesn't grow");
+  assert.ok(processedOthers.length > 0, "held PRs never crowd the rotation out");
 });
 
 test("auto-merge PRs are read once, not once for the queue and again for the sweep", async () => {
@@ -1544,7 +1545,7 @@ test("checks mode clears the stale wake of the PR it updates", async () => {
 test("checks mode passes the slot on when the holder's update fails, and wakes it once", async () => {
   const prs = [autoPr(41), autoPr(52)];
   const { calls } = await sweep({
-    routes: slotRoutes(prs, { updates: { 41: updateRoute(41, 502, { message: "Bad Gateway" }) } }),
+    routes: slotRoutes(prs, { updates: { 41: updateRoute(41, 422, { message: "Validation Failed" }) } }),
     updateToken: "app",
     mode: "checks",
   });
@@ -1554,8 +1555,71 @@ test("checks mode passes the slot on when the holder's update fails, and wakes i
   assert.ok(posted[0].url.includes("/issues/41/comments"));
 });
 
+test("checks mode stops on a repo-wide failure and wakes nobody", async () => {
+  for (const [status, message] of [
+    [502, "Bad Gateway"],
+    [401, "Bad credentials"],
+    [403, "You have exceeded a secondary rate limit"],
+  ]) {
+    const prs = [autoPr(41), autoPr(52)];
+    const { calls } = await sweep({
+      routes: slotRoutes(prs, { updates: { 41: updateRoute(41, status, { message }) } }),
+      updateToken: "app",
+      mode: "checks",
+    });
+    assert.deepEqual(puts(calls), ["41"], `${status}: the next PR would fail the same way`);
+    assert.equal(commentPosts(calls).length, 0, `${status}: the push sweep diagnoses it in one alert`);
+  }
+});
+
+test("checks mode leaves a conflict to the push sweep", async () => {
+  const { calls } = await sweep({
+    routes: slotRoutes([autoPr(41)], {
+      updates: { 41: updateRoute(41, 422, { message: "merge conflict between base and head" }) },
+    }),
+    updateToken: "app",
+    mode: "checks",
+  });
+  assert.equal(commentPosts(calls).length, 0);
+});
+
+test("checks mode sends the head it assessed as expected_head_sha", async () => {
+  const { calls } = await sweep({ routes: slotRoutes([autoPr(41)]), updateToken: "app", mode: "checks" });
+  const update = calls.find((c) => c.method === "PUT");
+  assert.equal(JSON.parse(update.body).expected_head_sha, autoPr(41).head.sha);
+});
+
+test("checks mode stops reading once it finds a PR in flight", async () => {
+  const prs = [autoPr(41), autoPr(52), autoPr(63)];
+  const { calls } = await sweep({
+    routes: slotRoutes(prs, { behind: { 41: 0 }, runs: { 41: running("api-tests") } }),
+    updateToken: "app",
+    mode: "checks",
+  });
+  assert.equal(calls.filter((c) => c.url.includes("/compare/")).length, 1, "the GITHUB_TOKEN budget is shared");
+  assert.ok(!calls.some((c) => /\/pulls\/\d+$/.test(c.url)), "no mergeable polling");
+});
+
+test("the holder is judged by the detail's head when an update landed after the list", async () => {
+  // The list still shows #41's old (behind, cancelled) head; the detail shows
+  // the new one the update just pushed.
+  const listed41 = autoPr(41);
+  const moved41 = autoPr(41, { head: { ...listed41.head, sha: "9".repeat(40) } });
+  const routes = [
+    listRoute([listed41, autoPr(52)]),
+    detailRoute(moved41),
+    compareRoute("9".repeat(40), 0),
+    checksRoute("9".repeat(40), running("api-tests")),
+    checksRoute(listed41.head.sha, checkRuns({ "api-tests": { conclusion: "cancelled" } })),
+    ...slotRoutes([autoPr(52)]).slice(1),
+    compareRoute(listed41.head.sha, 1),
+  ];
+  const { calls } = await sweep({ routes, updateToken: "app", mode: "checks" });
+  assert.deepEqual(puts(calls), [], "#41 is in flight on its new head");
+});
+
 test("checks mode doesn't re-wake a failing PR that already has a base-sync comment", async () => {
-  const routes = slotRoutes([autoPr(41)], { updates: { 41: updateRoute(41, 502, { message: "Bad Gateway" }) } });
+  const routes = slotRoutes([autoPr(41)], { updates: { 41: updateRoute(41, 422, { message: "Validation Failed" }) } });
   routes.unshift({
     method: "GET",
     path: "/issues/41/comments",
