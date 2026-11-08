@@ -17,6 +17,7 @@ import {
   useAutoAbsent,
   useCheckIn,
   useMintCheckInToken,
+  useMyAttendance,
   useUpdateAttendanceStatus,
 } from "./use-attendance";
 import { FrappClientProvider } from "./use-frapp-client";
@@ -688,6 +689,23 @@ describe("useCheckIn", () => {
     });
   });
 
+  it("re-reads the member's own row on a 409, which means they're already in", async () => {
+    const mockPost = vi.fn().mockResolvedValue(
+      refusedWith({ statusCode: 409, message: "Already checked in for this event" }),
+    );
+    const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useCheckIn(), {
+      wrapper: createWrapper({ POST: mockPost }),
+    });
+
+    await expect(
+      result.current.mutateAsync({ eventId: "event-123" }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["attendance", "event-123", "me"],
+    });
+  });
+
   it("surfaces an error when check-in request fails", async () => {
     const mockError = { statusCode: 400, message: "You're outside the zone." };
     const mockPost = vi.fn().mockResolvedValue(refusedWith(mockError));
@@ -855,5 +873,44 @@ describe("the officer's attendance writes", () => {
     await expect(absent.result.current.mutateAsync("event-1")).resolves.toEqual(
       { marked: 3 },
     );
+  });
+});
+
+describe("useMyAttendance", () => {
+  const wrapperFor = (mockClient: unknown) => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const Wrapper = ({ children }: { children: React.ReactNode }) => (
+      <FrappClientProvider
+        client={mockClient as ReturnType<typeof createFrappClient>}
+      >
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      </FrappClientProvider>
+    );
+    Wrapper.displayName = "MyAttendanceHookWrapper";
+    return Wrapper;
+  };
+
+  it("reads the member's own row", async () => {
+    const row = { id: "a-1", status: "PRESENT", check_in_time: "2026-11-07T00:52:00Z" };
+    const mockGet = vi.fn().mockResolvedValue(answered({ attendance: row }));
+    const { result } = renderHook(() => useMyAttendance("event-1"), {
+      wrapper: wrapperFor({ GET: mockGet }),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual({ attendance: row });
+    expect(mockGet).toHaveBeenCalledWith("/v1/events/{eventId}/attendance/me", {
+      params: { path: { eventId: "event-1" } },
+    });
+  });
+
+  it("asks nothing without an event", () => {
+    const mockGet = vi.fn();
+    renderHook(() => useMyAttendance(""), {
+      wrapper: wrapperFor({ GET: mockGet }),
+    });
+    expect(mockGet).not.toHaveBeenCalled();
   });
 });

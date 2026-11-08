@@ -1,4 +1,6 @@
 import {
+  DEFAULT_CHECK_IN_OPENS_MINUTES,
+  MAX_CHECK_IN_OPENS_MINUTES,
   RECURRENCE_REPEAT_LABELS,
   attendanceInvitesNobody,
   attendanceToWire,
@@ -18,7 +20,7 @@ import { parsePointReward } from "@/lib/tasks/create-task";
  * The sheet opens simple: a name, when it starts and ends, and a place. The
  * rest sits behind "More options" (Paul, 2026-11-06: "nobody wants a billion
  * options showing up when they open create event"): who's coming by role,
- * repeat, points and a description. The check-in zone stays on the web
+ * points, how early check-in opens, repeat and a description. The check-in zone stays on the web
  * editor, where a map belongs.
  *
  * `CreateEventDto` is the authority. These copies exist so the sheet can say
@@ -57,6 +59,11 @@ export interface NewEventDraft {
   location: string;
   /** Raw keypad text, so a half-typed value is not silently coerced. */
   pointsInput: string;
+  /**
+   * How many minutes before the start check-in opens, as keypad text
+   * (`check_in_opens_minutes`; #3703). Blank reads as the default.
+   */
+  checkInOpensInput: string;
   /** Who's coming, by role (`spec/behavior/events.md` § Attendance by role). */
   attendance: EventAttendanceDraft;
   /** `null` for a one-time event. */
@@ -74,6 +81,7 @@ export function emptyEventDraft(): NewEventDraft {
     end: null,
     location: "",
     pointsInput: DEFAULT_POINTS,
+    checkInOpensInput: String(DEFAULT_CHECK_IN_OPENS_MINUTES),
     // Optional for everyone, as `/event` creates it: a required event marks
     // everyone who misses it absent, so it is a choice, not a default.
     attendance: emptyAttendanceDraft(),
@@ -148,6 +156,7 @@ export interface ValidatedNewEvent {
   optional_role_ids?: string[];
   excluded_role_ids?: string[];
   recurrence_rule?: RecurrenceRule;
+  check_in_opens_minutes?: number;
 }
 
 export interface NewEventErrors {
@@ -155,8 +164,25 @@ export interface NewEventErrors {
   start?: string;
   end?: string;
   points?: string;
+  checkInOpens?: string;
   attendance?: string;
 }
+
+/**
+ * The "Check-in opens" field as minutes, or `null` when it isn't a whole
+ * number in `0 … MAX_CHECK_IN_OPENS_MINUTES` (the `CreateEventDto` bound).
+ * Blank is the default, as a blank points field is 0.
+ */
+export function parseCheckInOpens(input: string): number | null {
+  const text = input.trim();
+  if (text.length === 0) return DEFAULT_CHECK_IN_OPENS_MINUTES;
+  if (!/^\d+$/.test(text)) return null;
+  const minutes = Number(text);
+  return minutes <= MAX_CHECK_IN_OPENS_MINUTES ? minutes : null;
+}
+
+/** The error under the field when {@link parseCheckInOpens} refuses it. */
+export const CHECK_IN_OPENS_ERROR = `Check-in can open up to ${MAX_CHECK_IN_OPENS_MINUTES} minutes before the start.`;
 
 /**
  * The draft as a request body, or the reasons it isn't one.
@@ -186,13 +212,17 @@ export function validateNewEvent(
   if (points.kind === "invalid") {
     errors.points = "Points must be a whole number, up to 100,000.";
   }
+  const opens = parseCheckInOpens(draft.checkInOpensInput);
+  if (opens === null) errors.checkInOpens = CHECK_IN_OPENS_ERROR;
 
   const wire = attendanceToWire(draft.attendance);
   if (attendanceInvitesNobody(wire)) {
     errors.attendance = "Nobody is invited. Add a role, or invite everyone.";
   }
 
-  if (Object.keys(errors).length > 0) return { ok: false, errors };
+  if (Object.keys(errors).length > 0 || opens === null) {
+    return { ok: false, errors };
+  }
 
   const location = draft.location.trim();
   const description = draft.description.trim();
@@ -219,6 +249,11 @@ export function validateNewEvent(
     body.excluded_role_ids = wire.excluded_role_ids;
   }
   if (draft.recurrenceRule) body.recurrence_rule = draft.recurrenceRule;
+  // Sent only when it isn't the default the server applies, so an ordinary
+  // event still creates against an API that predates the field.
+  if (opens !== DEFAULT_CHECK_IN_OPENS_MINUTES) {
+    body.check_in_opens_minutes = opens;
+  }
   return { ok: true, body };
 }
 
@@ -236,10 +271,15 @@ export function repeatCaption(
 /**
  * What "More options" holds, said in one line while it is closed, so the
  * officer can see what the event will do without opening it:
- * "10 pts · Optional for everyone · Doesn't repeat".
+ * "10 pts · Optional for everyone · Doesn't repeat". A check-in lead other
+ * than the default joins it ("Check-in opens 30 min early"); the default goes
+ * unsaid, as it does on every event.
  */
 export function moreOptionsSummary(
-  draft: Pick<NewEventDraft, "pointsInput" | "attendance" | "recurrenceRule">,
+  draft: Pick<
+    NewEventDraft,
+    "pointsInput" | "attendance" | "recurrenceRule" | "checkInOpensInput"
+  >,
   roleName: (roleId: string) => string | undefined,
 ): string {
   const points = parsePointReward(draft.pointsInput);
@@ -252,9 +292,21 @@ export function moreOptionsSummary(
   const repeat = draft.recurrenceRule
     ? RECURRENCE_REPEAT_LABELS[draft.recurrenceRule]
     : "Doesn't repeat";
+  const opens = parseCheckInOpens(draft.checkInOpensInput);
+  const opensText =
+    opens === null
+      ? "Check-in time needs a fix"
+      : opens === DEFAULT_CHECK_IN_OPENS_MINUTES
+        ? null
+        : opens === 0
+          ? "Check-in opens at the start"
+          : `Check-in opens ${opens} min early`;
   return [
     pointsText,
     describeAttendance(draft.attendance, roleName),
+    opensText,
     repeat,
-  ].join(" · ");
+  ]
+    .filter((part): part is string => part !== null)
+    .join(" · ");
 }

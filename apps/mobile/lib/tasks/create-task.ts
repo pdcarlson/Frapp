@@ -11,8 +11,7 @@ import { localIsoDate, parseBareDateLocalNoon } from "@repo/formatting";
  * form does not share a schema either. Adding one to a shared package for a
  * single caller would create a second authority to keep in sync; these copies
  * exist only so the sheet can disable its own CTA rather than post a request it
- * knows will 400. Same relationship `CHECK_IN_GRACE_MINUTES` has to the
- * attendance service.
+ * knows will 400.
  *
  * ## The due date
  *

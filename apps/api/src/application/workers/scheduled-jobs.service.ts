@@ -2,10 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
-import {
-  AttendanceService,
-  CHECK_IN_GRACE_PERIOD_MINUTES,
-} from '../services/attendance.service';
+import { AttendanceService } from '../services/attendance.service';
 import { NotificationService } from '../services/notification.service';
 import { ChapterWorkflowsService } from '../services/chapter-workflows.service';
 import { PollService } from '../services/poll.service';
@@ -29,7 +26,7 @@ import {
 } from '#domain/entities';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { SIGNET_ENGINE_VERSION } from '@repo/chapter-theme';
-import { isBetaOffModule } from '@repo/validation';
+import { CHECK_IN_GRACE_MINUTES, isBetaOffModule } from '@repo/validation';
 import { formatDueDate, joinFacts } from '../services/push-copy';
 import {
   buildChapterPalette,
@@ -381,11 +378,13 @@ export class ScheduledJobsService {
    * Mark required non-attendees absent for every event whose grace period
    * closed since the last sweep.
    *
-   * The cutoff is `now - grace`, the same arithmetic `markAutoAbsent`
-   * enforces, so no candidate is ever rejected for being too early.
+   * The cutoff is `now - grace`, the inverse of the window's close
+   * (`checkInWindowBounds` in `@repo/validation`, which `markAutoAbsent`
+   * enforces), so no candidate is ever rejected for being too early. A range
+   * query needs the inverse, hence the shared constant rather than the helper.
    */
   async sweepAutoAbsent(now: Date): Promise<{ events: number }> {
-    const graceMs = CHECK_IN_GRACE_PERIOD_MINUTES * 60 * 1000;
+    const graceMs = CHECK_IN_GRACE_MINUTES * 60 * 1000;
     const endedBefore = new Date(now.getTime() - graceMs);
     const endedAfter = new Date(
       now.getTime() - AUTO_ABSENT_LOOKBACK_HOURS * 60 * 60 * 1000,

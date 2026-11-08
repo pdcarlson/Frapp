@@ -236,7 +236,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     );
     const [draft, setDraft] = useState<NewEventDraft>(freshDraft);
     const [focused, setFocused] = useState<
-      "name" | "location" | "points" | "description" | null
+      "name" | "location" | "points" | "checkInOpens" | "description" | null
     >(null);
     // Written by Create; a field's line goes when that field is edited.
     const [errors, setErrors] = useState<NewEventErrors>({});
@@ -316,7 +316,11 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       );
       if (!result.ok) {
         setErrors(result.errors);
-        if (result.errors.points || result.errors.attendance) {
+        if (
+          result.errors.points ||
+          result.errors.checkInOpens ||
+          result.errors.attendance
+        ) {
           setDraft((previous) => ({ ...previous, showMore: true }));
         }
         return;
@@ -446,7 +450,11 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       if (!result.ok) {
         setErrors(result.errors);
         // An error inside the closed options would otherwise say nothing.
-        if (result.errors.points || result.errors.attendance) {
+        if (
+          result.errors.points ||
+          result.errors.checkInOpens ||
+          result.errors.attendance
+        ) {
           setDraft((previous) => ({ ...previous, showMore: true }));
         }
         return;
@@ -639,12 +647,42 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                       ]}
                     />
                   </View>
+                  <View style={styles.groupDivider} />
+                  {/* #3703: members arrive early, so check-in opens ahead
+                      of the start; 10 minutes unless the officer says. */}
+                  <View style={styles.optionRow}>
+                    <Text style={styles.optionLabel}>
+                      Check-in opens (min early)
+                    </Text>
+                    <BottomSheetTextInput
+                      value={draft.checkInOpensInput}
+                      onChangeText={(checkInOpensInput) =>
+                        update({ checkInOpensInput }, ["checkInOpens"])
+                      }
+                      onFocus={() => setFocused("checkInOpens")}
+                      onBlur={() => setFocused(null)}
+                      editable={!pending}
+                      placeholder="10"
+                      placeholderTextColor={tokens.color.text.muted}
+                      accessibilityLabel="Minutes before the start that check-in opens"
+                      keyboardType="number-pad"
+                      selectTextOnFocus
+                      style={[
+                        styles.pointsInput,
+                        focused === "checkInOpens" ? styles.fieldFocused : null,
+                        errors.checkInOpens ? styles.fieldError : null,
+                      ]}
+                    />
+                  </View>
                 </View>
                 {errors.attendance ? (
                   <Text style={styles.error}>{errors.attendance}</Text>
                 ) : null}
                 {errors.points ? (
                   <Text style={styles.error}>{errors.points}</Text>
+                ) : null}
+                {errors.checkInOpens ? (
+                  <Text style={styles.error}>{errors.checkInOpens}</Text>
                 ) : null}
 
                 {/* A generated occurrence whose series couldn't be read

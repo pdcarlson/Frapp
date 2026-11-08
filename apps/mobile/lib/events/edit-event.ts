@@ -7,7 +7,12 @@ import {
   type RecurrenceRule,
 } from "@repo/validation";
 import { parsePointReward } from "@/lib/tasks/create-task";
-import type { NewEventDraft, NewEventErrors } from "./create-event";
+import {
+  CHECK_IN_OPENS_ERROR,
+  parseCheckInOpens,
+  type NewEventDraft,
+  type NewEventErrors,
+} from "./create-event";
 import type { EventDetail } from "./select";
 
 /**
@@ -100,6 +105,7 @@ export function draftFromEvent(target: EventEditTarget): NewEventDraft {
     end: new Date(event.end_time),
     location: event.location ?? "",
     pointsInput: String(event.point_value ?? 0),
+    checkInOpensInput: String(event.check_in_opens_minutes),
     attendance: attendanceFromEvent(event.attendance),
     recurrenceRule: seriesRule,
     description: event.description ?? "",
@@ -122,6 +128,7 @@ export interface EventEditPatch {
   excluded_role_ids?: string[];
   /** `null` ends the series. */
   recurrence_rule?: RecurrenceRule | null;
+  check_in_opens_minutes?: number;
 }
 
 function sameIds(a: readonly string[], b: readonly string[]): boolean {
@@ -174,13 +181,17 @@ export function validateEventEdit(
   if (points.kind === "invalid") {
     errors.points = "Points must be a whole number, up to 100,000.";
   }
+  const opens = parseCheckInOpens(draft.checkInOpensInput);
+  if (opens === null) errors.checkInOpens = CHECK_IN_OPENS_ERROR;
 
   const wire = attendanceToWire(draft.attendance);
   if (attendanceInvitesNobody(wire)) {
     errors.attendance = "Nobody is invited. Add a role, or invite everyone.";
   }
 
-  if (Object.keys(errors).length > 0) return { ok: false, errors };
+  if (Object.keys(errors).length > 0 || opens === null) {
+    return { ok: false, errors };
+  }
 
   // Stored values are compared trimmed, as the draft is: the API doesn't
   // trim on write, and a stray space must not read as a change (a location
@@ -197,6 +208,9 @@ export function validateEventEdit(
   }
   const pointValue = points.kind === "value" ? points.points : 0;
   if (pointValue !== (event.point_value ?? 0)) patch.point_value = pointValue;
+  if (opens !== event.check_in_opens_minutes) {
+    patch.check_in_opens_minutes = opens;
+  }
   if (
     !sameWire(wire, attendanceToWire(attendanceFromEvent(event.attendance)))
   ) {

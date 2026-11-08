@@ -7,6 +7,7 @@ import type {
   TaskPayload,
 } from "./integrations/payloads";
 import type { ChatMessage } from "./types";
+import { checkInOpensMinutes } from "@repo/validation";
 
 export type {
   EventPayload,
@@ -68,6 +69,7 @@ export function readEventPayload(message: ChatMessage): EventPayload | null {
     location: typeof r.location === "string" ? r.location : null,
     point_value: finiteNumber(r.point_value) ?? 0,
     is_mandatory: r.is_mandatory === true,
+    check_in_opens_minutes: checkInOpensMinutes(r.check_in_opens_minutes),
     created_at: typeof r.created_at === "string" ? r.created_at : "",
   };
 }

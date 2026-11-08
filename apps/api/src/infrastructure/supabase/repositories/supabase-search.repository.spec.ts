@@ -497,6 +497,7 @@ describe('SupabaseSearchRepository — query shape', () => {
     expect(chains.rpc.select).toHaveBeenCalledWith(BACKWORK_SEARCH_COLUMNS);
     expect(EVENT_SEARCH_COLUMNS).toContain('check_in_zone');
     expect(EVENT_SEARCH_COLUMNS).toContain('check_in_zone_name');
+    expect(EVENT_SEARCH_COLUMNS).toContain('check_in_opens_minutes');
     // and the tsvector is still excluded, which is why the list is explicit
     expect(EVENT_SEARCH_COLUMNS).not.toContain('search_vector');
     expect(BACKWORK_SEARCH_COLUMNS).not.toContain('search_vector');
