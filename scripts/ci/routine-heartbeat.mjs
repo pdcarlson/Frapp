@@ -337,7 +337,7 @@ export function buildAlertIssueBody({ verdict, repo, runUrl }) {
     "",
     `Each routine ends its run by commenting a run record on [the heartbeat issue](${heartbeat}) ([format](${routinesDoc})). No record usually means the session died at startup, which the scheduled task may still report as a failed or even a succeeded run; a \`stopped\` record says why in its next line.`,
     "",
-    `The routines are scheduled tasks bound to the Frapp project thread *Redefine Frapp scheduled routines* ([how they run](https://github.com/${repo}/blob/main/docs/ci-cd/routines.md)). Read that thread's latest run, and the task's last run in \`list_triggers\`, and fix the cause. Running the routine again posts a fresh record, and the next heartbeat run closes this. Don't post a record by hand to clear it.`,
+    `The routines are scheduled tasks bound to the Claude Code session *Frapp scheduled tasks* ([how they run](https://github.com/${repo}/blob/main/docs/ci-cd/routines.md)). Read that session's latest run, and the task's last run in \`list_triggers\`, and fix the cause. Running the routine again posts a fresh record, and the next heartbeat run closes this. Don't post a record by hand to clear it.`,
   ];
   if (runUrl) body.push("", `Run: ${runUrl}`);
   return body.join("\n");
