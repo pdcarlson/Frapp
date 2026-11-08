@@ -11,12 +11,24 @@ import {
   buildConflictComment,
   compareBehindBy,
   fetchPrWithMergeable,
+  CHECKS_START_GRACE_MS,
+  MAX_AUTO_MERGE_PRS,
+  MERGE_GRACE_MS,
+  isHeadMoved,
+  isInFlight,
+  pickSlotOrder,
   processBaseMove,
+  readRequiredChecks,
+  sweepModeFor,
 } from "../pr-base-sync.mjs";
+import { ALL_REQUIRED_CHECKS } from "../lib/required-checks.mjs";
 
 const REPO = "pdcarlson/Frapp";
 const BASE_REF = "main";
 const BASE_SHA = "aabbccddeeff00112233445566778899aabbccdd";
+// The sweep's clock in every test: an hour after the fixtures' timestamps, so
+// neither slot grace applies unless a test sets a fresher time.
+const NOW = Date.parse("2026-11-06T20:00:00Z");
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -60,7 +72,15 @@ const compareRoute = (headSha, behindBy) => ({
 });
 const emptyCommentsRoute = { method: "GET", path: "/comments", body: [] };
 
-function sweep({ routes, updateToken = null, fetchWrapper = (f) => f, logger = quiet }) {
+function sweep({
+  routes,
+  updateToken = null,
+  fetchWrapper = (f) => f,
+  logger = quiet,
+  mode = "push",
+  now = () => NOW,
+  updateBranchTimeoutMs,
+}) {
   const { fetchImpl, calls } = makeFetchMock(routes);
   const run = processBaseMove({
     token: "t",
@@ -71,6 +91,9 @@ function sweep({ routes, updateToken = null, fetchWrapper = (f) => f, logger = q
     fetchImpl: fetchWrapper(fetchImpl),
     sleep: makeSleep().sleep,
     logger,
+    mode,
+    now,
+    updateBranchTimeoutMs,
   });
   return run.then((results) => ({ results, calls }));
 }
@@ -1017,4 +1040,830 @@ test("a 5xx from update-branch is answered fast, so it does not stop the sweep's
     4,
     "every PR is still tried: a quick refusal costs the sweep nothing",
   );
+});
+
+// ── The auto-merge update slot (#3599) ──────────────────────────────────────
+
+const AUTO = { auto_merge: { merge_method: "squash" } };
+const autoPr = (number, overrides = {}) => makePr(number, { ...AUTO, ...overrides });
+const minutesBefore = (minutes) => new Date(NOW - minutes * 60 * 1000).toISOString();
+
+// Every required check reported green, with `overrides` replacing named entries.
+function checkRuns(overrides = {}) {
+  return ALL_REQUIRED_CHECKS.map((name) => ({
+    name,
+    status: "completed",
+    conclusion: "success",
+    started_at: "2026-11-06T19:00:00Z",
+    completed_at: "2026-11-06T19:05:00Z",
+    ...(overrides[name] ?? {}),
+  }));
+}
+const running = (name) => checkRuns({ [name]: { status: "in_progress", conclusion: null } });
+const checksRoute = (sha, runs, status = 200) => ({
+  method: "GET",
+  path: `/commits/${sha}/check-runs`,
+  status,
+  body: status === 200 ? { check_runs: runs } : { message: "Resource not accessible by integration" },
+});
+const suitesRoute = (sha, createdAt) => ({
+  method: "GET",
+  path: `/commits/${sha}/check-suites`,
+  body: { check_suites: createdAt ? [{ created_at: createdAt }] : [] },
+});
+// Listed after the checks and suites routes: its path is a prefix of theirs.
+const commitRoute = (sha, date) => ({
+  method: "GET",
+  path: `/commits/${sha}`,
+  body: { commit: { committer: { date } } },
+});
+const updateRoute = (number, status = 202, body = {}) => ({
+  method: "PUT",
+  path: `/pulls/${number}/update-branch`,
+  status,
+  body,
+});
+const puts = (calls) =>
+  calls.filter((c) => c.method === "PUT").map((c) => c.url.match(/pulls\/(\d+)/)[1]);
+const commentPosts = (calls) =>
+  calls.filter((c) => c.method === "POST" && c.url.includes("/comments"));
+const byNumber = (results) => Object.fromEntries(results.map((r) => [r.number, r]));
+const RACE_422 = { message: "expected head sha didn't match current head ref" };
+
+function slotRoutes(
+  prs,
+  { behind = {}, runs = {}, updates = {}, committed = {}, pushed = {}, checksStatus = {} } = {},
+) {
+  return [
+    listRoute(prs),
+    ...prs.map(detailRoute),
+    ...prs.map((pr) => compareRoute(pr.head.sha, behind[pr.number] ?? 1)),
+    ...prs.map((pr) =>
+      checksRoute(pr.head.sha, runs[pr.number] ?? checkRuns(), checksStatus[pr.number] ?? 200),
+    ),
+    ...prs.map((pr) => suitesRoute(pr.head.sha, pushed[pr.number])),
+    ...prs.map((pr) => commitRoute(pr.head.sha, committed[pr.number] ?? "2026-11-06T19:00:00Z")),
+    ...prs.map((pr) => updates[pr.number] ?? updateRoute(pr.number)),
+    emptyCommentsRoute,
+    { method: "GET", path: "/issues?state=all", body: [] },
+  ];
+}
+
+test("several behind auto-merge PRs: only the lowest-numbered is updated, the rest are held in silence", async () => {
+  // Listed in updated-asc order, not number order: the slot must not depend on it.
+  const prs = [autoPr(63), autoPr(41), autoPr(52)];
+  const { results, calls } = await sweep({ routes: slotRoutes(prs), updateToken: "app" });
+  assert.deepEqual(puts(calls), ["41"], "one PR races CI at a time");
+  const r = byNumber(results);
+  assert.equal(r[41].action, "updated");
+  assert.equal(r[52].action, "held");
+  assert.equal(r[63].action, "held");
+  assert.equal(r[52].holder, 41);
+  assert.equal(
+    commentPosts(calls).length,
+    0,
+    "a held PR gets no wake: 'merge main yourself' would restart the race",
+  );
+});
+
+test("a held PR's stale wake from an earlier sweep is deleted", async () => {
+  const routes = slotRoutes([autoPr(41), autoPr(52)]);
+  routes.unshift(
+    {
+      method: "GET",
+      path: "/issues/52/comments",
+      body: [{ id: 9052, body: `${BASE_SYNC_MARKER}\n**Base-branch sync** — merge it yourself` }],
+    },
+    { method: "DELETE", path: "/issues/comments/9052", status: 204, body: {} },
+  );
+  const { calls } = await sweep({ routes, updateToken: "app" });
+  assert.ok(calls.some((c) => c.method === "DELETE" && c.url.includes("/comments/9052")));
+});
+
+test("an up-to-date auto-merge PR with checks running keeps the slot, so nothing else is updated", async () => {
+  const prs = [autoPr(41), autoPr(52), autoPr(63)];
+  const { results, calls } = await sweep({
+    routes: slotRoutes(prs, { behind: { 63: 0 }, runs: { 63: running("mobile-validate") } }),
+    updateToken: "app",
+  });
+  assert.deepEqual(puts(calls), [], "#63 is in flight; updating #41 would start a second racer");
+  const r = byNumber(results);
+  assert.equal(r[41].action, "held");
+  assert.equal(r[41].holder, 63);
+  assert.equal(r[63].verdict, "current");
+});
+
+test("a sweep whose behind PRs were all held does not close the token alert", async () => {
+  const prs = [autoPr(41), autoPr(52)];
+  const { calls } = await sweep({
+    routes: slotRoutes(prs, { behind: { 52: 0 }, runs: { 52: running("api-tests") } }),
+    updateToken: "app",
+  });
+  assert.ok(
+    !calls.some((c) => c.url.includes("/issues?")),
+    "no update-branch call was made, so 'hit no failure' would be vacuous",
+  );
+});
+
+test("a just-updated holder with no check runs yet is still in flight", async () => {
+  const prs = [autoPr(41), autoPr(52)];
+  const { calls } = await sweep({
+    routes: slotRoutes(prs, {
+      behind: { 41: 0 },
+      runs: { 41: [] },
+      committed: { 41: minutesBefore(1) },
+    }),
+    updateToken: "app",
+    mode: "checks",
+  });
+  assert.deepEqual(puts(calls), [], "the cancelled old run's completion must not hand the slot on");
+});
+
+test("a head whose required checks never report stops holding the slot after the grace", async () => {
+  const stale = new Date(NOW - CHECKS_START_GRACE_MS - 60_000).toISOString();
+  const prs = [autoPr(41, { updated_at: minutesBefore(1) }), autoPr(52)];
+  const { calls } = await sweep({
+    routes: slotRoutes(prs, { behind: { 41: 0 }, runs: { 41: [] }, pushed: { 41: stale } }),
+    updateToken: "app",
+    mode: "checks",
+  });
+  assert.deepEqual(
+    puts(calls),
+    ["52"],
+    "measured from the push, so comments bumping updated_at don't extend it",
+  );
+});
+
+test("the start grace runs from the push, not from an old commit date", async () => {
+  // Committed an hour before it was pushed (a review gate between the two).
+  const prs = [autoPr(41), autoPr(52)];
+  const { calls } = await sweep({
+    routes: slotRoutes(prs, {
+      behind: { 41: 0 },
+      runs: { 41: [] },
+      pushed: { 41: minutesBefore(2) },
+      committed: { 41: minutesBefore(60) },
+    }),
+    updateToken: "app",
+    mode: "checks",
+  });
+  assert.deepEqual(puts(calls), []);
+});
+
+test("an up-to-date PR whose checks or push time can't be read stays in flight", async () => {
+  const unreadableChecks = await sweep({
+    routes: slotRoutes([autoPr(41), autoPr(52)], { behind: { 41: 0 }, checksStatus: { 41: 502 } }),
+    updateToken: "app",
+    mode: "checks",
+  });
+  assert.deepEqual(puts(unreadableChecks.calls), [], "reading it as idle would start a second racer");
+
+  const routes = slotRoutes([autoPr(41), autoPr(52)], { behind: { 41: 0 }, runs: { 41: [] } });
+  routes.unshift({ method: "GET", path: `/commits/${autoPr(41).head.sha}/check-suites`, status: 502, body: {} });
+  const unreadablePush = await sweep({ routes, updateToken: "app", mode: "checks" });
+  assert.deepEqual(puts(unreadablePush.calls), []);
+});
+
+test("a just-updated holder whose mergeability hasn't resolved still holds the slot", async () => {
+  const holder = autoPr(41, { mergeable: null });
+  const prs = [holder, autoPr(52)];
+  const { results, calls } = await sweep({
+    routes: slotRoutes(prs, { behind: { 41: 0 }, runs: { 41: running("api-tests") } }),
+    updateToken: "app",
+  });
+  assert.deepEqual(puts(calls), []);
+  assert.equal(byNumber(results)[52].holder, 41);
+});
+
+test("an auto-merge PR whose compare keeps failing holds the slot fail-safe and is never updated", async () => {
+  // It may be the holder, up to date with CI running; reading it as idle would
+  // start a second racer.
+  const prs = [autoPr(41), autoPr(52)];
+  const routes = slotRoutes(prs);
+  routes.unshift({
+    method: "GET",
+    path: `/compare/${BASE_REF}...${autoPr(52).head.sha}`,
+    body: { message: "oops" },
+  });
+  const { results, calls } = await sweep({ routes, updateToken: "app" });
+  assert.deepEqual(puts(calls), []);
+  assert.equal(byNumber(results)[52].action, "skipped");
+  assert.equal(byNumber(results)[41].holder, 52);
+});
+
+test("up-to-date auto-merge PRs are reused in the per-PR pass, not read and compared again", async () => {
+  const prs = [autoPr(41), autoPr(52)];
+  const { results, calls } = await sweep({
+    routes: slotRoutes(prs, { behind: { 41: 0, 52: 0 }, runs: { 41: running("api-tests") } }),
+    updateToken: "app",
+  });
+  assert.ok(!calls.some((c) => /\/pulls\/(41|52)$/.test(c.url)), "no detail (mergeable) polling");
+  assert.equal(calls.filter((c) => c.url.includes("/compare/")).length, 2, "one compare each");
+  assert.equal(byNumber(results)[52].verdict, "current");
+});
+
+
+test("a holder that just went green is left to merge; one green for long is not", async () => {
+  const fresh = checkRuns({ "api-tests": { completed_at: minutesBefore(1) } });
+  const greenNow = await sweep({
+    routes: slotRoutes([autoPr(41), autoPr(52)], { behind: { 41: 0 }, runs: { 41: fresh } }),
+    updateToken: "app",
+    mode: "checks",
+  });
+  assert.deepEqual(puts(greenNow.calls), [], "auto-merge is about to act on #41");
+
+  const longAgo = new Date(NOW - MERGE_GRACE_MS - 60_000).toISOString();
+  const greenLong = await sweep({
+    routes: slotRoutes([autoPr(41), autoPr(52)], {
+      behind: { 41: 0 },
+      runs: { 41: checkRuns({ "api-tests": { completed_at: longAgo } }) },
+    }),
+    updateToken: "app",
+    mode: "checks",
+  });
+  assert.deepEqual(puts(greenLong.calls), ["52"], "#41 waits on something other than CI");
+});
+
+test("a holder knocked behind by a manual merge keeps the slot over a lower-numbered PR", async () => {
+  const prs = [autoPr(41), autoPr(63)];
+  const { results, calls } = await sweep({
+    routes: slotRoutes(prs, { runs: { 63: running("mobile-validate") } }),
+    updateToken: "app",
+  });
+  assert.deepEqual(puts(calls), ["63"]);
+  assert.equal(byNumber(results)[41].action, "held");
+});
+
+test("when that holder can't be updated, the slot passes back to the lower-numbered PR", async () => {
+  const prs = [autoPr(41), autoPr(63)];
+  const { results, calls } = await sweep({
+    routes: slotRoutes(prs, {
+      runs: { 63: running("mobile-validate") },
+      updates: { 63: updateRoute(63, 403, { message: "Repository rule violations found" }) },
+    }),
+    updateToken: "app",
+  });
+  assert.deepEqual(puts(calls), ["63", "41"]);
+  assert.equal(byNumber(results)[41].action, "updated");
+});
+
+test("a red auto-merge PR is not queued: it is updated as before, and the slot goes to the next", async () => {
+  const prs = [autoPr(41), autoPr(52), autoPr(63)];
+  const { results, calls } = await sweep({
+    routes: slotRoutes(prs, { runs: { 41: checkRuns({ "api-tests": { conclusion: "cancelled" } }) } }),
+    updateToken: "app",
+  });
+  assert.deepEqual(
+    puts(calls).sort(),
+    ["41", "52"],
+    "a fix on main must still reach a red PR; #52 holds the slot",
+  );
+  assert.equal(byNumber(results)[63].action, "held");
+});
+
+test("a skipped or neutral required check counts as a pass", async () => {
+  // Path-gated required jobs conclude `skipped` on most PRs (ADR-15).
+  const runs = checkRuns({
+    "web-tests": { conclusion: "skipped" },
+    "landing-fold": { conclusion: "neutral" },
+  });
+  const prs = [autoPr(41), autoPr(52)];
+  const { calls } = await sweep({
+    routes: slotRoutes(prs, { runs: { 41: runs, 52: runs } }),
+    updateToken: "app",
+  });
+  assert.deepEqual(puts(calls), ["41"], "both are queued, so only the holder is updated");
+});
+
+test("a PR whose checks can't be read waits behind a holder but never holds the slot", async () => {
+  const prs = [autoPr(41), autoPr(52)];
+  const held = await sweep({
+    routes: slotRoutes(prs, { checksStatus: { 41: 403 } }),
+    updateToken: "app",
+  });
+  assert.deepEqual(puts(held.calls), ["52"], "#41 is not updated beside the holder");
+  assert.equal(byNumber(held.results)[41].action, "held");
+
+  const alone = await sweep({
+    routes: slotRoutes([autoPr(41)], { checksStatus: { 41: 403 } }),
+    updateToken: "app",
+  });
+  assert.deepEqual(puts(alone.calls), ["41"], "with no holder there is nothing to wait behind");
+});
+
+test("a holder whose update fails gets its wake, and the slot passes to the next PR", async () => {
+  const prs = [autoPr(41), autoPr(52), autoPr(63)];
+  const { results, calls } = await sweep({
+    routes: slotRoutes(prs, {
+      updates: { 41: updateRoute(41, 403, { message: "Repository rule violations found" }) },
+    }),
+    updateToken: "app",
+  });
+  assert.deepEqual(puts(calls), ["41", "52"]);
+  const r = byNumber(results);
+  assert.equal(r[41].action, "commented", "the failed holder still gets told what to do");
+  assert.equal(r[52].action, "updated");
+  assert.equal(r[63].action, "held");
+  assert.equal(r[63].holder, 52);
+});
+
+test("when no PR can take the slot, every behind auto-merge PR gets its wake, as before", async () => {
+  const prs = [autoPr(41), autoPr(52), autoPr(63)];
+  const updates = Object.fromEntries(
+    prs.map((pr) => [pr.number, updateRoute(pr.number, 502, { message: "Bad Gateway" })]),
+  );
+  const { results, calls } = await sweep({ routes: slotRoutes(prs, { updates }), updateToken: "app" });
+  assert.deepEqual(puts(calls), ["41", "52", "63"]);
+  assert.ok(results.every((r) => r.action === "commented"), "nobody is held behind nothing");
+  assert.equal(commentPosts(calls).length, 3);
+});
+
+test("a head-moved 422 on the slot holder means another sweep got there: no wake, the slot stays", async () => {
+  const prs = [autoPr(41), autoPr(52)];
+  const { results, calls } = await sweep({
+    routes: slotRoutes(prs, { updates: { 41: updateRoute(41, 422, RACE_422) } }),
+    updateToken: "app",
+  });
+  assert.deepEqual(puts(calls), ["41"]);
+  assert.equal(byNumber(results)[41].action, "raced");
+  assert.equal(byNumber(results)[52].action, "held");
+  assert.equal(commentPosts(calls).length, 0);
+});
+
+test("any other 422 is a failure: the holder gets its wake and the slot moves on", async () => {
+  const prs = [autoPr(41), autoPr(52)];
+  const { results, calls } = await sweep({
+    routes: slotRoutes(prs, {
+      updates: { 41: updateRoute(41, 422, { message: "Validation Failed" }) },
+    }),
+    updateToken: "app",
+  });
+  assert.deepEqual(puts(calls), ["41", "52"]);
+  assert.equal(byNumber(results)[41].action, "commented");
+});
+
+test("isHeadMoved reads the message, not just the status", () => {
+  assert.equal(isHeadMoved({ status: 422, error: "HTTP 422: expected head sha didn't match current head ref" }), true);
+  assert.equal(isHeadMoved({ status: 422, error: "HTTP 422: Validation Failed" }), false);
+  assert.equal(isHeadMoved({ status: 409, error: "expected head sha" }), false);
+});
+
+test("PRs without auto-merge are still all updated beside a held queue", async () => {
+  const prs = [autoPr(41), autoPr(52), makePr(74), makePr(85)];
+  const { calls } = await sweep({ routes: slotRoutes(prs), updateToken: "app" });
+  assert.deepEqual(puts(calls).sort(), ["41", "74", "85"]);
+  assert.equal(
+    calls.filter((c) => c.url.includes("/check-runs")).length,
+    2,
+    "checks are read for the two auto-merge PRs only",
+  );
+});
+
+test("a fork PR with auto-merge is not queued: it keeps its fork wake and never holds the slot", async () => {
+  const fork = autoPr(30, {
+    head: { ref: "patch", sha: "f".repeat(40), repo: { full_name: "someone/Frapp" } },
+  });
+  const prs = [fork, autoPr(41)];
+  const { results, calls } = await sweep({ routes: slotRoutes(prs), updateToken: "app" });
+  assert.deepEqual(puts(calls), ["41"], "a fork head is never pushed to");
+  assert.equal(byNumber(results)[30].action, "commented");
+  assert.ok(!calls.some((c) => c.url.includes(`/commits/${"f".repeat(40)}/check-runs`)));
+});
+
+test("queued PRs share the MAX_PRS budget but always leave room for the rotation", async () => {
+  const held = Array.from({ length: MAX_AUTO_MERGE_PRS }, (_, i) => autoPr(400 + i));
+  const others = Array.from({ length: MAX_PRS }, (_, i) =>
+    makePr(600 + i, { mergeable: false, mergeable_state: "dirty" }),
+  );
+  const { results } = await sweep({ routes: slotRoutes([...held, ...others]), updateToken: "app" });
+  const processedOthers = results.filter((r) => r.number >= 600);
+  assert.equal(processedOthers.length, MAX_PRS - MAX_AUTO_MERGE_PRS, "the job's budget doesn't grow");
+  assert.ok(processedOthers.length > 0, "held PRs never crowd the rotation out");
+});
+
+test("auto-merge PRs are read once, not once for the queue and again for the sweep", async () => {
+  const prs = [autoPr(41), autoPr(52)];
+  const { calls } = await sweep({ routes: slotRoutes(prs), updateToken: "app" });
+  for (const number of [41, 52]) {
+    assert.equal(
+      calls.filter((c) => c.method === "GET" && c.url.endsWith(`/pulls/${number}`)).length,
+      1,
+    );
+    const sha = prs.find((pr) => pr.number === number).head.sha;
+    assert.equal(calls.filter((c) => c.url.includes(`/compare/${BASE_REF}...${sha}`)).length, 1);
+  }
+});
+
+test("an auto-merge PR whose mergeability never resolves is skipped, not re-polled and updated", async () => {
+  const pending = autoPr(52, { mergeable: null });
+  let reads = 0;
+  const routes = slotRoutes([autoPr(41), pending]);
+  routes.unshift({
+    method: "GET",
+    path: "/pulls/52",
+    body: () => (++reads > MERGEABLE_POLL_ATTEMPTS ? { ...pending, mergeable: true } : pending),
+  });
+  const { results, calls } = await sweep({ routes, updateToken: "app" });
+  assert.deepEqual(puts(calls), ["41"], "a second poll reading clean must not make a second racer");
+  assert.equal(reads, MERGEABLE_POLL_ATTEMPTS);
+  assert.equal(byNumber(results)[52].action, "skipped");
+});
+
+test("the queue sees auto-merge PRs past the MAX_PRS slice, so an updated holder stays in view", async () => {
+  // The holder was just updated, so it sorts last (updated-asc) and outside the slice.
+  const others = Array.from({ length: MAX_PRS }, (_, i) => makePr(200 + i));
+  const holder = autoPr(41);
+  const prs = [...others, holder, autoPr(52)];
+  const { calls } = await sweep({
+    routes: [
+      listRoute(prs),
+      ...slotRoutes([holder, autoPr(52)], { behind: { 41: 0 }, runs: { 41: running("api-tests") } }).slice(1),
+    ],
+    updateToken: "app",
+    mode: "checks",
+  });
+  assert.deepEqual(puts(calls), [], "#41 is in flight even though the slice no longer shows it");
+});
+
+test("a conflicted auto-merge PR still gets its conflict wake and never holds the slot", async () => {
+  const prs = [autoPr(41, { mergeable: false, mergeable_state: "dirty" }), autoPr(52)];
+  const { results, calls } = await sweep({ routes: slotRoutes(prs), updateToken: "app" });
+  assert.deepEqual(puts(calls), ["52"]);
+  assert.equal(byNumber(results)[41].verdict, "conflict");
+  assert.equal(commentPosts(calls).length, 1);
+});
+
+test("without an app token there is no slot: every behind auto-merge PR gets its wake", async () => {
+  const prs = [autoPr(41), autoPr(52)];
+  const { results, calls } = await sweep({ routes: slotRoutes(prs), updateToken: null });
+  assert.ok(results.every((r) => r.action === "commented"));
+  assert.ok(!calls.some((c) => c.url.includes("/check-runs")));
+});
+
+test("checks mode updates the holder and writes nothing else: no wakes, no alert raised", async () => {
+  const prs = [autoPr(41), autoPr(52), makePr(74)];
+  const { results, calls } = await sweep({
+    routes: slotRoutes(prs),
+    updateToken: "app",
+    mode: "checks",
+  });
+  assert.deepEqual(puts(calls), ["41"], "the PR without auto-merge waits for the push sweep");
+  assert.deepEqual(
+    results.map((r) => [r.number, r.action]),
+    [
+      [41, "updated"],
+      [52, "held"],
+    ],
+  );
+  assert.ok(
+    !calls.some((c) => c.method !== "GET" && !c.url.includes("/update-branch")),
+    "the base did not move, so nothing but the holder's update is written",
+  );
+});
+
+test("a checks-mode update closes an open token alert, which it proves wrong", async () => {
+  const routes = slotRoutes([autoPr(41)]);
+  routes.unshift(
+    {
+      method: "GET",
+      path: "/issues?state=all",
+      body: [{ number: 777, state: "open", title: ALERT.title, labels: [] }],
+    },
+    { method: "PATCH", path: "/issues/777", body: { number: 777, state: "closed" } },
+  );
+  const { calls } = await sweep({ routes, updateToken: "app", mode: "checks" });
+  assert.ok(calls.some((c) => c.method === "PATCH" && c.url.includes("/issues/777")));
+});
+
+test("a checks-mode failure never raises the alert", async () => {
+  const { calls } = await sweep({
+    routes: slotRoutes([autoPr(41)], { updates: { 41: updateRoute(41, 401, { message: "Bad credentials" }) } }),
+    updateToken: "app",
+    mode: "checks",
+  });
+  assert.equal(filedIssues(calls).length, 0);
+});
+
+test("checks mode clears the stale wake of the PR it updates", async () => {
+  const routes = slotRoutes([autoPr(41)]);
+  routes.unshift(
+    { method: "GET", path: "/issues/41/comments", body: [{ id: 9041, body: `${BASE_SYNC_MARKER}\nold` }] },
+    { method: "DELETE", path: "/issues/comments/9041", status: 204, body: {} },
+  );
+  const { calls } = await sweep({ routes, updateToken: "app", mode: "checks" });
+  assert.ok(calls.some((c) => c.method === "DELETE" && c.url.includes("/comments/9041")));
+});
+
+test("checks mode passes the slot on when the holder's update fails, and wakes it once", async () => {
+  const prs = [autoPr(41), autoPr(52)];
+  const { calls } = await sweep({
+    routes: slotRoutes(prs, { updates: { 41: updateRoute(41, 422, { message: "Validation Failed" }) } }),
+    updateToken: "app",
+    mode: "checks",
+  });
+  assert.deepEqual(puts(calls), ["41", "52"]);
+  const posted = commentPosts(calls);
+  assert.equal(posted.length, 1, "otherwise it matches the 'held, leave it' signature");
+  assert.ok(posted[0].url.includes("/issues/41/comments"));
+});
+
+test("checks mode stops on a rejected token, a plain 403 or a rate limit, and wakes nobody", async () => {
+  for (const [status, message] of [
+    [401, "Bad credentials"],
+    [403, "Resource not accessible by integration"],
+    [403, "You have exceeded a secondary rate limit"],
+  ]) {
+    const prs = [autoPr(41), autoPr(52)];
+    const { calls } = await sweep({
+      routes: slotRoutes(prs, { updates: { 41: updateRoute(41, status, { message }) } }),
+      updateToken: "app",
+      mode: "checks",
+    });
+    assert.deepEqual(puts(calls), ["41"], `${status} ${message}: the next PR would fail the same way`);
+    assert.equal(commentPosts(calls).length, 0, `${status}: the push sweep diagnoses it in one alert`);
+  }
+});
+
+test("checks mode moves past a 5xx on one PR, without a wake", async () => {
+  const prs = [autoPr(41), autoPr(52)];
+  const { results, calls } = await sweep({
+    routes: slotRoutes(prs, { updates: { 41: updateRoute(41, 502, { message: "Bad Gateway" }) } }),
+    updateToken: "app",
+    mode: "checks",
+  });
+  assert.deepEqual(puts(calls), ["41", "52"], "one PR's 5xx must not leave the slot empty");
+  assert.equal(byNumber(results)[52].action, "updated");
+  assert.equal(commentPosts(calls).length, 0);
+});
+
+test("checks mode tries unreadable-checks PRs last, and stops there on a rejected token", async () => {
+  const prs = [autoPr(41), autoPr(52), autoPr(63)];
+  const fallback = await sweep({
+    routes: slotRoutes(prs, { checksStatus: { 41: 403, 52: 403, 63: 403 } }),
+    updateToken: "app",
+    mode: "checks",
+  });
+  assert.deepEqual(puts(fallback.calls), ["41"], "the first that updates takes the slot");
+
+  const rejected = await sweep({
+    routes: slotRoutes(prs, {
+      checksStatus: { 41: 403, 52: 403, 63: 403 },
+      updates: { 41: updateRoute(41, 401, { message: "Bad credentials" }) },
+    }),
+    updateToken: "app",
+    mode: "checks",
+  });
+  assert.deepEqual(puts(rejected.calls), ["41"], "the rest would fail alike");
+});
+
+test("checks mode leaves a conflict to the push sweep, and tries the next PR", async () => {
+  const { calls } = await sweep({
+    routes: slotRoutes([autoPr(41), autoPr(52)], {
+      updates: { 41: updateRoute(41, 422, { message: "merge conflict between base and head" }) },
+    }),
+    updateToken: "app",
+    mode: "checks",
+  });
+  assert.equal(commentPosts(calls).length, 0);
+  assert.deepEqual(puts(calls), ["41", "52"]);
+});
+
+test("checks mode sends the head it assessed as expected_head_sha", async () => {
+  const { calls } = await sweep({ routes: slotRoutes([autoPr(41)]), updateToken: "app", mode: "checks" });
+  const update = calls.find((c) => c.method === "PUT");
+  assert.equal(JSON.parse(update.body).expected_head_sha, autoPr(41).head.sha);
+});
+
+test("checks mode stops reading once it finds a PR in flight", async () => {
+  const prs = [autoPr(41), autoPr(52), autoPr(63)];
+  const { calls } = await sweep({
+    routes: slotRoutes(prs, { behind: { 41: 0 }, runs: { 41: running("api-tests") } }),
+    updateToken: "app",
+    mode: "checks",
+  });
+  assert.equal(calls.filter((c) => c.url.includes("/compare/")).length, 1, "the GITHUB_TOKEN budget is shared");
+  assert.ok(!calls.some((c) => /\/pulls\/\d+$/.test(c.url)), "no mergeable polling");
+});
+
+test("the holder is judged by the detail's head when an update landed after the list", async () => {
+  // The list still shows #41's old (behind, cancelled) head; the detail shows
+  // the new one the update just pushed.
+  const listed41 = autoPr(41);
+  const moved41 = autoPr(41, { head: { ...listed41.head, sha: "9".repeat(40) } });
+  const routes = [
+    listRoute([listed41, autoPr(52)]),
+    detailRoute(moved41),
+    compareRoute("9".repeat(40), 0),
+    checksRoute("9".repeat(40), running("api-tests")),
+    checksRoute(listed41.head.sha, checkRuns({ "api-tests": { conclusion: "cancelled" } })),
+    ...slotRoutes([autoPr(52)]).slice(1),
+    compareRoute(listed41.head.sha, 1),
+  ];
+  const { calls } = await sweep({ routes, updateToken: "app", mode: "checks" });
+  assert.deepEqual(puts(calls), [], "#41 is in flight on its new head");
+});
+
+test("checks mode doesn't re-wake a failing PR that already has a base-sync comment", async () => {
+  const routes = slotRoutes([autoPr(41)], { updates: { 41: updateRoute(41, 422, { message: "Validation Failed" }) } });
+  routes.unshift({
+    method: "GET",
+    path: "/issues/41/comments",
+    body: [{ id: 1, body: `${BASE_SYNC_MARKER}\nearlier` }],
+  });
+  const { calls } = await sweep({ routes, updateToken: "app", mode: "checks" });
+  assert.equal(commentPosts(calls).length, 0);
+});
+
+test("checks mode stops trying once an update stalls to its deadline", STALL_TEST, async () => {
+  const prs = [autoPr(41), autoPr(52)];
+  const attempted = [];
+  await sweep({
+    routes: slotRoutes(prs),
+    updateToken: "app",
+    mode: "checks",
+    updateBranchTimeoutMs: 50,
+    fetchWrapper: (fetchImpl) => {
+      const stalled = stallUpdateBranch(fetchImpl);
+      return (url, init) => {
+        if (url.includes("/update-branch")) attempted.push(url.match(/pulls\/(\d+)/)[1]);
+        return stalled(url, init);
+      };
+    },
+  });
+  assert.deepEqual(attempted, ["41"], "a second two-minute wait would run the job out");
+});
+
+test("the slot falls to an unreadable-checks PR when none other can take it, and the rest wait", async () => {
+  const prs = [autoPr(41), autoPr(52), autoPr(63)];
+  const { results, calls } = await sweep({
+    routes: slotRoutes(prs, { checksStatus: { 41: 403, 52: 403, 63: 403 } }),
+    updateToken: "app",
+  });
+  assert.deepEqual(puts(calls), ["41"], "the first that updates holds the slot");
+  assert.equal(byNumber(results)[52].action, "held");
+  assert.equal(byNumber(results)[63].holder, 41);
+});
+
+test("the slot governs at most MAX_AUTO_MERGE_PRS auto-merge PRs", async () => {
+  const prs = Array.from({ length: MAX_AUTO_MERGE_PRS + 2 }, (_, i) => autoPr(500 + i));
+  const { calls } = await sweep({ routes: slotRoutes(prs), updateToken: "app" });
+  assert.equal(calls.filter((c) => c.url.includes("/check-runs")).length, MAX_AUTO_MERGE_PRS);
+});
+
+test("the slot is filled before the rest of the sweep", async () => {
+  const prs = [makePr(74), autoPr(41)];
+  const { calls } = await sweep({ routes: slotRoutes(prs), updateToken: "app" });
+  assert.deepEqual(puts(calls), ["41", "74"]);
+});
+
+test("checks mode: a head-moved 422 keeps the slot and starts no second PR", async () => {
+  const prs = [autoPr(41), autoPr(52)];
+  const { results, calls } = await sweep({
+    routes: slotRoutes(prs, { updates: { 41: updateRoute(41, 422, RACE_422) } }),
+    updateToken: "app",
+    mode: "checks",
+  });
+  assert.deepEqual(puts(calls), ["41"]);
+  assert.equal(byNumber(results)[41].action, "raced");
+  assert.equal(byNumber(results)[52].action, "held");
+});
+
+test("checks mode without an app token reads nothing and writes nothing", async () => {
+  const { results, calls } = await sweep({
+    routes: slotRoutes([autoPr(41)]),
+    updateToken: null,
+    mode: "checks",
+  });
+  assert.deepEqual(results, []);
+  assert.equal(calls.length, 0);
+});
+
+test("a CI completion or the schedule selects checks mode; a push the full sweep", () => {
+  assert.equal(sweepModeFor("workflow_run"), "checks");
+  assert.equal(sweepModeFor("schedule"), "checks");
+  assert.equal(sweepModeFor("push"), "push");
+});
+
+test("a PR whose auto-merge was turned off since the list was read takes the ordinary path", async () => {
+  const { results, calls } = await sweep({
+    routes: [listRoute([autoPr(41), autoPr(52)]), ...slotRoutes([makePr(41), autoPr(52)]).slice(1)],
+    updateToken: "app",
+  });
+  assert.deepEqual(puts(calls).sort(), ["41", "52"], "#41 is no longer queued, so it is not held");
+  assert.equal(byNumber(results)[41].action, "updated");
+});
+
+// ── readRequiredChecks / pickSlotOrder ──────────────────────────────────────
+
+async function readChecks(body, { status = 200 } = {}) {
+  const { fetchImpl } = makeFetchMock([{ method: "GET", path: "/check-runs", status, body }]);
+  return readRequiredChecks({
+    token: "t",
+    repo: REPO,
+    sha: "abc",
+    fetchImpl,
+    retryOptions: { attempts: 1 },
+  });
+}
+const stateOf = async (body, opts) => (await readChecks(body, opts))?.state ?? null;
+
+test("readRequiredChecks: all green is passed; one still running is running", async () => {
+  assert.equal(await stateOf({ check_runs: checkRuns() }), "passed");
+  assert.equal(await stateOf({ check_runs: running("api-tests") }), "running");
+});
+
+test("readRequiredChecks: a failed or cancelled required check is failed, even beside a running one", async () => {
+  for (const conclusion of ["failure", "cancelled", "timed_out"]) {
+    const runs = checkRuns({
+      "api-tests": { conclusion },
+      "mobile-validate": { status: "in_progress", conclusion: null },
+    });
+    assert.equal(await stateOf({ check_runs: runs }), "failed", conclusion);
+  }
+});
+
+test("readRequiredChecks: the newest run of a re-run check decides", async () => {
+  const runs = [
+    ...checkRuns({ "api-tests": { conclusion: "failure", started_at: "2026-11-06T19:00:00Z" } }),
+    { name: "api-tests", status: "in_progress", conclusion: null, started_at: "2026-11-06T19:10:00Z" },
+  ];
+  assert.equal(await stateOf({ check_runs: runs }), "running");
+});
+
+test("readRequiredChecks: a never-reported check is missing; a non-required failure does not count", async () => {
+  const runs = [
+    ...checkRuns().filter((run) => run.name !== "landing-fold"),
+    { name: "duplicate-detection", status: "completed", conclusion: "failure" },
+  ];
+  assert.equal(await stateOf({ check_runs: runs }), "missing");
+  assert.equal(await stateOf({ check_runs: [] }), "missing");
+});
+
+test("readRequiredChecks: reports when the last required check completed", async () => {
+  const runs = checkRuns({ "api-tests": { completed_at: "2026-11-06T19:30:00Z" } });
+  assert.equal((await readChecks({ check_runs: runs })).lastCompletedMs, Date.parse("2026-11-06T19:30:00Z"));
+});
+
+test("readRequiredChecks: an unreadable checks API is null, never passed", async () => {
+  assert.equal(await readChecks({ message: "boom" }, { status: 502 }), null);
+  assert.equal(await readChecks({ unexpected: true }), null);
+});
+
+test("readRequiredChecks retries a transient failure instead of dropping the holder", async () => {
+  let attempt = 0;
+  const { fetchImpl } = makeFetchMock([
+    {
+      method: "GET",
+      path: "/check-runs",
+      body: () => (++attempt === 1 ? "<html>bad gateway</html>" : { check_runs: checkRuns() }),
+    },
+  ]);
+  const flaky = async (url, init) => {
+    const response = await fetchImpl(url, init);
+    return attempt === 1 ? { ...response, ok: false, status: 502 } : response;
+  };
+  const result = await readRequiredChecks({
+    token: "t",
+    repo: REPO,
+    sha: "abc",
+    fetchImpl: flaky,
+    retryOptions: { backoffMs: [0] },
+  });
+  assert.equal(result?.state, "passed");
+  assert.equal(attempt, 2);
+});
+
+test("pickSlotOrder: unreadable, forked or red PRs never take the slot", () => {
+  const base = { isFork: false, pr: { mergeable: true } };
+  const passed = { state: "passed", lastCompletedMs: 0 };
+  assert.equal(
+    pickSlotOrder([{ ...base, number: 1, behindBy: null, checks: null }], NOW).inFlight,
+    1,
+    "an unreadable compare holds the slot fail-safe",
+  );
+  const slot = pickSlotOrder(
+    [
+      { ...base, number: 2, behindBy: 1, checks: null },
+      { ...base, number: 3, behindBy: 1, checks: { state: "failed", lastCompletedMs: 0 } },
+      { ...base, number: 4, isFork: true, behindBy: 1, checks: passed },
+      { ...base, number: 5, behindBy: 1, checks: passed },
+    ],
+    NOW,
+  );
+  assert.deepEqual(slot.order, [5]);
+  assert.deepEqual(slot.queued, [2, 5], "the unreadable one is governed, so it can be held");
+  assert.equal(pickSlotOrder([], NOW).inFlight, null);
+});
+
+test("isInFlight: only an up-to-date, same-repo, unconflicted PR can be in flight", () => {
+  const c = {
+    isFork: false,
+    pr: { mergeable: true },
+    checks: { state: "running", lastCompletedMs: 0 },
+  };
+  assert.equal(isInFlight({ ...c, behindBy: 0 }, NOW), true);
+  assert.equal(isInFlight({ ...c, behindBy: 2 }, NOW), false);
+  assert.equal(isInFlight({ ...c, behindBy: 0, isFork: true }, NOW), false);
+  assert.equal(isInFlight({ ...c, behindBy: 0, pr: { mergeable: false } }, NOW), false);
+  assert.equal(isInFlight({ ...c, behindBy: 0, checks: { state: "failed" } }, NOW), false);
 });
