@@ -28,16 +28,48 @@
  * regaining focus, and it is already how `use-is-api-authenticated.ts` refreshes
  * its token read.
  *
+ * ## Focus returns when the network does, not when the app does (#3747)
+ *
+ * iOS tears down a suspended app's sockets. Bound straight to `AppState`, focus
+ * came back the instant the app did, and that one edge fired every stale
+ * query's focus refetch and resumed every retry the background had parked.
+ * They all went out on the dead pooled connection and failed together within
+ * ~500ms of the resume (NSURLError -1005; FRAPP-MOBILE-1…E, F, J). A query
+ * gets one retry, so it had none left; a mark-read had none at all.
+ *
+ * So `background` drops focus as before, but focus comes back only once the
+ * connection monitor's first foreground probe has its verdict
+ * (`monitor.onResumeSettled`). TanStack's retryer will not continue while
+ * unfocused, so a request that dies on the suspended socket in that window
+ * parks its retry until the verdict is in. The verdict is an answer or a
+ * failure that counts. On an answer the focus refetch and the parked retries
+ * go out on a connection that works. On a counted failure they go out too,
+ * into whatever `onlineManager` now says: paused while OFFLINE, attempted
+ * while DEGRADED, which is still "online" (see `publish` below). Holding focus until an answer instead would
+ * hold it, and every `refetchInterval` poll with it, for a whole API outage.
+ *
+ * The wait is the probe, not a timer: up to two probes, each with a 5s
+ * timeout and `CONFIRM_RETRY_MS` apart when the first fails, so about 12s at
+ * worst, longer if the link drops meanwhile (the monitor's
+ * `LINK_DOWN_GRACE_MS`, then a probe). For that long a `refetchInterval` poll
+ * skips its ticks, since TanStack doesn't poll unfocused. A fresh request is
+ * not held back, because focus gates only refetches, polls and retries.
+ *
  * Wiring is idempotent and reversible — `bindQueryConnectivity` returns its own
  * teardown so a spec can unwire between cases.
  */
 
 import { AppState, type AppStateStatus } from "react-native";
 import { focusManager, onlineManager } from "@tanstack/react-query";
-import { connectionMonitor, type ConnectionMonitor } from "./monitor";
+import {
+  connectionMonitor,
+  type ConnectionMonitor,
+  type MonitorDeps,
+} from "./monitor";
 
 export function bindQueryConnectivity(
   monitor: ConnectionMonitor = connectionMonitor,
+  appState: MonitorDeps["appState"] = AppState,
 ): () => void {
   // DEGRADED is deliberately "online": requests are slow or intermittent, not
   // impossible, and telling TanStack the app is offline would pause every
@@ -46,21 +78,47 @@ export function bindQueryConnectivity(
   publish();
   const unsubscribeOnline = monitor.subscribe(publish);
 
-  const subscription = AppState.addEventListener(
+  // `inactive` is iOS Control Center and the app switcher, not a background:
+  // treating it as unfocused drops focus on every notification-shade pull,
+  // which would stop a host's 10s attendance poll mid-check-in.
+  // `app/(app)/study.tsx` draws the same line for its session heartbeat:
+  // "Backgrounded means `background` — **not** 'anything but active'."
+  const refocusIfSettled = (
+    current: AppStateStatus | null | undefined = appState.currentState,
+  ) => {
+    if (current === "background") return;
+    if (monitor.resumePending()) return;
+    focusManager.setFocused(true);
+  };
+  const unsubscribeResume = monitor.onResumeSettled(() => refocusIfSettled());
+
+  // Settle focus from where things stand. Bound in the background (a launch
+  // straight there, for a notification or a headless task), focus is off
+  // explicitly: TanStack's default reads as focused on a device, which would
+  // let the first resume fire before the probe. Bound in the foreground, a
+  // rebind can land mid-resume after the last binding's listener is gone
+  // (Fast Refresh remounts the runtime), and this hands focus back.
+  if (appState.currentState === "background") focusManager.setFocused(false);
+  else refocusIfSettled();
+
+  const subscription = appState.addEventListener(
     "change",
     (next: AppStateStatus) => {
-      // `inactive` is iOS Control Center and the app switcher, not a
-      // background — treating it as unfocused drops focus on every
-      // notification-shade pull, which would stop a host's 10s attendance poll
-      // mid-check-in. `app/(app)/study.tsx` draws the same line for its
-      // session heartbeat: "Backgrounded means `background` — **not** 'anything
-      // but active'."
-      focusManager.setFocused(next !== "background");
+      if (next === "background") {
+        focusManager.setFocused(false);
+        return;
+      }
+      // Usually still pending here, because the monitor has just started its
+      // foreground probe (or hasn't seen this event yet, so it is still
+      // suspended); then `onResumeSettled` refocuses. Not pending when the
+      // monitor isn't running, or for `inactive` → `active`.
+      refocusIfSettled(next);
     },
   );
 
   return () => {
     unsubscribeOnline();
+    unsubscribeResume();
     subscription.remove();
   };
 }
