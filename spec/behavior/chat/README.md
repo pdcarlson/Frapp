@@ -112,7 +112,7 @@ Each member arranges their own channel list (#2877, owner decision 2026-09-29). 
 - **API.** `GET /v1/chat-sidebar`; `PATCH /v1/chat-sidebar` switches one filter or both, and a filter left out keeps its value; `PUT` and `DELETE /v1/chat-sidebar/collapsed/{sectionKey}`; `PUT` and `DELETE /v1/chat-sidebar/pins/{channelId}`. Every write is idempotent and answers with the whole arrangement. Folding is one database statement over the stored array (`set_chat_sidebar_section_collapsed`), so two devices folding different sections at the same moment both land.
 - **One rule for both clients.** Web's rail and mobile's s04 render the output of `arrangeChannelSidebar` in `@repo/hooks`, which sits on `groupChannelsByCategory` (§ Channels), and read the arrangement through `useSidebarPreferences`. The unread counts and mute levels it reads are the server's, never recomputed, and reach it through `sidebarUnreadCounts` and `sidebarMutedChannelIds`, which report either as unknown while its read is pending or its last attempt failed. Writes show at once. A write that overlapped no other takes its own answer as the list; overlapping writes end with one re-read of the server, since their answers can arrive out of order. A failed write puts the list back on the server's state and tells the member, every time, not only for the latest write. A write still in flight when the member signs out, switches account or switches chapter never puts its own answer into the list read after that, so the next member of the chapter never sees the last one's arrangement; it only prompts a re-read, which goes out as whoever is signed in now. Its failure isn't reported either, since whoever is on screen then didn't make it. While the unread counts are unknown, both clients draw no unread badges, on rows or folded headers alike; mobile also says the counts are unavailable once a read has failed.
 - **Row menu** (owner, 2026-11-06). Each channel row opens that channel's actions: on web a right-click on a rail row (or a long press, the menu key, or Shift+F10 with the row focused), and the row itself draws no hover controls; on mobile a long press on an s04 row, hidden conversations included, which taps and opens the app's own glass menu rather than a system alert. Which actions a row offers is `channelRowActions` in `@repo/hooks`, one rule for both clients, scoped to the member's permissions so nobody sees an action the server would refuse. Leaving Edit and Delete off DMs and `#chapter-audit` (below) is the menu's own caution; the server does not refuse those deletes (#3633). In order: Mark as read (an unread row only), Pin to top or Unpin from top, Notifications (the three levels, the current one checked; locked while the level is unknown, and on mobile while offline), Copy link (web), and Hide conversation (a 1:1 DM); then, after a divider and only with `channels:manage`, Edit channel (web; opens Chat settings on it) and Delete channel (asks first). Mobile leaves out Copy link, since a phone has no address bar, and Edit channel, since it has no Chat settings screen. Edit and Delete are never offered on a DM, a group DM or `#chapter-audit`. On web every action is also reachable without the menu: the open channel's `⋯` menu, opening the channel, the address bar, or Chat settings.
-- **Rows carry no read-only mark.** Web used to draw a lock at the end of every read-only row, the same glyph that marks a private channel at the start of a row. The Discord import makes every channel it creates read-only, so the lock appeared on nearly every row. A read-only channel says so in its composer instead.
+- **Rows carry no read-only mark.** Web used to draw a lock at the end of every read-only row, the same glyph that marks a private channel at the start of a row. Until 2026-11-08 (#3697) the Discord import made every channel it created read-only, so the lock appeared on nearly every row. A read-only channel says so in its composer instead.
 
 ## Messages
 
@@ -886,21 +886,32 @@ channel that reports a different one fails the import rather than being skipped.
   read-only, where only an `announcements:post` holder can post, so a chapter
   moved off Discord with channels its members could read and not use.* A new
   channel is postable by everyone who can read it, unless Discord made it
-  read-only: the channel took Send Messages away from a reader the server
-  otherwise lets talk (`@everyone`, or a role whose own permissions grant
-  Send Messages). That is the `#announcements` shape: `@everyone` denied
-  Send Messages there (an allow for exec doesn't change it, because in Frapp
-  the exec hold `announcements:post`), or, on a server where only a
-  "Brothers" role can talk, Brothers denied there. A deny on a role that
-  grants nothing itself, like a "Muted" role, doesn't count. The scan records
-  this per top-level channel (`read_only_in_discord`); a thread lands in its
+  read-only: none of its readers could talk there, and the channel is what
+  stopped them. The readers are `@everyone` (when it can read the channel)
+  and each role that can, each asked on its own. Two kinds are set aside: a
+  role with Administrator, which overwrites pass over, and a role the channel
+  itself allows to talk (the exec of an `#announcements`). The channel is
+  read-only when none of the rest can talk, and either it took talking away
+  from one of them that the server otherwise lets talk, or no reader can talk
+  at all. So `#announcements` denying `@everyone`, or denying "Brothers" who
+  talk only by inheriting from `@everyone`, is read-only. A channel where the
+  brothers talk and only the pledges are denied stays postable (Frapp has no
+  deny, so the pledges can post there), and a "Muted" role denied everywhere
+  turns nothing read-only. Talking is Send Messages; in a forum, where that
+  only creates posts, it is Send Messages in Threads. The scan records the
+  answer per top-level channel (`read_only_in_discord`); a thread lands in its
   parent's channel and takes its answer. An uploaded export carries no
-  permissions, so its channels are postable. The review step lists the
-  channels that will be read-only and why, and a chapter changes either
-  default in chat admin afterwards. Discord answers Send Messages per role
-  and Frapp has only read-only or not, so a channel where some readers
-  could talk and others could not comes out postable by all its readers
-  unless a reader the server lets talk was silenced there.
+  permissions, and a scan that could not read the server's roles knows
+  nothing either, so their channels are postable ("can read means can post").
+  The channel step shows a Read-only switch on every new channel, set to
+  Discord's answer, and the review step lists the channels that will be
+  read-only. **Known gaps:** Discord answers per role and Frapp has only
+  read-only or not, so the roles a read-only channel let talk in Discord can
+  post in Frapp only if they hold `announcements:post`, which by default only
+  the President does; the admin grants it in Settings → Roles. A channel that
+  denies `@everyone` and allows a member role is indistinguishable from
+  `#announcements` with an exec allow, and comes out read-only until the
+  admin turns it off.
 - **The bot reads only what its roles can see.** Discord lists every channel to
   a bot, including ones hidden from it, so the scan works out the bot's own
   access per channel from Discord's permission overwrites rather than finding

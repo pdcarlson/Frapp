@@ -597,3 +597,26 @@ describe("choiceIsReadOnly", () => {
     expect(choiceIsReadOnly({}, { readOnly: true })).toBe(true);
   });
 });
+
+// Review of #3697: a split on Discord's own read-only answer must be both
+// caught and fixable from the wizard.
+describe("like-named channels that Discord answered differently on read-only", () => {
+  const pair = [
+    open("1", "news"),
+    { ...open("2", "news"), readOnlyInDiscord: true },
+  ];
+
+  it("asks about them, since the API would make two channels", () => {
+    expect(
+      mappingIssues(pair, defaultChoices(pair), []).map(
+        (issue) => issue.channelId,
+      ),
+    ).toEqual(["1", "2"]);
+  });
+
+  it("lands them in one channel once the admin answers read-only the same way", () => {
+    const choices = defaultChoices(pair);
+    choices["2"] = { ...choices["2"]!, readOnly: false };
+    expect(mappingIssues(pair, choices, [])).toEqual([]);
+  });
+});

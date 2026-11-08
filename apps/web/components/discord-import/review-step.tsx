@@ -13,6 +13,7 @@ import type { ChannelChoice } from "./channel-mapping-step";
 import {
   choiceIsReadOnly,
   isImportTarget,
+  normaliseChannelName,
   type ExistingChannel,
 } from "./mapping-issues";
 import type { StagedChannel, StagedExport, StagedRole } from "./upload-step";
@@ -125,13 +126,22 @@ export function ReviewStep({
   );
   // New channels only: a merge keeps the existing channel's own setting.
   // Read-only lets only members who can post announcements post (#3697).
-  const readOnlyNames = importing.flatMap((channel) => {
-    const choice = channelChoices[channel.channelId];
-    if (choice?.action !== "create_new" || !choiceIsReadOnly(channel, choice)) {
-      return [];
-    }
-    return [`#${choice.newName?.trim() || channel.channelName}`];
-  });
+  // Like-named rows become one channel, so each name is listed once.
+  const readOnlyNames = [
+    ...new Map(
+      importing.flatMap((channel) => {
+        const choice = channelChoices[channel.channelId];
+        if (
+          choice?.action !== "create_new" ||
+          !choiceIsReadOnly(channel, choice)
+        ) {
+          return [];
+        }
+        const name = choice.newName?.trim() || channel.channelName;
+        return [[normaliseChannelName(name), `#${name}`] as const];
+      }),
+    ).values(),
+  ];
   const unreadable = skipped.filter(
     (channel) => channel.readable === false,
   ).length;
@@ -318,7 +328,7 @@ export function ReviewStep({
       {readOnlyNames.length > 0 ? (
         <SummarySection
           title={`${readOnlyNames.length} read-only channel${readOnlyNames.length === 1 ? "" : "s"}`}
-          meta="Members couldn't send messages there in Discord, so only members who can post announcements can post. Change it in chat admin afterwards."
+          meta="Only members who can post announcements can post, by default the President. Change it on the channel step, or in chat admin afterwards."
         >
           <ChipList names={readOnlyNames} />
         </SummarySection>

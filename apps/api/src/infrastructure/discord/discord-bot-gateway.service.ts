@@ -343,6 +343,8 @@ export class DiscordBotGatewayService implements IDiscordBotGateway {
             access.roles,
             overwrites,
             access.named.map((role) => role.id),
+            // A forum's members talk by replying to its posts.
+            threadParentOnly,
           )
         : null;
       // A forum IS offered as a destination — `#questions` is what an admin

@@ -434,6 +434,48 @@ describe('DiscordBotGatewayService.discoverChannels: who can read what', () => {
     ]);
   });
 
+  it('records which channels Discord made read-only, from the overwrites (#3697)', async () => {
+    const TALK = String((1n << 10n) | (1n << 16n) | (1n << 11n));
+    const SEND = String(1n << 11n);
+    serve({
+      [`/guilds/${GUILD}/channels`]: [
+        { id: '11', type: 0, name: 'academics', parent_id: null },
+        {
+          id: '15',
+          type: 5,
+          name: 'announcements',
+          permission_overwrites: [
+            { id: GUILD, type: 0, allow: '0', deny: SEND },
+            { id: BROTHER, type: 0, allow: SEND, deny: '0' },
+          ],
+        },
+      ],
+      [`/guilds/${GUILD}/roles`]: [
+        { id: GUILD, name: '@everyone', permissions: TALK, position: 0 },
+        { id: BROTHER, name: 'Brother', permissions: '0', position: 2 },
+        { id: PLEDGE, name: 'Pledge', permissions: '0', position: 1 },
+      ],
+      '/channels/15/threads/archived/public': { threads: [], has_more: false },
+      '/channels/15/threads/archived/private': {
+        threads: [],
+        has_more: false,
+      },
+      '/channels/11/threads/archived/private': {
+        threads: [],
+        has_more: false,
+      },
+    });
+    const { channels } = await gateway().discoverChannels(GUILD);
+    const byId = new Map(channels.map((channel) => [channel.id, channel]));
+    expect(byId.get('11')).toMatchObject({ readOnlyInDiscord: false });
+    // Pledge is a candidate the channel silences; Brother is the one it lets talk.
+    expect(byId.get('15')).toMatchObject({ readOnlyInDiscord: true });
+    // A thread lands in its parent's channel and carries no answer of its own.
+    for (const channel of channels.filter((c) => c.isThread)) {
+      expect(channel.readOnlyInDiscord).toBeNull();
+    }
+  });
+
   it('knows neither when the roles cannot be read, and tells the admin privacy is unknown', async () => {
     serve({
       [`/guilds/${GUILD}/roles`]: Object.assign(new Error('nope'), {
@@ -446,6 +488,7 @@ describe('DiscordBotGatewayService.discoverChannels: who can read what', () => {
       readable: null,
       privateInDiscord: null,
       readerRoleIds: null,
+      readOnlyInDiscord: null,
     });
     // Nothing throws: the scan still returns, with no roles to map.
     expect(roles).toEqual([]);

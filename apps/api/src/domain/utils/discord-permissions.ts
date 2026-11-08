@@ -1,9 +1,10 @@
 /**
- * Discord's channel permission calculation, for two questions discovery asks
+ * Discord's channel permission calculation, for three questions discovery asks
  * of every channel before any message is read:
  *
- *  1. can the bot read this channel's history at all, and
- *  2. could every member of the server read it (or was it private)?
+ *  1. can the bot read this channel's history at all,
+ *  2. could every member of the server read it (or was it private), and
+ *  3. could the people who read it talk in it, or was it read-only (#3697)?
  *
  * Why compute rather than probe. Discord returns EVERY guild channel to a bot,
  * including ones it cannot open, so the channel list says nothing about
@@ -20,8 +21,10 @@
 
 /** View Channels (1 << 10). */
 export const VIEW_CHANNEL = 1n << 10n;
-/** Send Messages (1 << 11). */
+/** Send Messages (1 << 11); Create Posts in a forum. */
 export const SEND_MESSAGES = 1n << 11n;
+/** Send Messages in Threads (1 << 38): replying to a forum post. */
+export const SEND_MESSAGES_IN_THREADS = 1n << 38n;
 /** Read Message History (1 << 16). */
 export const READ_MESSAGE_HISTORY = 1n << 16n;
 /** Administrator (1 << 3): every permission, and overwrites do not apply. */
@@ -212,53 +215,87 @@ export function readerRoleIds(
 }
 
 /**
- * Whether the channel is read-only in Discord: it takes Send Messages away
- * from a reader the server otherwise lets talk (#3697). This is what makes an
- * imported channel read-only in Frapp, where only an `announcements:post`
- * holder can post in one; every other imported channel is postable by
- * whoever can read it.
+ * Whether the channel is read-only in Discord: the people who read it cannot
+ * talk in it (#3697). This is what makes an imported channel read-only in
+ * Frapp, where only an `announcements:post` holder can post in one; every
+ * other imported channel is postable by whoever can read it.
  *
- * The readers asked are `@everyone`, and each of `candidates` on its own
- * whose own guild permissions grant Send Messages. A reader counts when it
- * can read the channel's history and could send at the server level, but
- * cannot send here. So:
+ * The readers are `@everyone`, when it can read the channel's history, and
+ * each of `candidates` on its own that can. Two kinds are set aside:
  *
- *  - `#announcements` denying Send Messages to `@everyone` is read-only, and
- *    so is one denying it to "Brothers" on a server where only that role can
- *    talk. An allow for exec does not change it: in Frapp the exec hold
- *    `announcements:post`.
- *  - A deny on a "Muted" role that grants nothing itself does not count, so a
- *    moderation role does not turn every channel read-only.
- *  - A channel where nobody could talk at the server level is not read-only
- *    here: the channel itself did not take anything away.
+ *  - a role holding Administrator, which every overwrite passes over, so
+ *    whether it can talk says nothing about the channel;
+ *  - a role the channel itself allows to talk (an overwrite allow on that
+ *    role): the exec of an `#announcements`, which Frapp has no per-channel
+ *    way to express. They are why a read-only channel needs its posters to
+ *    hold `announcements:post`, which only the President does by default.
  *
- * Like `readerRoleIds`, one role at a time approximates Discord, which
- * answers per combination of roles; the wizard says which channels come out
- * read-only and a chapter can change it in chat admin afterwards.
+ * The channel is read-only when none of the remaining readers can talk in it,
+ * and it is the channel that stopped them: it took talking away from one of
+ * them that the server otherwise lets talk, or nobody reading it can talk at
+ * all. So `#announcements` denying `@everyone` is read-only, and so is one
+ * denying "Brothers" when they can talk only by inheriting from `@everyone`.
+ * A channel where the brothers talk and the pledges are denied stays
+ * postable (Frapp has no deny; the pledges can post there), and so does
+ * every channel of a server whose "Muted" role is denied everywhere. A server
+ * that lets nobody talk by default and allows members per channel reads its
+ * per-channel allows as privileged only where nobody else can talk, so its
+ * discussion channels stay postable, and an `#announcements` there that
+ * allows exec is postable too (the one shape this misses).
+ *
+ * Talking is Send Messages, except in a forum (`isForum`), where that is
+ * Create Posts and members talk by replying, Send Messages in Threads. One role
+ * at a time approximates Discord, which answers per combination of roles; the
+ * wizard shows the answer per channel and lets the admin change it.
  */
 export function readOnlyInDiscord(
   guildId: string,
   roles: readonly DiscordRolePermissions[],
   overwrites: readonly DiscordPermissionOverwrite[],
   candidates: readonly string[],
+  isForum = false,
 ): boolean {
-  const ownPermissions = new Map(
-    roles.map((role) => [role.id, bits(role.permissions)]),
+  const talk = isForum ? SEND_MESSAGES_IN_THREADS : SEND_MESSAGES;
+  const allowedHere = new Set(
+    overwrites
+      .filter(
+        (overwrite) =>
+          overwrite.type === 0 &&
+          overwrite.id !== guildId &&
+          (bits(overwrite.allow) & talk) !== 0n,
+      )
+      .map((overwrite) => overwrite.id),
   );
-  const silenced = (subject: DiscordPermissionSubject): boolean => {
+  const readers: {
+    canTalk: boolean;
+    silenced: boolean;
+    privileged: boolean;
+  }[] = [];
+  const ask = (subject: DiscordPermissionSubject, privileged: boolean) => {
     const base = basePermissions(guildId, roles, subject);
-    if ((base & SEND_MESSAGES) === 0n) return false;
+    if (base === ALL) return; // Administrator: overwrites do not apply.
     const here = channelPermissions(base, guildId, overwrites, subject);
-    return canReadHistory(here) && (here & SEND_MESSAGES) === 0n;
+    if (!canReadHistory(here)) return;
+    const canTalk = (here & talk) !== 0n;
+    readers.push({
+      canTalk,
+      silenced: !canTalk && (base & talk) !== 0n,
+      privileged,
+    });
   };
-  if (silenced({ userId: null, roleIds: [] })) return true;
-  return candidates.some((roleId) => {
-    if (roleId === guildId) return false;
-    if (((ownPermissions.get(roleId) ?? 0n) & SEND_MESSAGES) === 0n) {
-      return false;
-    }
-    return silenced({ userId: null, roleIds: [roleId] });
-  });
+  ask({ userId: null, roleIds: [] }, false);
+  for (const roleId of candidates) {
+    if (roleId === guildId) continue;
+    ask({ userId: null, roleIds: [roleId] }, allowedHere.has(roleId));
+  }
+  const common = readers.filter((reader) => !reader.privileged);
+  if (common.length === 0 || common.some((reader) => reader.canTalk)) {
+    return false;
+  }
+  return (
+    readers.some((reader) => reader.silenced) ||
+    !readers.some((reader) => reader.canTalk)
+  );
 }
 
 /** Parse `permission_overwrites` off a raw channel, dropping malformed rows. */

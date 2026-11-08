@@ -2,6 +2,7 @@ import {
   ADMINISTRATOR,
   READ_MESSAGE_HISTORY,
   SEND_MESSAGES,
+  SEND_MESSAGES_IN_THREADS,
   VIEW_CHANNEL,
   basePermissions,
   canReadHistory,
@@ -295,5 +296,109 @@ describe('readOnlyInDiscord', () => {
         candidates,
       ),
     ).toBe(false);
+  });
+
+  // Review of #3697: the shapes the first rule got wrong.
+  it('keeps a channel postable when its own members talk and only pledges are denied', () => {
+    const PLEDGE = '700000000000000007';
+    const withPledge: DiscordRolePermissions[] = [
+      ...brothersTalk,
+      { id: PLEDGE, permissions: TALK },
+    ];
+    expect(
+      readOnlyInDiscord(
+        GUILD,
+        withPledge,
+        [deny(PLEDGE, SEND)],
+        [...candidates, PLEDGE],
+      ),
+    ).toBe(false);
+  });
+
+  it('ignores a Muted role denied everywhere, even one left with default permissions', () => {
+    const defaultMuted: DiscordRolePermissions[] = [
+      { id: GUILD, permissions: TALK },
+      { id: MUTED, permissions: TALK },
+    ];
+    expect(
+      readOnlyInDiscord(GUILD, defaultMuted, [deny(MUTED, SEND)], [MUTED]),
+    ).toBe(false);
+  });
+
+  it('is read-only when a private channel silences readers who talk only through @everyone', () => {
+    // Brothers hold no permissions of their own: they read by the allow and
+    // would talk by inheriting from @everyone, which the channel takes away.
+    expect(
+      readOnlyInDiscord(
+        GUILD,
+        open,
+        [deny(GUILD, String(VIEW_CHANNEL | SEND_MESSAGES)), allow(BROTHER)],
+        [BROTHER, CABINET],
+      ),
+    ).toBe(true);
+    expect(
+      readOnlyInDiscord(
+        GUILD,
+        open,
+        [everyoneDenied, { id: BROTHER, type: 0, allow: READ, deny: SEND }],
+        [BROTHER, CABINET],
+      ),
+    ).toBe(true);
+  });
+
+  describe('a server that lets nobody talk by default and allows members per channel', () => {
+    const perChannel: DiscordRolePermissions[] = [
+      { id: GUILD, permissions: READ },
+      { id: BROTHER, permissions: '0' },
+    ];
+    it('keeps a discussion channel postable', () => {
+      expect(
+        readOnlyInDiscord(GUILD, perChannel, [allow(BROTHER, SEND)], [BROTHER]),
+      ).toBe(false);
+    });
+    it('makes a channel nobody can talk in read-only', () => {
+      expect(readOnlyInDiscord(GUILD, perChannel, [], [BROTHER])).toBe(true);
+    });
+  });
+
+  it('does not let an Administrator role, which overwrites pass over, keep a channel postable', () => {
+    const ADMIN = '800000000000000008';
+    const withAdmin: DiscordRolePermissions[] = [
+      ...open,
+      { id: ADMIN, permissions: String(ADMINISTRATOR) },
+    ];
+    expect(
+      readOnlyInDiscord(GUILD, withAdmin, [deny(GUILD, SEND)], [ADMIN]),
+    ).toBe(true);
+  });
+
+  describe('a forum, where members talk by replying to posts', () => {
+    const forumOpen: DiscordRolePermissions[] = [
+      {
+        id: GUILD,
+        permissions: String(
+          VIEW_CHANNEL |
+            READ_MESSAGE_HISTORY |
+            SEND_MESSAGES |
+            SEND_MESSAGES_IN_THREADS,
+        ),
+      },
+    ];
+    it('stays postable when only creating posts is reserved', () => {
+      expect(
+        readOnlyInDiscord(GUILD, forumOpen, [deny(GUILD, SEND)], [], true),
+      ).toBe(false);
+    });
+    it('is read-only when replying is denied too', () => {
+      expect(
+        readOnlyInDiscord(
+          GUILD,
+          forumOpen,
+          [deny(GUILD, String(SEND_MESSAGES | SEND_MESSAGES_IN_THREADS))],
+          [],
+          true,
+        ),
+      ).toBe(true);
+    });
   });
 });
