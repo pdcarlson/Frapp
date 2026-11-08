@@ -1853,6 +1853,57 @@ describe('RbacService', () => {
 
       expect(result).toEqual([]);
     });
+
+    // An OR of ANDs from one resolve (#3656: the member-joined push).
+    describe('findUserIdsWithAnyPermissions', () => {
+      const ANY = [
+        [SystemPermissions.MEMBERS_VIEW, SystemPermissions.CHANNELS_MANAGE],
+        [SystemPermissions.CHANNELS_MANAGE, SystemPermissions.ROLES_MANAGE],
+      ];
+
+      beforeEach(() => {
+        mockRoleRepo.findByChapter.mockResolvedValue([
+          role('role-president', ['*']),
+          role('role-mod', [
+            SystemPermissions.MEMBERS_VIEW,
+            SystemPermissions.CHANNELS_MANAGE,
+          ]),
+          role('role-admin', [
+            SystemPermissions.CHANNELS_MANAGE,
+            SystemPermissions.ROLES_MANAGE,
+          ]),
+          role('role-member', [SystemPermissions.MEMBERS_VIEW]),
+          role('role-roles-only', [SystemPermissions.ROLES_MANAGE]),
+        ]);
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          member('user-president', ['role-president']),
+          member('user-mod', ['role-mod']),
+          member('user-admin', ['role-admin']),
+          member('user-plain', ['role-member']),
+          member('user-split', ['role-member', 'role-roles-only']),
+        ]);
+      });
+
+      it('admits a member who satisfies every permission of any one set', async () => {
+        const result = await service.findUserIdsWithAnyPermissions('ch-1', ANY);
+
+        // user-split holds members:view and roles:manage: one from each set,
+        // neither set whole.
+        expect(result.sort()).toEqual([
+          'user-admin',
+          'user-mod',
+          'user-president',
+        ]);
+        expect(mockMemberRepo.findByChapter).toHaveBeenCalledTimes(1);
+      });
+
+      it('admits nobody for an empty list of sets', async () => {
+        const result = await service.findUserIdsWithAnyPermissions('ch-1', []);
+
+        expect(result).toEqual([]);
+        expect(mockMemberRepo.findByChapter).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('getChapterMemberAccess', () => {

@@ -46,9 +46,11 @@ import { isBetaOffModule } from "./beta-off-modules";
  *   emitter and a `kind` arm in the predicate; neither exists any more.)
  * - **`admin`** — "new member joined" / "invite accepted" / "role change", and
  *   "message reported" to the officers who can open the chat report queue
- *   (`ChatReportService`, via `notifyUser`). It is member-facing in *delivery*
- *   (`InviteService` sends it through `notifyChapter`, so every member gets a
- *   row), but it is chapter operations rather than something a member opts into
+ *   (`ChatReportService`, via `notifyUser`). Its pushes go only to the members
+ *   who can act on them: "new member joined" reaches whoever can open the
+ *   roster and invite or assign roles (`InviteService`, via `notifyMembers`;
+ *   the audience is the trigger row in `spec/behavior/notifications.md`,
+ *   #3656). It is chapter operations rather than something a member opts into
  *   per-category, and it has no drawn row in the reference. The report alert
  *   uses it rather than `chat` for the same reason: it is moderation work, not
  *   a message.
