@@ -1059,7 +1059,7 @@ describe('EventSeriesService', () => {
         // start and end were clamped against their own months independently, so
         // a MONTHLY event spanning midnight could generate an occurrence ending
         // before it began — slipping past the end<=start guard that create and
-        // update both enforce, and emitting DTEND before DTSTART in its .ics.
+        // update both enforce.
         const overnight: Event = {
           ...baseEvent,
           recurrence_rule: 'MONTHLY',
