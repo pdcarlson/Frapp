@@ -276,8 +276,26 @@ describe('EventService', () => {
       notes: null,
       check_in_zone: null,
       check_in_zone_name: null,
+      // Omitted: the ten-minute default (#3703).
+      check_in_opens_minutes: 10,
     });
     expect(result).toEqual(baseEvent);
+  });
+
+  it("stores the event's own check-in lead", async () => {
+    mockEventRepo.create.mockResolvedValue(baseEvent);
+
+    await service.create({
+      chapter_id: 'ch-1',
+      name: 'Chapter Meeting',
+      start_time: baseEvent.start_time,
+      end_time: baseEvent.end_time,
+      check_in_opens_minutes: 0,
+    });
+
+    expect(mockEventRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ check_in_opens_minutes: 0 }),
+    );
   });
 
   // The check-in geofence is opt-in per event (#994), and these cases pin the

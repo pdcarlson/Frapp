@@ -174,8 +174,12 @@ export function useQuickActionsHost({
           const at = new Date();
           const open = selectEventRows(eventsQuery.data, at).filter(
             (row) =>
-              resolveCheckInWindow(row.start_time, row.end_time, at).state ===
-              "open",
+              resolveCheckInWindow(
+                row.start_time,
+                row.end_time,
+                at,
+                row.check_in_opens_minutes,
+              ).state === "open",
           );
           if (open.length === 1) {
             router.push({

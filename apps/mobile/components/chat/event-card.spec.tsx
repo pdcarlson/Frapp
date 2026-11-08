@@ -97,6 +97,7 @@ const PAYLOAD: EventPayload = {
   location: "Great Hall",
   point_value: 10,
   is_mandatory: true,
+  check_in_opens_minutes: 10,
   created_at: "2026-11-01T12:00:00.000Z",
 };
 
@@ -273,13 +274,27 @@ describe("EventCard — the checked-in count", () => {
 });
 
 describe("EventCard — Check in", () => {
-  it("is offered only inside the window, the 15-minute grace included", () => {
-    state.now = new Date("2026-11-05T22:59:00.000Z");
+  it("is offered only inside the window, the lead and the 15-minute grace included", () => {
+    // Ten minutes before the 23:00 start is the default lead (#3703).
+    state.now = new Date("2026-11-05T22:49:00.000Z");
     expect(hasButton(render(), "Check in")).toBe(false);
+    state.now = new Date("2026-11-05T22:51:00.000Z");
+    expect(hasButton(render(), "Check in")).toBe(true);
     state.now = new Date("2026-11-06T00:14:00.000Z");
     expect(hasButton(render(), "Check in")).toBe(true);
     state.now = new Date("2026-11-06T00:16:00.000Z");
     expect(hasButton(render(), "Check in")).toBe(false);
+  });
+
+  it("opens on the card's own lead, not the default", () => {
+    // Thirty minutes ahead of the 23:00 start: open at 22:35, which the
+    // default ten would still call early.
+    state.now = new Date("2026-11-05T22:35:00.000Z");
+    const payload = { ...PAYLOAD, check_in_opens_minutes: 30 };
+    expect(hasButton(render({ payload }), "Check in")).toBe(true);
+    expect(
+      hasButton(render({ payload: { ...PAYLOAD, check_in_opens_minutes: 0 } }), "Check in"),
+    ).toBe(false);
   });
 
   it("doesn't read the event outside the window", () => {

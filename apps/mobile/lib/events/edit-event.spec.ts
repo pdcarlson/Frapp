@@ -20,6 +20,7 @@ const EVENT: EventDetail = {
   start_time: "2026-11-09T23:45:00.000Z",
   end_time: "2026-11-10T01:15:00.000Z",
   point_value: 10,
+  check_in_opens_minutes: 10,
   attendance: {
     is_mandatory: true,
     others_invited: true,
@@ -67,6 +68,13 @@ function patchOf(
 describe("validateEventEdit", () => {
   it("sends nothing for an untouched form", () => {
     expect(isEmptyPatch(patchOf(single, () => {}))).toBe(true);
+  });
+
+  it("sends the check-in lead only when it changed", () => {
+    expect(patchOf(single, (d) => (d.checkInOpensInput = "10"))).toEqual({});
+    expect(patchOf(single, (d) => (d.checkInOpensInput = "20"))).toEqual({
+      check_in_opens_minutes: 20,
+    });
   });
 
   it("sends only the name for a typo fix, so nobody is paged", () => {

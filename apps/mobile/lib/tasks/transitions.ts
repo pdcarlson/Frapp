@@ -5,8 +5,7 @@
  * `apps/api/src/application/services/task.service.ts`, which is the authority.
  * This copy exists only so s08 can stop *offering* a tap it knows will 400; it
  * never grants one — the server re-checks every PATCH and
- * `useUpdateTaskStatus` rolls back on rejection. Same relationship
- * `CHECK_IN_GRACE_MINUTES` has to the attendance service.
+ * `useUpdateTaskStatus` rolls back on rejection.
  *
  * ## Two facts that shape every caller
  *

@@ -17,8 +17,11 @@ import {
   eventChangeOf,
 } from './event-announcement.service';
 import { SystemPermissions } from '#domain/constants/permissions';
-import { isInvited } from './event-role-targeting';
-import { eventLimitsAudience } from '@repo/validation';
+import { isEventVisibleTo, isInvited } from './event-role-targeting';
+import {
+  DEFAULT_CHECK_IN_OPENS_MINUTES,
+  eventLimitsAudience,
+} from '@repo/validation';
 import { normalizeCheckInZone } from './event-input';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import type {
@@ -65,20 +68,10 @@ export class EventService {
     chapterId: string,
     viewerId: string,
   ): Promise<boolean> {
-    if (!eventLimitsAudience(event)) return true;
-    if (
-      await this.rbac.memberHasAnyPermission(chapterId, viewerId, [
-        SystemPermissions.EVENTS_UPDATE,
-      ])
-    ) {
-      return true;
-    }
-    const member = await this.memberRepo.findByUserAndChapter(
-      viewerId,
-      chapterId,
-    );
-    if (!member) return false;
-    return isInvited(event, member.role_ids);
+    return isEventVisibleTo(event, chapterId, viewerId, {
+      rbac: this.rbac,
+      memberRepo: this.memberRepo,
+    });
   }
 
   async findById(
@@ -206,6 +199,8 @@ export class EventService {
       notes: input.notes ?? null,
       check_in_zone: normalizeCheckInZone(input.check_in_zone) ?? null,
       check_in_zone_name: input.check_in_zone_name ?? null,
+      check_in_opens_minutes:
+        input.check_in_opens_minutes ?? DEFAULT_CHECK_IN_OPENS_MINUTES,
     });
 
     if (parent.recurrence_rule) {

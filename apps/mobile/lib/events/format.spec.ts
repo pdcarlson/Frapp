@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { CHECK_IN_GRACE_MINUTES } from "@repo/validation";
 import {
-  CHECK_IN_GRACE_MINUTES,
+  formatCheckInOpens,
   formatCountdown,
   formatEventClock,
   formatEventDateBlock,
@@ -155,14 +156,35 @@ describe("resolveCheckInWindow", () => {
   const start = at(2026, 3, 10, 18, 0);
   const end = at(2026, 3, 10, 19, 0);
 
-  it("is upcoming before the start", () => {
+  it("is upcoming before check-in opens, ten minutes before the start", () => {
     const window = resolveCheckInWindow(
       iso(start),
       iso(end),
       at(2026, 3, 10, 17, 45),
     );
     expect(window.state).toBe("upcoming");
+    expect(window.opensAt?.getTime()).toBe(at(2026, 3, 10, 17, 50).getTime());
+  });
+
+  it("opens ten minutes early, as members arrive (#3703)", () => {
+    expect(
+      resolveCheckInWindow(iso(start), iso(end), at(2026, 3, 10, 17, 50)).state,
+    ).toBe("open");
+  });
+
+  it("opens on the event's own lead", () => {
+    const window = resolveCheckInWindow(
+      iso(start),
+      iso(end),
+      at(2026, 3, 10, 17, 50),
+      0,
+    );
+    expect(window.state).toBe("upcoming");
     expect(window.opensAt?.getTime()).toBe(start.getTime());
+    expect(
+      resolveCheckInWindow(iso(start), iso(end), at(2026, 3, 10, 17, 31), 30)
+        .state,
+    ).toBe("open");
   });
 
   it("is open during the event", () => {
@@ -204,6 +226,31 @@ describe("resolveCheckInWindow", () => {
     const window = resolveCheckInWindow("garbage", "garbage", new Date());
     expect(window.state).toBe("unknown");
     expect(window.closesAt).toBeNull();
+  });
+});
+
+describe("formatCheckInOpens", () => {
+  const now = at(2026, 3, 10, 12, 0);
+
+  it("gives only the time today", () => {
+    expect(formatCheckInOpens(at(2026, 3, 10, 19, 50), now)).toBe(
+      `at ${formatEventClock(at(2026, 3, 10, 19, 50))}`,
+    );
+  });
+
+  it("says tomorrow, the weekday within the week, and the date past it", () => {
+    const tomorrow = at(2026, 3, 11, 19, 50);
+    expect(formatCheckInOpens(tomorrow, now)).toBe(
+      `tomorrow at ${formatEventClock(tomorrow)}`,
+    );
+    const thisWeek = at(2026, 3, 13, 19, 50);
+    expect(formatCheckInOpens(thisWeek, now)).toBe(
+      `${thisWeek.toLocaleDateString(undefined, { weekday: "long" })} at ${formatEventClock(thisWeek)}`,
+    );
+    const later = at(2026, 3, 24, 19, 50);
+    expect(formatCheckInOpens(later, now)).toBe(
+      `${later.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} at ${formatEventClock(later)}`,
+    );
   });
 });
 

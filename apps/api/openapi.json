@@ -5455,6 +5455,53 @@
         ]
       }
     },
+    "/v1/events/{eventId}/attendance/me": {
+      "get": {
+        "description": "Lets a member's event page show that they are checked in (and when) instead of offering check-in again. `attendance` is null when they have no row.",
+        "operationId": "AttendanceController_mine_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyAttendanceDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's own attendance for an event",
+        "tags": [
+          "Attendance"
+        ]
+      }
+    },
     "/v1/events/{eventId}/attendance": {
       "get": {
         "operationId": "AttendanceController_list_v1",
@@ -13774,6 +13821,12 @@
             "type": "string",
             "description": "Human-readable name for `check_in_zone`, shown on the mobile scanner (\"Inside the Great Hall zone\")."
           },
+          "check_in_opens_minutes": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120,
+            "description": "Minutes before start_time that check-in opens. Omitted on create, it is 10; the window closes 15 minutes after end_time."
+          },
           "channel_id": {
             "type": "string",
             "description": "When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when the event keeps anyone out (`others_invited` false, including its default when `required_role_ids` is non-empty, or a non-empty `excluded_role_ids`), on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both limit its audience and post one. (`PATCH` can still limit the audience of an event whose card already posted; that card is left as-is.)"
@@ -13876,6 +13929,12 @@
             "type": "string",
             "nullable": true
           },
+          "check_in_opens_minutes": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120,
+            "description": "Minutes before start_time that check-in opens; it closes 15 minutes after end_time."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -13904,6 +13963,7 @@
           "notes",
           "check_in_zone",
           "check_in_zone_name",
+          "check_in_opens_minutes",
           "created_at"
         ]
       },
@@ -13974,6 +14034,12 @@
             "type": "string",
             "description": "Human-readable name for `check_in_zone`, shown on the mobile scanner (\"Inside the Great Hall zone\")."
           },
+          "check_in_opens_minutes": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120,
+            "description": "Minutes before start_time that check-in opens; the window closes 15 minutes after end_time. Omitted leaves it unchanged; null is refused."
+          },
           "scope": {
             "type": "string",
             "enum": [
@@ -14005,6 +14071,78 @@
             "description": "Scanner longitude. Required when the event defines a check-in geofence; ignored when it doesn't."
           }
         }
+      },
+      "EventAttendanceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PRESENT",
+              "EXCUSED",
+              "ABSENT",
+              "LATE"
+            ]
+          },
+          "check_in_time": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "excuse_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "marked_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "user_id",
+          "status",
+          "check_in_time",
+          "excuse_reason",
+          "marked_by",
+          "created_at"
+        ]
+      },
+      "MyAttendanceDto": {
+        "type": "object",
+        "properties": {
+          "attendance": {
+            "nullable": true,
+            "description": "The caller's row, or null when they have none (not checked in, and not yet marked).",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EventAttendanceDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "attendance"
+        ]
       },
       "UpdateAttendanceDto": {
         "type": "object",

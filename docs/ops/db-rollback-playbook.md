@@ -3138,6 +3138,23 @@ alter table public.chat_message_attachments
 
 Dropping them loses each photo's blur and the link to its preview copy; photos still draw, from the original. The preview objects stay in the `chat` bucket under each original's `preview/` folder, unreferenced, until a sweep removes them (#2197).
 
+## Rollback event check_in_opens_minutes (20261108210000)
+
+* **Migration**: `20261108210000_event_check_in_opens_minutes.sql`
+
+One not-null column with a default on `events`, `check_in_opens_minutes`, and its range check. The API from the same PR writes it on every create and series occurrence and selects it in event search, so roll the API back first: dropping the column under the new API fails event creates and search. With the older API, check-in opens at the start again (the behaviour #3703 fixed).
+
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). After the API is back on the earlier version:
+
+```sql
+alter table public.events
+  drop constraint if exists events_check_in_opens_minutes_range;
+alter table public.events
+  drop column if exists check_in_opens_minutes;
+```
+
+Dropping it loses only the leads officers set; every event goes back to opening at its start.
+
 ## Rollback transfer presidency keeps member access (20261108200000)
 
 * **Migration**: `20261108200000_transfer_presidency_keeps_member_access.sql`

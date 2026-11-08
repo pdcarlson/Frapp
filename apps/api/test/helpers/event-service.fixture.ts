@@ -39,6 +39,7 @@ export const baseEvent: Event = {
   notes: null,
   check_in_zone: null,
   check_in_zone_name: null,
+  check_in_opens_minutes: 10,
   created_at: '2026-02-26T00:00:00.000Z',
 };
 
