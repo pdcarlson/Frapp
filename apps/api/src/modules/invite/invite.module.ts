@@ -12,6 +12,9 @@ import { NotificationModule } from '../notification/notification.module';
 import { ActivationModule } from '../activation/activation.module';
 import { EmailModule } from '../email/email.module';
 import { ChatModule } from '../chat/chat.module';
+// RbacModule → RbacService: the member-joined push goes to whoever can act on
+// a join (#3656).
+import { RbacModule } from '../rbac/rbac.module';
 
 @Module({
   imports: [
@@ -21,6 +24,7 @@ import { ChatModule } from '../chat/chat.module';
     ActivationModule,
     EmailModule,
     ChatModule,
+    RbacModule,
   ],
   controllers: [InviteController],
   providers: [
