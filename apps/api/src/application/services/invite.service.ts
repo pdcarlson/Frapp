@@ -28,6 +28,7 @@ import {
 } from '#domain/constants/permissions';
 import { isSubscriptionHardLocked } from '#domain/constants/subscription-grace';
 import { NotificationService } from './notification.service';
+import { RbacService } from './rbac.service';
 import { ActivationService } from './activation.service';
 import { ChatService } from './chat.service';
 import { LegalAcceptanceService } from './legal-acceptance.service';
@@ -153,6 +154,18 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
+/**
+ * Who is told a member joined (#3656): whoever can open the roster the push
+ * links to (`MemberController` requires `members:view` throughout) and can act
+ * on the join, by inviting more people or by giving the new member a role
+ * (`PATCH /v1/members/:id/roles` requires `roles:manage`). Any one of these
+ * sets admits a member; the wildcard admits all.
+ */
+export const MEMBER_JOINED_AUDIENCE: readonly (readonly string[])[] = [
+  [SystemPermissions.MEMBERS_VIEW, SystemPermissions.MEMBERS_INVITE],
+  [SystemPermissions.MEMBERS_VIEW, SystemPermissions.ROLES_MANAGE],
+];
+
 @Injectable()
 export class InviteService {
   private readonly logger = new Logger(InviteService.name);
@@ -172,6 +185,7 @@ export class InviteService {
     @Inject(CHAT_MESSAGE_REPOSITORY)
     private readonly chatMessages: IChatMessageRepository,
     private readonly legalAcceptance: LegalAcceptanceService,
+    private readonly rbac: RbacService,
   ) {}
 
   private prepareInviteData(
@@ -621,27 +635,36 @@ export class InviteService {
     try {
       // Named, and not sent to the member who just joined: "A new member has
       // joined the chapter" told everyone nothing, the joiner included
-      // (notifications.md § What a push says).
-      const [roster, joiner] = await Promise.all([
-        this.memberRepo.findByChapter(invite.chapter_id),
+      // (notifications.md § What a push says). Sent only to the members who
+      // can act on a join (#3656): a chapter onboarding at once would
+      // otherwise push every member once per join, on a category with no
+      // switch.
+      const [holders, joiner] = await Promise.all([
+        this.rbac.findUserIdsWithAnyPermissions(
+          invite.chapter_id,
+          MEMBER_JOINED_AUDIENCE,
+        ),
         // The name is a nicety: a failed read costs the name, not the push.
         this.userRepo
           .findByIds([userId])
           .then(([user]) => user)
           .catch(() => undefined),
       ]);
-      const name = joiner?.display_name?.trim();
-      await this.notificationService.notifyMembers(
-        invite.chapter_id,
-        roster.map((m) => m.user_id).filter((id) => id !== userId),
-        {
-          title: name ? `${name} joined` : 'A new member joined',
-          body: 'New member of the chapter',
-          priority: 'NORMAL',
-          category: 'admin',
-          data: { target: { screen: 'members' } },
-        },
-      );
+      const recipients = holders.filter((id) => id !== userId);
+      if (recipients.length > 0) {
+        const name = joiner?.display_name?.trim();
+        await this.notificationService.notifyMembers(
+          invite.chapter_id,
+          recipients,
+          {
+            title: name ? `${name} joined` : 'A new member joined',
+            body: 'New member of the chapter',
+            priority: 'NORMAL',
+            category: 'admin',
+            data: { target: { screen: 'members' } },
+          },
+        );
+      }
     } catch (error) {
       reportCaughtFailure(this.logger, {
         level: 'error',
