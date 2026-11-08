@@ -99,7 +99,7 @@ Read the matching skill before deep work. Skills live in [`.claude/skills/`](.cl
 
 - Building: `api-development`, `ui-development`, `signet-cutover`, `realtime-resilience`, `testing`.
 - Reviewing and verifying: `diff-review` (the pre-push gate; [runbook](docs/ci-cd/ai-code-review-runbook.md)), `audit`, `infrastructure-research`, `live-verification` (deployed staging only, never production).
-- Tracker and sessions: `file-follow-up`, `needs-me`, `handoff`.
+- Tracker and sessions: `file-follow-up`, `needs-me`, `handoff`, `coordinator` (a standing chat that routes Paul's and Shawn's input to worker sessions and keeps the shared board).
 - Multi-agent work: `multi-agent` (budget, effort and mechanics for any Workflow or subagent fan-out).
 - The three scheduled routines, 1 to 3: `beta-watch`, `board-sweep` (runs `pr-followups`, `issue-curator`, `issue-triage` as phases), `weekly-upkeep` (alternates `docs-upkeep` and `hygiene-scan`) ([`routines.md`](docs/ci-cd/routines.md)).
 
