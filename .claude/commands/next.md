@@ -55,8 +55,8 @@ drive-bys); note it in the PR body. Otherwise file it (`issue_write` create, lab
 priority + one `area:<x>`, `file:line` evidence, an Agent brief when you can). A fixed defect that
 deserves its own record (user-visible, security, anything someone would search the tracker for) is
 filed and claimed into the unit: same `CLAIM_ID`, claim comment and all. This record-keeping claim
-sits outside `MAX_BATCH` and the estimate ceiling, which cap planned scope, and it is the only time a
-`triage` issue is claimable. Needing a second one means the unit was mis-scoped: finish, and say so
+sits outside `MAX_BATCH` and the estimate ceiling, which cap planned scope. Apart from a named issue
+(Modes), it is the only time a `triage` issue is claimable. Needing a second one means the unit was mis-scoped: finish, and say so
 in the PR.
 
 **Ultracode changes how thoroughly a step is done, never which steps run or what is written to the
@@ -112,8 +112,11 @@ obligates the whole batch (§0.7).
 - **`/next 123 [124 …]`**: skip ranking (§0.3–0.4) but still claim and verify (§0.5–0.6) each named
   issue, since it may already be held. Several numbers claim as one batch under the same caps and
   coherence test; if the set doesn't honestly batch, say so and ask rather than silently splitting
-  it or shipping an incoherent PR. `triage` issues are never claimable in any mode (except the
-  record-keeping claim above), and §0.2 condition 5 applies here too: a human naming a `[human]`
+  it or shipping an incoherent PR. A named issue still in `triage` is claimable: the human naming
+  it (typing the number, or starting a card that carries it) is the triage decision, so the claim
+  promotes it (§0.5 step 3), and a release puts it back (Exits). Ranked `/next` never picks a
+  `triage` issue. A named `triage` issue carrying the `human` label is not promoted: say it's
+  marked human-only and ask. §0.2 condition 5 applies here too: a human naming a `[human]`
   item doesn't make it agent-doable. Nor does naming a `routine-state`, `incident` or `parked`
   issue (condition 1's clause for them): say so, for an `incident` offer to file the underlying
   fault as its own issue, and for a `parked` one say that it goes back on the path when the owner
@@ -154,7 +157,8 @@ reads the title; if it's missing, that condition silently passes everything. An 
 when all hold:
 
 1. No state label (`triage`, `in-progress`, `in-review`), and no `routine-state`, `incident` or
-   `parked` label. `triage` items need promotion and a priority first (who may promote them:
+   `parked` label (a named `triage` issue is the exception: [Modes](#modes)). `triage` items need
+   promotion and a priority first (who may promote them:
    [`github-pm.md` → Ownership boundary](../../docs/ci-cd/github-pm.md#ownership-boundary-organize-broadly-destroy-narrowly));
    `in-review` means a PR is waiting on a human; `routine-state` issues are routine infrastructure,
    never work; `incident` issues are live watchdog alerts that close themselves once the fault is
@@ -231,7 +235,10 @@ projection of it. For each candidate in lane-walk order (§0.3):
 1. `issue_read get_comments`; skip it if a live claim exists.
 2. Post the claim comment (`add_issue_comment` with `AGENT-CLAIM`, or `AGENT-RECLAIM` for a §0.7
    takeover).
-3. Then add the `in-progress` label (read-modify-write the full set).
+3. Then add the `in-progress` label (read-modify-write the full set). For a named issue still in
+   `triage` (Modes), the same write promotes it: drop `triage` and keep its priority label, or add
+   one `P1`–`P4` ([roster](../../docs/ci-cd/routines.md#label-roster)) when it has none. Choose
+   that priority before step 2, so the claim comment's `**Promoted:**` line can record it.
 4. Verify (§0.6). Lost a solo pick: yield, switch lanes per §0.3, and take that lane's next untried
    candidate. A lost batch member follows the batch paragraph below instead.
 
@@ -537,6 +544,11 @@ and the run ends only when every still-held member has its exit action.
 | PR opened, member named `Part of` | `AGENT-RELEASE` `slice-in-pr`, remove `in-progress`, add no `in-review`; the open PR holds it via §0.2 condition 4 |
 | Session ending, PR open **and** pipelined unit claimed | PR'd `Fixes` members stay `in-review` (`Part of` members were released at PR open); each unshipped member exits per its own row (work exists → handoff) |
 
+An issue this run promoted out of `triage` (Modes) goes back to Triage when a release leaves its
+work undone (`blocked-discovered`, `out-of-scope`, `plan-rejected`, `user-aborted`): add `triage`
+back and remove the priority label the run added, keeping one the issue already had, so a withdrawn
+or vetoed pick never lands in the Backlog on an agent's priority.
+
 `Reason` is a closed set: `plan-rejected` · `user-aborted` · `lost-race` · `blocked-discovered` ·
 `out-of-scope` · `superseded` · `session-ending` · `slice-in-pr`.
 
@@ -553,6 +565,7 @@ Post literally, substituting bracketed values; the sentinel is always the first 
 **Branch:** `claude/fix-signup-redirect` (local until review passes)
 **Batch:** solo — or: #100 · #101 · #102 (one claim comment per member, same claim id; this lease renews on this issue's own comment stream)
 **Prior art:** none
+**Promoted:** from triage at P2, named by the owner — <one-line reason for the priority> (only for a named `triage` issue; omit the line otherwise)
 **Heartbeat:** 2026-08-03T14:22:07Z — lease 4h, renewed by AGENT-HEARTBEAT comments
 
 _Other agents: taken while this lease is live. If it has expired AND no open
