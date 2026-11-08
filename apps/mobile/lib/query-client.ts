@@ -1,4 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
+import { isRetryableFailure } from "@repo/api-sdk";
+import { markChannelReadMutationKey } from "@repo/hooks";
 import { createReportingCaches } from "@/lib/sentry/query-errors";
 import { forgetDuesMemory } from "@/lib/dues/visit-memory";
 import { forgetCachedChatPhotos } from "@/lib/chat/photo-cache";
@@ -62,6 +64,38 @@ export const queryClient = new QueryClient({
       retry: 0,
     },
   },
+});
+
+/**
+ * One more attempt for a failure that may pass next time (a dropped
+ * connection, a 5xx), never for a definitive refusal
+ * (`spec/ui/resilience/api-retry.md` § Writes).
+ */
+export function retryOnceIfRetryable(
+  failureCount: number,
+  error: unknown,
+): boolean {
+  return failureCount < 1 && isRetryableFailure(error);
+}
+
+/**
+ * Idempotent writes fired on their own, with no control a member could press
+ * again, retry once (#3747). Every other mutation keeps `retry: 0` above.
+ *
+ * The case is a resume. iOS tears down a suspended app's sockets, and the
+ * write chat-thread runs when it takes focus (a notification tap opens it the
+ * moment the app comes back) dies on the dead connection: FRAPP-MOBILE-F and J.
+ * Because the retryer won't continue while unfocused, and
+ * `lib/connection/query-connectivity.ts` holds focus until the connection
+ * monitor's foreground probe answers, the retry goes out after that answer and
+ * not on the same dead socket. A non-idempotent write must not join this list:
+ * it keeps failing visibly (`spec/ui/design-system/README.md` §5 rule 2).
+ *
+ * - mark-read stamps the read cursor to server `now()`, so a replay only
+ *   re-stamps it. Lost, it leaves the badge counting a thread the member read.
+ */
+queryClient.setMutationDefaults(markChannelReadMutationKey, {
+  retry: retryOnceIfRetryable,
 });
 
 /**

@@ -531,10 +531,19 @@ export function useUnpinMessage() {
   });
 }
 
+/**
+ * Identifies `useMarkChannelRead` (#3393), so a client can give it its own
+ * defaults. Mobile retries it once through a resume-time socket drop (#3747,
+ * `apps/mobile/lib/query-client.ts`): it stamps the read cursor to server
+ * `now()`, so a replay is harmless.
+ */
+export const markChannelReadMutationKey = ["channels", "read"] as const;
+
 export function useMarkChannelRead() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: markChannelReadMutationKey,
     mutationFn: async (id: string) => {
       const { data, error } = await client.POST("/v1/channels/{id}/read", {
         params: { path: { id } },

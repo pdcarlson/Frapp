@@ -92,8 +92,16 @@ monitor — so `refetchOnReconnect` (a TanStack default) now actually fires. Two
 specifics: `DEGRADED` is published as **online**, because requests there are slow or
 intermittent rather than impossible and telling TanStack otherwise would pause every
 retry exactly when a retry is what recovers; and there is no window, so `focusManager`
-is driven by `AppState` — `"active"` only, since iOS `inactive` is Control Center and
-the app switcher, not a background. A *server* error, which no amount of
+is driven by `AppState`: `background` drops focus, and iOS `inactive` (Control Center,
+the app switcher) does not. Focus does not come back the instant the app does, though:
+it comes back once the connection monitor's first foreground probe has its verdict
+(#3747). iOS tears down a suspended app's sockets, so a focus refetch, or a retry the
+background parked, sent at the `active` edge died on the dead connection, all together
+within half a second of the resume. TanStack doesn't continue a retry while unfocused,
+so a request that dies in that window waits for `/health` to answer and then goes out
+once. The wait is the probe (a 5s timeout, plus one 2s confirm retry on a first
+failure), not a timer, and it holds back only refetches and retries, never a fresh
+request. A *server* error, which no amount of
 connectivity signalling fixes, is recovered by a pull; the explicit retry controls on
 s04/s06 stay as the recovery a member can see without knowing the gesture.
 
