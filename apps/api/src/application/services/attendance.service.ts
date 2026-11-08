@@ -277,8 +277,9 @@ export class AttendanceService {
    * offering the scanner again (#3703).
    *
    * An event the caller can't see 404s exactly as a nonexistent id does,
-   * by the rule `GET /v1/events/:id` applies (`isEventVisibleTo`). Answering `{ attendance: null }` instead would
-   * confirm a role-targeted event exists to someone it was hidden from.
+   * by the rule `GET /v1/events/:id` applies (`isEventVisibleTo`).
+   * Answering `{ attendance: null }` instead would confirm a role-targeted
+   * event exists to someone it was hidden from.
    */
   async getMyAttendance(
     eventId: string,
