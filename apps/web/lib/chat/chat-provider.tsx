@@ -13,7 +13,7 @@
 
 import { useContext, useEffect, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useFrappClient } from "@repo/hooks";
+import { useChatActivityHandler, useFrappClient } from "@repo/hooks";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/lib/hooks/use-toast";
 import { AnalyticsContext } from "@/lib/providers/analytics-provider";
@@ -32,6 +32,10 @@ import { useChatOutboundScope } from "./chat-scope";
 import { useFirstChunkCache } from "./use-first-chunk-cache";
 import { CachedViewerIdProvider } from "./viewer-id";
 import { CachedBlockFloorContext } from "./use-thread-block-list";
+
+function isTabVisible(): boolean {
+  return document.visibilityState === "visible";
+}
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
@@ -88,14 +92,39 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     fixed for the mount and `queryClient` is the app's one client, so a rebind
     never has to move a channel to another client.
   */
+  /*
+    Keeps the rail's unread rows and the nav's chat badge live (#3698): the
+    manager's inbox reports every new message the member may read, and this
+    re-reads the unread counts, or re-stamps the open channel read when the
+    message landed in it while the tab is visible.
+  */
+  const onMessageActivity = useChatActivityHandler(
+    userId ?? null,
+    isTabVisible,
+  );
+
   useEffect(() => {
     chatRealtime.configure({
       queryClient,
       supabase,
       viewerId: userId ?? null,
       backfill: createBackfillFetcher(apiClient),
+      onMessageActivity,
     });
-  }, [queryClient, supabase, apiClient, userId]);
+  }, [queryClient, supabase, apiClient, userId, onMessageActivity]);
+
+  /*
+    A tab that comes back from hidden may have been throttled or frozen, its
+    socket dead without the client knowing yet. Catch up now rather than at
+    the next heartbeat (#3698). The online edge is the manager's own.
+  */
+  useEffect(() => {
+    const onVisibility = () => {
+      if (isTabVisible()) chatRealtime.resume();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
 
   // Torn down on unmount only. On a remount the thread subscribes before this
   // provider configures (a child's effects run first), and `configure`

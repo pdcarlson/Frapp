@@ -145,6 +145,30 @@ The API used to emit a `new_message` broadcast that looked like a second deliver
 one; it was removed in #472 — see the ADR-11 amendment for why, and #1613 for whether a real
 sub-second path is wanted.
 
+**Every other channel: the inbox** (#3698). The per-channel subscription only exists while a
+thread is open, so on its own it leaves everything that summarizes *all* channels (unread
+badges and bold rows, the Messages order, the app badge) waiting for focus or staleness. The
+realtime manager therefore also holds one global Postgres Changes subscription on
+`chat_messages` INSERTs (`chat:inbox:global`), unfiltered and scoped by the `chat_messages` RLS
+policy that Realtime runs per subscriber, so a member is told about exactly the messages a REST
+read would return them, archive imports excluded. It carries no message into a timeline. It
+reports each new message to the client (`onMessageActivity`), which, coalescing a burst into one
+round, re-reads `GET /v1/channels/unread` and `/latest`. When the message landed in the thread
+the member has open, and the app or tab is in front of them, the client first re-stamps that
+channel read (`POST /v1/channels/{id}/read`), because they are looking at it
+(`createChatActivityHandler` in `@repo/hooks`). Each rejoin of the inbox after a drop reports a
+`resync`, which re-reads both. Mobile binds the manager app-wide from `components/app-runtime.tsx`
+so the inbox runs from launch. Web binds it in `ChatProvider`, so off `/chat` the nav's chat
+badge still refreshes on focus and staleness only.
+
+**Back in the foreground** (#3698). A socket can die while the app is in the background (mobile)
+or the tab is hidden (web), and the client finds out only at its next heartbeat. So the return
+calls `chatRealtime.resume()`: on mobile the AppState edge from `background` to `active`, not
+from `inactive`; on web the tab becoming visible. `resume()` reconnects a socket known to be down,
+runs the gap-recovery read below for every open thread at once, reopens any channel or inbox that
+isn't live, and reports a `resync`. Offline it does nothing, and the online edge reopens
+everything instead.
+
 **Fallback:** If Supabase Realtime disconnects or fails, fall back to polling.
 
 ```

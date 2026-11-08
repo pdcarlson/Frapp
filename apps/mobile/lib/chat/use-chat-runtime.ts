@@ -9,18 +9,26 @@
  * hook the chat screens call instead of a provider above them.
  *
  * That is safe because `chatRealtime` is a module singleton and already
- * refcounts per channel: `configure` is an idempotent rebind, and each screen
- * owns only its own `subscribe`/`unsubscribe` pair. Nothing here calls
- * `destroy()` — with no single owning provider, one screen unmounting must not
- * tear the manager out from under another.
+ * refcounts per channel: each screen owns only its own `subscribe`/
+ * `unsubscribe` pair. Binding the manager to the app's clients is not a
+ * screen's job any more: {@link useChatRealtimeBinding} does it once, app-wide,
+ * from `components/app-runtime.tsx` (#3698), because chat home and the app
+ * badge need the manager's inbox before any thread has been opened. Nothing
+ * calls `destroy()` — with no single owning provider, nothing may tear the
+ * manager out from under a screen.
  *
  * Imports are by subpath (`@repo/chat-core/adapters`, `/chat-client`,
  * `/realtime-manager`); the package has no barrel (#3228).
  */
 
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import { useFrappClient, useViewerUserId } from "@repo/hooks";
+import {
+  useChatActivityHandler,
+  useFrappClient,
+  useViewerUserId,
+} from "@repo/hooks";
 import type { OutboxStore } from "@repo/chat-core/adapters";
 import type { ChatActionContext } from "@repo/chat-core/chat-client";
 import { flushOutbox } from "@repo/chat-core/chat-client";
@@ -76,6 +84,74 @@ export function bootChatAdapters(): Promise<void> {
   return bootPromise;
 }
 
+function isForeground(): boolean {
+  return AppState.currentState === "active";
+}
+
+/**
+ * Binds the chat realtime manager to the app's clients, once, for the life of
+ * the process (#3698). Mounted from `components/app-runtime.tsx`, above the
+ * auth gate, so it runs before the member reaches any screen; until the viewer
+ * resolves it binds with `viewerId: null`, and `configure` rejoins the inbox
+ * when they do.
+ *
+ * What it adds over the per-thread wiring this replaced:
+ *
+ * - **The inbox from launch.** The manager's `chat:inbox:global` channel
+ *   reports every new message the member may read, and
+ *   `useChatActivityHandler` turns that into fresh unread counts (chat home's
+ *   badges, the app badge through `use-badge-sync.ts`) and a fresh Messages
+ *   order, or re-stamps the open thread read when the message landed in it.
+ *   Bound per screen, none of this ran until a thread was opened.
+ * - **Resume on foreground.** iOS and Android suspend the socket in the
+ *   background, and the client finds out only at its next heartbeat. Coming
+ *   back from the background calls `chatRealtime.resume()`, which reads every
+ *   open thread since its cursor and the summaries again at once.
+ */
+export function useChatRealtimeBinding(): void {
+  const queryClient = useQueryClient();
+  const apiClient = useFrappClient();
+  const supabase = useMemo(() => getSupabaseClient(), []);
+  const viewerId = useViewerUserId();
+  const onMessageActivity = useChatActivityHandler(viewerId, isForeground);
+
+  useEffect(() => {
+    if (!supabase) return;
+    let cancelled = false;
+
+    void bootChatAdapters().then(() => {
+      if (cancelled) return;
+      chatRealtime.configure({
+        queryClient,
+        supabase,
+        viewerId,
+        kv: chatKeyValueStore,
+        net: chatNetworkState,
+        backfill: createBackfillFetcher(apiClient),
+        onMessageActivity,
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [queryClient, supabase, apiClient, viewerId, onMessageActivity]);
+
+  useEffect(() => {
+    let previous: AppStateStatus | null = AppState.currentState;
+    const subscription = AppState.addEventListener("change", (next) => {
+      // `background`, not `inactive`: a permission prompt or the notification
+      // shade passes through `inactive` with the socket still up. The same
+      // line `lib/connection/monitor.ts` draws.
+      if (next === "active" && previous === "background") {
+        chatRealtime.resume();
+      }
+      previous = next;
+    });
+    return () => subscription.remove();
+  }, []);
+}
+
 export interface ChatRuntime {
   /** `null` until the viewer's app user resolves; no writes without identity. */
   ctx: ChatActionContext | null;
@@ -127,27 +203,6 @@ export function useChatRuntime(): ChatRuntime {
    */
   const outbox = useMemo(() => getOutboxStore(scope), [scope]);
   const drafts = useMemo(() => getDraftStore(scope), [scope]);
-
-  useEffect(() => {
-    if (!supabase) return;
-    let cancelled = false;
-
-    void bootChatAdapters().then(() => {
-      if (cancelled) return;
-      chatRealtime.configure({
-        queryClient,
-        supabase,
-        viewerId,
-        kv: chatKeyValueStore,
-        net: chatNetworkState,
-        backfill: createBackfillFetcher(apiClient),
-      });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [queryClient, supabase, apiClient, viewerId]);
 
   /**
    * The outbox lifecycle events (`spec/behavior/observability.md` § Outbox

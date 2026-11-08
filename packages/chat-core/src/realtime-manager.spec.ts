@@ -5,12 +5,14 @@ import { createFrappClient } from "@repo/api-sdk";
 import { CHAT_SINCE_NOT_FOUND_CODE } from "@repo/validation";
 import {
   BACKFILL_PAGE_LIMIT,
+  INBOX_TOPIC,
   chatRealtime,
   createBackfillFetcher,
   POLL_DEGRADE_AFTER_MS,
   POLL_INTERVAL_MS,
   type BackfillFetcher,
   type ConnectionStatus,
+  type MessageActivity,
 } from "./realtime-manager";
 import {
   chatMessagesKey,
@@ -1583,6 +1585,226 @@ describe("ChatRealtimeManager — a backfill that missed more than a page (#2807
     expect(backfill).toHaveBeenCalledTimes(1);
     expect(window.localStorage.getItem("chat:lastSeen:c1")).toBe("m3");
     expect(cachedIds()).toEqual(["m1", "m2", "m3"]);
+  });
+});
+
+describe("ChatRealtimeManager — inbox and resume keep every channel live (#3698)", () => {
+  const VIEWER = "11111111-1111-4111-8111-111111111111";
+  const OTHER = "44444444-4444-4444-8444-444444444444";
+  let backfill: ReturnType<typeof vi.fn> & BackfillFetcher;
+  let queryClient: QueryClient;
+  let channels: Map<string, FakeChannel>;
+  let supabase: SupabaseClient;
+  let activity: ReturnType<typeof vi.fn> & ((a: MessageActivity) => void);
+  let socket: {
+    isConnected: ReturnType<typeof vi.fn>;
+    connect: ReturnType<typeof vi.fn>;
+  };
+  let offline: boolean;
+  let netListener: ((online: boolean) => void) | null;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    backfill = vi.fn(async (): Promise<RawChatMessage[]> => []) as ReturnType<
+      typeof vi.fn
+    > &
+      BackfillFetcher;
+    queryClient = new QueryClient();
+    ({ supabase, channels } = makeFakeSupabase());
+    socket = { isConnected: vi.fn(() => true), connect: vi.fn() };
+    (supabase as unknown as { realtime: typeof socket }).realtime = socket;
+    activity = vi.fn() as ReturnType<typeof vi.fn> &
+      ((a: MessageActivity) => void);
+    offline = false;
+    netListener = null;
+    chatRealtime.configure({
+      queryClient,
+      supabase,
+      backfill,
+      kv: memoryStore(),
+      viewerId: VIEWER,
+      onMessageActivity: activity,
+      net: {
+        isOffline: () => offline,
+        subscribe: (cb) => {
+          netListener = cb;
+          return () => {
+            netListener = null;
+          };
+        },
+      },
+    });
+  });
+
+  afterEach(() => {
+    chatRealtime.destroy();
+    queryClient.clear();
+    vi.useRealTimers();
+  });
+
+  const inbox = () => channels.get(INBOX_TOPIC)!;
+  const row = (channelId: string, extra: Partial<RawChatMessage> = {}) => ({
+    id: `m-${channelId}`,
+    channel_id: channelId,
+    sender_id: OTHER,
+    author_name: null,
+    author_avatar_path: null,
+    author_external_id: null,
+    created_at: "2026-11-08T00:00:00.000Z",
+    client_message_id: null,
+    ...extra,
+  });
+
+  test("joins one inbox listening for every new chat message, scoped by RLS", () => {
+    const ch = inbox();
+    expect(ch).toBeDefined();
+    expect(ch.on).toHaveBeenCalledWith(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "chat_messages" },
+      expect.any(Function),
+    );
+  });
+
+  test("a message in a channel nobody has open reports it as not open", () => {
+    inbox().trigger("SUBSCRIBED");
+    inbox().emitPostgresChange({ eventType: "INSERT", new: row("elsewhere") });
+    expect(activity).toHaveBeenCalledWith({
+      type: "message",
+      channelId: "elsewhere",
+      senderId: OTHER,
+      open: false,
+    });
+  });
+
+  test("a message in the open thread reports it as open", () => {
+    chatRealtime.subscribe("c1");
+    inbox().emitPostgresChange({ eventType: "INSERT", new: row("c1") });
+    expect(activity).toHaveBeenLastCalledWith(
+      expect.objectContaining({ channelId: "c1", open: true }),
+    );
+  });
+
+  test("an archive import is not activity", () => {
+    inbox().emitPostgresChange({
+      eventType: "INSERT",
+      new: row("c1", { kind: "imported" }),
+    });
+    expect(activity).not.toHaveBeenCalled();
+  });
+
+  test("a handler that throws never escapes the frame dispatch", () => {
+    activity.mockImplementation(() => {
+      throw new Error("boom");
+    });
+    expect(() =>
+      inbox().emitPostgresChange({ eventType: "INSERT", new: row("c1") }),
+    ).not.toThrow();
+  });
+
+  test("the first join reports nothing; a rejoin after a drop reports a resync", async () => {
+    const first = inbox();
+    first.trigger("SUBSCRIBED");
+    expect(activity).not.toHaveBeenCalled();
+
+    first.trigger("CHANNEL_ERROR");
+    await vi.advanceTimersByTimeAsync(1000);
+    const second = inbox();
+    expect(second).not.toBe(first);
+    second.trigger("SUBSCRIBED");
+    expect(activity).toHaveBeenCalledWith({ type: "resync" });
+  });
+
+  test("coming back online rejoins the inbox, and its join reports a resync", async () => {
+    const first = inbox();
+    first.trigger("SUBSCRIBED");
+    offline = true;
+    netListener!(false);
+    first.trigger("CLOSED");
+    // Offline books no retry.
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(inbox()).toBe(first);
+
+    offline = false;
+    netListener!(true);
+    await vi.advanceTimersByTimeAsync(0);
+    const second = inbox();
+    expect(second).not.toBe(first);
+    second.trigger("SUBSCRIBED");
+    expect(activity).toHaveBeenCalledWith({ type: "resync" });
+  });
+
+  test("a viewer change rejoins the inbox under the new session", async () => {
+    const first = inbox();
+    first.trigger("SUBSCRIBED");
+    chatRealtime.configure({
+      queryClient,
+      supabase,
+      backfill,
+      kv: memoryStore(),
+      viewerId: OTHER,
+      onMessageActivity: activity,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(inbox()).not.toBe(first);
+  });
+
+  describe("resume()", () => {
+    test("reads every open thread since its cursor now, live or not, and reports a resync", () => {
+      chatRealtime.subscribe("c1");
+      channels.get("chat:channel:c1")!.trigger("SUBSCRIBED");
+      inbox().trigger("SUBSCRIBED");
+      backfill.mockClear();
+
+      chatRealtime.resume();
+
+      expect(backfill).toHaveBeenCalledTimes(1);
+      expect(backfill).toHaveBeenCalledWith("c1", expect.any(Object));
+      expect(activity).toHaveBeenCalledWith({ type: "resync" });
+      // A live channel and a live inbox are left joined.
+      expect(socket.connect).not.toHaveBeenCalled();
+    });
+
+    test("reconnects a socket known to be down and reopens what isn't live", async () => {
+      chatRealtime.subscribe("c1");
+      const before = channels.get("chat:channel:c1")!;
+      before.trigger("SUBSCRIBED");
+      before.trigger("CHANNEL_ERROR");
+      const inboxBefore = inbox();
+      inboxBefore.trigger("CLOSED");
+      socket.isConnected.mockReturnValue(false);
+
+      chatRealtime.resume();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(socket.connect).toHaveBeenCalledTimes(1);
+      // Reopened now, not at the end of the backoff.
+      expect(channels.get("chat:channel:c1")).not.toBe(before);
+      expect(inbox()).not.toBe(inboxBefore);
+    });
+
+    test("does nothing while offline; the online edge owns that", () => {
+      chatRealtime.subscribe("c1");
+      offline = true;
+      netListener!(false);
+      backfill.mockClear();
+
+      chatRealtime.resume();
+
+      expect(backfill).not.toHaveBeenCalled();
+      expect(activity).not.toHaveBeenCalled();
+    });
+
+    test("a socket that throws on reconnect still catches the threads up", () => {
+      chatRealtime.subscribe("c1");
+      socket.isConnected.mockReturnValue(false);
+      socket.connect.mockImplementation(() => {
+        throw new Error("no socket");
+      });
+      backfill.mockClear();
+
+      expect(() => chatRealtime.resume()).not.toThrow();
+      expect(backfill).toHaveBeenCalledWith("c1", expect.any(Object));
+    });
   });
 });
 

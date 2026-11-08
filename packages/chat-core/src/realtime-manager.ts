@@ -14,6 +14,11 @@
  *     not-yet-loaded messages are intentionally dropped. Nothing here reads
  *     back the actions written while this subscription was down: the
  *     backfill reads message rows only (#3039).
+ *   - One global Postgres Changes subscription on `chat_messages` INSERTs
+ *     (`INBOX_TOPIC`, #3698), RLS-scoped to what the viewer may read, which
+ *     reports every new message to `ctx.onMessageActivity` so the client can
+ *     keep unread badges and the Messages order live. Its rejoins, and
+ *     `resume()` (the app back in the foreground), report a `resync`.
  *   - Aggregates per-channel subscribe status into `"live" | "polling" |
  *     "reconnecting" | "offline"` for the UI "Reconnecting…" pill, with
  *     exponential backoff (1→2→4→8→16→30s capped) on
@@ -157,7 +162,45 @@ export interface ManagerContext {
    */
   kv?: KeyValueStore;
   net?: NetworkState;
+  /**
+   * Told about chat traffic outside the open thread (#3698), so a client can
+   * keep what summarizes every channel live: unread badges, the Messages
+   * order, the app badge. See {@link MessageActivity}. Optional; called from
+   * inside a realtime frame dispatch, so it must not throw (the manager
+   * contains it if it does) and should coalesce its own work.
+   */
+  onMessageActivity?: (activity: MessageActivity) => void;
 }
+
+/**
+ * What the inbox channel saw.
+ *
+ * - `message`: a new message the viewer may read landed in `channelId`.
+ *   `open` says whether this client has that channel subscribed (a thread on
+ *   screen), in which case the thread already merged the row itself.
+ * - `resync`: the manager may have missed messages (the inbox rejoined after a
+ *   drop, or the app came back from the background) and anything derived from
+ *   them should be read again.
+ */
+export type MessageActivity =
+  | {
+      type: "message";
+      channelId: string;
+      senderId: string | null;
+      open: boolean;
+    }
+  | { type: "resync" };
+
+/**
+ * The one topic carrying every new message the viewer may read, whichever
+ * channel it is in (#3698). Unfiltered: `chat_messages` has no chapter column
+ * to filter on, and Realtime runs the `chat_messages_select` RLS policy per
+ * subscriber for every row, so a member receives exactly the rows a REST read
+ * would return them (archive imports excluded) — the same arrangement as the
+ * actions topic. Public, like that one: a `postgres_changes`-only channel is
+ * authorised row by row, not at the join.
+ */
+export const INBOX_TOPIC = "chat:inbox:global";
 
 /**
  * A `postgres_changes` row, stripped of anything that would let it read as
@@ -207,6 +250,14 @@ class ChatRealtimeManager {
   private actionsChannel: RealtimeChannel | null = null;
   /** `attachSeq`'s equivalent for the single global actions channel. */
   private actionsAttachSeq = 0;
+  /** The global new-message channel (`INBOX_TOPIC`, #3698). */
+  private inboxChannel: RealtimeChannel | null = null;
+  private inboxAttachSeq = 0;
+  private inboxLive = false;
+  /** Set by the first SUBSCRIBED; every later one is a rejoin that owes a resync. */
+  private inboxJoinedOnce = false;
+  private inboxBackoffStep = 0;
+  private inboxRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private statusListeners = new Set<(status: ConnectionStatus) => void>();
   private offline = false;
   /** Unsubscribe for the `NetworkState` connectivity subscription. */
@@ -238,6 +289,7 @@ class ChatRealtimeManager {
     const previous = this.ctx;
     this.ctx = ctx;
     this.ensureActionsChannel();
+    this.ensureInboxChannel();
     this.ensureTypingTick();
     const net = ctx.net ?? browserNetworkState;
     this.offline = net.isOffline();
@@ -276,6 +328,11 @@ class ChatRealtimeManager {
     */
     const before = previous ? (previous.viewerId ?? null) : null;
     const after = ctx.viewerId ?? null;
+    // The inbox's rows are filtered by RLS against the session that joined.
+    // A viewer resolving or changing usually means a new session (mobile binds
+    // the manager before sign-in), so rejoin rather than trust the token
+    // refresh to re-scope a subscription made under the old one.
+    if (previous !== null && before !== after) this.reopenInbox();
     for (const state of this.channels.values()) {
       if (state.attachSeq === 0) {
         this.reopenChannel(state);
@@ -303,6 +360,15 @@ class ChatRealtimeManager {
       void this.ctx?.supabase.removeChannel(this.actionsChannel);
       this.actionsChannel = null;
     }
+    if (this.inboxRetryTimer) clearTimeout(this.inboxRetryTimer);
+    this.inboxRetryTimer = null;
+    if (this.inboxChannel) {
+      void this.ctx?.supabase.removeChannel(this.inboxChannel);
+      this.inboxChannel = null;
+    }
+    this.inboxLive = false;
+    this.inboxJoinedOnce = false;
+    this.inboxBackoffStep = 0;
     if (this.typingTickHandle) clearInterval(this.typingTickHandle);
     this.typingTickHandle = null;
     this.stopPolling();
@@ -354,6 +420,39 @@ class ChatRealtimeManager {
     if (state.retryTimer) clearTimeout(state.retryTimer);
     if (state.channel) void this.ctx?.supabase.removeChannel(state.channel);
     this.channels.delete(channelId);
+    this.emitStatus();
+  }
+
+  /**
+   * The app is back in front of the member: a mobile app returning from the
+   * background, a web tab becoming visible (#3698).
+   *
+   * The socket may have died while nobody was looking, and the client may not
+   * notice until its next heartbeat, tens of seconds later, so this does not
+   * wait on Realtime to say so. It reconnects a socket that is known down,
+   * reads every subscribed channel since its cursor over REST now (the same
+   * idempotent backfill a reconnect runs, so a row that also arrives live
+   * collapses to one), reopens any channel or inbox that isn't live, and
+   * reports a `resync` so the channel summaries are read again too.
+   *
+   * Cheap enough to call on every foreground: one REST read per open thread
+   * (usually zero or one) and two summary reads. Offline it does nothing; the
+   * online edge reopens everything when the network returns.
+   */
+  resume(): void {
+    if (!this.ctx || this.offline) return;
+    try {
+      const realtime = this.ctx.supabase.realtime;
+      if (realtime && !realtime.isConnected()) realtime.connect();
+    } catch {
+      // A socket that won't come back is the backoff's and polling's to cover.
+    }
+    for (const state of this.channels.values()) {
+      void this.runBackfill(state.channelId);
+      if (state.status !== "live") this.reopenChannel(state);
+    }
+    if (!this.inboxLive) this.reopenInbox();
+    this.reportActivity({ type: "resync" });
     this.emitStatus();
   }
 
@@ -417,6 +516,9 @@ class ChatRealtimeManager {
     for (const state of this.channels.values()) {
       this.reopenChannel(state);
     }
+    // Its SUBSCRIBED is a rejoin, which reports the resync that catches the
+    // channel summaries up on what landed while offline.
+    this.reopenInbox();
     this.emitStatus();
   };
 
@@ -790,6 +892,117 @@ class ChatRealtimeManager {
     );
     this.actionsChannel = channel;
     channel.subscribe();
+  }
+
+  // ─── inbox: every readable new message (#3698) ─────────────────────────
+
+  private ensureInboxChannel(): void {
+    if (!this.ctx) return;
+    if (this.inboxChannel) return;
+    void this.attachInboxChannel();
+  }
+
+  /** Rejoin the inbox now, cancelling any pending backoff. */
+  private reopenInbox(): void {
+    if (!this.ctx) return;
+    if (this.inboxRetryTimer) {
+      clearTimeout(this.inboxRetryTimer);
+      this.inboxRetryTimer = null;
+    }
+    void this.attachInboxChannel();
+  }
+
+  /**
+   * Same shape as `attachChannel`: free the topic first (rule 1 of the
+   * realtime-resilience skill), take a ticket so overlapping reopens can't
+   * interleave, and contain any failure in the backoff.
+   */
+  private async attachInboxChannel(): Promise<void> {
+    if (!this.ctx) return;
+    const seq = (this.inboxAttachSeq += 1);
+    this.inboxChannel = null;
+    this.inboxLive = false;
+    try {
+      if (this.isTopicOccupied(INBOX_TOPIC)) {
+        await this.releaseTopic(INBOX_TOPIC);
+        if (!this.ctx || this.inboxAttachSeq !== seq) return;
+      }
+      this.installInboxChannel();
+    } catch {
+      if (!this.ctx || this.inboxAttachSeq !== seq) return;
+      this.inboxChannel = null;
+      this.scheduleInboxReconnect();
+    }
+  }
+
+  private installInboxChannel(): void {
+    if (!this.ctx) return;
+    const channel = this.ctx.supabase.channel(INBOX_TOPIC);
+    channel.on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "chat_messages" },
+      (payload: RealtimePostgresChangesPayload<RawChatMessage>) => {
+        const row = payload.new as RawChatMessage | undefined;
+        if (!row?.channel_id) return;
+        // RLS already keeps archive rows off the wire (see the per-channel
+        // handler); an import is not traffic anyone should be told about.
+        if (row.kind === "imported") return;
+        this.reportActivity({
+          type: "message",
+          channelId: row.channel_id,
+          senderId: row.sender_id ?? null,
+          open: this.channels.has(row.channel_id),
+        });
+      },
+    );
+    this.inboxChannel = channel;
+    channel.subscribe((status) => {
+      // A channel since replaced can still report its own teardown.
+      if (this.inboxChannel !== channel) return;
+      if (status === "SUBSCRIBED") {
+        this.inboxLive = true;
+        this.inboxBackoffStep = 0;
+        if (this.inboxRetryTimer) {
+          clearTimeout(this.inboxRetryTimer);
+          this.inboxRetryTimer = null;
+        }
+        // The first join has nothing to catch up on: the summaries were read
+        // when their screens mounted. Every rejoin follows a gap.
+        if (this.inboxJoinedOnce) this.reportActivity({ type: "resync" });
+        this.inboxJoinedOnce = true;
+      } else if (
+        status === "CHANNEL_ERROR" ||
+        status === "TIMED_OUT" ||
+        status === "CLOSED"
+      ) {
+        this.inboxLive = false;
+        this.scheduleInboxReconnect();
+      }
+    });
+  }
+
+  private scheduleInboxReconnect(): void {
+    if (this.offline || !this.ctx) return;
+    const step = Math.min(this.inboxBackoffStep, BACKOFF_STEPS_MS.length - 1);
+    const delay = BACKOFF_STEPS_MS[step]!;
+    this.inboxBackoffStep = Math.min(
+      this.inboxBackoffStep + 1,
+      BACKOFF_STEPS_MS.length - 1,
+    );
+    if (this.inboxRetryTimer) clearTimeout(this.inboxRetryTimer);
+    this.inboxRetryTimer = setTimeout(() => {
+      this.inboxRetryTimer = null;
+      void this.attachInboxChannel();
+    }, delay);
+  }
+
+  /** Hands activity to the client, never letting its failure into a frame dispatch. */
+  private reportActivity(activity: MessageActivity): void {
+    try {
+      this.ctx?.onMessageActivity?.(activity);
+    } catch {
+      // The summaries catch up on focus or the next activity.
+    }
   }
 
   private dispatchActionInsert(action: RawChatMessageAction): void {

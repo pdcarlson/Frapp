@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 /**
- * The one claim here is the realtime manager's wiring: mobile hands it
+ * The first claim here is the realtime manager's wiring: mobile hands it
  * chat-core's own backfill read (#2807), the read web's `ChatProvider` hands
  * it too. The full-page rule and the unknown-cursor recovery live in that read
  * and the manager (`packages/chat-core/src/realtime-manager.spec.ts`), so an
@@ -9,6 +9,10 @@
  * The second is the outbox telemetry sink: chat-core's `ctx.track` reaches
  * the app's `AnalyticsContext` `track`, as web's does, without `ctx` changing
  * identity when `track` does.
+ *
+ * The third is the app-wide binding's own job (#3698): the manager is told
+ * about chat activity through `onMessageActivity`, and the app coming back
+ * from the background (not merely `inactive`) calls `resume()`.
  *
  * Everything else the hook touches is a stand-in: the platform ports, the
  * member-scoped stores, and the outbox flush.
@@ -22,10 +26,31 @@ import { describe, expect, it, vi } from "vitest";
 const apiClient = vi.hoisted(() => ({ GET: vi.fn() }));
 const viewer = vi.hoisted(() => ({ id: null as string | null }));
 
+const onMessageActivity = vi.hoisted(() => vi.fn());
 vi.mock("@repo/hooks", () => ({
   useFrappClient: () => apiClient,
   useViewerUserId: () => viewer.id,
+  useChatActivityHandler: () => onMessageActivity,
 }));
+const appState = vi.hoisted(() => ({
+  currentState: "active" as string,
+  listeners: new Set<(state: string) => void>(),
+}));
+vi.mock("react-native", () => ({
+  AppState: {
+    get currentState() {
+      return appState.currentState;
+    },
+    addEventListener: (_: string, listener: (state: string) => void) => {
+      appState.listeners.add(listener);
+      return { remove: () => appState.listeners.delete(listener) };
+    },
+  },
+}));
+function setAppState(next: string) {
+  appState.currentState = next;
+  for (const listener of [...appState.listeners]) listener(next);
+}
 type TrackFn = (name: string, properties?: Record<string, unknown>) => void;
 const analytics = vi.hoisted(() => ({
   context: null as React.Context<TrackFn | null> | null,
@@ -35,7 +60,7 @@ vi.mock("@/lib/analytics-provider", () => {
   return { AnalyticsContext: analytics.context };
 });
 vi.mock("@repo/chat-core/realtime-manager", () => ({
-  chatRealtime: { configure: vi.fn() },
+  chatRealtime: { configure: vi.fn(), resume: vi.fn() },
   createBackfillFetcher: vi.fn((client: unknown) => ({ readsWith: client })),
 }));
 vi.mock("@repo/chat-core/chat-client", () => ({ flushOutbox: vi.fn() }));
@@ -54,18 +79,24 @@ vi.mock("./network-state", () => ({
   }),
 }));
 
-const { useChatRuntime } = await import("./use-chat-runtime");
+const { useChatRealtimeBinding, useChatRuntime } =
+  await import("./use-chat-runtime");
 const { chatRealtime, createBackfillFetcher } =
   await import("@repo/chat-core/realtime-manager");
 
-describe("useChatRuntime", () => {
-  it("hands the manager chat-core's one backfill read, on the app's API client (#2807)", async () => {
-    const queryClient = new QueryClient();
-    const wrapper = ({ children }: { children: React.ReactNode }) => (
+function queryWrapper() {
+  const queryClient = new QueryClient();
+  function Wrapper({ children }: { children: React.ReactNode }) {
+    return (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     );
+  }
+  return Wrapper;
+}
 
-    renderHook(() => useChatRuntime(), { wrapper });
+describe("useChatRealtimeBinding", () => {
+  it("hands the manager chat-core's one backfill read, on the app's API client (#2807)", async () => {
+    renderHook(() => useChatRealtimeBinding(), { wrapper: queryWrapper() });
 
     await waitFor(() => expect(chatRealtime.configure).toHaveBeenCalled());
     const fetcher = vi.mocked(createBackfillFetcher);
@@ -73,6 +104,45 @@ describe("useChatRuntime", () => {
     expect(chatRealtime.configure).toHaveBeenLastCalledWith(
       expect.objectContaining({ backfill: fetcher.mock.results.at(-1)?.value }),
     );
+  });
+
+  it("hands the manager the activity handler that keeps chat home live (#3698)", async () => {
+    renderHook(() => useChatRealtimeBinding(), { wrapper: queryWrapper() });
+
+    await waitFor(() =>
+      expect(chatRealtime.configure).toHaveBeenLastCalledWith(
+        expect.objectContaining({ onMessageActivity }),
+      ),
+    );
+  });
+
+  it("resumes the manager on the way back from the background, not from inactive (#3698)", () => {
+    vi.mocked(chatRealtime.resume).mockClear();
+    const { unmount } = renderHook(() => useChatRealtimeBinding(), {
+      wrapper: queryWrapper(),
+    });
+
+    // A permission prompt or the notification shade: the socket never left.
+    setAppState("inactive");
+    setAppState("active");
+    expect(chatRealtime.resume).not.toHaveBeenCalled();
+
+    setAppState("background");
+    setAppState("active");
+    expect(chatRealtime.resume).toHaveBeenCalledTimes(1);
+
+    unmount();
+    setAppState("background");
+    setAppState("active");
+    expect(chatRealtime.resume).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useChatRuntime", () => {
+  it("leaves binding the manager to the app-wide runtime", () => {
+    vi.mocked(chatRealtime.configure).mockClear();
+    renderHook(() => useChatRuntime(), { wrapper: queryWrapper() });
+    expect(chatRealtime.configure).not.toHaveBeenCalled();
   });
 
   it("hands chat-core the app's track for the outbox events, keeping ctx stable when track changes (#3164)", () => {

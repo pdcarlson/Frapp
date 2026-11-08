@@ -1,3 +1,4 @@
+import { useChatRealtimeBinding } from "@/lib/chat/use-chat-runtime";
 import { useConnectionRuntime } from "@/lib/connection/use-connection";
 import { useBadgeSyncRuntime } from "@/lib/notifications/use-badge-sync";
 import { usePushRuntime } from "@/lib/notifications/use-push-runtime";
@@ -20,9 +21,12 @@ import { useOnboardingRedirect } from "@/lib/onboarding/use-onboarding-redirect"
  * - **Connection** drives the banner, which renders app-wide, and TanStack's
  *   `onlineManager`, which is process-global.
  *
- * Chat is the deliberate exception: `lib/chat/use-chat-runtime.ts` stays a
- * per-screen hook because configuring the realtime manager is a chat concern
- * with per-screen refcounting, not an app-wide one.
+ * **Chat realtime** is bound here too (#3698). Each thread still subscribes its
+ * own channel, refcounted, from `lib/chat/use-chat-runtime.ts`; what lives here
+ * is the manager's binding to the app's clients, because its inbox keeps chat
+ * home's badges, the Messages order and the app badge live before any thread
+ * has been opened, and its resume catches up when the app comes back from the
+ * background.
  *
  * **Onboarding** is the third runtime for the same freeze: `(app)/_layout.tsx`
  * cannot learn about join/welcome without becoming an integrator PR, so walking
@@ -34,6 +38,7 @@ import { useOnboardingRedirect } from "@/lib/onboarding/use-onboarding-redirect"
  */
 export function AppRuntime(): null {
   useConnectionRuntime();
+  useChatRealtimeBinding();
   usePushRuntime();
   useOnboardingRedirect();
   useBadgeSyncRuntime();
