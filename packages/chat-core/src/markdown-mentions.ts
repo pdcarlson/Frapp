@@ -49,12 +49,11 @@ import { extractMentionTokens, findMentionSpans } from "@repo/validation";
  * anyway. That is the API over-notifying on an escape, not the chip
  * under-painting, and it is filed rather than papered over here.
  *
- * What this does **not** claim is that a chipped token *resolved* to a member.
- * Resolution needs the chapter roster and happens server-side; a rendered
- * message carries only its text. So the chip marks "addressed someone by name",
- * which is what a reader is actually scanning for, and an unresolvable
- * `@nobody` is chipped too. Highlighting only resolved mentions would need the
- * roster on every row and would still be wrong the moment someone is renamed.
+ * Which tokens really pinged someone is the caller's `chips` option, built
+ * from the message's resolved `mentions` and the roster
+ * (`mentionChipFilter` in `@repo/validation`). Until 2026-11-07 every token
+ * was chipped, so `@bigsigma`, a name nobody holds, drew as a mention that
+ * notified no one (tester report).
  */
 
 /**
@@ -204,14 +203,23 @@ export interface MentionChipOptions {
   content: string;
   /** Attributes for every chip element, such as web's chip class. */
   properties?: MentionChipProperties;
+  /**
+   * Whether a token the API read really pinged someone (`mentionChipFilter`
+   * in `@repo/validation`, fed the message's resolved `mentions`). Left out,
+   * every token the API read is chipped.
+   */
+  chips?: (token: string) => boolean;
 }
 
 export function remarkMentionChips(options: MentionChipOptions) {
   const properties = options.properties ?? {};
   // Folded once per message rather than per text node: a body is one string and
   // a bubble can hold many nodes.
+  const chips = options.chips ?? (() => true);
   const addressed = new Set(
-    extractMentionTokens(options.content).map((token) => token.toLowerCase()),
+    extractMentionTokens(options.content)
+      .filter((token) => chips(token))
+      .map((token) => token.toLowerCase()),
   );
   return (tree: MdastNode): void => {
     // Nothing was addressed, so nothing can be chipped and the tree does not

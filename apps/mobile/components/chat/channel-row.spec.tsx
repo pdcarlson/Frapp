@@ -166,13 +166,10 @@ describe("ChannelRow badge colour", () => {
     expect(findBadgeStyle(renderRow({}))).toBeNull();
   });
 
-  it("uses the neutral fill for plain unread — never red, never accent", () => {
-    const style = findBadgeStyle(renderRow({ unreadCount: 7 }));
-
-    expect(style?.backgroundColor).toBe(signetDarkTokens.color.border.input);
-    expect(style?.backgroundColor).not.toBe(
-      signetDarkTokens.color.semantic.mention,
-    );
+  it("draws no number for a channel that is merely unread", () => {
+    // 2026-11-07: only what addresses the member carries a count; the bold
+    // name says the channel is unread, as on Discord.
+    expect(findBadgeStyle(renderRow({ unreadCount: 7 }))).toBeNull();
   });
 
   it("uses the fixed mention red when the viewer is addressed", () => {
@@ -183,19 +180,6 @@ describe("ChannelRow badge colour", () => {
     expect(style?.backgroundColor).toBe(
       signetDarkTokens.color.semantic.mention,
     );
-  });
-
-  it("keeps one badge geometry across both states", () => {
-    // "fill and text are the only difference, so badge geometry stays one
-    // recipe" — a regression here means the two states drifted apart.
-    const neutral = findBadgeStyle(renderRow({ unreadCount: 7 }));
-    const mention = findBadgeStyle(
-      renderRow({ unreadCount: 7, mentionCount: 1 }),
-    );
-
-    expect(neutral?.minWidth).toBe(mention?.minWidth);
-    expect(neutral?.height).toBe(mention?.height);
-    expect(neutral?.borderRadius).toBe(mention?.borderRadius);
   });
 
   it("treats a mention with a zero unread total as an unread row", () => {
@@ -315,9 +299,7 @@ describe("ChannelRow pin and DM badge (#2877)", () => {
     expect(dmStyle?.backgroundColor).toBe(
       signetDarkTokens.color.semantic.mention,
     );
-    expect(channelStyle?.backgroundColor).toBe(
-      signetDarkTokens.color.border.input,
-    );
+    expect(channelStyle).toBeNull();
   });
 });
 

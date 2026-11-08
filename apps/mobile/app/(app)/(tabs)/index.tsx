@@ -98,6 +98,8 @@ import {
   reportChannelsRefused,
 } from "@/lib/chat/channels-error";
 import {
+  chatLaunchOpen,
+  chatLaunchWindowLeftMs,
   claimChatLaunch,
   readLastChannel,
   settleChatLaunch,
@@ -396,6 +398,27 @@ export default function ChatHomeScreen() {
   const isFocused = useIsFocused();
   const chapterId = useActiveChapterId();
   const listAnswered = channelsQuery.isSuccess;
+  // While the jump may still happen the list stays behind the skeleton, and
+  // the thread opens with no slide, so launch reads as landing in the channel
+  // rather than the list flashing and a channel sliding over it (owner,
+  // 2026-11-07). A failed list read, or a launch that settles without a jump,
+  // lets the list show.
+  const [holdingForLaunch, setHoldingForLaunch] = useState(() =>
+    chatLaunchOpen(),
+  );
+  useEffect(() => {
+    if (!holdingForLaunch) return;
+    if (channelsQuery.isError || viewerQuery.isError || !isFocused) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- release the launch hold on an external edge (a failed list or account read, chat home losing focus)
+      setHoldingForLaunch(false);
+    }
+    // Past the launch window the jump can no longer happen.
+    const timer = setTimeout(
+      () => setHoldingForLaunch(false),
+      chatLaunchWindowLeftMs(),
+    );
+    return () => clearTimeout(timer);
+  }, [holdingForLaunch, channelsQuery.isError, viewerQuery.isError, isFocused]);
   useEffect(() => {
     if (!listAnswered || !viewerId) return;
     if (!isFocused) {
@@ -404,21 +427,34 @@ export default function ChatHomeScreen() {
     }
     // No cancellation on cleanup: the claim is spent either way, and a
     // cancelled read would lose the jump for good (Strict Mode re-runs this).
-    if (!claimChatLaunch()) return;
-    void readLastChannel(viewerId, chapterId).then((stored) => {
-      const target = lastChannelLandingId(allChannels, stored);
-      if (target) openChannel(target);
-    });
+    if (!claimChatLaunch()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the launch claim is a one-shot module flag outside React; nothing to hold for once it is spent
+      setHoldingForLaunch(false);
+      return;
+    }
+    void readLastChannel(viewerId, chapterId)
+      .then((stored) => {
+        const target = lastChannelLandingId(allChannels, stored);
+        if (target) openChannel(target, { landing: true });
+      })
+      .finally(() => {
+        // After the push, so the list is already covered when it shows.
+        setHoldingForLaunch(false);
+      });
     // Launch-only: `claimChatLaunch` makes later runs no-ops, so the list
     // changing afterwards never re-opens anything.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listAnswered, viewerId]);
 
-  function openChannel(channelId: string) {
+  function openChannel(channelId: string, options?: { landing?: boolean }) {
     // Object form, because the route takes a param. Note this is invisible to
     // `lib/routes.spec.ts`'s literal scan — the `pathname:` matcher added
-    // alongside this slice is what keeps it covered.
-    router.push({ pathname: "/chat-thread", params: { channelId } });
+    // alongside this slice is what keeps it covered. `landing` opens it with
+    // no slide (`app/(app)/_layout.tsx`): the launch jump.
+    router.push({
+      pathname: "/chat-thread",
+      params: options?.landing ? { channelId, landing: "1" } : { channelId },
+    });
   }
 
   function renderChannel(channel: ChannelSummary) {
@@ -553,7 +589,10 @@ export default function ChatHomeScreen() {
         draws it above its channel list. Only once channels have loaded, so it
         never sits on top of the skeleton or the error.
       */}
-      {setup.checklist && !channelsQuery.isPending && !channelsQuery.isError ? (
+      {setup.checklist &&
+      !channelsQuery.isPending &&
+      !holdingForLaunch &&
+      !channelsQuery.isError ? (
         <SetupChecklistView
           checklist={setup.checklist}
           onHide={setup.hide}
@@ -566,7 +605,9 @@ export default function ChatHomeScreen() {
         "Not now" (`shouldOfferReminder`). Under the checklist, and only once
         channels have loaded, for the same reason the checklist waits.
       */}
-      {!channelsQuery.isPending && !channelsQuery.isError ? (
+      {!channelsQuery.isPending &&
+      !holdingForLaunch &&
+      !channelsQuery.isError ? (
         <PushReminder />
       ) : null}
 
@@ -582,7 +623,7 @@ export default function ChatHomeScreen() {
         </Text>
       ) : null}
 
-      {channelsQuery.isPending ? (
+      {channelsQuery.isPending || holdingForLaunch ? (
         <ChannelListSkeleton />
       ) : channelsQuery.isError ? (
         // An explicit retry as well as the pull (#3385): this tab stays
@@ -659,16 +700,23 @@ export default function ChatHomeScreen() {
                       >
                         <Text
                           numberOfLines={1}
-                          style={[styles.heading, styles.headingInHeader]}
+                          style={[
+                            styles.heading,
+                            styles.headingInHeader,
+                            // Folded over something unread: reads as an
+                            // unread row does, since only a mention or DM
+                            // carries a number (2026-11-07).
+                            section.collapsed && section.unreadCount > 0
+                              ? styles.headingUnread
+                              : null,
+                          ]}
                         >
                           {section.label}
                         </Text>
-                        {section.collapsed &&
-                        (section.unreadCount > 0 || section.addressed) ? (
+                        {section.collapsed && section.addressed ? (
                           <UnreadBadge
-                            unreadCount={section.unreadCount}
+                            unreadCount={section.addressedCount}
                             mentionCount={section.mentionCount}
-                            addressed={section.addressed}
                           />
                         ) : null}
                         {/* Drawn, at the right edge where a thumb expects
@@ -759,6 +807,13 @@ function createStyles(tokens: SignetTokens) {
     heading: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.mutedForeground,
+    },
+    headingUnread: {
+      ...typeRole({
+        ...tokens.typography.role.label,
+        weight: tokens.typography.weight.bold,
+      }),
+      color: tokens.color.text.foreground,
     },
     // The fold header takes the rows' `gutterBleed`, so its name lines up
     // with the rows' sigils.
