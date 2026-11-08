@@ -1,6 +1,6 @@
 import { checkInZoneLine } from "@repo/validation";
 import { useRequiredOfViewer } from "@/lib/events/viewer-roles";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -16,7 +16,6 @@ import {
 import { seriesRuleOf, type EventEditTarget } from "@/lib/events/edit-event";
 import { BACK_TO_EVENTS } from "@/components/back-row";
 import { goBackTo } from "@/lib/href";
-import { PressableRow } from "@/components/list-section";
 import { SheetPrimaryButton } from "@/components/sheet-scaffold";
 import {
   ErrorState,
@@ -25,7 +24,6 @@ import {
   SkeletonText,
 } from "@/components/state-block";
 import { AccentChip, StatusChip } from "@/components/status-chip";
-import { exportEventToCalendar } from "@/lib/calendar-export";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   formatEventClock,
@@ -41,7 +39,8 @@ import { InlineNote } from "@/components/inline-note";
  * s07 — Event detail (`canvas-screens.dc.html:246`).
  *
  * **This filename is a contract and must never be renamed**: `frapp://event-details`
- * is baked into `.ics` files already exported to members' calendars, so a
+ * is baked into `.ics` files members exported before the calendar export was
+ * withdrawn (#3708), and those entries live on in their calendars, so a
  * rename orphans every one of them (`spec/ui/mobile/screens.md:29`).
  *
  * Reached with an `id` param from s06 and from the Chat home UP NEXT strip.
@@ -120,10 +119,6 @@ export default function EventDetailsScreen() {
     ? JSON.stringify([eventQuery.data, parentQuery.data ?? null])
     : "";
 
-  const [calendarState, setCalendarState] = useState<
-    "ready" | "exporting" | "exported" | "failed"
-  >("ready");
-
   /*
     A ticking clock, not one frozen at mount: this screen is often opened
     *before* check-in opens — a member arriving early taps through from UP
@@ -137,31 +132,6 @@ export default function EventDetailsScreen() {
     server enforces the real window regardless — this is UX only.
   */
   const now = useNowDate();
-
-  async function handleCalendarExport() {
-    if (!event) return;
-    setCalendarState("exporting");
-
-    try {
-      const exportStarted = await exportEventToCalendar({
-        title: event.name,
-        description: event.description ?? "",
-        location: event.location ?? "",
-        startAtIso: event.start_time,
-        endAtIso: event.end_time,
-        // The deep link the filename contract exists for. Carries the id so a
-        // calendar entry opens *this* event, not a bare screen.
-        deepLinkUrl: `frapp://event-details?id=${event.id}`,
-        // Only a series parent describes the series. A materialized child
-        // carries its parent's id and exports as the single meeting it is.
-        recurrenceRule: event.parent_event_id ? null : event.recurrence_rule,
-      });
-
-      setCalendarState(exportStarted ? "exported" : "failed");
-    } catch {
-      setCalendarState("failed");
-    }
-  }
 
   if (!eventId) {
     return (
@@ -252,28 +222,6 @@ export default function EventDetailsScreen() {
           />
         ) : null}
 
-        <PressableRow
-          accessibilityRole="button"
-          accessibilityLabel="Add this event to your calendar"
-          accessibilityState={{ disabled: calendarState === "exporting" }}
-          disabled={calendarState === "exporting"}
-          onPress={() => void handleCalendarExport()}
-          // The press feedback the s06 cards use: a ripple on Android, rounded
-          // to the button's corners by `PressableRow`'s clip and dropped while
-          // exporting, and a lift from the card fill to `surface.popover` on iOS.
-          onCard
-          style={styles.secondaryButton}
-        >
-          <Text style={styles.secondaryButtonText}>
-            {calendarState === "exporting"
-              ? "Adding…"
-              : calendarState === "exported"
-                ? "Added to calendar"
-                : calendarState === "failed"
-                  ? "Couldn't add — try again"
-                  : "Add to calendar"}
-          </Text>
-        </PressableRow>
       </ScreenShell>
       {grants.edit && editTarget ? (
         <NewEventSheet
@@ -384,11 +332,10 @@ function CheckInCard({
 
 /**
  * The screen's loading state, on the loaded screen's own styles: the check-in
- * card's frame and header line, and the Add to calendar button, whose label is
- * fixed and so renders as itself (components.md §10). The badge row and the
+ * card's frame and header line (components.md §10). The badge row and the
  * DETAILS and INTERNAL NOTES sections are left out: each draws only when the
- * event carries one, and a placeholder for one would leave a gap, and move the
- * button, when it doesn't land.
+ * event carries one, and a placeholder for one would leave a gap when it
+ * doesn't land.
  *
  * Exported so `components/screen-skeletons.spec.tsx` can pin its shape.
  */
@@ -414,10 +361,6 @@ export function EventDetailSkeleton() {
             width={tokens.spacing["3xl"] + tokens.spacing.lg}
           />
         </View>
-      </View>
-
-      <View style={styles.secondaryButton}>
-        <Text style={styles.secondaryButtonText}>Add to calendar</Text>
       </View>
     </SkeletonRegion>
   );
@@ -502,22 +445,6 @@ function createStyles(tokens: SignetTokens) {
     sectionBody: {
       color: tokens.color.text.mutedForeground,
       ...typeRole(tokens.typography.role.body),
-    },
-    secondaryButton: {
-      // The primary button's geometry (`SheetPrimaryButton`: the 48pt Primary
-      // step, control radius), outlined as the board draws its secondary
-      // buttons.
-      height: tokens.touch.buttonLarge,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.card,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    secondaryButtonText: {
-      color: tokens.color.text.foreground,
-      ...typeRole(tokens.typography.role.label),
     },
   });
 }

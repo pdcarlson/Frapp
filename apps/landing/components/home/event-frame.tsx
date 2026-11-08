@@ -28,7 +28,7 @@ export function EventFrame() {
   return (
     <div
       role="img"
-      aria-label="The Frapp mobile app: an event detail with check-in open, a Scan QR to check in button, and an Add to calendar action."
+      aria-label="The Frapp mobile app: an event detail with check-in open and a Scan QR to check in button."
       /*
        * Phone geometry is the base and desktop is the override, because the two
        * boards draw different frames rather than one frame at two widths:
@@ -91,10 +91,6 @@ export function EventFrame() {
           Scan QR to check in
         </span>
       </div>
-
-      <span className="mt-4 flex h-[46px] items-center justify-center rounded-md border border-input bg-card text-[16px] font-semibold text-foreground">
-        Add to calendar
-      </span>
 
       <p className="mt-6 text-[12.5px] font-semibold uppercase leading-[17px] tracking-[0.1em] text-muted-foreground">
         Details

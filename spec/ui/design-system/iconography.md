@@ -519,8 +519,7 @@ points — and the events table drew its role-targeting and recurrence markers a
 12px, under §2's 14–16 badge-companion floor.
 
 - **Control furniture**, unchanged from §6.2.2's rule: `Loader2`,
-  `AlertCircle`, `AlertTriangle`, `Trash2`, `Pencil`, `Plus`, `Save`, and the
-  event detail sheet's `CalendarPlus` (Add to calendar). This family has
+  `AlertCircle`, `AlertTriangle`, `Trash2`, `Pencil`, `Plus` and `Save`. This family has
   more of the second kind than any other — every pair naming a *control's own
   action* rather than a domain object stays Lucide: `Play`/`Pause`/`Square` on
   the study timer, `Eye`/`EyeOff` on its tracking state, `Power`/`PowerOff` on
