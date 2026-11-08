@@ -46,7 +46,7 @@ App identifiers: iOS bundle and Android package are both `live.frapp.mobile`
 
 | Source | Tool | What to pull |
 | --- | --- | --- |
-| Sentry | `search_issues` | `environment:production is:unresolved`, with `firstSeen` or `is:regressed` inside the window, per project. Then `get_sentry_resource` on each candidate for the frame, release and user count. |
+| Sentry | `search_issues` | `environment:production is:unresolved`, with `firstSeen` or `is:regressed` inside the window, per project. In `frapp-web` and `frapp-mobile`, also pull unresolved `status_class:5xx` issues with events inside the window (`lastSeen`), because their grouping folds new failures into old issues. Then `get_sentry_resource` on each candidate for the frame, release and user count. |
 | TestFlight feedback | Expo `testflight_feedback` | Submissions inside the window. |
 | TestFlight crashes | Expo `testflight_crashes` | Crashes inside the window; fetch the log for any new one. |
 | Play crashes and ANRs | Expo `playstore_crashes` | Issues new or growing inside the window. |
@@ -63,6 +63,20 @@ File (or update) an issue for:
 
 - A Sentry production issue at level error or above that isn't already tracked, unless it is
   clearly noise (a bot, a browser extension, a single event from a dev build).
+- A server failure the API never saw: a `frapp-web` or `frapp-mobile` issue tagged
+  `query_failure:http` and `status_class:5xx` (these arrive at `warning`,
+  [#3377](https://github.com/pdcarlson/Frapp/issues/3377)) whose events carry no `request_id`, or
+  one that matches no `frapp-api` event. That is a gateway 502/503/504 or a crashed instance.
+  - When the `request_id` matches, the `frapp-api` issue is the problem: cite the client issue
+    there and don't file it.
+  - Several of these in one window are one outage: one issue, or a comment on the watchdog's
+    open `/health/ready` `incident` when there is one.
+  - A single event is noise, as above. So is a 5xx that came from a host other than our API, such
+    as Supabase Storage on an upload (`mutation "unkeyed"`): check the event's breadcrumbs.
+  - Other client warnings (4xx, network drops, `query_failure:exception`) stay unfiled.
+
+  Owner decision, 2026-11-08: under the error-only bar, the apps' warnings were never filed,
+  including a 504 on the sign-in screen's client-policy query.
 - Any crash or ANR from TestFlight or Play.
 - Tester feedback or a review describing a bug, a broken flow or confusing UI. A feature request
   is filed only when it's specific; general praise or complaint is reported, not filed.
