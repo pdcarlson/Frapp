@@ -16,7 +16,7 @@ import { putSignedUpload } from "./put-signed-upload";
 /** The query key `useChannels` caches the channel list under. */
 export const CHANNEL_LIST_KEY = ["channels"] as const;
 
-export function useChannels() {
+export function useChannels(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: CHANNEL_LIST_KEY,
@@ -26,6 +26,7 @@ export function useChannels() {
       return data;
     },
     staleTime: 60_000,
+    enabled: options?.enabled ?? true,
   });
 }
 

@@ -348,6 +348,13 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     queryKey: channelId ? chatMessagesKey(channelId) : ["chat", "none"],
     enabled: !!channelId,
     staleTime: Infinity,
+    // Kept for half an hour after the screen leaves, not TanStack's default
+    // five minutes (2026-11-07). Opening a channel from a push eight minutes
+    // after last reading it found the cache collected and drew the skeleton
+    // for the whole cold read (3 s on prod that evening, the read queued
+    // behind the resume burst). Kept, the rows paint at once and the
+    // realtime join's backfill reads what arrived since (`mergeSincePage`).
+    gcTime: 30 * 60_000,
     queryFn: () => (channelId ? pager.readNewest(channelId) : emptyCache()),
   });
 

@@ -6,7 +6,10 @@ import {
   type ReactTestRenderer,
 } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
-import { MAX_MESSAGE_MARKDOWN_DEPTH, skipsMarkdownParse } from "@repo/chat-core/markdown";
+import {
+  MAX_MESSAGE_MARKDOWN_DEPTH,
+  skipsMarkdownParse,
+} from "@repo/chat-core/markdown";
 import {
   COSTLY_MARKDOWN_BODIES,
   NEAR_BUDGET_MARKDOWN_BODY,
@@ -23,14 +26,18 @@ import {
 
 function render(
   content: string,
-  props: { trailing?: React.ReactNode; onLongPress?: () => void } = {},
+  props: {
+    trailing?: React.ReactNode;
+    onLongPress?: () => void;
+    chips?: (token: string) => boolean;
+  } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
         <MessageMarkdown
-          parsed={parseMessageMarkdown(content)}
+          parsed={parseMessageMarkdown(content, props.chips)}
           style={{ color: "body" }}
           {...props}
         />
@@ -47,9 +54,10 @@ const texts = (tree: ReactTestRenderer) =>
 const drawn = (content: string) => drawnText(texts(render(content))[0]!);
 
 function fontOf(node: ReactTestInstance): string | undefined {
-  const style = [node.props.style].flat(Infinity) as Array<
-    Record<string, unknown> | null
-  >;
+  const style = [node.props.style].flat(Infinity) as Array<Record<
+    string,
+    unknown
+  > | null>;
   return style.reduce<string | undefined>(
     (family, part) => (part?.fontFamily as string | undefined) ?? family,
     undefined,
@@ -118,8 +126,8 @@ describe("MessageMarkdown: the formatting set (#2861)", () => {
   });
 });
 
-const mentionRuns = (content: string) =>
-  texts(render(content))
+const mentionRuns = (content: string, chips?: (token: string) => boolean) =>
+  texts(render(content, { chips }))
     .slice(1)
     .filter((node) =>
       [node.props.style]
@@ -132,6 +140,14 @@ const mentionRuns = (content: string) =>
     );
 
 describe("MessageMarkdown: the in-body mention chip", () => {
+  it("leaves a token that pinged nobody plain (`mentionChipFilter`)", () => {
+    // Tester report 2026-11-07: `@bigsigma` drew as a mention nobody got.
+    const chips = (token: string) => token === "President";
+    expect(
+      mentionRuns("@President @bigsigma", chips).map((node) => drawnText(node)),
+    ).toEqual(["@President"]);
+  });
+
   it("chips the handle alone, in the fixed amber pair at body weight", () => {
     const [chip, ...rest] = mentionRuns("How are you doing @frapp");
     expect(rest).toHaveLength(0);
@@ -145,10 +161,9 @@ describe("MessageMarkdown: the in-body mention chip", () => {
   });
 
   it("chips every handle, and leaves the stop after one outside it", () => {
-    expect(mentionRuns("@jane and @bob.").map((node) => drawnText(node))).toEqual([
-      "@jane",
-      "@bob",
-    ]);
+    expect(
+      mentionRuns("@jane and @bob.").map((node) => drawnText(node)),
+    ).toEqual(["@jane", "@bob"]);
   });
 
   it("chips nothing in code, an email address or a link label", () => {
@@ -198,7 +213,11 @@ describe("MessageMarkdown: lines, laid out as web's body shows them", () => {
     ["a nested list, one item a line", "- a\n  - b\n- c", "a\nb\nc"],
     ["a quote inside a list item", "- > q\n- x", "q\nx"],
     ["a blank line after a heading", "# Title\n\nbody", "Title\n\nbody"],
-    ["a linked item in a tight list", "- see https://x.test\n- b", "see https://x.test\nb"],
+    [
+      "a linked item in a tight list",
+      "- see https://x.test\n- b",
+      "see https://x.test\nb",
+    ],
   ])("unwraps %s, keeping its text", (_label, content, expected) => {
     expect(drawn(content)).toBe(expected);
   });
@@ -227,7 +246,9 @@ describe("MessageMarkdown: links", () => {
     expect(found.map(drawnText)).toEqual(parsed.links.map((link) => link.text));
     vi.mocked(WebBrowser.openBrowserAsync).mockClear();
     act(() => found[1]!.props.onPress());
-    expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith("https://x.test/d");
+    expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
+      "https://x.test/d",
+    );
   });
 
   it.each([
@@ -256,63 +277,92 @@ describe("MessageMarkdown: links", () => {
   });
 
   it.each([
-    ["an `__x__` pair", "see https://x.test/pkg/__init__.py now", "https://x.test/pkg/__init__.py"],
-    ["a `*x*` pair", "https://x.test/search?q=a*b*c.", "https://x.test/search?q=a*b*c"],
-    ["an `_x_` pair after a slash", "https://x.test/_next/_x_/y", "https://x.test/_next/_x_/y"],
+    [
+      "an `__x__` pair",
+      "see https://x.test/pkg/__init__.py now",
+      "https://x.test/pkg/__init__.py",
+    ],
+    [
+      "a `*x*` pair",
+      "https://x.test/search?q=a*b*c.",
+      "https://x.test/search?q=a*b*c",
+    ],
+    [
+      "an `_x_` pair after a slash",
+      "https://x.test/_next/_x_/y",
+      "https://x.test/_next/_x_/y",
+    ],
   ])("links a bare URL holding %s whole, as typed", (_label, content, url) => {
-    expect(parseMessageMarkdown(content).links).toEqual([{ text: url, href: url }]);
+    expect(parseMessageMarkdown(content).links).toEqual([
+      { text: url, href: url },
+    ]);
     expect(links(render(content)).map(drawnText)).toEqual([url]);
   });
 
   it.each([
     ["after a line break", "line one\nhttps://x.test/pkg/__init__.py"],
-    ["after a trailing space and a line break", "see \nhttps://x.test/pkg/__init__.py"],
-    ["on an indented continuation line", "see\n   https://x.test/pkg/__init__.py"],
+    [
+      "after a trailing space and a line break",
+      "see \nhttps://x.test/pkg/__init__.py",
+    ],
+    [
+      "on an indented continuation line",
+      "see\n   https://x.test/pkg/__init__.py",
+    ],
     ["in a quote's second line", "> see\n> https://x.test/pkg/__init__.py"],
     ["in a list item's second line", "- see\n  https://x.test/pkg/__init__.py"],
   ])("links a split URL %s whole", (_label, content) => {
     // Pins `remarkBareUrls` ahead of `remark-breaks`, whose split text nodes
     // carry no positions to measure by.
-    expect(parseMessageMarkdown(content).links.map((link) => link.href)).toEqual([
-      "https://x.test/pkg/__init__.py",
-    ]);
+    expect(
+      parseMessageMarkdown(content).links.map((link) => link.href),
+    ).toEqual(["https://x.test/pkg/__init__.py"]);
   });
 
   it.each([
     ["inline code", "https://x.test/`x`", ["https://x.test/"], 1],
-    ["a link", "https://x.test/[docs](https://y.test)", ["https://x.test/", "https://y.test"], 0],
-  ])("ends a bare URL before %s, which keeps its own meaning", (_label, content, hrefs, code) => {
-    expect(parseMessageMarkdown(content).links.map((link) => link.href)).toEqual(hrefs);
-    const tree = render(content);
-    expect(
-      texts(tree).filter((node) => fontOf(node) === MONO_FONT_FAMILY),
-    ).toHaveLength(code);
-  });
+    [
+      "a link",
+      "https://x.test/[docs](https://y.test)",
+      ["https://x.test/", "https://y.test"],
+      0,
+    ],
+  ])(
+    "ends a bare URL before %s, which keeps its own meaning",
+    (_label, content, hrefs, code) => {
+      expect(
+        parseMessageMarkdown(content).links.map((link) => link.href),
+      ).toEqual(hrefs);
+      const tree = render(content);
+      expect(
+        texts(tree).filter((node) => fontOf(node) === MONO_FONT_FAMILY),
+      ).toHaveLength(code);
+    },
+  );
 
   it("leaves what a URL cut from an emphasis as typed", () => {
     const content = "https://x.test/pkg/__init__ is new";
-    expect(parseMessageMarkdown(content).links.map((link) => link.href)).toEqual([
-      "https://x.test/pkg/__init",
-    ]);
+    expect(
+      parseMessageMarkdown(content).links.map((link) => link.href),
+    ).toEqual(["https://x.test/pkg/__init"]);
     expect(drawn(content)).toBe(content);
   });
 
   it("ends a URL before an emphasis ending in an entity, which draws decoded", () => {
     const content = "https://x.test/p*a&amp;*";
-    expect(parseMessageMarkdown(content).links.map((link) => link.href)).toEqual([
-      "https://x.test/p",
-    ]);
+    expect(
+      parseMessageMarkdown(content).links.map((link) => link.href),
+    ).toEqual(["https://x.test/p"]);
     expect(drawn(content)).toBe("https://x.test/pa&");
   });
 
   it("links the URL after one it had to measure on the raw body", () => {
     expect(
-      parseMessageMarkdown("https://x.test/__a__.py and https://y.test").links.map(
-        (link) => link.href,
-      ),
+      parseMessageMarkdown(
+        "https://x.test/__a__.py and https://y.test",
+      ).links.map((link) => link.href),
     ).toEqual(["https://x.test/__a__.py", "https://y.test"]);
   });
-
 
   it("names a link across a line break with a space, as a reader hears it", () => {
     const content = "[click\nhere](https://x.test)";
@@ -351,7 +401,11 @@ describe("MessageMarkdown: links", () => {
     const parsed = parseMessageMarkdown("**see** https://x.test");
     const draw = (onLongPress: () => void) => (
       <FrappThemeProvider>
-        <MessageMarkdown parsed={parsed} style={null} onLongPress={onLongPress} />
+        <MessageMarkdown
+          parsed={parsed}
+          style={null}
+          onLongPress={onLongPress}
+        />
       </FrappThemeProvider>
     );
     let tree!: ReactTestRenderer;
@@ -380,7 +434,9 @@ describe("MessageMarkdown: links", () => {
     ]);
     vi.mocked(WebBrowser.openBrowserAsync).mockClear();
     expect(runLinkA11yAction(found, "openLink:1")).toBe(true);
-    expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith("https://x.test/e");
+    expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
+      "https://x.test/e",
+    );
     expect(runLinkA11yAction(found, "openLink:2")).toBe(false);
     expect(runLinkA11yAction(found, "longpress")).toBe(false);
   });
@@ -409,11 +465,16 @@ describe("MessageMarkdown: the #2209 depth cap", () => {
     // Alternating openers, closed in reverse: no line of container markers,
     // so only the cap after the parse catches it.
     const levels = MAX_MESSAGE_MARKDOWN_DEPTH + 8;
-    const markers = Array.from({ length: levels }, (_, i) => (i % 2 ? "_" : "*"));
+    const markers = Array.from({ length: levels }, (_, i) =>
+      i % 2 ? "_" : "*",
+    );
     const content =
       markers.map((marker) => `${marker}a `).join("") +
       "x" +
-      [...markers].reverse().map((marker) => ` a${marker}`).join("");
+      [...markers]
+        .reverse()
+        .map((marker) => ` a${marker}`)
+        .join("");
     expect(drawn(content)).toBe(content);
     expect(texts(render(content))).toHaveLength(1);
   });
@@ -485,10 +546,13 @@ describe("MessageMarkdown: trailing markers", () => {
     ["a list, past a divider", "- a\n\n---", "a"],
     ["a code block, past a divider", "```\ncode\n```\n\n***", "code"],
     ["a list, past an image", "- a\n\n![x](https://x.test/i.png)", "a"],
-  ])("take a line of their own after %s, as §11 says", (_label, content, body) => {
-    const tree = render(content, { trailing: "(edited)" });
-    expect(drawnText(texts(tree)[0]!)).toBe(`${body}\n(edited)`);
-  });
+  ])(
+    "take a line of their own after %s, as §11 says",
+    (_label, content, body) => {
+      const tree = render(content, { trailing: "(edited)" });
+      expect(drawnText(texts(tree)[0]!)).toBe(`${body}\n(edited)`);
+    },
+  );
 
   it.each([
     ["a heading", "# Release notes", "Release notes"],

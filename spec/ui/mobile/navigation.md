@@ -139,7 +139,7 @@ The row names the screen it pops to, so these are the rows a member sees arrivin
 
 ## Launch
 
-Launch opens the last channel the member was in, then back goes to chat home (s04), the way Discord does (owner, 2026-11-05). Once per app process and only at launch (a list that answers late, or a member who has already left chat home, gets no jump), and a notification tap that launched the app wins. The rule and its fallbacks: [`spec/behavior/chat/README.md` § Where Chat opens](../../behavior/chat/README.md#where-chat-opens). Implementation: [`apps/mobile/lib/chat/last-channel.ts`](../../../apps/mobile/lib/chat/last-channel.ts).
+Launch opens the last channel the member was in, then back goes to chat home (s04), the way Discord does (owner, 2026-11-05). Once per app process and only at launch (a list that answers late, or a member who has already left chat home, gets no jump), and a notification tap that launched the app wins. The rule and its fallbacks: [`spec/behavior/chat/README.md` § Where Chat opens](../../behavior/chat/README.md#where-chat-opens). It lands rather than slides: while the jump may still happen chat home holds its list behind the skeleton, and the channel opens with no push animation, so the list never flashes first (owner, 2026-11-07). A notification for a channel while a channel is open replaces it instead of stacking a second, so back still reaches chat home (2026-11-07, `openHref` in `apps/mobile/lib/href.ts`). Implementation: [`apps/mobile/lib/chat/last-channel.ts`](../../../apps/mobile/lib/chat/last-channel.ts).
 
 ## Deep links
 

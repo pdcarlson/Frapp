@@ -75,6 +75,7 @@ import {
 } from "@/components/chat/notification-level-control";
 import { ThreadHistoryEdge } from "@/components/chat/thread-history-edge";
 import { ThreadMessageRow } from "@/components/chat/thread-message-row";
+import { MentionChipTargetsContext } from "@repo/hooks/mention-chips";
 import { ThreadSkeleton } from "@/components/chat/thread-skeleton";
 import { threadLayout } from "@/lib/chat/thread-layout";
 import { ErrorState } from "@/components/state-block";
@@ -181,12 +182,21 @@ export default function ChatThreadScreen() {
 
   // Params arrive as `string | string[]`; a repeated query key would otherwise
   // silently produce an array where a channel id is expected.
-  const params = useLocalSearchParams<{ channelId?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    channelId?: string | string[];
+    landing?: string | string[];
+  }>();
   const channelId = useMemo(() => {
     const raw = params.channelId;
     const value = Array.isArray(raw) ? raw[0] : raw;
     return typeof value === "string" && value.length > 0 ? value : null;
   }, [params.channelId]);
+  // `landing` opens the launch jump with no slide (`app/(app)/_layout.tsx`).
+  // Dropped once it has, so going back slides as from any other channel.
+  const landing = params.landing !== undefined;
+  useEffect(() => {
+    if (landing) router.setParams({ landing: undefined });
+  }, [landing, router]);
 
   // Channel-level metadata (#704) — mobile had no read-only/post gating of any
   // kind before this, unlike web's `chat-shell.tsx`. `can_post` already folds
@@ -592,6 +602,13 @@ export default function ChatThreadScreen() {
   // The roles it offers after the members, each saying whether this member
   // may ping it (the server's rule, so a pick never lands on nobody).
   const mentionRoles = useMentionRoles();
+  const mentionChipTargets = useMemo(
+    () => ({
+      members: mentionRoster.data,
+      roleNames: mentionRoles.data?.map((role) => role.name),
+    }),
+    [mentionRoster.data, mentionRoles.data],
+  );
   // A staged reply or an open edit (#2775), keyed by channel. Typing into the
   // draft still emits typing; typing into an edit does not, since nothing new
   // is on its way.
@@ -1129,65 +1146,68 @@ export default function ChatThreadScreen() {
             // The rows reach the image viewer through this, not through a
             // prop threaded down the row and its body.
             <ImageViewerContext.Provider value={imageViewer.open}>
-              {/* The list and the jump control over its corner. */}
-              <View style={styles.flex}>
-                <FlatList
-                  // One list per channel. The screen stays mounted across a
-                  // switch, so a shared list kept the last channel's scroll
-                  // offset and opened a cached channel mid-history, with no
-                  // jump control to say so. A fresh list opens at offset 0,
-                  // the newest message.
-                  key={channelId ?? undefined}
-                  ref={listRef}
-                  onScrollToIndexFailed={handleScrollToIndexFailed}
-                  data={inverted}
-                  renderItem={renderItem}
-                  // `client_message_id` is always present and is stable across
-                  // the optimistic → confirmed transition, which the server id
-                  // is not.
-                  keyExtractor={(item) => item.message.client_message_id}
-                  inverted
-                  // A new message is inserted at index 0, the scroll origin of
-                  // an inverted list, so without this every arrival moved what
-                  // a member reading back through history was reading by a
-                  // row. The native scroll view keeps the first visible row
-                  // where it was (iOS, and Android's Fabric scroll view in RN
-                  // 0.86, which this app runs) and, within
-                  // `FOLLOW_ARRIVALS_WITHIN` of the newest message, scrolls on
-                  // to show the arrival instead. Older pages append at the far
-                  // end, which this never touches.
-                  maintainVisibleContentPosition={MAINTAIN_POSITION}
-                  onScroll={latest.onScroll}
-                  onLayout={latest.onLayout}
-                  // A tap on a reaction, link, photo, quote or Retry acts at
-                  // once with the keyboard up; React Native's default spent
-                  // that tap on dismissing the keyboard. Dragging the thread
-                  // puts the keyboard away, as every messenger does, and so
-                  // does a tap on a plain message (`MessageRowFrame`). A tap
-                  // on a card's body doesn't (#3461): the card's own
-                  // long-press Pressable takes it first.
-                  // `on-drag` rather than iOS's `interactive`, on both: the
-                  // avoiding view under the composer follows keyboard frame
-                  // events, which an interactive drag only sends at its end,
-                  // so the composer would hang in mid-air while the keyboard
-                  // followed the finger down.
-                  keyboardShouldPersistTaps="handled"
-                  keyboardDismissMode="on-drag"
-                  onEndReached={handleEndReached}
-                  onEndReachedThreshold={0.5}
-                  // An inverted list draws its footer at the top, above the
-                  // oldest loaded row.
-                  ListFooterComponent={historyEdge}
-                  contentContainerStyle={styles.listContent}
-                  style={styles.flex}
-                />
-                {latest.showsJump ? (
-                  <JumpToLatestButton
-                    hasNew={latest.hasNewBelow}
-                    onPress={() => jumpToLatest()}
+              {/* Which `@`-tokens in the rows really pinged someone. */}
+              <MentionChipTargetsContext.Provider value={mentionChipTargets}>
+                {/* The list and the jump control over its corner. */}
+                <View style={styles.flex}>
+                  <FlatList
+                    // One list per channel. The screen stays mounted across a
+                    // switch, so a shared list kept the last channel's scroll
+                    // offset and opened a cached channel mid-history, with no
+                    // jump control to say so. A fresh list opens at offset 0,
+                    // the newest message.
+                    key={channelId ?? undefined}
+                    ref={listRef}
+                    onScrollToIndexFailed={handleScrollToIndexFailed}
+                    data={inverted}
+                    renderItem={renderItem}
+                    // `client_message_id` is always present and is stable across
+                    // the optimistic → confirmed transition, which the server id
+                    // is not.
+                    keyExtractor={(item) => item.message.client_message_id}
+                    inverted
+                    // A new message is inserted at index 0, the scroll origin of
+                    // an inverted list, so without this every arrival moved what
+                    // a member reading back through history was reading by a
+                    // row. The native scroll view keeps the first visible row
+                    // where it was (iOS, and Android's Fabric scroll view in RN
+                    // 0.86, which this app runs) and, within
+                    // `FOLLOW_ARRIVALS_WITHIN` of the newest message, scrolls on
+                    // to show the arrival instead. Older pages append at the far
+                    // end, which this never touches.
+                    maintainVisibleContentPosition={MAINTAIN_POSITION}
+                    onScroll={latest.onScroll}
+                    onLayout={latest.onLayout}
+                    // A tap on a reaction, link, photo, quote or Retry acts at
+                    // once with the keyboard up; React Native's default spent
+                    // that tap on dismissing the keyboard. Dragging the thread
+                    // puts the keyboard away, as every messenger does, and so
+                    // does a tap on a plain message (`MessageRowFrame`). A tap
+                    // on a card's body doesn't (#3461): the card's own
+                    // long-press Pressable takes it first.
+                    // `on-drag` rather than iOS's `interactive`, on both: the
+                    // avoiding view under the composer follows keyboard frame
+                    // events, which an interactive drag only sends at its end,
+                    // so the composer would hang in mid-air while the keyboard
+                    // followed the finger down.
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="on-drag"
+                    onEndReached={handleEndReached}
+                    onEndReachedThreshold={0.5}
+                    // An inverted list draws its footer at the top, above the
+                    // oldest loaded row.
+                    ListFooterComponent={historyEdge}
+                    contentContainerStyle={styles.listContent}
+                    style={styles.flex}
                   />
-                ) : null}
-              </View>
+                  {latest.showsJump ? (
+                    <JumpToLatestButton
+                      hasNew={latest.hasNewBelow}
+                      onPress={() => jumpToLatest()}
+                    />
+                  ) : null}
+                </View>
+              </MentionChipTargetsContext.Provider>
             </ImageViewerContext.Provider>
           )}
 
