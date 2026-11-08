@@ -5,21 +5,11 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import type { JwtPayload, UserResponse } from '@supabase/supabase-js';
+import type { JwtPayload } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { RequestContext, getHeaderValue } from '../types/request-context.types';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
-import {
-  InFlightLookups,
-  isAuthOutage,
-  lookupUnavailable,
-} from './guard-lookup';
-
-/**
- * One process-wide map, not one per guard instance: Nest builds a guard per
- * module, and a resume burst spans several modules' routes (#3728).
- */
-const userLookups = new InFlightLookups<UserResponse>();
+import { isAuthOutage, lookupUnavailable } from './guard-lookup';
 
 @Injectable()
 export class SupabaseAuthGuard implements CanActivate {
@@ -39,13 +29,7 @@ export class SupabaseAuthGuard implements CanActivate {
 
     const token = authHeader.slice(7);
 
-    // Requests carrying one token that arrive together share one Auth round
-    // trip (`InFlightLookups`). A joiner can miss a revocation committed
-    // within `IN_FLIGHT_JOIN_WINDOW_MS` before it arrived; a request after
-    // that makes its own call.
-    const { data, error } = await userLookups.run(token, () =>
-      this.supabase.auth.getUser(token),
-    );
+    const { data, error } = await this.supabase.auth.getUser(token);
 
     // An Auth outage is not a verdict on the token (#3143): `isAuthOutage`.
     if (error && isAuthOutage(error)) {
@@ -55,7 +39,7 @@ export class SupabaseAuthGuard implements CanActivate {
       throw new UnauthorizedException('Invalid or expired token');
     }
 
-    request.supabaseUser = structuredClone(data.user);
+    request.supabaseUser = data.user;
     request.jwtClaims = await this.readClaims(token);
     return true;
   }

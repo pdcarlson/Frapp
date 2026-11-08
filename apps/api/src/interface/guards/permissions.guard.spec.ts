@@ -414,44 +414,4 @@ describe('PermissionsGuard', () => {
       },
     );
   });
-
-  describe('requests arriving together (#3728)', () => {
-    const rolesReads = () =>
-      mockFrom.mock.calls.filter(([table]) => table === 'roles').length;
-
-    it('shares one role read between concurrent requests for the same roles', async () => {
-      mockPermissionMetadata({ classRequire: ['members:view'] });
-      mockRoles([role('r1', ['members:view']), role('r2', [])]);
-
-      await expect(
-        Promise.all([
-          guard.canActivate(mockExecutionContext({ role_ids: ['r1', 'r2'] })),
-          guard.canActivate(mockExecutionContext({ role_ids: ['r2', 'r1'] })),
-        ]),
-      ).resolves.toEqual([true, true]);
-      expect(rolesReads()).toBe(1);
-    });
-
-    it('reads separately for different roles or chapters', async () => {
-      mockPermissionMetadata({ classRequire: ['members:view'] });
-      mockRoles([
-        role('r1', ['members:view']),
-        role('r2', []),
-        role('r1', ['members:view'], 'ch-2'),
-      ]);
-
-      const results = await Promise.allSettled([
-        guard.canActivate(mockExecutionContext({ role_ids: ['r1'] })),
-        guard.canActivate(mockExecutionContext({ role_ids: ['r2'] })),
-        guard.canActivate(mockExecutionContext({ role_ids: ['r1'] }, 'ch-2')),
-      ]);
-
-      expect(results.map((r) => r.status)).toEqual([
-        'fulfilled',
-        'rejected',
-        'fulfilled',
-      ]);
-      expect(rolesReads()).toBe(3);
-    });
-  });
 });

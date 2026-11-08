@@ -946,7 +946,7 @@ describe('ChapterGuard', () => {
     const tablesQueried = () =>
       mockFrom.mock.calls.map(([table]: [string]) => table).sort();
 
-    it('shares each lookup between concurrent requests for the same member and chapter', async () => {
+    it('shares the user and chapter lookups between concurrent requests, but reads membership per request', async () => {
       mockSupabaseChain({
         appUser: { id: 'user-1' },
         member: { id: 'member-1', role_ids: ['role-1'] },
@@ -962,15 +962,21 @@ describe('ChapterGuard', () => {
         ),
       ).resolves.toEqual([true, true, true]);
 
-      expect(tablesQueried()).toEqual(['chapters', 'members', 'users']);
+      // Membership stays per request: a revoked member must be refused by
+      // the very next request (spec/behavior/multi-tenancy.md).
+      expect(tablesQueried()).toEqual([
+        'chapters',
+        'members',
+        'members',
+        'members',
+        'users',
+      ]);
       for (const request of requests) {
         expect(request.member).toEqual({
           id: 'member-1',
           role_ids: ['role-1'],
         });
       }
-      // Each request owns its copy; one handler's edit can't reach another.
-      expect(requests[0].member).not.toBe(requests[1].member);
     });
 
     it('looks the chapter up again for a request that starts after the first finished', async () => {
@@ -1039,7 +1045,12 @@ describe('ChapterGuard', () => {
         ),
       );
 
-      expect(tablesQueried()).toEqual(['chapters', 'members', 'users']);
+      expect(tablesQueried()).toEqual([
+        'chapters',
+        'members',
+        'members',
+        'users',
+      ]);
       expect(first.appUser).toEqual(second.appUser);
       expect(first.appUser).not.toBe(second.appUser);
       expect(first.enabledModules).toEqual({ polls: false });

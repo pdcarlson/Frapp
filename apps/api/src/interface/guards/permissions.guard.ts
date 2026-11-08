@@ -10,7 +10,7 @@ import { Reflector } from '@nestjs/core';
 import { PostgrestError } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
-import { InFlightLookups, lookupUnavailable } from './guard-lookup';
+import { lookupUnavailable } from './guard-lookup';
 import {
   PERMISSIONS_KEY,
   PERMISSIONS_ANY_KEY,
@@ -27,22 +27,6 @@ interface RolePermissionRow {
 interface CustomRoleCapabilityRow {
   capabilities: string[];
 }
-
-type RowsResult<Row> = { data: Row[] | null; error: PostgrestError | null };
-
-/**
- * Concurrent requests from one member ask for the same role rows; they share
- * the read (#3728, `InFlightLookups` for the freshness bound). Keyed by the
- * chapter and the sorted id list, so two members share only when they ask for
- * exactly the same rows. Results are only read here, never put on a request.
- */
-const roleLookups = new InFlightLookups<RowsResult<RolePermissionRow>>();
-const customRoleLookups = new InFlightLookups<
-  RowsResult<CustomRoleCapabilityRow>
->();
-
-const lookupKey = (chapterId: string, ids: string[]): string =>
-  `${chapterId}:${[...ids].sort().join(',')}`;
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -91,40 +75,25 @@ export class PermissionsGuard implements CanActivate {
     // well as the id list: a stale or cross-chapter id left on the member row
     // then resolves to no row instead of silently granting that other
     // chapter's permissions here.
-    const [rolesResult, customRolesResult] = await Promise.all([
+    const [rolesResult, customRolesResult] = (await Promise.all([
       roleIds.length
-        ? roleLookups.run(
-            lookupKey(chapterId, roleIds),
-            () =>
-              this.supabase
-                .from('roles')
-                .select('permissions')
-                .in('id', roleIds)
-                .eq('chapter_id', chapterId) as PromiseLike<
-                RowsResult<RolePermissionRow>
-              >,
-          )
-        : Promise.resolve<RowsResult<RolePermissionRow>>({
-            data: [],
-            error: null,
-          }),
+        ? this.supabase
+            .from('roles')
+            .select('permissions')
+            .in('id', roleIds)
+            .eq('chapter_id', chapterId)
+        : Promise.resolve({ data: [], error: null }),
       customRoleIds.length
-        ? customRoleLookups.run(
-            lookupKey(chapterId, customRoleIds),
-            () =>
-              this.supabase
-                .from('chapter_custom_roles')
-                .select('capabilities')
-                .in('id', customRoleIds)
-                .eq('chapter_id', chapterId) as PromiseLike<
-                RowsResult<CustomRoleCapabilityRow>
-              >,
-          )
-        : Promise.resolve<RowsResult<CustomRoleCapabilityRow>>({
-            data: [],
-            error: null,
-          }),
-    ]);
+        ? this.supabase
+            .from('chapter_custom_roles')
+            .select('capabilities')
+            .in('id', customRoleIds)
+            .eq('chapter_id', chapterId)
+        : Promise.resolve({ data: [], error: null }),
+    ])) as [
+      { data: RolePermissionRow[] | null; error: PostgrestError | null },
+      { data: CustomRoleCapabilityRow[] | null; error: PostgrestError | null },
+    ];
 
     // A failed lookup must surface as a server fault, not a permission
     // denial — otherwise a transient DB error reads as a terminal 403. A 503,

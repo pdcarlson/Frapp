@@ -1,4 +1,4 @@
-import { InFlightLookups } from './guard-lookup';
+import { IN_FLIGHT_JOIN_WINDOW_MS, InFlightLookups } from './guard-lookup';
 
 describe('InFlightLookups (#3728)', () => {
   const deferred = <T>() => {
@@ -110,6 +110,25 @@ describe('InFlightLookups (#3728)', () => {
       pendingAgain.resolve('newest');
       await expect(newest).resolves.toBe('newest');
       expect(lookups.size).toBe(0);
+    });
+
+    it('uses IN_FLIGHT_JOIN_WINDOW_MS when no window is given', async () => {
+      let clock = 0;
+      const lookups = new InFlightLookups<string>({ now: () => clock });
+      const load = jest.fn(() => new Promise<string>(() => undefined));
+
+      void lookups.run('k', load);
+      clock = IN_FLIGHT_JOIN_WINDOW_MS;
+      void lookups.run('k', load);
+      expect(load).toHaveBeenCalledTimes(0);
+      await Promise.resolve();
+      expect(load).toHaveBeenCalledTimes(1);
+
+      clock = IN_FLIGHT_JOIN_WINDOW_MS + 1;
+      void lookups.run('k', load);
+      await Promise.resolve();
+      expect(load).toHaveBeenCalledTimes(2);
+      expect(IN_FLIGHT_JOIN_WINDOW_MS).toBe(250);
     });
   });
 });

@@ -57,20 +57,22 @@ export const IN_FLIGHT_JOIN_WINDOW_MS = 250;
  * its own (#3728).
  *
  * A mobile app resuming from a push fires about seven requests at once, all
- * with the same token and chapter, and each ran the same guard lookups: seven
- * `auth.getUser` calls and some twenty to thirty-five PostgREST reads (users,
- * members, chapters, roles) before any handler started.
+ * with the same token and chapter, and each ran the same guard lookups before
+ * any handler started.
  *
  * What a joiner gives up, and its bound: a request that joins gets an answer
  * whose query left up to `joinWindowMs` before the request arrived, so a
- * session revocation, member removal or role change committed inside that
- * window is not seen by it. A request arriving later than that, or after the
+ * change committed inside that window is not seen by it. That is why only
+ * lookups whose staleness grants no access use this (see `ChapterGuard`):
+ * the specs promise that role, membership and session changes take effect on
+ * the very next request. A request arriving after the window, or after the
  * call settled, makes its own lookup. Nothing is cached beyond the call.
  *
- * The window also bounds a stalled call: the Supabase client sets no fetch
- * timeout, so a call can hang for minutes, and without the window every later
- * request with its key would hang with it. Once the window has passed, the
- * next request starts a fresh call and takes the key over.
+ * Joiners share the call's fate. The Supabase client sets no fetch timeout,
+ * so if the call stalls, every request that joined it stalls with it. The
+ * window limits that to requests arriving within `joinWindowMs` of the call's
+ * start; the next request after that starts a fresh call and takes the key
+ * over.
  *
  * Results are shared by reference, so callers copy what they put on the
  * request (`structuredClone`) rather than hand two requests one object.

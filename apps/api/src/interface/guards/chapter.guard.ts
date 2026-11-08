@@ -57,14 +57,14 @@ type ChapterRow = {
 /**
  * Process-wide, not per guard instance: Nest builds a guard per module, and
  * the requests a mobile resume fires together (#3728) hit several modules'
- * routes. A joiner's answer can predate its request by at most
- * `IN_FLIGHT_JOIN_WINDOW_MS` (see `InFlightLookups`); nothing is cached.
+ * routes. Only lookups that decide no access are shared: the user's own row
+ * id, and the chapter's subscription state and module toggles. Membership is
+ * still read per request, because spec/behavior/multi-tenancy.md promises
+ * that a revoked membership refuses every later request; a joiner's answer
+ * can predate its request by up to `IN_FLIGHT_JOIN_WINDOW_MS`.
  */
 const appUserLookups = new InFlightLookups<
   PostgrestMaybeSingleResponse<{ id: string }>
->();
-const memberLookups = new InFlightLookups<
-  PostgrestMaybeSingleResponse<MemberContext>
 >();
 const chapterLookups = new InFlightLookups<
   PostgrestMaybeSingleResponse<ChapterRow>
@@ -174,9 +174,10 @@ export class ChapterGuard implements CanActivate {
       throw new ForbiddenException('Chapter not found');
     }
 
-    // Copies: a lookup's result is shared by every request that joined it.
+    // Copies of the two shared lookups (`appUserLookups`, `chapterLookups`):
+    // their results go to every request that joined them.
     request.appUser = { id: appUser.id };
-    request.member = structuredClone(member);
+    request.member = member;
     request.chapterId = chapterId;
     request.subscriptionStatus = chapter.subscription_status;
     request.enabledModules = structuredClone(chapter.enabled_modules);
@@ -299,16 +300,12 @@ export class ChapterGuard implements CanActivate {
     appUserId: string,
     chapterId: string,
   ): Promise<MemberContext | null> {
-    const { data, error } = await memberLookups.run(
-      `${appUserId}:${chapterId}`,
-      () =>
-        this.supabase
-          .from('members')
-          .select('id, role_ids, custom_role_ids')
-          .eq('user_id', appUserId)
-          .eq('chapter_id', chapterId)
-          .maybeSingle<MemberContext>(),
-    );
+    const { data, error } = await this.supabase
+      .from('members')
+      .select('id, role_ids, custom_role_ids')
+      .eq('user_id', appUserId)
+      .eq('chapter_id', chapterId)
+      .maybeSingle<MemberContext>();
 
     if (error) {
       throw lookupUnavailable(LOOKUP_FAILED, new SupabaseQueryError(error));
