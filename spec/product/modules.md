@@ -113,7 +113,7 @@
 - **Auto-absent:** For mandatory or role-targeted events, required members who did not check in and were not excused are auto-marked ABSENT.
 - **Meeting minutes:** Events have an optional notes field (markdown) editable by admins after the event. Visible to all members with access to the event.
 - Unique constraint: one attendance record per (event, user).
-- **Calendar integration:** "Add to Calendar" generates .ics file or deep-links to device calendar.
+- **Calendar integration:** none for now. The `.ics` export was withdrawn on 2026-11-08 (#3708) until real calendar sync ships (#3322); [`events.md` § Calendar Integration](../behavior/events.md#calendar-integration).
 
 ## Polls and Voting
 

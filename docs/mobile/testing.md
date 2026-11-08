@@ -104,8 +104,9 @@ device run, check:
 - [ ] **Profile** is reachable from More and gone from the tab bar.
 - [ ] A deleted path (`exp://.../--/points`, `--/task-center`) lands on home via
       `+not-found` instead of an error screen.
-- [ ] **`frapp://event-details` still resolves** — export an `.ics` from an event
-      and open it. This is the one filename contract in the app; a break here is
+- [ ] **`frapp://event-details` still resolves** — open
+      `frapp://event-details?id=<an event id>`, the URL `.ics` files exported
+      before #3708 carry. This is the one filename contract in the app; a break here is
       invisible until a member taps a calendar entry.
 - [ ] **Single-chapter member**: signs in straight to the tabs and is never
       asked to choose. This must hold **with or without** an `active_chapter_id`

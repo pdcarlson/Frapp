@@ -1571,23 +1571,6 @@ export interface paths {
         patch: operations["EventController_update_v1"];
         trace?: never;
     };
-    "/v1/events/{id}/ics": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Download .ics calendar file for an event */
-        get: operations["EventController_getIcs_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/events/{eventId}/attendance/check-in": {
         parameters: {
             query?: never;
@@ -9014,34 +8997,6 @@ export interface operations {
                 "application/json": components["schemas"]["UpdateEventDto"];
             };
         };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    EventController_getIcs_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             200: {
                 headers: {

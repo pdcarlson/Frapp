@@ -5365,45 +5365,6 @@
         ]
       }
     },
-    "/v1/events/{id}/ics": {
-      "get": {
-        "operationId": "EventController_getIcs_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Download .ics calendar file for an event",
-        "tags": [
-          "Events"
-        ]
-      }
-    },
     "/v1/events/{eventId}/attendance/check-in": {
       "post": {
         "description": "Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.",

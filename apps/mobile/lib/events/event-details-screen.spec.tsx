@@ -12,7 +12,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
-import { expectRoundedRipple } from "@/test/pressable-row";
 import { screenText } from "@/test/screen-text";
 
 /**
@@ -77,14 +76,6 @@ vi.mock("@/lib/chapter-branding", () => ({
     accentBorder: "#6B5619",
   }),
 }));
-
-// Real by default; the exporting spec holds one export open.
-const exportCalendar = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/calendar-export", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/calendar-export")>();
-  exportCalendar.mockImplementation(actual.exportEventToCalendar);
-  return { ...actual, exportEventToCalendar: exportCalendar };
-});
 
 vi.mocked(expoRouter.useLocalSearchParams).mockImplementation(
   (): Record<string, string> => (routeId === undefined ? {} : { id: routeId }),
@@ -320,50 +311,6 @@ describe("Event details layout", () => {
     expect(dotColor(render(), "Check-in is closed")).toBe(
       signetDarkTokens.color.text.muted,
     );
-  });
-
-  it("draws Add to calendar at the scan button's height and radius", () => {
-    const tree = render();
-    const [button] = tree.root.findAll(
-      (node) =>
-        node.props.accessibilityLabel === "Add this event to your calendar" &&
-        typeof node.props.style === "function",
-    );
-    const rest = StyleSheet.flatten(button.props.style({ pressed: false }));
-    const held = StyleSheet.flatten(button.props.style({ pressed: true }));
-
-    expect(rest).toMatchObject({
-      height: signetDarkTokens.touch.buttonLarge,
-      borderRadius: signetDarkTokens.radius.control,
-    });
-    // Press feedback is a lift up the surface ladder (the stub is iOS) and a
-    // ripple on Android, never an opacity fade.
-    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
-    expect(held).not.toHaveProperty("opacity");
-    // The ripple is rounded by a parent clip with the button's radius
-    // (`PressableRow`); the button's own `overflow` would leave it square.
-    expectRoundedRipple(button, signetDarkTokens.radius.control);
-  });
-
-  it("drops Add to calendar's ripple while it is exporting", () => {
-    // The export never settles here, so the button stays in "Adding…".
-    exportCalendar.mockReturnValueOnce(new Promise<boolean>(() => {}));
-    const tree = render();
-    const button = () =>
-      tree.root.find(
-        (node) =>
-          node.props.accessibilityLabel === "Add this event to your calendar" &&
-          typeof node.props.style === "function",
-      );
-
-    act(() => {
-      button().props.onPress();
-    });
-
-    expect(screenText(tree)).toContain("Adding…");
-    expect(button().props.disabled).toBe(true);
-    expect(button().props.accessibilityState).toEqual({ disabled: true });
-    expect(button().props.android_ripple).toBeUndefined();
   });
 
   it("says no more than the card does", () => {

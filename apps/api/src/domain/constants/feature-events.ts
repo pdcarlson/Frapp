@@ -36,7 +36,6 @@ export const FEATURE_EVENTS = {
       'posted_to_chat',
     ],
   },
-  'event-calendar-downloaded': { feature: 'events', properties: [] },
   'attendance-checked-in': {
     feature: 'events',
     properties: ['method', 'has_location'],

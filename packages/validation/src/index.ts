@@ -807,10 +807,9 @@ export {
   assertProductionSupabaseUrl,
 } from "./invite-token";
 
-// Event recurrence: the rule catalog the DTOs validate against, the child
-// counts the series generator materializes, and the RFC 5545 RRULE the two
-// .ics exporters emit. One source so the generated series and the exported
-// series cannot describe different meetings.
+// Event recurrence: the rule catalog the DTOs validate against and the child
+// counts the series generator materializes. One source so the generated series
+// and what the Repeat pickers promise cannot describe different meetings.
 export {
   RECURRENCE_RULES,
   RECURRENCE_REPEAT_LABELS,
@@ -820,7 +819,6 @@ export {
   recurrenceChildCount,
   recurrenceLastStart,
   recurrenceMeetingCount,
-  toRRuleLine,
 } from "./recurrence";
 export type { RecurrenceRule } from "./recurrence";
 // Event attendance by role: who an event is for, read the same way by the
