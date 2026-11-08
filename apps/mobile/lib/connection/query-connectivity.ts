@@ -43,9 +43,9 @@
  * unfocused, so a request that dies on the suspended socket in that window
  * parks its retry until the verdict is in. The verdict is an answer or a
  * failure that counts. On an answer the focus refetch and the parked retries
- * go out on a connection that works. On a counted failure they go out too, into whatever `onlineManager`
- * now says: paused while OFFLINE, attempted while DEGRADED, which is still
- * "online" (see `publish` below). Holding focus until an answer instead would
+ * go out on a connection that works. On a counted failure they go out too,
+ * into whatever `onlineManager` now says: paused while OFFLINE, attempted
+ * while DEGRADED, which is still "online" (see `publish` below). Holding focus until an answer instead would
  * hold it, and every `refetchInterval` poll with it, for a whole API outage.
  *
  * The wait is the probe, not a timer: up to two probes, each with a 5s

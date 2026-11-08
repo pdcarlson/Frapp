@@ -540,8 +540,9 @@ export function useUnpinMessage() {
  *
  * The key is also the Sentry grouping root for its failures
  * (`@repo/observability`'s `query-errors.ts`), on web and mobile: they group
- * under `channels` now, not `unkeyed`, so the unkeyed issues that reported
- * them before (FRAPP-MOBILE-F, J) going quiet says nothing either way.
+ * under `channels` now, not `unkeyed`. The unkeyed issues that likely
+ * reported them before (FRAPP-MOBILE-F, J, unkeyed mutations from chat-thread
+ * opening) going quiet therefore says nothing either way.
  */
 export const markChannelReadMutationKey = ["channels", "read"] as const;
 
