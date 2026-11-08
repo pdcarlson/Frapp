@@ -97,6 +97,8 @@ vi.mock("@repo/hooks", async () => {
       byId: { [ALICE]: "Alice Chen", [BOB]: "Bob Diaz" },
       nameFor: (id: string) =>
         ({ [ALICE]: "Alice Chen", [BOB]: "Bob Diaz" })[id] ?? null,
+      avatarFor: (id: string) =>
+        id === ALICE ? "https://storage.test/alice.jpg?token=t" : null,
     }),
     useChannels: () => ({
       ...query(channelsData.value),
