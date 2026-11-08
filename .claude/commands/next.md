@@ -55,8 +55,8 @@ drive-bys); note it in the PR body. Otherwise file it (`issue_write` create, lab
 priority + one `area:<x>`, `file:line` evidence, an Agent brief when you can). A fixed defect that
 deserves its own record (user-visible, security, anything someone would search the tracker for) is
 filed and claimed into the unit: same `CLAIM_ID`, claim comment and all. This record-keeping claim
-sits outside `MAX_BATCH` and the estimate ceiling, which cap planned scope, and it is the only time a
-`triage` issue is claimable. Needing a second one means the unit was mis-scoped: finish, and say so
+sits outside `MAX_BATCH` and the estimate ceiling, which cap planned scope. Apart from a named issue
+(Modes), it is the only time a `triage` issue is claimable. Needing a second one means the unit was mis-scoped: finish, and say so
 in the PR.
 
 **Ultracode changes how thoroughly a step is done, never which steps run or what is written to the
@@ -112,8 +112,9 @@ obligates the whole batch (§0.7).
 - **`/next 123 [124 …]`**: skip ranking (§0.3–0.4) but still claim and verify (§0.5–0.6) each named
   issue, since it may already be held. Several numbers claim as one batch under the same caps and
   coherence test; if the set doesn't honestly batch, say so and ask rather than silently splitting
-  it or shipping an incoherent PR. `triage` issues are never claimable in any mode (except the
-  record-keeping claim above), and §0.2 condition 5 applies here too: a human naming a `[human]`
+  it or shipping an incoherent PR. A named issue still in `triage` is claimable: the human naming
+  it is the triage decision, so the claim promotes it (§0.5 step 3). Ranked `/next` never picks a
+  `triage` issue. §0.2 condition 5 applies here too: a human naming a `[human]`
   item doesn't make it agent-doable. Nor does naming a `routine-state`, `incident` or `parked`
   issue (condition 1's clause for them): say so, for an `incident` offer to file the underlying
   fault as its own issue, and for a `parked` one say that it goes back on the path when the owner
@@ -231,7 +232,10 @@ projection of it. For each candidate in lane-walk order (§0.3):
 1. `issue_read get_comments`; skip it if a live claim exists.
 2. Post the claim comment (`add_issue_comment` with `AGENT-CLAIM`, or `AGENT-RECLAIM` for a §0.7
    takeover).
-3. Then add the `in-progress` label (read-modify-write the full set).
+3. Then add the `in-progress` label (read-modify-write the full set). For a named issue still in
+   `triage` (Modes), the same write promotes it: drop `triage` and keep its priority label, or add
+   one `P1`–`P4` ([roster](../../docs/ci-cd/routines.md#label-roster)) when it has none. Say which
+   priority you set, and why, in the claim comment.
 4. Verify (§0.6). Lost a solo pick: yield, switch lanes per §0.3, and take that lane's next untried
    candidate. A lost batch member follows the batch paragraph below instead.
 
