@@ -82,7 +82,9 @@ async function openMenu(title: string): Promise<HTMLElement[]> {
   fireEvent.contextMenu(row);
   return screen.queryAllByRole("menuitem").length > 0
     ? screen.queryAllByRole("menuitem")
-    : (await screen.findAllByRole("menuitem").catch(() => [])) as HTMLElement[];
+    : ((await screen
+        .findAllByRole("menuitem")
+        .catch(() => [])) as HTMLElement[]);
 }
 
 /** The labels a row's right-click menu offers; `[]` when it opens none. */
@@ -97,8 +99,8 @@ function channelsUnder(container: HTMLElement, label: string): string[] {
   );
   if (!header) return [];
   const list = header.parentElement?.querySelector("ul");
-  return Array.from(list?.querySelectorAll("li") ?? []).map((li) =>
-    li.querySelector("span.truncate")?.textContent ?? "",
+  return Array.from(list?.querySelectorAll("li") ?? []).map(
+    (li) => li.querySelector("span.truncate")?.textContent ?? "",
   );
 }
 
@@ -222,7 +224,11 @@ describe("ChannelList category grouping", () => {
   });
 
   it("hides the Channels group when every channel is categorized", () => {
-    const { container } = renderList([exec, philanthropy], undefined, CATEGORIES);
+    const { container } = renderList(
+      [exec, philanthropy],
+      undefined,
+      CATEGORIES,
+    );
 
     expect(sectionLabels(container)).toEqual(["Executive", "Committees"]);
   });
@@ -278,7 +284,9 @@ describe("ChannelList category grouping", () => {
     expect(
       lists.map((ul) => {
         const id = ul.getAttribute("aria-labelledby");
-        return id ? (container.querySelector(`#${CSS.escape(id)}`)?.textContent ?? null) : null;
+        return id
+          ? (container.querySelector(`#${CSS.escape(id)}`)?.textContent ?? null)
+          : null;
       }),
     ).toEqual(["Channels", "Executive", "Direct messages"]);
   });
@@ -365,25 +373,32 @@ describe("unreadAnnouncement", () => {
   });
 
   it("announces a direct message distinctly from a channel", () => {
-    expect(
-      unreadAnnouncement({ unreadCount: 3, mentionCount: 0 }, true),
-    ).toBe("3 unread direct messages");
-    expect(
-      unreadAnnouncement({ unreadCount: 3, mentionCount: 0 }, false),
-    ).toBe("3 unread messages");
+    expect(unreadAnnouncement({ unreadCount: 3, mentionCount: 0 }, true)).toBe(
+      "3 unread direct messages",
+    );
+    expect(unreadAnnouncement({ unreadCount: 3, mentionCount: 0 }, false)).toBe(
+      "3 unread messages",
+    );
   });
 });
 
 describe("ChannelList unread badges", () => {
-  it("shows the neutral badge with the unread count on a plain unread channel", () => {
-    renderList([general], new Map([["c-gen", { unreadCount: 4, mentionCount: 0 }]]));
+  it("shows no number on a channel that is merely unread", () => {
+    // 2026-11-07: only a mention or a DM carries a count, as on Discord; the
+    // bold name says the channel is unread.
+    renderList(
+      [general],
+      new Map([["c-gen", { unreadCount: 4, mentionCount: 0 }]]),
+    );
 
-    const badge = screen.getByText("4");
-    expect(badge).toBeInTheDocument();
+    expect(screen.queryByText("4")).not.toBeInTheDocument();
   });
 
   it("shows the mention badge, not the raw total, when the channel has an @-mention", () => {
-    renderList([general], new Map([["c-gen", { unreadCount: 9, mentionCount: 1 }]]));
+    renderList(
+      [general],
+      new Map([["c-gen", { unreadCount: 9, mentionCount: 1 }]]),
+    );
 
     expect(screen.getByText("@ 1")).toBeInTheDocument();
     expect(screen.queryByText("9")).not.toBeInTheDocument();
@@ -434,12 +449,12 @@ describe("ChannelList hidden conversations", () => {
   it("keeps it while it is the open channel, so the open row is still marked", () => {
     renderList([general, hiddenDm], undefined, undefined, hiddenDm.id);
 
-    expect(
-      screen.getByRole("button", { name: /Alice Chen/ }),
-    ).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: /Alice Chen/ })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 });
-
 
 describe("ChannelList hide and reopen (#2303)", () => {
   const hiddenDm: ChatChannel = { ...dm, hidden: true };
@@ -596,9 +611,9 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
     expect(headers()).toEqual(["Pinned", "Channels", "Direct messages"]);
     const pinnedList = screen.getByRole("list", { name: "Pinned" });
     expect(pinnedList).toHaveTextContent("exec");
-    expect(screen.getByRole("list", { name: "Channels" })).not.toHaveTextContent(
-      "exec",
-    );
+    expect(
+      screen.getByRole("list", { name: "Channels" }),
+    ).not.toHaveTextContent("exec");
   });
 
   it("folds a section from its header", () => {
@@ -642,9 +657,7 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
     const header = screen.getByRole("button", { name: /Channels/ });
     expect(header).toHaveAttribute("aria-expanded", "false");
     expect(header).toHaveTextContent("@ 1");
-    expect(
-      screen.getByLabelText("1 mention, 5 unread"),
-    ).toBeInTheDocument();
+    expect(screen.getByLabelText("1 mention, 5 unread")).toBeInTheDocument();
     // Folded: no rows drawn under it.
     expect(screen.queryByRole("list", { name: /Channels/ })).toBeNull();
   });
@@ -688,9 +701,7 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
       (await openMenu("general")).find((i) => i.textContent === "Pin to top")!,
     );
     fireEvent.click(
-      (await openMenu("exec")).find(
-        (i) => i.textContent === "Unpin from top",
-      )!,
+      (await openMenu("exec")).find((i) => i.textContent === "Unpin from top")!,
     );
 
     expect(onSetPinned).toHaveBeenNthCalledWith(1, general, true);
@@ -753,7 +764,9 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
       }),
     );
 
-    expect(screen.getByText("No channels match your filters.")).toBeInTheDocument();
+    expect(
+      screen.getByText("No channels match your filters."),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Show all channels" }));
     expect(onClearFilters).toHaveBeenCalled();
   });
@@ -773,7 +786,11 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
   });
 
   it("drops a muted row under Hide muted, keeping one that mentions the member", () => {
-    const random: ChatChannel = { id: "c-rand", name: "random", type: "PUBLIC" };
+    const random: ChatChannel = {
+      id: "c-rand",
+      name: "random",
+      type: "PUBLIC",
+    };
     render(
       <ChannelList
         channels={[general, random, announcements]}

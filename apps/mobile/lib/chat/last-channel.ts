@@ -76,6 +76,24 @@ export function claimChatLaunch(now: number = Date.now()): boolean {
   return !hasLaunchNotificationTap();
 }
 
+/**
+ * Whether the launch jump may still happen, without claiming it. Chat home
+ * holds its list behind the skeleton while this is true, so the list never
+ * flashes before the last channel opens over it (owner, 2026-11-07).
+ */
+export function chatLaunchOpen(now: number = Date.now()): boolean {
+  return (
+    !launchSettled &&
+    now - launchStartedAt <= LAUNCH_WINDOW_MS &&
+    !hasLaunchNotificationTap()
+  );
+}
+
+/** How long the launch window has left, for a hold that must not outlast it. */
+export function chatLaunchWindowLeftMs(now: number = Date.now()): number {
+  return Math.max(0, launchStartedAt + LAUNCH_WINDOW_MS - now);
+}
+
 /** Test seam: a fresh process, launched at `startedAt`. */
 export function resetChatLaunchForTests(startedAt: number = Date.now()): void {
   launchSettled = false;

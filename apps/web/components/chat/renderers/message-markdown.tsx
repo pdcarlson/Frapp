@@ -62,7 +62,14 @@ function rehypeMessageFlow({ source }: { source: string }) {
  * again. The parse is linear for ordinary text but super-linear for some
  * adversarial bodies (#2209), so a message now costs its parse once per mount.
  */
-export const MessageMarkdown = memo(function MessageMarkdown({ content }: { content: string }) {
+export const MessageMarkdown = memo(function MessageMarkdown({
+  content,
+  chips,
+}: {
+  content: string;
+  /** Which `@`-tokens really pinged someone (`useMentionChips`); all when left out. */
+  chips?: (token: string) => boolean;
+}) {
   // Decided from the source, before remark sees it: a body remark would take
   // seconds to parse renders as its raw text instead. See `skipsMarkdownParse`
   // (#2209, #2664).
@@ -79,7 +86,10 @@ export const MessageMarkdown = memo(function MessageMarkdown({ content }: { cont
       remarkPlugins={[
         [remarkDepthCap, { content, flatten }],
         remarkBreaks,
-        [remarkMentionChips, { content, properties: { className: MENTION_CHIP } }],
+        [
+          remarkMentionChips,
+          { content, chips, properties: { className: MENTION_CHIP } },
+        ],
       ]}
       // Last, so it lays out the tree that renders.
       // `source` is the string remark parses, which the positions index into.
