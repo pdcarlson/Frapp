@@ -3,7 +3,12 @@
 import type { ChatNotificationLevel } from "@repo/validation";
 
 import { useEffect, useMemo, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { putSignedUpload } from "./put-signed-upload";
@@ -708,6 +713,10 @@ export function useAuthorAvatars(
   return useQuery({
     queryKey: ["channels", channelId, "avatars", messageIdsByDistinctPath],
     enabled: !!channelId && messageIdsByDistinctPath.length > 0,
+    // The key grows as history pages in and new authors appear; keeping the
+    // previous map while the larger one loads stops every avatar already on
+    // screen dropping back to initials for a round-trip.
+    placeholderData: keepPreviousData,
     // Comfortably inside the API's signed-URL TTL, so a URL handed to the DOM
     // is still live when it renders.
     staleTime: 10 * 60_000,

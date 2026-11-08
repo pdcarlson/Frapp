@@ -40,6 +40,7 @@ import {
   resolveAuthorName,
 } from "@repo/hooks";
 import { useMentionChips } from "@repo/hooks/mention-chips";
+import { MemberAvatar } from "@/components/member-avatar";
 import { initialsFor } from "@/lib/chat/display-name";
 import { useChatDensity } from "@/lib/chat/chat-density";
 import { MessageAttachments } from "./message-attachments";
@@ -102,6 +103,12 @@ export interface MessageItemProps {
    * surface without a roster draws plain names, which is a fine degradation.
    */
   roleColorFor?: (userId: string) => string | null;
+  /**
+   * Resolves a row to its author's photo URL (`resolveAuthorAvatar`: the
+   * member's profile photo, or an imported author's Discord avatar), drawn in
+   * the run's avatar with initials under it. Optional: without it, initials.
+   */
+  avatarFor?: (message: ChatMessage) => string | null;
   /**
    * Whether this row starts a run (`@repo/chat-core/grouping`), and so draws
    * the avatar and author line.
@@ -334,6 +341,7 @@ export function MessageRowFrame({
   viewerId,
   nameFor,
   roleColorFor,
+  avatarFor,
   startsRun,
   quote,
   onOpenActions,
@@ -347,6 +355,8 @@ export function MessageRowFrame({
   nameFor: (userId: string) => string | null;
   /** `users.id` → role color for the author line (#3485); see `MessageItemProps`. */
   roleColorFor?: (userId: string) => string | null;
+  /** The author's photo for the run's avatar; see `MessageItemProps`. */
+  avatarFor?: (message: ChatMessage) => string | null;
   startsRun: boolean;
   /**
    * Compact only: the body leads with the time and name itself
@@ -492,18 +502,24 @@ export function MessageRowFrame({
               </View>
             ) : (
               <Pressable
-                style={styles.avatar}
                 onPress={openAuthor}
                 onLongPress={openAuthor ? onOpenActions : undefined}
                 disabled={!openAuthor}
                 // The author line carries the same tap as a named action.
                 accessible={false}
               >
-                <Text style={styles.avatarText}>
-                  {authorName
-                    ? initialsFor(authorName)
-                    : authorInitialsFallback(message)}
-                </Text>
+                <MemberAvatar
+                  uri={avatarFor?.(message) ?? null}
+                  initials={
+                    authorName
+                      ? initialsFor(authorName)
+                      : authorInitialsFallback(message)
+                  }
+                  size={MESSAGE_AVATAR_SIZE}
+                  style={styles.avatar}
+                  textStyle={styles.avatarText}
+                  testID="message-avatar"
+                />
               </Pressable>
             )
           ) : (
@@ -669,6 +685,7 @@ export function MessageItem({
   viewerId,
   nameFor,
   roleColorFor,
+  avatarFor,
   startsRun,
   onRetry,
   onDiscard,
@@ -810,6 +827,7 @@ export function MessageItem({
       viewerId={viewerId}
       nameFor={nameFor}
       roleColorFor={roleColorFor}
+      avatarFor={avatarFor}
       startsRun={startsRun}
       quote={quote}
       authorInline={leadsWithAuthor}

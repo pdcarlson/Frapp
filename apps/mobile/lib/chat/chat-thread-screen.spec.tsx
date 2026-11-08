@@ -317,6 +317,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMemberDisplayNames: () => ROSTER,
   useChapterRoster: () => ({ data: MENTION_ROSTER }),
   useMentionRoles: () => ({ data: MENTION_ROLES }),
+  // No imported authors with avatars in these fixtures.
+  useAuthorAvatars: () => ({ data: undefined }),
   usePermissionList: () => [],
   useMarkChannelRead: () => markRead,
   useRequestChatUploadUrl: () => requestUploadUrl,

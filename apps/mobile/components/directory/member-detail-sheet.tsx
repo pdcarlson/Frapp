@@ -1,6 +1,12 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
-import { Image } from "expo-image";
+import {
+  Alert,
+  Linking,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useRouter } from "expo-router";
 import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
@@ -14,6 +20,7 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
+import { MemberAvatar } from "@/components/member-avatar";
 import {
   confirmBlockMember,
   confirmUnblockMember,
@@ -171,7 +178,11 @@ export const MemberDetailSheet = forwardRef<
   // ranked roles as plain chips.
   const allRoleChips: MemberRoleChip[] = [
     ...roleChips,
-    ...customRoleNames.map((name) => ({ id: `custom:${name}`, name, color: null })),
+    ...customRoleNames.map((name) => ({
+      id: `custom:${name}`,
+      name,
+      color: null,
+    })),
   ];
 
   const canEditRoles = can("roles:manage", permissions);
@@ -302,10 +313,12 @@ export const MemberDetailSheet = forwardRef<
           {detail ? (
             <>
               <View style={styles.identity}>
-                <MemberPhoto
-                  url={detail.avatarUrl}
+                <MemberAvatar
+                  uri={detail.avatarUrl}
                   initials={detail.initials}
-                  styles={styles}
+                  size={DETAIL_AVATAR_SIZE}
+                  style={styles.avatar}
+                  textStyle={styles.avatarText}
                 />
                 <Text style={styles.name} accessibilityRole="header">
                   {detail.displayName}
@@ -486,37 +499,11 @@ export const MemberDetailSheet = forwardRef<
   );
 });
 
-/** The member's photo, or their initials when there is none or it fails. */
-function MemberPhoto({
-  url,
-  initials,
-  styles,
-}: {
-  url: string | null;
-  initials: string;
-  styles: ReturnType<typeof createStyles>;
-}) {
-  const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  if (url && failedUrl !== url) {
-    return (
-      <Image
-        source={{ uri: url }}
-        style={styles.avatar}
-        onError={() => setFailedUrl(url)}
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-      />
-    );
-  }
-  return (
-    <View style={styles.avatar}>
-      <Text style={styles.avatarText}>{initials}</Text>
-    </View>
-  );
-}
+/** The identity block's avatar diameter. */
+const DETAIL_AVATAR_SIZE = 80;
 
 function createStyles(tokens: SignetTokens) {
-  const avatarSize = 80;
+  const avatarSize = DETAIL_AVATAR_SIZE;
   return StyleSheet.create({
     scroll: {
       flex: 1,

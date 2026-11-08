@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { MemberAvatar } from "@/components/member-avatar";
 import type { StagedPhoto } from "@/lib/chat/use-chat-channel";
 import {
   activeMentionQuery,
@@ -133,6 +134,8 @@ export interface ChatComposerProps {
    * while it loads, which offers nothing rather than "No matching members".
    */
   mentionCandidates?: readonly MentionCandidate[];
+  /** A member's photo for their picker row; without it, initials. */
+  avatarFor?: (userId: string) => string | null;
   /**
    * The roles `@` offers after the members (`GET /v1/channels/mention-roles`),
    * each saying whether this member may ping it. `undefined` while it loads,
@@ -167,6 +170,7 @@ export function ChatComposer({
   attachDisabledReason,
   context = null,
   mentionCandidates,
+  avatarFor,
   mentionRoles,
 }: ChatComposerProps) {
   const { tokens } = useFrappTheme();
@@ -295,6 +299,7 @@ export function ChatComposer({
 
       {mention.open ? (
         <MentionPicker
+          avatarFor={avatarFor}
           suggestions={mention.suggestions}
           onPick={mention.pick}
           styles={styles}
@@ -440,17 +445,19 @@ function useMentionPicker(
 /**
  * The member list `@` opens, between the staged strips and the input, so it
  * sits right above where the handle is typed and the keyboard stays up.
- * Each row is a 44pt touch target (components.md §2) with the 24pt initials
- * circle the channel member list draws; four rows show and the rest scroll.
+ * Each row is a 44pt touch target (components.md §2) with the 24pt avatar
+ * (photo, else initials) the channel member list draws; four rows show and the rest scroll.
  * `keyboardShouldPersistTaps` lets the first tap pick, rather than only close
  * the keyboard.
  */
 function MentionPicker({
   suggestions,
   onPick,
+  avatarFor,
   styles,
 }: {
   suggestions: readonly PickerEntry[];
+  avatarFor?: (userId: string) => string | null;
   onPick: (label: string) => void;
   styles: ReturnType<typeof createStyles>;
 }) {
@@ -489,21 +496,25 @@ function MentionPicker({
               pressed ? styles.mentionRowPressed : null,
             ]}
           >
-            <View style={styles.mentionAvatar}>
-              {entry.kind === "member" ? (
-                <Text style={styles.mentionAvatarText}>
-                  {initialsFor(name)}
-                </Text>
-              ) : (
-                // A role has no face: the Roles nav glyph, as web's row and
-                // the web sidebar draw it, neutral (foundations.md §6).
+            {entry.kind === "member" ? (
+              <MemberAvatar
+                uri={avatarFor?.(entry.member.user_id) ?? null}
+                initials={initialsFor(name)}
+                size={MENTION_AVATAR_SIZE}
+                style={styles.mentionAvatar}
+                textStyle={styles.mentionAvatarText}
+              />
+            ) : (
+              // A role has no face: the Roles nav glyph, as web's row and
+              // the web sidebar draw it, neutral (foundations.md §6).
+              <View style={styles.mentionAvatar}>
                 <NavGlyph
                   paths={NAV_GLYPHS.roles}
                   color={styles.mentionAvatarText.color}
                   size={MENTION_ROLE_GLYPH_SIZE}
                 />
-              )}
-            </View>
+              </View>
+            )}
             <Text numberOfLines={1} style={styles.mentionName}>
               {name}
             </Text>
