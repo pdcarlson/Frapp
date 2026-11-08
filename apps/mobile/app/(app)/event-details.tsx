@@ -1,4 +1,4 @@
-import { can, checkInZoneLine } from "@repo/validation";
+import { can, checkInZoneLine, statusLabel } from "@repo/validation";
 import { useRequiredOfViewer } from "@/lib/events/viewer-roles";
 import { useMemo, useRef } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
@@ -40,7 +40,6 @@ import {
 import {
   selectEventDetail,
   selectMyAttendance,
-  type MyAttendance,
   type EventDetail,
 } from "@/lib/events/select";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -302,14 +301,6 @@ export default function EventDetailsScreen() {
  * info blue, a semantic hue the board never draws on this screen, and inside
  * a chapter the blue read as an alert rather than a condition.
  */
-/** What a row an officer marked, with no check-in time, says. */
-const MARKED_TITLES: Record<MyAttendance["status"], string> = {
-  PRESENT: "Marked present",
-  LATE: "Marked late",
-  EXCUSED: "Marked excused",
-  ABSENT: "Marked absent",
-};
-
 function CheckInCard({
   event,
   window,
@@ -336,7 +327,7 @@ function CheckInCard({
   const title = checkedInAt
     ? `Checked in at ${formatEventClock(checkedInAt)}`
     : marked
-      ? MARKED_TITLES[marked]
+      ? `Marked ${statusLabel("attendance", marked).toLowerCase()}`
       : isOpen
       ? "Check-in is open"
       : window.state === "upcoming" && window.opensAt

@@ -286,6 +286,17 @@ describe("EventCard — Check in", () => {
     expect(hasButton(render(), "Check in")).toBe(false);
   });
 
+  it("opens on the card's own lead, not the default", () => {
+    // Thirty minutes ahead of the 23:00 start: open at 22:35, which the
+    // default ten would still call early.
+    state.now = new Date("2026-11-05T22:35:00.000Z");
+    const payload = { ...PAYLOAD, check_in_opens_minutes: 30 };
+    expect(hasButton(render({ payload }), "Check in")).toBe(true);
+    expect(
+      hasButton(render({ payload: { ...PAYLOAD, check_in_opens_minutes: 0 } }), "Check in"),
+    ).toBe(false);
+  });
+
   it("doesn't read the event outside the window", () => {
     state.now = new Date("2026-11-04T12:00:00.000Z");
     render();

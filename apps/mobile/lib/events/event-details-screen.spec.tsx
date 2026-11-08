@@ -471,6 +471,24 @@ describe("Event details layout", () => {
     expect(textNode(tree, "Check myself in")).toBeUndefined();
   });
 
+  it("opens on the event's own lead, not the default", () => {
+    // Twenty minutes before the start: early for the default ten, inside a
+    // thirty-minute lead.
+    vi.setSystemTime(new Date(START.getTime() - 20 * 60_000));
+    event = { ...EVENT, check_in_opens_minutes: 30 };
+    const tree = render();
+    expect(textNode(tree, "Check-in is open")).toBeDefined();
+    expect(textNode(tree, "Scan QR to check in")).toBeDefined();
+  });
+
+  it("says when a zero lead opens, at the start itself", () => {
+    vi.setSystemTime(new Date(START.getTime() - 5 * 60_000));
+    event = { ...EVENT, check_in_opens_minutes: 0 };
+    expect(
+      textNode(render(), `Check-in opens at ${formatEventClock(START)}`),
+    ).toBeDefined();
+  });
+
   it("lets a host put the QR up before check-in opens", () => {
     permissions = ["*"];
     vi.setSystemTime(new Date(START.getTime() - 30 * 60_000));

@@ -62,10 +62,12 @@ export function memberAttendance(
  * see an event gets the same 404 a nonexistent id does, so no response
  * confirms a role-targeted event exists.
  *
- * The one copy of the rule: `GET /v1/events/:id` (`EventService.findById`)
- * and `GET /v1/events/:id/attendance/me` (`AttendanceService.getMyAttendance`)
- * both answer through it, so a change can't reach one and leave the other
- * leaking.
+ * The single-event form of the rule: `GET /v1/events/:id`
+ * (`EventService.findById`) and `GET /v1/events/:id/attendance/me`
+ * (`AttendanceService.getMyAttendance`) both answer through it. The list
+ * (`EventService.findByChapter`) and search (`SearchService.filterVisibleEvents`)
+ * apply the same rule in batch form, reading the permission and member row
+ * once for many events, so a change to the rule lands in all three.
  */
 export async function isEventVisibleTo(
   event: EventAttendanceFields,

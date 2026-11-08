@@ -56,7 +56,11 @@ export function useAttendance(
  * Keyed under `["attendance", eventId]`, so a check-in's invalidation, or an
  * officer's status write, refreshes it with the roster.
  */
-export function useMyAttendance(eventId: string) {
+export function useMyAttendance(
+  eventId: string,
+  /** `false` to read only on `refetch()` (s18 asks on a 409). */
+  options: { enabled?: boolean } = {},
+) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["attendance", eventId, "me"],
@@ -68,7 +72,7 @@ export function useMyAttendance(eventId: string) {
       return result.data;
     },
     staleTime: 30_000,
-    enabled: !!eventId,
+    enabled: (options.enabled ?? true) && !!eventId,
   });
 }
 

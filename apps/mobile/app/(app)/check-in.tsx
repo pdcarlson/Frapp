@@ -27,7 +27,8 @@ import { useScreenBelow } from "@/lib/back-target";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import Svg, { Path } from "react-native-svg";
-import { useCheckIn, useEvent } from "@repo/hooks";
+import { useCheckIn, useEvent, useMyAttendance } from "@repo/hooks";
+import { statusLabel } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ManualCodeSheet } from "@/components/check-in/manual-code-sheet";
 import { useSheetVisit } from "@/components/sheet-scaffold";
@@ -45,7 +46,7 @@ import {
   checkInSuccess,
 } from "@/lib/events/check-in-outcome";
 import { latLngOf, requireForegroundFix } from "@/lib/location";
-import { selectEventDetail } from "@/lib/events/select";
+import { selectEventDetail, selectMyAttendance } from "@/lib/events/select";
 import { useConnection } from "@/lib/connection/use-connection";
 import { successHaptic } from "@/lib/haptics";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
@@ -131,29 +132,47 @@ type Status =
  * Which state a failed check-in lands in. The copy, gate refusals included,
  * is `checkInFailure`'s, shared with the chat event card.
  *
- * A 409, "already checked in", is not a failure: the member is on the list,
- * which is what they came to this screen for. So it lands on the success
- * panel, in its own words and with no points (none were awarded this time),
- * rather than in the error style it used to take (#3703: the owner chose to
- * keep the API's 409 and have the scanner read it as "you're in"). The panel
- * resets on focus like any success, so the next event's scanner is armed.
+ * A 409 means the member already has a row for this event. When that row is
+ * a check-in (PRESENT or LATE), they are on the list, which is what they came
+ * here for, so it lands on the success panel in its own words and with no
+ * points (none were awarded this time), rather than in the error style it
+ * used to take (#3703: the owner chose to keep the API's 409 and have the
+ * scanner read it as "you're in"). The panel resets on focus like any
+ * success, so the next event's scanner is armed.
+ *
+ * The API answers 409 for any row, though, including one an officer marked
+ * absent or excused after the member checked in. Telling that member
+ * "you're in" would contradict their record, so the caller reads their own
+ * row first (`ownRow`) and passes what it found: a mark is said as one
+ * ("An officer marked you absent for this event."), the same fact the event
+ * page shows. An unread row (the read failed) keeps the old error line,
+ * which claims nothing about the record.
  */
 function failureStatus(
   error: unknown,
   eventId: string,
   eventName: string | null,
+  ownRow: ReturnType<typeof selectMyAttendance> | undefined,
 ): Status {
   const failure = checkInFailure(error);
-  return failure.kind === "already"
-    ? {
-        kind: "success",
-        message: failure.message,
-        title: ALREADY_CHECKED_IN_TITLE,
-        pointsLabel: null,
-        eventId,
-        eventName,
-      }
-    : failure;
+  if (failure.kind !== "already") return failure;
+  if (ownRow?.checkedInAt) {
+    return {
+      kind: "success",
+      message: failure.message,
+      title: ALREADY_CHECKED_IN_TITLE,
+      pointsLabel: null,
+      eventId,
+      eventName,
+    };
+  }
+  return {
+    kind: "error",
+    message: ownRow
+      ? `An officer marked you ${statusLabel("attendance", ownRow.status).toLowerCase()} for this event.`
+      : failure.message,
+    attemptOnly: false,
+  };
 }
 
 /** The drawn corner bracket: 36pt arms, a 3pt stroke in the foreground text. */
@@ -296,8 +315,10 @@ export default function CheckInScreen() {
    * `success` is reset for the same reason: the success panel replaces the
    * camera, so a member who checked in at one event would otherwise re-enter
    * at the next one to "You're checked in" for the *previous* event, with no
-   * scanner at all. Ordinary failures and the 409 "already checked in" keep
-   * behaving exactly as they did, because those leave the scanner armed.
+   * scanner at all. A repeat scan's 409 lands on the same panel when the
+   * member's row is a check-in (`failureStatus`), so it is reset here too;
+   * ordinary failures, and a 409 over an officer's mark, leave the scanner
+   * armed and need no reset.
    *
    * Leaving the screen also turns the torch off and closes the manual sheet,
    * which is portalled above the navigator and would otherwise float over
@@ -321,6 +342,11 @@ export default function CheckInScreen() {
   // whichever event that was for, so nothing here reads it: `sending` and the
   // latches are per event.
   const { mutateAsync: sendCheckIn } = useCheckIn();
+  // Read only on a 409, to tell a check-in from an officer's mark
+  // (`failureStatus`); never fetched up front.
+  const { refetch: refetchOwnRow } = useMyAttendance(eventId, {
+    enabled: false,
+  });
 
   // Last foreign-event code already reported — see `handleBarcode`.
   const reportedForeignRef = useRef<string | null>(null);
@@ -429,7 +455,13 @@ export default function CheckInScreen() {
         }
       } catch (error) {
         if (eventIdRef.current !== submittedFor) return;
-        const next = failureStatus(error, submittedFor, eventName);
+        let ownRow: ReturnType<typeof selectMyAttendance> | undefined;
+        if (checkInFailure(error).kind === "already") {
+          const read = await refetchOwnRow();
+          if (eventIdRef.current !== submittedFor) return;
+          ownRow = read.isSuccess ? selectMyAttendance(read.data) : undefined;
+        }
+        const next = failureStatus(error, submittedFor, eventName, ownRow);
         setStatus(next);
         if (next.kind === "success") {
           // As a fresh check-in clears them: the panel replaces the scanner.
@@ -452,7 +484,15 @@ export default function CheckInScreen() {
         latch.release();
       }
     },
-    [dismissSheet, event, eventId, latchFor, resolveLocation, sendCheckIn],
+    [
+      dismissSheet,
+      event,
+      eventId,
+      latchFor,
+      refetchOwnRow,
+      resolveLocation,
+      sendCheckIn,
+    ],
   );
 
   const handleBarcode = useCallback(

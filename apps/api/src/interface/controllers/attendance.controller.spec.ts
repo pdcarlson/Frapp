@@ -163,13 +163,15 @@ describe('AttendanceController', () => {
       ).resolves.toEqual({ attendance: null });
     });
 
-    it("is not permission-gated: it is the member's own record", () => {
+    // Its own row needs no events:update, but it carries the members:view
+    // gate GET /v1/events/:id does, so it answers no one that route refuses.
+    it('is gated on members:view, as GET /v1/events/:id is', () => {
       expect(
         Reflect.getMetadata(
           PERMISSIONS_KEY,
           AttendanceController.prototype.mine,
         ),
-      ).toBeUndefined();
+      ).toEqual([SystemPermissions.MEMBERS_VIEW]);
     });
   });
 

@@ -115,9 +115,14 @@ export class AttendanceController {
   }
 
   // Declared before `@Get()`'s siblings take a path param, and a literal
-  // segment, so it never reads as a user id. Any member may ask: it is their
-  // own row (no `events:update`, unlike the roster below).
+  // segment, so it never reads as a user id. It is the caller's own row, so
+  // it needs no `events:update` (unlike the roster below), but it does need
+  // `members:view`, the gate `GET /v1/events/:id` carries on its whole
+  // controller: answering here for an event that route refuses would tell a
+  // member without it which event ids exist.
   @Get('me')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({
     summary: "The caller's own attendance for an event",
     description:

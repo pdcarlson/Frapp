@@ -238,14 +238,18 @@ describe("formatCheckInOpens", () => {
     );
   });
 
-  it("says tomorrow, and the day after that", () => {
+  it("says tomorrow, the weekday within the week, and the date past it", () => {
     const tomorrow = at(2026, 3, 11, 19, 50);
     expect(formatCheckInOpens(tomorrow, now)).toBe(
       `tomorrow at ${formatEventClock(tomorrow)}`,
     );
-    const later = at(2026, 3, 13, 19, 50);
-    expect(formatCheckInOpens(later, now)).toMatch(
-      new RegExp(`\\d at ${formatEventClock(later)}$`),
+    const thisWeek = at(2026, 3, 13, 19, 50);
+    expect(formatCheckInOpens(thisWeek, now)).toBe(
+      `${thisWeek.toLocaleDateString(undefined, { weekday: "long" })} at ${formatEventClock(thisWeek)}`,
+    );
+    const later = at(2026, 3, 24, 19, 50);
+    expect(formatCheckInOpens(later, now)).toBe(
+      `${later.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} at ${formatEventClock(later)}`,
     );
   });
 });

@@ -12,7 +12,7 @@
  * on purpose and its day ladder repeats the strip's.
  */
 
-import { dayDelta, parseInstant } from "@repo/formatting";
+import { dayDelta, formatWeekdayDay, parseInstant } from "@repo/formatting";
 import { checkInWindowBounds } from "@repo/validation";
 
 function clock(date: Date): string {
@@ -158,22 +158,26 @@ export function resolveCheckInWindow(
 }
 
 /**
- * "at 7:50 PM" today, "tomorrow at 7:50 PM", otherwise "Fri, Nov 13 at
- * 7:50 PM": when an upcoming event's check-in opens, for the one line its
- * card says (#3703). The day is said whenever it isn't today, because "opens
- * at 7:50 PM" on next week's meeting reads as tonight.
+ * "at 7:50 PM" today, "tomorrow at 7:50 PM", "Friday at 7:50 PM" within the
+ * week (the detail header's own day word, so the screen agrees with itself),
+ * otherwise "Fri, Nov 13 at 7:50 PM" (`formatWeekdayDay`, with the year
+ * outside the current one): when an upcoming event's check-in opens, for the
+ * one line its card says (#3703). The day is said whenever it isn't today,
+ * because "opens at 7:50 PM" on next week's meeting reads as tonight.
+ *
+ * A sentence fragment, which none of `@repo/formatting`'s row labels
+ * ("Tomorrow · 7:50 PM") can be, so it is built here from their parts; it is
+ * one of mobile's date copies #3420 folds into the shared helpers.
  */
 export function formatCheckInOpens(opensAt: Date, now: Date): string {
   const time = clock(opensAt);
   const days = dayDelta(now, opensAt);
   if (days === 0) return `at ${time}`;
   if (days === 1) return `tomorrow at ${time}`;
-  const day = opensAt.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    ...(opensAt.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
-  });
+  const day =
+    days > 1 && days < 7
+      ? opensAt.toLocaleDateString(undefined, { weekday: "long" })
+      : formatWeekdayDay(opensAt.toISOString(), now);
   return `${day} at ${time}`;
 }
 

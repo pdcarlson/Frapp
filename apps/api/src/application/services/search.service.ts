@@ -292,9 +292,11 @@ export class SearchService {
    * Search must not become a side-channel around `EventService`'s read
    * visibility (#1463): a role-targeted event is invisible via `GET
    * /v1/events` to a member without an intersecting role, so it must be
-   * invisible here too. Mirrors `EventService.isVisibleToViewer`/
-   * `findByChapter` exactly — same `isInvited` predicate, same
-   * `events:update` (wildcard-inclusive) management exemption.
+   * invisible here too. The batch form of `isEventVisibleTo`
+   * (`event-role-targeting.ts`), as `EventService.findByChapter` is: same
+   * `isInvited` predicate, same `events:update` (wildcard-inclusive)
+   * management exemption, read once for the whole list. A change to the rule
+   * lands in all three.
    */
   private async filterVisibleEvents(
     chapterId: string,
