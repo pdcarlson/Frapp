@@ -40,7 +40,12 @@ export function roleAccessRows(
   return data.flatMap((role: unknown) => {
     if (!role || typeof role !== "object") return [];
     const candidate = role as Record<string, unknown>;
-    if (typeof candidate.id !== "string") return [];
+    // Same rows as the checklist ({@link normalizeRoleOptions} drops a role
+    // without a name), so the access check never hinges on a role the
+    // officer can't see or untick.
+    if (typeof candidate.id !== "string" || typeof candidate.name !== "string") {
+      return [];
+    }
     const permissions = Array.isArray(candidate.permissions)
       ? candidate.permissions.filter((p): p is string => typeof p === "string")
       : [];

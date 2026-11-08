@@ -139,8 +139,9 @@ export const CHAPTER_PROFILE_PERMISSIONS = [
  * server's `PermissionsGuard` drops `*` from custom roles. The seeded flag
  * doesn't count on its own, because a seeded role's permissions are editable.
  * Live and custom ids are both uuids, so one set holds them without
- * collisions. Shared by web's member sheet and mobile's roles sheet so the two
- * editors can't drift; `transfer_presidency` applies the same rule in SQL.
+ * collisions. Web's member sheet calls it with live and custom roles; mobile's
+ * roles sheet calls it per live role (`parseRoleOptions`), since it edits no
+ * custom roles. `transfer_presidency` applies the same rule in SQL.
  */
 export function memberAccessRoleIds(
   roles: readonly {

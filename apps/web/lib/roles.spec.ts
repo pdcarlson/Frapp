@@ -26,12 +26,13 @@ describe("normalizeRoleOptions", () => {
 });
 
 describe("roleAccessRows", () => {
-  it("keeps id and string permissions, defaulting a missing list to none", () => {
+  it("keeps the checklist's rows with their string permissions, defaulting a missing list to none", () => {
     expect(
       roleAccessRows([
         { id: "r1", name: "Member", permissions: ["members:view", 3] },
         { id: "r2", name: "Bare" },
         { name: "No id", permissions: ["*"] },
+        { id: "r3", permissions: ["members:view"] },
         null,
       ]),
     ).toEqual([

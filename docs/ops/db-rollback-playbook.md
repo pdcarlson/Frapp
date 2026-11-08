@@ -3141,7 +3141,7 @@ Dropping them loses each photo's blur and the link to its preview copy; photos s
 ## Rollback transfer presidency keeps member access (20261108200000)
 
 * **Migration**: `20261108200000_transfer_presidency_keeps_member_access.sql`
-* **Action**: normally none. It only changes `transfer_presidency` to append Member to an outgoing President who would otherwise hold no role with member access; leaving it in place is safe whatever happens to the rest of the PR.
+* **Action**: normally none. It only changes `transfer_presidency` to append Member to an outgoing President who would otherwise hold no role with member access and doesn't already hold Member; leaving it in place is safe whatever happens to the rest of the PR.
 
 To restore the previous body, re-run the `create or replace function transfer_presidency` block from `20260604120000_add_transfer_presidency_rpc.sql` in a later forward migration, adding `set search_path = public, pg_temp` so the advisor stays clear. Members it already gave Member to keep it; an officer removes it on the member's roles if that was wrong.
 

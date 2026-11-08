@@ -13,7 +13,7 @@
  * opens (held roles first) so a row never jumps out from under a finger.
  */
 import {
-  can,
+  memberAccessRoleIds,
   removesMemberAccess,
   WILDCARD_PERMISSION,
 } from "@repo/validation";
@@ -53,7 +53,8 @@ export function parseRoleOptions(rolesData: unknown): RoleOption[] {
       name,
       color: str(row, "color"),
       locked: permissions.includes(WILDCARD_PERMISSION),
-      grantsBase: can("members:view", permissions),
+      // The shared rule web's member sheet uses too (`@repo/validation`).
+      grantsBase: memberAccessRoleIds([{ id, permissions }]).has(id),
     });
   }
   return options;
@@ -104,14 +105,6 @@ export function toggleRole(
 /** The ids among `options` whose holder has member access. */
 function baseAccessIds(options: readonly RoleOption[]): Set<string> {
   return new Set(options.filter((o) => o.grantsBase).map((o) => o.id));
-}
-
-export function hasBaseAccess(
-  heldIds: readonly string[],
-  options: readonly RoleOption[],
-): boolean {
-  const access = baseAccessIds(options);
-  return heldIds.some((id) => access.has(id));
 }
 
 /**
