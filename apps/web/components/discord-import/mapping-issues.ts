@@ -301,6 +301,19 @@ export { normaliseChannelName };
 type ReadersOf = (channel: StagedChannel) => SameAsDiscordReaders | null;
 
 /**
+ * Whether the channel a choice creates is read-only, where only
+ * `announcements:post` holders can post (#3697). Unless the admin said
+ * otherwise, as in Discord: read-only only when the scan saw Discord make it
+ * so (`readOnlyInDiscord`), and postable by whoever can read it otherwise.
+ */
+export function choiceIsReadOnly(
+  channel: Pick<StagedChannel, "readOnlyInDiscord">,
+  choice: Pick<ChannelChoice, "readOnly">,
+): boolean {
+  return choice.readOnly ?? channel.readOnlyInDiscord === true;
+}
+
+/**
  * Who reads the channel a new-channel choice makes, and whether it is read
  * only, as one comparable string; null while the visibility is not chosen.
  *
@@ -315,7 +328,7 @@ function readersSignature(
   choice: ChannelChoice,
   readersOf: ReadersOf,
 ): string | null {
-  const readOnly = `read-only:${choice.readOnly ?? true}`;
+  const readOnly = `read-only:${choiceIsReadOnly(channel, choice)}`;
   switch (choice.visibility) {
     case "chapter":
       return `chapter|${readOnly}`;

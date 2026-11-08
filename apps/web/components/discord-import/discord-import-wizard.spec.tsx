@@ -622,6 +622,119 @@ describe("ImportWizard — the bot path", () => {
     expect(setChannelMapping).not.toHaveBeenCalled();
   });
 
+  it("sends imported channels postable, read-only only where Discord made them so, and says which (#3697)", async () => {
+    discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          discord_channel_id: "c1",
+          discord_channel_name: "academics",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+          read_only_in_discord: false,
+        },
+        {
+          discord_channel_id: "c2",
+          discord_channel_name: "announcements",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+          read_only_in_discord: true,
+        },
+      ],
+      roles: [],
+      warnings: [],
+    });
+
+    await renderAtChannels();
+    await screen.findByText(/Nothing needs attention/);
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => expect(setDiscoveredMapping).toHaveBeenCalled());
+    const { channels } = setDiscoveredMapping.mock.calls[0]![0] as {
+      channels: {
+        discord_channel_id: string;
+        new_channel_is_read_only?: boolean;
+      }[];
+    };
+    expect(
+      channels.map((row) => [
+        row.discord_channel_id,
+        row.new_channel_is_read_only,
+      ]),
+    ).toEqual([
+      ["c1", false],
+      ["c2", true],
+    ]);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^1 read-only channel/ }),
+    );
+    expect(screen.getByText("#announcements")).toBeInTheDocument();
+  });
+
+  it("lists like-named read-only channels once, as the one channel they land in (#3697)", async () => {
+    discoverChannels.mockResolvedValue({
+      channels: ["c1", "c2"].map((id) => ({
+        discord_channel_id: id,
+        discord_channel_name: "announcements",
+        discord_category: null,
+        parent_discord_channel_id: null,
+        readable: true,
+        private_in_discord: false,
+        read_only_in_discord: true,
+      })),
+      roles: [],
+      warnings: [],
+    });
+
+    await renderAtChannels();
+    await screen.findByText(/Nothing needs attention/);
+    // Two read-only rows land in one channel, listed once.
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(
+      await screen.findByRole("button", { name: /^1 read-only channel/ }),
+    ).toBeInTheDocument();
+    expect(setDiscoveredMapping).toHaveBeenCalled();
+  });
+
+  it("sends the admin's read-only choice over Discord's", async () => {
+    discoverChannels.mockResolvedValue({
+      channels: [
+        {
+          discord_channel_id: "c2",
+          discord_channel_name: "announcements",
+          discord_category: null,
+          parent_discord_channel_id: null,
+          readable: true,
+          private_in_discord: false,
+          read_only_in_discord: true,
+        },
+      ],
+      roles: [],
+      warnings: [],
+    });
+
+    await renderAtChannels();
+    await screen.findByText(/Nothing needs attention/);
+    // Nothing to fix, so its group starts closed.
+    fireEvent.click(screen.getByRole("button", { name: /^No category/ }));
+    const readOnly = screen.getByRole("switch", { name: "Read-only" });
+    expect(readOnly).toBeChecked();
+    fireEvent.click(readOnly);
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => expect(setDiscoveredMapping).toHaveBeenCalled());
+    const { channels } = setDiscoveredMapping.mock.calls[0]![0] as {
+      channels: { new_channel_is_read_only?: boolean }[];
+    };
+    expect(channels[0]!.new_channel_is_read_only).toBe(false);
+    expect(
+      screen.queryByRole("button", { name: /read-only channel/ }),
+    ).toBeNull();
+  });
+
   it("keeps Discord's categories as channel groups only when asked, and only the ones still ticked", async () => {
     discoverChannels.mockResolvedValue({
       channels: [

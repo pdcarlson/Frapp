@@ -141,6 +141,13 @@ export interface DiscordChannelRef {
    * for a public channel, a thread, or when the roles could not be read.
    */
   readerRoleIds: string[] | null;
+  /**
+   * For a top-level channel: whether it was read-only in Discord, none of its
+   * ordinary readers able to talk there (`readOnlyInDiscord`). Null for a
+   * thread, which lands in its parent's channel, or when the roles could not
+   * be read.
+   */
+  readOnlyInDiscord: boolean | null;
 }
 
 /** A role as the guild defines it, for the role mapping step. */

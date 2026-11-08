@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   asNewChannel,
+  choiceIsReadOnly,
   defaultChoice,
   defaultChoices,
   mappingIssues,
@@ -245,7 +246,8 @@ describe("mappingIssues", () => {
     );
 
     const readOnly = defaultChoices(channels);
-    readOnly["2"] = { ...readOnly["2"]!, newName: "memes", readOnly: false };
+    // The default is postable (#3697), so read-only is the one that differs.
+    readOnly["2"] = { ...readOnly["2"]!, newName: "memes", readOnly: true };
     expect(
       mappingIssues(channels, readOnly, []).map((issue) => issue.channelId),
     ).toEqual(["1", "2"]);
@@ -576,5 +578,45 @@ describe("normaliseChannelName", () => {
   it("compares names the way an admin reads them", () => {
     expect(normaliseChannelName("  #General ")).toBe("general");
     expect(normaliseChannelName("##x")).toBe("x");
+  });
+});
+
+// #3697: every imported channel used to be sent read-only.
+describe("choiceIsReadOnly", () => {
+  it("is postable unless Discord made the channel read-only", () => {
+    expect(choiceIsReadOnly({}, {})).toBe(false);
+    expect(choiceIsReadOnly({ readOnlyInDiscord: null }, {})).toBe(false);
+    expect(choiceIsReadOnly({ readOnlyInDiscord: false }, {})).toBe(false);
+    expect(choiceIsReadOnly({ readOnlyInDiscord: true }, {})).toBe(true);
+  });
+
+  it("follows the admin's own choice over Discord's", () => {
+    expect(
+      choiceIsReadOnly({ readOnlyInDiscord: true }, { readOnly: false }),
+    ).toBe(false);
+    expect(choiceIsReadOnly({}, { readOnly: true })).toBe(true);
+  });
+});
+
+// Review of #3697: a split on Discord's own read-only answer must be both
+// caught and fixable from the wizard.
+describe("like-named channels that Discord answered differently on read-only", () => {
+  const pair = [
+    open("1", "news"),
+    { ...open("2", "news"), readOnlyInDiscord: true },
+  ];
+
+  it("asks about them, since the API would make two channels", () => {
+    expect(
+      mappingIssues(pair, defaultChoices(pair), []).map(
+        (issue) => issue.channelId,
+      ),
+    ).toEqual(["1", "2"]);
+  });
+
+  it("lands them in one channel once the admin answers read-only the same way", () => {
+    const choices = defaultChoices(pair);
+    choices["2"] = { ...choices["2"]!, readOnly: false };
+    expect(mappingIssues(pair, choices, [])).toEqual([]);
   });
 });
