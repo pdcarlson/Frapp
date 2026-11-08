@@ -29,6 +29,13 @@ on:
   workflow_run:
     workflows: [CI, "Migration drift gate"]
     types: [completed]
+  # The backstop. A completion fires the moment a holder's last check finishes,
+  # inside the grace that keeps it in flight (isInFlight), and nothing fires when
+  # that grace runs out. Every fifteen minutes the slot is re-read, so a holder
+  # that is green but never merges, or whose checks never start, can't hold the
+  # queue in a quiet repo. A sweep with no auto-merge PR makes one list call.
+  schedule:
+    - cron: "*/15 * * * *"
 
 permissions:
   contents: read
@@ -47,7 +54,8 @@ permissions:
   pull-requests: write
   issues: write # the alert issue (and possibly the wake comments; see above)
   # The auto-merge slot reads each auto-merge PR's required checks (#3599).
-  # Without it the read fails, no PR can hold the slot, and the queue stops.
+  # Without it every read fails, no PR can hold the slot, and the sweep falls
+  # back to updating every behind auto-merge PR: the pre-#3599 race, silently.
   checks: read
 
 # Only the newest sweep matters — it re-reads every open PR against the newest
@@ -62,10 +70,10 @@ permissions:
 # completions the job will act on may share the slot group: a completion of
 # `main`'s own push CI, or of a fork PR's CI, is skipped by the job `if:` below,
 # but concurrency is evaluated first, so in the slot group it would cancel a
-# running slot sweep and then do nothing itself. Both expressions are values
-# GitHub sets (event names, and a repo-equality boolean), never PR-authored text.
+# running slot sweep and then do nothing itself; those land in a third group of
+# runs that skip. The group is one of three fixed strings, never PR-authored text.
 concurrency:
-  group: ${{ github.event_name == 'push' && 'pr-base-sync-push' || format('pr-base-sync-slot-{0}-{1}', github.event.workflow_run.event, github.event.workflow_run.head_repository.full_name == github.repository) }}
+  group: ${{ github.event_name == 'push' && 'pr-base-sync-push' || ((github.event_name == 'schedule' || (github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.head_repository.full_name == github.repository)) && 'pr-base-sync-slot' || 'pr-base-sync-skipped') }}
   cancel-in-progress: true
 
 jobs:
@@ -76,6 +84,7 @@ jobs:
     # at will by adding its own workflow named `CI`.
     if: >-
       github.event_name == 'push' ||
+      github.event_name == 'schedule' ||
       (github.event.workflow_run.event == 'pull_request' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest

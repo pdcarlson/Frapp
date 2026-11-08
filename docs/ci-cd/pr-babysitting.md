@@ -235,7 +235,7 @@ introduces them (unit tests + this doc are the pre-merge verification).
 
 Branch protection on `main` sets `strict: true`, so every merge to `main` outdates every other
 open PR. `pr-base-sync.yml` fires on each push to `main` (and, for the auto-merge slot below, on
-each PR's CI completion) and sweeps open PRs targeting it —
+each of this repo's PR CI completions and every 15 minutes) and sweeps open PRs targeting it —
 sequentially, capped at 20 per sweep with the remainder logged (never silently truncated), and
 listed **least-recently-updated first**: acting on a PR bumps its `updated_at` to the back of the
 next sweep's order, so a deferred PR rotates to the front instead of being starved behind the same
@@ -292,33 +292,44 @@ busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeabl
   Now one auto-merge PR at a time holds the slot (`pickSlotOrder`), and only it is updated. Its
   merge is a push to `main`, which passes the slot on. A held PR's session should leave it alone:
   merging `main` into it starts the race again. It can tell it is held because auto-merge is on, the
-  PR stays behind, and it has no base-sync comment (a held PR's stale one is deleted, and anything
-  the session must act on, such as a conflict or a failed update, gets a fresh one).
-  - **Who holds it.** An up-to-date PR in flight keeps it: its required checks
-    ([`required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs)) are running; or they have
-    not reported yet and its head is under 15 minutes old (right after an update, the new head has
-    no check runs while CI cancels the old run, and that cancelled run's completion fires a slot
-    sweep); or they all passed under 5 minutes ago (auto-merge is about to act). Otherwise the slot
-    goes to a behind PR: first one whose checks are still running, which is almost always the holder
-    knocked behind by a merge the queue didn't cause, then the lowest-numbered.
-  - **Who is queued.** A clean, same-repo auto-merge PR whose required checks are readable and not
-    failed. A red PR (a failed or cancelled required check) is not queued and is updated as before,
-    so a fix on `main` still reaches it. An unreadable checks read is retried, then leaves the PR
-    unqueued. Every open auto-merge PR is assessed, not only the 20-PR slice, because updating the
-    holder moves it to the back of the list.
-  - **When the holder can't be updated**, it gets the per-PR treatment above (a wake, or alert
-    evidence), and the slot passes to the next queued PR, up to `SLOT_ATTEMPTS` (three) per sweep.
-    So a holder nobody is watching can't hold the queue. A 422 (`expected_head_sha` lost to a
-    concurrent sweep or a push) keeps the slot and posts no wake, because the head already moved.
-  - A holder that goes red, or turns green without merging, never pushes, so the workflow also runs
-    on `workflow_run: completed` of `CI` and `Migration drift gate` (together they emit every
-    required check), for this repository's PRs only. In that mode (`mode: "checks"`) the sweep only
-    updates the slot's PR if it is behind, passing the slot on if that fails. It posts and deletes no
-    comment, handles no conflict and touches no alert: the base did not move, and those jobs belong
-    to the push sweep. Push sweeps and slot sweeps run in separate concurrency groups, so a CI
-    completion never cancels a push sweep midway through its wakes. A completion of `main`'s own CI,
-    or of a fork's, lands in neither. The two kinds can still overlap, and both may pick the same
-    holder, which the 422 rule above absorbs.
+  PR stays behind, and it has no base-sync comment. A held PR's stale comment is deleted, and
+  anything the session must act on (a conflict, an update that failed) gets a fresh one from the
+  next push sweep.
+  - **Who holds it.** An up-to-date PR in flight keeps it, meaning one of three things. Its required
+    checks ([`required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs)) are running. Or they
+    haven't reported yet and its head commit is under 15 minutes old: right after an update, the new
+    head has no check runs while CI cancels the old run, and that cancelled run's completion fires a
+    slot sweep. Or they all passed under 5 minutes ago, so auto-merge is about to act. Otherwise the
+    sweep tries the behind PRs in turn until one updates. First come those whose checks are still
+    running, which is almost always the holder knocked behind by a merge the queue didn't cause, so
+    it keeps the slot. Then the rest, lowest number first.
+  - **Who is queued.** A clean, same-repo auto-merge PR whose required checks haven't failed. A red PR
+    (a failed or cancelled required check) isn't queued and is updated as before, so a fix on `main`
+    still reaches it. A PR whose checks can't be read, even after a retry, waits behind a holder but
+    never becomes one. Without `checks: read` that is every PR, and the sweep falls back to updating
+    them all. The slot governs up to 15 auto-merge PRs, lowest numbers first, assessed from every
+    open PR, not only the 20-PR slice, because updating the holder moves it to the back of the list.
+    Queued PRs take no place in that slice.
+  - **When a PR can't take the slot**, it gets the per-PR treatment above (a wake, or alert evidence),
+    and the sweep tries the next. So a holder nobody is watching can't block the queue. When none can
+    be updated, nothing is held: every behind PR gets its wake, as before #3599. A 422 whose message
+    says the head moved (`expected_head_sha` lost to a concurrent sweep or a push) keeps the slot and
+    posts no wake. Any other 422 is a failure like the rest.
+  - **The slot-only sweep.** A holder that goes red, or turns green without merging, never pushes. So
+    the workflow also runs on `workflow_run: completed` of `CI` and `Migration drift gate` (together
+    they emit every required check), for this repository's PRs only, and every 15 minutes on a
+    schedule. The schedule exists because the completion fires inside the grace that keeps a holder
+    in flight, and no event marks the end of that grace. In this mode (`mode: "checks"`) the sweep
+    fills the slot the same way, and its only other write is deleting the updated PR's stale wake.
+    It posts no wake, handles no conflict and touches no alert: the base did not move, and those
+    jobs belong to the push sweep. Push sweeps and slot sweeps run in separate concurrency groups,
+    so a slot sweep never cancels a push sweep midway through its wakes. Completions the job skips
+    (`main`'s own CI, a fork's) go to a third group. The two kinds can still overlap and pick the
+    same PR, which the head-moved rule absorbs.
+  - **The alert** isn't closed by a sweep whose behind PRs were all held, because it called
+    update-branch on none of them, so "hit no failure" would prove nothing.
+  - **Known gap.** A PR made conflicted by a merge the sweep raced (the stale-`mergeable` read above)
+    is held rather than tried. Its conflict wake comes from the next push sweep, not this one.
   - Merge queue is the platform version of this (option 3 in #3599). It needs a branch-protection
     change, which is the owner's call.
 - **Already in sync** → any stale base-sync wake comment is deleted and the sweep stays silent.
@@ -396,7 +407,8 @@ this compares against a design, not against something that ran.) What makes it s
 - **`pr-base-sync.yml` triggers only on `push` to `main`**, so it runs only on commits that already
   reached the default branch. A fork PR cannot trigger it, and untrusted code never executes in a
   job holding the App credentials. _Amended 2026-11-08 (#3599), outside this review:_ it now also
-  triggers on `workflow_run: completed` of `CI` and `Migration drift gate`. `workflow_run` executes
+  triggers every 15 minutes on `schedule` (which, like `push`, runs on `main`), and on
+  `workflow_run: completed` of `CI` and `Migration drift gate`. `workflow_run` executes
   the **default branch's** copy of the workflow and the script, checks out `main`, and reads no
   artifact or event payload (the script sees only `GITHUB_EVENT_NAME`), so the "only `main`'s code
   runs with the key" property holds. A fork PR can still fire the event (and could name a workflow

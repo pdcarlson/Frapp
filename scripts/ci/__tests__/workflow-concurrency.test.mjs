@@ -129,7 +129,7 @@ describe("workflow concurrency — a main push run must never cancel another", (
     assert.ok(sync, "pr-base-sync.yml must exist");
     assert.equal(
       concurrencyOf(sync.text)?.group,
-      "${{ github.event_name == 'push' && 'pr-base-sync-push' || format('pr-base-sync-slot-{0}-{1}', github.event.workflow_run.event, github.event.workflow_run.head_repository.full_name == github.repository) }}",
+      "${{ github.event_name == 'push' && 'pr-base-sync-push' || ((github.event_name == 'schedule' || (github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.head_repository.full_name == github.repository)) && 'pr-base-sync-slot' || 'pr-base-sync-skipped') }}",
     );
     assert.ok(
       !concurrencyOf(sync.text)?.group.includes("github.ref"),
