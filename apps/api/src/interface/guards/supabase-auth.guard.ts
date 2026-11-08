@@ -39,9 +39,10 @@ export class SupabaseAuthGuard implements CanActivate {
 
     const token = authHeader.slice(7);
 
-    // Requests sharing a token in the same instant share one Auth round
-    // trip (`InFlightLookups`); nothing outlives the call, so a revoked
-    // session is still refused by the next request that starts after it.
+    // Requests carrying one token that arrive together share one Auth round
+    // trip (`InFlightLookups`). A joiner can miss a revocation committed
+    // within `IN_FLIGHT_JOIN_WINDOW_MS` before it arrived; a request after
+    // that makes its own call.
     const { data, error } = await userLookups.run(token, () =>
       this.supabase.auth.getUser(token),
     );

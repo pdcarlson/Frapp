@@ -46,16 +46,31 @@ export function isAuthOutage(error: unknown): boolean {
 }
 
 /**
+ * How long after a lookup starts a later request may still join it. A mobile
+ * resume's requests leave the phone together but can reach the API spread over
+ * a few hundred milliseconds; past that, a request makes its own lookup.
+ */
+export const IN_FLIGHT_JOIN_WINDOW_MS = 250;
+
+/**
  * Lets requests that arrive together share one lookup instead of each making
  * its own (#3728).
  *
  * A mobile app resuming from a push fires about seven requests at once, all
  * with the same token and chapter, and each ran the same guard lookups: seven
- * `auth.getUser` calls and up to twenty-one PostgREST reads before any handler
- * started. A caller that asks for a key already in flight gets that call's
- * result; the entry is dropped once the call settles, so nothing is cached and
- * a result is never older than the request that asked for it. A request that
- * starts after the call settled makes its own.
+ * `auth.getUser` calls and some twenty to thirty-five PostgREST reads (users,
+ * members, chapters, roles) before any handler started.
+ *
+ * What a joiner gives up, and its bound: a request that joins gets an answer
+ * whose query left up to `joinWindowMs` before the request arrived, so a
+ * session revocation, member removal or role change committed inside that
+ * window is not seen by it. A request arriving later than that, or after the
+ * call settled, makes its own lookup. Nothing is cached beyond the call.
+ *
+ * The window also bounds a stalled call: the Supabase client sets no fetch
+ * timeout, so a call can hang for minutes, and without the window every later
+ * request with its key would hang with it. Once the window has passed, the
+ * next request starts a fresh call and takes the key over.
  *
  * Results are shared by reference, so callers copy what they put on the
  * request (`structuredClone`) rather than hand two requests one object.
@@ -64,19 +79,34 @@ export function isAuthOutage(error: unknown): boolean {
  * a rejection is shared too, and each caller decides what to throw from it.
  */
 export class InFlightLookups<T> {
-  private readonly pending = new Map<string, Promise<T>>();
+  private readonly pending = new Map<
+    string,
+    { call: Promise<T>; startedAt: number }
+  >();
+  private readonly joinWindowMs: number;
+  private readonly now: () => number;
+
+  constructor(options: { joinWindowMs?: number; now?: () => number } = {}) {
+    this.joinWindowMs = options.joinWindowMs ?? IN_FLIGHT_JOIN_WINDOW_MS;
+    this.now = options.now ?? (() => performance.now());
+  }
 
   run(key: string, load: () => PromiseLike<T>): Promise<T> {
+    const now = this.now();
     const existing = this.pending.get(key);
-    if (existing) return existing;
+    if (existing && now - existing.startedAt <= this.joinWindowMs) {
+      return existing.call;
+    }
 
-    const call = Promise.resolve()
+    const entry = { startedAt: now } as { call: Promise<T>; startedAt: number };
+    entry.call = Promise.resolve()
       .then(load)
       .finally(() => {
-        this.pending.delete(key);
+        // A newer call may have taken the key over; leave that one alone.
+        if (this.pending.get(key) === entry) this.pending.delete(key);
       });
-    this.pending.set(key, call);
-    return call;
+    this.pending.set(key, entry);
+    return entry.call;
   }
 
   /** How many lookups are in flight; for tests. */

@@ -1022,6 +1022,99 @@ describe('ChapterGuard', () => {
       await expect(result).resolves.toBe(true);
     });
 
+    it('gives each request its own copy of the user and module toggles', async () => {
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        member: { id: 'member-1', role_ids: ['role-1'] },
+        chapter: {
+          subscription_status: 'active',
+          enabled_modules: { polls: false },
+        },
+      });
+      const [first, second] = [buildRequest(), buildRequest()];
+
+      await Promise.all(
+        [first, second].map((request) =>
+          guard.canActivate(mockExecutionContext(request)),
+        ),
+      );
+
+      expect(tablesQueried()).toEqual(['chapters', 'members', 'users']);
+      expect(first.appUser).toEqual(second.appUser);
+      expect(first.appUser).not.toBe(second.appUser);
+      expect(first.enabledModules).toEqual({ polls: false });
+      expect(first.enabledModules).not.toBe(second.enabledModules);
+    });
+
+    it('never shares a lookup between different chapters or users', async () => {
+      const CHAPTER_A = 'aaaaaaaa-0000-4000-8000-00000000000a';
+      const CHAPTER_B = 'bbbbbbbb-0000-4000-8000-00000000000b';
+      // user-1 is a member of A only; auth-456 is a different person.
+      mockFrom.mockImplementation((table: string) => {
+        const filters: Record<string, string> = {};
+        const maybeSingle = jest.fn(() => {
+          if (table === 'users') {
+            return Promise.resolve({
+              data: {
+                id:
+                  filters.supabase_auth_id === 'auth-123' ? 'user-1' : 'user-2',
+              },
+              error: null,
+            });
+          }
+          if (table === 'members') {
+            const isMember =
+              filters.user_id === 'user-1' && filters.chapter_id === CHAPTER_A;
+            return Promise.resolve({
+              data: isMember ? { id: 'member-a', role_ids: ['role-a'] } : null,
+              error: null,
+            });
+          }
+          return Promise.resolve({
+            data: { subscription_status: 'active' },
+            error: null,
+          });
+        });
+        const eq: jest.Mock = jest.fn((column: string, value: string) => {
+          filters[column] = value;
+          return { eq, maybeSingle };
+        });
+        return { select: jest.fn().mockReturnValue({ eq }) };
+      });
+
+      const forA = buildRequest({ headers: { 'x-chapter-id': CHAPTER_A } });
+      const forB = buildRequest({ headers: { 'x-chapter-id': CHAPTER_B } });
+      const otherUser = buildRequest({
+        headers: { 'x-chapter-id': CHAPTER_A },
+        supabaseUser: { id: 'auth-456' },
+      });
+      const [a, b, other] = await Promise.allSettled(
+        [forA, forB, otherUser].map((request) =>
+          guard.canActivate(mockExecutionContext(request)),
+        ),
+      );
+
+      expect(a).toMatchObject({ status: 'fulfilled', value: true });
+      expect(forA.member).toEqual({ id: 'member-a', role_ids: ['role-a'] });
+      expect(b).toMatchObject({
+        status: 'rejected',
+        reason: { response: { code: 'chapter.context.invalid' } },
+      });
+      expect(other).toMatchObject({
+        status: 'rejected',
+        reason: { response: { code: 'chapter.context.invalid' } },
+      });
+      expect(tablesQueried()).toEqual([
+        'chapters',
+        'chapters',
+        'members',
+        'members',
+        'members',
+        'users',
+        'users',
+      ]);
+    });
+
     it('still reports a missing profile before a mismatched chapter', async () => {
       mockSupabaseChain({ appUser: null });
       const ctx = mockExecutionContext(

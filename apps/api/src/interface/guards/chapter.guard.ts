@@ -57,8 +57,8 @@ type ChapterRow = {
 /**
  * Process-wide, not per guard instance: Nest builds a guard per module, and
  * the requests a mobile resume fires together (#3728) hit several modules'
- * routes. `InFlightLookups` shares a lookup only while it is in flight, so
- * no answer here is older than the request that receives it.
+ * routes. A joiner's answer can predate its request by at most
+ * `IN_FLIGHT_JOIN_WINDOW_MS` (see `InFlightLookups`); nothing is cached.
  */
 const appUserLookups = new InFlightLookups<
   PostgrestMaybeSingleResponse<{ id: string }>

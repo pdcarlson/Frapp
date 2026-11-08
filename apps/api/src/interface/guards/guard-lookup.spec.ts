@@ -74,4 +74,42 @@ describe('InFlightLookups (#3728)', () => {
     ).rejects.toThrow('boom');
     expect(lookups.size).toBe(0);
   });
+
+  describe('the join window', () => {
+    it('starts a fresh call for a request arriving after the window, and keeps the newer entry', async () => {
+      let clock = 0;
+      const lookups = new InFlightLookups<string>({
+        joinWindowMs: 250,
+        now: () => clock,
+      });
+      const stalled = deferred<string>();
+      const load = jest
+        .fn<Promise<string>, []>()
+        .mockReturnValueOnce(stalled.promise)
+        .mockResolvedValueOnce('fresh');
+
+      const first = lookups.run('k', load);
+      clock = 250;
+      const joiner = lookups.run('k', load);
+      clock = 251;
+      const late = lookups.run('k', load);
+
+      await expect(late).resolves.toBe('fresh');
+      expect(load).toHaveBeenCalledTimes(2);
+
+      // The stalled call settling must not drop the key from under a newer call.
+      clock = 300;
+      const pendingAgain = deferred<string>();
+      load.mockReturnValueOnce(pendingAgain.promise);
+      const newest = lookups.run('k', load);
+      stalled.resolve('stale');
+      await expect(first).resolves.toBe('stale');
+      await expect(joiner).resolves.toBe('stale');
+      expect(lookups.size).toBe(1);
+      expect(lookups.run('k', load)).toBe(newest);
+      pendingAgain.resolve('newest');
+      await expect(newest).resolves.toBe('newest');
+      expect(lookups.size).toBe(0);
+    });
+  });
 });
