@@ -266,9 +266,8 @@ function DocumentPreview({
   }
   if (!url) return <PageSkeleton />;
   if (kind === "image") {
-    // Keyed by link and attempt, so a fresh link (a refetch on focus) or a Try
-    // again gets a
-    // fresh attempt rather than the last link's failure.
+    // Keyed by link and attempt, so a fresh link (a refetch on focus) or a
+    // Try again starts over rather than keeping the last link's failure.
     return (
       <ImagePreview
         key={`${attempt}:${url}`}
