@@ -2063,6 +2063,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/backwork/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List chapter course names and nicknames */
+        get: operations["BackworkController_listCourses_v1"];
+        /** Name a course or add nicknames (create on first write) */
+        put: operations["BackworkController_upsertCourse_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/backwork/courses/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a course's name and nicknames (its files are untouched) */
+        delete: operations["BackworkController_deleteCourse_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/backwork/professors": {
         parameters: {
             query?: never;
@@ -4629,6 +4664,8 @@ export interface components {
             department_code?: string;
             /** @description Course number (e.g. "101") */
             course_number?: string;
+            /** @description The course's name ("Calculus I"). Saved only when the course has no name yet; an upload never renames a course. */
+            course_name?: string;
             /** @description Professor name */
             professor_name?: string;
             year?: number;
@@ -4664,6 +4701,41 @@ export interface components {
         MergeBackworkTaxonomyResponseDto: {
             /** @description Count of resources reassigned from source to target */
             reassigned: number;
+        };
+        BackworkCourseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            department_id: string;
+            /** @description Course number as first saved, e.g. "1010" */
+            course_number: string;
+            /** @description The course number trimmed and lowercased; files join a course by department_id and this. */
+            course_key: string;
+            /** @example Calculus I */
+            name: string | null;
+            /**
+             * @example [
+             *       "Calc 1",
+             *       "Calc I"
+             *     ]
+             */
+            nicknames: string[];
+            created_at: string;
+            updated_at: string;
+        };
+        UpsertBackworkCourseDto: {
+            /** Format: uuid */
+            department_id: string;
+            /** @description Course number (e.g. "1010") */
+            course_number: string;
+            /** @description Omit to keep the stored name. A blank or null clears it (backwork:admin). */
+            name?: string | null;
+            /** @description Nicknames to add to the list as stored. Open to backwork:upload; a list past the cap is a 400. */
+            add_nicknames?: string[];
+            /** @description Nicknames to remove from the list as stored, matched case-insensitively. Needs backwork:admin. */
+            remove_nicknames?: string[];
         };
         UpdateProfessorDto: {
             /** @description Professor name */
@@ -10072,6 +10144,94 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MergeBackworkTaxonomyResponseDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_listCourses_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackworkCourseDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_upsertCourse_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertBackworkCourseDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackworkCourseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_deleteCourse_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
