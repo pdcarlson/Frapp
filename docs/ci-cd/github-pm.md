@@ -209,7 +209,7 @@ Everything an agent files (follow-ups from `/next`, curator suggestions, PR-foll
 
 - Born **open + `triage`** with a **priority label** proposed (the triage routine confirms),
   **`suggestion`** when routine-owned, exactly one **`area:<x>`**.
-- Body: summary · meta block (`Blocked by #N` / `Estimate:` as applicable) · problem/context with
+- Body: summary · meta block (`Asked by:` naming whose request it is, then `Blocked by #N` / `Estimate:` as applicable) · problem/context with
   exact `file:line` refs · acceptance criteria (objectively verifiable checkboxes) · an
   **Agent brief**.
 - **`fp=` dedup markers are the routines' mechanism, per-namespace.** They are **visible lines,
