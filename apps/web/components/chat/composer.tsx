@@ -67,10 +67,12 @@ import {
 import { EmojiPicker } from "./emoji-picker";
 import {
   ComposerPlusMenu,
+} from "./composer-plus-menu";
+import {
   plusMenuModel,
   type PlusMenuCommand,
   type PlusMenuForm,
-} from "./composer-plus-menu";
+} from "@repo/chat-core/plus-menu";
 import { QuotedMessage } from "./reply-quote";
 import {
   createMentionSuggestion,
@@ -1552,9 +1554,11 @@ export function Composer({
         moduleStatus: slashCommandsStatus,
         isModuleEnabled,
         replying: replyTo != null,
-        filesStaged: stagedCount,
-        fileLimit: CHAT_FILE_LIMIT,
+        attachmentNoun: "file",
+        attachmentsStaged: stagedCount,
+        attachmentLimit: CHAT_FILE_LIMIT,
         offline: Boolean(isOffline),
+        roleRetryHint: "Reload to try again.",
       }),
     [
       commandForms,

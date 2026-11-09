@@ -32,11 +32,14 @@
  * 3. **No outbox `get`.** That is a web-only extra on the Dexie store; the
  *    port itself only offers `listForChannel`, so retry/discard look the row up
  *    through it.
- * 4. **No slash dispatch.** Slash commands are not a mobile surface
- *    (`@repo/chat-core/dispatch` is web's), so `unconfirmed`/`recorded` rows
- *    have no replay path; the thread presents them read-only (#1910) until one
- *    exists. Do not invent a slash dispatch from here. Web's `dispatchSlash`, `retryUnconfirmed` and the
- *    persisted-notice merge in its channel query all hang off it.
+ * 4. **No slash dispatch.** Slash commands are not a mobile surface, so
+ *    `unconfirmed`/`recorded` rows have no replay path; the thread presents
+ *    them read-only (#1910) until one exists. Do not invent a slash dispatch
+ *    from here. The + sheet's forms (#3865) do post through
+ *    `@repo/chat-core/dispatch`'s `postPoll`, `postTask`, `postHours` and
+ *    `trackEventCard`, the calls web's commands make; none of them replays.
+ *    Web's `dispatchSlash`, `retryUnconfirmed` and the persisted-notice merge
+ *    in its channel query all hang off slash dispatch.
  * 5. **The draft and the staged attachments live here.** Web's draft has its
  *    own hook (`useChannelDraft`, #2176) and its composer owns the attachments
  *    it passes to `send`. Here `send` claims whatever is staged, and both reset
@@ -99,6 +102,16 @@ import {
 } from "@repo/chat-core/types";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import type { PollPayload } from "@repo/chat-core/polls";
+import {
+  postHours,
+  postPoll,
+  postTask,
+  trackEventCard,
+  type DispatchResult,
+  type EventCardTrack,
+  type HoursInput,
+  type TaskInput,
+} from "@repo/chat-core/dispatch";
 import { randomClientId } from "@repo/api-sdk";
 import type { AttachmentPickResult } from "./attachment-upload";
 import {
@@ -107,10 +120,13 @@ import {
   matchLocalPhotos,
   rememberLocalPhotos,
 } from "./local-photos";
-import { useFrappClient } from "@repo/hooks";
+import { taskKeys, useFrappClient } from "@repo/hooks";
 
 import { getSupabaseClient } from "@/lib/supabase";
 import { bootChatAdapters, useChatRuntime } from "./use-chat-runtime";
+
+/** chat-core's `postPoll` sentence for a write with no identity behind it. */
+const SIGNED_OUT_COPY = "You're signed out. Sign in, then post it again.";
 
 /** Matches web's debounce so a draft write never rides every keystroke. */
 const DRAFT_SAVE_DEBOUNCE_MS = 400;
@@ -244,17 +260,34 @@ export interface UseChatChannelResult {
   sendInFlight: () => boolean;
   /**
    * Posts a poll card (`kind: "poll"`) built by `buildPollMessage`, from s05's
-   * New poll sheet (#3701). It goes through the outbox like any message, so
-   * it is optimistic, survives going offline, and a refusal lands as a failed
-   * row in the thread with Retry and Discard. It touches neither the draft nor
-   * the photo tray. Resolves once the card is queued, or with the reason it
-   * couldn't be (no identity yet, or an outbox that refused the row). Never
-   * rejects.
+   * New poll sheet (#3701), through chat-core's `postPoll`, the call web's
+   * `/poll` makes. It goes through the outbox like any message, so it is
+   * optimistic, survives going offline, and a refusal lands as a failed row
+   * in the thread with Retry and Discard. It touches neither the draft nor
+   * the photo tray. Resolves once the card is queued, with `warning` when it
+   * posted but wasn't saved on this phone, or with the reason it couldn't be
+   * (signed out, or an outbox that refused the row). Never rejects.
    */
   sendPoll: (poll: {
     content: string;
     payload: PollPayload;
-  }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  }) => Promise<{ ok: true; warning?: string } | { ok: false; error: string }>;
+  /**
+   * The + sheet's Task and Service hours forms (#3865): chat-core's
+   * `postTask` / `postHours` into this channel, the calls web's `/task` and
+   * `/hours log` make, so the card gets the same placeholder, the `recorded`
+   * row when it didn't post, and `unconfirmed` (never `ok: false`) when the
+   * answer was lost. Neither route dedupes, so a form closes on anything but
+   * `ok: false`. Never rejects.
+   */
+  postTask: (input: TaskInput) => Promise<DispatchResult>;
+  postHours: (input: HoursInput) => Promise<DispatchResult>;
+  /**
+   * The + sheet's Event form: chat-core's `trackEventCard` for this channel,
+   * the timeline bookkeeping for a card the form's own `POST /v1/events`
+   * asks the server to post. `null` while there's no channel or identity.
+   */
+  trackEventCard: ((name: string) => EventCardTrack) | null;
   /**
    * Saves an edit of the viewer's own message. Not optimistic: the server row
    * is merged on success, and the Realtime echo of the same edit is a no-op.
@@ -903,29 +936,51 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     async (poll: {
       content: string;
       payload: PollPayload;
-    }): Promise<{ ok: true } | { ok: false; error: string }> => {
+    }): Promise<
+      { ok: true; warning?: string } | { ok: false; error: string }
+    > => {
       if (!channelId || !ctx) {
         return { ok: false, error: "Couldn't post that poll. Try again." };
       }
-      try {
-        await sendMessage(ctx, {
-          channelId,
-          content: poll.content,
-          kind: "poll",
-          payload: poll.payload as unknown as Record<string, unknown>,
-          // The composer may hold a message the member is still writing.
-          keepDraft: true,
-        });
-        return { ok: true };
-      } catch (error) {
-        // As in `send`: the outbox refused the row and `sendMessage` took the
-        // optimistic card back out, so nothing is queued or on screen.
-        return {
-          ok: false,
-          error: errorCopy(error, "Couldn't post that poll. Try again."),
-        };
-      }
+      const result = await postPoll(ctx, channelId, poll);
+      if (result.ok) return result;
+      // `cause` is for error reporting; the sheet shows the sentence.
+      return { ok: false, error: result.error };
     },
+    [channelId, ctx],
+  );
+
+  // No channel or identity means no + (the composer can't send), so these
+  // only answer a caller that raced a sign-out.
+  const postTaskHere = useCallback(
+    async (input: TaskInput): Promise<DispatchResult> => {
+      if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_COPY };
+      const result = await postTask(ctx, channelId, input);
+      // `postTask` writes the chat's cache, not the task board's. A lost
+      // answer refreshes it too: the task may exist.
+      if (result.ok)
+        void queryClient.invalidateQueries({ queryKey: taskKeys.all });
+      return result;
+    },
+    [channelId, ctx, queryClient],
+  );
+  const postHoursHere = useCallback(
+    async (input: HoursInput): Promise<DispatchResult> => {
+      if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_COPY };
+      const result = await postHours(ctx, channelId, input);
+      // As above, for the Service page's entries.
+      if (result.ok) {
+        void queryClient.invalidateQueries({ queryKey: ["service-entries"] });
+      }
+      return result;
+    },
+    [channelId, ctx, queryClient],
+  );
+  const trackEventCardHere = useMemo(
+    () =>
+      channelId && ctx
+        ? (name: string) => trackEventCard(ctx, channelId, name)
+        : null,
     [channelId, ctx],
   );
 
@@ -1197,6 +1252,9 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     send,
     sendInFlight,
     sendPoll,
+    postTask: postTaskHere,
+    postHours: postHoursHere,
+    trackEventCard: trackEventCardHere,
     edit,
     remove,
     closePoll,

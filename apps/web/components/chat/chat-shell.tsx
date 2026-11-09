@@ -56,7 +56,6 @@ import {
 import {
   can,
   canAll,
-  EVENT_CREATE_PERMISSIONS,
   isAnnouncementChannel,
   type MentionCandidate,
   type MentionChipTargets,
@@ -175,20 +174,14 @@ import { useSubscriptionGate } from "@/components/shared/subscription-gate";
 import { EventEditorDialog } from "@/components/events/event-editor-dialog";
 import { pollDraftFromArgs, type PollDraft } from "@repo/chat-core/poll-draft";
 import { NewPollDialog } from "./new-poll-dialog";
-import type { PlusMenuForm } from "./composer-plus-menu";
+import {
+  PLUS_MENU_COMMANDS,
+  PLUS_MENU_PERMISSIONS,
+  plusMenuForms,
+  type PlusMenuForm,
+} from "@repo/chat-core/plus-menu";
 import type { ChatNotificationLevel } from "@repo/hooks";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
-
-/**
- * What each + menu form's write needs (#3865), from the routes' guards:
- * `POST /v1/tasks` is `tasks:manage` under the controller's `members:view`,
- * `POST /v1/service-entries` is `service:log`, and `POST /v1/points/adjust`
- * is `points:adjust` under `members:view`. The task and points forms also
- * list members to pick from, which `members:view` reads.
- */
-const TASK_CREATE_PERMISSIONS = ["tasks:manage", "members:view"] as const;
-const HOURS_LOG_PERMISSIONS = ["service:log"] as const;
-const POINTS_ADJUST_PERMISSIONS = ["points:adjust", "members:view"] as const;
 
 /** What a + menu form says when its write threw after the request went out. */
 const FORM_UNCONFIRMED_WARNING = {
@@ -1188,7 +1181,7 @@ export function ChatShell({
       };
       if (command.name === "task") {
         if (parseTaskArgs(args).ok) return null;
-        if (roleRefuses(TASK_CREATE_PERMISSIONS, "create tasks", "creating tasks")) {
+        if (roleRefuses(PLUS_MENU_PERMISSIONS.task, "create tasks", "creating tasks")) {
           return "refused";
         }
         const { assigneeToken, ...prefill } = taskFormPrefill(args);
@@ -1207,7 +1200,7 @@ export function ChatShell({
       // neither form has a field for what the member got wrong.
       if (command.name === "hours") {
         if (args.trim().length > 0) return null;
-        if (roleRefuses(HOURS_LOG_PERMISSIONS, "log service hours", "logging service hours")) {
+        if (roleRefuses(PLUS_MENU_PERMISSIONS.hours, "log service hours", "logging service hours")) {
           return "refused";
         }
         setHoursForm((previous) => ({
@@ -1219,7 +1212,7 @@ export function ChatShell({
       }
       if (command.name === "points") {
         if (args.trim().length > 0) return null;
-        if (roleRefuses(POINTS_ADJUST_PERMISSIONS, "adjust points", "adjusting points")) {
+        if (roleRefuses(PLUS_MENU_PERMISSIONS.points, "adjust points", "adjusting points")) {
           return "refused";
         }
         setPointsForm({ open: true, channelId: activeChannelId });
@@ -1240,7 +1233,7 @@ export function ChatShell({
       }
       if (command.name !== "event") return null;
       if (parseEventArgs(args).ok) return null;
-      if (roleRefuses(EVENT_CREATE_PERMISSIONS, "create events", "creating events")) {
+      if (roleRefuses(PLUS_MENU_PERMISSIONS.event, "create events", "creating events")) {
         return "refused";
       }
       setEventForm({
@@ -1294,32 +1287,15 @@ export function ChatShell({
   const permissionsFailed =
     permissionsQuery.isError ||
     (permissionsQuery.fetchStatus === "paused" && !permissionsPayload);
-  const commandForms = useMemo((): PlusMenuForm[] => {
-    const granted = permissionsPayload?.permissions;
-    const allows = (check: (list: string[]) => boolean) =>
-      granted ? check(granted) : permissionsFailed ? "unknown" : "loading";
-    return [
-      { command: "poll", roleAllows: allows((list) => can("polls:create", list)) },
-      {
-        command: "event",
-        roleAllows: allows((list) => canAll(EVENT_CREATE_PERMISSIONS, list)),
-      },
-      {
-        command: "task",
-        roleAllows: allows((list) => canAll([...TASK_CREATE_PERMISSIONS], list)),
-      },
-      {
-        command: "hours",
-        roleAllows: allows((list) => canAll([...HOURS_LOG_PERMISSIONS], list)),
-      },
-      {
-        command: "points",
-        roleAllows: allows((list) =>
-          canAll([...POINTS_ADJUST_PERMISSIONS], list),
-        ),
-      },
-    ];
-  }, [permissionsPayload, permissionsFailed]);
+  const commandForms = useMemo(
+    (): PlusMenuForm[] =>
+      plusMenuForms(
+        PLUS_MENU_COMMANDS,
+        permissionsPayload?.permissions,
+        permissionsFailed,
+      ),
+    [permissionsPayload, permissionsFailed],
+  );
 
   // Memoised because the timeline hands it to the virtualizer's header
   // context, and a new element every render would re-render that row.

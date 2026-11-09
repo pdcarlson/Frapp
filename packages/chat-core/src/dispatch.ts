@@ -68,6 +68,12 @@ export interface DispatchResult {
    * silence after a retry is indistinguishable from a retry that did nothing.
    */
   resolved?: string;
+  /**
+   * The API's refusal body, set beside `error` by `postTask` and `postHours`,
+   * so a form posting through them can read the same gate refusals
+   * (subscription, module, receipt required) it reads from its own request.
+   */
+  cause?: unknown;
 }
 
 /**
@@ -855,6 +861,7 @@ export async function postTask(
       return {
         ok: false,
         error: apiErrorMessage(result.error, "Couldn't create task"),
+        cause: result.error,
       };
     }
     if (data?.card_posted === false) {
@@ -1106,6 +1113,7 @@ export async function postHours(
       return {
         ok: false,
         error: apiErrorMessage(result.error, "Couldn't log hours"),
+        cause: result.error,
       };
     }
     if (data?.card_posted === false) {

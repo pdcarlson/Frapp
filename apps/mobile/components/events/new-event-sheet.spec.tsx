@@ -609,3 +609,103 @@ describe("Edit event", () => {
     expect(onDeleted).toHaveBeenCalled();
   });
 });
+
+describe("New event from a chat's + (#3865)", () => {
+  const card = { clientMessageId: "cm-1", failed: vi.fn(), lost: vi.fn() };
+  const trackCard = vi.fn(() => card);
+
+  function renderFromChat(onCreated = vi.fn()): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewEventSheet
+            now={NOW}
+            onCreated={onCreated}
+            chat={{ channelId: "ch-1", trackCard }}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+
+  beforeEach(() => {
+    trackCard.mockClear();
+    card.failed.mockClear();
+    card.lost.mockClear();
+    outcome = { ok: true };
+  });
+
+  it("asks the server to post its card in the channel, under the placeholder's id", () => {
+    const onCreated = vi.fn();
+    const tree = renderFromChat(onCreated);
+    type(tree, "Event name", "Formal");
+    act(() => createButton(tree).props.onPress());
+    expect(trackCard).toHaveBeenCalledWith("Formal");
+    expect(mutate.mock.calls.at(-1)![0]).toEqual(
+      expect.objectContaining({
+        name: "Formal",
+        channel_id: "ch-1",
+        client_message_id: "cm-1",
+      }),
+    );
+    expect(onCreated).toHaveBeenCalledWith({
+      name: "Formal",
+      cardKeptOut: false,
+      cardLost: false,
+    });
+    act(() => tree.unmount());
+  });
+
+  it("keeps the recorded row when the event saved but its card didn't post", () => {
+    mutate.mockImplementationOnce((_body, options) =>
+      (options.onSuccess as (created: unknown) => void)({
+        card_posted: false,
+      }),
+    );
+    const onCreated = vi.fn();
+    const tree = renderFromChat(onCreated);
+    type(tree, "Event name", "Formal");
+    act(() => createButton(tree).props.onPress());
+    expect(card.lost).toHaveBeenCalledTimes(1);
+    expect(onCreated).toHaveBeenCalledWith(
+      expect.objectContaining({ cardLost: true }),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("drops the placeholder when the create fails", () => {
+    outcome = { ok: false, error: new Error("nope") };
+    const tree = renderFromChat();
+    type(tree, "Event name", "Formal");
+    act(() => createButton(tree).props.onPress());
+    expect(card.failed).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("asks for no card when the event keeps anyone out, and says so", () => {
+    const onCreated = vi.fn();
+    const tree = renderFromChat(onCreated);
+    type(tree, "Event name", "Formal");
+    act(() => byLabel(tree, "More options").props.onPress());
+    const attendance = tree.root.find(
+      (node) =>
+        typeof node.props.onChange === "function" &&
+        node.props.value?.everyone !== undefined,
+    );
+    act(() =>
+      attendance.props.onChange({
+        everyone: "optional",
+        roles: { "role-alumni": "not_invited" },
+      }),
+    );
+    act(() => createButton(tree).props.onPress());
+    expect(trackCard).not.toHaveBeenCalled();
+    expect(mutate.mock.calls.at(-1)![0]).not.toHaveProperty("channel_id");
+    expect(onCreated).toHaveBeenCalledWith(
+      expect.objectContaining({ cardKeptOut: true }),
+    );
+    act(() => tree.unmount());
+  });
+});

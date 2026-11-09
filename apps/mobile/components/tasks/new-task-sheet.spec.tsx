@@ -8,6 +8,7 @@ import { drawnText, screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { moduleDisabledMessage } from "@repo/validation";
+import type { DispatchResult } from "@repo/chat-core/dispatch";
 
 /**
  * The new-task sheet on a subscription refusal (#2297), rendered (#2416).
@@ -636,3 +637,100 @@ function pressCancel(tree: ReactTestRenderer) {
   );
   cancel.props.onPress();
 }
+
+describe("New task from a chat's + (#3865)", () => {
+  const dismiss = vi.fn();
+  const ref = React.createRef<never>();
+
+  function renderFromChat(
+    postToChannel: (input: unknown) => Promise<DispatchResult>,
+    onPosted = vi.fn(),
+  ): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet
+            ref={ref}
+            now={new Date("2026-09-27T12:00:00Z")}
+            postToChannel={postToChannel}
+            onPosted={onPosted}
+          />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) =>
+            (element.type as unknown) === "BottomSheetModal"
+              ? typeof (element.props as { onDismiss?: unknown })
+                  .onDismiss === "function"
+                ? { dismiss, present: vi.fn() }
+                : { dismiss: vi.fn(), present: vi.fn() }
+              : null,
+        },
+      );
+    });
+    act(() => sheetModal(tree).props.onAnimate(-1, 0));
+    return tree;
+  }
+
+  const titleValue = (tree: ReactTestRenderer) =>
+    tree.root.find((node) => node.props.accessibilityLabel === "Task title")
+      .props.value;
+
+  beforeEach(() => {
+    dismiss.mockReset();
+  });
+
+  it("posts through the channel, not the board's create, and closes", async () => {
+    const postToChannel = vi.fn(async () => ({ ok: true }));
+    const onPosted = vi.fn();
+    const tree = renderFromChat(postToChannel, onPosted);
+    submitTask(tree);
+    await act(async () => {});
+    expect(mutate).not.toHaveBeenCalled();
+    expect(postToChannel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Sweep the porch",
+        assignee_id: "user-1",
+      }),
+    );
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(titleValue(tree)).toBe("");
+    expect(successHaptic).toHaveBeenCalledTimes(1);
+    expect(onPosted).toHaveBeenCalledWith({ ok: true });
+    act(() => tree.unmount());
+  });
+
+  it("closes on a lost answer, which may have written, and hands it on", async () => {
+    // Neither route dedupes: keeping the draft would be one tap from a second task.
+    const lost = { ok: true, unconfirmed: true, warning: "Couldn't confirm." };
+    const onPosted = vi.fn();
+    const tree = renderFromChat(vi.fn(async () => lost), onPosted);
+    submitTask(tree);
+    await act(async () => {});
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    expect(titleValue(tree)).toBe("");
+    // No success haptic for a task that may not exist.
+    expect(successHaptic).not.toHaveBeenCalled();
+    expect(onPosted).toHaveBeenCalledWith(lost);
+    act(() => tree.unmount());
+  });
+
+  it("keeps the draft on a refusal, and reads its gate from the cause", async () => {
+    const onPosted = vi.fn();
+    const tree = renderFromChat(
+      vi.fn(async () => ({
+        ok: false,
+        error: REFUSED.message,
+        cause: REFUSED,
+      })),
+      onPosted,
+    );
+    submitTask(tree);
+    await act(async () => {});
+    expect(dismiss).not.toHaveBeenCalled();
+    expect(titleValue(tree)).toBe("Sweep the porch");
+    expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.task);
+    expect(onPosted).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+});

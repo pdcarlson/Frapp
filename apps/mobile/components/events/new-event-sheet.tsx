@@ -18,6 +18,7 @@ import DateTimePicker, {
 } from "@react-native-community/datetimepicker";
 import { formatWeekdayDay } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
+import type { EventCardTrack } from "@repo/chat-core/dispatch";
 import {
   EVENT_CREATE_UNCONFIRMED,
   useCreateEvent,
@@ -32,6 +33,7 @@ import {
   canAll,
   EVENT_CREATE_PERMISSIONS,
   describeAttendance,
+  eventLimitsAudience,
   isRecurrenceRule,
 } from "@repo/validation";
 import { fieldTypeRole, typeRole, useFrappTheme } from "@/lib/theme";
@@ -131,11 +133,33 @@ import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
  * close, not a Cancel, and is read-only while a create runs, with Cancel held.
  */
 
+export interface EventCreatedOutcome {
+  name: string;
+  /** From chat: the event keeps someone out, so no card was asked for. */
+  cardKeptOut: boolean;
+  /** From chat: the event exists but its card didn't post (`card_posted: false`). */
+  cardLost: boolean;
+}
+
 export interface NewEventSheetProps {
   /** The host's clock, so a sheet left up overnight reads the new day. */
   now?: Date;
-  /** Fired after a successful create. */
-  onCreated?: () => void;
+  /**
+   * Fired after a successful create. From chat, it also says whether the
+   * card stayed out (an event that keeps anyone out can't be broadcast) or
+   * didn't post, so the host can say where the card went.
+   */
+  onCreated?: (outcome: EventCreatedOutcome) => void;
+  /**
+   * Set when the sheet was opened from a chat's + (#3865): the create asks
+   * the server to post the event's card in `channelId`, with `trackCard`'s
+   * placeholder in the thread until it lands (chat-core's `trackEventCard`,
+   * as web's event form does from chat).
+   */
+  chat?: {
+    channelId: string;
+    trackCard: (name: string) => EventCardTrack;
+  };
   /** Set to edit this event instead of creating one. */
   editing?: EventEditTarget;
   /**
@@ -206,7 +230,10 @@ const GATE_COPY = {
 };
 
 export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
-  function NewEventSheet({ now, onCreated, editing, onSaved, onDeleted }, ref) {
+  function NewEventSheet(
+    { now, onCreated, chat, editing, onSaved, onDeleted },
+    ref,
+  ) {
     const { tokens } = useFrappTheme();
     const brand = useChapterBranding();
     const styles = createStyles(tokens, brand);
@@ -472,28 +499,48 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       setRefusal(null);
       Keyboard.dismiss();
       const sentFrom = visit();
-      createEvent.mutate(result.body, {
-        onSuccess: () => {
-          sending.current = false;
-          successHaptic();
-          // Saved, so the draft goes whichever visit is on screen.
-          reset();
-          if (isSameVisit(sentFrom)) dismiss();
-          onCreated?.();
+      // From chat, the server posts the card, under the placeholder's id. An
+      // event that keeps anyone out can't be broadcast, so none is asked for
+      // (the API refuses one, `EventService.create`), as on web.
+      const cardKeptOut = !!chat && eventLimitsAudience(result.body);
+      const card =
+        chat && !cardKeptOut ? chat.trackCard(result.body.name) : null;
+      createEvent.mutate(
+        card && chat
+          ? {
+              ...result.body,
+              channel_id: chat.channelId,
+              client_message_id: card.clientMessageId,
+            }
+          : result.body,
+        {
+          onSuccess: (created) => {
+            sending.current = false;
+            const cardLost = card !== null && created?.card_posted === false;
+            if (cardLost) card.lost();
+            successHaptic();
+            // Saved, so the draft goes whichever visit is on screen.
+            reset();
+            if (isSameVisit(sentFrom)) dismiss();
+            onCreated?.({ name: result.body.name, cardKeptOut, cardLost });
+          },
+          onError: (error) => {
+            sending.current = false;
+            // Refused or lost, the placeholder goes: a lost answer's event may
+            // exist, and the sheet's own line says to check before trying again.
+            card?.failed();
+            if (!isSameVisit(sentFrom)) return;
+            const gated = gateRefusalOf(error, GATE_COPY);
+            if (gated) setRefusal(gated);
+            else if (
+              error instanceof Error &&
+              error.message === EVENT_CREATE_UNCONFIRMED
+            ) {
+              setUnconfirmed(true);
+            } else setSubmitFailed(true);
+          },
         },
-        onError: (error) => {
-          sending.current = false;
-          if (!isSameVisit(sentFrom)) return;
-          const gated = gateRefusalOf(error, GATE_COPY);
-          if (gated) setRefusal(gated);
-          else if (
-            error instanceof Error &&
-            error.message === EVENT_CREATE_UNCONFIRMED
-          ) {
-            setUnconfirmed(true);
-          } else setSubmitFailed(true);
-        },
-      });
+      );
     }
 
     // An existing series' length was set when it was made; the line comes
