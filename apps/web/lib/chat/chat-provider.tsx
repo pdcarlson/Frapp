@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Wires the chat realtime manager into the React tree and runs boot-time
- * outbox flush. Mounts under the existing `FrappProvider` + `QueryProvider` +
+ * Runs chat's boot-time outbox flush and the persisted first chunk for the
+ * `/chat` surface. Mounts under the existing `FrappProvider` + `QueryProvider` +
  * `NetworkProvider` in the dashboard tree, so by the time it renders we have
  * a query client, an api-sdk client, and the active chapter id available.
  *
@@ -13,7 +13,7 @@
 
 import { useContext, useEffect, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useChatActivityHandler, useFrappClient } from "@repo/hooks";
+import { useFrappClient } from "@repo/hooks";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/lib/hooks/use-toast";
 import { AnalyticsContext } from "@/lib/providers/analytics-provider";
@@ -22,20 +22,12 @@ import {
   browserNetworkState,
 } from "@repo/chat-core/adapters";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
-import {
-  chatRealtime,
-  createBackfillFetcher,
-} from "@repo/chat-core/realtime-manager";
 import { flushOutbox } from "@repo/chat-core/chat-client";
 import { createDexieOutboxStore } from "./offline-queue";
 import { useChatOutboundScope } from "./chat-scope";
 import { useFirstChunkCache } from "./use-first-chunk-cache";
 import { CachedViewerIdProvider } from "./viewer-id";
 import { CachedBlockFloorContext } from "./use-thread-block-list";
-
-function isTabVisible(): boolean {
-  return document.visibilityState === "visible";
-}
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
@@ -77,59 +69,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const { viewerId: cachedViewerId, blockFloor } = useFirstChunkCache();
 
   /*
-    Bind the realtime manager (a module singleton) to this mount's clients,
-    and rebind it when the viewer resolves or changes.
-
-    Rebinding is a plain `configure`, never `destroy()` first (#3002). The live
-    `userId` answers after the thread has often already subscribed its channel,
-    from the first-chunk channel list. `destroy()` dropped that subscription,
-    and the thread's subscribe effect, keyed on the channel, never ran again:
-    the thread went quiet for good, with the pill still reading live and no
-    polling behind it. `configure` now follows the viewer itself: it tracks a
-    viewer who resolves after the join on the channel already joined, and
-    rejoins every channel for a different one, so presence names the right
-    member (ADR-10). Mobile's runtime already rebound this way. `supabase` is
-    fixed for the mount and `queryClient` is the app's one client, so a rebind
-    never has to move a channel to another client.
+    The realtime manager's lifecycle is not this provider's (#3745): it is bound
+    for the whole dashboard by `useChatRealtimeBinding`, from `DashboardShell`,
+    so the nav's Chat row stays live off `/chat`. This provider mounts and
+    unmounts with every trip in and out of `/chat`, and must not configure or
+    destroy a manager the shell owns (`realtime-resilience` rule 1).
   */
-  /*
-    Keeps the rail's unread rows and the nav's chat badge live (#3698): the
-    manager's inbox reports every new message the member may read, and this
-    re-reads the unread counts, or re-stamps the open channel read when the
-    message landed in it while the tab is visible.
-  */
-  const onMessageActivity = useChatActivityHandler(
-    userId ?? null,
-    isTabVisible,
-  );
-
-  useEffect(() => {
-    chatRealtime.configure({
-      queryClient,
-      supabase,
-      viewerId: userId ?? null,
-      backfill: createBackfillFetcher(apiClient),
-      onMessageActivity,
-    });
-  }, [queryClient, supabase, apiClient, userId, onMessageActivity]);
-
-  /*
-    A tab that comes back from hidden may have been throttled or frozen, its
-    socket dead without the client knowing yet. Catch up now rather than at
-    the next heartbeat (#3698). The online edge is the manager's own.
-  */
-  useEffect(() => {
-    const onVisibility = () => {
-      if (isTabVisible()) chatRealtime.resume();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, []);
-
-  // Torn down on unmount only. On a remount the thread subscribes before this
-  // provider configures (a child's effects run first), and `configure`
-  // attaches that waiting channel.
-  useEffect(() => () => chatRealtime.destroy(), []);
 
   // Boot-time + on-reconnect outbox flush. The manager also pokes per-channel
   // flushes via `useChatChannel`, but this catches the first paint where no
@@ -173,9 +118,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     outside this provider, which would be strictly worse than the behaviour this
     change is replacing.
 
-    The live id above is **not** merged in here on purpose. It feeds
-    `chatRealtime.configure` and the outbox flush, which are writes — a queued
-    message's `senderId`, a reaction's `user_id`, a presence `track()` — and
+    The live id above is **not** merged in here on purpose. It feeds the
+    outbox flush, as it feeds the shell's `chatRealtime.configure`, and those
+    are writes — a queued message's `senderId`, a reaction's `user_id`, a presence `track()` — and
     those keep waiting for identity to actually resolve. A cached id is good
     enough to say "You" on a row; it is not a thing to sign a send with.
   */
