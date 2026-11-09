@@ -6,10 +6,15 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
-import { formatEventDateBlock } from "@/lib/events/format";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  EVENTS_VIEW_STORAGE_KEY,
+  hydrateEventsView,
+  resetEventsViewForTests,
+} from "@/lib/events/events-view";
 import { expectRoundedRipple } from "@/test/pressable-row";
 import { InlineNote } from "@/components/inline-note";
-import { screenText } from "@/test/screen-text";
+import { drawnText, screenText } from "@/test/screen-text";
 
 /**
  * s06, rendered. It renders `app/(app)/(tabs)/events.tsx` but lives here: a spec
@@ -92,6 +97,7 @@ const skeletons = (tree: ReactTestRenderer) =>
   tree.root.findAll((node) => node.props.accessibilityRole === "progressbar");
 
 beforeEach(() => {
+  resetEventsViewForTests();
   vi.useFakeTimers();
   vi.setSystemTime(MOUNTED_AT);
   events = [EVENT];
@@ -144,22 +150,18 @@ describe("Event card", () => {
     expect(place.color).toBe(signetDarkTokens.color.text.mutedForeground);
   });
 
-  // foundations.md §6 "Where the accent goes" (2026-11-05): a date label is a
-  // label, so it is neutral: "Today" in the foreground, any other day muted.
-  it("draws the date block's label neutral over the day, never the accent", () => {
+  // The day is the heading over the rows now (#3707), so the card says only
+  // its time; the board's "THU / 14" date block went with the headings.
+  it("puts the card under its written-out day heading, with no date block", () => {
     const tree = render();
-    // Mounted a minute before the event, which is the same local day in most
-    // zones but the day before in some (UTC+6 puts the start at midnight), so
-    // the label comes from the formatter, which format.spec.ts pins.
-    const block = formatEventDateBlock(START.toISOString(), MOUNTED_AT);
-    const color = styleOf(tree, block!.label).color;
-    expect(color).toBe(
-      block!.isToday
-        ? signetDarkTokens.color.text.foreground
-        : signetDarkTokens.color.text.mutedForeground,
+    const text = screenText(tree);
+    // Mounted eleven minutes before the start: the same local day in most
+    // zones, the day before in a few, so either heading is right.
+    expect(text).toMatch(/^(Today|Tomorrow)$/m);
+    expect(text.indexOf("Chapter meeting")).toBeGreaterThan(
+      text.search(/^(Today|Tomorrow)$/m),
     );
-    expect(color).not.toBe(ACCENT);
-    expect(screenText(tree)).toContain(String(START.getDate()));
+    expect(text).not.toMatch(/^Tmrw$/m);
   });
 
   it("answers a press with a lift and a ripple, not a fade", () => {
@@ -323,8 +325,9 @@ describe("Events list states", () => {
 
 /**
  * The owner's 2026-11-05 pick: the next event is the page's one card, and the
- * rest sit flush on the floor in "This week" and "Later" groups, with points in
- * the meta line as web writes them.
+ * rest sit flush on the floor, with points in the meta line as web writes
+ * them. Since #3707 they sit under day headings, two weeks of them, with the
+ * rest behind Later.
  */
 describe("Events after the first", () => {
   const at = (days: number) => new Date(START.getTime() + days * 86_400_000);
@@ -337,19 +340,62 @@ describe("Events after the first", () => {
     ...extra,
   });
 
-  it("groups the rest into this week and later", () => {
+  it("heads each day, and keeps everything past two weeks behind Later", () => {
     events = [
       make("a", 0),
       make("b", 2),
       make("c", 10, { point_value: 15, location: "Library" }),
+      make("d", 20),
     ];
-    const text = screenText(render());
-    expect(text.indexOf("This week")).toBeGreaterThan(text.indexOf("Event a"));
-    expect(text.indexOf("Event b")).toBeGreaterThan(text.indexOf("This week"));
-    expect(text.indexOf("Later")).toBeGreaterThan(text.indexOf("Event b"));
-    expect(text.indexOf("Event c")).toBeGreaterThan(text.indexOf("Later"));
+    const tree = render();
+    let text = screenText(tree);
+    const weekday = at(2).toLocaleDateString(undefined, { weekday: "long" });
+    expect(text).toMatch(new RegExp(`^${weekday}$`, "m"));
+    expect(text.indexOf("Event b")).toBeGreaterThan(text.indexOf(weekday));
     expect(text).toMatch(/Library · 15 pts/);
     expect(text).not.toContain("+15 pts");
+    // Day 20 is past the horizon: one Later row offers it, folded.
+    expect(text).toContain("Later");
+    expect(text).toContain("Show 1");
+    expect(text).not.toContain("Event d");
+
+    const later = tree.root.find(
+      (node) =>
+        typeof node.props.onPress === "function" &&
+        node.props.accessibilityLabel === "Show 1 later event",
+    );
+    act(() => later.props.onPress());
+    text = screenText(tree);
+    expect(text).toContain("Event d");
+    expect(text).toContain("Hide");
+  });
+
+  it("says when nothing falls in the next two weeks", () => {
+    events = [make("far", 30)];
+    const text = screenText(render());
+    expect(text).toContain("Nothing in the next two weeks.");
+    expect(text).toContain("Show 1");
+  });
+
+  it("draws a weekly series once, as \"Chapter · Every …\" (#3823)", () => {
+    const weekday = START.toLocaleDateString(undefined, { weekday: "long" });
+    events = Array.from({ length: 13 }, (_, index) =>
+      make(index === 0 ? "head" : `child-${index}`, index * 7, {
+        name: "Chapter",
+        recurrence_rule: index === 0 ? "WEEKLY" : null,
+        parent_event_id: index === 0 ? null : "head",
+      }),
+    );
+    const tree = render();
+    const rows = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.accessibilityLabel).startsWith("Open Chapter"),
+    );
+    expect(rows).toHaveLength(1);
+    expect(drawnText(rows[0]!)).toContain(`Chapter · Every ${weekday}`);
+    // Nothing waits in Later: the other twelve live on the event's page.
+    expect(screenText(tree)).not.toContain("Later");
   });
 
   it("draws a later row with no card fill and Mandatory in danger", () => {
@@ -373,8 +419,12 @@ describe("Events after the first", () => {
     );
   });
 
-  it("splits rows by hairlines, none above a group's first, and bleeds into the gutter", () => {
-    events = [make("a", 0), make("b", 2), make("c", 3)];
+  it("splits a day's rows by hairlines, none above the first, and bleeds into the gutter", () => {
+    events = [
+      make("a", 0),
+      make("b", 2),
+      make("c", 2, { start_time: new Date(at(2).getTime() + 3_600_000).toISOString() }),
+    ];
     const tree = render();
     const pressableOf = (name: string) =>
       tree.root.find(
@@ -391,5 +441,82 @@ describe("Events after the first", () => {
     expect(first.paddingHorizontal).toBe(signetDarkTokens.spacing.sm);
     const clip = StyleSheet.flatten(pressableOf("Event b").parent!.props.style);
     expect(clip.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
+  });
+});
+
+/** #3792 / #3823: a List | Calendar switch that opens on the last one used. */
+describe("Events view switch", () => {
+  const viewSwitch = (tree: ReactTestRenderer, label: string) =>
+    tree.root.find(
+      (node) =>
+        node.props.accessibilityRole === "radio" &&
+        node.props.accessibilityLabel === label &&
+        typeof node.props.onPress === "function",
+    );
+
+  it("switches to a month calendar, marks event days, and remembers the pick", () => {
+    const tree = render();
+    act(() => viewSwitch(tree, "Calendar").props.onPress());
+
+    const month = START.toLocaleDateString(undefined, {
+      month: "long",
+      year: "numeric",
+    });
+    expect(screenText(tree)).toContain(month);
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "View" &&
+          String(node.props.testID).startsWith("event-dot-"),
+      ),
+    ).toHaveLength(1);
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      EVENTS_VIEW_STORAGE_KEY,
+      "calendar",
+    );
+  });
+
+  it("opens on Calendar after a restart when Calendar was the last pick", async () => {
+    vi.mocked(AsyncStorage.getItem).mockResolvedValueOnce("calendar");
+    await hydrateEventsView();
+    const tree = render();
+    expect(viewSwitch(tree, "Calendar").props.accessibilityState.checked).toBe(
+      true,
+    );
+    expect(screenText(tree)).toContain(
+      START.toLocaleDateString(undefined, { month: "long", year: "numeric" }),
+    );
+  });
+
+  it("turns the month with the chevrons and lists the chosen day's events", () => {
+    const tree = render();
+    act(() => viewSwitch(tree, "Calendar").props.onPress());
+    const next = START.getMonth() + 1;
+    const nextLabel = new Date(START.getFullYear(), next, 1).toLocaleDateString(
+      undefined,
+      { month: "long", year: "numeric" },
+    );
+    const chevron = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Next month" &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => chevron.props.onPress());
+    expect(screenText(tree)).toContain(nextLabel);
+
+    // Back, then pick the event's day: its row lists under the grid.
+    const prev = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Previous month" &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => prev.props.onPress());
+    const day = tree.root.find(
+      (node) =>
+        typeof node.props.onPress === "function" &&
+        String(node.props.accessibilityLabel).endsWith(", 1 event"),
+    );
+    act(() => day.props.onPress());
+    expect(screenText(tree)).toContain("Chapter meeting");
   });
 });

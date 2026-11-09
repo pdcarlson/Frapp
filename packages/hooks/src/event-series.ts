@@ -92,7 +92,11 @@ export function collapseSeries<T extends object>(
     const key = eventSeriesKey(event);
     const start = startOf(event);
     if (!key || !start || start.getTime() <= now.getTime()) {
-      out.push({ event, series: null, rule: key ? (rules.get(key) ?? null) : null });
+      out.push({
+        event,
+        series: null,
+        rule: key ? (rules.get(key) ?? null) : null,
+      });
       continue;
     }
     const members = upcoming.get(key);

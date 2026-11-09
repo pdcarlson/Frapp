@@ -293,6 +293,8 @@ vi.mock("react-native-gesture-handler", () => {
       "numberOfTaps",
       "runOnJS",
       "minDistance",
+      "activeOffsetX",
+      "failOffsetY",
     ]) {
       gesture[method] = () => gesture;
     }

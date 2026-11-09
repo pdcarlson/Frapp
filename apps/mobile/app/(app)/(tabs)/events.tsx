@@ -1,13 +1,11 @@
-import { useRequiredOfViewer } from "@/lib/events/viewer-roles";
-import { useMemo, useRef } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { useMemo, useRef, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
+import { startOfMonth } from "@repo/formatting";
 import { useActiveChapterId, useEvents, useNowDate } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
-  gutterBleed,
-  PressableRow,
   SectionHeader,
   SectionHeaderSkeleton,
 } from "@/components/list-section";
@@ -21,30 +19,45 @@ import {
   SkeletonText,
 } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
-import { AccentChip, StatusChip } from "@/components/status-chip";
+import { Segmented } from "@/components/segmented";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { useCanCreateEvents } from "@/components/events/new-event-sheet";
+import {
+  createEventRowStyles,
+  EventRowCard,
+  EventRowFlat,
+} from "@/components/events/event-rows";
+import { EventsCalendar } from "@/components/events/events-calendar";
 import { AskPill } from "@/components/chat/ask-pill";
 import { isAskAvailable } from "@/lib/ask/flag";
 import {
-  formatEventDateBlock,
-  resolveCheckInWindow,
-} from "@/lib/events/format";
-import {
-  groupByWeek,
-  selectEventRows,
-  type EventRow,
+  selectAllEventRows,
+  selectEventList,
+  type EventDayGroup,
 } from "@/lib/events/select";
+import {
+  setEventsView,
+  useEventsView,
+  type EventsView,
+} from "@/lib/events/events-view";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * s06 — Events list (`canvas-screens.dc.html:195`).
+ * s06 — Events (`canvas-screens.dc.html:195`), as a List or a Calendar.
  *
- * Rows are the chapter's real events from `GET /v1/events`, filtered to what a
- * member can still act on: anything upcoming, plus anything whose check-in
- * window is still open. Finished events deliberately fall off — attendance
- * history is a reports surface, and a list that grows forever buries tonight's
- * meeting under last semester's.
+ * **List** (#3707): what a member can still act on — anything upcoming, plus
+ * anything whose check-in window is still open — from today through the next
+ * two weeks, under written-out day headings (Today, Tomorrow, Sunday,
+ * November 14). A repeating series is one row, its next occurrence, with
+ * "Every Sunday" after the name; its other dates are on the event's page.
+ * Everything past the two weeks waits behind Later. Finished events fall off:
+ * attendance history is a reports surface.
+ *
+ * **Calendar** (#3792): a month grid marking every occurrence, and the
+ * selected day's events under it (`components/events/events-calendar.tsx`).
+ *
+ * The List | Calendar switch opens on whichever the member used last on this
+ * phone (`lib/events/events-view.ts`; per device, #3823).
  *
  * The ✦ Ask pill in the header is the s06 half of the global Ask entry.
  * `spec/ui/mobile/navigation.md` § Global entries puts it "in the top bar of
@@ -61,21 +74,42 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * the endpoint (#1035), as on s07.
  */
 
+const VIEW_OPTIONS = [
+  { value: "list", label: "List" },
+  { value: "calendar", label: "Calendar" },
+] as const satisfies readonly { value: EventsView; label: string }[];
+
+function startOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
 export default function EventsScreen() {
   const chapterId = useActiveChapterId();
   const router = useRouter();
   const eventsQuery = useEvents();
   const askSheetRef = useRef<BottomSheetModal>(null);
   const canCreateEvents = useCanCreateEvents();
+  const view = useEventsView();
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
 
   // One `now` per render so every row agrees on what "today" and "open" mean,
   // and it ticks so a check-in window opens and closes on a tab that never
   // unmounts rather than staying as it was when the screen first rendered.
   const now = useNowDate();
-  const events = useMemo(
-    () => selectEventRows(eventsQuery.data, now),
+  const list = useMemo(
+    () => selectEventList(eventsQuery.data, now),
     [eventsQuery.data, now],
   );
+  const allEvents = useMemo(
+    () => selectAllEventRows(eventsQuery.data),
+    [eventsQuery.data],
+  );
+
+  // Held here, not in the views, so List → Calendar → List keeps both places.
+  const [showLater, setShowLater] = useState(false);
+  const [monthAnchor, setMonthAnchor] = useState(() => startOfMonth(now));
+  const [selectedDay, setSelectedDay] = useState(() => startOfDay(now));
 
   const refresh = useRefetchAll([eventsQuery]);
 
@@ -85,7 +119,95 @@ export default function EventsScreen() {
     router.push({ pathname: "/event-details", params: { id: eventId } });
   }
 
+  function renderDayGroups(groups: EventDayGroup[], leadCard: boolean) {
+    return groups.map((group, groupIndex) => {
+      // The next event is the page's one card; the rest of its day, and every
+      // later day, sit flush on the floor (owner pick 2026-11-05).
+      const card = leadCard && groupIndex === 0 ? group.entries[0] : null;
+      const flat = card ? group.entries.slice(1) : group.entries;
+      return (
+        <View key={group.day} style={styles.dayGroup}>
+          <SectionHeader>{group.heading}</SectionHeader>
+          {card ? (
+            <EventRowCard
+              event={card.event}
+              cadence={card.cadence}
+              now={now}
+              onPress={() => openEvent(card.event.id)}
+            />
+          ) : null}
+          {flat.length > 0 ? (
+            <View>
+              {flat.map(({ event, cadence }, index) => (
+                <EventRowFlat
+                  key={event.id}
+                  event={event}
+                  cadence={cadence}
+                  now={now}
+                  isFirst={index === 0}
+                  onPress={() => openEvent(event.id)}
+                />
+              ))}
+            </View>
+          ) : null}
+        </View>
+      );
+    });
+  }
+
   function renderList() {
+    const { soon, later } = list;
+    if (soon.length === 0 && later.length === 0) {
+      return (
+        // One line where the rows would be, not a card (`writing.md` § 4,
+        // rule 7): the fact, and for a creator the way to change it, which is
+        // the tab bar's + (New event) rather than a button of the screen's own.
+        <InlineNote>
+          {canCreateEvents
+            ? "Nothing scheduled yet. Tap + to add the first event."
+            : "Nothing scheduled yet."}
+        </InlineNote>
+      );
+    }
+
+    const laterCount = later.reduce(
+      (total, group) => total + group.entries.length,
+      0,
+    );
+
+    return (
+      <>
+        {soon.length > 0 ? (
+          renderDayGroups(soon, true)
+        ) : (
+          <InlineNote>Nothing in the next two weeks.</InlineNote>
+        )}
+        {laterCount > 0 ? (
+          <View style={styles.dayGroup}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                showLater
+                  ? "Hide later events"
+                  : `Show ${laterCount} later ${laterCount === 1 ? "event" : "events"}`
+              }
+              accessibilityState={{ expanded: showLater }}
+              onPress={() => setShowLater((shown) => !shown)}
+              style={styles.laterToggle}
+            >
+              <SectionHeader>Later</SectionHeader>
+              <Text style={styles.laterAction}>
+                {showLater ? "Hide" : `Show ${laterCount}`}
+              </Text>
+            </Pressable>
+            {showLater ? renderDayGroups(later, false) : null}
+          </View>
+        ) : null}
+      </>
+    );
+  }
+
+  function renderBody() {
     // `useEvents` is `enabled: !!chapterId`, so with no active chapter the
     // query never runs and `isPending` never clears. Without this gate the tab
     // showed its loading state forever.
@@ -108,52 +230,20 @@ export default function EventsScreen() {
       );
     }
 
-    if (events.length === 0) {
+    if (view === "calendar") {
       return (
-        // One line where the rows would be, not a card (`writing.md` § 4,
-        // rule 7): the fact, and for a creator the way to change it, which is
-        // the tab bar's + (New event) rather than a button of the screen's own.
-        <InlineNote>
-          {canCreateEvents
-            ? "Nothing scheduled yet. Tap + to add the first event."
-            : "Nothing scheduled yet."}
-        </InlineNote>
+        <EventsCalendar
+          events={allEvents}
+          now={now}
+          monthAnchor={monthAnchor}
+          selectedDay={selectedDay}
+          onMonthChange={setMonthAnchor}
+          onSelectDay={setSelectedDay}
+          onOpen={openEvent}
+        />
       );
     }
-
-    // The next event is the one card on the page; everything after it is a
-    // flush row, as web's Events list draws its rows. Mobile adds the This
-    // week / Later split the Tasks tab already uses (owner pick 2026-11-05,
-    // recorded in `spec/ui/mobile/screens.md` s06).
-    const [next, ...rest] = events;
-    const { thisWeek, later } = groupByWeek(rest, now);
-
-    return (
-      <>
-        <EventRowCard
-          key={next.id}
-          event={next}
-          now={now}
-          onPress={() => openEvent(next.id)}
-        />
-        {thisWeek.length > 0 ? (
-          <EventGroup
-            label="This week"
-            events={thisWeek}
-            now={now}
-            onOpen={openEvent}
-          />
-        ) : null}
-        {later.length > 0 ? (
-          <EventGroup
-            label="Later"
-            events={later}
-            now={now}
-            onOpen={openEvent}
-          />
-        ) : null}
-      </>
-    );
+    return renderList();
   }
 
   return (
@@ -167,191 +257,19 @@ export default function EventsScreen() {
         ) : undefined
       }
     >
-      {renderList()}
+      {chapterId ? (
+        <Segmented
+          options={VIEW_OPTIONS}
+          value={view}
+          onChange={setEventsView}
+          accessibilityLabel="Events view"
+        />
+      ) : null}
+
+      {renderBody()}
 
       <AskSheet ref={askSheetRef} />
     </ScreenShell>
-  );
-}
-
-/**
- * One event, as the board draws it: a date block on the left, and on the
- * right the name (with Mandatory beside it), a muted "6:00 PM · Great Hall"
- * line, then the points chip and the check-in status. The name leads: it is
- * the largest, heaviest text on the card, and the place sits under it at
- * caption size. The card used to stack an accent time caption, a 14pt name and
- * a 16pt location, so the location was the biggest text on every card.
- *
- * The date block's label is neutral: "Today" in the foreground text so the
- * day's event stands out, any other day muted. A date is a label, never the
- * chapter accent (foundations.md §6, "Where the accent goes", 2026-11-05).
- */
-function EventRowCard({
-  event,
-  now,
-  onPress,
-}: {
-  event: EventRow;
-  now: Date;
-  onPress: () => void;
-}) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
-  const required = useRequiredOfViewer()(event.attendance);
-  const window = resolveCheckInWindow(
-    event.start_time,
-    event.end_time,
-    now,
-    event.check_in_opens_minutes,
-  );
-  const date = formatEventDateBlock(event.start_time, now);
-  const meta = [date?.clock, event.location].filter(Boolean).join(" · ");
-  const isOpen = window.state === "open";
-
-  return (
-    <PressableRow
-      accessibilityRole="button"
-      accessibilityLabel={`Open ${event.name}`}
-      accessibilityHint="View event details and check in."
-      onPress={onPress}
-      // The card is itself a card, so it lifts to `surface.popover` on iOS;
-      // `PressableRow` rounds its Android ripple to the card's corners.
-      onCard
-      style={styles.card}
-    >
-      {date ? (
-        <View style={styles.dateBlock}>
-          <Text
-            style={[
-              styles.dateLabel,
-              date.isToday ? styles.dateLabelToday : null,
-            ]}
-          >
-            {date.label}
-          </Text>
-          <Text style={styles.dateDay}>{date.day}</Text>
-        </View>
-      ) : null}
-
-      <View style={styles.body}>
-        <View style={styles.titleRow}>
-          <Text style={styles.title}>{event.name}</Text>
-          {required ? (
-            <StatusChip
-              label="Mandatory"
-              hue={tokens.color.semantic.destructive}
-            />
-          ) : null}
-        </View>
-        {meta ? <Text style={styles.meta}>{meta}</Text> : null}
-
-        {event.point_value || isOpen ? (
-          <View style={styles.footer}>
-            {event.point_value ? (
-              <AccentChip label={`+${event.point_value} pts`} />
-            ) : null}
-            {isOpen ? (
-              <Text style={styles.openNow}>Check-in is open</Text>
-            ) : null}
-          </View>
-        ) : null}
-      </View>
-    </PressableRow>
-  );
-}
-
-function EventGroup({
-  label,
-  events,
-  now,
-  onOpen,
-}: {
-  label: string;
-  events: EventRow[];
-  now: Date;
-  onOpen: (id: string) => void;
-}) {
-  return (
-    <View>
-      <SectionHeader>{label}</SectionHeader>
-      {events.map((event, index) => (
-        <EventRowFlat
-          key={event.id}
-          event={event}
-          now={now}
-          isFirst={index === 0}
-          onPress={() => onOpen(event.id)}
-        />
-      ))}
-    </View>
-  );
-}
-
-/**
- * An event after the first: the same date block and name as the card, on the
- * floor with a hairline between rows. Points move into the meta line, as web
- * writes them ("7:00 PM · Great Room · 10 pts"), and Mandatory sits at the
- * row's end, so a row is one line of chips at most.
- */
-function EventRowFlat({
-  event,
-  now,
-  isFirst,
-  onPress,
-}: {
-  event: EventRow;
-  now: Date;
-  isFirst: boolean;
-  onPress: () => void;
-}) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
-  const required = useRequiredOfViewer()(event.attendance);
-  const date = formatEventDateBlock(event.start_time, now);
-  const meta = [
-    date?.clock,
-    event.location,
-    event.point_value ? `${event.point_value} pts` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  const isOpen =
-    resolveCheckInWindow(
-      event.start_time,
-      event.end_time,
-      now,
-      event.check_in_opens_minutes,
-    ).state === "open";
-
-  return (
-    <PressableRow
-      accessibilityRole="button"
-      accessibilityLabel={`Open ${event.name}`}
-      accessibilityHint="View event details and check in."
-      onPress={onPress}
-      style={[styles.flatRow, isFirst ? null : styles.flatDivider]}
-    >
-      {date ? (
-        <View style={styles.dateBlock}>
-          <Text style={styles.dateLabel}>{date.label}</Text>
-          <Text style={styles.flatDay}>{date.day}</Text>
-        </View>
-      ) : null}
-      <View style={styles.body}>
-        <Text numberOfLines={1} style={styles.flatTitle}>
-          {event.name}
-        </Text>
-        {meta ? (
-          <Text numberOfLines={1} style={styles.meta}>
-            {meta}
-          </Text>
-        ) : null}
-        {isOpen ? <Text style={styles.openNow}>Check-in is open</Text> : null}
-      </View>
-      {required ? (
-        <StatusChip label="Mandatory" hue={tokens.color.semantic.destructive} />
-      ) : null}
-    </PressableRow>
   );
 }
 
@@ -362,11 +280,11 @@ const SKELETON_NAME_WIDTHS = ["62%", "48%", "56%", "52%"] as const;
 const SKELETON_FLAT_ROWS = 3;
 
 /**
- * The list's loading state, on the loaded list's own styles: the next event
- * as {@link EventRowCard} (the 52pt date column, the name and meta lines, a
- * chip where the points land), then a group caption and flat rows as
- * {@link EventRowFlat} draws them, hairline-split. Which caption lands (This
- * week or Later) depends on the data, so it is a bar.
+ * The list's loading state, on the loaded list's own styles: a day heading,
+ * the next event as {@link EventRowCard} (the name and meta lines, a chip
+ * where the points land), then a heading and flat rows as
+ * {@link EventRowFlat} draws them, hairline-split. Which headings land
+ * depends on the data, so they are bars.
  *
  * Exported so `components/screen-skeletons.spec.tsx` can pin its shape.
  */
@@ -377,23 +295,23 @@ export function EventListSkeleton({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const { body, caption, headline, title } = tokens.typography.role;
+  const rowStyles = createEventRowStyles(tokens);
+  const { body, caption, title } = tokens.typography.role;
 
   return (
     <SkeletonRegion label="Loading chapter events" style={styles.skeletonList}>
-      <View style={styles.card}>
-        <View style={styles.dateBlock}>
-          <SkeletonText role={caption} width="70%" />
-          <SkeletonText role={headline} width="50%" />
-        </View>
-        <View style={styles.body}>
-          <SkeletonText role={title} width={SKELETON_NAME_WIDTHS[0]} />
-          <SkeletonText role={caption} width="40%" />
-          <View style={styles.footer}>
-            <SkeletonBlock
-              width={tokens.spacing["3xl"]}
-              height={tokens.spacing.xl}
-            />
+      <View style={styles.dayGroup}>
+        <SectionHeaderSkeleton width="18%" />
+        <View style={rowStyles.card}>
+          <View style={rowStyles.body}>
+            <SkeletonText role={title} width={SKELETON_NAME_WIDTHS[0]} />
+            <SkeletonText role={caption} width="40%" />
+            <View style={rowStyles.footer}>
+              <SkeletonBlock
+                width={tokens.spacing["3xl"]}
+                height={tokens.spacing.xl}
+              />
+            </View>
           </View>
         </View>
       </View>
@@ -403,13 +321,12 @@ export function EventListSkeleton({
         {Array.from({ length: rows }, (_, index) => (
           <View
             key={index}
-            style={[styles.flatRow, index === 0 ? null : styles.flatDivider]}
+            style={[
+              rowStyles.flatRow,
+              index === 0 ? null : rowStyles.flatDivider,
+            ]}
           >
-            <View style={styles.dateBlock}>
-              <SkeletonText role={caption} width="70%" />
-              <SkeletonText role={title} width="44%" />
-            </View>
-            <View style={styles.body}>
+            <View style={rowStyles.body}>
               <SkeletonText
                 role={body}
                 width={
@@ -433,97 +350,22 @@ function createStyles(tokens: SignetTokens) {
     skeletonList: {
       gap: tokens.spacing.md,
     },
-    card: {
-      flexDirection: "row",
-      gap: tokens.spacing.md,
-      borderRadius: tokens.radius.cardLarge,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
-      padding: tokens.spacing.lg,
+    // A day's heading sits close over its rows; days are spaced by the shell.
+    dayGroup: {
+      gap: tokens.spacing.sm,
     },
-    flatRow: {
+    laterToggle: {
       flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.md,
+      alignItems: "flex-end",
+      justifyContent: "space-between",
       minHeight: tokens.touch.minimum,
-      paddingVertical: tokens.spacing.md,
-      // Square and hairline-split like the Directory's member rows, so it
-      // bleeds the same way: content on the gutter line, press feedback clear
-      // of it.
-      ...gutterBleed(tokens, { rounded: false }),
     },
-    flatDivider: {
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: tokens.color.border.hairline,
-    },
-    flatDay: {
-      ...typeRole(tokens.typography.role.title),
-      color: tokens.color.text.foreground,
-    },
-    flatTitle: {
-      ...typeRole(tokens.typography.role.body),
-      fontFamily: typeRole({
-        ...tokens.typography.role.body,
-        weight: tokens.typography.weight.semibold,
-      }).fontFamily,
-      color: tokens.color.text.foreground,
-    },
-    dateBlock: {
-      // 52 as drawn. No spacing token sits near it, and the column has to
-      // hold "TODAY" over a two-digit day without shifting the names beside it.
-      width: 52,
-      alignItems: "center",
-    },
-    dateLabel: {
-      // The board draws 11px / 700. `caption` is the smallest role, so it
-      // keeps the role's size and takes the drawn weight.
-      ...typeRole({
-        ...tokens.typography.role.caption,
-        weight: tokens.typography.weight.bold,
-      }),
-      color: tokens.color.text.mutedForeground,
-      letterSpacing: 0.6,
-      textTransform: "uppercase",
-    },
-    dateLabelToday: {
-      color: tokens.color.text.foreground,
-    },
-    dateDay: {
-      ...typeRole(tokens.typography.role.headline),
-      color: tokens.color.text.foreground,
-    },
-    body: {
-      flex: 1,
-      gap: tokens.spacing.xs,
-    },
-    titleRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      flexWrap: "wrap",
-      gap: tokens.spacing.sm,
-    },
-    title: {
-      flexShrink: 1,
-      ...typeRole(tokens.typography.role.title),
-      color: tokens.color.text.foreground,
-    },
-    meta: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    footer: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-      marginTop: tokens.spacing.xs,
-    },
-    openNow: {
+    laterAction: {
       ...typeRole({
         ...tokens.typography.role.caption,
         weight: tokens.typography.weight.semibold,
       }),
-      color: tokens.color.semantic.success,
+      color: tokens.color.text.mutedForeground,
     },
   });
 }

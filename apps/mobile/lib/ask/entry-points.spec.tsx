@@ -23,7 +23,14 @@ import { useRouter } from "expo-router";
  * (`lib/routes.spec.ts`, `docs/mobile/testing.md` § Gotchas).
  */
 
-vi.mock("@repo/hooks", () => {
+vi.mock("@repo/hooks", async (importOriginal) => {
+  // s06's pure series helpers (#3823), which its list runs on any data.
+  const {
+    collapseSeries,
+    eventSeriesKey,
+    seriesCadenceLabel,
+    splitByHorizon,
+  } = await importOriginal<typeof import("@repo/hooks")>();
   const empty = {
     data: [],
     isPending: false,
@@ -33,6 +40,10 @@ vi.mock("@repo/hooks", () => {
   };
   const now = new Date("2026-09-25T18:00:00Z");
   return {
+    collapseSeries,
+    eventSeriesKey,
+    seriesCadenceLabel,
+    splitByHorizon,
     useNowDate: () => now,
     // s06 gates its list on an active chapter (no chapter, no query).
     useActiveChapterId: () => "chapter-1",

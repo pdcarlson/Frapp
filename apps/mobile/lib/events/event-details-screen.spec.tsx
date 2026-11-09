@@ -57,6 +57,8 @@ let myAttendance: unknown = { attendance: null };
 // That read's state: settled by default.
 let myAttendancePending = false;
 let myAttendancePaused = false;
+// `GET /v1/events`, which the series section reads: none by default.
+let chapterEvents: unknown[] = [];
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -72,6 +74,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPaused: myAttendancePaused,
     data: myAttendancePending ? undefined : myAttendance,
   }),
+  useEvents: () => ({ data: chapterEvents }),
   useEvent: () => ({
     isPending: eventPending,
     isError: false,
@@ -536,5 +539,64 @@ describe("Event details editing", () => {
   it("gives an owner's wildcard the pencil too", () => {
     permissions = ["*"];
     expect(editButton(render()).length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * #3707: the Events list draws a series once, so the occurrence's page lists
+ * the series' other upcoming dates under its cadence.
+ */
+describe("Event details series (#3823)", () => {
+  const weekly = (index: number) => {
+    const start = new Date(START.getTime() + index * 7 * 86_400_000);
+    return {
+      ...EVENT,
+      id: index === 0 ? "evt-1" : `evt-${index + 1}`,
+      start_time: start.toISOString(),
+      end_time: new Date(start.getTime() + 3_600_000).toISOString(),
+      recurrence_rule: index === 0 ? "WEEKLY" : null,
+      parent_event_id: index === 0 ? null : "evt-1",
+    };
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(MOUNTED_AT);
+  });
+
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    vi.useRealTimers();
+    event = EVENT;
+    chapterEvents = [];
+  });
+
+  it("lists the series' other dates under its cadence, each opening its occurrence", () => {
+    chapterEvents = [0, 1, 2, 3].map(weekly);
+    event = chapterEvents[0] as Record<string, unknown>;
+    const tree = render();
+    const weekday = START.toLocaleDateString(undefined, { weekday: "long" });
+    expect(screenText(tree)).toContain(`Every ${weekday}`);
+
+    const dates = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.accessibilityLabel).startsWith("Open Chapter meeting, "),
+    );
+    expect(dates).toHaveLength(3);
+    vi.mocked(expoRouter.useRouter().push).mockClear();
+    act(() => dates[0]!.props.onPress());
+    expect(expoRouter.useRouter().push).toHaveBeenCalledWith({
+      pathname: "/event-details",
+      params: { id: "evt-2" },
+    });
+  });
+
+  it("draws no series section for a one-time event", () => {
+    chapterEvents = [EVENT];
+    const tree = render();
+    expect(screenText(tree)).not.toMatch(/Every |Also in this series/);
   });
 });

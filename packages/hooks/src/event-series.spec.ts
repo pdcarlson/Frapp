@@ -78,9 +78,14 @@ describe("collapseSeries", () => {
   });
 
   it("leaves one-time events alone and reads no rule for them", () => {
-    const collapsed = collapseSeries([oneOff("b", 11, 20), oneOff("a", 11, 10)], NOW);
+    const collapsed = collapseSeries(
+      [oneOff("b", 11, 20), oneOff("a", 11, 10)],
+      NOW,
+    );
     expect(collapsed.map((entry) => entry.event.id)).toEqual(["a", "b"]);
-    expect(collapsed.every((entry) => entry.series === null && entry.rule === null)).toBe(true);
+    expect(
+      collapsed.every((entry) => entry.series === null && entry.rule === null),
+    ).toBe(true);
   });
 
   it("keeps a series whose head is missing, without a rule", () => {
@@ -127,12 +132,24 @@ describe("seriesCadenceLabel", () => {
   });
 
   it("says the day of the month for a monthly series", () => {
-    expect(seriesCadenceLabel("MONTHLY", sunday)).toBe("Every month on the 15th");
-    expect(seriesCadenceLabel("MONTHLY", iso(11, 1))).toBe("Every month on the 1st");
-    expect(seriesCadenceLabel("MONTHLY", iso(11, 2))).toBe("Every month on the 2nd");
-    expect(seriesCadenceLabel("MONTHLY", iso(11, 3))).toBe("Every month on the 3rd");
-    expect(seriesCadenceLabel("MONTHLY", iso(11, 11))).toBe("Every month on the 11th");
-    expect(seriesCadenceLabel("MONTHLY", iso(11, 22))).toBe("Every month on the 22nd");
+    expect(seriesCadenceLabel("MONTHLY", sunday)).toBe(
+      "Every month on the 15th",
+    );
+    expect(seriesCadenceLabel("MONTHLY", iso(11, 1))).toBe(
+      "Every month on the 1st",
+    );
+    expect(seriesCadenceLabel("MONTHLY", iso(11, 2))).toBe(
+      "Every month on the 2nd",
+    );
+    expect(seriesCadenceLabel("MONTHLY", iso(11, 3))).toBe(
+      "Every month on the 3rd",
+    );
+    expect(seriesCadenceLabel("MONTHLY", iso(11, 11))).toBe(
+      "Every month on the 11th",
+    );
+    expect(seriesCadenceLabel("MONTHLY", iso(11, 22))).toBe(
+      "Every month on the 22nd",
+    );
   });
 
   it("says nothing for a one-time event or an unreadable start", () => {

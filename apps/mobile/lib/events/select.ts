@@ -11,13 +11,23 @@
  * detail selector, and a route file importing another route file would drag a
  * whole screen component into the scanner's bundle.
  */
-import type { DeviceInstant } from "@repo/hooks";
+import {
+  collapseSeries,
+  eventSeriesKey,
+  seriesCadenceLabel,
+  splitByHorizon,
+  type DeviceInstant,
+} from "@repo/hooks";
 import {
   attendanceFieldsOf,
   checkInOpensMinutes,
   type EventAttendanceFields,
 } from "@repo/validation";
-import { dayDelta, parseInstant } from "@repo/formatting";
+import {
+  formatDayHeading,
+  localIsoDate,
+  parseInstant,
+} from "@repo/formatting";
 import { isCurrentOrUpcoming, sortEventsByStart } from "./format";
 
 export interface EventRow {
@@ -37,6 +47,20 @@ export interface EventRow {
    * their roles, so a screen asks `useRequiredOfViewer` (`viewer-roles.ts`).
    */
   attendance: EventAttendanceFields;
+  /**
+   * The series rule (`WEEKLY` / `BIWEEKLY` / `MONTHLY`) on a series head,
+   * `null` on a generated occurrence or a one-off. The list collapses a series
+   * by it (`collapseSeries`), and the edit flow reads it (`seriesRuleOf` in
+   * `edit-event.ts`) to tell a series from a one-off.
+   */
+  recurrence_rule: string | null;
+  /**
+   * The series head's id on a generated occurrence, `null` on a head or a
+   * one-off. The list groups a series by it; the edit flow reads it to fetch
+   * the series parent and to ask whether a save covers this occurrence or the
+   * series.
+   */
+  parent_event_id: string | null;
 }
 
 export interface EventDetail extends EventRow {
@@ -59,18 +83,6 @@ export interface EventDetail extends EventRow {
    * exact boundary to anyone who asked for the event.
    */
   hasCheckInZone: boolean;
-  /**
-   * The series rule (`WEEKLY` / `BIWEEKLY` / `MONTHLY`), or `null` for a
-   * one-off. The edit flow reads it (`seriesRuleOf` in `edit-event.ts`) to
-   * tell a series from a one-off and to know the series' rule.
-   */
-  recurrence_rule: string | null;
-  /**
-   * Set on a materialized child occurrence, `null` on a series parent or a
-   * one-off. The edit flow reads it to fetch the series parent and to ask
-   * whether a save covers this occurrence or the series.
-   */
-  parent_event_id: string | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -101,6 +113,8 @@ function toRow(row: Record<string, unknown>): EventRow | null {
     point_value: typeof row.point_value === "number" ? row.point_value : null,
     check_in_opens_minutes: checkInOpensMinutes(row.check_in_opens_minutes),
     attendance: attendanceFieldsOf(row),
+    recurrence_rule: str(row, "recurrence_rule"),
+    parent_event_id: str(row, "parent_event_id"),
   };
 }
 
@@ -113,12 +127,115 @@ function toRow(row: Record<string, unknown>): EventRow | null {
  * semester's.
  */
 export function selectEventRows(data: unknown, now: Date): EventRow[] {
+  return selectAllEventRows(data).filter((row) =>
+    isCurrentOrUpcoming(row.start_time, row.end_time, now),
+  );
+}
+
+/**
+ * Every readable event, past ones included, soonest first: what the calendar
+ * marks (each occurrence of a series on its own day, #3792), and what the
+ * list collapses series from, since a series' rule lives on its head row and
+ * the head may already have happened.
+ */
+export function selectAllEventRows(data: unknown): EventRow[] {
   const rows = (Array.isArray(data) ? data.filter(isRecord) : [])
     .map(toRow)
-    .filter((row): row is EventRow => !!row)
-    .filter((row) => isCurrentOrUpcoming(row.start_time, row.end_time, now));
-
+    .filter((row): row is EventRow => !!row);
   return sortEventsByStart(rows);
+}
+
+/** One row of the s06 list: an event and, for a series, how often it meets. */
+export interface EventListEntry {
+  event: EventRow;
+  /** "Every Sunday" on a series' row, `null` on a one-time event. */
+  cadence: string | null;
+}
+
+/** The rows of one day under its written-out heading ("Tomorrow"). */
+export interface EventDayGroup {
+  /** The local calendar day, `YYYY-MM-DD`: a stable key. */
+  day: string;
+  heading: string;
+  entries: EventListEntry[];
+}
+
+function groupByDay(entries: EventListEntry[], now: Date): EventDayGroup[] {
+  const groups: EventDayGroup[] = [];
+  for (const entry of entries) {
+    const start = parseInstant(entry.event.start_time);
+    if (!start) continue;
+    const day = localIsoDate(start);
+    const last = groups[groups.length - 1];
+    if (last?.day === day) {
+      last.entries.push(entry);
+    } else {
+      groups.push({
+        day,
+        heading: formatDayHeading(entry.event.start_time, now) ?? day,
+        entries: [entry],
+      });
+    }
+  }
+  return groups;
+}
+
+/**
+ * s06's list (#3707): what a member can still act on, a repeating series once
+ * as its next occurrence with "Every Sunday" beside it, grouped under
+ * written-out day headings, split at the two-week horizon into `soon` and
+ * `later`.
+ *
+ * A series meeting that has started and is still open for check-in is the
+ * series' row while it runs: it carries the cadence, and next week's
+ * occurrence stays off the list until it ends, so the series is never drawn
+ * twice.
+ */
+export function selectEventList(
+  data: unknown,
+  now: Date,
+): { soon: EventDayGroup[]; later: EventDayGroup[] } {
+  const visible = collapseSeries(selectAllEventRows(data), now).filter(
+    ({ event }) => isCurrentOrUpcoming(event.start_time, event.end_time, now),
+  );
+
+  // Series with a meeting under way: that meeting is the series' row.
+  const running = new Set<string>();
+  for (const { event, series } of visible) {
+    const key = eventSeriesKey(event);
+    if (key && series === null) running.add(key);
+  }
+
+  const entries: { event: EventRow; cadence: string | null }[] = [];
+  for (const { event, series, rule } of visible) {
+    const key = eventSeriesKey(event);
+    if (key && series !== null && running.has(key)) continue;
+    entries.push({
+      event,
+      cadence: key ? seriesCadenceLabel(rule, event.start_time) : null,
+    });
+  }
+
+  const { soon, later } = splitByHorizon(entries, now);
+  return { soon: groupByDay(soon, now), later: groupByDay(later, now) };
+}
+
+/**
+ * The other upcoming occurrences of the series `event` belongs to, soonest
+ * first, for s07's "Also on" list (#3707). Empty for a one-time event.
+ */
+export function selectSeriesOccurrences(
+  data: unknown,
+  event: Pick<EventRow, "id" | "recurrence_rule" | "parent_event_id">,
+  now: Date,
+): EventRow[] {
+  const key = eventSeriesKey(event);
+  if (!key) return [];
+  return selectAllEventRows(data).filter((row) => {
+    if (row.id === event.id || eventSeriesKey(row) !== key) return false;
+    const start = parseInstant(row.start_time);
+    return !!start && start.getTime() > now.getTime();
+  });
 }
 
 export interface MintedCheckInToken {
@@ -218,29 +335,5 @@ export function selectEventDetail(data: unknown): EventDetail | null {
     check_in_zone_name: str(data, "check_in_zone_name"),
     hasCheckInZone:
       Array.isArray(data.check_in_zone) && data.check_in_zone.length > 0,
-    recurrence_rule: str(data, "recurrence_rule"),
-    parent_event_id: str(data, "parent_event_id"),
   };
-}
-
-/**
- * Splits s06's rows after the lead card into "This week" and "Later".
- *
- * The same calendar-day rule as the row's own date block
- * (`formatEventDateBlock`: weekday under seven days, month after) and as the
- * Tasks board's `THIS_WEEK_DAYS`, so a row that reads "WED" never lands under
- * Later and a row that reads "NOV" never lands under This week. An unparseable
- * `start_time` goes to Later rather than throwing.
- */
-export function groupByWeek(
-  events: EventRow[],
-  now: Date,
-): { thisWeek: EventRow[]; later: EventRow[] } {
-  const thisWeek: EventRow[] = [];
-  const later: EventRow[] = [];
-  for (const event of events) {
-    const start = parseInstant(event.start_time);
-    (start && dayDelta(now, start) < 7 ? thisWeek : later).push(event);
-  }
-  return { thisWeek, later };
 }

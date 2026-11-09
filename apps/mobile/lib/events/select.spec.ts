@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  type EventRow,
-  groupByWeek,
+  selectAllEventRows,
   selectEventDetail,
+  selectEventList,
   selectMyAttendance,
+  selectSeriesOccurrences,
 } from "./select";
 
 function event(overrides: Record<string, unknown> = {}) {
@@ -113,40 +114,133 @@ describe("selectMyAttendance", () => {
   });
 });
 
-describe("groupByWeek", () => {
-  function at(start: Date | string, name: string): EventRow {
-    return {
-      id: name,
-      name,
-      location: null,
-      start_time: typeof start === "string" ? start : start.toISOString(),
-      end_time: typeof start === "string" ? start : start.toISOString(),
-      point_value: null,
-      check_in_opens_minutes: 10,
-      attendance: { is_mandatory: false },
-    };
-  }
-  // Wednesday 8 PM, local time, so the split is by calendar day wherever the
-  // suite runs.
-  const now = new Date(2026, 10, 4, 20, 0);
+/**
+ * #3707 / #3823: a repeating series is one row, the list holds today through
+ * the next two weeks under day headings, and everything after waits in Later.
+ * Local wall-clock times, so the day split holds wherever the suite runs.
+ */
+describe("selectEventList", () => {
+  // Monday Nov 9, 2026, 9:00 AM.
+  const now = new Date(2026, 10, 9, 9, 0);
+  const local = (day: number, hour = 18, month = 11) =>
+    new Date(2026, month - 1, day, hour).toISOString();
+  const row = (id: string, day: number, extra: object = {}) => ({
+    id,
+    name: id,
+    location: null,
+    start_time: local(day),
+    end_time: local(day, 19),
+    point_value: null,
+    ...extra,
+  });
+  /** "Chapter" every Sunday from Nov 8, as the API materializes it. */
+  const chapter = Array.from({ length: 13 }, (_, index) =>
+    row(index === 0 ? "head" : `chapter-${index}`, 8 + index * 7, {
+      name: "Chapter",
+      recurrence_rule: index === 0 ? "WEEKLY" : null,
+      parent_event_id: index === 0 ? null : "head",
+    }),
+  );
 
-  it("splits by calendar day, as the date block does, not by 168 hours", () => {
-    const { thisWeek, later } = groupByWeek(
+  const flatten = (groups: ReturnType<typeof selectEventList>["soon"]) =>
+    groups.flatMap((group) =>
+      group.entries.map((entry) => `${group.heading}: ${entry.event.name}`),
+    );
+
+  it("draws a weekly series once, as its next occurrence, labelled", () => {
+    const { soon, later } = selectEventList(chapter, now);
+    expect(flatten(soon)).toEqual(["Sunday: Chapter"]);
+    expect(soon[0]!.entries[0]!.cadence).toBe("Every Sunday");
+    expect(soon[0]!.entries[0]!.event.id).toBe("chapter-1");
+    expect(later).toEqual([]);
+  });
+
+  it("writes day headings out and splits at the end of the 14th day", () => {
+    const { soon, later } = selectEventList(
       [
-        at(new Date(2026, 10, 10, 23, 0), "next Tuesday night"),
-        // Under 168 hours away, but seven calendar days: its date block reads
-        // the month, so it belongs under Later.
-        at(new Date(2026, 10, 11, 19, 0), "next Wednesday"),
+        row("today", 9),
+        row("tomorrow", 10),
+        row("thursday", 12),
+        row("next week", 17),
+        row("day 14", 23),
+        row("day 15", 24),
       ],
       now,
     );
-    expect(thisWeek.map((e) => e.name)).toEqual(["next Tuesday night"]);
-    expect(later.map((e) => e.name)).toEqual(["next Wednesday"]);
+    expect(flatten(soon)).toEqual([
+      "Today: today",
+      "Tomorrow: tomorrow",
+      "Thursday: thursday",
+      "November 17: next week",
+      "November 23: day 14",
+    ]);
+    expect(flatten(later)).toEqual(["November 24: day 15"]);
+    expect(soon.every((group) => group.entries.every((e) => e.cadence === null))).toBe(true);
   });
 
-  it("files an unparseable start under Later instead of throwing", () => {
-    const { thisWeek, later } = groupByWeek([at("not a date", "broken")], now);
-    expect(thisWeek).toEqual([]);
-    expect(later.map((e) => e.name)).toEqual(["broken"]);
+  it("groups two events on one day under one heading", () => {
+    const { soon } = selectEventList([row("a", 10, { start_time: local(10, 12) }), row("b", 10)], now);
+    expect(soon).toHaveLength(1);
+    expect(soon[0]!.entries.map((entry) => entry.event.id)).toEqual(["a", "b"]);
+  });
+
+  it("puts a series whose next meeting is past the horizon under Later, once", () => {
+    const monthly = [0, 1, 2].map((index) =>
+      row(index === 0 ? "dues" : `dues-${index}`, 28, {
+        start_time: local(28, 18, 11 + index),
+        end_time: local(28, 19, 11 + index),
+        name: "Dues night",
+        recurrence_rule: index === 0 ? "MONTHLY" : null,
+        parent_event_id: index === 0 ? null : "dues",
+      }),
+    );
+    const { soon, later } = selectEventList(monthly, now);
+    expect(soon).toEqual([]);
+    expect(flatten(later)).toEqual(["November 28: Dues night"]);
+    expect(later[0]!.entries[0]!.cadence).toBe("Every month on the 28th");
+  });
+
+  it("shows a series meeting that is under way as the series' row, not twice", () => {
+    // Sunday Nov 15, 6:05 PM: chapter-1 started five minutes ago.
+    const during = new Date(2026, 10, 15, 18, 5);
+    const { soon } = selectEventList(chapter, during);
+    const rows = soon.flatMap((group) => group.entries);
+    expect(rows.map((entry) => entry.event.id)).toEqual(["chapter-1"]);
+    expect(rows[0]!.cadence).toBe("Every Sunday");
+  });
+});
+
+describe("selectSeriesOccurrences", () => {
+  const now = new Date(2026, 10, 9, 9, 0);
+  const at = (id: string, day: number, parent: string | null, rule: string | null = null) => ({
+    id,
+    name: "Chapter",
+    start_time: new Date(2026, 10, day, 18).toISOString(),
+    end_time: new Date(2026, 10, day, 19).toISOString(),
+    recurrence_rule: rule,
+    parent_event_id: parent,
+  });
+  const data = [
+    at("head", 8, null, "WEEKLY"),
+    at("c1", 15, "head"),
+    at("c2", 22, "head"),
+    at("c3", 29, "head"),
+    { ...at("other", 16, null), name: "Social" },
+  ];
+
+  it("lists the series' other upcoming dates, soonest first", () => {
+    const [, c1] = selectAllEventRows(data);
+    expect(c1!.id).toBe("c1");
+    expect(selectSeriesOccurrences(data, c1!, now).map((e) => e.id)).toEqual(["c2", "c3"]);
+  });
+
+  it("reaches the children from the head", () => {
+    const head = selectAllEventRows(data)[0]!;
+    expect(selectSeriesOccurrences(data, head, now).map((e) => e.id)).toEqual(["c1", "c2", "c3"]);
+  });
+
+  it("is empty for a one-time event", () => {
+    const other = selectAllEventRows(data).find((e) => e.id === "other")!;
+    expect(selectSeriesOccurrences(data, other, now)).toEqual([]);
   });
 });

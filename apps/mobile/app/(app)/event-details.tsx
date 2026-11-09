@@ -5,7 +5,10 @@ import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
+  eventSeriesKey,
+  seriesCadenceLabel,
   useEvent,
+  useEvents,
   useMyAttendance,
   useNowDate,
   usePermissionList,
@@ -38,10 +41,14 @@ import {
   type CheckInWindow,
 } from "@/lib/events/format";
 import {
+  selectAllEventRows,
   selectEventDetail,
   selectMyAttendance,
+  selectSeriesOccurrences,
   type EventDetail,
 } from "@/lib/events/select";
+import { PressableRow } from "@/components/list-section";
+import { createEventRowStyles } from "@/components/events/event-rows";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { InlineNote } from "@/components/inline-note";
 
@@ -237,6 +244,7 @@ export default function EventDetailsScreen() {
           />
         ) : null}
 
+        <SeriesSection event={event} now={now} />
       </ScreenShell>
       {grants.edit && editTarget ? (
         <NewEventSheet
@@ -474,6 +482,71 @@ export function EventDetailSkeleton() {
 }
 
 /** DETAILS and INTERNAL NOTES share this shape; only the label and body differ. */
+/**
+ * The rest of a repeating series under the occurrence on screen (#3707): the
+ * Events list draws a series once, so this is where its other dates are. Its
+ * caption is the cadence ("EVERY SUNDAY"), and each date opens that
+ * occurrence. Read from the cached Events list (`useEvents`), which already
+ * holds every occurrence; nothing draws for a one-time event, or until the
+ * list has loaded.
+ */
+function SeriesSection({ event, now }: { event: EventDetail; now: Date }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const rowStyles = createEventRowStyles(tokens);
+  const router = useRouter();
+  const key = eventSeriesKey(event);
+  const eventsQuery = useEvents({ enabled: !!key });
+  const occurrences = useMemo(
+    () => selectSeriesOccurrences(eventsQuery.data, event, now),
+    [eventsQuery.data, event, now],
+  );
+  if (!key || occurrences.length === 0) return null;
+
+  // The rule lives on the series head, which may be this event.
+  const head = selectAllEventRows(eventsQuery.data).find(
+    (row) => row.id === key,
+  );
+  const cadence = seriesCadenceLabel(
+    head?.recurrence_rule ?? event.recurrence_rule,
+    event.start_time,
+  );
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionLabel}>{cadence ?? "Also in this series"}</Text>
+      <View>
+        {occurrences.map((occurrence, index) => {
+          const when = formatEventWindow(
+            occurrence.start_time,
+            occurrence.end_time,
+            now,
+          );
+          return (
+            <PressableRow
+              key={occurrence.id}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${event.name}, ${when}`}
+              onPress={() =>
+                router.push({
+                  pathname: "/event-details",
+                  params: { id: occurrence.id },
+                })
+              }
+              style={[
+                rowStyles.flatRow,
+                index === 0 ? null : rowStyles.flatDivider,
+              ]}
+            >
+              <Text style={styles.sectionBody}>{when}</Text>
+            </PressableRow>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 function DetailSection({
   label,
   body,
