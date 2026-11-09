@@ -44,6 +44,12 @@ type Props = {
   onSelect?: () => void;
   /** Trailing marks after the label (an unread dot, a chevron). Expanded rows only. */
   trailing?: ReactNode;
+  /**
+   * Something new behind this row (#3824), named for a screen reader ("unread
+   * messages"). The row draws bright and semibold with a dot, and in the rail
+   * the dot sits on the glyph.
+   */
+  highlight?: string;
 };
 
 function isGranted(
@@ -131,6 +137,7 @@ export function ProtectedNavItem({
   collapsed = false,
   onSelect,
   trailing,
+  highlight,
 }: Props) {
   if (!isNavItemVisible(item, permissions, isModuleEnabled, hiddenFeatures)) {
     return null;
@@ -159,22 +166,45 @@ export function ProtectedNavItem({
      * web as well as mobile (foundations §9) - so the row is 44px until
      * the desktop breakpoint, then takes the board's density.
      */
-    "flex min-h-touch items-center rounded-[10px] text-left text-sm transition lg:h-[34px] lg:min-h-0",
+    "relative flex min-h-touch items-center rounded-[10px] text-left text-sm transition lg:h-[34px] lg:min-h-0",
     collapsed ? "w-[34px] justify-center" : "w-full gap-2.5 px-2.5",
     focusClassName,
     isActive
       ? "bg-accent-subtle font-semibold text-accent-text"
-      : "text-muted-foreground hover:bg-card hover:text-foreground",
+      : highlight
+        ? // Something new (#3824): bright and semibold, the way an unread
+          // channel row draws, so it reads lit at a glance and stays lit.
+          "font-semibold text-foreground hover:bg-card"
+        : "text-muted-foreground hover:bg-card hover:text-foreground",
   );
+  // The rail's `aria-label` replaces the row's content, the sr-only words
+  // included, so it carries them itself.
+  const railLabel = highlight ? `${item.label}, ${highlight}` : item.label;
+  const dot = highlight ? (
+    <span
+      aria-hidden="true"
+      data-nav-highlight=""
+      className={cn(
+        "h-1.5 w-1.5 shrink-0 rounded-full bg-foreground",
+        // In the rail there is no label to trail, so the dot sits on the glyph.
+        collapsed && "absolute right-1 top-1",
+      )}
+    />
+  ) : null;
   const content = (
     <>
       <item.icon className={iconClassName} active={isActive} />
       {collapsed ? null : <span className="truncate">{item.label}</span>}
-      {collapsed || !trailing ? null : (
+      {collapsed ? dot : null}
+      {collapsed || (!trailing && !dot) ? null : (
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          {dot}
           {trailing}
         </span>
       )}
+      {highlight && !collapsed ? (
+        <span className="sr-only">, {highlight}</span>
+      ) : null}
     </>
   );
 
@@ -184,7 +214,7 @@ export function ProtectedNavItem({
         type="button"
         onClick={onSelect}
         aria-current={current}
-        aria-label={collapsed ? item.label : undefined}
+        aria-label={collapsed ? railLabel : undefined}
         title={collapsed ? item.label : item.description}
         className={className}
       >
@@ -200,7 +230,7 @@ export function ProtectedNavItem({
       aria-current={current}
       // In the rail the label has nowhere to render, so the accessible name
       // has to come from somewhere other than the text content.
-      aria-label={collapsed ? item.label : undefined}
+      aria-label={collapsed ? railLabel : undefined}
       title={collapsed ? item.label : item.description}
       className={className}
     >

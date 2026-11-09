@@ -59,7 +59,19 @@ type AppNavProps = {
    * gives it (the unread dot and a chevron).
    */
   chatRow?: { onSelect: () => void; trailing: ReactNode };
+  /**
+   * Ids of rows with something new for the member (today Chat's unread,
+   * `use-chat-has-unread.ts`; the only row the app counts). A highlighted row
+   * draws bright and semibold with a dot, on every route and in the drawer,
+   * until the count clears (#3824).
+   */
+  highlighted?: ReadonlySet<string>;
   className?: string;
+};
+
+/** What a screen reader hears after a highlighted row's name. */
+const HIGHLIGHT_LABEL: Record<string, string> = {
+  chat: "unread messages",
 };
 
 /** 18px duotone glyph, per `1b` pin 2. */
@@ -88,6 +100,7 @@ export function AppNav({
   onNavigate,
   variant = "column",
   chatRow,
+  highlighted,
   className,
 }: AppNavProps) {
   const isDrawer = variant === "drawer";
@@ -142,6 +155,11 @@ export function AppNav({
             isModuleEnabled={isModuleEnabled}
             hiddenFeatures={hiddenFeatures}
             collapsed={isCollapsed}
+            highlight={
+              highlighted?.has(item.id)
+                ? (HIGHLIGHT_LABEL[item.id] ?? "new")
+                : undefined
+            }
             {...(chatRow && item.id === "chat"
               ? { onSelect: chatRow.onSelect, trailing: chatRow.trailing }
               : {})}

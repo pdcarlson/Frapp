@@ -33,6 +33,8 @@ import { NoAccessRedirect } from "@/components/layout/no-access-redirect";
 import { TermsPromptGate } from "@/components/auth/terms-prompt";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useChatRealtimeBinding } from "@/lib/chat/use-chat-realtime-binding";
+import { useChatHasUnread } from "@/components/layout/use-chat-has-unread";
 import { cn } from "@/lib/utils";
 
 /**
@@ -64,6 +66,8 @@ import { cn } from "@/lib/utils";
  * list that can drift.
  */
 
+const NO_HIGHLIGHTS: ReadonlySet<string> = new Set();
+
 type DashboardShellProps = {
   children: React.ReactNode;
   /**
@@ -84,6 +88,16 @@ export function DashboardShell({
   // semantic tokens signet.css defines. Mounted here (not in ChatProvider) so
   // the nav's active-item tint does not depend on which route is open.
   useChapterTheme();
+  // Chat's inbox, joined on every page, so a message arriving while the member
+  // is on Events lights the nav's Chat row within seconds (#3745).
+  useChatRealtimeBinding();
+  // Rows with something new, lit on every route and in the drawer until seen
+  // (#3824). Chat is the only row the app counts today.
+  const chatHasUnread = useChatHasUnread();
+  const highlightedNav = useMemo<ReadonlySet<string>>(
+    () => (chatHasUnread ? new Set(["chat"]) : NO_HIGHLIGHTS),
+    [chatHasUnread],
+  );
 
   const [navCollapsed, setNavCollapsed] = useState(defaultNavCollapsed);
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
@@ -209,6 +223,7 @@ export function DashboardShell({
             permissions={permissions}
             isModuleEnabled={isModuleEnabled}
             pathname={pathname}
+            highlighted={highlightedNav}
             onNavigate={() => setMobileNavOpen(false)}
           />
           <div className="mt-2 shrink-0 border-t border-border pt-2">
@@ -240,6 +255,7 @@ export function DashboardShell({
           permissions={permissions}
           isModuleEnabled={isModuleEnabled}
           pathname={pathname}
+          highlighted={highlightedNav}
         />
       </div>
 

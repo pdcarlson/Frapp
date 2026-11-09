@@ -1,21 +1,13 @@
 "use client";
 
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { ChevronRight } from "lucide-react";
-import {
-  countsAddressMember,
-  sidebarUnreadCounts,
-  useChannelNotificationPreferences,
-  useChannelUnreadCounts,
-  useChannels,
-} from "@repo/hooks";
 import { signetDarkTokens } from "@repo/theme/signet";
-import { isDirectChannel } from "@repo/validation";
 import { AppNav } from "@/components/layout/app-nav";
 import { ChapterNavHeader } from "@/components/layout/chapter-nav-header";
-import { NavBackButton, type NavFace } from "@/components/layout/nav-face";
+import { NavChannelsTitle, type NavFace } from "@/components/layout/nav-face";
 import { ChannelListSkeleton } from "@/components/chat/channel-list-skeleton";
-import { asArray, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 /**
  * The desktop shell's left column, on every route from `lg` up: one column, one
@@ -72,6 +64,11 @@ type NavColumnProps = {
   permissions: readonly string[] | null | undefined;
   isModuleEnabled?: (moduleKey: string) => boolean;
   pathname: string;
+  /**
+   * Nav rows with something new for the member (`AppNav`'s `highlighted`),
+   * lit on every route until it has been seen.
+   */
+  highlighted?: ReadonlySet<string>;
 };
 
 const SLIDE =
@@ -82,75 +79,13 @@ const SLIDE_STYLE = {
 } as const;
 
 /**
- * Whether Chat has anything new the member would want to know about while the
- * channels are out of sight. Two ways in, the same two the channel list draws:
- *
- * - **Addressed**: an @-mention, or anything unread in a DM. It gets past a
- *   mute, as it does for push and for the list's Hide muted filter
- *   (`countsAddressMember`, foundations §5).
- * - **Unread in a channel known not to be muted.** Levels are read from the
- *   last good preferences, so a failed refetch keeps a muted channel muted;
- *   while they have never loaded, plain unread lights nothing.
- *
- * Counts are the server's (`GET /v1/channels/unread`, the read the list uses),
- * never a local re-derivation, and unknown counts light nothing.
+ * What the Chat row trails on `/chat`'s modules face: the chevron that says the
+ * row slides the channels back rather than navigating. The unread dot is the
+ * row's own highlight now (`ProtectedNavItem`), drawn on every route.
  */
-function useChatHasUnread(): boolean {
-  const unreadQuery = useChannelUnreadCounts();
-  const prefsQuery = useChannelNotificationPreferences();
-  const channelsQuery = useChannels();
-  return useMemo(() => {
-    const counts = sidebarUnreadCounts({
-      data: unreadQuery.data,
-      isError: unreadQuery.isError,
-    });
-    if (!counts) return false;
-    const directIds = new Set(
-      asArray<{ id: string; type: string }>(channelsQuery.data)
-        .filter(isDirectChannel)
-        .map((c) => c.id),
-    );
-    const levels = prefsQuery.data
-      ? new Map(prefsQuery.data.map((row) => [row.channel_id, row.level]))
-      : undefined;
-    for (const [channelId, c] of counts) {
-      if (countsAddressMember(directIds.has(channelId), c)) return true;
-      if (c.unreadCount > 0 && levels && levels.get(channelId) !== "off") {
-        return true;
-      }
-    }
-    return false;
-  }, [
-    unreadQuery.data,
-    unreadQuery.isError,
-    prefsQuery.data,
-    channelsQuery.data,
-  ]);
-}
-
-/**
- * What the Chat row trails on `/chat`'s modules face: the unread dot, when
- * there is something new, and the chevron that says the row goes somewhere.
- * A component of its own so the unread reads run only on `/chat`, while the
- * nav around it stays one mounted instance on every route.
- */
-function ChatRowTrailing() {
-  const hasUnread = useChatHasUnread();
-  return (
-    <>
-      {hasUnread ? (
-        <>
-          <span
-            aria-hidden="true"
-            className="h-1.5 w-1.5 rounded-full bg-foreground"
-          />
-          <span className="sr-only">, unread messages</span>
-        </>
-      ) : null}
-      <ChevronRight className="h-3.5 w-3.5 text-muted" aria-hidden="true" />
-    </>
-  );
-}
+const CHAT_ROW_TRAILING = (
+  <ChevronRight className="h-3.5 w-3.5 text-muted" aria-hidden="true" />
+);
 
 export function NavColumn({
   chatFace,
@@ -162,6 +97,7 @@ export function NavColumn({
   permissions,
   isModuleEnabled,
   pathname,
+  highlighted,
 }: NavColumnProps) {
   const onChat = chatFace !== null;
   const face: NavFace = chatFace ?? "modules";
@@ -256,10 +192,7 @@ export function NavColumn({
           {onChat ? (
             <div className="hidden min-h-0 flex-1 flex-col peer-empty:flex">
               <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-3">
-                <NavBackButton onClick={onShowModules} />
-                <span className="text-sm font-semibold text-foreground">
-                  Channels
-                </span>
+                <NavChannelsTitle onBack={onShowModules} heading={false} />
               </div>
               <div aria-hidden="true" className="p-2">
                 <ChannelListSkeleton />
@@ -286,9 +219,10 @@ export function NavColumn({
             permissions={permissions}
             isModuleEnabled={isModuleEnabled}
             pathname={pathname}
+            highlighted={highlighted}
             chatRow={
               onChat
-                ? { onSelect: onShowChannels, trailing: <ChatRowTrailing /> }
+                ? { onSelect: onShowChannels, trailing: CHAT_ROW_TRAILING }
                 : undefined
             }
           />

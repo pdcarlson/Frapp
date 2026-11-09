@@ -3005,6 +3005,52 @@ describe("ChatShell narrow viewports (#2142)", () => {
       expect(columns().thread.className).not.toContain("max-lg:hidden");
     });
   });
+
+  it("gives the way back a 40px target, not the 32px compact control (#3824)", () => {
+    render(<ChatShell />);
+    const back = screen.getByRole("button", { name: "Back to channels" });
+    expect(back).toHaveClass("h-10", "w-10");
+  });
+
+  it("returns to the list on Esc, and leaves an Esc typed in a field alone (#3824)", async () => {
+    render(<ChatShell />);
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    try {
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      await waitFor(() => {
+        expect(columns().channels.className).not.toContain("max-lg:hidden");
+      });
+    } finally {
+      input.remove();
+    }
+  });
+
+  it("returns from a picked channel on the browser's Back (#3824)", async () => {
+    // jsdom keeps one history across the file; start off a plain entry.
+    window.history.replaceState(null, "");
+    render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    await waitFor(() => {
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    });
+
+    // The pick is a step Back can undo: it pushes a marked same-URL entry.
+    fireEvent.click(screen.getByTestId("pick-random"));
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+    expect(window.history.state).toMatchObject({ frappChatThreadPane: true });
+
+    // jsdom's `history.back()` fires `popstate` asynchronously.
+    window.history.back();
+    await waitFor(() => {
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    });
+  });
 });
 
 /**
