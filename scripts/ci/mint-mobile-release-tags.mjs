@@ -29,6 +29,7 @@
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
+import { parseRegistry } from "./lib/shipped-builds-registry.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 export const TAG_PREFIX = "mobile-v";
@@ -197,9 +198,19 @@ function mintTag(repo, { tag, sha, version }) {
   }
 }
 
+/**
+ * The registry's `builds`, through the registry's own parse: a key repeated
+ * inside one entry fails here rather than tagging whichever value JSON.parse
+ * kept (#3783). Dropped builds are left out, as a deleted entry was before
+ * `dropped` existed; folding them back in by date reorders same-day builds,
+ * which would rewrite a published Release and point it at another commit.
+ */
+export function registryBuilds(text) {
+  return parseRegistry(text).builds;
+}
+
 export function run({ registryPath, repo, log = console.log }) {
-  const registry = JSON.parse(readFileSync(registryPath, "utf8"));
-  const plan = planMobileReleases(registry, { repo });
+  const plan = planMobileReleases({ builds: registryBuilds(readFileSync(registryPath, "utf8")) }, { repo });
   let warnings = 0;
 
   for (const release of plan) {

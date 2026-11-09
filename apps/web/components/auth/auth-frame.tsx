@@ -1,8 +1,8 @@
 /**
  * The signed-out frame: the form on the left, the product on the right.
  *
- * Mounted once by `app/(auth)/layout.tsx` for `/sign-in`, `/sign-up`, `/join`
- * and `/no-access` (`/` redirects to `/sign-in`), so moving between them swaps
+ * Mounted once by `app/(auth)/layout.tsx` for `/sign-in`, `/sign-up`, `/join`,
+ * `/no-access` and `/new-account` (`/` redirects to `/sign-in`), so moving between them swaps
  * only the form column and the showcase keeps playing instead of restarting. Paul asked for this on
  * 2026-11-05: the single centred column these routes drew before was the
  * mobile s01 layout stretched onto a desktop, and sign-in and sign-up should

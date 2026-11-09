@@ -37,7 +37,8 @@
 //     and it must not become an entry that says otherwise.
 // The values are EAS's own (`appVersion`, `appBuildVersion`), the version and
 // build number the binary sends in `X-Client-Version`, and the result is
-// validated with the checker's own `parseRegistry` before it is written.
+// validated with the registry's own `parseRegistry` (`lib/shipped-builds-registry.mjs`)
+// before it is written.
 //
 // ── How it fails ────────────────────────────────────────────────────────────
 // Exits 1 when a build it should record can't be (no token, an API refusal, a
@@ -74,11 +75,10 @@
 //   GITHUB_STEP_SUMMARY — where the summary goes
 
 import { appendFileSync } from "node:fs";
-import { parseRegistry } from "../check-api-breaking-changes.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
+import { REGISTRY_PATH, mergeRegistry } from "./lib/shipped-builds-registry.mjs";
 
-export const REGISTRY_PATH = "apps/mobile/store/shipped-builds.json";
 
 /** Each requested platform, and the store platforms it builds. */
 export const PLATFORMS_FOR = Object.freeze({
@@ -185,24 +185,6 @@ export function planRecord({ builds, platform, uploads, sha, recorded, buildResu
   return { rows, entries, problems };
 }
 
-/** The `<platform>/<version>+<build>` key the checker uses for a duplicate. */
-const keyOf = (b) => `${b.platform}/${b.version}+${b.build}`;
-
-/**
- * The registry with `entries` appended, as file text, and which entries were
- * new. An entry already listed (a re-run after the PR merged) is not added
- * twice. Throws when the current file or the result fails `parseRegistry`.
- */
-export function mergeRegistry(text, entries) {
-  const { builds } = parseRegistry(text);
-  const listed = new Set(builds.map(keyOf));
-  const added = entries.filter((e) => !listed.has(keyOf(e)));
-  const merged = { builds: [...builds, ...added] };
-  const next = `${JSON.stringify(merged, null, 2)}\n`;
-  parseRegistry(next);
-  return { text: next, added };
-}
-
 const label = (e) => `${DISPLAY[e.platform]} ${e.version} (${e.build})`;
 
 export function branchName({ runId, runAttempt }) {
@@ -226,7 +208,7 @@ export function prBody({ entries, rows, sha, runUrl, repo }) {
     "",
     `This adds one \`${REGISTRY_PATH}\` entry per submitted build, so this PR's \`api-contract-check\` holds the API to the contract at \`${sha}\` ([\`apps/mobile/store/README.md\` § Shipped builds and the API contract](https://github.com/${repo}/blob/main/apps/mobile/store/README.md#shipped-builds-and-the-api-contract)). Merge it before any tester installs one of these builds: until then the gate doesn't protect them.`,
     "",
-    `EAS accepted each submission, and Expo may still be uploading it. [The run](${runUrl})'s \`confirm\` job says whether each upload finished. If one failed, drop its entry before merging, or in a PR of its own once this has merged.`,
+    `EAS accepted each submission, and Expo may still be uploading it. [The run](${runUrl})'s \`confirm\` job says whether each upload finished. If one failed, drop its entry before merging, or, once this has merged, move it to the registry's \`dropped\` list in a PR of its own.`,
     "",
     `**If \`api-contract-check\` fails here,** \`main\` has already changed the API in a way these builds can't take (it is ahead of \`${sha}\`). Fix that on \`main\` before the next production ship, or waive a route no shipped binary calls as the README says, then re-run the check. Don't merge around it.`,
     "",

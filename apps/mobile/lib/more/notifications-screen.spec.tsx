@@ -56,6 +56,9 @@ const NOTIFICATIONS = [
 /** What the inbox query returns; a spec sets `data` for an inbox of its own. */
 const inbox = vi.hoisted(() => ({ data: null as unknown[] | null }));
 
+/** The read receipt the screen sends; stable so a spec can assert on a tap. */
+const markRead = vi.hoisted(() => ({ mutate: vi.fn(), mutateAsync: vi.fn() }));
+
 /** The inbox query's `refetch`, kept stable so a spec can assert on a pull. */
 const refetchInbox = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 
@@ -69,7 +72,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     data: inbox.data ?? NOTIFICATIONS,
     refetch: refetchInbox,
   }),
-  useMarkNotificationRead: () => ({ mutateAsync: vi.fn() }),
+  useMarkNotificationRead: () => markRead,
 }));
 
 import { signetDarkTokens } from "@repo/theme/signet";
@@ -362,5 +365,42 @@ describe("Notification row press feedback", () => {
     ) as Record<string, number>;
 
     expect(dotStyle.marginTop * 2 + dotStyle.height).toBe(title.lineHeight);
+  });
+});
+
+/**
+ * #3788. Opening a notification from the inbox marks it read; the screen sends
+ * the receipt itself, and a row that is already read sends none.
+ */
+describe("Notifications row tap marks read (#3788)", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    inbox.data = null;
+    markRead.mutate.mockClear();
+  });
+
+  function pressRow(tree: ReactTestRenderer, title: string) {
+    const row = tree.root.find(
+      (node) =>
+        typeof node.props.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.startsWith(title) &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => row.props.onPress());
+  }
+
+  it("sends the read receipt for an unread row", () => {
+    const tree = render();
+    pressRow(tree, "Dues reminder");
+    expect(markRead.mutate).toHaveBeenCalledWith("notif-1");
+  });
+
+  it("sends nothing for a row already read", () => {
+    inbox.data = [{ ...NOTIFICATIONS[0], read_at: CREATED_AT.toISOString() }];
+    const tree = render();
+    pressRow(tree, "Dues reminder");
+    expect(markRead.mutate).not.toHaveBeenCalled();
   });
 });
