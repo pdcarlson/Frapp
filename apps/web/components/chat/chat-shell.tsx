@@ -55,6 +55,8 @@ import {
 } from "@repo/hooks";
 import {
   can,
+  canAll,
+  EVENT_CREATE_PERMISSIONS,
   isAnnouncementChannel,
   type MentionCandidate,
   type MentionChipTargets,
@@ -111,7 +113,12 @@ import {
   MessageTimelineSkeleton,
   type MessageTimelineHandle,
 } from "./message-timeline";
-import { Composer, ComposerShell, notifyDispatchOutcome } from "./composer";
+import {
+  Composer,
+  ComposerShell,
+  notifyDispatchOutcome,
+  type CommandFormOutcome,
+} from "./composer";
 import {
   canBlockSender,
   channelAllowsReplies,
@@ -146,7 +153,13 @@ import {
   useIsDesktopShell,
   useNavFace,
 } from "@/components/layout/nav-face";
-import type { SlashCommand } from "@repo/chat-core/integrations";
+import {
+  eventFormPrefill,
+  parseEventArgs,
+  type EventFormPrefill,
+  type SlashCommand,
+} from "@repo/chat-core/integrations";
+import { EventEditorDialog } from "@/components/events/event-editor-dialog";
 import type { ChatNotificationLevel } from "@repo/hooks";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 
@@ -209,6 +222,19 @@ const UNREACHABLE_COPY: Record<UnreachableReason, string> = {
 };
 
 /**
+ * A typed `/event` date and clock time as a `datetime-local` value, or
+ * `undefined` unless both are there (the form's field takes neither alone).
+ */
+export function prefillLocalInput(
+  date: string | undefined,
+  time: string | undefined,
+): string | undefined {
+  if (!date || !time) return undefined;
+  const [hours = "", minutes = ""] = time.split(":");
+  return `${date}T${hours.padStart(2, "0")}:${minutes}`;
+}
+
+/**
  * The chat surface: channels column, then thread and composer.
  *
  * **Two columns, flush, full height** (`1b`). It was three, the third being a
@@ -233,6 +259,7 @@ const UNREACHABLE_COPY: Record<UnreachableReason, string> = {
  * is what the board's first-paint contract asks for. The no-chapter branch was
  * the last exception and is one too, as of #2145.
  */
+
 export function ChatShell({
   initialChannelId = null,
   initialMessageId = null,
@@ -917,6 +944,42 @@ export function ChatShell({
   const canManageChannel = can(
     "channels:manage",
     permissionsPayload?.permissions,
+  );
+
+  // `/event` typed bare, with details the one-liner can't read, or picked
+  // from the palette opens the Events page's own form, filled in with what
+  // was typed, and the card posts in the channel it came from (#3773).
+  const [eventForm, setEventForm] = useState<{
+    open: boolean;
+    channelId: string;
+    prefill: EventFormPrefill;
+  } | null>(null);
+  const openCommandForm = useCallback(
+    (command: SlashCommand, args: string): CommandFormOutcome => {
+      if (command.name !== "event" || !activeChannelId) return null;
+      if (parseEventArgs(args).ok) return null;
+      // Unknown until the read lands, and the server enforces it either way,
+      // so only a loaded grant without it refuses before the form opens.
+      if (
+        permissionsPayload &&
+        !canAll(EVENT_CREATE_PERMISSIONS, permissionsPayload.permissions)
+      ) {
+        toast({
+          title: "You can't create events",
+          description:
+            "Your role doesn't include creating events. An officer can add it in Settings.",
+          variant: "destructive",
+        });
+        return "refused";
+      }
+      setEventForm({
+        open: true,
+        channelId: activeChannelId,
+        prefill: eventFormPrefill(args),
+      });
+      return "opened";
+    },
+    [activeChannelId, permissionsPayload, toast],
   );
 
   // Memoised because the timeline hands it to the virtualizer's header
@@ -2436,6 +2499,7 @@ export function ChatShell({
                 resolveMember,
               )
             }
+            onOpenCommandForm={openCommandForm}
             onTyping={channel.emitTyping}
             isModuleEnabled={isModuleEnabled}
             recruitmentVocab={recruitmentVocab}
@@ -2517,6 +2581,34 @@ export function ChatShell({
       {confirmDialog}
       {unblockFlow.confirmDialog}
       {blockFlow.confirmDialog}
+      {/* Mounted from the first `/event` on, so it can animate closed. */}
+      {eventForm ? (
+        <EventEditorDialog
+          open={eventForm.open}
+          onOpenChange={(open) =>
+            setEventForm((previous) =>
+              previous ? { ...previous, open } : previous,
+            )
+          }
+          mode="create"
+          event={null}
+          usingPreviewData={false}
+          onSaved={() => undefined}
+          initialName={eventForm.prefill.name}
+          initialLocation={eventForm.prefill.location}
+          initialPointValue={eventForm.prefill.pointValue}
+          initialStartAt={prefillLocalInput(
+            eventForm.prefill.date,
+            eventForm.prefill.startTime,
+          )}
+          initialEndAt={prefillLocalInput(
+            eventForm.prefill.date,
+            eventForm.prefill.endTime,
+          )}
+          postToChannelId={eventForm.channelId}
+          trackChatCard={channel.trackEventCard}
+        />
+      ) : null}
       <ReportMessageDialog
         key={reportTarget?.messageId ?? "closed"}
         target={reportTarget}
