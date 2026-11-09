@@ -42,10 +42,15 @@ Body:
   the originating PR, and an `### Agent brief` (`depth:` / `model:` / `ultracode:`; lean toward
   `depth:deep`; syntax in
   [`github-pm.md`](../../../docs/ci-cd/github-pm.md#agent-briefs-depth--model--ultracode)).
+- **Who asked:** the first line names the person whose request it is ("Asked by Shawn, 2026-11-09"), or the routine or PR it came from.
 - **Problem/context:** what's wrong and why it matters, with exact file paths and line refs.
 - **Acceptance criteria:** objectively verifiable checkboxes.
 - **Implementation notes:** constraints, helpers to reuse, gotchas.
 - **Definition of done:** "PR linked with `Fixes #N`, criteria met, CI green."
+
+Epic: when an open epic covers the area (an `[Epic]` issue; `list_issues` and search), attach the new
+issue to it as a sub-issue (`sub_issue_write`) instead of leaving it loose. When three or more related
+issues have no epic, say so in your report as a candidate epic for Paul; don't create one unasked.
 
 Lifecycle: filed with `triage` → accepted to Backlog (label removed, priority confirmed) → claimed
 via `/next` → PR with `Fixes #N`. An issue with an open `Blocked by #N` isn't started.
