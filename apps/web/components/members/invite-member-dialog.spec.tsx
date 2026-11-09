@@ -42,7 +42,9 @@ const INVITE = {
   created_at: new Date(NOW - 4 * 3600_000).toISOString(),
 };
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  // The pure list helpers (`listedInvites`, `INVITE_STATUS_LABEL`) are real.
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
   useActiveChapterId: () => activeChapterId.current,
   // `refetch`: opening the panel re-reads invites and roles.
   useRoles: () => ({ refetch: mockRefetchRoles, ...mockRoles() }),
@@ -72,8 +74,7 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
-const { InviteMemberDialog, listedInvites, sentLabel } =
-  await import("./invite-member-dialog");
+const { InviteMemberDialog } = await import("./invite-member-dialog");
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
@@ -590,46 +591,5 @@ describe("InviteMemberDialog share link and list", () => {
     expect(
       screen.getByRole("button", { name: /^More for Invite link, sent / }),
     ).toBeInTheDocument();
-  });
-});
-
-describe("listedInvites", () => {
-  const now = new Date("2026-11-20T12:00:00Z");
-  const row = (
-    status: typeof INVITE.status | "joined" | "expired" | "revoked",
-    created_at: string,
-  ) => ({
-    ...INVITE,
-    id: `${status}-${created_at}`,
-    status,
-    created_at,
-  });
-
-  it("keeps every pending invite, recent joined and expired ones, and no revoked ones", () => {
-    const rows = [
-      row("pending", "2026-10-01T00:00:00Z"),
-      row("joined", "2026-11-19T00:00:00Z"),
-      row("joined", "2026-11-01T00:00:00Z"),
-      row("expired", "2026-11-18T00:00:00Z"),
-      row("revoked", "2026-11-19T00:00:00Z"),
-    ];
-
-    expect(listedInvites(rows, now).map((r) => r.id)).toEqual([
-      "pending-2026-10-01T00:00:00Z",
-      "joined-2026-11-19T00:00:00Z",
-      "expired-2026-11-18T00:00:00Z",
-    ]);
-  });
-});
-
-describe("sentLabel", () => {
-  it("says when, in words", () => {
-    const now = new Date(2026, 10, 6, 18, 0);
-    expect(sentLabel(new Date(2026, 10, 6, 16, 46).toISOString(), now)).toMatch(
-      /^Sent today at 4:46/,
-    );
-    expect(sentLabel(new Date(2026, 10, 5, 9, 0).toISOString(), now)).toMatch(
-      /^Sent yesterday at 9:00/,
-    );
   });
 });

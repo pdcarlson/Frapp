@@ -7,7 +7,7 @@ import { inviteTokenOf, webJoinUrl } from "./invite-link";
 /**
  * Share-first invite links: setup's invite step (`spec/behavior/onboarding.md`,
  * owner pick 2026-11-06 "Share first") and, inside a chapter, the Invite
- * members screen (`app/(tabs)/invite.tsx`) draw the same flow from here.
+ * members screen (`app/(app)/invite.tsx`) draw the same flow from here.
  *
  * An invite lets one person in and lapses after a day, so every press of
  * Share invite mints a fresh link and opens the share sheet with it. The
@@ -19,8 +19,10 @@ import { inviteTokenOf, webJoinUrl } from "./invite-link";
  * platform says so: iOS reports the dismissal, Android's chooser can't tell
  * and always reports shared, so there a backed-out sheet lists its link too.
  *
- * Shared links are listed newest first and watched while the step is open,
- * so a link that someone redeems reads Joined.
+ * Setup's step lists the shared links newest first and watches them while it
+ * is open, so a link that someone redeems reads Joined. The Invite members
+ * screen draws no such list (`active: false`): its Invited list shows every
+ * invite, and tells this hook which kept link has stopped working (`isDead`).
  */
 
 /**
@@ -56,6 +58,15 @@ export function inviteShareContent(
 }
 
 /**
+ * The share sheet's options: an iOS mail target (Mail, Gmail) takes `subject`
+ * as the email's subject line, so an invite sent from the sheet doesn't go out
+ * blank (#3828). Android has no subject option and ignores it.
+ */
+export function inviteShareOptions(chapterName: string): { subject: string } {
+  return { subject: `Join ${chapterName} on Frapp` };
+}
+
+/**
  * The tokens in a `GET /v1/invites` answer that someone joined with.
  *
  * A row's `status` decides (#3607): revoking a link also stamps `used_at`, so
@@ -85,6 +96,7 @@ export function useInviteShares({
   chapterName,
   role,
   onError,
+  isDead,
 }: {
   /** True while the invite step is on screen. */
   active: boolean;
@@ -97,6 +109,11 @@ export function useInviteShares({
    */
   role?: string;
   onError: (message: string | null) => void;
+  /**
+   * Whether a link no longer lets anyone in (revoked, by this officer or
+   * another, or expired), so a kept link is dropped rather than sent.
+   */
+  isDead?: (token: string) => boolean;
 }) {
   const createInvite = useCreateInvite();
   const [minting, setMinting] = useState(false);
@@ -146,32 +163,36 @@ export function useInviteShares({
     return run;
   }
 
-  async function share() {
+  /** Resolves `true` once a link went out, `false` if nothing did. */
+  async function share(): Promise<boolean> {
     onError(null);
+    if (unsent.current && isDead?.(unsent.current)) unsent.current = null;
     const token = unsent.current ?? (await mint());
-    if (!token) return;
+    if (!token) return false;
     unsent.current = token;
     opening.current += 1;
     let result: { action?: string };
     try {
       result = await Share.share(
         inviteShareContent(webJoinUrl(token), chapterName),
+        inviteShareOptions(chapterName),
       );
     } catch {
       // A second sheet over one already showing is refused; the first is
       // fine, so only a refusal with nothing else open is news.
       if (opening.current === 1) onError(SHARE_FAILED_MESSAGE);
-      return;
+      return false;
     } finally {
       opening.current -= 1;
     }
-    if (result?.action === "dismissedAction") return;
+    if (result?.action === "dismissedAction") return false;
     if (unsent.current === token) unsent.current = null;
     setShared((rows) =>
       rows.some((row) => row.token === token)
         ? rows
         : [{ token, number: rows.length + 1 }, ...rows],
     );
+    return true;
   }
 
   return {
@@ -180,5 +201,14 @@ export function useInviteShares({
     shared,
     isJoined: (token: string) => used.has(token),
     share,
+    /**
+     * Drops a link kept from a backed-out sheet once it has gone elsewhere:
+     * the Invite members screen's list revoked it, or shared it from its
+     * row. The next press then mints a fresh one rather than sending a dead
+     * link, or one person's link to a second person.
+     */
+    forget: (token: string) => {
+      if (unsent.current === token) unsent.current = null;
+    },
   };
 }

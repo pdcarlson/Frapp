@@ -25,6 +25,7 @@ export {
   formatDayTimeRange,
   formatDueLabel,
   formatRelativeDayTime,
+  formatSentLabel,
   formatTimestampFull,
   formatWeekdayDay,
 } from "./display";
