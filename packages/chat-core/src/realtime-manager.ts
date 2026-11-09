@@ -911,9 +911,11 @@ class ChatRealtimeManager {
   /**
    * `destroy()` removes the actions channel fire-and-forget and `configure()`
    * re-creates it on the same topic immediately after, so a remount races its
-   * own teardown exactly like `openChannel` did. Every `ChatProvider` remount
-   * does this, StrictMode's simulated one included; a re-auth re-configures
-   * without a `destroy()` since #3002, and keeps the channel it has.
+   * own teardown exactly like `openChannel` did. On web a `DashboardShell`
+   * remount does this (`useChatRealtimeBinding`, which moved there from
+   * `ChatProvider` in #3745, so a trip in or out of `/chat` no longer does),
+   * StrictMode's simulated one included; a re-auth re-configures without a
+   * `destroy()` since #3002, and keeps the channel it has.
    */
   private ensureActionsChannel(): void {
     if (!this.ctx) return;

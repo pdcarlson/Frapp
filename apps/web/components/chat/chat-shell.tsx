@@ -154,7 +154,7 @@ import {
 } from "./report-message-dialog";
 import { compactControlClassName } from "@/components/shared/table-controls";
 import {
-  NavBackButton,
+  NavChannelsTitle,
   useIsDesktopShell,
   useNavFace,
 } from "@/components/layout/nav-face";
@@ -229,6 +229,62 @@ const UNREACHABLE_COPY: Record<UnreachableReason, string> = {
   error: "Couldn't load the messages needed to reach that message.",
   unloaded: "Couldn't load this channel's messages to reach that message.",
 };
+
+/**
+ * Marks the history entry a channel pick pushes below `lg`, so Back returns
+ * from the thread to the channel list (#3824).
+ *
+ * The value is this document's own token, not `true`. History state outlives
+ * a reload, but the entry under a marked one then belongs to the document the
+ * reload discarded, and going back to it is a full page load, not a
+ * `popstate`. A marker from another document is not ours to go back through.
+ */
+const THREAD_PANE_HISTORY_KEY = "frappChatThreadPane";
+const THREAD_PANE_DOCUMENT_TOKEN = `${Date.now().toString(36)}-${Math.random()
+  .toString(36)
+  .slice(2)}`;
+
+function isThreadPaneEntry(state: unknown): boolean {
+  return (
+    typeof state === "object" &&
+    state !== null &&
+    (state as Record<string, unknown>)[THREAD_PANE_HISTORY_KEY] ===
+      THREAD_PANE_DOCUMENT_TOKEN
+  );
+}
+
+/** Pushes this document's marked, same-URL entry for an opened thread. */
+function pushThreadPaneEntry(): void {
+  // The spread keeps Next's own `__NA` state, so its patched `pushState`
+  // passes the entry straight through.
+  window.history.pushState(
+    {
+      ...(window.history.state as object | null),
+      [THREAD_PANE_HISTORY_KEY]: THREAD_PANE_DOCUMENT_TOKEN,
+    },
+    "",
+  );
+}
+
+/**
+ * Overlays that own `Esc` while open. Radix closes them on the same keydown,
+ * before this listener runs but while they are still in the DOM.
+ */
+const ESCAPE_OWNERS =
+  '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper]';
+
+/**
+ * Whether an `Esc` is someone else's: typed in a field or the composer (which
+ * cancel a reply or an edit with it), or closing an open overlay. Chat only
+ * takes the key when nothing else would have (#3824).
+ */
+function escapeBelongsElsewhere(target: EventTarget | null): boolean {
+  if (target instanceof HTMLElement) {
+    if (target.isContentEditable) return true;
+    if (target.closest("input, textarea, select")) return true;
+  }
+  return document.querySelector(ESCAPE_OWNERS) !== null;
+}
 
 /**
  * A typed `/event` date and clock time as a `datetime-local` value, or
@@ -409,6 +465,12 @@ export function ChatShell({
     [categoriesQuery.data],
   );
 
+  // The pane-history refs (#3824), described with `openThreadPane` below.
+  // Declared here because the URL-target effect clears `onThreadEntry`.
+  const onThreadEntry = useRef(false);
+  const backPending = useRef(false);
+  const openAfterBack = useRef(false);
+
   // Seeded from the `?channel=` query param a caller (e.g. the member
   // directory's Message action, a chat notification, a command-palette
   // search hit) may navigate here with — see `activeChannelId` below for what
@@ -557,6 +619,10 @@ export function ChatShell({
       channelId: initialChannelId,
       messageId: initialMessageId,
     };
+    // A new URL target (a Find result, a notification) is a new history entry
+    // Next pushed, not the one this mount marked (#3824), so the arrow must
+    // not go back through it and the next pick pushes its own.
+    onThreadEntry.current = false;
     setSelectedChannelId(initialChannelId);
     setChannelTargetDismissed(false);
     setPendingMessageId(initialMessageId);
@@ -577,6 +643,83 @@ export function ChatShell({
     // is on screen in the list too.
     if (initialChannelId) showChannelsInNav?.();
   }, [initialChannelId, initialMessageId, showChannelsInNav]);
+
+  /*
+    Getting back from a channel without hunting for the arrow (#3824): the
+    browser's Back and `Esc` return to the channel list.
+
+    Below `lg` the thread and the list are one screen each, so opening a
+    channel from the list is a step the member expects Back to undo. Picking a
+    row pushes a same-URL history entry marked `THREAD_PANE_HISTORY_KEY`, and a
+    `popstate` that lands off a marked entry shows the list. The arrow and
+    `Esc` show the list at once and go back through that entry when we are on
+    it, so the list is never one Back press away while also being on screen. A
+    thread that opened without a pick (the landing channel, a deep link) has
+    no entry of its own, and going back from it just shows the list, as the
+    arrow always did.
+
+    "On it" is the marker or `onThreadEntry`. The ref covers a later soft
+    navigation to the same URL (the nav's Chat link, a notification for
+    `/chat`): Next then rewrites the entry's state without our marker
+    (`preserveCustomHistoryState: false`), and only this mount still knows the
+    entry is the one it pushed. A new URL target (a Find result, a
+    notification) is an entry Next pushed, so it clears the ref.
+    `backPending` keeps a quick second press from going back a second entry,
+    out of `/chat`, before the first `popstate` lands, and a pick made in that
+    window pushes its entry once the `popstate` has.
+
+    The spread keeps Next's own `__NA` state on the entry, which its patched
+    `pushState` then passes straight through, and its `popstate` handler
+    restores the same route for the same URL.
+
+    From `lg` up the list is on screen beside the thread, so a pick pushes
+    nothing; `Esc` there brings the channels back when the column shows the
+    module nav. An entry pushed below `lg` that outlives a widening past it
+    costs one Back press that changes nothing on screen.
+  */
+  const openThreadPane = useCallback(() => {
+    setNarrowPane("thread");
+    if (isDesktopShell) return;
+    // A pick while our own Back is still traversing: `history.state` is the
+    // entry being left, so push only once the `popstate` lands.
+    if (backPending.current) {
+      openAfterBack.current = true;
+      return;
+    }
+    if (onThreadEntry.current) return;
+    if (isThreadPaneEntry(window.history.state)) {
+      onThreadEntry.current = true;
+      return;
+    }
+    pushThreadPaneEntry();
+    onThreadEntry.current = true;
+  }, [isDesktopShell]);
+  const backToChannels = useCallback(() => {
+    setNarrowPane("channels");
+    if (backPending.current) return;
+    if (onThreadEntry.current || isThreadPaneEntry(window.history.state)) {
+      backPending.current = true;
+      onThreadEntry.current = false;
+      window.history.back();
+    }
+  }, []);
+  useEffect(() => {
+    const onPopState = (event: PopStateEvent) => {
+      backPending.current = false;
+      if (openAfterBack.current) {
+        openAfterBack.current = false;
+        pushThreadPaneEntry();
+        onThreadEntry.current = true;
+        setNarrowPane("thread");
+        return;
+      }
+      const thread = isThreadPaneEntry(event.state);
+      onThreadEntry.current = thread;
+      setNarrowPane(thread ? "thread" : "channels");
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   // `useChannels()` can serve a read up to its `staleTime` old. A channel
   // created moments ago (a fresh DM, a newly shared private channel) can
@@ -1214,17 +1357,28 @@ export function ChatShell({
   // a hidden row must leave no badge), and so does the rail's right-click
   // Mark as read. So does a message from someone else landing in the open
   // channel while the tab is visible (#3698: `useChatActivityHandler`, which
-  // `ChatProvider` wires, re-stamps the channel claimed below). Those are the
-  // only things that move it, and the only things that clear the badges
-  // above. Without it the rail lights up on first load and never goes out,
+  // the shell's `useChatRealtimeBinding` wires, re-stamps the channel claimed
+  // below). Those are the only things that move it, and the only things that
+  // clear the badges above. Without it the rail lights up on first load and never goes out,
   // which is worse than the dead badge this slice replaced: it would show
   // every channel as permanently unread.
   // `spec/behavior/chat/README.md` § Read Receipts: opening stamps to server
   // `now()`; there is no mark-read-to-a-message.
   const markRead = useMarkChannelRead();
   const markReadMutate = markRead.mutate;
+  /*
+    Only while the thread is on screen. Below `lg` the list and the thread are
+    one screen each, and a member back on the list (the arrow, `Esc`, the
+    browser's Back, #3824) is not looking at the channel: still claimed, a
+    message landing in it was stamped read before they ever saw it, so the
+    nav's Chat row never lit and the channel came back read. Leaving the
+    thread for the list runs the cleanup, which stamps it read on the way out as leaving
+    a channel always has; coming back claims and stamps it again. From `lg`
+    up both are on screen and `narrowPane` changes nothing.
+  */
+  const threadOnScreen = isDesktopShell || narrowPane === "thread";
   useEffect(() => {
-    if (!activeChannelId) return;
+    if (!activeChannelId || !threadOnScreen) return;
     markReadMutate(activeChannelId);
     const releaseViewed = claimViewedChannel(activeChannelId);
     // Stamp again on the way out, so messages that arrived while the channel
@@ -1233,7 +1387,7 @@ export function ChatShell({
       releaseViewed();
       markReadMutate(activeChannelId);
     };
-  }, [activeChannelId, markReadMutate]);
+  }, [activeChannelId, threadOnScreen, markReadMutate]);
 
   // The rail row's right-click menu (owner, 2026-11-06). Which rows a channel
   // offers is `channelRowActions`' call in `@repo/hooks`, scoped to the
@@ -1857,6 +2011,31 @@ export function ChatShell({
           : !activeChapterId
             ? "no-chapter"
             : "empty";
+  // `Esc`, where nothing else takes it (#3824; the history half is above).
+  const navFaceShowing = navFace?.face;
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (escapeBelongsElsewhere(event.target)) return;
+      if (isDesktopShell) {
+        if (navFaceShowing === "modules") showChannelsInNav?.();
+        return;
+      }
+      if (narrowPane === "thread" && channelsPaneState === "ready") {
+        backToChannels();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [
+    isDesktopShell,
+    navFaceShowing,
+    showChannelsInNav,
+    narrowPane,
+    channelsPaneState,
+    backToChannels,
+  ]);
+
   const timelineReady =
     channelsPaneState === "ready" && !requestedChannelMissing;
   const memberColumnMounted =
@@ -1896,9 +2075,10 @@ export function ChatShell({
           */}
       <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-3">
         {channelsInNav && navFace ? (
-          <NavBackButton onClick={navFace.showModules} />
-        ) : null}
-        <h2 className="text-sm font-semibold text-foreground">Channels</h2>
+          <NavChannelsTitle onBack={navFace.showModules} />
+        ) : (
+          <h2 className="text-sm font-semibold text-foreground">Channels</h2>
+        )}
         <ChannelFilters
           filters={sidebarPreferences.filters}
           onChange={sidebarControls.onSetFilters}
@@ -1942,7 +2122,7 @@ export function ChatShell({
               setSelectedChannelId(ch.id);
               // Below `lg` the list and the thread are never both on screen,
               // so picking has to navigate. Inert at `lg` and up.
-              setNarrowPane("thread");
+              openThreadPane();
               // Deliberately leaves any pending jump target alone - it is
               // gated on its own channel and will resolve if the member
               // returns. Only the notice is channel-scoped for display.
@@ -2088,8 +2268,10 @@ export function ChatShell({
             <Button
               variant="ghost"
               size="icon"
-              className={cn(compactControlClassName, "shrink-0 lg:hidden")}
-              onClick={() => setNarrowPane("channels")}
+              // 40px, never the 32px compact control (#3824): it is the one
+              // way back below `lg`, so it gets a real target.
+              className="-ml-2 h-10 w-10 shrink-0 lg:hidden"
+              onClick={backToChannels}
               aria-label="Back to channels"
             >
               <ChevronLeft className="h-5 w-5" />
