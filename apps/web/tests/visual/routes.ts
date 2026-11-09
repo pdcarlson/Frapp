@@ -60,6 +60,11 @@ export const DASHBOARD_ROUTES = [
  * sessionless harness can only ever measure the redirect target. Covering it
  * needs a seeded session, which `README.md` in this directory already scopes
  * as its own piece of work. Its 375px measurement is by hand for now.
+ *
+ * **`/new-account` is absent for the same reason** (#3786): protected in
+ * `proxy.ts`, and the page redirects without a session — and with one, unless
+ * the account was created by Google or Apple in the last few minutes. It is
+ * one `AuthScreen` with two full-width buttons; measured by hand at 375px.
  */
 export const PRE_AUTH_ROUTES = [
   // `/` is a gate since 2026-11-05: signed out, it redirects to the form.
