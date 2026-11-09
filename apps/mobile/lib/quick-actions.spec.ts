@@ -66,6 +66,9 @@ describe("which actions a member can use", () => {
     expect(keys(["members:view"])).toEqual(["message", "checkIn", "study"]);
     // No roster, no Directory and no study sessions; check-in needs none.
     expect(keys(["service:log"])).toEqual(["checkIn", "logHours"]);
+    // `POST /v1/tasks` also needs the controller's members:view (#3865).
+    expect(keys(["tasks:manage"])).not.toContain("newTask");
+    expect(keys(["tasks:manage", "members:view"])).toContain("newTask");
   });
 
   it("lets officers check themselves in, not only host", () => {
