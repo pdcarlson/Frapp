@@ -1,8 +1,8 @@
 /**
  * Repeating events, as the Events lists show them (#3707): one row per series
  * (its next occurrence), and a two-week horizon with everything after it
- * under Later. Web (#3822) and mobile (#3823) both read these, so a series
- * collapses and a horizon falls the same way in each app.
+ * under Later. Mobile reads these (#3823), and web adopts them in #3822, so
+ * that a series collapses and a horizon falls the same way in each app.
  *
  * A series on the wire is one head row (`recurrence_rule` set,
  * `parent_event_id` null) plus the occurrences the API generated from it
@@ -50,6 +50,49 @@ export function eventSeriesKey(event: object): string | null {
   return text(event, "recurrence_rule") ? text(event, "id") : null;
 }
 
+/** What a series' label reads off its head row: the rule and the anchor date. */
+export interface SeriesHead {
+  rule: RecurrenceRule;
+  /** The head's start, which the generated occurrences step from. */
+  start_time: string;
+}
+
+/**
+ * Each series' head, by series key ({@link eventSeriesKey}): the one place the
+ * apps read a series' rule. Heads carrying a rule this app doesn't know are
+ * left out.
+ */
+export function seriesHeads(
+  events: readonly object[],
+): Map<string, SeriesHead> {
+  const heads = new Map<string, SeriesHead>();
+  for (const event of events) {
+    const id = text(event, "id");
+    const rule = field(event, "recurrence_rule");
+    const start = text(event, "start_time");
+    if (id && start && isRecurrenceRule(rule)) {
+      heads.set(id, { rule, start_time: start });
+    }
+  }
+  return heads;
+}
+
+/**
+ * How often `event`'s series meets ("Every Sunday"), read off its head, never
+ * off `event` itself: a monthly occurrence the API clamped to the 30th, or one
+ * an officer moved to a Monday, belongs to a series that still meets on the
+ * 31st or on Sundays. `null` for a one-time event or a series whose head isn't
+ * in `heads`.
+ */
+export function seriesCadence(
+  heads: ReadonlyMap<string, SeriesHead>,
+  event: object,
+): string | null {
+  const key = eventSeriesKey(event);
+  const head = key ? heads.get(key) : undefined;
+  return head ? seriesCadenceLabel(head.rule, head.start_time) : null;
+}
+
 export interface CollapsedEvent<T> {
   /** The row to draw: a one-time event, a started occurrence, or a series' next one. */
   event: T;
@@ -65,6 +108,8 @@ export interface CollapsedEvent<T> {
    * carries a rule this app doesn't know.
    */
   rule: RecurrenceRule | null;
+  /** {@link seriesCadence} for the row: "Every Sunday", or `null`. */
+  cadence: string | null;
 }
 
 /**
@@ -79,12 +124,16 @@ export function collapseSeries<T extends object>(
   events: readonly T[],
   now: Date,
 ): CollapsedEvent<T>[] {
-  const rules = new Map<string, RecurrenceRule>();
-  for (const event of events) {
-    const id = text(event, "id");
-    const rule = field(event, "recurrence_rule");
-    if (id && isRecurrenceRule(rule)) rules.set(id, rule);
-  }
+  const heads = seriesHeads(events);
+  const entry = (event: T, series: T[] | null): CollapsedEvent<T> => {
+    const key = eventSeriesKey(event);
+    return {
+      event,
+      series,
+      rule: key ? (heads.get(key)?.rule ?? null) : null,
+      cadence: seriesCadence(heads, event),
+    };
+  };
 
   const out: CollapsedEvent<T>[] = [];
   const upcoming = new Map<string, T[]>();
@@ -92,11 +141,7 @@ export function collapseSeries<T extends object>(
     const key = eventSeriesKey(event);
     const start = startOf(event);
     if (!key || !start || start.getTime() <= now.getTime()) {
-      out.push({
-        event,
-        series: null,
-        rule: key ? (rules.get(key) ?? null) : null,
-      });
+      out.push(entry(event, null));
       continue;
     }
     const members = upcoming.get(key);
@@ -105,7 +150,7 @@ export function collapseSeries<T extends object>(
     } else {
       const series = [event];
       upcoming.set(key, series);
-      out.push({ event, series, rule: rules.get(key) ?? null });
+      out.push(entry(event, series));
     }
   }
   return out.sort((a, b) => byStart(a.event, b.event));
@@ -148,8 +193,9 @@ function ordinal(day: number): string {
 }
 
 /**
- * How often a series meets, as a member says it, from the occurrence on
- * screen: `"Every Sunday"`, `"Every other Sunday"`, `"Every month on the 9th"`.
+ * How often a series meets, as a member says it, from its rule and its head's
+ * start ({@link seriesCadence} finds both): `"Every Sunday"`,
+ * `"Every other Sunday"`, `"Every month on the 9th"`.
  * `null` for a one-time event or an unreadable start.
  */
 export function seriesCadenceLabel(

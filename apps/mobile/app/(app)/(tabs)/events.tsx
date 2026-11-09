@@ -97,19 +97,24 @@ export default function EventsScreen() {
   // and it ticks so a check-in window opens and closes on a tab that never
   // unmounts rather than staying as it was when the screen first rendered.
   const now = useNowDate();
-  const list = useMemo(
-    () => selectEventList(eventsQuery.data, now),
-    [eventsQuery.data, now],
-  );
   const allEvents = useMemo(
     () => selectAllEventRows(eventsQuery.data),
     [eventsQuery.data],
   );
+  const list = useMemo(
+    () => selectEventList(allEvents, now),
+    [allEvents, now],
+  );
 
   // Held here, not in the views, so List → Calendar → List keeps both places.
+  // Until the member moves the calendar, it follows the clock: the tab never
+  // unmounts, so a month and day fixed at mount would leave yesterday selected
+  // after midnight. `null` means "wherever today is".
   const [showLater, setShowLater] = useState(false);
-  const [monthAnchor, setMonthAnchor] = useState(() => startOfMonth(now));
-  const [selectedDay, setSelectedDay] = useState(() => startOfDay(now));
+  const [pickedMonth, setPickedMonth] = useState<Date | null>(null);
+  const [pickedDay, setPickedDay] = useState<Date | null>(null);
+  const monthAnchor = pickedMonth ?? startOfMonth(now);
+  const selectedDay = pickedDay ?? startOfDay(now);
 
   const refresh = useRefetchAll([eventsQuery]);
 
@@ -155,19 +160,17 @@ export default function EventsScreen() {
     });
   }
 
+  // One line where the rows would be, not a card (`writing.md` § 4, rule 7):
+  // the fact, and for a creator the way to change it, which is the tab bar's
+  // + (New event) rather than a button of the screen's own.
+  const nothingScheduled = canCreateEvents
+    ? "Nothing scheduled yet. Tap + to add the first event."
+    : "Nothing scheduled yet.";
+
   function renderList() {
     const { soon, later } = list;
     if (soon.length === 0 && later.length === 0) {
-      return (
-        // One line where the rows would be, not a card (`writing.md` § 4,
-        // rule 7): the fact, and for a creator the way to change it, which is
-        // the tab bar's + (New event) rather than a button of the screen's own.
-        <InlineNote>
-          {canCreateEvents
-            ? "Nothing scheduled yet. Tap + to add the first event."
-            : "Nothing scheduled yet."}
-        </InlineNote>
-      );
+      return <InlineNote>{nothingScheduled}</InlineNote>;
     }
 
     const laterCount = later.reduce(
@@ -237,9 +240,12 @@ export default function EventsScreen() {
           now={now}
           monthAnchor={monthAnchor}
           selectedDay={selectedDay}
-          onMonthChange={setMonthAnchor}
-          onSelectDay={setSelectedDay}
+          onMonthChange={setPickedMonth}
+          onSelectDay={setPickedDay}
           onOpen={openEvent}
+          // A chapter with nothing at all says so, and points a creator at
+          // the +, whichever view it opens on.
+          emptyNote={allEvents.length === 0 ? nothingScheduled : null}
         />
       );
     }

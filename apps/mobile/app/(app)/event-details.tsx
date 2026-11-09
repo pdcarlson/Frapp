@@ -6,7 +6,8 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   eventSeriesKey,
-  seriesCadenceLabel,
+  seriesCadence,
+  seriesHeads,
   useEvent,
   useEvents,
   useMyAttendance,
@@ -481,12 +482,11 @@ export function EventDetailSkeleton() {
   );
 }
 
-/** DETAILS and INTERNAL NOTES share this shape; only the label and body differ. */
 /**
  * The rest of a repeating series under the occurrence on screen (#3707): the
  * Events list draws a series once, so this is where its other dates are. Its
- * caption is the cadence ("EVERY SUNDAY"), and each date opens that
- * occurrence. Read from the cached Events list (`useEvents`), which already
+ * caption is the cadence ("EVERY SUNDAY"), read off the series head, and each
+ * date opens that occurrence; one renamed on its own carries its name. Read from the cached Events list (`useEvents`), which already
  * holds every occurrence; nothing draws for a one-time event, or until the
  * list has loaded.
  */
@@ -497,20 +497,21 @@ function SeriesSection({ event, now }: { event: EventDetail; now: Date }) {
   const router = useRouter();
   const key = eventSeriesKey(event);
   const eventsQuery = useEvents({ enabled: !!key });
+  // Parsed once per payload; only the upcoming filter follows the clock.
+  const rows = useMemo(
+    () => selectAllEventRows(eventsQuery.data),
+    [eventsQuery.data],
+  );
   const occurrences = useMemo(
-    () => selectSeriesOccurrences(eventsQuery.data, event, now),
-    [eventsQuery.data, event, now],
+    () => selectSeriesOccurrences(rows, event, now),
+    [rows, event, now],
+  );
+  // The cadence is read off the series head, which may be this event.
+  const cadence = useMemo(
+    () => seriesCadence(seriesHeads([event, ...rows]), event),
+    [rows, event],
   );
   if (!key || occurrences.length === 0) return null;
-
-  // The rule lives on the series head, which may be this event.
-  const head = selectAllEventRows(eventsQuery.data).find(
-    (row) => row.id === key,
-  );
-  const cadence = seriesCadenceLabel(
-    head?.recurrence_rule ?? event.recurrence_rule,
-    event.start_time,
-  );
 
   return (
     <View style={styles.section}>
@@ -526,7 +527,7 @@ function SeriesSection({ event, now }: { event: EventDetail; now: Date }) {
             <PressableRow
               key={occurrence.id}
               accessibilityRole="button"
-              accessibilityLabel={`Open ${event.name}, ${when}`}
+              accessibilityLabel={`Open ${occurrence.name}, ${when}`}
               onPress={() =>
                 router.push({
                   pathname: "/event-details",
@@ -538,7 +539,12 @@ function SeriesSection({ event, now }: { event: EventDetail; now: Date }) {
                 index === 0 ? null : rowStyles.flatDivider,
               ]}
             >
-              <Text style={styles.sectionBody}>{when}</Text>
+              <Text style={styles.sectionBody}>
+                {/* An occurrence renamed on its own says so. */}
+                {occurrence.name === event.name
+                  ? when
+                  : `${occurrence.name} · ${when}`}
+              </Text>
             </PressableRow>
           );
         })}
@@ -547,6 +553,7 @@ function SeriesSection({ event, now }: { event: EventDetail; now: Date }) {
   );
 }
 
+/** DETAILS and INTERNAL NOTES share this shape; only the label and body differ. */
 function DetailSection({
   label,
   body,

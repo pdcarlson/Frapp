@@ -14,7 +14,6 @@
 import {
   collapseSeries,
   eventSeriesKey,
-  seriesCadenceLabel,
   splitByHorizon,
   type DeviceInstant,
 } from "@repo/hooks";
@@ -190,12 +189,15 @@ function groupByDay(entries: EventListEntry[], now: Date): EventDayGroup[] {
  * series' row while it runs: it carries the cadence, and next week's
  * occurrence stays off the list until it ends, so the series is never drawn
  * twice.
+ *
+ * Takes {@link selectAllEventRows}' rows, parsed once per payload, since this
+ * reruns on every clock tick.
  */
 export function selectEventList(
-  data: unknown,
+  rows: readonly EventRow[],
   now: Date,
 ): { soon: EventDayGroup[]; later: EventDayGroup[] } {
-  const visible = collapseSeries(selectAllEventRows(data), now).filter(
+  const visible = collapseSeries(rows, now).filter(
     ({ event }) => isCurrentOrUpcoming(event.start_time, event.end_time, now),
   );
 
@@ -207,13 +209,10 @@ export function selectEventList(
   }
 
   const entries: { event: EventRow; cadence: string | null }[] = [];
-  for (const { event, series, rule } of visible) {
+  for (const { event, series, cadence } of visible) {
     const key = eventSeriesKey(event);
     if (key && series !== null && running.has(key)) continue;
-    entries.push({
-      event,
-      cadence: key ? seriesCadenceLabel(rule, event.start_time) : null,
-    });
+    entries.push({ event, cadence });
   }
 
   const { soon, later } = splitByHorizon(entries, now);
@@ -225,13 +224,13 @@ export function selectEventList(
  * first, for s07's "Also on" list (#3707). Empty for a one-time event.
  */
 export function selectSeriesOccurrences(
-  data: unknown,
+  rows: readonly EventRow[],
   event: Pick<EventRow, "id" | "recurrence_rule" | "parent_event_id">,
   now: Date,
 ): EventRow[] {
   const key = eventSeriesKey(event);
   if (!key) return [];
-  return selectAllEventRows(data).filter((row) => {
+  return rows.filter((row) => {
     if (row.id === event.id || eventSeriesKey(row) !== key) return false;
     const start = parseInstant(row.start_time);
     return !!start && start.getTime() > now.getTime();

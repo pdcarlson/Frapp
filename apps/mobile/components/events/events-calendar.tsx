@@ -8,8 +8,7 @@ import {
   parseInstant,
   startOfMonth,
 } from "@repo/formatting";
-import { eventSeriesKey, seriesCadenceLabel } from "@repo/hooks";
-import { isRecurrenceRule, type RecurrenceRule } from "@repo/validation";
+import { seriesCadence, seriesHeads } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChevronGlyph } from "@/components/chat/viewer-glyphs";
 import { IconButton } from "@/components/icon-button";
@@ -27,8 +26,9 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * Every occurrence of a series is marked on its own day, while the List draws
  * a series once (#3792 § Notes). The grid is `@repo/formatting`'s `monthGrid`,
- * which web's calendar draws too, so the two agree on which days a month
- * shows; a day is the viewer's local calendar day (`localIsoDate`), as on web.
+ * the same six weeks from the Sunday on or before the 1st that web's calendar
+ * draws (web moves onto the shared helper in #3822); a day is the viewer's
+ * local calendar day (`localIsoDate`), as on web.
  *
  * The month and the selected day are the screen's state, not this
  * component's, so switching to List and back keeps the member's place.
@@ -47,6 +47,7 @@ export function EventsCalendar({
   onMonthChange,
   onSelectDay,
   onOpen,
+  emptyNote = null,
 }: {
   /** Every occurrence, past ones included (`selectAllEventRows`). */
   events: EventRow[];
@@ -58,6 +59,11 @@ export function EventsCalendar({
   onMonthChange: (anchor: Date) => void;
   onSelectDay: (day: Date) => void;
   onOpen: (id: string) => void;
+  /**
+   * What the day list says when the chapter has no events at all (the List's
+   * own zero-state line), in place of "Nothing on this day.".
+   */
+  emptyNote?: string | null;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -76,16 +82,8 @@ export function EventsCalendar({
     return map;
   }, [events]);
 
-  // A series' rule is on its head row; an occurrence reads it from there.
-  const rules = useMemo(() => {
-    const map = new Map<string, RecurrenceRule>();
-    for (const event of events) {
-      if (isRecurrenceRule(event.recurrence_rule)) {
-        map.set(event.id, event.recurrence_rule);
-      }
-    }
-    return map;
-  }, [events]);
+  // A series' cadence is read off its head row, for every occurrence.
+  const heads = useMemo(() => seriesHeads(events), [events]);
 
   const month = startOfMonth(monthAnchor);
   const days = monthGrid(month);
@@ -223,25 +221,18 @@ export function EventsCalendar({
           {formatDayHeading(selectedDay.toISOString(), now) ?? selectedKey}
         </SectionHeader>
         {dayEvents.length === 0 ? (
-          <InlineNote>Nothing on this day.</InlineNote>
+          <InlineNote>{emptyNote ?? "Nothing on this day."}</InlineNote>
         ) : (
-          dayEvents.map((event, index) => {
-            const key = eventSeriesKey(event);
-            return (
-              <EventRowFlat
-                key={event.id}
-                event={event}
-                cadence={
-                  key
-                    ? seriesCadenceLabel(rules.get(key), event.start_time)
-                    : null
-                }
-                now={now}
-                isFirst={index === 0}
-                onPress={() => onOpen(event.id)}
-              />
-            );
-          })
+          dayEvents.map((event, index) => (
+            <EventRowFlat
+              key={event.id}
+              event={event}
+              cadence={seriesCadence(heads, event)}
+              now={now}
+              isFirst={index === 0}
+              onPress={() => onOpen(event.id)}
+            />
+          ))
         )}
       </View>
     </View>

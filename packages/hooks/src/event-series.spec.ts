@@ -3,7 +3,9 @@ import {
   collapseSeries,
   EVENT_HORIZON_DAYS,
   eventSeriesKey,
+  seriesCadence,
   seriesCadenceLabel,
+  seriesHeads,
   splitByHorizon,
 } from "./event-series";
 
@@ -156,5 +158,41 @@ describe("seriesCadenceLabel", () => {
     expect(seriesCadenceLabel(null, sunday)).toBeNull();
     expect(seriesCadenceLabel("DAILY", sunday)).toBeNull();
     expect(seriesCadenceLabel("WEEKLY", "nope")).toBeNull();
+  });
+});
+
+describe("seriesCadence", () => {
+  it("reads the cadence off the head, not the occurrence on screen", () => {
+    // A monthly series on Jan 31: the API clamps April's meeting to the 30th.
+    const head = {
+      id: "dues",
+      start_time: new Date(2027, 0, 31, 18).toISOString(),
+      recurrence_rule: "MONTHLY",
+      parent_event_id: null,
+    };
+    const april = {
+      id: "dues-3",
+      start_time: new Date(2027, 3, 30, 18).toISOString(),
+      recurrence_rule: null,
+      parent_event_id: "dues",
+    };
+    const heads = seriesHeads([head, april]);
+    expect(seriesCadence(heads, april)).toBe("Every month on the 31st");
+  });
+
+  it("keeps a series' weekday for an occurrence moved to another day", () => {
+    const [head, child] = weeklySeries(8, 2);
+    const moved = { ...child!, start_time: iso(11, 16) }; // a Monday
+    const heads = seriesHeads([head!, moved]);
+    expect(seriesCadence(heads, moved)).toBe("Every Sunday");
+    expect(collapseSeries([head!, moved], NOW).at(-1)!.cadence).toBe(
+      "Every Sunday",
+    );
+  });
+
+  it("says nothing for a one-time event or a series without its head", () => {
+    const heads = seriesHeads([]);
+    expect(seriesCadence(heads, oneOff("social", 11, 12))).toBeNull();
+    expect(seriesCadence(heads, weeklySeries(8, 2)[1]!)).toBeNull();
   });
 });

@@ -594,6 +594,33 @@ describe("Event details series (#3823)", () => {
     });
   });
 
+  it("reads a generated occurrence's cadence off its series head", () => {
+    chapterEvents = [0, 1, 2, 3].map(weekly);
+    // The common path: the list's series row opens a child, whose own
+    // recurrence_rule is null.
+    event = chapterEvents[1] as Record<string, unknown>;
+    const tree = render();
+    const weekday = START.toLocaleDateString(undefined, { weekday: "long" });
+    expect(screenText(tree)).toContain(`Every ${weekday}`);
+    expect(screenText(tree)).not.toContain("Also in this series");
+  });
+
+  it("names an occurrence renamed on its own, on screen and to a screen reader", () => {
+    chapterEvents = [0, 1, 2].map(weekly);
+    (chapterEvents[2] as Record<string, unknown>).name = "Chapter: Elections";
+    event = chapterEvents[0] as Record<string, unknown>;
+    const tree = render();
+    expect(screenText(tree)).toMatch(/^Chapter: Elections · /m);
+    const renamed = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.accessibilityLabel).startsWith(
+          "Open Chapter: Elections, ",
+        ),
+    );
+    expect(renamed).toHaveLength(1);
+  });
+
   it("draws no series section for a one-time event", () => {
     chapterEvents = [EVENT];
     const tree = render();

@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import {
   dayDelta,
+  formatDayHeading,
   parseInstant,
   parseInstantOrBareLocalNoon,
 } from "@repo/formatting";
@@ -159,16 +160,12 @@ export function selectNextTask(
 /**
  * The day in words, never abbreviated (owner, 2026-11-07): "Today",
  * "Tomorrow", a weekday inside the coming week ("Sunday"), else the full date
- * ("November 14"). Exported for the strip's due line too.
+ * ("November 14"). `@repo/formatting`'s `formatDayHeading`, which the Events
+ * tab heads its days with, so the strip and the list say a day the same way.
+ * Exported for the strip's due line too.
  */
 export function formatDayWord(at: Date, now: Date): string {
-  const days = dayDelta(now, at);
-  if (days === 0) return "Today";
-  if (days === 1) return "Tomorrow";
-  if (days > 1 && days < 7) {
-    return at.toLocaleDateString(undefined, { weekday: "long" });
-  }
-  return at.toLocaleDateString(undefined, { month: "long", day: "numeric" });
+  return formatDayHeading(at.toISOString(), now) ?? "";
 }
 
 /** The day in words, then the clock time while it is inside the coming week. */

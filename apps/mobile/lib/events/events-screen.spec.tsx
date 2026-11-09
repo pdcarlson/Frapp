@@ -9,7 +9,6 @@ import { FrappThemeProvider } from "@/lib/theme";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   EVENTS_VIEW_STORAGE_KEY,
-  hydrateEventsView,
   resetEventsViewForTests,
 } from "@/lib/events/events-view";
 import { expectRoundedRipple } from "@/test/pressable-row";
@@ -477,15 +476,49 @@ describe("Events view switch", () => {
   });
 
   it("opens on Calendar after a restart when Calendar was the last pick", async () => {
+    // A fresh process: the screen's own subscription reads storage.
     vi.mocked(AsyncStorage.getItem).mockResolvedValueOnce("calendar");
-    await hydrateEventsView();
     const tree = render();
+    // Let the stored read land; nothing here calls hydrate by hand.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(AsyncStorage.getItem).toHaveBeenCalledWith(EVENTS_VIEW_STORAGE_KEY);
     expect(viewSwitch(tree, "Calendar").props.accessibilityState.checked).toBe(
       true,
     );
     expect(screenText(tree)).toContain(
       START.toLocaleDateString(undefined, { month: "long", year: "numeric" }),
     );
+  });
+
+  it("says nothing is scheduled in Calendar too, for a chapter with no events", () => {
+    permissions = ["*"];
+    events = [];
+    const tree = render();
+    act(() => viewSwitch(tree, "Calendar").props.onPress());
+    expect(screenText(tree)).toContain(
+      "Nothing scheduled yet. Tap + to add the first event.",
+    );
+    expect(screenText(tree)).not.toContain("Nothing on this day.");
+    permissions = [];
+  });
+
+  it("follows the clock to a new day until the member picks one", () => {
+    const tree = render();
+    act(() => viewSwitch(tree, "Calendar").props.onPress());
+    const heading = () =>
+      tree.root
+        .findAllByType("Text" as never)
+        .map((node) => node.props.children)
+        .filter((text) => text === "Today" || text === "Yesterday");
+    expect(heading()).toContain("Today");
+    // A day and a half later, the tab still mounted.
+    act(() => {
+      vi.advanceTimersByTime(36 * 3_600_000);
+    });
+    expect(heading()).toContain("Today");
+    expect(heading()).not.toContain("Yesterday");
   });
 
   it("turns the month with the chevrons and lists the chosen day's events", () => {

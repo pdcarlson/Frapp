@@ -5,7 +5,7 @@
  * Pure and `now`-injected so the screens stay presentational and the states are
  * testable without freezing a clock. The window formatters are deliberately
  * separate from the relative labels in `components/chat/up-next-strip.tsx`:
- * that strip answers "how soon" in a one-line pulse ("tmrw 6:00 PM"), while
+ * that strip answers "how soon" in a one-line pulse ("Tomorrow 6:00 PM"), while
  * they answer "when and for how long" in a detail context ("Tonight · 6:00 –
  * 7:00 PM"). s06's day headings are `@repo/formatting`'s `formatDayHeading`.
  */
