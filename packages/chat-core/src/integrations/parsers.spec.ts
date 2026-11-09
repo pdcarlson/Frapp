@@ -2,6 +2,7 @@ import { POINTS_REASON_MAX_LENGTH } from "@repo/validation";
 import { describe, expect, it } from "vitest";
 import {
   eventFormPrefill,
+  taskFormPrefill,
   parseAnnounceArgs,
   parseEventArgs,
   parseHoursArgs,
@@ -586,5 +587,44 @@ describe("eventFormPrefill (#3773)", () => {
   it("caps the name at the API's 255 characters", () => {
     const prefill = eventFormPrefill("x".repeat(300));
     expect(prefill.name).toHaveLength(255);
+  });
+});
+
+describe("taskFormPrefill (#3865)", () => {
+  it("is empty for a bare /task", () => {
+    expect(taskFormPrefill("")).toEqual({});
+    expect(taskFormPrefill("   ")).toEqual({});
+  });
+
+  it("takes an unquoted title up to the first @member or date", () => {
+    expect(taskFormPrefill("Sweep the porch @bobby")).toEqual({
+      title: "Sweep the porch",
+      assigneeToken: "bobby",
+    });
+    expect(taskFormPrefill("Sweep 2026-11-12")).toEqual({
+      title: "Sweep",
+      dueDate: "2026-11-12",
+    });
+  });
+
+  it("drops an unterminated quote and keeps what follows in its slots", () => {
+    expect(taskFormPrefill('"Sweep the porch @bobby 2026-11-12 5')).toEqual({
+      title: "Sweep the porch",
+      assigneeToken: "bobby",
+      dueDate: "2026-11-12",
+      pointReward: 5,
+    });
+  });
+
+  it("keeps an over-long title whole, for the form to flag", () => {
+    const long = "x".repeat(300);
+    expect(taskFormPrefill(`"${long}" @alex 2026-12-01`).title).toBe(long);
+  });
+
+  it("drops points before a date, and tokens that fit no slot", () => {
+    expect(taskFormPrefill('"Sweep" @bobby 5 2026-13-40')).toEqual({
+      title: "Sweep",
+      assigneeToken: "bobby",
+    });
   });
 });

@@ -109,6 +109,13 @@ export const MAJOR_MAX_LENGTH = 100;
 export const DOCUMENT_TITLE_MAX_LENGTH = 255;
 
 /**
+ * A task's title (`CreateTaskDto.title`), from the task board, the `/task`
+ * one-liner and the chat composer's Task form (#3865). The API refuses a
+ * longer one; the form and the one-liner say so first.
+ */
+export const TASK_TITLE_MAX_LENGTH = 255;
+
+/**
  * What a member says they did on a service entry
  * (`service_entries.description`), on web and mobile s20. The API's
  * `CreateServiceEntryDto` refuses a longer one, and s20's field stops at it.

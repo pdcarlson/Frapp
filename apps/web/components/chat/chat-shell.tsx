@@ -162,15 +162,40 @@ import {
   eventFormPrefill,
   parseEventArgs,
   parsePollArgs,
+  parseTaskArgs,
+  taskFormPrefill,
   type EventFormPrefill,
   type SlashCommand,
 } from "@repo/chat-core/integrations";
+import type { DispatchResult } from "@repo/chat-core/dispatch";
+import { NewTaskDialog, type NewTaskPrefill } from "@/components/tasks/new-task-dialog";
+import { LogHoursDialog } from "@/components/service/log-hours-dialog";
+import { PointsAdjustmentDialog } from "@/components/points/points-adjustment-dialog";
+import { useSubscriptionGate } from "@/components/shared/subscription-gate";
 import { EventEditorDialog } from "@/components/events/event-editor-dialog";
 import { pollDraftFromArgs, type PollDraft } from "@repo/chat-core/poll-draft";
 import { NewPollDialog } from "./new-poll-dialog";
 import type { PlusMenuForm } from "./composer-plus-menu";
 import type { ChatNotificationLevel } from "@repo/hooks";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
+
+/**
+ * What each + menu form's write needs (#3865), from the routes' guards:
+ * `POST /v1/tasks` is `tasks:manage` under the controller's `members:view`,
+ * `POST /v1/service-entries` is `service:log`, and `POST /v1/points/adjust`
+ * is `points:adjust` under `members:view`. The task and points forms also
+ * list members to pick from, which `members:view` reads.
+ */
+const TASK_CREATE_PERMISSIONS = ["tasks:manage", "members:view"] as const;
+const HOURS_LOG_PERMISSIONS = ["service:log"] as const;
+const POINTS_ADJUST_PERMISSIONS = ["points:adjust", "members:view"] as const;
+
+/** What a + menu form says when its write threw after the request went out. */
+const FORM_UNCONFIRMED_WARNING = {
+  task: "Couldn't confirm the task was created. Check the task board before you create it again.",
+  hours: "Couldn't confirm the hours were logged. Check the Service page before you log them again.",
+  points: "Couldn't confirm the points were adjusted. Check the points ledger before you adjust them again.",
+} as const;
 
 interface DirectoryMember {
   user_id: string;
@@ -1116,9 +1141,90 @@ export function ChatShell({
     channelId: string;
     draft: PollDraft;
   } | null>(null);
+  // `/task`, `/hours` and `/points` the same way (#3865): the + menu's Task,
+  // Service hours and Points rows, `/task` with details the one-liner can't
+  // read, and `/hours` or `/points` picked bare. Keyed per open, like the poll.
+  const [taskForm, setTaskForm] = useState<{
+    open: boolean;
+    key: number;
+    channelId: string;
+    prefill: NewTaskPrefill;
+    assigneeId?: string;
+  } | null>(null);
+  const [hoursForm, setHoursForm] = useState<{
+    open: boolean;
+    key: number;
+    channelId: string;
+  } | null>(null);
+  const [pointsForm, setPointsForm] = useState<{
+    open: boolean;
+    channelId: string;
+  } | null>(null);
+  // The Service hours form's writes are paid-ops (#841); the dialog takes its
+  // host's gate, as on the Service page.
+  const hoursGate = useSubscriptionGate();
   const openCommandForm = useCallback(
     (command: SlashCommand, args: string): CommandFormOutcome => {
       if (!activeChannelId) return null;
+      // Unknown until the read lands, and the server enforces it either way,
+      // so only a loaded grant without it refuses before a form opens.
+      const roleRefuses = (
+        permissions: readonly string[],
+        verb: string,
+        gerund: string,
+      ) => {
+        if (
+          !permissionsPayload ||
+          canAll([...permissions], permissionsPayload.permissions)
+        ) {
+          return false;
+        }
+        toast({
+          title: `You can't ${verb}`,
+          description: `Your role doesn't include ${gerund}. An officer can add it in Settings.`,
+          variant: "destructive",
+        });
+        return true;
+      };
+      if (command.name === "task") {
+        if (parseTaskArgs(args).ok) return null;
+        if (roleRefuses(TASK_CREATE_PERMISSIONS, "create tasks", "creating tasks")) {
+          return "refused";
+        }
+        const { assigneeToken, ...prefill } = taskFormPrefill(args);
+        const assignee = assigneeToken ? resolveMember(assigneeToken) : null;
+        setTaskForm((previous) => ({
+          open: true,
+          key: (previous?.key ?? 0) + 1,
+          channelId: activeChannelId,
+          prefill,
+          assigneeId: assignee?.user_id,
+        }));
+        return "opened";
+      }
+      // `/hours` and `/points` open their forms only when picked or typed
+      // bare: a half-typed one-liner keeps the parser's precise refusal, since
+      // neither form has a field for what the member got wrong.
+      if (command.name === "hours") {
+        if (args.trim().length > 0) return null;
+        if (roleRefuses(HOURS_LOG_PERMISSIONS, "log service hours", "logging service hours")) {
+          return "refused";
+        }
+        setHoursForm((previous) => ({
+          open: true,
+          key: (previous?.key ?? 0) + 1,
+          channelId: activeChannelId,
+        }));
+        return "opened";
+      }
+      if (command.name === "points") {
+        if (args.trim().length > 0) return null;
+        if (roleRefuses(POINTS_ADJUST_PERMISSIONS, "adjust points", "adjusting points")) {
+          return "refused";
+        }
+        setPointsForm({ open: true, channelId: activeChannelId });
+        return "opened";
+      }
       if (command.name === "poll") {
         if (parsePollArgs(args).ok) return null;
         // No role check: `/poll` lets any member post a poll today, and
@@ -1134,18 +1240,7 @@ export function ChatShell({
       }
       if (command.name !== "event") return null;
       if (parseEventArgs(args).ok) return null;
-      // Unknown until the read lands, and the server enforces it either way,
-      // so only a loaded grant without it refuses before the form opens.
-      if (
-        permissionsPayload &&
-        !canAll(EVENT_CREATE_PERMISSIONS, permissionsPayload.permissions)
-      ) {
-        toast({
-          title: "You can't create events",
-          description:
-            "Your role doesn't include creating events. An officer can add it in Settings.",
-          variant: "destructive",
-        });
+      if (roleRefuses(EVENT_CREATE_PERMISSIONS, "create events", "creating events")) {
         return "refused";
       }
       setEventForm({
@@ -1155,14 +1250,45 @@ export function ChatShell({
       });
       return "opened";
     },
-    [activeChannelId, permissionsPayload, toast],
+    [activeChannelId, permissionsPayload, resolveMember, toast],
+  );
+
+  // A + menu form's write, read as the typed command's is: a refusal stays
+  // in the form (which says so and keeps the draft), and a committed write
+  // with a lost card, or an unknown outcome, gets the command's own notice.
+  //
+  // The chat-core calls report a lost answer themselves, as unconfirmed. A
+  // throw here comes from their cache bookkeeping, usually after the request
+  // went out, so the write may have committed (#1718's class). It reads as
+  // unconfirmed too, never as failed: the form closes rather than inviting a
+  // resubmit under a fresh key, which would write it twice.
+  const postFromForm = useCallback(
+    async (
+      commandName: "task" | "hours" | "points",
+      post: () => Promise<DispatchResult>,
+    ): Promise<DispatchResult> => {
+      let result: DispatchResult;
+      try {
+        result = await post();
+      } catch (error) {
+        Sentry.captureException(error, { tags: { plus_menu_form: commandName } });
+        result = {
+          ok: true,
+          unconfirmed: true,
+          warning: FORM_UNCONFIRMED_WARNING[commandName],
+        };
+      }
+      if (result.ok && (result.warning || result.unconfirmed || result.resolved)) {
+        notifyDispatchOutcome(toast, commandName, result);
+      }
+      return result;
+    },
+    [toast],
   );
 
   // What the composer's + offers beside Attach a file (#3865), and whether
   // the member's role may use each: `"loading"` until the read lands, so a row
   // isn't blamed on the role before it does, and `"unknown"` if it failed.
-  // Task, Service hours and Points join as their forms learn to post into the
-  // channel.
   // A read paused offline before it ever landed can't answer either, and
   // stays `pending` rather than erroring, so it counts as failed here.
   const permissionsFailed =
@@ -1177,6 +1303,20 @@ export function ChatShell({
       {
         command: "event",
         roleAllows: allows((list) => canAll(EVENT_CREATE_PERMISSIONS, list)),
+      },
+      {
+        command: "task",
+        roleAllows: allows((list) => canAll([...TASK_CREATE_PERMISSIONS], list)),
+      },
+      {
+        command: "hours",
+        roleAllows: allows((list) => canAll([...HOURS_LOG_PERMISSIONS], list)),
+      },
+      {
+        command: "points",
+        roleAllows: allows((list) =>
+          canAll([...POINTS_ADJUST_PERMISSIONS], list),
+        ),
       },
     ];
   }, [permissionsPayload, permissionsFailed]);
@@ -2879,7 +3019,7 @@ export function ChatShell({
       ) : null}
       {pollForm ? (
         <NewPollDialog
-          key={pollForm.key}
+          key={`poll:${pollForm.key}`}
           open={pollForm.open}
           onOpenChange={(open) =>
             setPollForm((previous) =>
@@ -2896,6 +3036,58 @@ export function ChatShell({
             }
             return result;
           }}
+        />
+      ) : null}
+      {taskForm ? (
+        <NewTaskDialog
+          key={`task:${taskForm.key}`}
+          open={taskForm.open}
+          onOpenChange={(open) =>
+            setTaskForm((previous) =>
+              previous ? { ...previous, open } : previous,
+            )
+          }
+          prefill={taskForm.prefill}
+          initialAssigneeId={taskForm.assigneeId}
+          onPost={async (input) =>
+            postFromForm("task", () =>
+              channel.postTask(taskForm.channelId, input),
+            )
+          }
+        />
+      ) : null}
+      {hoursForm ? (
+        <LogHoursDialog
+          key={`hours:${hoursForm.key}`}
+          open={hoursForm.open}
+          onOpenChange={(open) =>
+            setHoursForm((previous) =>
+              previous ? { ...previous, open } : previous,
+            )
+          }
+          gate={hoursGate}
+          showSubscriptionNotice
+          submitToChannel={async (input) =>
+            postFromForm("hours", () =>
+              channel.postHours(hoursForm.channelId, input),
+            )
+          }
+        />
+      ) : null}
+      {pointsForm ? (
+        <PointsAdjustmentDialog
+          open={pointsForm.open}
+          onOpenChange={(open) =>
+            setPointsForm((previous) =>
+              previous ? { ...previous, open } : previous,
+            )
+          }
+          onAdjusted={() => undefined}
+          submitToChannel={async (input) =>
+            postFromForm("points", () =>
+              channel.postPointsAdjustment(pointsForm.channelId, input),
+            )
+          }
         />
       ) : null}
       <ReportMessageDialog

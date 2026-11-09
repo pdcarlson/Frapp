@@ -10,13 +10,13 @@ import {
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { POINTS_ADJUSTMENT_MAX } from '@repo/validation';
+import { POINTS_ADJUSTMENT_MAX, TASK_TITLE_MAX_LENGTH } from '@repo/validation';
 import { TaskStatus, type Task } from '#domain/entities/task.entity';
 
 export class CreateTaskDto {
   @ApiProperty()
   @IsString()
-  @MaxLength(255)
+  @MaxLength(TASK_TITLE_MAX_LENGTH)
   title: string;
 
   @ApiPropertyOptional()
