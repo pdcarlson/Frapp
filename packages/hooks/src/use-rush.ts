@@ -57,6 +57,7 @@ export function useVoteRushCandidate() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["rush", "vote-rush-candidate"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.POST(
         "/v1/rush/candidates/{id}/vote",
@@ -81,6 +82,7 @@ export function useBidRushCandidate() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
+    mutationKey: ["rush", "bid-rush-candidate"],
     mutationFn: async (id: string) => {
       const { data, error } = await client.POST("/v1/rush/candidates/{id}/bid", {
         params: { path: { id } },

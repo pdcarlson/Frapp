@@ -59,6 +59,7 @@ export function useUpdateUser() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["user", "update-user"],
     mutationFn: async (body: components["schemas"]["UpdateUserDto"]) => {
       const { data, error } = await client.PATCH("/v1/users/me", { body });
       if (error) throw error;
@@ -131,6 +132,7 @@ function invalidateProfileReads(
 export function useRequestAvatarUploadUrl() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["user", "request-avatar-upload-url"],
     mutationFn: async (body: {
       filename: string;
       content_type: string;
@@ -156,6 +158,7 @@ export function useConfirmAvatar() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["user", "confirm-avatar"],
     mutationFn: async (storagePath: string) => {
       const { data, error } = await client.POST("/v1/users/me/avatar", {
         body: { storage_path: storagePath },
@@ -172,6 +175,7 @@ export function useRemoveAvatar() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: ["user", "remove-avatar"],
     mutationFn: async () => {
       const { data, error } = await client.DELETE("/v1/users/me/avatar");
       if (error) throw error;
@@ -204,6 +208,7 @@ export function useRemoveAvatar() {
 export function useDeleteAccount() {
   const client = useFrappClient();
   return useMutation({
+    mutationKey: ["user", "delete-account"],
     mutationFn: async () => {
       const { data, error } = await client.DELETE("/v1/users/me");
       if (error) throw error;
