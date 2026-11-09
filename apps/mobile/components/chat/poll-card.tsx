@@ -91,8 +91,9 @@ export function PollCard(props: PollCardProps) {
   // A card vote is a Polls write, and the server refuses it while Polls is off
   // (#2993). The gate is mirrored here so the member sees that before tapping
   // (#3012), failing closed until the chapter read answers and saying whether
-  // it is still running or needs a Retry (`usePollsGate`, which the
-  // composer's Poll offer reads too).
+  // it is still running or needs a Retry (`usePollsGate`). The composer's +
+  // reads the same chapter through `plusMenuModel`, which greys its Poll row
+  // instead (`components/chat/use-composer-plus.tsx`).
   const { gate: pollsGate, recheck: recheckPolls } = usePollsGate();
   // The close route requires `polls:create`, which posting a card doesn't
   // (#3007). Unknown until the read lands, which withholds Close poll.

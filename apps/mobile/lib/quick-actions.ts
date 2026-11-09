@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { PLUS_MENU_PERMISSIONS } from "@repo/chat-core/plus-menu";
 import {
   can,
   canAll,
@@ -96,7 +97,9 @@ export function availableQuickActions({
     // controller guards with members:view.
     newEvent:
       on("events") && canAll(EVENT_CREATE_PERMISSIONS, permissions),
-    newTask: on("tasks") && can("tasks:manage", permissions),
+    // The route's grant, from the table the chat + reads too: `tasks:manage`
+    // under the controller's `members:view`.
+    newTask: on("tasks") && canAll(PLUS_MENU_PERMISSIONS.task, permissions),
     // Every invite route (`POST /v1/invites`, `GET /v1/invites`) checks
     // `members:invite`. Invites have no module switch.
     invite: can("members:invite", permissions),
