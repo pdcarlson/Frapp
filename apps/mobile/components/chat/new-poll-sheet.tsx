@@ -81,7 +81,8 @@ export interface NewPollSheetProps {
   now?: () => Date;
 }
 
-type Focus = "question" | number | null;
+/** The question, an option row by its key, or nothing. */
+type Focus = "question" | string | null;
 
 export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
   function NewPollSheet({ onPost, now }, ref) {
@@ -145,19 +146,28 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
         options: check.options,
         closesAt: closesAtFor(draft.closes, now ? now() : new Date()),
       });
-      void onPost(poll).then((result) => {
-        sending.current = false;
-        setPosting(false);
-        if (result.ok) {
-          successHaptic();
-          // The card is in the thread, so the draft goes whichever visit is
-          // on screen: keeping it would invite a second poll.
-          reset();
-          if (isSameVisit(sentFrom)) dismiss();
-          return;
-        }
-        if (isSameVisit(sentFrom)) setFailure(result.error);
-      });
+      // `sendPoll` never rejects, but the lock is released whatever happens:
+      // a rejection would otherwise hold the sheet at "Posting…" for good.
+      void onPost(poll)
+        .catch(
+          (): { ok: false; error: string } => ({
+            ok: false,
+            error: "Couldn't post that poll. Try again.",
+          }),
+        )
+        .then((result) => {
+          sending.current = false;
+          setPosting(false);
+          if (result.ok) {
+            successHaptic();
+            // The card is in the thread, so the draft goes whichever visit
+            // is on screen: keeping it would invite a second poll.
+            reset();
+            if (isSameVisit(sentFrom)) dismiss();
+            return;
+          }
+          if (isSameVisit(sentFrom)) setFailure(result.error);
+        });
     }, [check, draft.closes, now, onPost, reset, dismiss, visit, isSameVisit]);
 
     const problem = failure ?? (check.ok ? null : check.problem);
@@ -215,26 +225,28 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
           <Text style={styles.groupLabel}>Options</Text>
           {draft.options.map((option, index) => (
             <OptionRow
-              // Rows move, so the key is the slot: React keeps each input
-              // where it is and the moved text flows into it, which also keeps
-              // the keyboard on the row the member is typing in.
-              key={index}
+              // The row's own key, not its position: a moved row takes its
+              // field with it, so a member typing in it keeps typing in it
+              // (`PollOptionRow` in `lib/chat/new-poll.ts`).
+              key={option.key}
               index={index}
               count={draft.options.length}
-              value={option}
-              focused={focused === index}
+              value={option.text}
+              focused={focused === option.key}
               disabled={posting}
               canRemove={canRemovePollOption(draft)}
               onChange={(text) =>
-                edit((current) => setPollOption(current, index, text))
+                edit((current) => setPollOption(current, option.key, text))
               }
-              onFocus={() => setFocused(index)}
-              onBlur={() => setFocused(null)}
+              onFocus={() => setFocused(option.key)}
+              onBlur={() =>
+                setFocused((current) => (current === option.key ? null : current))
+              }
               onMove={(step) =>
-                edit((current) => movePollOption(current, index, step))
+                edit((current) => movePollOption(current, option.key, step))
               }
               onRemove={() =>
-                edit((current) => removePollOption(current, index))
+                edit((current) => removePollOption(current, option.key))
               }
               styles={styles}
             />

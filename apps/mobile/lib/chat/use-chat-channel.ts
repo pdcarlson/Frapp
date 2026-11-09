@@ -900,6 +900,8 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
           content: poll.content,
           kind: "poll",
           payload: poll.payload as unknown as Record<string, unknown>,
+          // The composer may hold a message the member is still writing.
+          keepDraft: true,
         });
         return { ok: true };
       } catch (error) {

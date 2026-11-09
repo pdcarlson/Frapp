@@ -280,6 +280,8 @@ let channelType = "PUBLIC";
 /** The viewer's permissions, and the chapter's modules, for the + (#3701). */
 let permissionList: string[] = [];
 let enabledModules: Record<string, boolean> = {};
+/** The member view of the chapter hasn't answered yet. */
+let chapterUnread = false;
 
 /** A ready list with one member on it, stable across renders as the hook's is. */
 const BLOCK_LIST = {
@@ -345,7 +347,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   // No imported authors with avatars in these fixtures.
   useAuthorAvatars: () => ({ data: undefined }),
   usePermissionList: () => permissionList,
-  useCurrentChapter: () => ({ data: { enabled_modules: enabledModules } }),
+  useCurrentChapter: () =>
+    chapterUnread
+      ? { data: undefined, fetchStatus: "fetching" }
+      : { data: { enabled_modules: enabledModules }, fetchStatus: "idle" },
   useMarkChannelRead: () => markRead,
   useRequestChatUploadUrl: () => requestUploadUrl,
   useChannelNotificationPreferences: () => ({ data: NOTIFICATION_PREFS }),
@@ -478,6 +483,7 @@ beforeEach(() => {
   channelType = "PUBLIC";
   permissionList = [];
   enabledModules = {};
+  chapterUnread = false;
   queryClient = new QueryClient();
 });
 
@@ -1921,6 +1927,35 @@ describe("chat thread new poll (#3701)", () => {
     enabledModules = { polls: false };
     const tree = render();
     expect(composer(tree).props.onCreatePoll).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("offers none until the chapter's modules are read, as the card's Vote waits", () => {
+    permissionList = ["polls:create"];
+    chapterUnread = true;
+    const tree = render();
+    expect(composer(tree).props.onCreatePoll).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("offers none while a reply is staged: a poll can't be a reply", () => {
+    permissionList = ["polls:create"];
+    const tree = render();
+    expect(composer(tree).props.onCreatePoll).toBeTypeOf("function");
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    act(() => (sheet.props.onReply as (id: string) => void)("m1"));
+    expect(composer(tree).props.onCreatePoll).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  it("mounts a new sheet per channel, so a kept draft never posts elsewhere", () => {
+    permissionList = ["polls:create"];
+    const tree = render();
+    const first = tree.root.findByType("NewPollSheet" as never);
+    params = { channelId: OTHER_CHANNEL };
+    rerender(tree);
+    const second = tree.root.findByType("NewPollSheet" as never);
+    expect(second).not.toBe(first);
     act(() => tree.unmount());
   });
 

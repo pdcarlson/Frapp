@@ -4,7 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
-import { screenText } from "@/test/screen-text";
+import { drawnText, screenText } from "@/test/screen-text";
 import { DUPLICATE_OPTION_PROBLEM } from "@/lib/chat/new-poll";
 
 /**
@@ -191,6 +191,123 @@ describe("New poll sheet (#3701)", () => {
     });
     expect(onPost).toHaveBeenCalledTimes(1);
     await act(async () => settle({ ok: true }));
+    act(() => tree.unmount());
+  });
+});
+
+/**
+ * The close: a post that queued closes the sheet and gives the draft up,
+ * Cancel gives it up, and a swipe keeps it (`patterns.md` § Bottom sheets).
+ */
+describe("New poll sheet across visits (#3701)", () => {
+  const dismiss = vi.fn();
+
+  function renderWithModal(
+    onPost: NewPollSheetProps["onPost"],
+  ): ReactTestRenderer {
+    const ref = React.createRef<never>();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewPollSheet ref={ref} onPost={onPost} now={() => NOW} />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) =>
+            (element.type as unknown) === "BottomSheetModal"
+              ? { dismiss, present: vi.fn() }
+              : null,
+        },
+      );
+    });
+    // What gorhom reports as `present()` starts bringing the sheet up.
+    act(() => modal(tree).props.onAnimate(-1, 0));
+    return tree;
+  }
+
+  const modal = (tree: ReactTestRenderer) =>
+    tree.root.find((node) => node.type === ("BottomSheetModal" as never));
+
+  const pressCancel = (tree: ReactTestRenderer) =>
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.type === ("Pressable" as never) &&
+            drawnText(node) === "Cancel",
+        )
+        .props.onPress(),
+    );
+
+  beforeEach(() => dismiss.mockReset());
+
+  it("closes once the poll is queued", async () => {
+    const tree = renderWithModal(queued());
+    fill(tree);
+    await act(async () => postButton(tree).props.onPress());
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("stays open, draft and all, when the poll couldn't be queued", async () => {
+    const tree = renderWithModal(async () => ({
+      ok: false as const,
+      error: "Couldn't post that poll. Try again.",
+    }));
+    fill(tree);
+    await act(async () => postButton(tree).props.onPress());
+    expect(dismiss).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("gives the draft up on Cancel", () => {
+    const tree = renderWithModal(queued());
+    fill(tree);
+    pressCancel(tree);
+    expect(field(tree, "Poll question").props.value).toBe("");
+    expect(field(tree, "Option 1").props.value).toBe("");
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("keeps the draft through a swipe or scrim close", () => {
+    const tree = renderWithModal(queued());
+    fill(tree);
+    act(() => modal(tree).props.onDismiss());
+    expect(field(tree, "Poll question").props.value).toBe(
+      "Who's driving Saturday?",
+    );
+    act(() => tree.unmount());
+  });
+
+  it("releases Post if the post rejects, rather than holding at Posting…", async () => {
+    const tree = renderWithModal(async () => {
+      throw new Error("boom");
+    });
+    fill(tree);
+    await act(async () => postButton(tree).props.onPress());
+    expect(postButton(tree).props.disabled).toBe(false);
+    expect(screenText(tree)).toContain("Couldn't post that poll. Try again.");
+    act(() => tree.unmount());
+  });
+});
+
+describe("New poll sheet row moves (#3701)", () => {
+  it("moves the field with its text, so the row being typed in stays focused", () => {
+    const tree = render(queued());
+    fill(tree);
+    // Typing in Option 2.
+    act(() => field(tree, "Option 2").props.onFocus());
+    const typing = field(tree, "Option 2");
+    act(() => control(tree, "Move option 2 up")!.props.onPress());
+    // The same field instance now leads the list, still holding "Not me",
+    // still the focused one: the next keystrokes edit the option it shows.
+    const first = field(tree, "Option 1");
+    expect(first).toBe(typing);
+    expect(first.props.value).toBe("Not me");
+    act(() => first.props.onChangeText("Not me!"));
+    expect(field(tree, "Option 1").props.value).toBe("Not me!");
+    expect(field(tree, "Option 2").props.value).toBe("Me");
     act(() => tree.unmount());
   });
 });

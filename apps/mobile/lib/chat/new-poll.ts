@@ -1,9 +1,5 @@
-import {
-  can,
-  isModuleEnabled,
-  POLL_OPTIONS_MAX,
-  POLL_OPTIONS_MIN,
-} from "@repo/validation";
+import { type PollsGate } from "@repo/chat-core/polls";
+import { can, POLL_OPTIONS_MAX, POLL_OPTIONS_MIN } from "@repo/validation";
 
 /**
  * The model behind s05's New poll sheet (`components/chat/new-poll-sheet.tsx`,
@@ -30,40 +26,62 @@ export const POLL_CLOSE_CHOICES: readonly {
 /** A day, as web's `/poll` closes when it isn't told otherwise. */
 export const DEFAULT_POLL_CLOSE: PollCloseChoice = "1d";
 
+/**
+ * One option row. `key` is the row's own and moves with it, so a row moved up
+ * or down takes its text field (and the keyboard, if the member is typing in
+ * it) along: a key by position would leave the caret in the slot the text
+ * just left, and the next keystrokes would land in another option.
+ */
+export interface PollOptionRow {
+  key: string;
+  text: string;
+}
+
 export interface PollDraft {
   question: string;
-  /** One entry per option row, as typed; blank rows are allowed while editing. */
-  options: string[];
+  /** The option rows, as typed; blank rows are allowed while editing. */
+  options: PollOptionRow[];
   closes: PollCloseChoice;
+}
+
+let nextRowKey = 0;
+function newRow(): PollOptionRow {
+  nextRowKey += 1;
+  return { key: `option-${nextRowKey}`, text: "" };
 }
 
 /** A new poll starts with the two rows every poll needs. */
 export function emptyPollDraft(): PollDraft {
   return {
     question: "",
-    options: Array.from({ length: POLL_OPTIONS_MIN }, () => ""),
+    options: Array.from({ length: POLL_OPTIONS_MIN }, newRow),
     closes: DEFAULT_POLL_CLOSE,
   };
 }
 
 /**
  * Whether this member may start a poll here: their role grants `polls:create`
- * and the chapter has Polls on (#3701, `spec/behavior/polls.md`). The module
- * gate is the server's too (#2993): a poll sent while Polls is off is refused.
- * Permissions still loading read as none, so the entry appears once they
- * answer rather than flickering in and out.
+ * and the chapter has Polls on (#3701, `spec/behavior/polls.md`).
+ *
+ * `pollsGate` is the same Polls read the poll card's Vote takes (`pollsGateOf`
+ * in `@repo/chat-core/polls`): only `"on"` offers a poll, so while the
+ * chapter is still loading, or couldn't be read, the + offers photos only
+ * rather than a poll the server may refuse. Permissions still loading read as
+ * none, for the same reason.
+ *
+ * Only the module half is the server's too (#2993). The chat send route
+ * doesn't check `polls:create` for a poll card, on this client's posts or
+ * web's `/poll`: whether it should is #3007's open decision. Until then this
+ * is a client-side offer, not enforcement.
  */
 export function canCreatePoll({
   permissions,
-  enabledModules,
+  pollsGate,
 }: {
   permissions: readonly string[] | undefined;
-  enabledModules: Record<string, boolean> | null | undefined;
+  pollsGate: PollsGate;
 }): boolean {
-  return (
-    isModuleEnabled(enabledModules, "polls") &&
-    can("polls:create", permissions)
-  );
+  return pollsGate === "on" && can("polls:create", permissions);
 }
 
 export function closesAtFor(choice: PollCloseChoice, now: Date): Date {
@@ -95,7 +113,7 @@ export const DUPLICATE_OPTION_PROBLEM =
 export function checkPollDraft(draft: PollDraft): PollDraftCheck {
   const question = draft.question.trim();
   const options = draft.options
-    .map((option) => option.trim())
+    .map((option) => option.text.trim())
     .filter((option) => option.length > 0);
   const seen = new Set<string>();
   for (const option of options) {
@@ -126,37 +144,41 @@ export function canRemovePollOption(draft: PollDraft): boolean {
 
 export function addPollOption(draft: PollDraft): PollDraft {
   if (!canAddPollOption(draft)) return draft;
-  return { ...draft, options: [...draft.options, ""] };
+  return { ...draft, options: [...draft.options, newRow()] };
 }
 
-export function removePollOption(draft: PollDraft, index: number): PollDraft {
+export function removePollOption(draft: PollDraft, key: string): PollDraft {
   if (!canRemovePollOption(draft)) return draft;
-  if (index < 0 || index >= draft.options.length) return draft;
+  if (!draft.options.some((row) => row.key === key)) return draft;
   return {
     ...draft,
-    options: draft.options.filter((_, each) => each !== index),
+    options: draft.options.filter((row) => row.key !== key),
   };
 }
 
 export function setPollOption(
   draft: PollDraft,
-  index: number,
+  key: string,
   text: string,
 ): PollDraft {
-  if (index < 0 || index >= draft.options.length) return draft;
-  const options = [...draft.options];
-  options[index] = text;
-  return { ...draft, options };
+  if (!draft.options.some((row) => row.key === key)) return draft;
+  return {
+    ...draft,
+    options: draft.options.map((row) =>
+      row.key === key ? { ...row, text } : row,
+    ),
+  };
 }
 
 /** Moves one row up (`-1`) or down (`1`); a move off either end does nothing. */
 export function movePollOption(
   draft: PollDraft,
-  index: number,
+  key: string,
   step: -1 | 1,
 ): PollDraft {
+  const index = draft.options.findIndex((row) => row.key === key);
   const target = index + step;
-  if (index < 0 || index >= draft.options.length) return draft;
+  if (index < 0) return draft;
   if (target < 0 || target >= draft.options.length) return draft;
   const options = [...draft.options];
   [options[index], options[target]] = [options[target]!, options[index]!];

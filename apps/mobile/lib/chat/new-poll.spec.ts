@@ -14,33 +14,44 @@ import {
 } from "./new-poll";
 
 function draft(question: string, options: string[]): PollDraft {
-  return { question, options, closes: DEFAULT_POLL_CLOSE };
+  return {
+    question,
+    options: options.map((text, i) => ({ key: `k${i}`, text })),
+    closes: DEFAULT_POLL_CLOSE,
+  };
 }
+
+const texts = (d: PollDraft) => d.options.map((row) => row.text);
 
 describe("canCreatePoll (#3701)", () => {
   it("needs polls:create", () => {
     expect(
-      canCreatePoll({ permissions: ["polls:create"], enabledModules: {} }),
+      canCreatePoll({ permissions: ["polls:create"], pollsGate: "on" }),
     ).toBe(true);
     expect(
-      canCreatePoll({ permissions: ["members:view"], enabledModules: {} }),
+      canCreatePoll({ permissions: ["members:view"], pollsGate: "on" }),
     ).toBe(false);
   });
 
   it("lets a President's * through", () => {
-    expect(canCreatePoll({ permissions: ["*"], enabledModules: {} })).toBe(
-      true,
-    );
+    expect(canCreatePoll({ permissions: ["*"], pollsGate: "on" })).toBe(true);
   });
 
   it("is off while Polls is off, whatever the role", () => {
-    expect(
-      canCreatePoll({ permissions: ["*"], enabledModules: { polls: false } }),
-    ).toBe(false);
+    expect(canCreatePoll({ permissions: ["*"], pollsGate: "off" })).toBe(false);
+  });
+
+  it("fails closed while Polls is unread or unreadable, as the card's Vote does", () => {
+    expect(canCreatePoll({ permissions: ["*"], pollsGate: "loading" })).toBe(
+      false,
+    );
+    expect(canCreatePoll({ permissions: ["*"], pollsGate: "error" })).toBe(
+      false,
+    );
   });
 
   it("offers nothing while permissions are still loading", () => {
-    expect(canCreatePoll({ permissions: undefined, enabledModules: {} })).toBe(
+    expect(canCreatePoll({ permissions: undefined, pollsGate: "on" })).toBe(
       false,
     );
   });
@@ -87,31 +98,34 @@ describe("checkPollDraft (#3701)", () => {
 });
 
 describe("editing the option rows (#3701)", () => {
-  it("adds rows up to ten", () => {
+  it("adds rows up to ten, each with its own key", () => {
     let next = emptyPollDraft();
     for (let i = 0; i < 20; i++) next = addPollOption(next);
     expect(next.options).toHaveLength(10);
+    expect(new Set(next.options.map((row) => row.key)).size).toBe(10);
   });
 
   it("never goes below the two rows a poll needs", () => {
     const start = draft("Q?", ["A", "B"]);
-    expect(removePollOption(start, 0)).toBe(start);
-    expect(removePollOption(draft("Q?", ["A", "B", "C"]), 1).options).toEqual([
-      "A",
-      "C",
-    ]);
+    expect(removePollOption(start, "k0")).toBe(start);
+    expect(texts(removePollOption(draft("Q?", ["A", "B", "C"]), "k1"))).toEqual(
+      ["A", "C"],
+    );
   });
 
-  it("moves a row up or down, and not off either end", () => {
+  it("moves a row up or down, key and all, and not off either end", () => {
     const start = draft("Q?", ["A", "B", "C"]);
-    expect(movePollOption(start, 2, -1).options).toEqual(["A", "C", "B"]);
-    expect(movePollOption(start, 0, 1).options).toEqual(["B", "A", "C"]);
-    expect(movePollOption(start, 0, -1)).toBe(start);
-    expect(movePollOption(start, 2, 1)).toBe(start);
+    const moved = movePollOption(start, "k2", -1);
+    expect(texts(moved)).toEqual(["A", "C", "B"]);
+    // The row keeps its key, so its field (and focus) moves with the text.
+    expect(moved.options[1]).toEqual({ key: "k2", text: "C" });
+    expect(texts(movePollOption(start, "k0", 1))).toEqual(["B", "A", "C"]);
+    expect(movePollOption(start, "k0", -1)).toBe(start);
+    expect(movePollOption(start, "k2", 1)).toBe(start);
   });
 
   it("sets one row's text", () => {
-    expect(setPollOption(draft("Q?", ["A", "B"]), 1, "Bee").options).toEqual([
+    expect(texts(setPollOption(draft("Q?", ["A", "B"]), "k1", "Bee"))).toEqual([
       "A",
       "Bee",
     ]);

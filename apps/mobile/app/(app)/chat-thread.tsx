@@ -53,7 +53,8 @@ import {
   useRequestChatUploadUrl,
   useSetChannelNotificationLevel,
 } from "@repo/hooks";
-import { can, draftWithMention } from "@repo/validation";
+import { can, draftWithMention, isModuleEnabled } from "@repo/validation";
+import { pollsGateOf } from "@repo/chat-core/polls";
 import { SignetTokens } from "@repo/theme/signet";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ChatComposer } from "@/components/chat/chat-composer";
@@ -338,14 +339,21 @@ export default function ChatThreadScreen() {
   const permissionList = usePermissionList();
   const canManageChannel = can("channels:manage", permissionList);
   // The composer's + offers a poll to a member whose role creates them, in a
-  // chapter with Polls on, in a channel they can post in (#3701). The member
-  // view's `enabled_modules`, as the poll card reads it.
+  // chapter with Polls on, in a channel they can post in (#3701). The Polls
+  // read is the poll card's (`pollsGateOf`): the member view's
+  // `enabled_modules`, failing closed while it is unread or unreadable.
   const chapterQuery = useCurrentChapter();
   const pollsAllowed =
     channelCanPost &&
     canCreatePoll({
       permissions: permissionList,
-      enabledModules: chapterQuery.data?.enabled_modules,
+      pollsGate: pollsGateOf({
+        pollsEnabled:
+          chapterQuery.data === undefined
+            ? undefined
+            : isModuleEnabled(chapterQuery.data?.enabled_modules, "polls"),
+        fetchStatus: chapterQuery.fetchStatus,
+      }),
     });
   const canReplyHere = channelAllowsReplies({
     can_post: channelCanPost,
