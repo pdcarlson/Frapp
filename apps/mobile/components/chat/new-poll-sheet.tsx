@@ -23,6 +23,7 @@ import {
   SheetHeader,
   SheetPrimaryButton,
   SheetScrim,
+  SHEET_STACK_BEHAVIOR,
   sheetFieldStyles,
   useSheetBackgroundStyle,
   useSheetClose,
@@ -175,6 +176,7 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
     return (
       <BottomSheetModal
         ref={ref}
+        stackBehavior={SHEET_STACK_BEHAVIOR}
         enableDynamicSizing
         keyboardBehavior="interactive"
         backgroundStyle={backgroundStyle}
