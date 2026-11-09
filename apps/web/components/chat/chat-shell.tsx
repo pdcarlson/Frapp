@@ -1041,48 +1041,52 @@ export function ChatShell({
   }, [activeChannelId, resetBookmarkMessage, resetUnbookmarkMessage]);
 
   const { confirm, confirmDialog } = useConfirmDialog();
+  // Delete message and Close poll (#3794) are both destructive, so both ask
+  // first through one flow: the copy is the action's, and a failure was
+  // already toasted by the chat-core action, so it is swallowed here.
+  // Mobile's equivalent is `confirmDestructive`.
+  const confirmThen = useCallback(
+    (
+      copy: { title: string; description: string; confirmLabel: string },
+      action: () => Promise<void>,
+    ) => {
+      void (async () => {
+        const confirmed = await confirm({ ...copy, tone: "destructive" });
+        if (!confirmed) return;
+        try {
+          await action();
+        } catch {
+          // The chat-core action already toasted the failure.
+        }
+      })();
+    },
+    [confirm],
+  );
   const deleteMessage = channel.delete;
   const handleDeleteMessage = useCallback(
-    (messageId: string) => {
-      void (async () => {
-        const confirmed = await confirm({
+    (messageId: string) =>
+      confirmThen(
+        {
           title: DELETE_MESSAGE_CONFIRM_TITLE,
           description: DELETE_MESSAGE_CONFIRM_BODY,
           confirmLabel: DELETE_MESSAGE_CONFIRM_LABEL,
-          tone: "destructive",
-        });
-        if (!confirmed) return;
-        try {
-          await deleteMessage(messageId);
-        } catch {
-          // The delete action already toasted the failure.
-        }
-      })();
-    },
-    [confirm, deleteMessage],
+        },
+        () => deleteMessage(messageId),
+      ),
+    [confirmThen, deleteMessage],
   );
-
-  // A poll card's Close poll (#3794): asked first, in the words mobile's
-  // alert uses, because it stops everyone's voting and can't be undone.
   const closePoll = channel.closePoll;
   const handleClosePoll = useCallback(
-    (messageId: string) => {
-      void (async () => {
-        const confirmed = await confirm({
+    (messageId: string) =>
+      confirmThen(
+        {
           title: CLOSE_POLL_CONFIRM_TITLE,
           description: CLOSE_POLL_CONFIRM_BODY,
           confirmLabel: CLOSE_POLL_CONFIRM_LABEL,
-          tone: "destructive",
-        });
-        if (!confirmed) return;
-        try {
-          await closePoll(messageId);
-        } catch {
-          // The close action already toasted the failure.
-        }
-      })();
-    },
-    [confirm, closePoll],
+        },
+        () => closePoll(messageId),
+      ),
+    [confirmThen, closePoll],
   );
 
   const setNotificationLevel = useSetChannelNotificationLevel();

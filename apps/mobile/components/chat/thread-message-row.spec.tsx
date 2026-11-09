@@ -2,7 +2,7 @@
 import React from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { CARD_KINDS } from "@repo/chat-core/message-actions";
 import { reactionActionType } from "@repo/chat-core/types";
@@ -19,6 +19,10 @@ import type {
   MaskedRefreshState,
   ThreadRow,
 } from "@repo/chat-core/blocks";
+
+// The viewer's permissions. None by default; the Close poll wiring test
+// below grants `polls:create`, which the card's Close poll requires (#3794).
+const rowPermissions = vi.hoisted(() => ({ current: [] as string[] }));
 
 const attachmentHook = vi.hoisted(() => ({
   calls: 0,
@@ -45,7 +49,9 @@ vi.mock("@repo/hooks", async () => {
     // cover what each one does. Here they only have to draw.
     usePermissionList: () => [],
     // The hours and rush cards read the query itself (#3383).
-    useMyPermissions: () => ({ data: { permissions: [] } }),
+    useMyPermissions: () => ({
+      data: { permissions: rowPermissions.current },
+    }),
     useTask: () => ({ data: undefined }),
     useEvent: () => ({ data: undefined, isError: false }),
     useAttendance: () => ({ data: undefined }),
@@ -134,6 +140,7 @@ function renderRow(
     blockState?: BlockState;
     replyParent?: ChatMessage | null;
     onOpenActions?: (message: ChatMessage) => void;
+    onClosePoll?: (messageId: string) => void;
     onJumpToMessage?: (messageId: string) => void;
     onUnblock?: (userId: string) => void;
     maskedRefresh?: ReadonlyMap<string, MaskedRefreshState>;
@@ -157,7 +164,7 @@ function renderRow(
           replyParent={overrides.replyParent}
           blockState={overrides.blockState ?? READY_WITH_BLOCKED}
           onVote={vi.fn()}
-          onClosePoll={vi.fn()}
+          onClosePoll={overrides.onClosePoll ?? vi.fn()}
           onRetry={vi.fn()}
           onDiscard={vi.fn()}
           onReact={vi.fn()}
@@ -1265,5 +1272,46 @@ describe("the author's role color reaches the author line", () => {
       { roleColorFor },
     );
     expect(authorStyle(tree)).toContain('"color":"#5CC8F0"');
+  });
+});
+
+describe("ThreadMessageRow Close poll wiring (#3794)", () => {
+  afterEach(() => {
+    rowPermissions.current = [];
+  });
+
+  it("hands the thread's onClosePoll to the viewer's own poll card", () => {
+    rowPermissions.current = ["members:view", "polls:create"];
+    const onClosePoll = vi.fn();
+    const tree = renderRow(
+      {
+        message: message({
+          id: "poll-1",
+          sender_id: VIEWER,
+          kind: "poll",
+          content: "Who is driving?",
+          payload: {
+            question: "Who is driving?",
+            options: [
+              { id: "a", label: "Me" },
+              { id: "b", label: "Not me" },
+            ],
+            closes_at: "2999-01-01T00:00:00.000Z",
+          },
+        }),
+        visibility: "visible",
+      },
+      { onClosePoll },
+    );
+
+    const [close] = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "button" &&
+        JSON.stringify(node.props.children?.props?.children) === '"Close poll"',
+    );
+    expect(close).toBeDefined();
+    act(() => close.props.onPress());
+    expect(onClosePoll).toHaveBeenCalledWith("poll-1");
   });
 });
