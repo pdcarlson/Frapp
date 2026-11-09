@@ -12,7 +12,10 @@ import { db, miss } from "../harness.mjs";
 //   - a typo still finds the word it was meant to be ("homewrk");
 //   - nothing comes from another chapter, even a better match;
 //   - an unrelated word, an exclusion-only query and an empty query find
-//     nothing.
+//     nothing;
+//   - since 20261109230000, a course's name and nicknames (`backwork_courses`)
+//     find its files, the course number matched trimmed and case-insensitively,
+//     and another chapter's course name never does.
 //
 // Everything runs inside one transaction and is rolled back.
 console.log("\n=== Functional: backwork search over every field (#585) ===");
@@ -26,6 +29,8 @@ console.log("\n=== Functional: backwork search over every field (#585) ===");
   const HW = "f5850000-0000-4000-8000-0000000000f1";
   const EXAM = "f5850000-0000-4000-8000-0000000000f2";
   const OTHER = "f5850000-0000-4000-8000-0000000000f3";
+  const COURSE = "a3848000-0000-4000-8000-0000000000c1";
+  const COURSE_B = "a3848000-0000-4000-8000-0000000000c2";
   const results = [];
   const check = (name, ok, detail) => results.push({ name, ok, detail });
   const search = async (chapter, query) =>
@@ -51,6 +56,9 @@ console.log("\n=== Functional: backwork search over every field (#585) ===");
         ('${HW}', '${A}', '${DEPT}', '2120', '${PROF}', '${USER}', 'Homework 2', 'a/hw.pdf', 'h1', '{curved}', now() - interval '1 day'),
         ('${EXAM}', '${A}', null, '1200', null, '${USER}', 'Data Structures Exam', 'a/exam.pdf', 'h2', '{}', now()),
         ('${OTHER}', '${B}', '${DEPT_B}', '2120', null, '${USER}', 'Homework 2', 'b/hw.pdf', 'h3', '{curved}', now());
+      insert into backwork_courses (id, chapter_id, department_id, course_number, name, nicknames) values
+        ('${COURSE}', '${A}', '${DEPT}', ' 2120 ', 'Cognition Fundamentals', '{Brainy}'),
+        ('${COURSE_B}', '${B}', '${DEPT_B}', '2120', 'Perception', '{}');
     `);
 
     check(
@@ -77,6 +85,132 @@ console.log("\n=== Functional: backwork search over every field (#585) ===");
       "finds a file by course written together",
       (await search(A, "cogs2120")).includes(HW),
       await search(A, "cogs2120"),
+    );
+    check(
+      "finds a file by its course's name",
+      (await search(A, "fundamentals")).join() === HW,
+      await search(A, "fundamentals"),
+    );
+    check(
+      "finds a file by its course's nickname",
+      (await search(A, "brainy")).join() === HW,
+      await search(A, "brainy"),
+    );
+    check(
+      "never finds a file by another chapter's course name",
+      (await search(A, "perception")).length === 0 &&
+        !(await search(B, "brainy")).includes(HW),
+      { a: await search(A, "perception"), b: await search(B, "brainy") },
+    );
+    // backwork_course_write (#3848): each write applies to the row as it is.
+    const writeTo = async (dept, number, name, setName, mayRename, add, remove, clamp = false) =>
+      (
+        await db.query(
+          `select name, nicknames from backwork_course_write($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [A, dept, number, setName, name, mayRename, add, remove, clamp],
+        )
+      ).rows[0];
+    const write = (name, setName, mayRename, add, remove) =>
+      writeTo(DEPT, "2120", name, setName, mayRename, add, remove);
+    const first = await writeTo(DEPT, "3000", "Perception", true, false, ["Percept"], []);
+    check(
+      "a first write stores the name and nicknames",
+      first.name === "Perception" && first.nicknames.join() === "Percept",
+      first,
+    );
+    const renamed = await writeTo(DEPT, "3000", "Sensation", true, true, [], []);
+    check(
+      "an admin write (set and may-rename) changes a set name",
+      renamed.name === "Sensation",
+      renamed,
+    );
+    await write(null, false, false, ["Cog One"], []);
+    const both = await write(null, false, false, ["Cog 1"], []);
+    check(
+      "two nickname adds both survive",
+      ["Brainy", "Cog One", "Cog 1"].every((n) => both.nicknames.includes(n)),
+      both,
+    );
+    const filled = await write("Something Else", true, false, [], []);
+    check(
+      "fill-only never overwrites a set name",
+      filled.name === "Cognition Fundamentals",
+      filled,
+    );
+    const swapped = await write(null, false, true, ["BRAINY"], ["brainy"]);
+    check(
+      "remove applies before add, so a case-only fix keeps the new spelling",
+      swapped.nicknames.includes("BRAINY") && !swapped.nicknames.includes("Brainy"),
+      swapped,
+    );
+    // A department merge: fold a source course into the target's twin,
+    // fill-only and clamped, after someone added a nickname to the target.
+    const many = Array.from({ length: 18 }, (_, i) => `Own ${i}`);
+    await writeTo(DEPT, "4000", "Memory", true, false, many, []);
+    await writeTo(DEPT, "4000", null, false, false, ["Late add"], []);
+    const folded = await writeTo(
+      DEPT,
+      "4000",
+      "Remembering",
+      true,
+      false,
+      // The over-60 item first, where the 20 cap alone wouldn't cut it.
+      ["😀".repeat(61), "Source nick", "Third", "Remembering"],
+      [],
+      true,
+    );
+    check(
+      "a merge fold keeps an add made just before it and the target's name",
+      folded.name === "Memory" &&
+        folded.nicknames.includes("Late add") &&
+        folded.nicknames.includes("Source nick"),
+      folded,
+    );
+    check(
+      "the merge clamp keeps 20, the target's own first, and drops one over 60",
+      folded.nicknames.length === 20 &&
+        folded.nicknames.slice(0, 19).join() === [...many, "Late add"].join() &&
+        !folded.nicknames.some((n) => [...n].length > 60),
+      folded,
+    );
+    // A fold with room under the cap: what the service sends for a source
+    // course named "Brain Science" into a target named "Neuroscience".
+    await writeTo(DEPT, "5000", "Neuroscience", true, false, ["Neuro"], []);
+    const roomy = await writeTo(
+      DEPT,
+      "5000",
+      "Brain Science",
+      true,
+      false,
+      ["Brainy", "😀".repeat(61), "neuroscience", "Brain Science"],
+      [],
+      true,
+    );
+    check(
+      "a fold keeps the losing source name as a nickname",
+      roomy.name === "Neuroscience" && roomy.nicknames.includes("Brain Science"),
+      roomy,
+    );
+    check(
+      "a fold never makes the target's own name a nickname",
+      !roomy.nicknames.some((n) => n.toLowerCase() === "neuroscience"),
+      roomy,
+    );
+    check(
+      "a fold drops a source nickname over 60 code points",
+      !roomy.nicknames.some((n) => [...n].length > 60) &&
+        roomy.nicknames.join() === "Neuro,Brainy,Brain Science",
+      roomy,
+    );
+    check(
+      "writes nothing for a department in another chapter",
+      (
+        await db.query(
+          `select (backwork_course_write($1, $2, '2120', true, 'X', true, '{}', '{}')).id as id`,
+          [A, DEPT_B],
+        )
+      ).rows[0].id === null,
+      "row returned",
     );
     check(
       "forgives a typo",

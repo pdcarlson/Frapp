@@ -104,10 +104,12 @@ export class SupabaseSearchRepository implements ISearchRepository {
 
   /**
    * Backwork search through `search_backwork_resources`
-   * (20261106190000_backwork_search_wider.sql): title, course, department,
-   * professor and tags, ranked, with trigram typo tolerance (#585). It joins
-   * the department and professor at query time, which a generated column
-   * can't, so it is a function rather than `.textSearch('search_vector')`.
+   * (20261106190000_backwork_search_wider.sql, replaced by
+   * 20261109230000_backwork_courses.sql): title, course, department, the
+   * course's name and nicknames (#3848), professor and tags, ranked, with
+   * trigram typo tolerance (#585). It joins the department, course and
+   * professor at query time, which a generated column can't, so it is a
+   * function rather than `.textSearch('search_vector')`.
    * The function parses the query with `websearch_to_tsquery('english', …)`,
    * the same parse as `TEXT_SEARCH`, so the raw query still travels as one
    * opaque argument and is never spliced into a filter.

@@ -4,6 +4,8 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import {
   isAllowedUploadExtension,
@@ -11,22 +13,30 @@ import {
   isWithinUploadSizeLimit,
   MAX_BACKWORK_UPLOAD_BYTES,
   MAX_BACKWORK_UPLOAD_LABEL,
+  MAX_COURSE_NICKNAMES,
+  collapseCourseText,
+  courseTextTooLong,
+  normalizeCourseNicknames,
 } from '@repo/validation';
 import {
   BACKWORK_RESOURCE_REPOSITORY,
   BACKWORK_DEPARTMENT_REPOSITORY,
   BACKWORK_PROFESSOR_REPOSITORY,
+  BACKWORK_COURSE_REPOSITORY,
+  type BackworkCourseWrite,
   type BackworkResourceFilter,
 } from '#domain/repositories/backwork.repository.interface';
 import type {
   IBackworkResourceRepository,
   IBackworkDepartmentRepository,
   IBackworkProfessorRepository,
+  IBackworkCourseRepository,
 } from '#domain/repositories/backwork.repository.interface';
 import type {
   BackworkResource,
   BackworkDepartment,
   BackworkProfessor,
+  BackworkCourse,
   Semester,
   AssignmentType,
   DocumentVariant,
@@ -37,8 +47,13 @@ import {
 } from '#domain/adapters/storage.interface';
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
 import { safeObjectFilename } from '#domain/constants/storage';
+import {
+  applyNicknameEdit,
+  courseEditRefusal,
+} from '#domain/utils/backwork-course-rules';
 
 const BACKWORK_BUCKET = 'backwork';
+
 /** Long enough to fetch 50 files one after another on a slow connection. */
 const ZIP_LINK_TTL_SECONDS = 15 * 60;
 
@@ -49,6 +64,17 @@ export interface RequestUploadUrlInput {
   sizeBytes?: number;
 }
 
+export interface UpsertCourseInput {
+  department_id: string;
+  course_number: string;
+  /** Omitted keeps the stored name; `null` or blank clears it (admin only). */
+  name?: string | null;
+  /** Nicknames to add; applied in SQL to the row as the write finds it. */
+  add_nicknames?: string[];
+  /** Nicknames to remove, case-insensitively, before the adds (admin only). */
+  remove_nicknames?: string[];
+}
+
 export interface ConfirmUploadInput {
   chapter_id: string;
   uploader_id: string;
@@ -57,6 +83,11 @@ export interface ConfirmUploadInput {
   title?: string | null;
   department_code?: string | null;
   course_number?: string | null;
+  /**
+   * The course's name, from the upload sheet. Saved only when the course has
+   * no name yet: an upload never renames a course.
+   */
+  course_name?: string | null;
   professor_name?: string | null;
   year?: number | null;
   semester?: string | null;
@@ -69,6 +100,8 @@ export interface ConfirmUploadInput {
 
 @Injectable()
 export class BackworkService {
+  private readonly logger = new Logger(BackworkService.name);
+
   constructor(
     @Inject(BACKWORK_RESOURCE_REPOSITORY)
     private readonly resourceRepo: IBackworkResourceRepository,
@@ -76,6 +109,8 @@ export class BackworkService {
     private readonly departmentRepo: IBackworkDepartmentRepository,
     @Inject(BACKWORK_PROFESSOR_REPOSITORY)
     private readonly professorRepo: IBackworkProfessorRepository,
+    @Inject(BACKWORK_COURSE_REPOSITORY)
+    private readonly courseRepo: IBackworkCourseRepository,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
   ) {}
@@ -169,14 +204,17 @@ export class BackworkService {
       );
     }
 
-    return this.resourceRepo.create({
+    // Trimmed like the course key (`lower(btrim(course_number))`), so the
+    // stored number and the course join agree.
+    const courseNumber = input.course_number?.trim() || null;
+    const created = await this.resourceRepo.create({
       chapter_id: input.chapter_id,
       uploader_id: input.uploader_id,
       storage_path: input.storage_path,
       file_hash: input.file_hash,
       title: input.title ?? null,
       department_id: departmentId,
-      course_number: input.course_number ?? null,
+      course_number: courseNumber,
       professor_id: professorId,
       year: input.year ?? null,
       semester: (input.semester as Semester) ?? null,
@@ -186,6 +224,28 @@ export class BackworkService {
       tags: input.tags ?? [],
       is_redacted: input.is_redacted ?? false,
     });
+
+    const courseName = input.course_name
+      ? collapseCourseText(input.course_name)
+      : '';
+    if (departmentId && courseNumber && courseName) {
+      // Best effort: the file is filed by now, and a course name that didn't
+      // save must not report the upload as failed (the member would retry and
+      // hit the duplicate-hash 409). It can be named from the row menu.
+      try {
+        await this.nameCourseIfUnnamed(
+          input.chapter_id,
+          departmentId,
+          courseNumber,
+          courseName,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Couldn't name course ${courseNumber} (department ${departmentId}) for chapter ${input.chapter_id} after upload ${created.id}: ${(error as Error)?.message ?? String(error)}`,
+        );
+      }
+    }
+    return created;
   }
 
   async findById(
@@ -291,6 +351,98 @@ export class BackworkService {
     return updated;
   }
 
+  async getCourses(chapterId: string): Promise<BackworkCourse[]> {
+    return this.courseRepo.findByChapter(chapterId);
+  }
+
+  /**
+   * Names a course, or adds to its nicknames, creating its entry on first
+   * write. `courseEditRefusal` decides what a non-admin may change; a refused
+   * edit is a 403 and writes nothing.
+   */
+  async upsertCourse(
+    chapterId: string,
+    input: UpsertCourseInput,
+    isAdmin: boolean,
+  ): Promise<BackworkCourse> {
+    const department = await this.departmentRepo.findById(
+      input.department_id,
+      chapterId,
+    );
+    if (!department) {
+      throw new NotFoundException('Department not found');
+    }
+    const courseNumber = input.course_number.trim();
+    if (!courseNumber) {
+      throw new BadRequestException('course_number must not be blank');
+    }
+    // Read only to answer a refused or impossible edit with a clear 403 or
+    // 400; the write itself (`backwork_course_write`) applies the edit to the
+    // row as it is when the statement runs, so it never overwrites a change
+    // made since this read.
+    const stored = await this.courseRepo.findByCourse(
+      chapterId,
+      department.id,
+      courseNumber,
+    );
+    const setName = input.name !== undefined;
+    const name = setName ? collapseCourseText(input.name ?? '') || null : null;
+    const remove = (input.remove_nicknames ?? [])
+      .map(collapseCourseText)
+      .filter(Boolean);
+    const add = normalizeCourseNicknames(input.add_nicknames ?? []);
+    const refusal = courseEditRefusal(
+      stored,
+      {
+        name: setName ? name : (stored?.name ?? null),
+        removeNicknames: remove,
+      },
+      isAdmin,
+    );
+    if (refusal) throw new ForbiddenException(refusal);
+    const tooLong = courseTextTooLong(name, add);
+    if (tooLong) throw new BadRequestException(tooLong);
+    const resultingName = !setName
+      ? (stored?.name ?? null)
+      : isAdmin
+        ? name
+        : (stored?.name ?? name);
+    const predicted = applyNicknameEdit(
+      stored?.nicknames ?? [],
+      add,
+      remove,
+      resultingName,
+    );
+    if (predicted.length > MAX_COURSE_NICKNAMES) {
+      throw new BadRequestException(
+        `A course takes at most ${MAX_COURSE_NICKNAMES} nicknames`,
+      );
+    }
+    if (!stored && !name && add.length === 0) {
+      throw new BadRequestException('Give the course a name or a nickname');
+    }
+    const written = await this.writeCourse(chapterId, {
+      departmentId: department.id,
+      courseNumber,
+      setName,
+      name,
+      mayRename: isAdmin,
+      add,
+      remove,
+    });
+    if (!written) throw new NotFoundException('Department not found');
+    return written;
+  }
+
+  /** Deletes a course's name and nicknames (`backwork:admin`). Files keep their course. */
+  async deleteCourse(id: string, chapterId: string): Promise<void> {
+    const existing = await this.courseRepo.findById(id, chapterId);
+    if (!existing) {
+      throw new NotFoundException('Course not found');
+    }
+    await this.courseRepo.delete(id, chapterId);
+  }
+
   /**
    * Deletes a department, or a professor when `entity: 'professor'`. Blocks
    * with a 400 (rather than orphaning the taxonomy on every resource that
@@ -351,6 +503,10 @@ export class BackworkService {
     if (!source || !target) {
       throw new NotFoundException('Department not found');
     }
+    // Courses first, so the source's names survive the delete below (its FK
+    // cascades): each folds into the target's entry for the same course
+    // number, created if the target has none.
+    await this.foldCourses(chapterId, sourceId, targetId);
     const reassigned = await this.resourceRepo.reassignDepartment(
       chapterId,
       sourceId,
@@ -382,6 +538,86 @@ export class BackworkService {
     );
     await this.professorRepo.delete(sourceId, chapterId);
     return { reassigned };
+  }
+
+  /**
+   * Folds each of the source department's courses into the target, one
+   * `backwork_course_write` per course, then deletes the source course. The
+   * write is fill-only (the target keeps its name, or takes the source's when
+   * it has none) and adds the source's nicknames and name as nicknames, so
+   * what people typed keeps finding the course. Being an upsert, it merges
+   * into a twin created a moment ago instead of colliding with it. `clamp`
+   * keeps the fold from failing on the table's limits: it drops a nickname
+   * over 60 characters (a long losing name) and keeps the first 20, the
+   * target's own first.
+   */
+  private async foldCourses(
+    chapterId: string,
+    sourceId: string,
+    targetId: string,
+  ): Promise<void> {
+    const sourceCourses = await this.courseRepo.findByDepartment(
+      chapterId,
+      sourceId,
+    );
+    for (const course of sourceCourses) {
+      const written = await this.courseRepo.write(chapterId, {
+        departmentId: targetId,
+        courseNumber: course.course_number,
+        setName: course.name !== null,
+        name: course.name,
+        mayRename: false,
+        add: [...course.nicknames, ...(course.name ? [course.name] : [])],
+        remove: [],
+        clamp: true,
+      });
+      if (!written) throw new NotFoundException('Department not found');
+      await this.courseRepo.delete(course.id, chapterId);
+    }
+  }
+
+  /**
+   * The upload sheet's "Course name": fill-only, in one statement, so it
+   * never overwrites a name, even one saved a moment ago by someone else.
+   */
+  private async nameCourseIfUnnamed(
+    chapterId: string,
+    departmentId: string,
+    courseNumber: string,
+    name: string,
+  ): Promise<void> {
+    const tooLong = courseTextTooLong(name, []);
+    if (tooLong) throw new BadRequestException(tooLong);
+    await this.writeCourse(chapterId, {
+      departmentId,
+      courseNumber,
+      setName: true,
+      name,
+      mayRename: false,
+      add: [],
+      remove: [],
+    });
+  }
+
+  /**
+   * `courseRepo.write`, with the table's check violation (`23514`) answered
+   * as a 400: the limits above should catch every case first, and this keeps
+   * one they miss from reaching the member as a 500.
+   */
+  private async writeCourse(
+    chapterId: string,
+    edit: BackworkCourseWrite,
+  ): Promise<BackworkCourse | null> {
+    try {
+      return await this.courseRepo.write(chapterId, edit);
+    } catch (error) {
+      if ((error as { code?: string }).code === '23514') {
+        throw new BadRequestException(
+          'That name or nickname is too long, or there are too many nicknames',
+        );
+      }
+      throw error;
+    }
   }
 
   private async resolveOrCreateDepartment(
