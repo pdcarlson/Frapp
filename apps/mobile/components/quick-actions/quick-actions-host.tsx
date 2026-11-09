@@ -283,7 +283,7 @@ export function useQuickActionsHost({
 }
 
 /** Catches a sheet's render error, reports it, and lets the host drop it. */
-class SheetBoundary extends Component<
+export class SheetBoundary extends Component<
   { onError: () => void; children: ReactNode },
   { failed: boolean }
 > {
