@@ -428,6 +428,12 @@ export function ChatShell({
     [categoriesQuery.data],
   );
 
+  // The pane-history refs (#3824), described with `openThreadPane` below.
+  // Declared here because the URL-target effect clears `onThreadEntry`.
+  const onThreadEntry = useRef(false);
+  const backPending = useRef(false);
+  const openAfterBack = useRef(false);
+
   // Seeded from the `?channel=` query param a caller (e.g. the member
   // directory's Message action, a chat notification, a command-palette
   // search hit) may navigate here with — see `activeChannelId` below for what
@@ -516,11 +522,6 @@ export function ChatShell({
   // params without remounting the page — so without this, the new target is
   // silently dropped. Re-applying it here whenever it's genuinely new (not
   // on every render) is what makes each deep link a fresh navigation intent.
-  // The pane-history refs (#3824), described with `openThreadPane` below.
-  // Declared here because the URL-target effect clears `onThreadEntry`.
-  const onThreadEntry = useRef(false);
-  const backPending = useRef(false);
-  const openAfterBack = useRef(false);
   const appliedTargetRef = useRef({
     channelId: initialChannelId,
     messageId: initialMessageId,
@@ -1213,8 +1214,8 @@ export function ChatShell({
     one screen each, and a member back on the list (the arrow, `Esc`, the
     browser's Back, #3824) is not looking at the channel: still claimed, a
     message landing in it was stamped read before they ever saw it, so the
-    nav's Chat row never lit and the channel came back read. Leaving the thread for
-    the list runs the cleanup, which stamps it read on the way out as leaving
+    nav's Chat row never lit and the channel came back read. Leaving the
+    thread for the list runs the cleanup, which stamps it read on the way out as leaving
     a channel always has; coming back claims and stamps it again. From `lg`
     up both are on screen and `narrowPane` changes nothing.
   */
