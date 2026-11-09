@@ -33,12 +33,15 @@ import { useChapterPresenceContext } from "@/lib/providers/chapter-presence-prov
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useNetwork } from "@/lib/providers/network-provider";
 import {
+  DND_DURATIONS,
+  MEMBER_STATUS_HINT,
+  clockTime,
   dndEndsAt,
   tomorrowMorning,
-  type DndDuration,
+  untilLabel,
   type MemberStatus,
   type OwnStatus,
-} from "@/lib/realtime/member-status";
+} from "@repo/hooks/member-status";
 import { presenceLabel } from "@/lib/realtime/presence-status";
 import { useOwnStatus, useSaveOwnStatus } from "@/lib/realtime/use-own-status";
 import { signOutCurrentSession } from "@/lib/auth/session";
@@ -255,36 +258,6 @@ export function AccountMenu({
 }
 
 /**
- * DND's durations. "Until I turn it off" is the default (#3845), so it comes
- * first: opening the submenu (a click on the row, or the right arrow) puts
- * focus on it, and Enter takes it. A submenu row can only open its submenu,
- * never select, so first is what makes a default reachable in one step.
- */
-const DND_DURATIONS: { duration: DndDuration; label: string }[] = [
-  { duration: null, label: "Until I turn it off" },
-  { duration: "1h", label: "For 1 hour" },
-  { duration: "8h", label: "For 8 hours" },
-  { duration: "tomorrow", label: "Until tomorrow" },
-];
-
-const TIME = new Intl.DateTimeFormat(undefined, {
-  hour: "numeric",
-  minute: "2-digit",
-});
-const DAY_TIME = new Intl.DateTimeFormat(undefined, {
-  weekday: "short",
-  hour: "numeric",
-  minute: "2-digit",
-});
-
-/** "Until 3:45 PM" today, "Until Tue 8:00 AM" past today. */
-function untilLabel(endsAt: number, now: Date): string {
-  const end = new Date(endsAt);
-  const sameDay = end.toDateString() === now.toDateString();
-  return `Until ${(sameDay ? TIME : DAY_TIME).format(end)}`;
-}
-
-/**
  * The Status row (a submenu: Online, Idle, Do Not Disturb with its
  * durations, Invisible) and the custom status row under it (#3845).
  *
@@ -343,7 +316,7 @@ function StatusRows({
               <span className="min-w-0 flex-1">
                 <span className="block">{presenceLabel("dnd")}</span>
                 <span className="block text-caption text-muted-foreground">
-                  Only urgent notifications ring
+                  {MEMBER_STATUS_HINT.dnd}
                 </span>
               </span>
               {current === "dnd" ? <Check aria-label="Current" /> : null}
@@ -357,7 +330,7 @@ function StatusRows({
                   <span className="flex-1">{label}</span>
                   {duration === "tomorrow" ? (
                     <span className="text-caption text-muted-foreground">
-                      {TIME.format(tomorrowMorning(now))}
+                      {clockTime(tomorrowMorning(now))}
                     </span>
                   ) : null}
                 </DropdownMenuItem>
@@ -366,7 +339,7 @@ function StatusRows({
           </DropdownMenuSub>
           <StatusItem
             status="invisible"
-            hint="You'll appear offline"
+            hint={MEMBER_STATUS_HINT.invisible}
             onSelect={() => pick("invisible")}
           >
             {mark("invisible")}
