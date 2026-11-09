@@ -1,3 +1,4 @@
+import type React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   render,
@@ -669,5 +670,124 @@ describe("EventEditorDialog point value guard (#2206)", () => {
 
     await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
     expect(createMutate.mock.calls[0]![0].point_value).toBe(15);
+  });
+});
+
+/**
+ * #3773 — web chat opens this form for `/event` typed bare or picked from the
+ * palette, filled in with what was typed, and the card posts in that channel.
+ */
+describe("EventEditorDialog opened from chat (#3773)", () => {
+  const CHANNEL = "11111111-1111-4111-8111-111111111111";
+
+  beforeEach(() => {
+    createMutate.mockReset();
+    mockToast.mockReset();
+    createMutate.mockResolvedValue({ card_posted: true });
+    chapter.active();
+  });
+
+  function renderFromChat(
+    props: Partial<React.ComponentProps<typeof EventEditorDialog>> = {},
+  ) {
+    render(
+      <EventEditorDialog
+        open
+        mode="create"
+        event={null}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+        postToChannelId={CHANNEL}
+        {...props}
+      />,
+    );
+  }
+
+  it("opens filled in with what was typed", () => {
+    renderFromChat({
+      initialName: "Chapter Dinner",
+      initialLocation: "Main House",
+      initialPointValue: 5,
+      initialStartAt: "2026-11-12T18:00",
+      initialEndAt: "2026-11-12T20:00",
+    });
+    expect(screen.getByLabelText("Event name")).toHaveValue("Chapter Dinner");
+    expect(screen.getByLabelText("Start")).toHaveValue("2026-11-12T18:00");
+    expect(screen.getByLabelText("End")).toHaveValue("2026-11-12T20:00");
+    expect(
+      screen.getByRole("button", { name: /More options/ }),
+    ).toHaveTextContent("5 pts");
+  });
+
+  it("posts the card in the channel it came from", async () => {
+    renderFromChat();
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    const body = createMutate.mock.calls[0]![0];
+    expect(body.channel_id).toBe(CHANNEL);
+    expect(body.client_message_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: "Exec Sync was added to the chapter calendar.",
+      }),
+    );
+  });
+
+  it("creates an event that keeps anyone out without a card, and says why", async () => {
+    // The API refuses a card for these: it would show the event to everyone
+    // in the channel (`EventService.create`).
+    renderFromChat();
+    fillRequiredFields();
+    openMoreOptions();
+    fireEvent.click(
+      within(
+        screen.getByRole("radiogroup", { name: "Attendance for everyone" }),
+      ).getByRole("radio", { name: "Not invited" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Set a role differently" }),
+    );
+    fireEvent.click(await screen.findByText("Exec"));
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    const body = createMutate.mock.calls[0]![0];
+    expect(body).not.toHaveProperty("channel_id");
+    expect(body).not.toHaveProperty("client_message_id");
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: expect.stringMatching(/isn't posted in chat/),
+      }),
+    );
+  });
+
+  it("says so when the event saved but its card didn't post", async () => {
+    createMutate.mockResolvedValue({ card_posted: false });
+    renderFromChat();
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Event created",
+          description: expect.stringMatching(/card couldn't be posted/),
+        }),
+      ),
+    );
+  });
+
+  it("sends no chat keys from the Events page", async () => {
+    renderFromChat({ postToChannelId: undefined });
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]![0]).not.toHaveProperty("channel_id");
   });
 });

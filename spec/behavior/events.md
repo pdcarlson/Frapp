@@ -70,7 +70,7 @@ current channel — an immutable snapshot (name, when, location, point value). E
 self-service check-in surface alongside the mobile app; the server enforces the window, the role gate, and
 one-check-in-per-member regardless of surface. Viewers who can read attendance (`events:update`) also see a
 live checked-in count read back through the attendance query (members can self-check-in but can't read the
-roster, so the count is shown only to them). Recurrence, role-targeting, and the mandatory flag stay on the dashboard.
+roster, so the count is shown only to them). Recurrence, role-targeting, and the mandatory flag stay off the one-liner. On web, an `/event` the one-liner can't read opens the full event form in the chat instead, and it posts the card the same way ([`integrations.md` § Slash command dispatch](chat/integrations.md#slash-command-dispatch)).
 
 Role-targeting and the card are mutually exclusive on create, and `POST /v1/events` enforces that with a `400` —
 because the card is broadcast to every reader of the channel, it would undo the read gate. The rule, its reasoning

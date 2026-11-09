@@ -28,6 +28,7 @@ import {
   othersInvitedForCreate,
   describeAttendance,
   emptyAttendanceDraft,
+  eventLimitsAudience,
   isRecurrenceRule,
   describeSeriesLength,
   type EventAttendanceDraft,
@@ -57,6 +58,7 @@ import {
   parseGuardedInt,
 } from "@/lib/utils";
 import { parseInstant } from "@repo/formatting";
+import { randomClientId } from "@repo/api-sdk";
 
 type EventRecord = Record<string, unknown>;
 
@@ -177,6 +179,33 @@ function parseZoneDrafts(drafts: ZoneVertexDraft[]): ZoneParseResult {
   return { ok: true, zone };
 }
 
+/**
+ * The toast after a create. From chat (#3773) the card is the point, so a
+ * create that couldn't post one says why rather than leaving the member to
+ * wonder where it went. Neither case is a failure: the event exists.
+ */
+export function createdToast(
+  name: string,
+  card: { cardKeptOut: boolean; cardLost: boolean },
+): { title: string; description: string } {
+  if (card.cardKeptOut) {
+    return {
+      title: "Event created",
+      description: `${name} is on the calendar. It isn't posted in chat because it's only for some roles.`,
+    };
+  }
+  if (card.cardLost) {
+    return {
+      title: "Event created",
+      description: `${name} is on the calendar, but its card couldn't be posted in chat.`,
+    };
+  }
+  return {
+    title: "Event created",
+    description: `${name} was added to the chapter calendar.`,
+  };
+}
+
 type EventEditorDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -199,6 +228,20 @@ type EventEditorDialogProps = {
    */
   initialStartAt?: string;
   initialEndAt?: string;
+  /**
+   * More create-only prefill, from what a member typed after `/event` in chat
+   * (#3773). Ignored in edit mode.
+   */
+  initialName?: string;
+  initialLocation?: string;
+  initialPointValue?: number;
+  /**
+   * The chat channel a create came from. The event's card posts there, as the
+   * `/event` one-liner's does, unless the event keeps anyone out: the API
+   * refuses a card for those, so they are created without one and the toast
+   * says so. Ignored in edit mode.
+   */
+  postToChannelId?: string;
 };
 
 export function EventEditorDialog({
@@ -211,6 +254,10 @@ export function EventEditorDialog({
   onSaved,
   initialStartAt,
   initialEndAt,
+  initialName,
+  initialLocation,
+  initialPointValue,
+  postToChannelId,
 }: EventEditorDialogProps) {
   const createEventMutation = useCreateEvent();
   const updateEventMutation = useUpdateEvent();
@@ -294,12 +341,12 @@ export function EventEditorDialog({
       return;
     }
 
-    setName("");
+    setName(initialName ?? "");
     setDescription("");
-    setLocation("");
+    setLocation(initialLocation ?? "");
     setStartAt(initialStartAt ?? "");
     setEndAt(initialEndAt ?? "");
-    setPointValue("10");
+    setPointValue(String(initialPointValue ?? 10));
     setAttendance(emptyAttendanceDraft());
     setRecurrenceRule("NONE");
     setNotes("");
@@ -307,7 +354,16 @@ export function EventEditorDialog({
     setCheckInZoneName("");
     setShowMore(false);
     setShowZone(false);
-  }, [event, mode, open, initialStartAt, initialEndAt]);
+  }, [
+    event,
+    mode,
+    open,
+    initialStartAt,
+    initialEndAt,
+    initialName,
+    initialLocation,
+    initialPointValue,
+  ]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const submitLabel = useMemo(() => {
@@ -444,8 +500,19 @@ export function EventEditorDialog({
         // reason: CreateEventDto carries @ArrayMinSize(3), so sending [] here is
         // a 400 rather than "no zone". Update deliberately omits that decorator
         // so [] can clear — see the update branch below.
-        await createEventMutation.mutateAsync({
+        // A card is broadcast to everyone in the channel, so the API refuses
+        // one for an event that keeps anyone out (`EventService.create`).
+        const cardKeptOut =
+          postToChannelId !== undefined && eventLimitsAudience(wire);
+        const postsCard = postToChannelId !== undefined && !cardKeptOut;
+        const created = await createEventMutation.mutateAsync({
           ...payload,
+          ...(postsCard
+            ? {
+                channel_id: postToChannelId,
+                client_message_id: randomClientId(),
+              }
+            : {}),
           ...(wire.required_role_ids.length > 0
             ? { required_role_ids: wire.required_role_ids }
             : {}),
@@ -465,10 +532,12 @@ export function EventEditorDialog({
               }
             : {}),
         });
-        toast({
-          title: "Event created",
-          description: `${payload.name} was added to the chapter calendar.`,
-        });
+        toast(
+          createdToast(payload.name, {
+            cardKeptOut,
+            cardLost: postsCard && created?.card_posted === false,
+          }),
+        );
       } else {
         if (!eventId) return;
         await updateEventMutation.mutateAsync({

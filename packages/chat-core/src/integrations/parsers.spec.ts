@@ -1,6 +1,7 @@
 import { POINTS_REASON_MAX_LENGTH } from "@repo/validation";
 import { describe, expect, it } from "vitest";
 import {
+  eventFormPrefill,
   parseAnnounceArgs,
   parseEventArgs,
   parseHoursArgs,
@@ -488,5 +489,75 @@ describe("parseRushArgs", () => {
     if (parsed.ok) return;
     expect(parsed.error).toMatch(/Unknown action/i);
     expect(parsed.error).not.toMatch(/\/rush/i);
+  });
+});
+
+describe("eventFormPrefill (#3773)", () => {
+  it("is empty for a bare /event", () => {
+    expect(eventFormPrefill("")).toEqual({});
+    expect(eventFormPrefill("   ")).toEqual({});
+  });
+
+  it("takes an unquoted multi-word name", () => {
+    expect(eventFormPrefill("Chapter Dinner")).toEqual({
+      name: "Chapter Dinner",
+    });
+  });
+
+  it("reads an unterminated quote as closed", () => {
+    expect(eventFormPrefill('"Chapter Dinner')).toEqual({
+      name: "Chapter Dinner",
+    });
+  });
+
+  it("stops the name at the first valid date, and leaves an unreadable time out of the location", () => {
+    expect(eventFormPrefill("Formal 2026-11-20 7pm Lodge")).toEqual({
+      name: "Formal",
+      date: "2026-11-20",
+    });
+  });
+
+  it("fills every field from a full command", () => {
+    expect(
+      eventFormPrefill(
+        '"Chapter Dinner" 2026-11-12 9:00-20:30 Main House points=5',
+      ),
+    ).toEqual({
+      name: "Chapter Dinner",
+      date: "2026-11-12",
+      startTime: "9:00",
+      endTime: "20:30",
+      location: "Main House",
+      pointValue: 5,
+    });
+  });
+
+  it("drops a time range whose end is not after its start", () => {
+    expect(
+      eventFormPrefill("Formal 2026-11-20 20:00-19:00 Lodge points=4"),
+    ).toEqual({
+      name: "Formal",
+      date: "2026-11-20",
+      pointValue: 4,
+    });
+  });
+
+  it("keeps an invalid date in the name rather than inventing one", () => {
+    expect(eventFormPrefill("Formal 2026-02-30")).toEqual({
+      name: "Formal 2026-02-30",
+    });
+  });
+
+  it("takes points= anywhere and ignores a malformed one", () => {
+    expect(eventFormPrefill("Formal points=3")).toEqual({
+      name: "Formal",
+      pointValue: 3,
+    });
+    expect(eventFormPrefill("Formal points=-1")).toEqual({ name: "Formal" });
+  });
+
+  it("caps the name at the API's 255 characters", () => {
+    const prefill = eventFormPrefill("x".repeat(300));
+    expect(prefill.name).toHaveLength(255);
   });
 });

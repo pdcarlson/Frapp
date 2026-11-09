@@ -73,6 +73,7 @@ import {
 } from "./mention-suggestion";
 import {
   getSlashCommand,
+  paletteCommandArgs,
   parseSlashInput,
   type SlashCommand,
 } from "@repo/chat-core/integrations";
@@ -455,6 +456,14 @@ interface ComposerBaseProps {
     command: SlashCommand,
     args: string,
   ) => Promise<DispatchResult>;
+  /**
+   * Offered every implemented command before it dispatches, typed or picked
+   * from the palette, once the composer's own refusals have passed. Returns
+   * `true` when it took the command over (it opened a form for one typed bare
+   * or with details the one-liner can't read, #3773), and the composer then
+   * clears itself without dispatching.
+   */
+  onOpenCommandForm?: (command: SlashCommand, args: string) => boolean;
   onTyping: () => void;
   /**
    * The chapter's module gate. The palette filters by it, and a typed module
@@ -940,6 +949,7 @@ export function Composer({
   onChangeDraft,
   onSend,
   onSlashDispatch,
+  onOpenCommandForm,
   onTyping,
   isModuleEnabled,
   recruitmentVocab,
@@ -1296,6 +1306,7 @@ export function Composer({
           return;
         }
         editor.commands.clearContent(true);
+        if (onOpenCommandForm?.(command, parsed.args)) return;
         void (async () => {
           notifyDispatchOutcome(
             toast,
@@ -1384,6 +1395,7 @@ export function Composer({
     onRestoreReply,
     onSend,
     onSlashDispatch,
+    onOpenCommandForm,
     pending,
     recruitmentVocab,
     replyTo,
@@ -1619,6 +1631,12 @@ export function Composer({
 
   const onPaletteSelect = useCallback(
     async (command: SlashCommand) => {
+      // Typing after `/` goes into the palette's search box, not the editor,
+      // so a whole command typed out arrives here as the query (#3773).
+      const paletteArgs =
+        paletteCommandArgs(palette.query, command, {
+          recruitment: recruitmentVocab,
+        }) ?? "";
       setPalette({ open: false, query: "" });
       // Implemented commands route through dispatch; unimplemented ones keep
       // the "coming soon" toast so the Chunk 10 stubs still surface intent.
@@ -1645,18 +1663,27 @@ export function Composer({
       const typed = parsed.command
         ? getSlashCommand(parsed.command, { recruitment: recruitmentVocab })
         : undefined;
-      const args = typed?.name === command.name ? parsed.args : "";
+      const args = typed?.name === command.name ? parsed.args : paletteArgs;
       // Clear the composer optimistically — the dispatch enqueues the message
       // through the same hot path as `onSend`, so the optimistic card appears
       // immediately and a toast surfaces any parse / authz failure.
       if (editor) editor.commands.clearContent(true);
+      if (onOpenCommandForm?.(command, args)) return;
       notifyDispatchOutcome(
         toast,
         slashToken(command),
         await runDispatch(onSlashDispatch, command, args),
       );
     },
-    [editor, onSlashDispatch, recruitmentVocab, slashRefusal, toast],
+    [
+      editor,
+      onSlashDispatch,
+      onOpenCommandForm,
+      palette.query,
+      recruitmentVocab,
+      slashRefusal,
+      toast,
+    ],
   );
 
   // `canPost` is the single source of truth for whether *this caller* may

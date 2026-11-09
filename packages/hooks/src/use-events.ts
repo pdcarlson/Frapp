@@ -64,6 +64,10 @@ export function useCreateEvent() {
       check_in_zone_name?: string;
       // Minutes before the start that check-in opens; the server defaults it.
       check_in_opens_minutes?: number;
+      // Both or neither: posts the event's card to this chat channel. The API
+      // refuses either key on an event that keeps anyone out.
+      channel_id?: string;
+      client_message_id?: string;
     }) => {
       const { data, error } = await client.POST("/v1/events", { body });
       if (error) throw error;

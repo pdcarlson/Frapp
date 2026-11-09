@@ -1890,3 +1890,130 @@ describe("slashModuleRefusal for a beta-off module", () => {
     });
   });
 });
+
+/**
+ * #3773 — `/event` typed bare, or picked from the palette (which always
+ * dispatched with empty args), answered with the one-liner's usage string.
+ * The composer now offers each command to `onOpenCommandForm` first, after
+ * its own refusals, and dispatches only when that declines.
+ */
+describe("Composer hands a command to onOpenCommandForm before dispatching (#3773)", () => {
+  afterEach(() => {
+    editorDouble.current = null;
+    mockToast.mockClear();
+  });
+
+  it("opens the form for a typed command instead of dispatching", async () => {
+    const editor = fakeEditor("/event Chapter Dinner");
+    editorDouble.current = editor;
+    const onSlashDispatch = vi.fn(async () => ({ ok: true as const }));
+    const onOpenCommandForm = vi.fn(() => true);
+    const onSend = vi.fn();
+    render(
+      <Composer
+        {...baseProps({
+          draft: "/event Chapter Dinner",
+          onSlashDispatch,
+          onOpenCommandForm,
+          onSend,
+          isModuleEnabled: () => true,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    expect(onOpenCommandForm).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "event" }),
+      "Chapter Dinner",
+    );
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
+    expect(editor.getText()).toBe("");
+  });
+
+  it("dispatches a typed command the form declines", async () => {
+    editorDouble.current = fakeEditor('/poll "Venue?" Lodge Riverside');
+    const onSlashDispatch = vi.fn(async () => ({ ok: true as const }));
+    const onOpenCommandForm = vi.fn(() => false);
+    render(
+      <Composer
+        {...baseProps({
+          draft: '/poll "Venue?" Lodge Riverside',
+          onSlashDispatch,
+          onOpenCommandForm,
+          isModuleEnabled: () => true,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => expect(onSlashDispatch).toHaveBeenCalledTimes(1));
+  });
+
+  it("opens the form for a command picked from the palette", async () => {
+    const user = userEvent.setup();
+    const onSlashDispatch = vi.fn(async () => ({ ok: true as const }));
+    const onOpenCommandForm = vi.fn(() => true);
+    render(
+      <Composer {...baseProps({ onSlashDispatch, onOpenCommandForm })} />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /open slash commands/i }),
+    );
+    await user.click(await screen.findByRole("option", { name: /event/i }));
+
+    expect(onOpenCommandForm).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "event" }),
+      "",
+    );
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+  });
+
+  it("still applies its refusals before offering the form", async () => {
+    const user = userEvent.setup();
+    const onOpenCommandForm = vi.fn(() => true);
+    render(
+      <Composer
+        {...baseProps({
+          onSlashDispatch: vi.fn(async () => ({ ok: true as const })),
+          onOpenCommandForm,
+          isOffline: true,
+        })}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /open slash commands/i }),
+    );
+    await user.click(await screen.findByRole("option", { name: /event/i }));
+
+    expect(onOpenCommandForm).not.toHaveBeenCalled();
+  });
+});
+
+describe("Composer passes details typed into the palette's search (#3773)", () => {
+  it("hands `/event Chapter Dinner`, typed into the palette, to the form", async () => {
+    const user = userEvent.setup();
+    const onOpenCommandForm = vi.fn(() => true);
+    render(
+      <Composer
+        {...baseProps({
+          onSlashDispatch: vi.fn(async () => ({ ok: true as const })),
+          onOpenCommandForm,
+        })}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /open slash commands/i }),
+    );
+    await user.type(
+      await screen.findByRole("combobox"),
+      "event Chapter Dinner",
+    );
+    await user.click(await screen.findByRole("option", { name: /event/i }));
+
+    expect(onOpenCommandForm).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "event" }),
+      "Chapter Dinner",
+    );
+  });
+});
