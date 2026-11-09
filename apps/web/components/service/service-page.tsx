@@ -74,6 +74,7 @@ import {
   localIsoDate,
 } from "@repo/formatting";
 import { ServicePageSkeleton } from "@/components/service/service-skeleton";
+import { approvePointsPreview } from "@/components/service/service-points-preview";
 
 type ServiceEntry = {
   id: string;
@@ -132,6 +133,10 @@ export function ServiceHoursPage() {
     (wf) => wf.key === "wf_hours_receipt",
   );
   const receiptRequired = receiptWorkflow?.enabled === true;
+  // The rate Approve will apply, for each queue row's points preview (#3862).
+  // Same permission caveat as the receipt policy above: without the config,
+  // the preview stays off rather than guessing the default.
+  const minutesPerPoint = orgConfig.data?.service?.minutes_per_point;
   const proofLabel = receiptRequired
     ? "Proof file (required by chapter policy)"
     : receiptWorkflow
@@ -629,6 +634,10 @@ export function ServiceHoursPage() {
                 const showApproveReason =
                   cannotApprove && gate.state.allowed && !gate.isPending;
                 const approveReasonId = `svc-approve-reason-${entry.id}`;
+                const pointsPreview = approvePointsPreview(
+                  entry.duration_minutes,
+                  minutesPerPoint,
+                );
                 const approveBlockedReason = isOwnEntry
                   ? "You can't approve your own hours. Another admin has to review them."
                   : viewerLoading
@@ -647,6 +656,11 @@ export function ServiceHoursPage() {
                       <p className="mt-0.5 text-sm text-muted-foreground">
                         {entry.description}
                       </p>
+                      {pointsPreview ? (
+                        <p className="mt-0.5 text-caption text-muted-foreground">
+                          {pointsPreview}
+                        </p>
+                      ) : null}
                       {/* Deliberately ungated: the signed link comes from
                             `GET /v1/service-entries/:id/proof-url`, and
                             `enforceSubscription` returns early for GET — a

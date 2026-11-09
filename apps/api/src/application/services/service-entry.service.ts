@@ -14,6 +14,7 @@ import {
   MAX_UPLOAD_LABEL,
   SERVICE_RECEIPT_REQUIRED_CODE,
   SERVICE_RECEIPT_REQUIRED_MESSAGE,
+  servicePointsForDuration,
 } from '@repo/validation';
 import { SERVICE_ENTRY_REPOSITORY } from '#domain/repositories/service-entry.repository.interface';
 import type { IServiceEntryRepository } from '#domain/repositories/service-entry.repository.interface';
@@ -529,8 +530,13 @@ export class ServiceEntryService {
       await this.chapterServiceConfig.getMinutesPerPoint(chapterId);
 
     // Sub-rate durations floor to 0 and approve with no ledger row, per the
-    // spec's "(Sub-rate durations approve with no ledger row.)"
-    const pointsToAward = Math.floor(entry.duration_minutes / minutesPerPoint);
+    // spec's "(Sub-rate durations approve with no ledger row.)" The web review
+    // queue previews this number with the same helper (#3862), so the two
+    // can't round differently.
+    const pointsToAward = servicePointsForDuration(
+      entry.duration_minutes,
+      minutesPerPoint,
+    );
 
     // Approve the entry and award its SERVICE points atomically: a single DB
     // transaction (compare-and-set on status/points_awarded) so a partial

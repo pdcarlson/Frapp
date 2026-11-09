@@ -59,6 +59,10 @@ const APPROVED_ENTRY = {
 
 const entriesPending = vi.hoisted(() => ({ current: false }));
 const entriesEmpty = vi.hoisted(() => ({ current: false }));
+// The loaded chapter config, or undefined for the unloaded/unreadable branch.
+const orgConfig = vi.hoisted(() => ({
+  current: undefined as Record<string, unknown> | undefined,
+}));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   // The real PUT, so the specs below assert on the request it actually sends.
@@ -84,9 +88,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     mutateAsync: mockRequestProofUpload,
   }),
   useGetServiceProofUrl: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  // Chapter policy only decides whether the proof input is `required`; it has
-  // no bearing on the gate, so the neutral (unloaded) branch is enough here.
-  useOrgConfig: () => ({ data: undefined }),
+  // Chapter policy decides whether the proof input is `required` and the rate
+  // the queue's points preview uses; neither bears on the gate, so most specs
+  // run the neutral (unloaded) branch.
+  useOrgConfig: () => ({ data: orgConfig.current }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -443,6 +448,43 @@ describe("ServiceHoursPage review queue", () => {
     // token (principles.md P2.1).
     expect(within(history).getByText("Approved")).toBeInTheDocument();
     expect(within(history).queryByText("APPROVED")).not.toBeInTheDocument();
+  });
+});
+
+describe("ServiceHoursPage approve points preview", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+    mockFrappUser.mockReturnValue({ userId: "admin-9", isLoading: false });
+  });
+  afterEach(() => {
+    orgConfig.current = undefined;
+  });
+
+  const queue = () => screen.getByRole("region", { name: /review queue/i });
+
+  it("says how many points Approve awards at the chapter's rate", () => {
+    orgConfig.current = { service: { minutes_per_point: 60 } };
+    render(<ServiceHoursPage />);
+
+    expect(queue()).toHaveTextContent(
+      "Approving awards 2 service points, at the chapter's current rate of 1 per hour.",
+    );
+  });
+
+  it("says plainly when the entry is under the rate", () => {
+    orgConfig.current = { service: { minutes_per_point: 180 } };
+    render(<ServiceHoursPage />);
+
+    expect(queue()).toHaveTextContent(
+      "Approving awards no points: 2h is under the chapter's rate of 1 point per 3h.",
+    );
+  });
+
+  it("states no number when the rate couldn't be read", () => {
+    render(<ServiceHoursPage />);
+
+    expect(queue()).not.toHaveTextContent(/approving awards/i);
   });
 });
 

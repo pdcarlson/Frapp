@@ -355,6 +355,7 @@ Mobile's Tasks tab (s08) is a personal board for everyone, so with nothing assig
 |---|---|---|
 | Loading | — | `Loading service entries...` |
 | Empty queue | — | `Nothing waiting for review.` (one line) |
+| Queue row, points preview | — | `Approving awards {N} service point(s), at the chapter's current rate of 1 per {rate}.`; under the rate, `Approving awards no points: {duration} is under the chapter's rate of 1 point per {rate}.` `{rate}` reads `hour` at the default 60 minutes, otherwise a duration (`30m`, `1h 30m`). No line when the rate can't be read (#3862) |
 | Empty history | — | `No service logged yet.` then, for a viewer with `service:log`, a **Log the first hours** link that opens Log service (one line) |
 | Empty history, mobile | — | `No service logged yet.`; for a viewer with `service:log`, `No service logged yet. Tap + to log your first hours.`, the screen's own + (one line) |
 | Error | `Couldn't load service entries` | the load-failure line (§ copy rules) |
