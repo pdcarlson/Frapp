@@ -2,8 +2,9 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { RELEASE_NOTES, formatReleaseNoteDate } from "@repo/validation";
 import { describe, expect, it } from "vitest";
-import AboutPage from "./about/page";
-import ChangelogPage from "./changelog/page";
+import AboutPage, { metadata as aboutMetadata } from "./about/page";
+import ChangelogPage, { metadata as changelogMetadata } from "./changelog/page";
+import Home from "./page";
 import sitemap from "./sitemap";
 
 /**
@@ -25,6 +26,25 @@ const text = (html: string) =>
 
 const about = render(AboutPage);
 const changelog = render(ChangelogPage);
+const home = render(Home);
+
+/** The markup of one landmark, so header and footer are checked apart. */
+function landmark(html: string, tag: "header" | "footer"): string {
+  const start = html.indexOf(`<${tag}`);
+  const end = html.indexOf(`</${tag}>`, start);
+  expect(start, `no <${tag}> rendered`).toBeGreaterThan(-1);
+  return html.slice(start, end);
+}
+
+/** Every string a route's `<head>` carries: title, description, OG, Twitter. */
+function headStrings(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(headStrings);
+  if (value && typeof value === "object") {
+    return Object.values(value).flatMap(headStrings);
+  }
+  return [];
+}
 
 describe("/changelog", () => {
   it("shows every entry and every line of the app's What's new", () => {
@@ -51,6 +71,12 @@ describe("/about", () => {
       "Get in touch",
     ]) {
       expect(shown, `About lost its "${heading}" section`).toContain(heading);
+      // A heading with no text under it is a section in name only.
+      const escaped = heading.replace("'", "&#x27;");
+      expect(
+        about,
+        `About's "${heading}" section has no paragraph`,
+      ).toMatch(new RegExp(`>${escaped}</h2><p[^>]*>[^<]{20,}`));
     }
     expect(about).toContain('href="mailto:team@frapp.live"');
   });
@@ -61,7 +87,16 @@ describe("both pages", () => {
     ["about", about],
     ["changelog", changelog],
   ])("/%s keeps the landing copy rules: no em dashes", (_route, html) => {
-    expect(text(html)).not.toContain("—");
+    expect(text(html)).not.toContain("\u2014");
+  });
+
+  it.each([
+    ["about", aboutMetadata],
+    ["changelog", changelogMetadata],
+  ])("/%s carries no em dash in its <head> either", (_route, metadata) => {
+    const strings = headStrings(metadata);
+    expect(strings.length).toBeGreaterThan(0);
+    for (const value of strings) expect(value).not.toContain("\u2014");
   });
 
   it.each([
@@ -70,11 +105,28 @@ describe("both pages", () => {
   ])("/%s draws the storefront chrome with rooted anchors", (_route, html) => {
     expect(html).toContain("Skip to content");
     expect(html).toMatch(/<main id="top"/);
-    for (const href of ["/#product", "/#pricing", "/about", "/changelog"]) {
-      expect(html).toContain(`href="${href}"`);
+    for (const tag of ["header", "footer"] as const) {
+      const part = landmark(html, tag);
+      for (const href of ["/#product", "/#pricing", "/about", "/changelog"]) {
+        expect(part, `${tag} lacks ${href}`).toContain(`href="${href}"`);
+      }
+      // A bare anchor here would resolve against this page, not the homepage.
+      expect(part).not.toMatch(/href="#(product|pricing)"/);
     }
-    // A bare anchor here would resolve against this page, not the homepage.
-    expect(html).not.toMatch(/href="#(product|pricing)"/);
+  });
+
+  it("are linked from the homepage, whose own anchors stay bare", () => {
+    // Bare, so a click on `/?utm_source=...` scrolls and keeps the query
+    // (components/home/site-chrome.tsx).
+    for (const tag of ["header", "footer"] as const) {
+      const part = landmark(home, tag);
+      for (const href of ["#product", "#pricing", "/about", "/changelog"]) {
+        expect(part, `homepage ${tag} lacks ${href}`).toContain(
+          `href="${href}"`,
+        );
+      }
+      expect(part).not.toMatch(/href="\/#(product|pricing)"/);
+    }
   });
 
   it("are in the sitemap", () => {
