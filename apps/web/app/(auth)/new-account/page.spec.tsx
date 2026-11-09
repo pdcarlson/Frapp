@@ -17,6 +17,7 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/auth/session", () => ({ signOutCurrentSession }));
 
 import NewAccountPage from "./page";
+import { NEW_ACCOUNT_SIGN_OUT_FAILED } from "@/components/auth/new-account-actions";
 
 function freshUser(email: string) {
   return {
@@ -60,7 +61,9 @@ describe("/new-account (#3786)", () => {
     getUser.mockResolvedValue({ data: { user: freshUser("member@gmail.com") } });
     await renderPage("/join?token=inv-1");
     await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
-    expect(signOutCurrentSession).toHaveBeenCalledTimes(1);
+    // Local scope: the browser's session is gone even if Auth's revoke fails,
+    // so the proxy can't bounce `/sign-in` back into the new account.
+    expect(signOutCurrentSession).toHaveBeenCalledWith({ scope: "local" });
     expect(assign).toHaveBeenCalledWith("/sign-in?redirectTo=%2Fjoin%3Ftoken%3Dinv-1");
   });
 
@@ -101,5 +104,35 @@ describe("/new-account (#3786)", () => {
     });
     await expect(renderPage("/events")).rejects.toThrow("NEXT_REDIRECT");
     expect(redirect).toHaveBeenCalledWith("/events");
+  });
+
+  it("leads with Sign out when there's no invite", async () => {
+    getUser.mockResolvedValue({ data: { user: freshUser("member@gmail.com") } });
+    await renderPage("/chat");
+    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "Sign out",
+      "Continue with the new account",
+    ]);
+  });
+
+  it("leads with Continue when `next` is an invite, since invite links land on sign-in", async () => {
+    getUser.mockResolvedValue({ data: { user: freshUser("new@gmail.com") } });
+    await renderPage("/join?token=inv-1");
+    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "Continue with the new account",
+      "Sign out",
+    ]);
+  });
+
+  it("says so, and stays put, when the sign-out throws", async () => {
+    getUser.mockResolvedValue({ data: { user: freshUser("member@gmail.com") } });
+    signOutCurrentSession.mockRejectedValueOnce(new Error("network"));
+    await renderPage("/chat");
+    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      NEW_ACCOUNT_SIGN_OUT_FAILED,
+    );
+    expect(assign).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Sign out" }).hasAttribute("disabled")).toBe(false);
   });
 });

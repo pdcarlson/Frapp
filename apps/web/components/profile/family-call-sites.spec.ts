@@ -220,12 +220,15 @@ describe("the accent slot never paints a pre-auth screen", () => {
     "app/(auth)/sign-up/page.tsx",
     "app/(auth)/join/page.tsx",
     "app/(auth)/no-access/page.tsx",
+    "app/(auth)/new-account/page.tsx",
     "components/auth/auth-screen.tsx",
     "components/auth/auth-frame.tsx",
     "components/auth/sign-in-screen.tsx",
     "components/auth/auth-mode-toggle.tsx",
     "components/auth/floating-field.tsx",
     "components/auth/oauth-buttons.tsx",
+    "components/auth/no-access-sign-out.tsx",
+    "components/auth/new-account-actions.tsx",
   ] as const;
 
   it.each(PRE_AUTH)("%s paints no bare accent-slot class", (file) => {

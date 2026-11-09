@@ -121,11 +121,16 @@ export async function startWebOAuth(
 
 /**
  * How close `created_at` and `last_sign_in_at` must be for the session to be
- * the account's first. GoTrue writes both in the same request when an OAuth
- * callback creates the user; a returning member's `created_at` is days or
- * months old. A minute leaves room for clock skew between Auth's writes.
+ * the account's first. With PKCE they are two requests apart: GoTrue creates
+ * the user at its provider callback, and writes `last_sign_in_at` only when
+ * the app exchanges the code (`/token?grant_type=pkce`). The gap is the
+ * browser's redirect back here plus the exchange, normally a second or two,
+ * but a slow phone or network can stretch it, so the window is generous. A
+ * returning member's `created_at` is days or months old; the only account it
+ * misreads is one created minutes ago and signed into again, for which the
+ * notice is still true.
  */
-const FIRST_SIGN_IN_WINDOW_MS = 60_000;
+export const FIRST_SIGN_IN_WINDOW_MS = 5 * 60_000;
 
 type FirstSignInUser = {
   created_at?: string | null;
@@ -139,7 +144,8 @@ type FirstSignInUser = {
  * GoTrue does not hand the `user_signedup` event to the code exchange, so this
  * reads it off the user: the account was created by Google or Apple
  * (`app_metadata.provider`, set from the first identity) and its first sign-in
- * is this one. A member whose Google identity GoTrue auto-linked onto an older
+ * is this one. Email accounts are out of scope: a magic link creates the user
+ * when it is requested, not when it is opened, so the timestamps can't tell. A member whose Google identity GoTrue auto-linked onto an older
  * account by verified email keeps the old `created_at` and is not flagged.
  */
 export function isFirstOAuthSignIn(

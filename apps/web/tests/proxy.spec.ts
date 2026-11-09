@@ -64,15 +64,17 @@ describe("apps/web/proxy.ts", () => {
 
     // Static routes: Next reuses their prefetch as the navigation, so the
     // proxy must run on the prefetch too.
-    const staticRoutes = ["/", ...AUTH_ROUTES, "/join", "/no-access", "/new-account", "/dashboard"];
-    for (const path of staticRoutes) {
+    const staticRoutes = ["/", ...AUTH_ROUTES, "/join", "/no-access", "/dashboard"];
+    // Not static, but outside `(dashboard)` and kept on prefetches the same way.
+    const alwaysProxied = [...staticRoutes, "/new-account"];
+    for (const path of alwaysProxied) {
       expect(onNavigation(path), path).toBe(true);
       expect(onPrefetch(path), path).toBe(true);
     }
     expect(onNavigation("/index.rsc"), "/index.rsc").toBe(true);
 
     const dynamicPrefixes = PROTECTED_ROUTE_PREFIXES.filter(
-      (prefix) => !staticRoutes.includes(prefix),
+      (prefix) => !alwaysProxied.includes(prefix),
     );
     expect(dynamicPrefixes.length).toBeGreaterThan(15);
     for (const prefix of dynamicPrefixes) {

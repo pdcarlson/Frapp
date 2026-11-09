@@ -6,6 +6,7 @@ import {
   isIdentityCollisionError,
   isPlaceholderAuthEmail,
   OAUTH_UNAVAILABLE_COPY,
+  FIRST_SIGN_IN_WINDOW_MS,
   isFirstOAuthSignIn,
   startWebOAuth,
 } from "./oauth";
@@ -176,6 +177,21 @@ describe("isFirstOAuthSignIn", () => {
         }),
       ).toBe(true);
     }
+  });
+
+  it("holds across a slow redirect up to the window, and not past it", () => {
+    // With PKCE, `last_sign_in_at` is written at the app's code exchange, a
+    // browser round trip after GoTrue created the user.
+    const at = (ms: number) => new Date(Date.parse(created) + ms).toISOString();
+    const user = (gapMs: number) => ({
+      created_at: created,
+      last_sign_in_at: at(gapMs),
+      app_metadata: { provider: "google" },
+    });
+    expect(FIRST_SIGN_IN_WINDOW_MS).toBeGreaterThanOrEqual(60_000);
+    expect(isFirstOAuthSignIn(user(45_000))).toBe(true);
+    expect(isFirstOAuthSignIn(user(FIRST_SIGN_IN_WINDOW_MS - 1_000))).toBe(true);
+    expect(isFirstOAuthSignIn(user(FIRST_SIGN_IN_WINDOW_MS + 1_000))).toBe(false);
   });
 
   it("is false for a returning member", () => {

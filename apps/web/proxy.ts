@@ -197,10 +197,12 @@ export async function proxy(request: NextRequest) {
  *
  * Everything else keeps the proxy on every request, prefetch or not:
  *
- * - `/`, the auth routes, `/join`, `/no-access`, `/new-account` and
- *   `/dashboard` are static.
+ * - `/`, the auth routes, `/join`, `/no-access` and `/dashboard` are static.
  *   Next prefetches a static route whole and reuses that for the navigation
  *   with no second request, so a skipped prefetch would skip the redirect.
+ * - `/new-account` is dynamic (it reads the session and its query on the
+ *   server) but sits in the `(auth)` group, which has no `loading.tsx` for a
+ *   prefetch to stop at, so it keeps the proxy on prefetches too.
  * - `/` stays the plain string because Next only adds the root's transport
  *   forms (`/index.rsc` and the like) to a source that is exactly `"/"`.
  * - Only Next's own header is excluded, not the browser's `Purpose: prefetch`.
