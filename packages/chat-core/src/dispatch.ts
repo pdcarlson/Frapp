@@ -198,7 +198,10 @@ export async function postPoll(
   ctx: ChatActionContext,
   channelId: string,
   poll: { content: string; payload: PollPayload },
-): Promise<{ ok: true; warning?: string } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; warning?: string }
+  | { ok: false; error: string; cause?: unknown }
+> {
   if (!ctx.userId) {
     return { ok: false, error: "You're signed out. Sign in, then post it again." };
   }
@@ -211,10 +214,11 @@ export async function postPoll(
       keepDraft: true,
     });
     return sent.warning ? { ok: true, warning: sent.warning } : { ok: true };
-  } catch {
+  } catch (cause) {
     // The outbox refused the row and `sendMessage` took the optimistic card
-    // back out, so nothing is queued or on screen.
-    return { ok: false, error: "Couldn't post that poll. Try again." };
+    // back out, so nothing is queued or on screen. `cause` is for the
+    // caller's error reporting, which chat-core has no port for.
+    return { ok: false, error: "Couldn't post that poll. Try again.", cause };
   }
 }
 

@@ -700,6 +700,13 @@ export async function runDispatch(
   }
 }
 
+/**
+ * Commands that post through `sendMessage`, and so queue in the outbox like
+ * a message (`sendSimpleCommand` in `@repo/chat-core/dispatch`). Every other
+ * implemented command POSTs straight to its controller and is refused offline.
+ */
+const QUEUED_COMMANDS: ReadonlySet<string> = new Set(["poll", "announce"]);
+
 /** What `onOpenCommandForm` did with a command; `null` hands it to dispatch. */
 export type CommandFormOutcome = "opened" | "refused" | null;
 
@@ -1263,11 +1270,11 @@ export function Composer({
       // is labelled and stays live because it queues, and the queueless path
       // refuses and says why.
       //
-      // `/poll` is the exception (#3865): its one-liner and its New poll form
-      // both post through `sendMessage`, which queues in the outbox like a
-      // text message, so offline it runs rather than being refused, as the
-      // + menu's Poll row does.
-      if (isOffline && command.name !== "poll") {
+      // `/poll` and `/announce` are not queueless (#3865): both post through
+      // `sendMessage`, which queues in the outbox like a text message, so
+      // offline they run rather than being refused. The New poll form and
+      // the + menu's Poll row queue the same way.
+      if (isOffline && !QUEUED_COMMANDS.has(command.name)) {
         return {
           title: `/${slashToken(command)} needs a connection`,
           description:
@@ -1711,7 +1718,7 @@ export function Composer({
         return;
       }
       // The same refusals the typed path applies. Without this the palette was
-      // a way around all three: picking `/poll` while offline, with a file
+      // a way around all three: picking `/points` while offline, with a file
       // staged, or with a reply staged dispatched anyway and dropped whichever
       // context could not ride along.
       //

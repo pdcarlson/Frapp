@@ -4311,6 +4311,28 @@ describe("ChatShell opens the New poll form for a /poll it can't read (#3865)", 
     );
   });
 
+  it("shows the posted-but-not-saved warning, so nobody posts it twice", async () => {
+    mockSendPoll.mockResolvedValueOnce({
+      ok: true,
+      warning: "Don't send it again",
+    } as unknown as { ok: true });
+    mockToast.mockClear();
+    render(<ChatShell />);
+    fireEvent.click(pollButton('"Who drives?" Sam'));
+    fireEvent.change(await screen.findByLabelText("Option 2"), {
+      target: { value: "Alex" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Post poll" }));
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Poll posted",
+          description: "Don't send it again",
+        }),
+      ),
+    );
+  });
+
   it("leaves a one-liner it can read to the dispatcher", () => {
     render(<ChatShell />);
     fireEvent.click(pollButton('"Who drives?" Sam Alex'));
@@ -4339,11 +4361,19 @@ describe("ChatShell tells the composer's + which forms the role may use (#3865)"
     expect(
       formsFor({ data: { permissions: ["events:create", "members:view"] } }),
     ).toBe("poll:false,event:true");
+    // Both event grants, not `events:create` alone: the form needs the roster.
+    expect(formsFor({ data: { permissions: ["events:create"] } })).toBe(
+      "poll:false,event:false",
+    );
   });
 
   it("blames nothing on the role while permissions load, and says when they couldn't be read", () => {
     expect(formsFor({ data: undefined })).toBe("poll:loading,event:loading");
     expect(formsFor({ data: undefined, isError: true })).toBe(
+      "poll:unknown,event:unknown",
+    );
+    // Paused offline before it ever landed: it can't answer either.
+    expect(formsFor({ data: undefined, fetchStatus: "paused" })).toBe(
       "poll:unknown,event:unknown",
     );
   });

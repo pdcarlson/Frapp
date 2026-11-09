@@ -586,6 +586,13 @@ describe("Composer typed slash dispatch respects the module gate (#2993)", () =>
     expect(onSlashDispatch).not.toHaveBeenCalled();
   });
 
+  it("lets /announce through offline, since it queues like a message", () => {
+    const { onSlashDispatch } = typeAndSend("/announce Chapter at 7", {
+      isOffline: true,
+    });
+    expect(onSlashDispatch).toHaveBeenCalledTimes(1);
+  });
+
   it("never gates a command with no module (/announce)", async () => {
     // `/announce` belongs to an always-on module, so an unresolved gate has
     // nothing to say about it.
@@ -2197,6 +2204,31 @@ describe("Composer + menu (#3865)", () => {
     expect(screen.getByRole("menuitem", { name: /poll/i })).toHaveTextContent(
       "Not while replying",
     );
+  });
+
+  it("greys the rows while a file is staged", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <Composer {...baseProps({ commandForms: FORMS })} />,
+    );
+    await user.upload(
+      container.querySelector<HTMLInputElement>('input[type="file"]')!,
+      new File(["x"], "notes.pdf", { type: "application/pdf" }),
+    );
+    await screen.findByRole("button", { name: /remove notes\.pdf/i });
+    await user.click(
+      screen.getByRole("button", { name: /add a file, poll, event/i }),
+    );
+    expect(
+      await screen.findByRole("menuitem", { name: /poll/i }),
+    ).toHaveTextContent("Send the file first");
+  });
+
+  it("greys the rows while the module read is still loading", async () => {
+    await openPlus({ slashCommandsStatus: "loading" });
+    expect(
+      await screen.findByRole("menuitem", { name: /event/i }),
+    ).toHaveTextContent("Still loading");
   });
 
   it("greys Event offline and keeps Poll, which queues", async () => {

@@ -1015,7 +1015,11 @@ export function ChatShell({
   // isn't blamed on the role before it does, and `"unknown"` if it failed.
   // Task, Service hours and Points join as their forms learn to post into the
   // channel.
-  const permissionsFailed = permissionsQuery.isError;
+  // A read paused offline before it ever landed can't answer either, and
+  // stays `pending` rather than erroring, so it counts as failed here.
+  const permissionsFailed =
+    permissionsQuery.isError ||
+    (permissionsQuery.fetchStatus === "paused" && !permissionsPayload);
   const commandForms = useMemo((): PlusMenuForm[] => {
     const granted = permissionsPayload?.permissions;
     const allows = (check: (list: string[]) => boolean) =>

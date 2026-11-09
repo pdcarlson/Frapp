@@ -1259,6 +1259,7 @@ describe("postPoll — the New poll form's send (#3865)", () => {
     expect(await postPoll(ctx, CHANNEL_ID, POLL)).toEqual({
       ok: false,
       error: "Couldn't post that poll. Try again.",
+      cause: expect.any(Error),
     });
   });
 

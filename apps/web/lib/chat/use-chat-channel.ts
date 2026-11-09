@@ -89,6 +89,7 @@ import {
 } from "@repo/chat-core/dispatch";
 import type { SlashCommand } from "@repo/chat-core/integrations";
 import type { PollPayload } from "@repo/chat-core/polls";
+import * as Sentry from "@sentry/nextjs";
 import { createDexieOutboxStore } from "./offline-queue";
 import { useChatOutboundScope } from "./chat-scope";
 import { usePersistedChannelTail } from "./use-first-chunk-cache";
@@ -606,7 +607,17 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     (
       targetChannelId: string,
       poll: { content: string; payload: PollPayload },
-    ) => postPoll(ctx, targetChannelId, poll),
+    ) =>
+      postPoll(ctx, targetChannelId, poll).then((result) => {
+        // An outbox that refused the row is reported, as the composer's own
+        // send reports it (`chat_send: "composer"`).
+        if (!result.ok && result.cause !== undefined) {
+          Sentry.captureException(result.cause, {
+            tags: { chat_send: "poll_form" },
+          });
+        }
+        return result;
+      }),
     [ctx],
   );
 

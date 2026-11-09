@@ -126,7 +126,8 @@ export function checkPollDraft(draft: PollDraft): PollDraftCheck {
   if (question.length === 0 || options.length < POLL_OPTIONS_MIN) {
     return { ok: false, problem: null };
   }
-  // The rows stop at the maximum, so only a draft built elsewhere gets here.
+  // Adding stops at the maximum, but a `/poll` prefill keeps every option
+  // typed (`pollDraftFromArgs`), so the member is told and trims one.
   if (options.length > POLL_OPTIONS_MAX) {
     return {
       ok: false,
