@@ -3138,6 +3138,24 @@ alter table public.chat_message_attachments
 
 Dropping them loses each photo's blur and the link to its preview copy; photos still draw, from the original. The preview objects stay in the `chat` bucket under each original's `preview/` folder, unreferenced, until a sweep removes them (#2197).
 
+## Rollback chapter-audit system-write (20261109210000)
+
+* **Migration**: `20261109210000_chat_channels_is_audit_log.sql`
+
+One not-null column with a default on `chat_channels`, `is_audit_log`, its partial unique index, and the `before insert` trigger `chat_channels_flag_audit_log` with its function. The API from the same PR writes the column when it seeds a chapter and filters on it to find the audit log, so roll the API back first: dropping the column under the new API fails chapter onboarding, skips every audit mirror (the lookup errors), and quietly reopens `#chapter-audit` to `*` and `announcements:post` holders, while channel reads keep working. With the older API those holders can post there again too (#3909); that is what rolling back means.
+
+**Roll back with a new forward migration, not by hand.** See [§ 3) Undo one migration](#3-undo-one-migration). After the API is back on the earlier version:
+
+```sql
+drop trigger if exists chat_channels_flag_audit_log on public.chat_channels;
+drop function if exists public.chat_channels_flag_audit_log();
+drop index if exists public.chat_channels_one_audit_log_per_chapter;
+alter table public.chat_channels
+  drop column if exists is_audit_log;
+```
+
+The `is_read_only = true` the backfill set stays; an officer can switch it off again in Chat settings under the older API.
+
 ## Rollback invites pending-emailed index (20261109050000)
 
 * **Migration**: `20261109050000_invites_pending_by_email_index.sql`

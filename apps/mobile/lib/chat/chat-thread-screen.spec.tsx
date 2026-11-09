@@ -30,6 +30,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { ThreadRow } from "@repo/chat-core/blocks";
 import { ChatComposer } from "@/components/chat/chat-composer";
+import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { ImageViewer } from "@/components/chat/image-viewer";
 import {
   NotificationLevelControl,
@@ -278,6 +279,8 @@ let viewerQuery = { isError: false, isFetching: false, refetch: vi.fn() };
 let channelRow: "found" | "reading" | "missing" = "found";
 /** The open channel's type, for the member list's 1:1 DM rule (#3536). */
 let channelType = "PUBLIC";
+/** The open channel is the chapter's audit log (#3909). */
+let channelIsAuditLog = false;
 /** The viewer's permissions, and the chapter's modules, for the + (#3701). */
 let permissionList: string[] = [];
 let enabledModules: Record<string, boolean> = {};
@@ -333,8 +336,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
             name: "general",
             type: channelType,
             description: "The whole chapter.",
-            can_post: true,
-            is_read_only: false,
+            can_post: !channelIsAuditLog,
+            is_read_only: channelIsAuditLog,
+            is_audit_log: channelIsAuditLog,
           },
           isFetching: false,
         }
@@ -482,6 +486,7 @@ beforeEach(() => {
   params = { channelId: CHANNEL };
   channelRow = "found";
   channelType = "PUBLIC";
+  channelIsAuditLog = false;
   permissionList = [];
   enabledModules = {};
   chapterUnread = false;
@@ -512,6 +517,27 @@ describe("chat thread way back", () => {
     expect(vi.mocked(expoRouter.useRouter)().dismissTo).toHaveBeenCalledWith(
       "/",
     );
+    act(() => tree.unmount());
+  });
+});
+
+// #3909: only Frapp posts in the audit log, so there is no composer there.
+describe("chat thread in the audit log", () => {
+  it("shows the audit log line in place of the composer", () => {
+    channelIsAuditLog = true;
+    const tree = render();
+    expect(tree.root.findAllByType(ChatComposer)).toHaveLength(0);
+    const note = tree.root.findByProps({ testID: "chat-audit-log-note" });
+    expect(note.props.children).toBe(AUDIT_LOG_COMPOSER_NOTE);
+    act(() => tree.unmount());
+  });
+
+  it("keeps the composer in an ordinary channel", () => {
+    const tree = render();
+    expect(tree.root.findAllByType(ChatComposer)).toHaveLength(1);
+    expect(
+      tree.root.findAllByProps({ testID: "chat-audit-log-note" }),
+    ).toHaveLength(0);
     act(() => tree.unmount());
   });
 });

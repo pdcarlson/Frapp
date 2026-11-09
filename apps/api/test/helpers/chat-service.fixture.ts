@@ -68,6 +68,7 @@ export const baseChannel: ChatChannel = {
   archived_at: null,
   default_notification_level: null,
   is_default: false,
+  is_audit_log: false,
 };
 
 export const baseMessage: ChatMessage = {
@@ -93,6 +94,7 @@ export async function createChatServiceFixture() {
     findDm: jest.fn(),
     createDm: jest.fn(),
     findByName: jest.fn(),
+    findAuditLog: jest.fn(),
     findPushRouting: jest.fn(),
     createMany: jest.fn(),
     create: jest.fn(),
