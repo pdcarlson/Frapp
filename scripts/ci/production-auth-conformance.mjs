@@ -57,6 +57,7 @@ import {
   checkAuthHook,
   checkAuthLeakedPassword,
   checkAuthRedirects,
+  checkAuthEmailConfirm,
   checkAuthMagicLink,
   checkAuthSmtp,
   checkProjectStatus,
@@ -78,6 +79,7 @@ export const DEFAULT_CHECK_IDS = Object.freeze([
   "auth-smtp",
   "auth-magic-link",
   "auth-leaked-password",
+  "auth-email-confirm",
 ]);
 
 // Title is the lookup key. Must not equal staging-conformance's title.
@@ -202,6 +204,11 @@ function defaultChecks({ accessToken, projectRef, fetchImpl }) {
       id: "auth-leaked-password",
       label: "Leaked-password protection is on",
       run: () => checkAuthLeakedPassword({ accessToken, projectRef, fetchImpl }),
+    },
+    {
+      id: "auth-email-confirm",
+      label: "Email confirmations are required",
+      run: () => checkAuthEmailConfirm({ accessToken, projectRef, fetchImpl }),
     },
   ];
 }
