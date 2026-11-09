@@ -62,6 +62,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   actOnCard,
+  closePoll as closePollAction,
   deleteMessage,
   discardOutboxRow,
   editMessage,
@@ -266,6 +267,12 @@ export interface UseChatChannelResult {
    * server says so. Rejects with a member-facing message on failure.
    */
   remove: (messageId: string) => Promise<void>;
+  /**
+   * Closes the viewer's own poll card early (#3794). Pessimistic like
+   * `remove`: the card draws closed when the server row lands. Rejects with a
+   * member-facing message on failure, and changes nothing.
+   */
+  closePoll: (messageId: string) => Promise<void>;
   react: (messageId: string, emoji: string) => Promise<void>;
   unreact: (messageId: string, emoji: string) => Promise<void>;
   /** Inline-card action dispatch (poll votes, #528; RSVP/Done in a future card). */
@@ -950,6 +957,20 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
+  const closePoll = useCallback(
+    async (messageId: string) => {
+      if (!channelId || !ctx) {
+        throw new MemberFacingError("Couldn't close poll. Try again.");
+      }
+      await withFailureMessage(
+        (onError) =>
+          closePollAction({ ...ctx, onError }, { channelId, messageId }),
+        "Couldn't close poll. Try again.",
+      );
+    },
+    [channelId, ctx],
+  );
+
   const updatePhoto = useCallback(
     (key: string, patch: Partial<StagedPhoto>) => {
       const before = latestPhotoRef.current.get(key);
@@ -1178,6 +1199,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     sendPoll,
     edit,
     remove,
+    closePoll,
     react,
     unreact,
     act,

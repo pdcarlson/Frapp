@@ -480,6 +480,8 @@ export interface MessageTimelineProps {
   ) => void;
   onEdit?: (messageId: string, content: string) => Promise<void>;
   onDelete?: (messageId: string) => void;
+  /** A poll card's Close poll, on the viewer's own open poll (#3794). */
+  onClosePoll?: (messageId: string) => void;
   /**
    * Message ids the viewer has bookmarked (#462). A set rather than a
    * per-message flag so the virtualized list looks each row up in O(1) without
@@ -554,6 +556,7 @@ export const MessageTimeline = forwardRef<
     onAct,
     onEdit,
     onDelete,
+    onClosePoll,
     bookmarkedMessageIds,
     onToggleBookmark,
     canManageChannel,
@@ -1076,6 +1079,7 @@ export const MessageTimeline = forwardRef<
                   onAct={onAct}
                   onEdit={onEdit}
                   onDelete={onDelete}
+                  onClosePoll={onClosePoll}
                   isBookmarked={bookmarkedMessageIds?.has(entry.message.id)}
                   onToggleBookmark={onToggleBookmark}
                   canManageChannel={canManageChannel}

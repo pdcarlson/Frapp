@@ -5,6 +5,7 @@ import {
   AttachmentsNotReadyError,
   classifyChatError,
   definitiveRefusalMessage,
+  closePoll,
   deleteMessage,
   discardOutboxRow,
   editMessage,
@@ -473,6 +474,118 @@ describe("editMessage", () => {
 
     expect(apiClient.PATCH).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
+  });
+});
+
+describe("closePoll (#3794)", () => {
+  let toast: ToastFn;
+  let onError: ChatErrorFn;
+
+  const openCard = {
+    question: "Who is driving Saturday?",
+    options: [
+      { id: "a", label: "Me" },
+      { id: "b", label: "Not me" },
+    ],
+    closes_at: "2999-01-01T00:00:00.000Z",
+  };
+
+  beforeEach(() => {
+    toast = vi.fn() as ToastFn;
+    onError = vi.fn() as ChatErrorFn;
+  });
+
+  it("posts the close and merges the closed card into the cache before any Realtime echo", async () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(
+      chatMessagesKey("chan-1"),
+      mergeServerRows(emptyCache(), [
+        {
+          id: "msg-1",
+          channel_id: "chan-1",
+          sender_id: "user-1",
+          content: openCard.question,
+          kind: "poll",
+          payload: openCard,
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+      ]),
+    );
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: {
+          id: "msg-1",
+          channel_id: "chan-1",
+          sender_id: "user-1",
+          content: openCard.question,
+          kind: "poll",
+          payload: {
+            ...openCard,
+            closed_at: "2026-06-01T00:00:00.000Z",
+            closed_by: "user-1",
+          },
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+        error: null,
+        response: { status: 201 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      queryClient,
+      toast,
+      onError,
+    });
+
+    await closePoll(ctx, { channelId: "chan-1", messageId: "msg-1" });
+
+    expect(apiClient.POST).toHaveBeenCalledWith(
+      "/v1/polls/{messageId}/close",
+      { params: { path: { messageId: "msg-1" } } },
+    );
+    expect(toast).not.toHaveBeenCalled();
+    const cache = queryClient.getQueryData(chatMessagesKey("chan-1")) as
+      ReturnType<typeof emptyCache> | undefined;
+    expect(
+      (cache?.byId["msg-1"]?.payload as { closed_at?: string })?.closed_at,
+    ).toBe("2026-06-01T00:00:00.000Z");
+  });
+
+  it("toasts, reports and rejects when the server refuses", async () => {
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "Only the poll creator can close it" },
+        response: { status: 403 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      toast,
+      onError,
+    });
+
+    await expect(
+      closePoll(ctx, { channelId: "chan-1", messageId: "msg-1" }),
+    ).rejects.toThrow();
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Couldn't close poll" }),
+    );
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Couldn't close poll" }),
+    );
+  });
+
+  it("is a no-op with no userId", async () => {
+    const apiClient = { POST: vi.fn() };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      userId: null,
+    });
+
+    await closePoll(ctx, { channelId: "chan-1", messageId: "msg-1" });
+
+    expect(apiClient.POST).not.toHaveBeenCalled();
   });
 });
 

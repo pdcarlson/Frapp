@@ -441,6 +441,25 @@ describe('PollService', () => {
   });
 
   describe('vote on a manually closed poll', () => {
+    it('reads the close by presence, even when its stamp is ahead of this clock (#3794)', async () => {
+      // The close ran on a process whose clock runs ahead of this one.
+      mockMessageRepo.findById.mockResolvedValue({
+        ...basePollMessage,
+        metadata: {
+          ...basePollMessage.metadata,
+          expires_at: '2099-01-01T00:00:00Z',
+          closed_at: new Date(Date.now() + 60_000).toISOString(),
+          closed_by: 'user-1',
+        },
+      });
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+      await expect(
+        service.vote('msg-1', 'user-2', 'ch-1', [0]),
+      ).rejects.toThrow('Poll has expired');
+      expect(mockVoteRepo.create).not.toHaveBeenCalled();
+    });
+
     it('rejects with the same message an expired poll would, even with time left before expires_at', async () => {
       const closedPoll = {
         ...basePollMessage,
@@ -567,6 +586,118 @@ describe('PollService', () => {
       await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    // A chat-card poll (#3794): `kind: 'poll'`, a `TEXT` row whose poll lives
+    // in `payload`. The close is stamped there, by the API only.
+    describe('a chat-card poll (#3794)', () => {
+      const cardPoll: ChatMessage = {
+        ...basePollMessage,
+        type: 'TEXT',
+        kind: 'poll',
+        metadata: {},
+        payload: {
+          question: 'Who is driving Saturday?',
+          options: [
+            { id: 'opt-a', label: 'Me' },
+            { id: 'opt-b', label: 'Not me' },
+          ],
+          closes_at: '2999-01-01T00:00:00.000Z',
+        },
+      };
+
+      beforeEach(() => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      });
+
+      it('lets the creator close it, stamping payload.closed_at and closed_by and keeping the card', async () => {
+        mockMessageRepo.findById.mockResolvedValue(cardPoll);
+        mockMessageRepo.update.mockResolvedValue(cardPoll);
+
+        await service.close('msg-1', 'user-1', 'ch-1');
+
+        expect(mockMessageRepo.update).toHaveBeenCalledTimes(1);
+        const [id, patch] = mockMessageRepo.update.mock.calls[0];
+        expect(id).toBe('msg-1');
+        expect(patch).toEqual({
+          payload: {
+            ...cardPoll.payload,
+            closed_at: expect.any(String),
+            closed_by: 'user-1',
+          },
+        });
+        // Only the payload is written: the REST shape's metadata is untouched.
+        expect(patch).not.toHaveProperty('metadata');
+      });
+
+      it('refuses anyone but the creator with 403', async () => {
+        mockMessageRepo.findById.mockResolvedValue(cardPoll);
+
+        await expect(service.close('msg-1', 'user-2', 'ch-1')).rejects.toThrow(
+          ForbiddenException,
+        );
+        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('refuses a card already closed early', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...cardPoll,
+          payload: {
+            ...cardPoll.payload,
+            closed_at: '2026-01-01T00:00:00.000Z',
+            closed_by: 'user-1',
+          },
+        });
+
+        await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
+          'Poll is already closed',
+        );
+        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('refuses a card whose deadline has passed', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...cardPoll,
+          payload: { ...cardPoll.payload, closes_at: '2020-01-01T00:00:00Z' },
+        });
+
+        await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
+          'Poll has expired',
+        );
+        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('refuses a deleted card', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...cardPoll,
+          is_deleted: true,
+        });
+
+        await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
+          'Cannot close a deleted poll',
+        );
+        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('refuses a card with no payload to stamp', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...cardPoll,
+          payload: null,
+        });
+
+        await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
+          'Malformed poll card',
+        );
+        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('still refuses a card to the other poll operations, which read the REST shape', async () => {
+        mockMessageRepo.findById.mockResolvedValue(cardPoll);
+
+        await expect(
+          service.vote('msg-1', 'user-1', 'ch-1', [0]),
+        ).rejects.toThrow('Message is not a poll');
+      });
     });
 
     it('404 when the channel does not resolve within the chapter', async () => {
