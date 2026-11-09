@@ -163,9 +163,12 @@ describe("landing marketing copy rules", () => {
 
 describe("landing page structure", () => {
   it("opens with a skip link into the main landmark", () => {
-    expect(renderedPage).toContain("Skip to content");
-    expect(renderedPage).toMatch(/href="#top"/);
-    expect(renderedPage).toMatch(/<main id="top"/);
+    // The chrome is shared with /about and /changelog (#3817).
+    const chrome = withoutComments(homeSource("site-chrome.tsx"));
+    expect(renderedPage).toMatch(/<SiteChrome\b/);
+    expect(chrome).toContain("Skip to content");
+    expect(chrome).toMatch(/href="#top"/);
+    expect(chrome).toMatch(/<main id="top"/);
   });
 
   it("keeps the anchors the nav, the footer and positioning.md point at", () => {
@@ -198,15 +201,20 @@ describe("landing page structure", () => {
         `${name} is exported from components/home/ but nothing renders it`,
       ).toMatch(new RegExp(`<${name}\\b`));
     }
+    const chrome = withoutComments(homeSource("site-chrome.tsx"));
+    for (const part of ["SiteHeader", "SiteFooter"]) {
+      expect(chrome, `site-chrome.tsx no longer renders ${part}`).toMatch(
+        new RegExp(`<${part}\\b`),
+      );
+    }
     for (const section of [
-      "SiteHeader",
+      "SiteChrome",
       "HeroSection",
       "OfficersSection",
       "ChatProofSection",
       "EventsProofSection",
       "PricingSection",
       "ClosingSection",
-      "SiteFooter",
     ]) {
       expect(renderedPage, `page.tsx no longer renders ${section}`).toMatch(
         new RegExp(`<${section}\\b`),
@@ -232,10 +240,15 @@ describe("landing page structure", () => {
   it("gives the hero H1, lead and primary CTA no entrance animation", () => {
     // The hero is the first thing inside `main`, and nothing `page.tsx` puts
     // around it, or ahead of it, may animate either.
-    const main = renderedPage.slice(renderedPage.indexOf("<main"));
+    // `main` is drawn by SiteChrome, which animates nothing, so the hero must
+    // be SiteChrome's first child here.
+    const chrome = withoutComments(homeSource("site-chrome.tsx"));
+    expect(chrome).toMatch(/<main\b[^>]*>\s*\{children\}\s*<\/main>/);
+    expect(chrome).not.toMatch(/RevealOnView|reveal-item|animate-|transition-/);
+    const main = renderedPage.slice(renderedPage.indexOf("<SiteChrome"));
     const aboveOfficers = main.slice(0, main.indexOf("<OfficersSection"));
     expect(main.indexOf("<OfficersSection")).toBeGreaterThan(-1);
-    expect(aboveOfficers).toMatch(/^<main\b[^>]*>\s*<HeroSection\b/);
+    expect(aboveOfficers).toMatch(/^<SiteChrome\b[^>]*>\s*<HeroSection\b/);
     expect(aboveOfficers).not.toContain("RevealOnView");
     expect(aboveOfficers).not.toContain("reveal-item");
     const hero = withoutComments(homeSource("hero-section.tsx"));
@@ -395,7 +408,7 @@ describe("landing page structure", () => {
         new RegExp(`cta="${cta}"\\s*\\n?\\s*surface="${surface}"`),
       );
     }
-    expect(pageSource).toContain("buildAuthUrls");
+    expect(pageSource).toContain("landingAuthUrls()");
     // The invite CTA targets this origin's `/join`, which calls `buildJoinUrl`
     // itself rather than moving that helper's throw onto the homepage.
     expect(renderedPage).toContain('const joinUrl = "/join"');

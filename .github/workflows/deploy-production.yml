@@ -316,6 +316,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/ci/validate-deploy-sha.mjs
 
+      # A warning, never a gate (#3804): something members could notice
+      # changed since production's release tag, but What's new gained no new
+      # entry or lines, so members see nothing new after this update. Here,
+      # before the approval, so whoever approves reads it on the run page and
+      # can deploy a commit with an entry instead. What counts, and why it
+      # doesn't block: the script's header.
+      - name: Check What's new has an entry for this release
+        continue-on-error: true
+        env:
+          DEPLOY_SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          git fetch --no-tags origin '+refs/tags/v*:refs/tags/v*'
+          node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/ci/release-notes-freshness.mjs
+
   # The shipping work is `_deploy.yml`'s one job, the job staging runs too,
   # with production's layers switched on by `environment: production`: the
   # provider preflight, the migration rehearsal and its fence, the dry-run

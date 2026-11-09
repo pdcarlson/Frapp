@@ -14,7 +14,11 @@ export {
   RELEASE_NOTES,
   formatReleaseNoteDate,
   releaseNoteText,
+  releaseNoteVersion,
+  parseReleaseNoteVersion,
+  isNewerReleaseNoteVersion,
   type ReleaseNote,
+  type ReleaseNoteVersion,
 } from "./release-notes";
 
 // ── Legal / compliance ───────────────────────────────────────────────────────
@@ -730,8 +734,10 @@ export {
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
   MAJOR_MAX_LENGTH,
+  POLL_OPTION_MAX_LENGTH,
   POLL_OPTIONS_MAX,
   POLL_OPTIONS_MIN,
+  POLL_QUESTION_MAX_LENGTH,
   SERVICE_DESCRIPTION_MAX_LENGTH,
   YEAR_MAX,
 } from "./field-limits";

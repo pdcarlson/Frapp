@@ -144,6 +144,71 @@ describe("ChatComposer attach affordance", () => {
   });
 });
 
+describe("ChatComposer + with a poll (#3701)", () => {
+  const PLUS = "Add photo or poll";
+
+  it("names both when a poll is offered, and keeps the photo-only name otherwise", () => {
+    const { tree } = renderComposer({
+      onAttach: vi.fn(),
+      onCreatePoll: vi.fn(),
+    });
+    expect(byLabel(tree, PLUS).props.disabled).toBe(false);
+    expect(byLabel(tree, "Attach photo")).toBeUndefined();
+  });
+
+  it("stays live with a full tray, and goes straight to the poll", () => {
+    const onAttach = vi.fn();
+    const onCreatePoll = vi.fn();
+    const { tree } = renderComposer({
+      onAttach,
+      onCreatePoll,
+      attachFull: true,
+    });
+    const button = byLabel(tree, PLUS);
+    expect(button.props.disabled).toBe(false);
+    act(() => button.props.onPress());
+    expect(onCreatePoll).toHaveBeenCalledTimes(1);
+    expect(onAttach).not.toHaveBeenCalled();
+  });
+
+  it("stays live offline, since a poll queues like a message", () => {
+    const onCreatePoll = vi.fn();
+    const { tree } = renderComposer({
+      onAttach: vi.fn(),
+      onCreatePoll,
+      attachDisabledReason: "offline",
+    });
+    const button = byLabel(tree, PLUS);
+    expect(button.props.disabled).toBe(false);
+    act(() => button.props.onPress());
+    expect(onCreatePoll).toHaveBeenCalledTimes(1);
+  });
+
+  it("locks while the photo picker is up", () => {
+    const { tree } = renderComposer({
+      onAttach: vi.fn(),
+      onCreatePoll: vi.fn(),
+      isPicking: true,
+    });
+    expect(byLabel(tree, PLUS).props.disabled).toBe(true);
+  });
+
+  it("locks while the composer can't send at all", () => {
+    const { tree } = renderComposer({
+      onCreatePoll: vi.fn(),
+      canSend: false,
+    });
+    expect(byLabel(tree, PLUS).props.disabled).toBe(true);
+  });
+
+  it("opens photos at once for a member offered no poll", () => {
+    const onAttach = vi.fn();
+    const { tree } = renderComposer({ onAttach });
+    act(() => byLabel(tree, "Attach photo").props.onPress());
+    expect(onAttach).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("ChatComposer staged photos", () => {
   it("sends with photos and no text — a photo-only message is real", () => {
     // Web shipped this bug once: `!body` returned early, so the send silently
