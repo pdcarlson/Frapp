@@ -279,14 +279,53 @@ describe('SupabaseInviteRepository — tenant scope', () => {
         'revoked_at',
         'expires_at',
       ]);
+      expect(harness.ops[0].filters[0].op).toBe('__not__');
     });
 
-    it('findPendingByEmail escapes LIKE wildcards in the address (#3776)', async () => {
-      await repo.findPendingByEmail('a_b%c@school.edu', new Date());
-      const emailFilter = harness.ops[0].filters.find(
-        (f) => f.column === 'email',
+    it('findPendingByEmail matches the address exactly, so `*`, `%` and `_` are literal (#3776)', async () => {
+      // PostgREST reads `*` in a like pattern as `%`: an `ilike` here handed
+      // `*@school.edu` every pending invite at that domain.
+      const live = (id: string, email: string) => ({
+        id,
+        token: `token-${id}`,
+        role: 'MEMBER',
+        created_by: USER_SHARED,
+        used_at: null,
+        revoked_at: null,
+        expires_at: '2099-01-01T00:00:00.000Z',
+        created_at: '2026-11-08T00:00:00.000Z',
+        email,
+      });
+      harness = createTenantHarness({
+        tables: {
+          invites: [
+            inA(
+              live('0a000000-0000-4000-8000-000000000030', 'alice@school.edu'),
+            ),
+            inA(live('0a000000-0000-4000-8000-000000000031', 'a_b@school.edu')),
+            inB(live('0b000000-0000-4000-8000-000000000030', 'bob@school.edu')),
+            inB(live('0b000000-0000-4000-8000-000000000031', 'axb@school.edu')),
+          ],
+        },
+        collisionExempt: { invites: ['token', 'email'] },
+      });
+      repo = new SupabaseInviteRepository(harness.client);
+
+      for (const pattern of ['*@school.edu', '%@school.edu', 'a*@school.edu']) {
+        await expect(
+          repo.findPendingByEmail(pattern, new Date()),
+        ).resolves.toEqual([]);
+      }
+      const underscore = await repo.findPendingByEmail(
+        'a_b@school.edu',
+        new Date(),
       );
-      expect(emailFilter?.value).toBe('a\\_b\\%c@school.edu');
+      expect(underscore.map((i) => i.email)).toEqual(['a_b@school.edu']);
+      // No like/ilike filter at all: nothing the address holds is a pattern.
+      for (const op of harness.ops) {
+        expect(op.filters.map((f) => f.op)).not.toContain('ilike');
+        expect(op.filters.map((f) => f.op)).not.toContain('like');
+      }
     });
 
     it('revokePending skips an invite already redeemed', async () => {

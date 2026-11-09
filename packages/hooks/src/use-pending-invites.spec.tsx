@@ -2,7 +2,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import React from "react";
-import { usePendingInvites } from "./use-invites";
+import { usePendingInvites, useRedeemInvite } from "./use-invites";
 import { FrappClientProvider } from "./use-frapp-client";
 
 /**
@@ -68,5 +68,24 @@ describe("usePendingInvites (#3776)", () => {
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(GET).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("redeeming drops the offers (#3776)", () => {
+  it("re-reads the pending list once a join lands, so a joined chapter's card goes", async () => {
+    const GET = vi.fn().mockResolvedValue({ data: PENDING, error: undefined });
+    const POST = vi
+      .fn()
+      .mockResolvedValue({ data: { chapterId: "ch-1", memberId: "m-1" }, error: undefined });
+    const { result } = renderHook(
+      () => ({ pending: usePendingInvites("user-1"), redeem: useRedeemInvite() }),
+      { wrapper: wrapperFor({ GET, POST }) },
+    );
+    await waitFor(() => expect(result.current.pending.isSuccess).toBe(true));
+    expect(GET).toHaveBeenCalledTimes(1);
+
+    await result.current.redeem.mutateAsync({ token: "token-1" });
+
+    await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
   });
 });

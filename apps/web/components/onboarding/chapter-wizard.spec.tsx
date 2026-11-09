@@ -38,6 +38,7 @@ vi.mock("@/lib/supabase/client", () => ({
 vi.mock("@repo/hooks", () => ({
   DIRECTORY_MIN_QUERY_LENGTH: 2,
   useAccessibleChapters: () => ({ data: [], isSuccess: true }),
+  useCurrentUser: () => ({ data: { email: "founder@school.edu" } }),
   useChapterDirectorySearch: () => ({
     data: directoryRows.current,
     isFetching: false,
@@ -143,6 +144,12 @@ describe("ChapterWizard legal acceptance gate", () => {
     render(<ChapterWizard onComplete={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "I have an invite" }));
     expect(routerPush).toHaveBeenCalledWith("/join");
+  });
+
+  it("says which account is signed in, with a way to sign out (#3776)", () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    expect(screen.getByText("founder@school.edu")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
   });
 
   it("blocks Create chapter until Terms/Privacy is accepted", () => {

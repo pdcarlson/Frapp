@@ -107,19 +107,22 @@ describe("sign-in and sign-up are one page with different fields", () => {
 
   it("offers the invite route from sign-in, where `/` now sends a visitor", () => {
     render(<SignInPage />);
-    // Through sign-up (#3776): `/join` is gated and would bounce a signed-out
-    // visitor straight back here.
+    // Not `/join` itself (#3776): it is gated and would bounce a signed-out
+    // visitor straight back here. This form, pointed at `/join`.
     expect(
       screen.getByRole("link", { name: "Join your chapter" }).getAttribute("href"),
-    ).toBe("/sign-up?redirectTo=%2Fjoin");
+    ).toBe("/sign-in?redirectTo=%2Fjoin");
   });
 
-  it("keeps the invite a visitor arrived with on the way to sign-up (#3776)", () => {
+  it("offers a new account the way to join, keeping the invite (#3776)", () => {
     searchParams.value = new URLSearchParams("redirectTo=/join?token=abc");
     try {
       render(<SignInPage />);
+      expect(screen.queryByRole("link", { name: "Join your chapter" })).toBeNull();
       expect(
-        screen.getByRole("link", { name: "Join your chapter" }).getAttribute("href"),
+        screen
+          .getByRole("link", { name: "Create an account to join" })
+          .getAttribute("href"),
       ).toBe("/sign-up?redirectTo=%2Fjoin%3Ftoken%3Dabc");
     } finally {
       searchParams.value = new URLSearchParams();

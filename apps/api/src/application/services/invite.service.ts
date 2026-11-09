@@ -89,8 +89,11 @@ export interface PendingInvite extends InvitePreview {
 /**
  * The address Supabase Auth has verified for this account, or null.
  * `email_confirmed_at` is set by a confirmed sign-up or magic link, or by an
- * OAuth provider that reports the address verified; hosted projects require
- * confirmation (`docs/ops/deployment/supabase.md` § Auth settings). A pending
+ * OAuth provider that reports the address verified. Hosted projects require
+ * confirmation (docs/ops/deployment/supabase.md#auth-settings-hosted-dashboard-or-management-api),
+ * and `auth-email-confirm` in scripts/ci/staging-conformance.mjs asserts it
+ * daily on both, because with autoconfirm on anyone could claim an invitee's
+ * address. A pending
  * email change sits in `new_email`, not `email`, until it is confirmed too.
  */
 export function verifiedEmailOf(

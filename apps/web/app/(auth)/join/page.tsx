@@ -20,6 +20,7 @@ import { AuthNote, AuthScreen } from "@/components/auth/auth-screen";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { LinkGlyph } from "@/components/profile/profile-glyphs";
 import { CrestTile } from "@/components/layout/crest-tile";
+import { SignedInAs } from "@/components/auth/signed-in-as";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -56,7 +57,8 @@ import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confir
  *
  * Two failure paths that had none before:
  *
- * - **The session check.** `getSessionUser()` is a network call, and it ran as
+ * - **The session check.** It is a network call (`getLiveSessionUser()`; then a
+ *   helper since deleted), and it ran as
  *   a bare `void ensureSession()` with no `catch`. A member who opened an
  *   invite link on a dropped connection sat on "Verifying your session…"
  *   forever, with no retry and nothing announced.
@@ -89,7 +91,11 @@ function JoinPageContent() {
   const [sessionState, setSessionState] = useState<
     "checking" | "ready" | "failed"
   >("checking");
-  const [userId, setUserId] = useState<string | null>(null);
+  const [account, setAccount] = useState<{
+    id: string;
+    email: string | null;
+  } | null>(null);
+  const userId = account?.id ?? null;
   const [attempt, setAttempt] = useState(0);
   const [redeemError, setRedeemError] = useState<string | null>(null);
   // When to show the Terms checkbox, and what a refused join means for it,
@@ -102,6 +108,11 @@ function JoinPageContent() {
   const offers = initialToken ? [] : (pendingInvites.data ?? []);
   const [joiningToken, setJoiningToken] = useState<string | null>(null);
   const [offerError, setOfferError] = useState<string | null>(null);
+  // Held for the whole join, not just the API call: `selectChapter` and the
+  // navigation run after the mutation settles, and a second Join in that
+  // window would redeem another invite and race the first over which chapter
+  // ends up active.
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -123,7 +134,7 @@ function JoinPageContent() {
           return;
         }
 
-        setUserId(user.id);
+        setAccount({ id: user.id, email: user.email ?? null });
         setSessionState("ready");
       } catch {
         // The check itself could not be made. That is recoverable and must say
@@ -172,12 +183,22 @@ function JoinPageContent() {
   }
 
   async function redeem(extracted: string, onError: (copy: string) => void) {
+    if (busy) return;
     if (terms.blocker) {
       onError(terms.blocker);
       return;
     }
-    // Joining switches to the new chapter, which ends this tab's Bulk upload.
-    if (!(await confirmDrop("switch"))) return;
+    setBusy(true);
+    try {
+      // Joining switches to the new chapter, which ends this tab's Bulk upload.
+      if (!(await confirmDrop("switch"))) return;
+      await joinWith(extracted, onError);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function joinWith(extracted: string, onError: (copy: string) => void) {
     try {
       const result = await redeemInviteMutation.mutateAsync(
         terms.redeemBody(extracted),
@@ -241,6 +262,7 @@ function JoinPageContent() {
 
   return (
     <AuthScreen
+      toggle={<SignedInAs email={account?.email ?? null} disabled={busy} />}
       title="Join your chapter"
       subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
       footer={JOIN_FOOTER}
@@ -276,7 +298,7 @@ function JoinPageContent() {
               <Button
                 type="button"
                 onClick={() => void handleJoinOffer(offer.token)}
-                disabled={redeemInviteMutation.isPending}
+                disabled={busy}
                 aria-label={`Join ${offer.chapter_name}`}
               >
                 {joiningToken === offer.token ? (
@@ -326,7 +348,7 @@ function JoinPageContent() {
               setRedeemError(null);
               setOfferError(null);
             }}
-            disabled={redeemInviteMutation.isPending}
+            disabled={busy}
           />
         ) : null}
         <Button
@@ -334,9 +356,9 @@ function JoinPageContent() {
           className="w-full"
           // One primary per screen: an offered invite's Join is it.
           variant={offers.length > 0 ? "secondary" : "default"}
-          disabled={redeemInviteMutation.isPending}
+          disabled={busy}
         >
-          {redeemInviteMutation.isPending && joiningToken === null ? (
+          {busy && joiningToken === null ? (
             <Loader2 className="animate-spin" />
           ) : null}
           Join chapter

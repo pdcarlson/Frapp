@@ -85,7 +85,7 @@ async function renderReady() {
 
 beforeEach(() => {
   sessionUser.mockReset();
-  sessionUser.mockResolvedValue({ id: "auth-1" });
+  sessionUser.mockResolvedValue({ id: "auth-1", email: "brother@school.edu" });
   replace.mockReset();
   pending.data = [];
   pending.userIds = [];
@@ -268,5 +268,44 @@ describe("web join — invites for the verified address (#3776)", () => {
     renderPage();
     await screen.findByLabelText("Invite");
     expect(screen.queryByRole("region", { name: "Your invites" })).toBeNull();
+  });
+});
+
+describe("web join — who is signed in (#3776)", () => {
+  it("names the account and offers Sign out", async () => {
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(screen.getByText("brother@school.edu")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
+  });
+});
+
+describe("web join — one join at a time (#3776)", () => {
+  beforeEach(() => {
+    legal.data = { required: false };
+    redeemMutate.mockReset();
+  });
+
+  it("keeps every Join off until the first join has finished, not just its API call", async () => {
+    pending.data = [
+      OFFER,
+      { ...OFFER, chapter_name: "Theta Chi Beta", token: "second-token" },
+    ];
+    let finish: (value: unknown) => void = () => {};
+    redeemMutate.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    renderPage();
+    await screen.findByText("You've been invited to Theta Chi Beta");
+    await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: "Join Sigma Chi Alpha" }));
+    await waitFor(() => expect(redeemMutate).toHaveBeenCalledTimes(1));
+    const second = screen.getByRole("button", { name: "Join Theta Chi Beta" });
+    expect(second).toHaveProperty("disabled", true);
+    fireEvent.click(second);
+    expect(redeemMutate).toHaveBeenCalledTimes(1);
+
+    finish({ chapterId: "ch-1", memberId: "m-1" });
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/chat"));
+    expect(redeemMutate).toHaveBeenCalledTimes(1);
   });
 });

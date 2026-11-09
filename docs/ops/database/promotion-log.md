@@ -29,6 +29,16 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-11-09: A partial index for invites waiting on an address
+
+### 20261109050000_invites_pending_by_email_index.sql
+
+- **Purpose**: Adds `idx_invites_pending_emailed` on `invites (expires_at) where used_at is null and email is not null`. `GET /v1/invites/mine` (#3776) reads every live emailed invite across chapters and matches the caller's verified address in the API; used and revoked invites are never pruned, so without the index that read scans every invite ever made. Index only: no data or behaviour changes.
+- **Checks**: After `db push`, `select indexdef from pg_indexes where indexname = 'idx_invites_pending_emailed';` returns one row naming the partial predicate.
+- **Promoter notes**: Order-free against the API: the API from the same PR works without it, only slower. Plain `create index` (Supabase applies each migration in a transaction, where `concurrently` is refused); `invites` is small, so the write lock is brief. `if not exists`, so re-applying is idempotent. Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`db-rollback-playbook.md`](../db-rollback-playbook.md#rollback-invites-pending-emailed-index-20261109050000) § Rollback invites pending-emailed index.
+
 ## 2026-11-08: Event check-in opens before the start
 
 ### 20261108210000_event_check_in_opens_minutes.sql

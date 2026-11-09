@@ -256,20 +256,36 @@ function SignInPageContent() {
  * The form's one other exit (the toggle covers sign-up). A component so the
  * Suspense fallback draws the same footer and nothing shifts on hydration.
  *
- * It goes to sign-up, not `/join` (#3776). `/join` is gated, so a visitor here
- * is signed out by definition and the link only bounced them back to this
- * form, dropping the invite they arrived with on the way. Sign-up carries
- * `redirectTo`, so the new account lands on `/join` with its invite intact;
- * someone who already has an account signs in above, or crosses back with the
- * toggle, which carries it too.
+ * `/join` is gated, so it never links there (#3776): a signed-out visitor was
+ * bounced back to this form, with any invite they arrived with dropped on the
+ * way. Instead:
+ *
+ * - Not yet headed to `/join`: "Join your chapter" points this form at `/join`
+ *   (`?redirectTo=/join`), so an existing account signs in above and lands
+ *   there, where its emailed invites are offered. The footer then changes to:
+ * - Headed to `/join` (with or without an invite): "Create an account" opens
+ *   sign-up carrying that `redirectTo`, so a new account lands on `/join` with
+ *   its invite intact. The toggle carries it too.
  */
 function SignInFooter({ redirectTo }: { redirectTo: string }) {
-  const joinPath = isJoinPath(redirectTo) ? redirectTo : "/join";
+  if (isJoinPath(redirectTo)) {
+    return (
+      <p>
+        New to Frapp?{" "}
+        <Link
+          href={`/sign-up?redirectTo=${encodeURIComponent(redirectTo)}`}
+          className="font-semibold text-accent-text hover:underline"
+        >
+          Create an account to join
+        </Link>
+      </p>
+    );
+  }
   return (
     <p>
       Have an invite?{" "}
       <Link
-        href={`/sign-up?redirectTo=${encodeURIComponent(joinPath)}`}
+        href={`/sign-in?redirectTo=${encodeURIComponent("/join")}`}
         className="font-semibold text-accent-text hover:underline"
       >
         Join your chapter

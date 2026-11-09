@@ -1,9 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
 import { Button } from "@/components/ui/button";
-import { signOutCurrentSession } from "@/lib/auth/session";
+import { useSignOutToSignIn } from "./use-sign-out";
 
 /**
  * `/no-access`'s "different account" action, which has to sign out first.
@@ -15,19 +13,7 @@ import { signOutCurrentSession } from "@/lib/auth/session";
  * the account menu does it.
  */
 export function NoAccessSignOut() {
-  const [signingOut, setSigningOut] = useState(false);
-  const { confirmDrop, confirmDropDialog } = useConfirmDropBulkUploads();
-
-  async function handleSignOut() {
-    if (!(await confirmDrop("sign-out"))) return;
-    setSigningOut(true);
-    try {
-      await signOutCurrentSession();
-      window.location.assign("/sign-in");
-    } finally {
-      setSigningOut(false);
-    }
-  }
+  const { signOut, signingOut, confirmDropDialog } = useSignOutToSignIn();
 
   return (
     <>
@@ -36,7 +22,7 @@ export function NoAccessSignOut() {
         variant="secondary"
         className="w-full"
         disabled={signingOut}
-        onClick={() => void handleSignOut()}
+        onClick={() => void signOut()}
       >
         Sign in to a different account
       </Button>
