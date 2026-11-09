@@ -68,6 +68,12 @@ export interface DispatchResult {
    * silence after a retry is indistinguishable from a retry that did nothing.
    */
   resolved?: string;
+  /**
+   * The API's refusal body, set beside `error` by `postTask` and `postHours`,
+   * so a form posting through them can read the same gate refusals
+   * (subscription, module, receipt required) it reads from its own request.
+   */
+  cause?: unknown;
 }
 
 /**
@@ -181,9 +187,13 @@ async function dispatchPoll(
   });
 }
 
+/** A post from a form with no signed-in member behind it, on either surface. */
+export const SIGNED_OUT_POST_COPY =
+  "You're signed out. Sign in, then post it again.";
+
 /**
  * Posts a poll card a New poll form built (`buildPollMessage`): web's dialog
- * (#3865) and, in time, mobile's sheet. Through the outbox like a message, so
+ * (#3865) and the phone's New poll sheet. Through the outbox like a message, so
  * it is optimistic and survives going offline. Unlike `/poll` it leaves the
  * channel's saved draft alone: the composer may hold a message the member is
  * still writing beside the form.
@@ -203,7 +213,7 @@ export async function postPoll(
   | { ok: false; error: string; cause?: unknown }
 > {
   if (!ctx.userId) {
-    return { ok: false, error: "You're signed out. Sign in, then post it again." };
+    return { ok: false, error: SIGNED_OUT_POST_COPY };
   }
   try {
     const sent = await sendMessage(ctx, {
@@ -855,6 +865,7 @@ export async function postTask(
       return {
         ok: false,
         error: apiErrorMessage(result.error, "Couldn't create task"),
+        cause: result.error,
       };
     }
     if (data?.card_posted === false) {
@@ -983,6 +994,25 @@ async function dispatchEvent(
 }
 
 /**
+ * What a create from chat says when its event card isn't in the thread: kept
+ * out because the event is only for some roles (none is asked for), or lost
+ * (`card_posted: false`). `null` when the card is there. Web's event form and
+ * the phone's New event sheet both say it.
+ */
+export function eventCardOutcomeCopy(
+  name: string,
+  card: { cardKeptOut: boolean; cardLost: boolean },
+): string | null {
+  if (card.cardKeptOut) {
+    return `${name} is on the calendar. It isn't posted in chat because it's only for some roles.`;
+  }
+  if (card.cardLost) {
+    return `${name} is on the calendar, but its card couldn't be posted in chat.`;
+  }
+  return null;
+}
+
+/**
  * The chat side of an event created from the event form rather than the
  * one-liner (web chat's `/event` with details it can't read, #3773). The form
  * makes its own `POST /v1/events`; this gives it the one-liner's timeline
@@ -1106,6 +1136,7 @@ export async function postHours(
       return {
         ok: false,
         error: apiErrorMessage(result.error, "Couldn't log hours"),
+        cause: result.error,
       };
     }
     if (data?.card_posted === false) {

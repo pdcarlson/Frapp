@@ -141,8 +141,9 @@ export const CHAPTER_PROFILE_PERMISSIONS = [
  *
  * **The one spelling.** Code that reads it: mobile's `useCanCreateEvents`
  * (`new-event-sheet.tsx`) and quick actions (`quick-actions.ts`), the setup
- * checklist's event step (`packages/hooks/src/setup-checklist.ts`), and web's
- * Events page create controls and chat's `/event` form (`chat-shell.tsx`).
+ * checklist's event step (`packages/hooks/src/setup-checklist.ts`), web's
+ * Events page create controls, and the chat + menu's Event row and `/event`
+ * form on both surfaces (`PLUS_MENU_PERMISSIONS` in `@repo/chat-core/plus-menu`).
  */
 export const EVENT_CREATE_PERMISSIONS = [
   "events:create",
