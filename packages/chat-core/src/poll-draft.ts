@@ -1,12 +1,14 @@
-import { type PollsGate } from "@repo/chat-core/polls";
 import { can, POLL_OPTIONS_MAX, POLL_OPTIONS_MIN } from "@repo/validation";
+import { tokenizeQuotedArgs } from "./integrations/parsers";
+import { type PollsGate } from "./polls";
 
 /**
- * The model behind s05's New poll sheet (`components/chat/new-poll-sheet.tsx`,
- * #3701): who may open it, the draft it edits, and what makes a draft
- * postable. The card it posts is built by `buildPollMessage` in
- * `@repo/chat-core/polls`, the same builder web's `/poll` uses, so a poll made
- * on the phone is the card web members already vote on.
+ * The model behind the New poll form on both clients: mobile's New poll sheet
+ * (`apps/mobile/components/chat/new-poll-sheet.tsx`, #3701) and web's New poll
+ * dialog (`apps/web/components/chat/new-poll-dialog.tsx`, #3865): who may open
+ * it, the draft it edits, and what makes a draft postable. The card it posts
+ * is built by `buildPollMessage` in `./polls`, the same builder `/poll` uses,
+ * so a poll made in either form is the card every client already votes on.
  */
 
 /** When voting stops, as More options offers it. */
@@ -183,4 +185,37 @@ export function movePollOption(
   const options = [...draft.options];
   [options[index], options[target]] = [options[target]!, options[index]!];
   return { ...draft, options };
+}
+
+/**
+ * A draft filled in from what was typed after a bare or unfinished `/poll`
+ * (#3773 step 2), so the form opens on the member's own words: the first
+ * token is the question and the rest are options, as the one-liner reads them.
+ * A `closes=` token is dropped (the form's choices are coarser). Rows are
+ * padded to the minimum and cut at the maximum; an unterminated quote reads as
+ * the question alone, since that is what the member was still typing.
+ */
+export function pollDraftFromArgs(args: string): PollDraft {
+  const draft = emptyPollDraft();
+  const trimmed = args.trim();
+  if (trimmed.length === 0) return draft;
+  const tokens = tokenizeQuotedArgs(trimmed);
+  if (tokens === null) {
+    return { ...draft, question: trimmed.replace(/^"/, "").trim() };
+  }
+  const [question = "", ...rest] = tokens;
+  const typed = rest
+    .filter((token) => !token.startsWith("closes="))
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0)
+    .slice(0, POLL_OPTIONS_MAX);
+  const options = draft.options.map((row, index) => ({
+    ...row,
+    text: typed[index] ?? "",
+  }));
+  for (const text of typed.slice(options.length)) {
+    nextRowKey += 1;
+    options.push({ key: `option-${nextRowKey}`, text });
+  }
+  return { ...draft, question: question.trim(), options };
 }

@@ -256,6 +256,7 @@ vi.mock("./report-message-dialog", () => ({
 // The member list owns its own reads and has its own spec; here it is only a
 // column the shell decides to show.
 const mockTrackEventCard = vi.fn();
+const mockSendPoll = vi.fn(async () => ({ ok: true as const }));
 
 vi.mock("@/components/events/event-editor-dialog", () => ({
   EventEditorDialog: (props: {
@@ -696,8 +697,10 @@ vi.mock("./composer", () => ({
     slashCommandsStatus,
     recruitmentVocab,
     onOpenCommandForm,
+    commandForms,
   }: {
     channelId: string;
+    commandForms?: readonly { command: string; roleAllows: boolean | null }[];
     onOpenCommandForm?: (
       command: { name: string; implemented: boolean },
       args: string,
@@ -740,6 +743,9 @@ vi.mock("./composer", () => ({
         data-slash-status={slashCommandsStatus ?? ""}
         data-polls-enabled={String(isModuleEnabled?.("polls"))}
         data-recruitment={recruitmentVocab ?? ""}
+        data-command-forms={(commandForms ?? [])
+          .map((form) => `${form.command}:${String(form.roleAllows)}`)
+          .join(",")}
       >
         {channelId}
         {/* The staged-reply seam (#489). The real Composer cannot be driven
@@ -788,6 +794,21 @@ vi.mock("./composer", () => ({
             </button>
           ),
         )}
+        {["", '"Who drives?" Sam', '"Who drives?" Sam Alex'].map((args) => (
+          <button
+            key={`poll:${args}`}
+            data-testid={`composer-poll:${args}`}
+            onClick={(event) => {
+              const took = onOpenCommandForm?.(
+                { name: "poll", implemented: true },
+                args,
+              );
+              event.currentTarget.dataset.took = String(took);
+            }}
+          >
+            /poll {args}
+          </button>
+        ))}
         <button data-testid="composer-cancel-reply" onClick={onCancelReply}>
           cancel reply
         </button>
@@ -1019,6 +1040,7 @@ function chatChannelResult(
     discard: vi.fn(),
     dispatchSlash: vi.fn(),
     trackEventCard: mockTrackEventCard,
+    sendPoll: mockSendPoll,
     act: vi.fn(),
     hasOlder: overrides.hasOlder ?? false,
     isLoadingOlder: overrides.isLoadingOlder ?? false,
@@ -4252,6 +4274,70 @@ describe("ChatShell opens the event form for an /event it can't read (#3773)", (
     expect(screen.queryByTestId("event-form")).toBeNull();
     expect(mockToast).toHaveBeenCalledWith(
       expect.objectContaining({ title: "You can't create events" }),
+    );
+  });
+});
+
+describe("ChatShell opens the New poll form for a /poll it can't read (#3865)", () => {
+  function pollButton(args: string) {
+    return screen.getByTestId(`composer-poll:${args}`);
+  }
+
+  it("opens it on what was typed, and posts the card into the channel it came from", async () => {
+    mockSendPoll.mockClear();
+    render(<ChatShell />);
+    fireEvent.click(pollButton('"Who drives?" Sam'));
+
+    expect(pollButton('"Who drives?" Sam').dataset.took).toBe("opened");
+    expect(await screen.findByText("New poll")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Ask a question")).toHaveValue(
+      "Who drives?",
+    );
+    fireEvent.change(screen.getByLabelText("Option 2"), {
+      target: { value: "Alex" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Post poll" }));
+
+    await waitFor(() =>
+      expect(mockSendPoll).toHaveBeenCalledWith(
+        expect.stringMatching(/.+/),
+        expect.objectContaining({ content: "Who drives?" }),
+      ),
+    );
+    // The composer stub prints its `channelId` first: the card goes there.
+    const [channelId] = mockSendPoll.mock.calls[0] as unknown as [string];
+    expect(screen.getByTestId("composer").textContent).toMatch(
+      new RegExp(`^${channelId}`),
+    );
+  });
+
+  it("leaves a one-liner it can read to the dispatcher", () => {
+    render(<ChatShell />);
+    fireEvent.click(pollButton('"Who drives?" Sam Alex'));
+    expect(pollButton('"Who drives?" Sam Alex').dataset.took).toBe("null");
+    expect(screen.queryByText("New poll")).toBeNull();
+  });
+});
+
+describe("ChatShell tells the composer's + which forms the role may use (#3865)", () => {
+  it("maps polls:create and the event grants, and says nothing while permissions load", () => {
+    mockUseMyPermissions.mockReturnValue({
+      data: undefined as unknown as { permissions: string[] },
+    });
+    const { unmount } = render(<ChatShell />);
+    expect(screen.getByTestId("composer")).toHaveAttribute(
+      "data-command-forms",
+      "poll:null,event:null",
+    );
+    unmount();
+
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["polls:create"] },
+    });
+    render(<ChatShell />);
+    expect(screen.getByTestId("composer")).toHaveAttribute(
+      "data-command-forms",
+      "poll:true,event:false",
     );
   });
 });

@@ -5,6 +5,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -28,7 +29,6 @@ import {
   AttachGlyph,
   ReactionGlyph,
   SendArrowGlyph,
-  SlashCommandGlyph,
 } from "./chat-glyphs";
 import { cn } from "@/lib/utils";
 import { compactControlClassName } from "@/components/shared/table-controls";
@@ -65,6 +65,12 @@ import {
   readSignedUpload,
 } from "@repo/validation";
 import { EmojiPicker } from "./emoji-picker";
+import {
+  ComposerPlusMenu,
+  plusMenuModel,
+  type PlusMenuCommand,
+  type PlusMenuForm,
+} from "./composer-plus-menu";
 import { QuotedMessage } from "./reply-quote";
 import {
   createMentionSuggestion,
@@ -468,6 +474,13 @@ interface ComposerBaseProps {
     command: SlashCommand,
     args: string,
   ) => CommandFormOutcome;
+  /**
+   * The command forms the **+** menu offers (#3865), each with whether the
+   * member's role may use it; a row opens its form through
+   * `onOpenCommandForm` with no details, as a bare command does. Omitted, the
+   * menu holds Attach a file alone.
+   */
+  commandForms?: readonly PlusMenuForm[];
   onTyping: () => void;
   /**
    * The chapter's module gate. The palette filters by it, and a typed module
@@ -957,6 +970,7 @@ export function Composer({
   onSend,
   onSlashDispatch,
   onOpenCommandForm,
+  commandForms,
   onTyping,
   isModuleEnabled,
   recruitmentVocab,
@@ -1517,6 +1531,38 @@ export function Composer({
   );
 
   const stagedCount = pending.length + uploading.length;
+
+  // The + menu (#3865): what it offers, what it greys and why.
+  const plusMenu = useMemo(
+    () =>
+      plusMenuModel({
+        forms: commandForms ?? [],
+        moduleStatus: slashCommandsStatus,
+        isModuleEnabled,
+        replying: replyTo != null,
+        filesStaged: stagedCount,
+        fileLimit: CHAT_FILE_LIMIT,
+        offline: Boolean(isOffline),
+      }),
+    [
+      commandForms,
+      slashCommandsStatus,
+      isModuleEnabled,
+      replyTo,
+      stagedCount,
+      isOffline,
+    ],
+  );
+  // A row opens the form its bare command opens. The model has already
+  // greyed every row that can't open right now, so nothing is refused here
+  // that the member wasn't told about beside the row.
+  const openPlusMenuForm = useCallback(
+    (name: PlusMenuCommand) => {
+      const command = getSlashCommand(name);
+      if (command) onOpenCommandForm?.(command, "");
+    },
+    [onOpenCommandForm],
+  );
   const handleAttach = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(event.target.files ?? []);
@@ -1860,17 +1906,18 @@ export function Composer({
                 <EmojiPicker onPick={insertEmoji} />
               </PopoverContent>
             </Popover>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className={compactControlClassName}
-              aria-label="Attach file"
-              onClick={() => fileInput.current?.click()}
-              disabled={stagedCount >= CHAT_FILE_LIMIT}
-            >
-              <AttachGlyph className="h-5 w-5" />
-            </Button>
+            {/*
+              One + for a file and every command's form (#3865, layout A),
+              replacing the paperclip and the slash-palette button. Typing
+              `/` in the message box still opens the palette, and each row
+              shows its shortcut so the menu teaches it.
+            */}
+            <ComposerPlusMenu
+              model={plusMenu}
+              triggerClassName={compactControlClassName}
+              onAttach={() => fileInput.current?.click()}
+              onOpenForm={openPlusMenuForm}
+            />
             <input
               ref={fileInput}
               type="file"
@@ -1880,24 +1927,6 @@ export function Composer({
               onChange={(event) => void handleAttach(event)}
               aria-hidden="true"
             />
-            {/*
-              Not a ✦. The four-pointed sparkle is the Ask/AI mark and
-              components.md §11 says it "MUST NOT mark anything that is not an
-              Ask/AI entry point or answer" — a slash palette is a command
-              launcher, not an answer surface.
-            */}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className={compactControlClassName}
-              aria-label="Open slash commands (Command Slash)"
-              aria-haspopup="dialog"
-              aria-expanded={palette.open}
-              onClick={() => setPalette({ open: true, query: "" })}
-            >
-              <SlashCommandGlyph className="h-5 w-5" />
-            </Button>
             <ComposerHelp />
           </div>
           {/*

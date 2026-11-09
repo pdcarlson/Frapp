@@ -179,25 +179,30 @@ describe("Composer placeholder wiring", () => {
  * whether that dialog is currently open — a screen-reader user got no signal
  * distinguishing this from a plain action button.
  */
-describe("Composer slash-command trigger (#396)", () => {
-  it("reflects the palette's open state via aria-expanded, and opens a modal dialog", async () => {
+/**
+ * Opens the slash palette the way a keyboard member does: Cmd/Ctrl+/ from
+ * inside the composer. The toolbar's `/` button is gone since #3865 (the +
+ * menu replaced it), and typing `/` in the editor needs a real ProseMirror
+ * view, which jsdom doesn't host.
+ */
+async function openPalette(user: ReturnType<typeof userEvent.setup>) {
+  screen.getByRole("button", { name: /add a file, poll, event/i }).focus();
+  await user.keyboard("{Control>}/{/Control}");
+}
+
+describe("Composer slash palette (#396)", () => {
+  it("opens as a modal dialog on Cmd/Ctrl+/", async () => {
     const user = userEvent.setup();
     render(<Composer {...baseProps()} />);
 
-    const trigger = screen.getByRole("button", {
-      name: /open slash commands/i,
-    });
-    expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
-    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("button", { name: /open slash commands/i }),
+    ).toBeNull();
+    await openPalette(user);
 
-    await user.click(trigger);
-
-    expect(trigger).toHaveAttribute("aria-expanded", "true");
     // `findBy`, not `getBy`: the palette is a `next/dynamic` boundary now
     // (`cmdk` and a Radix Dialog are `chat-extras` under the board's `1s`
     // split), so the first open resolves a module before the dialog exists.
-    // `aria-expanded` above flips synchronously either way — the state that
-    // drives it is the composer's, not the palette's.
     expect(await screen.findByRole("dialog")).toHaveAttribute(
       "aria-modal",
       "true",
@@ -302,7 +307,9 @@ describe("Composer staged reply (#489)", () => {
     const onCancelReply = vi.fn();
     render(<Composer {...baseProps({ onCancelReply })} />);
 
-    await user.click(screen.getByRole("button", { name: /attach file/i }));
+    await user.click(
+      screen.getByRole("button", { name: /add a file, poll, event/i }),
+    );
     await user.keyboard("{Escape}");
 
     expect(onCancelReply).not.toHaveBeenCalled();
@@ -342,9 +349,7 @@ describe("Composer slash refusals cover the palette path too (#489)", () => {
     const user = userEvent.setup();
     const onSlashDispatch = vi.fn(async () => ({ ok: true }));
     render(<Composer {...baseProps({ onSlashDispatch, ...props })} />);
-    await user.click(
-      screen.getByRole("button", { name: /open slash commands/i }),
-    );
+    await openPalette(user);
     return { user, onSlashDispatch };
   }
 
@@ -388,9 +393,7 @@ describe("Composer slash refusals cover the palette path too (#489)", () => {
     await user.upload(input, file);
     await screen.findByRole("button", { name: /remove notes\.pdf/i });
 
-    await user.click(
-      screen.getByRole("button", { name: /open slash commands/i }),
-    );
+    await openPalette(user);
     await user.click(await screen.findByRole("option", { name: /poll/i }));
 
     expect(onSlashDispatch).not.toHaveBeenCalled();
@@ -1958,9 +1961,7 @@ describe("Composer hands a command to onOpenCommandForm before dispatching (#377
     render(
       <Composer {...baseProps({ onSlashDispatch, onOpenCommandForm })} />,
     );
-    await user.click(
-      screen.getByRole("button", { name: /open slash commands/i }),
-    );
+    await openPalette(user);
     await user.click(await screen.findByRole("option", { name: /event/i }));
 
     expect(onOpenCommandForm).toHaveBeenCalledWith(
@@ -1982,9 +1983,7 @@ describe("Composer hands a command to onOpenCommandForm before dispatching (#377
         })}
       />,
     );
-    await user.click(
-      screen.getByRole("button", { name: /open slash commands/i }),
-    );
+    await openPalette(user);
     await user.click(await screen.findByRole("option", { name: /event/i }));
 
     expect(onOpenCommandForm).not.toHaveBeenCalled();
@@ -2003,9 +2002,7 @@ describe("Composer passes details typed into the palette's search (#3773)", () =
         })}
       />,
     );
-    await user.click(
-      screen.getByRole("button", { name: /open slash commands/i }),
-    );
+    await openPalette(user);
     await user.type(
       await screen.findByRole("combobox"),
       "event Chapter Dinner",
@@ -2069,9 +2066,7 @@ describe("Composer form handoff keeps the member's input on a refusal (#3773 rev
     const user = userEvent.setup();
     const onSlashDispatch = vi.fn(async () => ({ ok: true as const }));
     render(<Composer {...baseProps({ onSlashDispatch, ...overrides })} />);
-    await user.click(
-      screen.getByRole("button", { name: /open slash commands/i }),
-    );
+    await openPalette(user);
     const search = await screen.findByRole("combobox");
     await user.type(search, query);
     return { user, onSlashDispatch, search };

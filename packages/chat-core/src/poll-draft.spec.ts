@@ -8,10 +8,11 @@ import {
   DUPLICATE_OPTION_PROBLEM,
   emptyPollDraft,
   movePollOption,
+  pollDraftFromArgs,
   removePollOption,
   setPollOption,
   type PollDraft,
-} from "./new-poll";
+} from "./poll-draft";
 
 function draft(question: string, options: string[]): PollDraft {
   return {
@@ -147,6 +148,34 @@ describe("closesAtFor (#3701)", () => {
     );
     expect(closesAtFor("1w", now).toISOString()).toBe(
       "2026-11-16T12:00:00.000Z",
+    );
+  });
+});
+
+describe("pollDraftFromArgs (#3865)", () => {
+  const texts = (d: PollDraft) => d.options.map((row) => row.text);
+
+  it("opens an empty draft for a bare /poll", () => {
+    const d = pollDraftFromArgs("  ");
+    expect(d.question).toBe("");
+    expect(texts(d)).toEqual(["", ""]);
+  });
+
+  it("reads the question and the options the one-liner would", () => {
+    const d = pollDraftFromArgs('"Who drives?" Sam closes=60');
+    expect(d.question).toBe("Who drives?");
+    expect(texts(d)).toEqual(["Sam", ""]);
+  });
+
+  it("adds rows past the minimum, with keys of their own", () => {
+    const d = pollDraftFromArgs('"Q" A B C');
+    expect(texts(d)).toEqual(["A", "B", "C"]);
+    expect(new Set(d.options.map((row) => row.key)).size).toBe(3);
+  });
+
+  it("keeps a question still being typed inside an open quote", () => {
+    expect(pollDraftFromArgs('"Who is driving').question).toBe(
+      "Who is driving",
     );
   });
 });

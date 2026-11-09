@@ -57,7 +57,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { NewPollSheet } from "@/components/chat/new-poll-sheet";
-import { canCreatePoll } from "@/lib/chat/new-poll";
+import { canCreatePoll } from "@repo/chat-core/poll-draft";
 import { usePollsGate } from "@/lib/chat/use-polls-gate";
 import {
   ImageViewer,

@@ -156,10 +156,14 @@ import {
 import {
   eventFormPrefill,
   parseEventArgs,
+  parsePollArgs,
   type EventFormPrefill,
   type SlashCommand,
 } from "@repo/chat-core/integrations";
 import { EventEditorDialog } from "@/components/events/event-editor-dialog";
+import { pollDraftFromArgs, type PollDraft } from "@repo/chat-core/poll-draft";
+import { NewPollDialog } from "./new-poll-dialog";
+import type { PlusMenuForm } from "./composer-plus-menu";
 import type { ChatNotificationLevel } from "@repo/hooks";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 
@@ -947,16 +951,39 @@ export function ChatShell({
   );
 
   // `/event` typed bare, with details the one-liner can't read, or picked
-  // from the palette opens the Events page's own form, filled in with what
-  // was typed, and the card posts in the channel it came from (#3773).
+  // from the palette or the composer's + menu, opens the Events page's own
+  // form, filled in with what was typed, and the card posts in the channel it
+  // came from (#3773, #3865).
   const [eventForm, setEventForm] = useState<{
     open: boolean;
     channelId: string;
     prefill: EventFormPrefill;
   } | null>(null);
+  // `/poll` the same way: the New poll dialog (#3773 step 2). Keyed per open,
+  // so each visit starts from what was typed and posts where it was opened.
+  const [pollForm, setPollForm] = useState<{
+    open: boolean;
+    key: number;
+    channelId: string;
+    draft: PollDraft;
+  } | null>(null);
   const openCommandForm = useCallback(
     (command: SlashCommand, args: string): CommandFormOutcome => {
-      if (command.name !== "event" || !activeChannelId) return null;
+      if (!activeChannelId) return null;
+      if (command.name === "poll") {
+        if (parsePollArgs(args).ok) return null;
+        // No role check: `/poll` lets any member post a poll today, and
+        // whether it should is #3007's open call. The + menu offers Poll
+        // only to `polls:create`, as the phone's + does.
+        setPollForm((previous) => ({
+          open: true,
+          key: (previous?.key ?? 0) + 1,
+          channelId: activeChannelId,
+          draft: pollDraftFromArgs(args),
+        }));
+        return "opened";
+      }
+      if (command.name !== "event") return null;
       if (parseEventArgs(args).ok) return null;
       // Unknown until the read lands, and the server enforces it either way,
       // so only a loaded grant without it refuses before the form opens.
@@ -981,6 +1008,24 @@ export function ChatShell({
     },
     [activeChannelId, permissionsPayload, toast],
   );
+
+  // What the composer's + offers beside Attach a file (#3865), and whether
+  // the member's role may use each: `null` while permissions load, so a row
+  // isn't blamed on the role before the read lands. Task, Service hours and
+  // Points join as their forms learn to post into the channel.
+  const commandForms = useMemo((): PlusMenuForm[] => {
+    const granted = permissionsPayload?.permissions;
+    return [
+      {
+        command: "poll",
+        roleAllows: granted ? can("polls:create", granted) : null,
+      },
+      {
+        command: "event",
+        roleAllows: granted ? canAll(EVENT_CREATE_PERMISSIONS, granted) : null,
+      },
+    ];
+  }, [permissionsPayload]);
 
   // Memoised because the timeline hands it to the virtualizer's header
   // context, and a new element every render would re-render that row.
@@ -2500,6 +2545,7 @@ export function ChatShell({
               )
             }
             onOpenCommandForm={openCommandForm}
+            commandForms={commandForms}
             onTyping={channel.emitTyping}
             isModuleEnabled={isModuleEnabled}
             recruitmentVocab={recruitmentVocab}
@@ -2607,6 +2653,19 @@ export function ChatShell({
           )}
           postToChannelId={eventForm.channelId}
           trackChatCard={channel.trackEventCard}
+        />
+      ) : null}
+      {pollForm ? (
+        <NewPollDialog
+          key={pollForm.key}
+          open={pollForm.open}
+          onOpenChange={(open) =>
+            setPollForm((previous) =>
+              previous ? { ...previous, open } : previous,
+            )
+          }
+          initialDraft={pollForm.draft}
+          onPost={(poll) => channel.sendPoll(pollForm.channelId, poll)}
         />
       ) : null}
       <ReportMessageDialog
