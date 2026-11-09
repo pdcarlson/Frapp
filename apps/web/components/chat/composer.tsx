@@ -5,6 +5,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -28,8 +29,8 @@ import {
   AttachGlyph,
   ReactionGlyph,
   SendArrowGlyph,
-  SlashCommandGlyph,
 } from "./chat-glyphs";
+import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { cn } from "@/lib/utils";
 import { compactControlClassName } from "@/components/shared/table-controls";
 import { MENTION_CHIP } from "./chip";
@@ -65,6 +66,12 @@ import {
   readSignedUpload,
 } from "@repo/validation";
 import { EmojiPicker } from "./emoji-picker";
+import {
+  ComposerPlusMenu,
+  plusMenuModel,
+  type PlusMenuCommand,
+  type PlusMenuForm,
+} from "./composer-plus-menu";
 import { QuotedMessage } from "./reply-quote";
 import {
   createMentionSuggestion,
@@ -73,6 +80,7 @@ import {
 } from "./mention-suggestion";
 import {
   getSlashCommand,
+  paletteCommandArgs,
   parseSlashInput,
   type SlashCommand,
 } from "@repo/chat-core/integrations";
@@ -339,7 +347,7 @@ export function ComposerShell({
 /**
  * `cmdk` and a Radix Dialog, fetched when the palette is first summoned.
  *
- * The palette opens from typing `/` or from the toolbar's ⌘ button, so on most
+ * The palette opens from typing `/` or Cmd/Ctrl+/, so on most
  * cold loads it is never opened at all — but the eager import put its whole
  * dependency chain in the chunk that has to parse before the composer is
  * focusable, which `1s` budgets at 400ms. It is one of the five surfaces the
@@ -422,6 +430,11 @@ interface ComposerBaseProps {
   isDirect?: boolean;
   isReadOnly: boolean;
   /**
+   * The chapter's audit log (#3909), where only Frapp posts: no member gets a
+   * composer, whatever `canPost` says, and the line that replaces it says why.
+   */
+  isAuditLog?: boolean;
+  /**
    * Server-decided capability (#704): whether the caller may post in this
    * channel at all, from `ChatChannel.can_post` — already folds in the
    * read-only gate (a holder of `announcements:post`, or `*`, gets `true` in
@@ -455,6 +468,25 @@ interface ComposerBaseProps {
     command: SlashCommand,
     args: string,
   ) => Promise<DispatchResult>;
+  /**
+   * Offered every implemented command before it dispatches, typed or picked
+   * from the palette, once the composer's own refusals have passed (#3773).
+   * `"opened"`: it opened a form for a command typed bare or with details the
+   * one-liner can't read, and the composer clears itself without dispatching.
+   * `"refused"`: it said why the command can't run, and the composer keeps the
+   * member's text (and the palette's) where it is. `null`: dispatch as usual.
+   */
+  onOpenCommandForm?: (
+    command: SlashCommand,
+    args: string,
+  ) => CommandFormOutcome;
+  /**
+   * The command forms the **+** menu offers (#3865), each with whether the
+   * member's role may use it; a row opens its form through
+   * `onOpenCommandForm` with no details, as a bare command does. Omitted, the
+   * menu holds Attach a file alone.
+   */
+  commandForms?: readonly PlusMenuForm[];
   onTyping: () => void;
   /**
    * The chapter's module gate. The palette filters by it, and a typed module
@@ -673,6 +705,16 @@ export async function runDispatch(
     return { ok: false };
   }
 }
+
+/**
+ * Commands that post through `sendMessage`, and so queue in the outbox like
+ * a message (`sendSimpleCommand` in `@repo/chat-core/dispatch`). Every other
+ * implemented command POSTs straight to its controller and is refused offline.
+ */
+const QUEUED_COMMANDS: ReadonlySet<string> = new Set(["poll", "announce"]);
+
+/** What `onOpenCommandForm` did with a command; `null` hands it to dispatch. */
+export type CommandFormOutcome = "opened" | "refused" | null;
 
 /**
  * Toast the outcome of a slash dispatch. Shared by the two call sites (typed
@@ -935,11 +977,14 @@ export function Composer({
   channelName,
   isDirect,
   isReadOnly,
+  isAuditLog = false,
   canPost,
   draft,
   onChangeDraft,
   onSend,
   onSlashDispatch,
+  onOpenCommandForm,
+  commandForms,
   onTyping,
   isModuleEnabled,
   recruitmentVocab,
@@ -1022,7 +1067,7 @@ export function Composer({
   // Hoisted above `useEditor` so `onCreate` can honour it — the early return
   // that reads it next is ~400 lines down, but Tiptap builds the editor from
   // here regardless of whether anything ever renders it. See `onCreate`.
-  const resolvedCanPost = canPost ?? !isReadOnly;
+  const resolvedCanPost = isAuditLog ? false : (canPost ?? !isReadOnly);
   const sendRef = useRef<() => void>(() => {});
   /*
     What is staged as of the last commit, for a refused send to compare
@@ -1190,7 +1235,7 @@ export function Composer({
 
   // Radix's default `onCloseAutoFocus` returns focus to whatever rendered
   // `<DialogTrigger>` — this palette has none, since it opens from typing "/"
-  // as often as from clicking the toolbar button, so that handler is a no-op
+  // or Cmd/Ctrl+/ (the toolbar's palette button became the + menu, #3865), so that handler is a no-op
   // here and focus was landing nowhere (effectively `document.body`) on every
   // close. The composer editor is the one place a member always means to end
   // up, whichever of open/select/Escape/backspace-the-slash closed it.
@@ -1231,7 +1276,12 @@ export function Composer({
       // spec/ui/resilience/connection-state.md's split applies within this one control: the text path
       // is labelled and stays live because it queues, and the queueless path
       // refuses and says why.
-      if (isOffline) {
+      //
+      // `/poll` and `/announce` are not queueless (#3865): both post through
+      // `sendMessage`, which queues in the outbox like a text message, so
+      // offline they run rather than being refused. The New poll form and
+      // the + menu's Poll row queue the same way.
+      if (isOffline && !QUEUED_COMMANDS.has(command.name)) {
         return {
           title: `/${slashToken(command)} needs a connection`,
           description:
@@ -1295,7 +1345,11 @@ export function Composer({
           toast({ ...refusal, variant: "destructive" });
           return;
         }
+        // Asked before clearing: a refusal keeps the member's text to fix.
+        const form = onOpenCommandForm?.(command, parsed.args) ?? null;
+        if (form === "refused") return;
         editor.commands.clearContent(true);
+        if (form === "opened") return;
         void (async () => {
           notifyDispatchOutcome(
             toast,
@@ -1384,6 +1438,7 @@ export function Composer({
     onRestoreReply,
     onSend,
     onSlashDispatch,
+    onOpenCommandForm,
     pending,
     recruitmentVocab,
     replyTo,
@@ -1495,6 +1550,38 @@ export function Composer({
   );
 
   const stagedCount = pending.length + uploading.length;
+
+  // The + menu (#3865): what it offers, what it greys and why.
+  const plusMenu = useMemo(
+    () =>
+      plusMenuModel({
+        forms: commandForms ?? [],
+        moduleStatus: slashCommandsStatus,
+        isModuleEnabled,
+        replying: replyTo != null,
+        filesStaged: stagedCount,
+        fileLimit: CHAT_FILE_LIMIT,
+        offline: Boolean(isOffline),
+      }),
+    [
+      commandForms,
+      slashCommandsStatus,
+      isModuleEnabled,
+      replyTo,
+      stagedCount,
+      isOffline,
+    ],
+  );
+  // A row opens the form its bare command opens. The model has already
+  // greyed every row that can't open right now, so nothing is refused here
+  // that the member wasn't told about beside the row.
+  const openPlusMenuForm = useCallback(
+    (name: PlusMenuCommand) => {
+      const command = getSlashCommand(name);
+      if (command) onOpenCommandForm?.(command, "");
+    },
+    [onOpenCommandForm],
+  );
   const handleAttach = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(event.target.files ?? []);
@@ -1619,10 +1706,16 @@ export function Composer({
 
   const onPaletteSelect = useCallback(
     async (command: SlashCommand) => {
-      setPalette({ open: false, query: "" });
+      // Typing after `/` goes into the palette's search box, not the editor,
+      // so a whole command typed out arrives here as the query (#3773).
+      const paletteArgs =
+        paletteCommandArgs(palette.query, command, {
+          recruitment: recruitmentVocab,
+        }) ?? "";
       // Implemented commands route through dispatch; unimplemented ones keep
       // the "coming soon" toast so the Chunk 10 stubs still surface intent.
       if (!command.implemented || !onSlashDispatch) {
+        setPalette({ open: false, query: "" });
         toast({
           title: `/${slashToken(command)}`,
           description:
@@ -1632,9 +1725,12 @@ export function Composer({
         return;
       }
       // The same refusals the typed path applies. Without this the palette was
-      // a way around all three: picking `/poll` while offline, with a file
+      // a way around all three: picking `/points` while offline, with a file
       // staged, or with a reply staged dispatched anyway and dropped whichever
       // context could not ride along.
+      //
+      // A refusal leaves the palette open: what the member typed after `/`
+      // lives in its search box, and closing it would throw that away.
       const refusal = slashRefusal(command);
       if (refusal) {
         toast({ ...refusal, variant: "destructive" });
@@ -1645,18 +1741,33 @@ export function Composer({
       const typed = parsed.command
         ? getSlashCommand(parsed.command, { recruitment: recruitmentVocab })
         : undefined;
-      const args = typed?.name === command.name ? parsed.args : "";
+      // The palette's details win: the editor holds at most the command word
+      // the palette opened on, and its arguments only when pasted in whole.
+      const editorArgs = typed?.name === command.name ? parsed.args : "";
+      const args = paletteArgs || editorArgs;
+      const form = onOpenCommandForm?.(command, args) ?? null;
+      if (form === "refused") return;
+      setPalette({ open: false, query: "" });
       // Clear the composer optimistically — the dispatch enqueues the message
       // through the same hot path as `onSend`, so the optimistic card appears
       // immediately and a toast surfaces any parse / authz failure.
       if (editor) editor.commands.clearContent(true);
+      if (form === "opened") return;
       notifyDispatchOutcome(
         toast,
         slashToken(command),
         await runDispatch(onSlashDispatch, command, args),
       );
     },
-    [editor, onSlashDispatch, recruitmentVocab, slashRefusal, toast],
+    [
+      editor,
+      onSlashDispatch,
+      onOpenCommandForm,
+      palette.query,
+      recruitmentVocab,
+      slashRefusal,
+      toast,
+    ],
   );
 
   // `canPost` is the single source of truth for whether *this caller* may
@@ -1687,7 +1798,9 @@ export function Composer({
   if (!resolvedCanPost) {
     return (
       <p className="border-t border-border px-4 py-3 text-caption text-muted-foreground">
-        {isReadOnly ? (
+        {isAuditLog ? (
+          <>{AUDIT_LOG_COMPOSER_NOTE}</>
+        ) : isReadOnly ? (
           <>This channel is read-only for your role.</>
         ) : (
           <>
@@ -1798,6 +1911,27 @@ export function Composer({
         */}
         <div className="mt-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1">
+            {/*
+              One + for a file and every command's form (#3865, layout A),
+              replacing the paperclip and the slash-palette button. Typing
+              `/` in the message box still opens the palette, and each row
+              shows its shortcut so the menu teaches it.
+            */}
+            <ComposerPlusMenu
+              model={plusMenu}
+              triggerClassName={compactControlClassName}
+              onAttach={() => fileInput.current?.click()}
+              onOpenForm={openPlusMenuForm}
+            />
+            <input
+              ref={fileInput}
+              type="file"
+              accept={acceptAttribute("document")}
+              multiple
+              className="sr-only"
+              onChange={(event) => void handleAttach(event)}
+              aria-hidden="true"
+            />
             <Popover>
               <PopoverTrigger asChild>
                 <Button
@@ -1814,44 +1948,6 @@ export function Composer({
                 <EmojiPicker onPick={insertEmoji} />
               </PopoverContent>
             </Popover>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className={compactControlClassName}
-              aria-label="Attach file"
-              onClick={() => fileInput.current?.click()}
-              disabled={stagedCount >= CHAT_FILE_LIMIT}
-            >
-              <AttachGlyph className="h-5 w-5" />
-            </Button>
-            <input
-              ref={fileInput}
-              type="file"
-              accept={acceptAttribute("document")}
-              multiple
-              className="sr-only"
-              onChange={(event) => void handleAttach(event)}
-              aria-hidden="true"
-            />
-            {/*
-              Not a ✦. The four-pointed sparkle is the Ask/AI mark and
-              components.md §11 says it "MUST NOT mark anything that is not an
-              Ask/AI entry point or answer" — a slash palette is a command
-              launcher, not an answer surface.
-            */}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className={compactControlClassName}
-              aria-label="Open slash commands (Command Slash)"
-              aria-haspopup="dialog"
-              aria-expanded={palette.open}
-              onClick={() => setPalette({ open: true, query: "" })}
-            >
-              <SlashCommandGlyph className="h-5 w-5" />
-            </Button>
             <ComposerHelp />
           </div>
           {/*

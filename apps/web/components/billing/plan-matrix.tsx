@@ -72,6 +72,10 @@ import { ProChip } from "@/components/billing/pro-chip";
  *   screen is that gate), and `4d` draws a "Dues and invoices (Stripe)" row.
  *   Omitting it would understate what the subscription buys, on the page that
  *   sells it.
+ * - **`polls` is listed by hand for the same reason.** Since #3871 retired
+ *   the `/polls` page, polls live only in chat (the `/poll` command and the
+ *   poll card's Vote), so no nav row carries the key, but the module still
+ *   gates them and the subscription still buys it.
  * - **`billing` can never appear**, and would be actively self-contradicting
  *   if it did. `BillingController` is class-level `@SubscriptionExempt()`
  *   precisely so the chapter can reach the screen that ungates it
@@ -89,6 +93,7 @@ const SHIPPED_PAID_KEYS = new Set<string>([
   ...DASHBOARD_NAV_ITEMS.flatMap((item) => (item.module ? [item.module] : [])),
   ...SETTINGS_TOOLS.flatMap((tool) => (tool.module ? [tool.module] : [])),
   "dues",
+  "polls",
 ]);
 
 const FREE_MODULES = MODULE_CATALOG.filter((entry) => entry.tier === "free");

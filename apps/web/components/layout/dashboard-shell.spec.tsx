@@ -128,6 +128,14 @@ vi.mock("@/components/onboarding/onboarding-tutorial", () => ({
 vi.mock("@/components/layout/dashboard-notification-drawer", () => ({
   DashboardNotificationDrawer: () => null,
 }));
+// The binding has its own spec (`use-chat-realtime-binding.spec.tsx`); this
+// one pins only that the shell mounts it, on every route (#3745).
+const realtimeBinding = vi.hoisted(() => ({ calls: 0 }));
+vi.mock("@/lib/chat/use-chat-realtime-binding", () => ({
+  useChatRealtimeBinding: () => {
+    realtimeBinding.calls += 1;
+  },
+}));
 
 import { DashboardShell } from "./dashboard-shell";
 import { useNavFace } from "./nav-face";
@@ -732,18 +740,72 @@ describe("DashboardShell", () => {
       expectGeometry();
     });
 
-    it("reads Chat's unread counts on /chat only, and draws no placeholder elsewhere", () => {
+    it("binds chat's inbox and reads its unread counts on every route, and draws no placeholder off Chat (#3745)", () => {
+      realtimeBinding.calls = 0;
       mockPathname.value = "/events";
-      const { rerender } = render(<DashboardShell>content</DashboardShell>);
-      expect(unreadReads.count).toBe(0);
+      render(<DashboardShell>content</DashboardShell>);
+      // Off `/chat` the inbox is joined and the counts read, so a message
+      // arriving while the member is on Events lights the Chat row.
+      expect(realtimeBinding.calls).toBeGreaterThan(0);
+      expect(unreadReads.count).toBeGreaterThan(0);
       // The placeholder's skeleton would shimmer out of view on every route.
       expect(
         screen.queryByRole("button", { name: "Back to menu" }),
       ).not.toBeInTheDocument();
+    });
 
-      mockPathname.value = "/chat";
+    it("lights the Chat row off /chat, as a link, until the counts clear (#3824)", () => {
+      mockPathname.value = "/events";
+      mockLevels.value = [];
+      mockChannels.value = [{ id: "d1", type: "DM" }];
+      mockUnread.value = [
+        { channel_id: "d1", unread_count: 2, mention_count: 0 },
+      ];
+      const { container, rerender } = render(
+        <DashboardShell>content</DashboardShell>,
+      );
+      const chatLink = () =>
+        within(screen.getByRole("navigation", { name: "Primary" })).getByRole(
+          "link",
+          { name: /^Chat/ },
+        );
+      expect(chatLink()).toHaveAccessibleName(/unread messages/);
+      expect(chatLink()).toHaveClass("font-semibold", "text-foreground");
+      expect(
+        chatLink().querySelector("[data-nav-highlight]"),
+      ).toBeInTheDocument();
+
+      // Read elsewhere (the counts are the server's): the row goes quiet.
+      mockUnread.value = [];
       rerender(<DashboardShell>content</DashboardShell>);
-      expect(unreadReads.count).toBeGreaterThan(0);
+      expect(chatLink()).not.toHaveAccessibleName(/unread/);
+      expect(
+        container.querySelector("[data-nav-highlight]"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("lights the Chat row in the collapsed rail and in the drawer too (#3824)", () => {
+      mockPathname.value = "/events";
+      mockLevels.value = [];
+      mockChannels.value = [{ id: "d1", type: "DM" }];
+      mockUnread.value = [
+        { channel_id: "d1", unread_count: 2, mention_count: 0 },
+      ];
+      render(<DashboardShell defaultNavCollapsed>content</DashboardShell>);
+
+      // The rail's `aria-label` replaces the row's words, so it carries them.
+      const rail = screen.getByRole("navigation", { name: "Primary" });
+      expect(
+        within(rail).getByRole("link", { name: "Chat, unread messages" }),
+      ).toBeInTheDocument();
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Open navigation menu" }),
+      );
+      const drawer = screen.getByRole("dialog");
+      expect(
+        within(drawer).getByRole("link", { name: /^Chat.*unread messages/ }),
+      ).toBeInTheDocument();
     });
 
     it("arriving at Chat with focus in the nav keeps it in the column, not on a placeholder", () => {

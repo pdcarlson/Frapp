@@ -331,6 +331,64 @@ describe("AccountMenu", () => {
       expect(save).toHaveBeenCalledWith({ custom_status: null });
     });
 
+    it("puts DND's default first, so opening the submenu lands on it", async () => {
+      const user = await openStatus();
+      (await screen.findByRole("menuitem", { name: /do not disturb/i })).focus();
+      await user.keyboard("{ArrowRight}");
+      await user.keyboard("{Enter}");
+      expect(save).toHaveBeenCalledWith({
+        status: "dnd",
+        status_expires_at: null,
+      });
+    });
+
+    it("sends no end time for Don't clear", async () => {
+      const user = userEvent.setup();
+      render(<AccountMenu variant="topbar" />);
+      await user.click(screen.getByRole("button", { name: /account menu/i }));
+      await user.click(
+        screen.getByRole("menuitem", { name: /set a custom status/i }),
+      );
+      const dialog = await screen.findByRole("dialog");
+      await user.type(
+        within(dialog).getByRole("textbox", { name: "Status" }),
+        "Abroad",
+      );
+      // The keyboard path: Radix Select picks on pointer-up geometry jsdom
+      // lacks. Open on Today (the default), one down is Don't clear.
+      fireEvent.keyDown(
+        within(dialog).getByRole("combobox", { name: "Clear after" }),
+        { key: "ArrowDown" },
+      );
+      await screen.findByRole("option", { name: "Don't clear" });
+      await user.keyboard("{ArrowDown}");
+      fireEvent.keyDown(document.activeElement!, { key: " " });
+      expect(
+        within(dialog).getByRole("combobox", { name: "Clear after" }),
+      ).toHaveTextContent("Don't clear");
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+      expect(save).toHaveBeenCalledWith({
+        custom_status: "Abroad",
+        custom_status_expires_at: null,
+      });
+    });
+
+    it("won't save a line over 80 characters", async () => {
+      const user = userEvent.setup();
+      render(<AccountMenu variant="topbar" />);
+      await user.click(screen.getByRole("button", { name: /account menu/i }));
+      await user.click(
+        screen.getByRole("menuitem", { name: /set a custom status/i }),
+      );
+      const dialog = await screen.findByRole("dialog");
+      const field = within(dialog).getByRole("textbox", { name: "Status" });
+      fireEvent.change(field, { target: { value: "x".repeat(81) } });
+      expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+      expect(dialog).toHaveTextContent("Keep it to 80 characters.");
+      fireEvent.submit(field.closest("form")!);
+      expect(save).not.toHaveBeenCalled();
+    });
+
     it("disables the status rows while offline", async () => {
       network.isOffline = true;
       const user = userEvent.setup();

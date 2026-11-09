@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, type ReactElement } from "react";
+import { useMemo, useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import {
+  useBackworkCourses,
+  useBackworkResources,
   useConfirmBackworkUpload,
+  useDepartments,
   useRequestBackworkUploadUrl,
   putSignedUpload,
 } from "@repo/hooks";
@@ -33,12 +36,18 @@ import {
   type SubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
-import { getErrorMessage, guardIntDraft, parseGuardedInt } from "@/lib/utils";
+import { asArray, getErrorMessage, guardIntDraft, parseGuardedInt } from "@/lib/utils";
+import type {
+  BackworkCourse,
+  BackworkDepartment,
+  BackworkResource,
+} from "@/components/backwork/backwork-library";
 import {
   ASSIGNMENT_TYPES,
   DOCUMENT_VARIANTS,
   MAX_BACKWORK_UPLOAD_BYTES,
   MAX_BACKWORK_UPLOAD_LABEL,
+  MAX_COURSE_NAME_LENGTH,
   acceptAttribute,
   inspectUploadFile,
   readSignedUpload,
@@ -135,6 +144,28 @@ export function BackworkUploadSheet({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const requestUpload = useRequestBackworkUploadUrl();
   const confirmUpload = useConfirmBackworkUpload();
+  // Already loaded by the page: these read its cache.
+  const departmentsQuery = useDepartments();
+  const coursesQuery = useBackworkCourses();
+  const resourcesQuery = useBackworkResources();
+  const [courseName, setCourseName] = useState("");
+  const courseState = useMemo(
+    () =>
+      describeCourse(
+        uploadDraft.department_code,
+        uploadDraft.course_number,
+        asArray<BackworkDepartment>(departmentsQuery.data),
+        asArray<BackworkCourse>(coursesQuery.data),
+        asArray<BackworkResource>(resourcesQuery.data),
+      ),
+    [
+      uploadDraft.department_code,
+      uploadDraft.course_number,
+      departmentsQuery.data,
+      coursesQuery.data,
+      resourcesQuery.data,
+    ],
+  );
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -220,6 +251,11 @@ export function BackworkUploadSheet({
         // The same body bulk upload confirms with (`finish.ts`), so a DTO
         // change can't reach one surface and miss the other.
         ...confirmFields(draftFields(uploadDraft), file.name),
+        // Only for a course no file has yet; the API saves it only when the
+        // course has no name, so an upload never renames one.
+        ...(courseState.kind === "new" && courseName.trim()
+          ? { course_name: courseName.trim() }
+          : {}),
         is_redacted: false,
       });
       toast({
@@ -240,6 +276,7 @@ export function BackworkUploadSheet({
         tags: "",
         file: null,
       });
+      setCourseName("");
     } catch (error) {
       toast({
         title: "Couldn't upload backwork",
@@ -346,8 +383,39 @@ export function BackworkUploadSheet({
                         }))
                       }
                       placeholder="3320"
+                      aria-describedby={
+                        courseState.kind === "named" ? "bw-course-caption" : undefined
+                      }
                     />
+                    {courseState.kind === "named" ? (
+                      <p id="bw-course-caption" className="text-caption text-muted-foreground">
+                        {courseState.label} ·{" "}
+                        <span className="font-semibold text-foreground">
+                          {courseState.name}
+                        </span>
+                      </p>
+                    ) : null}
                   </UploadField>
+                  {courseState.kind === "new" ? (
+                    <UploadField
+                      id="bw-course-name"
+                      label="Course name (optional)"
+                      className="sm:col-span-2"
+                    >
+                      <Input
+                        id="bw-course-name"
+                        className={UPLOAD_FIELD_CLASS}
+                        aria-describedby="bw-course-name-note"
+                        value={courseName}
+                        maxLength={MAX_COURSE_NAME_LENGTH}
+                        onChange={(event) => setCourseName(event.target.value)}
+                        placeholder="Calculus I"
+                      />
+                      <p id="bw-course-name-note" className="text-caption text-muted">
+                        New course. Name it once and everyone can find it by name.
+                      </p>
+                    </UploadField>
+                  ) : null}
                   <UploadField id="bw-professor" label="Professor">
                     <Input
                       id="bw-professor"
@@ -553,4 +621,38 @@ export function BackworkUploadSheet({
           </Dialog>
     </>
   );
+}
+
+type CourseState =
+  | { kind: "none" }
+  | { kind: "named"; label: string; name: string }
+  | { kind: "new" };
+
+/**
+ * What the sheet knows about the course typed so far (#3848): a course with a
+ * name shows it under Course number; a course no file has yet offers a name
+ * field; anything else shows nothing (an unnamed course with files is named
+ * from a row's menu). The department matches by its exact code, as the API
+ * resolves it on upload; the number trimmed and case-insensitively.
+ */
+export function describeCourse(
+  departmentCode: string,
+  courseNumber: string,
+  departments: readonly BackworkDepartment[],
+  courses: readonly BackworkCourse[],
+  resources: readonly BackworkResource[],
+): CourseState {
+  const code = departmentCode.trim();
+  const number = courseNumber.trim();
+  if (!code || !number) return { kind: "none" };
+  const key = number.toLowerCase();
+  const department = departments.find((d) => d.code === code);
+  if (!department) return { kind: "new" };
+  const course = courses.find((c) => c.department_id === department.id && c.course_key === key);
+  if (course?.name) return { kind: "named", label: `${code} ${number}`, name: course.name };
+  if (course) return { kind: "none" };
+  const hasFiles = resources.some(
+    (r) => r.department_id === department.id && r.course_number?.trim().toLowerCase() === key,
+  );
+  return hasFiles ? { kind: "none" } : { kind: "new" };
 }

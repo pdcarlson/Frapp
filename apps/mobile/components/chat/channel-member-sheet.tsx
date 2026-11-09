@@ -36,6 +36,7 @@ import {
   useSheetBackgroundStyle,
   useSheetClose,
   useTallSheetProps,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 
 /**
@@ -79,6 +80,7 @@ export const ChannelMemberSheet = forwardRef<
   return (
     <BottomSheetModal
       ref={ref}
+      stackBehavior={SHEET_STACK_BEHAVIOR}
       {...tallSheet}
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}

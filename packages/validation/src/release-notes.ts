@@ -1,15 +1,34 @@
 /**
  * What's new, in members' words: the one list behind mobile Settings → What's
- * new, web's account menu → What's new, and the block Paul pastes to beta
- * testers (`npm run release-notes`).
+ * new, web's account menu → What's new, the public changelog at
+ * frapp.live/changelog (`apps/landing/app/changelog/page.tsx`), and the block
+ * Paul pastes to beta testers (`npm run release-notes`).
+ *
+ * The changelog is public and indexed, so every line is read by people who
+ * have never opened the app. The writing rules below are the whole set for an
+ * entry, there and everywhere else; the landing page's own rules bind its page
+ * copy, not these lines (spec/ui/landing/README.md § Section inventory).
  *
  * Newest first. Each entry is one batch of changes that reached members on
  * `date` (a store build or an over-the-air update; members never see which).
  *
  * How to write a line: say what a member can now do or will notice, the way
  * you'd tell a friend. No feature codes, issue numbers, version strings,
- * screen ids, or emojis. A bit vague is fine; wrong is not, so only list what
- * is merged and shipped. Five to eight lines an entry, each one sentence.
+ * screen ids, emojis, or em dashes. A bit vague is fine; wrong is not, so
+ * only list what is merged and shipped. Five to eight lines a new entry, each
+ * one sentence.
+ *
+ * Mobile opens the newest entry by itself once after an update
+ * (`apps/mobile/lib/whats-new.ts`), and a phone remembers how many lines it
+ * showed ({@link releaseNoteVersion}). Dates are unique, so **a second release
+ * on the same day appends lines to that day's entry, even past eight, and
+ * never trims or merges the ones already there**: phones show it again only
+ * when it has more lines than they saw. Rewording a line is fine but isn't
+ * news, so it shows nothing. Deploy production warns when a release ships with
+ * neither a new entry nor new lines, or when the day's entry got shorter
+ * (`scripts/ci/release-notes-freshness.mjs`, which reads this file as text at
+ * the deployed commit, so keep `date:` and `changes: [...]` literal, one
+ * string per line).
  */
 export type ReleaseNote = {
   /** The day it reached members, as `YYYY-MM-DD`. */
@@ -20,6 +39,21 @@ export type ReleaseNote = {
 };
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
+  {
+    date: "2026-11-09",
+    title: "Easier check-in, live unread counts, and what's new on your phone",
+    changes: [
+      "On your phone, what's new now opens on its own once after an update, so you don't have to go looking for it.",
+      "Check-in opens 10 minutes before an event starts and then shows you're in, with your points, and hosts get Host check-in right on the event.",
+      "Unread counts and your Messages list stay in step across your phone and computer, the app catches up the moment you come back to it, and reading a chat clears its notifications.",
+      "You can post in the channels your chapter brought over from Discord, unless they were read-only there.",
+      "Edit and Reply open the keyboard straight away, with room for a long message, and closing a sheet you opened from another sheet takes you back to the first.",
+      "Handing over the presidency no longer locks the old president out, and changing roles asks first if it would take away someone's access.",
+      "Only officers who can do something about it are pinged when someone new joins, and Add to calendar is gone until calendar sync arrives.",
+      "On the web, an invite sent to your email shows up when you sign in, ready to join in one tap, and signing in with Google or Apple tells you if it just made a new account.",
+      "On the web, Chat in the menu lights up as soon as a new message arrives, whatever page you're on, and getting back to your channel list is easier: a bigger back button, Esc, or your browser's Back.",
+    ],
+  },
   {
     date: "2026-11-07",
     title: "Faster photos, a new message menu, and calmer notifications",
@@ -35,6 +69,41 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
     ],
   },
 ]);
+
+/**
+ * Which version of an entry a phone has shown: its date and how many lines it
+ * had, as `date#lines`. Lines appended later (a second release the same day)
+ * make a newer version; rewording one doesn't.
+ */
+export function releaseNoteVersion(note: ReleaseNote): string {
+  return `${note.date}#${note.changes.length}`;
+}
+
+export interface ReleaseNoteVersion {
+  readonly date: string;
+  readonly lines: number;
+}
+
+/** A stored {@link releaseNoteVersion}, read back. An unreadable count is 0. */
+export function parseReleaseNoteVersion(version: string): ReleaseNoteVersion {
+  const [date = "", lines = ""] = version.split("#");
+  const count = Number.parseInt(lines, 10);
+  return { date, lines: Number.isFinite(count) ? count : 0 };
+}
+
+/**
+ * Whether `candidate` is news to someone who has seen `seen`: a later day, or
+ * the same day with more lines.
+ */
+export function isNewerReleaseNoteVersion(
+  candidate: ReleaseNoteVersion,
+  seen: ReleaseNoteVersion,
+): boolean {
+  return (
+    candidate.date > seen.date ||
+    (candidate.date === seen.date && candidate.lines > seen.lines)
+  );
+}
 
 const MONTHS = [
   "January",

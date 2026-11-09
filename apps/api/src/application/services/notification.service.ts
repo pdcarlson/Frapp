@@ -799,6 +799,30 @@ export class NotificationService {
       : updated;
   }
 
+  /**
+   * Clear the member's chat notifications for a channel they have just read
+   * (#3788).
+   *
+   * A chat push writes a `notifications` row, but the member usually reads
+   * the message by opening the channel, not by tapping that row, so the row
+   * stayed unread in the inbox long after the messages were seen. Rows
+   * created after `readThrough` are left alone: they are about messages the
+   * read did not cover.
+   */
+  async markChatChannelNotificationsRead(
+    userId: string,
+    chapterId: string,
+    channelId: string,
+    readThrough: string,
+  ): Promise<void> {
+    await this.notificationRepo.markChatChannelRead(
+      userId,
+      chapterId,
+      channelId,
+      readThrough,
+    );
+  }
+
   async registerPushToken(
     userId: string,
     token: string,
@@ -898,68 +922,62 @@ export class NotificationService {
     >,
   ): Promise<UserSettingsValues> {
     const now = new Date();
-    const existing = await this.settingsRepo.findByUser(userId);
 
-    // A status and its end time are one choice (#3845): picking a status
-    // replaces the old end time, so switching from "DND for 1 hour" to
-    // Invisible does not end Invisible an hour later. An end time alone has no
-    // status to attach to, so it is refused rather than guessed at. The same
-    // holds for the custom line and its end time.
-    //
-    // A pair the PATCH did not touch is left out of the write, so the upsert
-    // leaves the stored columns alone. Writing back the values read above
-    // would let a theme save from one device undo DND switched on from another
-    // between this read and the write.
-    const statusWrite: Partial<UserSettingsValues> = {};
+    // Only what the PATCH names is written (#3845, #3924): `undefined` means
+    // "not supplied" and leaves the stored value alone, `null` means "clear
+    // this". The repository's upsert then touches no other column, so a save
+    // from one device cannot write back a value another device changed after
+    // this request began. Test the VALUE, not key presence: class-transformer
+    // can materialize a declared DTO property as an own key set to undefined,
+    // and keying on presence once made a theme-only PATCH wipe the member's
+    // whole quiet-hours window.
+    const write: Partial<UserSettingsValues> = {};
+    for (const field of [
+      'quiet_hours_start',
+      'quiet_hours_end',
+      'quiet_hours_tz',
+    ] as const) {
+      if (data[field] !== undefined) write[field] = data[field] ?? null;
+    }
+    // `!= null`: the DTO's `@IsOptional` lets `theme: null` through, and the
+    // column is NOT NULL, so null means "not supplied" here, never a clear.
+    if (data.theme != null) write.theme = data.theme;
+
+    // A status and its end time are one choice: picking a status replaces the
+    // old end time, so switching from "DND for 1 hour" to Invisible does not
+    // end Invisible an hour later. An end time alone has no status to attach
+    // to, so it is refused rather than guessed at; a null one alone asks for
+    // nothing and is ignored, so it cannot fail the save's other edits. The
+    // same holds for the custom line and its end time.
     if (data.status !== undefined && data.status !== null) {
-      statusWrite.status = data.status;
-      statusWrite.status_expires_at =
+      write.status = data.status;
+      write.status_expires_at =
         data.status === 'online' ? null : (data.status_expires_at ?? null);
-      assertFutureExpiry(
-        'status_expires_at',
-        statusWrite.status_expires_at,
-        now,
-      );
-    } else if (data.status_expires_at !== undefined) {
+      assertFutureExpiry('status_expires_at', write.status_expires_at, now);
+    } else if (data.status_expires_at != null) {
       throw new BadRequestException(
         'status_expires_at is accepted only together with status',
       );
     }
 
     if (data.custom_status !== undefined) {
-      statusWrite.custom_status = data.custom_status ?? null;
-      statusWrite.custom_status_expires_at =
-        statusWrite.custom_status === null
+      write.custom_status = data.custom_status ?? null;
+      write.custom_status_expires_at =
+        write.custom_status === null
           ? null
           : (data.custom_status_expires_at ?? null);
       assertFutureExpiry(
         'custom_status_expires_at',
-        statusWrite.custom_status_expires_at,
+        write.custom_status_expires_at,
         now,
       );
-    } else if (data.custom_status_expires_at !== undefined) {
+    } else if (data.custom_status_expires_at != null) {
       throw new BadRequestException(
         'custom_status_expires_at is accepted only together with custom_status',
       );
     }
 
-    // `undefined` means "not supplied" and `null` means "clear this". Test the
-    // VALUE, not key presence: `field in data` is always true here, because
-    // class-transformer materializes every declared DTO property as an own key
-    // (undefined when absent). Keying on presence made a theme-only PATCH read
-    // as an explicit clear and wipe the member's whole quiet-hours window.
-    const resolve = <K extends keyof typeof data>(field: K) =>
-      data[field] !== undefined
-        ? (data[field] ?? null)
-        : (existing?.[field] ?? null);
-    const saved = await this.settingsRepo.upsert({
-      user_id: userId,
-      quiet_hours_start: resolve('quiet_hours_start'),
-      quiet_hours_end: resolve('quiet_hours_end'),
-      quiet_hours_tz: resolve('quiet_hours_tz'),
-      theme: data.theme ?? existing?.theme ?? USER_SETTINGS_DEFAULTS.theme,
-      ...statusWrite,
-    });
+    const saved = await this.settingsRepo.upsert({ user_id: userId, ...write });
     return toUserSettingsValues(saved, now);
   }
 }

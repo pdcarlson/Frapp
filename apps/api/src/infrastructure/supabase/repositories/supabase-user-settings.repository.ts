@@ -53,19 +53,20 @@ export class SupabaseUserSettingsRepository implements IUserSettingsRepository {
   }
 
   async upsert(data: TablesInsert<'user_settings'>): Promise<UserSettings> {
+    // Only the columns the caller names are written (#3845, #3924).
+    // PostgREST's upsert updates only the columns in its payload, so a save
+    // leaves every setting it did not touch as stored, and a new row takes the
+    // column defaults. Writing back values read earlier would let a save from
+    // one device undo a change another device made in between.
     const row: TablesInsert<'user_settings'> = {
       user_id: data.user_id,
-      quiet_hours_start: data.quiet_hours_start ?? null,
-      quiet_hours_end: data.quiet_hours_end ?? null,
-      quiet_hours_tz: data.quiet_hours_tz ?? null,
-      theme: data.theme ?? 'system',
       updated_at: new Date().toISOString(),
     };
-    // The status columns are written only when the caller names them (#3845).
-    // PostgREST's upsert updates only the columns in the payload, so a save
-    // that did not touch a status keeps the stored one, and a new row takes the
-    // column defaults.
     for (const key of [
+      'quiet_hours_start',
+      'quiet_hours_end',
+      'quiet_hours_tz',
+      'theme',
       'status',
       'status_expires_at',
       'custom_status',

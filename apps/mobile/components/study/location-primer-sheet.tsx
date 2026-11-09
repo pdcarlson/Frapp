@@ -16,6 +16,7 @@ import {
   useSheetBackgroundStyle,
   SheetBackToClose,
   useSheetClose,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 
 /**
@@ -65,6 +66,7 @@ export const LocationPrimerSheet = forwardRef<
   return (
     <BottomSheetModal
       ref={ref}
+      stackBehavior={SHEET_STACK_BEHAVIOR}
       enableDynamicSizing
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}

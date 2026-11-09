@@ -184,6 +184,9 @@ export function MembersDirectory() {
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [bulkRoleId, setBulkRoleId] = useState<string>("");
   const [activeMemberId, setActiveMemberId] = useState<string | null>(null);
+  // The sheet reads the profile by `users.id` itself (#3726), so it keeps its
+  // member even once a role save moves them off this tab's list.
+  const [activeUserId, setActiveUserId] = useState<string | null>(null);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
 
   const { key: sortKey, dir: sortDir } = parseSort(sort);
@@ -476,8 +479,9 @@ export function MembersDirectory() {
     );
   }
 
-  function openMember(id: string) {
-    setActiveMemberId(id);
+  function openMember(member: MemberProfile) {
+    setActiveMemberId(memberId(member));
+    setActiveUserId(typeof member.user_id === "string" ? member.user_id : null);
     setDetailSheetOpen(true);
   }
 
@@ -934,7 +938,7 @@ export function MembersDirectory() {
                 */}
                   <button
                     type="button"
-                    onClick={() => openMember(id)}
+                    onClick={() => openMember(member)}
                     aria-label={[
                       name,
                       roleName,
@@ -1058,9 +1062,9 @@ export function MembersDirectory() {
       <MemberDetailSheet
         open={detailSheetOpen}
         onOpenChange={setDetailSheetOpen}
-        member={activeMember}
+        userId={activeUserId}
+        initialMember={activeMember}
         points={activeMember ? pointsOf(activeMember) : null}
-        usingPreviewData={false}
       />
     </section>
   );

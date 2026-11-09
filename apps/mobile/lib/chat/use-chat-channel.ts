@@ -62,6 +62,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   actOnCard,
+  closePoll as closePollAction,
   deleteMessage,
   discardOutboxRow,
   editMessage,
@@ -97,6 +98,7 @@ import {
   type ChatMessage,
 } from "@repo/chat-core/types";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
+import type { PollPayload } from "@repo/chat-core/polls";
 import { randomClientId } from "@repo/api-sdk";
 import type { AttachmentPickResult } from "./attachment-upload";
 import {
@@ -241,6 +243,19 @@ export interface UseChatChannelResult {
    */
   sendInFlight: () => boolean;
   /**
+   * Posts a poll card (`kind: "poll"`) built by `buildPollMessage`, from s05's
+   * New poll sheet (#3701). It goes through the outbox like any message, so
+   * it is optimistic, survives going offline, and a refusal lands as a failed
+   * row in the thread with Retry and Discard. It touches neither the draft nor
+   * the photo tray. Resolves once the card is queued, or with the reason it
+   * couldn't be (no identity yet, or an outbox that refused the row). Never
+   * rejects.
+   */
+  sendPoll: (poll: {
+    content: string;
+    payload: PollPayload;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /**
    * Saves an edit of the viewer's own message. Not optimistic: the server row
    * is merged on success, and the Realtime echo of the same edit is a no-op.
    * Rejects with a member-facing message on failure, and changes nothing.
@@ -252,6 +267,12 @@ export interface UseChatChannelResult {
    * server says so. Rejects with a member-facing message on failure.
    */
   remove: (messageId: string) => Promise<void>;
+  /**
+   * Closes the viewer's own poll card early (#3794). Pessimistic like
+   * `remove`: the card draws closed when the server row lands. Rejects with a
+   * member-facing message on failure, and changes nothing.
+   */
+  closePoll: (messageId: string) => Promise<void>;
   react: (messageId: string, emoji: string) => Promise<void>;
   unreact: (messageId: string, emoji: string) => Promise<void>;
   /** Inline-card action dispatch (poll votes, #528; RSVP/Done in a future card). */
@@ -674,9 +695,14 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     }
   }, []);
 
-  /** Send (or send again) a message whose photos may still be uploading. */
+  /**
+   * Send (or send again) a message whose photos may still be uploading. The
+   * first send clears the channel's saved draft, since the draft is what it
+   * sends; a Retry keeps it, because whatever is saved by then is a newer
+   * message the member is still writing.
+   */
   const runPendingPhotoSend = useCallback(
-    (clientMessageId: string) => {
+    (clientMessageId: string, options?: { retry?: boolean }) => {
       const pending = pendingPhotoSendsRef.current.get(clientMessageId);
       if (!pending || !ctx) return;
       const attachmentsReady = Promise.all(
@@ -704,6 +730,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         clientMessageId,
         attachmentsReady,
         attachmentCount: pending.keys.length,
+        keepDraft: options?.retry === true,
       })
         .then(() => settlePendingPhotoSend(clientMessageId))
         .catch((error: unknown) => {
@@ -872,6 +899,36 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   );
   const sendInFlight = useCallback(() => sendingRef.current, []);
 
+  const sendPoll = useCallback(
+    async (poll: {
+      content: string;
+      payload: PollPayload;
+    }): Promise<{ ok: true } | { ok: false; error: string }> => {
+      if (!channelId || !ctx) {
+        return { ok: false, error: "Couldn't post that poll. Try again." };
+      }
+      try {
+        await sendMessage(ctx, {
+          channelId,
+          content: poll.content,
+          kind: "poll",
+          payload: poll.payload as unknown as Record<string, unknown>,
+          // The composer may hold a message the member is still writing.
+          keepDraft: true,
+        });
+        return { ok: true };
+      } catch (error) {
+        // As in `send`: the outbox refused the row and `sendMessage` took the
+        // optimistic card back out, so nothing is queued or on screen.
+        return {
+          ok: false,
+          error: errorCopy(error, "Couldn't post that poll. Try again."),
+        };
+      }
+    },
+    [channelId, ctx],
+  );
+
   const edit = useCallback(
     async (messageId: string, content: string) => {
       if (!channelId || !ctx) {
@@ -895,6 +952,20 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         (onError) =>
           deleteMessage({ ...ctx, onError }, { channelId, messageId }),
         "Couldn't delete message. Try again.",
+      );
+    },
+    [channelId, ctx],
+  );
+
+  const closePoll = useCallback(
+    async (messageId: string) => {
+      if (!channelId || !ctx) {
+        throw new MemberFacingError("Couldn't close poll. Try again.");
+      }
+      await withFailureMessage(
+        (onError) =>
+          closePollAction({ ...ctx, onError }, { channelId, messageId }),
+        "Couldn't close poll. Try again.",
       );
     },
     [channelId, ctx],
@@ -1075,7 +1146,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
           });
           startPhotoJob(key, job.upload);
         }
-        runPendingPhotoSend(clientMessageId);
+        runPendingPhotoSend(clientMessageId, { retry: true });
         return;
       }
       const row = await findOutboxRow(clientMessageId);
@@ -1125,8 +1196,10 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     canSend: !!ctx && !!channelId,
     send,
     sendInFlight,
+    sendPoll,
     edit,
     remove,
+    closePoll,
     react,
     unreact,
     act,

@@ -162,8 +162,9 @@ over it. A round's stamps wait for the previous round's, so a slow stamp can't b
 later round's re-read, but no round waits on a re-read. A `resync` also re-stamps the channel being
 looked at, which covers what arrived in it while the app was away. Each rejoin of the inbox after a drop reports a
 `resync`, which re-reads both. Mobile binds the manager app-wide from `components/app-runtime.tsx`
-so the inbox runs from launch. Web binds it in `ChatProvider`, so off `/chat` the nav's chat
-badge still refreshes on focus and staleness only.
+so the inbox runs from launch. Web binds it for the whole dashboard from `DashboardShell`
+(`useChatRealtimeBinding`, #3745), so the nav's Chat row lights within seconds of a message on any
+page, not only on `/chat`; `ChatProvider` never configures or tears the manager down.
 
 **Back in the foreground** (#3698). A socket can die while the app is in the background (mobile)
 or the tab is hidden (web), and Realtime only notices when a heartbeat goes unanswered, on its own

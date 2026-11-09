@@ -183,7 +183,7 @@ One pill on every screen, web and mobile, says exactly one of these (2026-11-06;
 | Offline (permission check), control slot | — | `Offline — can't check your access.` |
 | Offline (permission check), whole surface | `Can't confirm your access` | `Reconnect to check whether you can <do the thing the surface does>.` |
 
-A paused permission check is **not** the surface being unavailable, and must not borrow that row's copy. "Polls unavailable offline" states a fact about the polls; here we do not know whether this member may see them at all, and saying otherwise promises access on reconnect that may not arrive. Both strings therefore report the *check*, and the second names the surface's verb rather than its noun. The per-surface descriptions are the `Offline (permission check)` rows in the surface tables below.
+A paused permission check is **not** the surface being unavailable, and must not borrow that row's copy. "Study zones unavailable offline" states a fact about the zones; here we do not know whether this member may manage them at all, and saying otherwise promises access on reconnect that may not arrive. Both strings therefore report the *check*, and the second names the surface's verb rather than its noun. The per-surface descriptions are the `Offline (permission check)` rows in the surface tables below.
 
 Implementation: `PermissionsOffline` (`apps/web/components/shared/async-states.tsx`) carries the first string; the second is passed to `<Can offlineFallback>` at each screen-level gate. Behaviour is [README.md](README.md) §4.
 
@@ -253,7 +253,7 @@ The composer is shared by the Members panel and the web setup wizard's last step
 | Error | `Couldn't load chapter events` | the load-failure line (§ copy rules) |
 | Offline | `Events workspace unavailable offline` | `Reconnect to load event schedules and attendance updates.` |
 
-A chapter with no events opens on the Calendar tab rather than an empty list, and a viewer with `events:create` gets a dashed `+` on today's square, where the first event will go. The choice is made once, when the events first load, so making that first event doesn't move the officer to the list. A viewer without `events:create` sees the dates as text, with no New event button and nothing to press on a day (2026-11-06). The time-window line is its own row because the default window (Upcoming) hides every past event without the officer touching a filter, and "No events yet" there would be false (2026-11-05). The lines are `InlineNote`s, like [Points (dashboard)](#points-dashboard); error and offline keep their cards.
+A chapter with no events opens on the Calendar tab rather than an empty list, and a viewer who can create events (`events:create` and `members:view`, `EVENT_CREATE_PERMISSIONS`) gets a dashed `+` on today's square, where the first event will go. The choice is made once, when the events first load, so making that first event doesn't move the officer to the list. A viewer without them sees the dates as text, with no New event button and nothing to press on a day (2026-11-06). The time-window line is its own row because the default window (Upcoming) hides every past event without the officer touching a filter, and "No events yet" there would be false (2026-11-05). The lines are `InlineNote`s, like [Points (dashboard)](#points-dashboard); error and offline keep their cards.
 
 Mobile's Events tab (s06) has no calendar, so with nothing scheduled its list is one line where the rows go: `Nothing scheduled yet. Tap + to add the first event.` for a viewer the tab bar's + offers New event to, and `Nothing scheduled yet.` for everyone else (2026-11-07). It is mobile's `InlineNote` (`components/inline-note.tsx`), which replaced the `Nothing scheduled` card.
 
@@ -355,6 +355,7 @@ Mobile's Tasks tab (s08) is a personal board for everyone, so with nothing assig
 |---|---|---|
 | Loading | — | `Loading service entries...` |
 | Empty queue | — | `Nothing waiting for review.` (one line) |
+| Queue row, points preview | — | `Approving awards {N} service point(s), at the chapter's current rate of 1 per {rate}.`; under the rate, `Approving awards no points: {duration} is under the chapter's current rate of 1 point per {rate}.` `{rate}` reads `hour` at the default 60 minutes, otherwise a duration (`30m`, `1h 30m`). No line when the rate can't be read (#3862) |
 | Empty history | — | `No service logged yet.` then, for a viewer with `service:log`, a **Log the first hours** link that opens Log service (one line) |
 | Empty history, mobile | — | `No service logged yet.`; for a viewer with `service:log`, `No service logged yet. Tap + to log your first hours.`, the screen's own + (one line) |
 | Error | `Couldn't load service entries` | the load-failure line (§ copy rules) |
@@ -367,24 +368,24 @@ Mobile's Tasks tab (s08) is a personal board for everyone, so with nothing assig
 |---|---|---|
 | Loading | — | `Loading chapter documents...` |
 | Empty | — | `No documents yet.`, `Nothing in {folder} yet.`, or on No folder `Every document is in a folder.`; for a viewer with `chapter_docs:upload` then **Upload a file** `or drop one anywhere on this page.` (one line) |
-| Empty (search, all files) | — | `No documents match “{query}”.` then a **Clear search** link (one line) |
-| Empty (search, inside a folder) | — | `Nothing in {folder} matches “{query}”.` (on No folder, `No documents outside a folder match “{query}”.`) then a **Search all files** link, which keeps the search (one line) |
+| Empty (search or filter, all files) | — | `No documents match “{query}”.`, or with no search typed `No documents match these filters.`, then a **Clear filters** link that clears the search and both filters (one line) |
+| Empty (search or filter, inside a folder) | — | `Nothing in {folder} matches.` (on No folder, `No documents outside a folder match.`) then a **Search all files** link, which keeps the search and filters (one line) |
+| Capped list (status line above the rows) | — | `Showing the newest 1,000 documents. Search and filters look only at these for now.` |
 | Empty, mobile s12 | — | `No documents yet.` or `Nothing in {folder} yet.`; for a viewer with `chapter_docs:upload` then `Tap + to upload one.`, the screen's own + (one line) |
-| Empty (search), mobile s12 | — | The web lines and links: `No documents match “{query}”.` with **Clear search**, or inside a folder chip `Nothing in {folder} matches “{query}”.` with **Search all files** (one line) |
+| Empty (search), mobile s12 | — | `No documents match “{query}”.` with **Clear search**, or inside a folder chip `Nothing in {folder} matches “{query}”.` with **Search all files** (one line). Web's lines differ since #3852, which added filters there |
 | Error | `Couldn't load documents` | the load-failure line (§ copy rules) |
 | Offline | `Documents unavailable offline` | `Reconnect to browse the chapter library and download files.` |
-| Offline (search active) | `Search needs a connection` | `Clear the search to browse the documents already on this device.` |
 | Folder list failed (inline, under the rail) | — | `Couldn't load the folder list, so these are read from the documents shown. Empty folders and folder management are unavailable until it loads.` |
 
-Three of these exist to keep one state from impersonating another:
+Why the states are split this way:
 
 - A search that matched nothing is not an empty library. The default empty copy
   invites an upload, which is the wrong instruction for a member who mistyped a
   title.
-- Search is served by the API, so each query is a cache key that an offline
-  member has never fetched. Falling to the plain offline card would replace a
-  library they still have cached; naming the search as the thing that needs a
-  connection keeps the recovery in the member's hands.
+- Web search runs over the library already loaded (#3852), so an offline
+  member keeps searching what they have; there is no offline-search state.
+  (Before #3852 search went to the API, and an offline query landed on a cache
+  key never fetched, which needed its own "Search needs a connection" state.)
 - The folder rail is its own request and can fail while the documents load
   fine. It degrades to names derived from the loaded documents rather than
   rendering as a chapter with no folders — so the notice reports what is
@@ -547,17 +548,6 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage study zones.` |
 | Permission denied | — | `Your role can't manage study zones. Ask your chapter president for access.` |
 
-### Polls (dashboard)
-
-| State | Title | Description |
-|---|---|---|
-| Loading | — | `Loading chapter polls...` |
-| Empty | — | `No polls here. Start one in a chat channel.` (one line) |
-| Error | `Couldn't load polls` | the load-failure line (§ copy rules) |
-| Offline | `Polls unavailable offline` | `Reconnect to load the chapter's polls and cast a vote.` |
-| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can see the chapter's polls.` |
-| Permission denied | `Polls` (the page title) | `Your role can't see every poll. You can still vote in chat.` |
-
 ### Chat (dashboard)
 
 | State | Title | Description |
@@ -582,6 +572,7 @@ see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
 | Error | `Couldn't load channels` / `Couldn't load messages` | the load-failure line (§ copy rules) |
 | Channel list refused by role (a 403 with no `chapter.*` code; both clients, `@repo/chat-core/channels-refused-copy`) | `Chat isn't open to you yet` | `Your role in <chapter> doesn't include chat. Ask an officer to give you the Member role.` (`this chapter` until the name loads). A `chapter.*` 403 keeps the error row above |
 | Read-only channel | — | `This channel is read-only for your role.` (mobile still quotes the permission key, [#3422](https://github.com/pdcarlson/Frapp/issues/3422)) |
+| Audit log channel (`#chapter-audit`, in place of the composer; both clients, #3909) | — | `Only Frapp posts here: it's the chapter's audit log.` In Chat settings (web) the read-only switch gives way to `Only Frapp posts here: it's the chapter's audit log. It stays read-only and keeps its name.` |
 | Alumni-restricted channel | — | `Alumni can read this channel but not post. Alumni may post in #alumni and direct messages.` |
 | Archived conversation (mobile only: a Group DM everyone else left, #348; web's channel list leaves archived channels out) | — | `This conversation is archived because everyone else left. You can still read it.` |
 | No chapter selected | — | `Pick an active chapter to load its channels.` (one line) |
@@ -968,7 +959,8 @@ member who turns on Hide muted and still sees a muted channel knows why.
 Reply, Edit and Delete on a message (#2775). Who is offered which is owned by
 [`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Edit and delete and
 § Reply threads. The delete confirmation is one wording for both clients, so it lives in
-`packages/chat-core/src/message-actions.ts`; the rest name controls only mobile has.
+`packages/chat-core/src/message-actions.ts`, and a poll card's Close poll confirmation (#3794)
+likewise lives in `packages/chat-core/src/polls.ts`; the rest name controls only mobile has.
 
 | State | Title | Description | Home |
 |---|---|---|---|
@@ -976,6 +968,8 @@ Reply, Edit and Delete on a message (#2775). Who is offered which is owned by
 | Add-reaction chip | — | `+` after a message's reactions, read `Add reaction`; it opens the actions sheet | mobile `components/chat/message-item.tsx` (`ADD_REACTION_A11Y_LABEL`) |
 | Delete confirmation | `Delete this message?` | `This can't be undone. Everyone in the channel will see "[message deleted]" in its place.` · confirm `Delete message`. A native alert on mobile, the shell's confirm dialog on web | `message-actions` (`DELETE_MESSAGE_CONFIRM_TITLE`, `_BODY`, `_LABEL`) |
 | Delete failed | `Couldn't delete message` | The reason chat-core classified from the response (an alert) | mobile `lib/chat/confirm-delete-message.ts` |
+| Close poll confirmation | `Close this poll?` | `No one can vote after it closes, and it can't be reopened. The results stay on the card.` · confirm `Close poll`. Offered as `Close poll` under the tally, on the creator's own open card while they hold `polls:create` and Polls is on ([#3794](https://github.com/pdcarlson/Frapp/issues/3794)). A native alert on mobile, the shell's confirm dialog on web | `polls` (`CLOSE_POLL_LABEL`, `CLOSE_POLL_CONFIRM_TITLE`, `_BODY`, `_LABEL`) |
+| Close poll failed | `Couldn't close poll` | The reason chat-core classified from the response (an alert on mobile, a toast on web). A card closed early then reads `Poll · Closed`, as one past its deadline does | mobile `lib/chat/confirm-close-poll.ts`, chat-core `chat-client.ts` |
 | Reply strip | `Replying to <name>` | One line of the parent, as its quote will show it. A parent the block list hides, or one not loaded: `Replying to a message` over the quote's placeholder. Cancel reads `Cancel reply` | mobile `lib/chat/use-composer-staging.ts`; the cancel label in `components/chat/chat-composer.tsx` (`composerCancelLabel`) |
 | Edit strip | `Editing message` | — · cancel `Cancel edit`; the send control reads `Save edit` to a screen reader | mobile `lib/chat/use-composer-staging.ts`, `components/chat/chat-composer.tsx` (`composerCancelLabel`) |
 | Edit left empty | — | `A message can't be empty. Delete it instead, or cancel the edit.` (the composer hint, error tone, shown while the text is empty, beside the greyed-out Save) | mobile `lib/chat/use-composer-staging.ts` (`EDIT_EMPTY_HINT`) |
@@ -1062,12 +1056,17 @@ The Quiet hours section (the Preferences card until 2026-11-05) is a **second qu
 | State | Title | Description |
 |---|---|---|
 | Idle (mobile s01) | `Frapp` | `Everything your chapter needs is already in chat.` — s01's wordmark and tagline are the screen's heading and body, not decoration above one. Not the brand tagline "Ask your chapter anything." ([`../brand-identity.md`](../brand-identity.md) §1): Ask is off by default (`EXPO_PUBLIC_ASK_ENABLED`), and this is the first screen App Review opens, so leading with it would advertise a feature the binary does not have (Guidelines 2.1 and 2.3). The line is the landing's closing line, held there for the same reason (landing D8, [`../landing/README.md`](../landing/README.md)). Owner decision 2026-09-22, [#2298](https://github.com/pdcarlson/Frapp/issues/2298). It returns to mobile in the slice that ships Ask. |
-| Idle (web `/sign-in`) | `Welcome back` | No subtitle: the `Sign in` / `Create account` toggle above the title (`apps/web/components/auth/auth-mode-toggle.tsx`) says which form this is, and the column has to fit a laptop screen without scrolling (Paul, 2026-11-05). The fields' labels, `Email` and `Password`, sit inside them and float up on focus or input, so there are no placeholders. The footer is `Have an invite?` `Join your chapter`. Until that compression the subtitle was `Sign in to your chapter.` and the footer also carried `New here?` `Create an account`. Since 2026-11-05 the web form sits in a split frame whose header carries the mark and wordmark (`apps/web/components/auth/auth-frame.tsx`), so the wordmark is chrome and the title is the form's own; Paul asked for the redesign. The brand tagline left with it: the frame's product panel shows the chat instead, and "Ask your chapter anything." waits for Ask like it does on mobile and the landing (D8). `scripts/ci/__tests__/frapp-naming.test.mjs` pins that no web pre-auth title is the bare wordmark. Until 2026-11-05 this row was `Frapp` over the tagline, moved from Signet by ADR-25 step 4 ([#2579](https://github.com/pdcarlson/Frapp/issues/2579)). |
+| Idle (web `/sign-in`) | `Welcome back` | No subtitle: the `Sign in` / `Create account` toggle above the title (`apps/web/components/auth/auth-mode-toggle.tsx`) says which form this is, and the column has to fit a laptop screen without scrolling (Paul, 2026-11-05). The fields' labels, `Email` and `Password`, sit inside them and float up on focus or input, so there are no placeholders. The footer is `Have an invite?` `Join your chapter`, which points this form at `/join?from=sign-in` (`/sign-in?redirectTo=/join?from=sign-in`), so an existing account signs in and lands there; a member with access and no emailed invite goes on to `/chat` (#3850, [`onboarding.md`](../../behavior/onboarding.md)). Once the form is headed to `/join` (with or without an invite) the footer reads `New to Frapp?` `Create an account to join`, which opens sign-up carrying that `redirectTo`. Until #3776 the link went to `/join` itself, which is gated, so it bounced a signed-out visitor back to this form and dropped any invite they arrived with. Until that compression the subtitle was `Sign in to your chapter.` and the footer also carried `New here?` `Create an account`. Since 2026-11-05 the web form sits in a split frame whose header carries the mark and wordmark (`apps/web/components/auth/auth-frame.tsx`), so the wordmark is chrome and the title is the form's own; Paul asked for the redesign. The brand tagline left with it: the frame's product panel shows the chat instead, and "Ask your chapter anything." waits for Ask like it does on mobile and the landing (D8). `scripts/ci/__tests__/frapp-naming.test.mjs` pins that no web pre-auth title is the bare wordmark. Until 2026-11-05 this row was `Frapp` over the tagline, moved from Signet by ADR-25 step 4 ([#2579](https://github.com/pdcarlson/Frapp/issues/2579)). |
 | Submitting | — | The primary reads `Continue` throughout and disables; no separate copy. |
-| Auth error | `Unable to sign in` | The Supabase message, verbatim. It is deliberately non-enumerating ("Invalid login credentials" whether or not the address exists), so passing it through leaks nothing and says more than a generic line would. |
+| Wrong email or password | `Unable to sign in` | `That email and password don't match. Check them and try again, or use a magic link instead.` Non-enumerating, as GoTrue's `invalid_credentials` is: it says the same whether or not the address has an account. |
+| Email not confirmed (web) | `Confirm your email` | The form gives way to the confirmation state (below, under Sign up: `Check your email`) for that address, with `Back to sign in` as its way out. *2026-11-09 ([#3831](https://github.com/pdcarlson/Frapp/issues/3831)):* until then this row and the one above were `The Supabase message, verbatim`, but the web form passed every refusal through the API's error map, which knows none of GoTrue's codes, so the member read `Something went wrong. Please try again.` for both. On launch day an invited member read it four times before opening the confirmation email. Every web auth refusal is now told in Frapp's words (`apps/web/lib/auth/email-auth-errors.ts`), never GoTrue's sentence. It is matched by GoTrue's `error_code`, and by the sentence only where the code alone can't tell (the email minute names its seconds, the hourly cap doesn't) or GoTrue sends no code; a GoTrue rewording of those sentences would need that file updated. Mobile still shows the sentence ([#3833](https://github.com/pdcarlson/Frapp/issues/3833)). |
+| Other auth error | `Unable to sign in` | What the error map makes of it (`errorCopy`), else `Something went wrong. Please try again.` |
 | Email me a magic link instead (web) | — | A text link under Continue rather than a third full-width button (2026-11-05). After Continue in tab order, so Tab from the password never lands a keyboard user on it by accident. |
 | Session ended | `You've been signed out` | `This account no longer exists or its session ended. Sign in to continue.` Shown once on arrival when the API refused the session (a 401) and Supabase Auth agreed it is over, usually an account deleted on another device. Web: a toast on `/sign-in?signedOut=session_ended` (`apps/web/lib/auth/rejected-session.ts`). Mobile: an alert over the sign-in screen (`apps/mobile/lib/rejected-session.ts`). Every screen used to render its own failure for this instead (2026-11-06). |
 | Magic link sent | `Magic link sent` | `Check your inbox to continue signing in.` |
+| Magic link inside the email minute | `Check your inbox` | `We just sent you an email. Check your inbox and spam folder. You can ask for another in <n> seconds.` Not destructive: GoTrue sends an address one auth email a minute, so the refusal means one just went out. |
+| Email send capped | `Unable to send magic link` | `We can't send email right now. Too many went out in the last hour. Try again in a few minutes.` The project's hourly cap, which GoTrue refuses with the same code as the minute but no seconds: nothing went out. |
+| Email confirmed (web) | `Email confirmed` | `This link couldn't sign this browser in. Sign in with your password, or ask for a new magic link.` On `/sign-in?authError=email_confirmed`: an email link (`intent=confirm`) that GoTrue verified, so the address is confirmed, but whose code couldn't sign this browser in ([`../web-dashboard/README.md` § Gating & routing semantics](../web-dashboard/README.md#gating--routing-semantics)). |
 | Magic link, no email | `Email required` | `Enter your email address to request a magic link.` |
 | Continue with Apple / Google | — | Button labels. Each carries the official brand mark at 20px (Apple silhouette in `currentColor`, Google four-color G) beside the label. Web: equal Secondary size, Apple first, side by side since 2026-11-05; half the column cannot hold the full label, so each shows `Apple` or `Google` and keeps `Continue with Apple` / `Continue with Google` as its accessible name. Mobile s01 (#3349): the phone's own account leads as the one filled button (Apple on iOS with Google beside it, Google elsewhere), and off iOS Apple sits behind `Other ways to sign in`. The board's equal-size, Apple-first pair is superseded on mobile, not drift. |
 | Continue with email (mobile s01) | — | Button label that opens the email form (password or magic link), titled `Sign in with email`, with a `‹ Back` row to the providers (#3349). |
@@ -1079,10 +1078,12 @@ The Quiet hours section (the Preferences card until 2026-11-05) is a **second qu
 
 | State | Title | Description |
 |---|---|---|
-| Idle | `Create your account` | No subtitle, for sign-in's reasons: the toggle above the title says which form this is, and the labels sit inside the fields. Until 2026-11-05 the subtitle was `One account, then join your chapter or start one.` and the footer read `Already have an account?` `Sign in`; the toggle replaced both. Sign-up has no footer: sign-in's `Join your chapter` link would drop the `redirectTo` an invited member arrives with. |
+| Idle | `Create your account` | No subtitle, for sign-in's reasons: the toggle above the title says which form this is, and the labels sit inside the fields. Until 2026-11-05 the subtitle was `One account, then join your chapter or start one.` and the footer read `Already have an account?` `Sign in`; the toggle replaced both. Sign-up has no footer: the toggle covers sign-in and carries `redirectTo`, so an invited member who crosses over keeps the `/join` they arrived for. |
 | Created, session issued | `Account created` | `You are signed in and ready to continue.` |
-| Created, confirmation required | `Check your inbox` | `Confirm your email to finish setting up your account.` |
-| Error | `Unable to create account` | The Supabase message, verbatim, for the reason above. |
+| Created, confirmation required (web) | `Check your email` | The form gives way to a note, `We sent a link to <email>. Open it to finish setting up your account. Not there? Check your spam folder.`, a Secondary `Resend email` that reads `Resend email in <n>s` through GoTrue's one-email minute, and a `Use a different email` link back to the form; the footer is `Opened it on another device?` `Sign in here`, carrying `redirectTo`. After a resend: `We sent a new link to <email>.` The screen carries on to `redirectTo` by itself once this browser holds a session. Every hosted sign-up lands here, because hosted projects require confirmation (#3776). *2026-11-09 ([#3831](https://github.com/pdcarlson/Frapp/issues/3831)):* until then this was a `Check your inbox` toast and a bounce to `/sign-in`, where the new password could only be refused. |
+| Already has an account | `You already have an account` | The identity-collision sentence (Sign in, above). GoTrue answers a sign-up for a taken address with an account that has no identities and sends no email, so without this the member would wait for one. |
+| Weak password | `Unable to create account` | `That password has appeared in a data breach. Choose a different one.` when leaked-password protection refused it; `Choose a stronger password: mix letters, numbers and symbols.` when a character-class policy refused it; otherwise `Choose a longer password: at least 6 characters.` |
+| Other error | `Unable to create account` | As sign-in's: in Frapp's words, never GoTrue's sentence. The email minute returns to `Check your email`, counting down. |
 
 ### Join chapter (pre-auth)
 
@@ -1091,6 +1092,9 @@ The Quiet hours section (the Preferences card until 2026-11-05) is a **second qu
 | Idle | `Join your chapter` | `Enter the invite your officer sent. Invites expire after 24 hours and work once.` |
 | Invite-link hint | — | `Got an invite link? Paste it here, or open it and this page fills itself in.` |
 | Unparseable paste | — | `Paste the invite your officer sent, or open the invite link.` |
+| Signed in (web) | — | `Signed in as <email>` · `Sign out` above the title (`Signed in` when the account has no email), on `/join` once the session is known and on every step of the web setup wizard (#3776): an account with no chapter otherwise has no way to sign out. Mobile says the same on its face (Signed in (mobile), below). |
+| Invite for this account (web, #3776) | `You've been invited to <chapter>` | The school, `from <inviter>` and the role, joined by ` · `, then a primary `Join`. One card per invite emailed to the account's verified address, above the field; the field's `Join chapter` turns secondary while any card shows. Not shown when the page was opened with an invite link. Mobile s02 offers the same invites on its question (below). |
+| Already a member (web, #3850) | `You're already in <chapter>` | `Have an invite to another chapter? Use it below.` beside `Open chat` (to `/chat`), above the field. Shown when the account has a chapter, except to a member `/no-access` would send back (no role in their only chapter, `isLockedOutOfChapter`), since `/chat` would return them there. `Open chat` is the primary unless an emailed-invite card shows; either way the field's `Join chapter` turns secondary. |
 | Create a chapter (secondary) | — | `Starting a chapter?` + `Create a chapter` (returns to `/chat`, which remounts the first-officer wizard). |
 | Checking the session | — | `Verifying your session…` (announced, not drawn) |
 | Session check failed, offline | `Can't check your session` | `Reconnect to confirm you're signed in, then redeem the invite.` |
@@ -1100,12 +1104,14 @@ The Quiet hours section (the Preferences card until 2026-11-05) is a **second qu
 | Mobile s02 answers | — | `I have an invite` + `Use the link your officer sent.`, then `I'm starting our chapter` + `Set it up, then invite everyone.` |
 | Mobile s02 invite step | `Join with an invite` | `Paste the invite link or code your officer sent. Invites work once and expire after 24 hours.` The membership hint ([§ Sign in (pre-auth)](#sign-in-pre-auth)) sits under the field, and the pinned button is `Continue`, which opens the confirm step. |
 | Mobile s02 confirm step (#3352) | `Join <chapter name>?` | One card: the chapter mark, the chapter name over its school, then `Invited by <name>` (left out when the inviter can't be read) and `Joining as <role>` (left out when joining would grant no role). Then the Terms checkbox when it's needed, and the pinned `Join chapter`. An opened invite link lands here. While the preview loads, or when it can't be read, the title is `Join with this invite?` over a card reading `Chapter invite` and `Ending in <last four> · Works once`, and Join still works. A dead invite, found by the preview or by the redeem, shows the **410** row below, hides the Terms checkbox and disables `Join chapter`. |
-| Mobile s02 Account menu | — | `Account` in the top corner opens `Signed in as <email>` (`Your account` when the session has no email), `Sign out` and `Delete account` (`Deleting account…` while it runs). |
+| Mobile s02 invite for this account (#3782) | `You've been invited to <chapter>` | The same title and ` · `-joined line as web's (school, `from <inviter>`, role), on a row with the chapter mark, one per invite, above the two answers. A tap opens the confirm step on that invite, whose `‹ Back` returns to the question with any invite pasted before put back in the field. Not shown when an invite link opened the screen. |
+| Signed in (mobile, #3782) | — | `Signed in as <email>` · `Sign out` under the header on every s02 view and every step of chapter setup (`Signed in` when the session has no email), as web's row above. |
+| Mobile s02 Account menu | — | `Account` in the top corner opens `Signed in as <email>` (`Your account` when the session has no email) and `Delete account` (`Deleting account…` while it runs). Sign out is on the screen's face (Signed in (mobile), above). |
 | **410** — expired, used, or missing | — | `This invite has expired or already been used. Ask an officer for a new one.` |
 | **409** — already a member | — | `You're already a member of this chapter. Open it from your chapter list.` |
 | Terms checkbox (#2302) | — | `I'm 18 or older and agree to the Terms of Service and Privacy Policy.` Shown unless the server says this user already accepted the current Terms. The wording is `LEGAL_ACCEPTANCE_LABEL` in `@repo/validation`, owner-approved with the September 2026 Terms, and shared by every acceptance surface. |
 | Join without the box ticked, or a **403** Terms refusal | — | `Agree to the Terms of Service and Privacy Policy to join.` (`JOIN_TERMS_REQUIRED_COPY`). The refusal is recognised by its code, `legal.acceptance_required`, or failing that by its message; it also puts the checkbox back. |
-| **410** — the account itself was deleted, its session not yet ended | — | `This account has been deleted, so it can't join a chapter.` Told apart from the invite 410s by its message, `ACCOUNT_DELETED_MESSAGE`, since a new invite wouldn't help. It names no control because web `/join` has no sign-out. |
+| **410** — the account itself was deleted, its session not yet ended | — | `This account has been deleted, so it can't join a chapter.` Told apart from the invite 410s by its message, `ACCOUNT_DELETED_MESSAGE`, since a new invite wouldn't help. It names no control: the `Signed in as … · Sign out` line above it, on web `/join` and every mobile s02 view since #3776 and #3782, is the way out. |
 | Any other failure | — | The server's message, else `Couldn't join that chapter. Check the invite and try again.` |
 
 The two status rows are the reason this table exists. Both are routine, both were rendering one generic toast, and they need **opposite** next actions — one says fetch a new invite, the other says you already have what you came for. `spec/behavior/onboarding.md` §Invite Token Rules fixes the codes; both apps render the failure rows (410, 409, the deleted account, the fallback, and a server's Terms refusal) through one function, `joinErrorCopy` in [`packages/hooks/src/join-errors.ts`](../../../packages/hooks/src/join-errors.ts), and this table is where the strings are specified. The rest of the Terms rows are not in it: their strings live in `@repo/validation` (`LEGAL_ACCEPTANCE_LABEL`, `JOIN_TERMS_REQUIRED_COPY`), and when to show the checkbox, and the unticked-box message before anything is sent, in `useJoinTermsCheckbox` (`@repo/hooks`), #2302.
@@ -1145,6 +1151,16 @@ The minimum-version gate (#2526, [`../mobile/patterns.md`](../mobile/patterns.md
 |---|---|---|
 | Signed in, no chapter role | `You don't have access yet` | `Your account is signed in, but no chapter role has been assigned. A chapter admin needs to invite you or grant a role before you can use the dashboard.` plus the three recovery paths (ask an officer, reopen the invite link, sign out and back in). |
 
+### New account (pre-auth)
+
+`/new-account`, shown once after a Google or Apple **sign-in** that created a new account ([#3786](https://github.com/pdcarlson/Frapp/issues/3786)). Wording decided by Paul, 2026-11-09.
+
+| State | Title | Description |
+|---|---|---|
+| New account | `New account created` | `This is a new Frapp account for <email>. Already a member? Sign out and use the method you joined with.` (no email on the account: `This is a new Frapp account.` then the same second sentence) |
+| Actions | — | `Sign out` and `Continue with the new account`; Continue is the primary when the destination is an invite |
+| Sign-out failed | — | `Couldn't sign out. Retry in a moment, or close this tab to end the session.` |
+
 ### Onboarding wizard (dashboard overlay)
 
 | State | Title | Description |
@@ -1181,14 +1197,14 @@ Mobile's first-officer setup, `(auth)/create-chapter.tsx` (#3351). Titles are `S
 
 ### Invite members (mobile)
 
-`(app)/invite.tsx`, setup's invite step inside the chapter (2026-11-06; [`navigation.md` § Inviting members](../mobile/navigation.md#inviting-members)). The body, the card, the `Shared` list and both failure sentences are the setup Invite rows' above, word for word; the share message reads `Join <chapter name> on Frapp`, and Share waits until the chapter's name has loaded rather than send a placeholder.
+`(app)/invite.tsx`, inside the chapter (2026-11-06, invite by email added 2026-11-09; [`navigation.md` § Inviting members](../mobile/navigation.md#inviting-members)). The card and both share-failure sentences are the setup Invite rows' above, word for word; the share message, and an iOS mail target's subject, read `Join <chapter name> on Frapp`, and Share waits until the chapter's name has loaded rather than send a placeholder. The screen draws no `Shared` list: its `Invited` list holds every link.
 
 | State | Title | Copy |
 |---|---|---|
-| Can invite | `Invite members` | Setup's line, card and list. The primary is `Share invite` with the platform's share mark, in the chapter accent. Its screen-reader hint: `Makes a new link and opens the share sheet.` |
+| Can invite | `Invite members` | Web's panel, on the phone (#3828). Top: the label `Invite by email` over a field (placeholder `name@school.edu`, screen-reader label `Email addresses to invite`), the caption `Separate addresses with commas. Each person gets their own link by email.`, and the chapter-accent primary `Send invite` (`Send <n> invites` for several; hint `Emails each address a link to join.`). Under it, `Invite sent to <address>` or `<n> invites sent`, or a problem in the destructive hue: `<address> isn't an email address. Fix or remove it.`, `<n> of these aren't email addresses. Fix or remove them.`, `Up to 50 addresses at a time. Remove some, then send.`, `Couldn't email this address. Send again, or share a link for them.` (`Couldn't email these <n> addresses. Send again, or share links for them.` for several), and on a failed send `Couldn't send invites. Try again in a moment.` Then `Or share a link` over `Paste it in a group chat, or send it from your mail app. A link lets one person in and lasts 24 hours.`, setup's card, and the secondary `Share invite` with the platform's share mark (hint `Makes a new link and opens the share sheet.`). Last, the `Invited` caption over the chapter's invites: the address or `Invite link`, `Sent today at 4:46 PM`, and `Pending`, `Joined` or `Expired`. A row's hint is `Opens what you can do with this invite.`, and its menu reads `Share link`, `Send again`, `Revoke invite`; their results read `Invite sent again to <address>` (`Couldn't email <address>. Its new invite is listed, so you can share its link.` when it didn't go) and `Invite revoked. <address> can't join with it now.` (`That link can't be used to join now.` for a link), and their failures `Couldn't send it again. Try again in a moment.` and `Couldn't revoke the invite. Try again in a moment.` A list that didn't load reads `Couldn't load your invites.` over a `Try again` row. |
 | Can't invite | `Invite members` | One line: `Your role can't send invites. Ask an officer to send each person their own link.` No button. |
 | Role didn't load | `Invite members` | Error state `Couldn't load your role` + `Whether you can send invites depends on it, so it has to load first.`, with `Try again`. |
-| Doors | — | More's row and the Directory's + read `Invite members`; the quick action reads `Invite`; Chat home's checklist line keeps its own `Invite members`. The first three carry the hint `Opens invite links to share with new members.`; the checklist line, like its other in-app lines, carries none. |
+| Doors | — | More's row and the Directory's + read `Invite members`; the quick action reads `Invite`; Chat home's checklist line keeps its own `Invite members`. The first three carry the hint `Opens invites to email or share with new members.`; the checklist line, like its other in-app lines, carries none. |
 
 ### Chapter picker (mobile)
 

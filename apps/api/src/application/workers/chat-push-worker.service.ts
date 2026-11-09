@@ -63,9 +63,32 @@ interface ChatMessageRow {
    * not set it.
    */
   mentions: string[] | null;
+  /**
+   * Carries `attachment_count` on a message with files (`ChatService.sendMessage`),
+   * which is how a file-only message, whose `content` is empty, is told apart.
+   */
+  metadata?: Record<string, unknown> | null;
   /** `audit:<id>` on an audit mirror (`isAuditMirrorRow`); a UUID or null otherwise. */
   client_message_id?: string | null;
   created_at: string;
+}
+
+/**
+ * The body of a single chat push: the first 200 characters of the message, or,
+ * for a message with no text (a photo or file sent on its own), what was sent.
+ * Those used to push an empty body under the sender's name (#3846). The cut is
+ * by code point, so it never splits an emoji into a broken character.
+ */
+export function chatPushPreview(
+  row: Pick<ChatMessageRow, 'content' | 'metadata'>,
+): string {
+  const text = row.content?.trim() ?? '';
+  if (text) return Array.from(text).slice(0, 200).join('');
+  const raw = Number(row.metadata?.attachment_count);
+  const count = Number.isInteger(raw) && raw > 0 ? raw : 0;
+  if (count === 1) return 'Sent an attachment';
+  if (count > 1) return `Sent ${count} attachments`;
+  return 'Sent a message';
 }
 
 /** Alias kept local so the rest of this file reads in its own domain terms. */
@@ -482,7 +505,7 @@ export class ChatPushWorkerService
     if (recipientIds.length === 0) return outcome;
 
     const presenceMap = this.readPresence(channel.id);
-    const senderPreview = row.content?.slice(0, 200) ?? '';
+    const senderPreview = chatPushPreview(row);
     // `chat_messages.mentions` is a `users.id[]` resolved by the API at send
     // time. Until C1 this read went through a structural cast over a column
     // that had never existed and was typed as a map, so it resolved to `{}`

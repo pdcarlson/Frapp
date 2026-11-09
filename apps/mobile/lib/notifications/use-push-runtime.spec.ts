@@ -18,6 +18,8 @@ const mockState = vi.hoisted(() => ({
   remove: vi.fn(async () => undefined),
   tokenListeners: [] as Array<() => void>,
   launchResponse: null as unknown,
+  responseListeners: [] as Array<(response: unknown) => void>,
+  markRead: vi.fn(),
 }));
 
 vi.mock("expo-router", () => ({
@@ -39,7 +41,7 @@ vi.mock("../use-is-api-authenticated", () => ({
 vi.mock("@repo/hooks", () => ({
   useRegisterPushToken: () => ({ mutateAsync: mockState.register }),
   useRemovePushToken: () => ({ mutateAsync: mockState.remove }),
-  useMarkNotificationRead: () => ({ mutate: vi.fn() }),
+  useMarkNotificationRead: () => ({ mutate: mockState.markRead }),
 }));
 
 vi.mock("./push", () => ({
@@ -56,7 +58,16 @@ vi.mock("./push", () => ({
       },
     };
   },
-  addNotificationResponseListener: () => ({ remove: vi.fn() }),
+  addNotificationResponseListener: (listener: (response: unknown) => void) => {
+    mockState.responseListeners.push(listener);
+    return {
+      remove: () => {
+        mockState.responseListeners = mockState.responseListeners.filter(
+          (l) => l !== listener,
+        );
+      },
+    };
+  },
   takeLastNotificationResponse: () => {
     const response = mockState.launchResponse;
     mockState.launchResponse = null;
@@ -95,6 +106,8 @@ beforeEach(() => {
   mockState.stored = null;
   mockState.tokenListeners = [];
   mockState.launchResponse = null;
+  mockState.responseListeners = [];
+  mockState.markRead.mockClear();
   mockState.register.mockClear();
   mockState.remove.mockClear();
 });
@@ -218,5 +231,61 @@ describe("usePushRuntime and the chat launch jump", () => {
   it("leaves the jump to chat home when no tap launched the app", () => {
     renderHook(() => usePushRuntime());
     expect(claimChatLaunch()).toBe(true);
+  });
+});
+
+/**
+ * #3788. Opening a notification from a push tap marks its in-app row read,
+ * whether the tap launched the app or arrived while it was running, and only
+ * once the session can authenticate the write.
+ */
+describe("usePushRuntime marks a tapped notification read", () => {
+  const tap = (notificationId: string) => ({
+    notification: {
+      request: {
+        content: {
+          data: { notificationId, target: { screen: "events" } },
+        },
+      },
+    },
+  });
+
+  function signIn() {
+    mockState.isAuthenticated = true;
+    mockState.status = "authenticated";
+  }
+
+  it("on a tap that launched the app", () => {
+    signIn();
+    mockState.launchResponse = tap("notif-cold");
+    renderHook(() => usePushRuntime());
+    expect(mockState.markRead).toHaveBeenCalledWith("notif-cold");
+  });
+
+  it("on a tap while the app is running", () => {
+    signIn();
+    renderHook(() => usePushRuntime());
+    expect(mockState.markRead).not.toHaveBeenCalled();
+
+    act(() => {
+      for (const listener of mockState.responseListeners) {
+        listener(tap("notif-warm"));
+      }
+    });
+
+    expect(mockState.markRead).toHaveBeenCalledWith("notif-warm");
+  });
+
+  it("holds the receipt until the session is restored, then sends it", () => {
+    mockState.status = "hydrating";
+    mockState.launchResponse = tap("notif-held");
+    const { rerender } = renderHook(() => usePushRuntime());
+    expect(mockState.markRead).not.toHaveBeenCalled();
+
+    signIn();
+    rerender();
+
+    expect(mockState.markRead).toHaveBeenCalledTimes(1);
+    expect(mockState.markRead).toHaveBeenCalledWith("notif-held");
   });
 });

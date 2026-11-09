@@ -50,7 +50,7 @@ export class CreateServiceEntryDto {
 
   @ApiPropertyOptional({
     description:
-      'When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. Chat cannot attach proof — when `wf_hours_receipt` is on, this route still 400s without `proof_path`.',
+      'When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. The one-liner cannot attach proof (the Service hours form in the chat composer can) — when `wf_hours_receipt` is on, this route still 400s without `proof_path`.',
   })
   @IsOptional()
   @IsUUID()
@@ -220,6 +220,21 @@ export class ServiceLeaderboardQueryDto {
   @IsOptional()
   @IsString()
   end_date?: string;
+}
+
+/**
+ * The rate `ServiceEntryService.approve` applies, so the review queue can say
+ * what Approve will award (#3862). Read through the same lookup the approve
+ * path uses, default and invalid-row fallback included.
+ */
+export class ServicePointsRateResponseDto {
+  @ApiProperty({
+    description:
+      'Minutes of approved service per SERVICE point, as the approve path reads it now (default 60). Approving awards floor(duration_minutes / minutes_per_point).',
+    minimum: 1,
+    example: 60,
+  })
+  minutes_per_point: number;
 }
 
 export class ReviewServiceEntryDto {

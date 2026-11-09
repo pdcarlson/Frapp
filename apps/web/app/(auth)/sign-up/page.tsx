@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
@@ -9,11 +10,21 @@ import { FloatingField } from "@/components/auth/floating-field";
 import { OAuthButtons } from "@/components/auth/oauth-buttons";
 import { Button } from "@/components/ui/button";
 import { SkeletonText } from "@/components/shared/async-states";
+import {
+  CheckEmail,
+  RESEND_COOLDOWN_SECONDS,
+  confirmationRedirectUrl,
+} from "@/components/auth/check-email";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { getErrorMessage } from "@/lib/utils";
 import { useToast } from "@/lib/hooks/use-toast";
 
-import { buildAuthCallbackUrl, resolveRedirectPath } from "@/lib/auth/redirect";
+import { resolveRedirectPath } from "@/lib/auth/redirect";
+import {
+  EXISTING_ACCOUNT_COPY,
+  describeSignUpError,
+  emailCooldownSeconds,
+  isExistingAccountSignUp,
+} from "@/lib/auth/email-auth-errors";
 import {
   describeOAuthKickoffError,
   startWebOAuth,
@@ -30,22 +41,31 @@ import {
  * reason: the two are one page, and the mode toggle above the title
  * (`auth-mode-toggle.tsx`) is the way across. Compressed with sign-in on
  * 2026-11-05 (floating labels, no subtitle, side-by-side providers) so the
- * column fits a laptop screen. It has no footer: the toggle covers sign-in,
- * and sign-in's "Join your chapter" link would drop the `redirectTo` an
- * invited member arrives with (`/join` is gated and bounces to sign-in).
+ * column fits a laptop screen. It has no footer: the toggle covers sign-in
+ * and carries `redirectTo`, so an invited member who crosses over keeps the
+ * `/join` they arrived for.
  *
  * The #920 Profile & pre-auth slice replaced a two-card grid whose eyebrow read
  * "Frapp account setup", whose heading promised "live staging walkthroughs",
  * and whose supporting card listed four internal milestones ("Activate billing
  * in test mode to unlock invite workflows").
  *
- * Both post-submit branches are unchanged: a session in the response means
- * Supabase is not confirming email, so the member goes straight to
- * `redirectTo`; otherwise they are told to check their inbox and bounced to
- * sign-in with `redirectTo` intact. The confirmation email's link lands on
- * `/auth/callback?next=<redirectTo>` (`buildAuthCallbackUrl`), which exchanges
- * the PKCE code and then delivers the member to `redirectTo` signed in — for an
- * invited member that is `/join?token=…`, token intact.
+ * After submit, four branches. A session in the response means Supabase is
+ * not confirming email (the local stack), so the member goes straight to
+ * `redirectTo`. A user with no identities is GoTrue's stand-in for an address
+ * that already has an account: no email goes out, so the member is told to
+ * sign in instead. Otherwise the form gives way to "Check your email"
+ * (`check-email.tsx`) for that address, which is what every hosted sign-up
+ * sees (#3776). Until 2026-11-09 that branch was a toast and a bounce to
+ * `/sign-in`, where the member typed the new password into a form that could
+ * only refuse it. A refusal inside GoTrue's email minute (the same address
+ * resubmitted) returns to "Check your email" too, counting down GoTrue's
+ * seconds.
+ *
+ * The confirmation email's link lands on
+ * `/auth/callback?next=<redirectTo>&intent=confirm`
+ * (`confirmationRedirectUrl`), which signs the member in and delivers them to
+ * `redirectTo` (for an invited member, `/join?token=…`, token intact).
  */
 function SignUpPageContent() {
   const router = useRouter();
@@ -55,6 +75,7 @@ function SignUpPageContent() {
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingOAuth, setPendingOAuth] = useState<OAuthProvider | null>(null);
+  const [sent, setSent] = useState<{ email: string; cooldown: number } | null>(null);
   const redirectTo = resolveRedirectPath(searchParams.get("redirectTo"));
 
   async function handleSignUp(event: React.FormEvent<HTMLFormElement>) {
@@ -66,7 +87,7 @@ function SignUpPageContent() {
         email,
         password,
         options: {
-          emailRedirectTo: buildAuthCallbackUrl(window.location.origin, redirectTo),
+          emailRedirectTo: confirmationRedirectUrl(window.location.origin, redirectTo),
         },
       });
       if (error) throw error;
@@ -81,15 +102,30 @@ function SignUpPageContent() {
         return;
       }
 
-      toast({
-        title: "Check your inbox",
-        description: "Confirm your email to finish setting up your account.",
-      });
-      router.replace(`/sign-in?redirectTo=${encodeURIComponent(redirectTo)}`);
+      if (isExistingAccountSignUp(data.user)) {
+        toast({
+          title: "You already have an account",
+          description: EXISTING_ACCOUNT_COPY,
+        });
+        return;
+      }
+
+      setPassword("");
+      setSent({ email, cooldown: RESEND_COOLDOWN_SECONDS });
     } catch (error) {
+      // Refused inside GoTrue's minute: this address already has an
+      // unconfirmed account whose email went out moments ago (a resubmit
+      // after "Use a different email", a double tap). That email is the one
+      // to open, so this is "Check your email" again, counting down.
+      const cooldown = emailCooldownSeconds(error);
+      if (cooldown !== undefined) {
+        setPassword("");
+        setSent({ email, cooldown: Math.max(cooldown, 1) });
+        return;
+      }
       toast({
         title: "Unable to create account",
-        description: getErrorMessage(error, "Something went wrong. Please try again."),
+        description: describeSignUpError(error),
         variant: "destructive",
       });
     } finally {
@@ -120,6 +156,33 @@ function SignUpPageContent() {
   }
 
   const oauthBusy = pendingOAuth !== null;
+
+  if (sent) {
+    return (
+      <AuthScreen
+        title="Check your email"
+        footer={
+          <p>
+            Opened it on another device?{" "}
+            <Link
+              href={`/sign-in?redirectTo=${encodeURIComponent(redirectTo)}`}
+              className="font-semibold text-accent-text hover:underline"
+            >
+              Sign in here
+            </Link>
+          </p>
+        }
+      >
+        <CheckEmail
+          email={sent.email}
+          redirectTo={redirectTo}
+          initialCooldownSeconds={sent.cooldown}
+          backLabel="Use a different email"
+          onBack={() => setSent(null)}
+        />
+      </AuthScreen>
+    );
+  }
 
   return (
     <AuthScreen

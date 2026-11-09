@@ -63,6 +63,7 @@ describe('NotificationService', () => {
       findByUser: jest.fn(),
       findById: jest.fn(),
       markRead: jest.fn(),
+      markChatChannelRead: jest.fn(),
     };
     mockPushTokenRepo = {
       create: jest.fn(),
@@ -522,23 +523,26 @@ describe('NotificationService', () => {
         );
       });
 
-      it('does not quiet a member who is only Idle or Invisible', async () => {
-        mockSettingsRepo.findByUser.mockResolvedValue({
-          ...noWindow,
-          status: 'invisible',
-        });
+      it.each(['idle', 'invisible'] as const)(
+        'does not quiet a member who is only %s',
+        async (status) => {
+          mockSettingsRepo.findByUser.mockResolvedValue({
+            ...noWindow,
+            status,
+          });
 
-        await service.notifyUser('u-1', 'ch-1', {
-          title: 'Test',
-          body: 'Body',
-          priority: 'NORMAL',
-        });
+          await service.notifyUser('u-1', 'ch-1', {
+            title: 'Test',
+            body: 'Body',
+            priority: 'NORMAL',
+          });
 
-        expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
-          [basePushToken.token],
-          expect.objectContaining({ priority: 'NORMAL' }),
-        );
-      });
+          expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
+            [basePushToken.token],
+            expect.objectContaining({ priority: 'NORMAL' }),
+          );
+        },
+      );
     });
 
     describe('pruning invalid tokens', () => {
@@ -1090,6 +1094,30 @@ describe('NotificationService', () => {
       expectSilentPush();
     });
 
+    it('still rings URGENT for a member with DND on, on the batched path (#3845)', async () => {
+      stubChapterNotify({
+        settings: [
+          {
+            ...baseSettings,
+            quiet_hours_start: null,
+            quiet_hours_end: null,
+            status: 'dnd',
+          },
+        ],
+      });
+
+      await service.notifyChapter('ch-1', {
+        title: 'Urgent',
+        body: 'Emergency',
+        priority: 'URGENT',
+      });
+
+      expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
+        [basePushToken.token],
+        expect.objectContaining({ priority: 'URGENT' }),
+      );
+    });
+
     it('reports a failed insert chunk once and still delivers the surviving chunk', async () => {
       const warn = spyWarn();
       const error = jest
@@ -1394,6 +1422,26 @@ describe('NotificationService', () => {
     });
   });
 
+  describe('markChatChannelNotificationsRead (#3788)', () => {
+    it('clears the channel rows the read covers, for this member in this chapter', async () => {
+      mockNotificationRepo.markChatChannelRead.mockResolvedValue(undefined);
+
+      await service.markChatChannelNotificationsRead(
+        'user-1',
+        'chapter-1',
+        'channel-1',
+        '2026-11-09T05:00:00.000Z',
+      );
+
+      expect(mockNotificationRepo.markChatChannelRead).toHaveBeenCalledWith(
+        'user-1',
+        'chapter-1',
+        'channel-1',
+        '2026-11-09T05:00:00.000Z',
+      );
+    });
+  });
+
   describe('notification preferences', () => {
     const baseMember = memberFixture({
       id: 'm-1',
@@ -1571,28 +1619,27 @@ describe('NotificationService', () => {
         quiet_hours_end: '08:00',
       });
 
+      // Only the named fields: a new row takes the column defaults for the rest.
       expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
         user_id: 'u-1',
         quiet_hours_start: '22:00',
         quiet_hours_end: '08:00',
-        quiet_hours_tz: null,
-        theme: 'system',
       });
     });
 
-    it('should preserve existing quiet-hour fields when omitted from update', async () => {
-      mockSettingsRepo.findByUser.mockResolvedValue(baseSettings);
+    // Omitted fields are left out of the write, so the upsert keeps what is
+    // stored, including a value another device saved after this request began
+    // (#3924). Writing back an earlier read would undo that change.
+    it('should leave omitted quiet-hour fields out of the write', async () => {
       mockSettingsRepo.upsert.mockResolvedValue(baseSettings);
 
       await service.updateSettings('u-1', { theme: 'dark' });
 
       expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
         user_id: 'u-1',
-        quiet_hours_start: '22:00:00',
-        quiet_hours_end: '08:00:00',
-        quiet_hours_tz: 'America/New_York',
         theme: 'dark',
       });
+      expect(mockSettingsRepo.findByUser).not.toHaveBeenCalled();
     });
 
     // The test above passes a plain object literal, which is NOT what the
@@ -1616,9 +1663,6 @@ describe('NotificationService', () => {
 
       expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
         user_id: 'u-1',
-        quiet_hours_start: '22:00:00',
-        quiet_hours_end: '08:00:00',
-        quiet_hours_tz: 'America/New_York',
         theme: 'dark',
       });
     });
@@ -1643,7 +1687,6 @@ describe('NotificationService', () => {
         quiet_hours_start: null,
         quiet_hours_end: null,
         quiet_hours_tz: null,
-        theme: 'system',
       });
       expect(result.quiet_hours_start).toBeNull();
       expect(result.quiet_hours_end).toBeNull();
@@ -1658,10 +1701,7 @@ describe('NotificationService', () => {
 
       expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
         user_id: 'u-1',
-        quiet_hours_start: '22:00:00',
-        quiet_hours_end: '08:00:00',
         quiet_hours_tz: null,
-        theme: 'system',
       });
     });
 
@@ -1828,6 +1868,43 @@ describe('NotificationService', () => {
         expect(written).not.toHaveProperty('status_expires_at');
         expect(written).not.toHaveProperty('custom_status');
         expect(written).not.toHaveProperty('custom_status_expires_at');
+      });
+
+      it('clears the end time with the line even when one is sent', async () => {
+        await service.updateSettings('u-1', {
+          custom_status: null,
+          custom_status_expires_at: LATER,
+        });
+
+        expect(mockSettingsRepo.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            custom_status: null,
+            custom_status_expires_at: null,
+          }),
+        );
+      });
+
+      it('treats theme: null as not supplied, since the column is NOT NULL', async () => {
+        await service.updateSettings('u-1', { theme: null as never });
+
+        expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
+          user_id: 'u-1',
+        });
+      });
+
+      // A null end time on its own asks for nothing, so it must not fail the
+      // save and take the member's other edits with it.
+      it('ignores a null end time sent without its status', async () => {
+        await service.updateSettings('u-1', {
+          theme: 'dark',
+          status_expires_at: null,
+          custom_status_expires_at: null,
+        });
+
+        expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
+          user_id: 'u-1',
+          theme: 'dark',
+        });
       });
 
       it('gives a new custom line its own end time, not the old one', async () => {

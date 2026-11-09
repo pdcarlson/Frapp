@@ -20,7 +20,11 @@ import {
   showsEditedMarker,
 } from "@repo/chat-core/message-actions";
 import { formatTimeOfDay } from "@repo/formatting";
-import { matchMentionCandidate, SYSTEM_SENDER_ID } from "@repo/validation";
+import { SYSTEM_SENDER_ID } from "@repo/validation";
+import {
+  authorProfileUserId,
+  mentionedUserId,
+} from "@repo/chat-core/profile-targets";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -163,47 +167,17 @@ const OPEN_PROFILE_ACTION: AccessibilityActionInfo = {
 
 /**
  * The tap that opens a row's author's profile, or nothing for a row with no
- * member behind it: Frapp's own posts, an imported archive message whose
- * author never joined (`sender_id` null), and a sender the roster no longer
- * lists (they left the chapter), whose profile read would only 404.
+ * member behind it (`authorProfileUserId` in `@repo/chat-core`, which web's
+ * row reads too).
  */
 export function authorProfileOpener(
   message: ChatMessage,
   onOpenProfile: ((userId: string) => void) | undefined,
   nameFor: (userId: string) => string | null,
 ): (() => void) | undefined {
-  const senderId = message.sender_id;
-  if (
-    !onOpenProfile ||
-    !senderId ||
-    senderId === SYSTEM_SENDER_ID ||
-    nameFor(senderId) === null
-  ) {
-    return undefined;
-  }
+  const senderId = onOpenProfile ? authorProfileUserId(message, nameFor) : null;
+  if (!onOpenProfile || !senderId) return undefined;
   return () => onOpenProfile(senderId);
-}
-
-/**
- * Who a tapped `@handle` chip names: matched only against the members the
- * server resolved for this message (`chat_messages.mentions`), with the same
- * fail-closed tiers the API used, so a tap never opens someone the message
- * didn't notify. A role mention (`@Brothers`) expands to its holders, and none
- * of them is named "Brothers", so it opens nothing.
- */
-export function mentionedUserId(
-  message: ChatMessage,
-  handle: string,
-  nameFor: (userId: string) => string | null,
-): string | null {
-  const candidates = message.mentions.flatMap((userId) => {
-    const name = nameFor(userId);
-    return name ? [{ user_id: userId, display_name: name }] : [];
-  });
-  const token = handle.replace(/^@/, "");
-  // Exact tiers only would be stricter, but the chip is drawn from the same
-  // tokenizer the API resolved, so the full ladder lands where the push did.
-  return matchMentionCandidate(candidates, token)?.user_id ?? null;
 }
 
 /** The add chip's accessible name: it opens the sheet that holds the picks. */

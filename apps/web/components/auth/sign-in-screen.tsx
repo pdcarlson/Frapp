@@ -7,6 +7,7 @@ import {
   SESSION_ENDED_PARAM,
   SESSION_ENDED_VALUE,
 } from "@/lib/auth/rejected-session";
+import { JOIN_FROM_SIGN_IN_PATH } from "@/lib/auth/join-visit";
 import { Loader2 } from "lucide-react";
 import { AuthModeToggle } from "@/components/auth/auth-mode-toggle";
 import { AuthDivider, AuthScreen } from "@/components/auth/auth-screen";
@@ -14,14 +15,21 @@ import { FloatingField } from "@/components/auth/floating-field";
 import { OAuthButtons } from "@/components/auth/oauth-buttons";
 import { Button } from "@/components/ui/button";
 import { SkeletonText } from "@/components/shared/async-states";
+import { CheckEmail, confirmationRedirectUrl } from "@/components/auth/check-email";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { getErrorMessage } from "@/lib/utils";
 import { useToast } from "@/lib/hooks/use-toast";
 import {
-  buildAuthCallbackUrl,
+  EMAIL_CONFIRMED_AUTH_ERROR,
   describeAuthError,
   resolveRedirectPath,
 } from "@/lib/auth/redirect";
+import {
+  cooldownCopy,
+  describeEmailSendError,
+  describePasswordSignInError,
+  emailCooldownSeconds,
+  isEmailNotConfirmed,
+} from "@/lib/auth/email-auth-errors";
 import {
   describeOAuthKickoffError,
   startWebOAuth,
@@ -61,6 +69,13 @@ import {
  * exchanges the PKCE code the link comes back with. `/auth/callback` sends a
  * failed link back here with `authError` set; the toast below is the only
  * place that code is read.
+ *
+ * **Refusals are told by GoTrue's code** (`lib/auth/email-auth-errors.ts`),
+ * never through the API's error map, which knows none of them and printed
+ * "Something went wrong" for a wrong password and an unconfirmed address
+ * alike until 2026-11-09. An unconfirmed address swaps the form for "Confirm
+ * your email" (`check-email.tsx`), with Resend, because no password typed
+ * here can get past it.
  */
 const SIGN_IN_TITLE = "Welcome back";
 
@@ -73,6 +88,7 @@ function SignInPageContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isMagicLinkPending, setIsMagicLinkPending] = useState(false);
   const [pendingOAuth, setPendingOAuth] = useState<OAuthProvider | null>(null);
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState<string | null>(null);
   const redirectTo = resolveRedirectPath(searchParams.get("redirectTo"));
   const authError = searchParams.get("authError");
   const sessionEnded =
@@ -82,6 +98,10 @@ function SignInPageContent() {
   // Shown once, on arrival; the parameter is not carried into the next hop.
   useEffect(() => {
     if (!authError) return;
+    if (authError === EMAIL_CONFIRMED_AUTH_ERROR) {
+      toast({ title: "Email confirmed", description: describeAuthError(authError) });
+      return;
+    }
     toast({
       title: "That link didn't sign you in",
       description: describeAuthError(authError),
@@ -122,9 +142,14 @@ function SignInPageContent() {
       router.replace(redirectTo);
       router.refresh();
     } catch (error) {
+      if (isEmailNotConfirmed(error)) {
+        setPassword("");
+        setUnconfirmedEmail(email);
+        return;
+      }
       toast({
         title: "Unable to sign in",
-        description: getErrorMessage(error, "Something went wrong. Please try again."),
+        description: describePasswordSignInError(error),
         variant: "destructive",
       });
     } finally {
@@ -148,7 +173,10 @@ function SignInPageContent() {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: buildAuthCallbackUrl(window.location.origin, redirectTo),
+          // `intent=confirm`: for an address that isn't confirmed yet, GoTrue
+          // answers this with the Confirm signup email, whose `?code=` link is
+          // the one that can confirm and still fail to sign this browser in.
+          emailRedirectTo: confirmationRedirectUrl(window.location.origin, redirectTo),
         },
       });
       if (error) throw error;
@@ -158,9 +186,17 @@ function SignInPageContent() {
         description: "Check your inbox to continue signing in.",
       });
     } catch (error) {
+      const cooldown = emailCooldownSeconds(error);
+      if (cooldown !== undefined) {
+        // An email went out under a minute ago (the confirmation, or the
+        // last link), so this one wasn't sent. Not a failure: that email's
+        // link still works (a confirmation lands as "Email confirmed").
+        toast({ title: "Check your inbox", description: cooldownCopy(cooldown) });
+        return;
+      }
       toast({
         title: "Unable to send magic link",
-        description: getErrorMessage(error, "Something went wrong. Please try again."),
+        description: describeEmailSendError(error),
         variant: "destructive",
       });
     } finally {
@@ -177,6 +213,7 @@ function SignInPageContent() {
         provider,
         window.location.origin,
         redirectTo,
+        "sign-in",
       );
       if (error) throw error;
     } catch (error) {
@@ -192,11 +229,25 @@ function SignInPageContent() {
 
   const oauthBusy = pendingOAuth !== null;
 
+  if (unconfirmedEmail) {
+    return (
+      <AuthScreen title="Confirm your email">
+        <CheckEmail
+          email={unconfirmedEmail}
+          redirectTo={redirectTo}
+          initialCooldownSeconds={0}
+          backLabel="Back to sign in"
+          onBack={() => setUnconfirmedEmail(null)}
+        />
+      </AuthScreen>
+    );
+  }
+
   return (
     <AuthScreen
       title={SIGN_IN_TITLE}
       toggle={<AuthModeToggle current="sign-in" redirectTo={redirectTo} />}
-      footer={<SignInFooter />}
+      footer={<SignInFooter redirectTo={redirectTo} />}
     >
       <form className="flex flex-col gap-3" onSubmit={handlePasswordSignIn}>
         <FloatingField
@@ -254,17 +305,68 @@ function SignInPageContent() {
 
 /**
  * The form's one other exit (the toggle covers sign-up). A component so the
- * Suspense fallback draws the same footer and nothing shifts on hydration.
+ * Suspense fallback draws its words (`SignInFooterPending`).
+ *
+ * `/join` is gated, so it never links there (#3776): a signed-out visitor was
+ * bounced back to this form, with any invite they arrived with dropped on the
+ * way. Instead:
+ *
+ * - Not yet headed to `/join`: "Join your chapter" points this form at
+ *   `/join?from=sign-in` (`JOIN_FROM_SIGN_IN_PATH`), so an existing account
+ *   signs in above and lands there, where its emailed invites are offered. A
+ *   member with access and no emailed invite goes on to `/chat` instead
+ *   (#3850). The footer then changes to:
+ * - Headed to `/join` (with or without an invite): "Create an account" opens
+ *   sign-up carrying that `redirectTo`, so a new account lands on `/join` with
+ *   its invite intact. The toggle carries it too.
  */
-function SignInFooter() {
+function SignInFooter({ redirectTo }: { redirectTo: string }) {
+  if (isJoinPath(redirectTo)) {
+    return (
+      <p>
+        New to Frapp?{" "}
+        <Link
+          href={`/sign-up?redirectTo=${encodeURIComponent(redirectTo)}`}
+          className="font-semibold text-accent-text hover:underline"
+        >
+          Create an account to join
+        </Link>
+      </p>
+    );
+  }
   return (
     <p>
       Have an invite?{" "}
-      <Link href="/join" className="font-semibold text-accent-text hover:underline">
+      <Link
+        // Marked, so a member who signs in here lands in their chapter, not
+        // on a join form they don't need (#3850).
+        href={`/sign-in?redirectTo=${encodeURIComponent(JOIN_FROM_SIGN_IN_PATH)}`}
+        className="font-semibold text-accent-text hover:underline"
+      >
         Join your chapter
       </Link>
     </p>
   );
+}
+
+/**
+ * The footer before the search params are known: the same words as the
+ * common case, but not a link. Before hydration a link here could only point
+ * somewhere that ignores the `redirectTo` this visit carries, and from an
+ * invite that drops the token (#3776).
+ */
+function SignInFooterPending() {
+  return (
+    <p>
+      Have an invite?{" "}
+      <span className="font-semibold text-accent-text">Join your chapter</span>
+    </p>
+  );
+}
+
+function isJoinPath(path: string): boolean {
+  const pathname = path.split(/[?#]/, 1)[0];
+  return pathname === "/join";
 }
 
 /**
@@ -284,7 +386,7 @@ export function SignInScreen() {
           toggle={
             <AuthModeToggle current="sign-in" redirectTo={resolveRedirectPath(null)} />
           }
-          footer={<SignInFooter />}
+          footer={<SignInFooterPending />}
         >
           <div role="status" aria-busy="true" aria-live="polite">
             <span className="sr-only">Loading the sign-in form…</span>

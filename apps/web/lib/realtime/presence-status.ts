@@ -108,7 +108,7 @@ export function presenceLabel(status: PresenceStatus): string {
  * The dot treatment for a status — the colour decision, in a named mapper
  * rather than inline in JSX.
  *
- * This repo keeps one mapper per domain status vocabulary (`poll-status.ts`,
+ * This repo keeps one mapper per domain status vocabulary (`geofence-status.ts`,
  * `settings-status.ts`, and friends) because the shared invariant is that **no
  * domain status is ever painted in the chapter accent** — #1202 found five that
  * were, and the ones that had no mapper were the ones nobody could check.
@@ -179,12 +179,11 @@ function pickedFrom(value: unknown): PickedPresence | null {
  *     may carry anything. Everything is validated before use and anything
  *     unrecognised is skipped rather than trusted — a malformed entry must not
  *     be able to throw inside a React render pass. An unknown `status` reads as
- *     automatic, and a malformed `line` as none. A `ts` ahead of `now` is
- *     clamped to it, which still reads Online (skew is fresh, not Idle).
+ *     automatic, and a malformed `line` as none. What this can't check is
+ *     who published an entry: see the chat spec on forged entries.
  */
 export function presenceMapFrom(
   state: RawPresenceState,
-  now: number = Date.now(),
 ): Map<string, PresenceEntry> {
   const byUser = new Map<string, PresenceEntry>();
   for (const entries of Object.values(state ?? {})) {
@@ -199,16 +198,10 @@ export function presenceMapFrom(
       };
       if (typeof userId !== "string" || userId.length === 0) continue;
       if (typeof ts !== "number" || !Number.isFinite(ts)) continue;
-      // Clamped to the reader's clock: an entry stamped in the far future
-      // would otherwise win "newest" forever, so a member publishing an entry
-      // that names someone else (presence is advisory, see the chat spec)
-      // could pin their picked status and line over the real ones. Clamped,
-      // the real member's next activity ties or beats it.
-      const at = Math.min(ts, now);
       const previous = byUser.get(userId);
-      if (previous === undefined || at > previous.ts) {
+      if (previous === undefined || ts > previous.ts) {
         byUser.set(userId, {
-          ts: at,
+          ts,
           picked: pickedFrom(status),
           line: presenceLineFrom(line),
         });

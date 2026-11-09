@@ -141,6 +141,11 @@ export interface ChannelPostCapability {
    * (`GET /v1/channels/{id}`), which still returns it to whoever can read it.
    */
   isArchived: boolean;
+  /**
+   * The chapter's audit log, `#chapter-audit` (#3909). Only Frapp posts
+   * there, so the thread shows a line saying so in place of the composer.
+   */
+  isAuditLog: boolean;
 }
 
 /**
@@ -153,13 +158,26 @@ export interface ChannelPostCapability {
  */
 export function selectPostCapability(data: unknown): ChannelPostCapability {
   if (!isRecord(data)) {
-    return { isReadOnly: false, canPost: true, isArchived: false };
+    return {
+      isReadOnly: false,
+      canPost: true,
+      isArchived: false,
+      isAuditLog: false,
+    };
   }
+  const isAuditLog = data.is_audit_log === true;
   return {
     isReadOnly: data.is_read_only === true,
-    canPost: typeof data.can_post === "boolean" ? data.can_post : true,
+    // The server refuses every member post in the audit log; never offer one,
+    // even from a row whose `can_post` is missing.
+    canPost: isAuditLog
+      ? false
+      : typeof data.can_post === "boolean"
+        ? data.can_post
+        : true,
     isArchived:
       typeof data.archived_at === "string" && data.archived_at.length > 0,
+    isAuditLog,
   };
 }
 

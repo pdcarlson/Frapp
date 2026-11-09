@@ -7,9 +7,11 @@ import type { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider } from "./use-frapp-client";
 import {
   markNotificationReadMutationKey,
+  markChannelNotificationsReadInCache,
   markNotificationReadOnOpenMutationKey,
   notificationKeys,
   useMarkNotificationRead,
+  useNotifications,
   useUpdateNotificationPreference,
   useUpdateUserSettings,
   useUserSettings,
@@ -123,6 +125,206 @@ describe("useMarkNotificationRead", () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toMatchObject({ statusCode: 502 });
+  });
+});
+
+describe("a pending read receipt shows its row read (#3788)", () => {
+  type Row = { id: string; title: string; read_at: string | null };
+  const serverRows = (): Row[] => [
+    { id: "notif-1", title: "A", read_at: null },
+    { id: "notif-2", title: "B", read_at: null },
+  ];
+
+  /** The list as `useNotifications` serves it, beside the mutation. */
+  function renderInbox(client: Record<string, unknown>, queryClient: QueryClient) {
+    return renderHook(
+      () => ({ list: useNotifications(), markRead: useMarkNotificationRead() }),
+      { wrapper: createWrapper(client, queryClient) },
+    );
+  }
+  const readAtOf = (rows: unknown, id: string) =>
+    (rows as Row[] | undefined)?.find((row) => row.id === id)?.read_at;
+
+  it("serves the row read while the PATCH is pending, and leaves the others unread", async () => {
+    const queryClient = makeQueryClient();
+    const get = vi.fn().mockResolvedValue({ data: serverRows(), error: undefined });
+    const { patch } = deferredPatch();
+    const { result } = renderInbox({ GET: get, PATCH: patch }, queryClient);
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+
+    act(() => result.current.markRead.mutate("notif-1"));
+
+    await waitFor(() =>
+      expect(readAtOf(result.current.list.data, "notif-1")).toEqual(expect.any(String)),
+    );
+    expect(readAtOf(result.current.list.data, "notif-2")).toBeNull();
+  });
+
+  it("serves a push tap's receipt (the on-open key) read while it is pending", async () => {
+    const queryClient = makeQueryClient();
+    const get = vi.fn().mockResolvedValue({ data: serverRows(), error: undefined });
+    const { patch } = deferredPatch();
+    const { result } = renderHook(
+      () => ({
+        list: useNotifications(),
+        markRead: useMarkNotificationRead({ sentOnOpen: true }),
+      }),
+      { wrapper: createWrapper({ GET: get, PATCH: patch }, queryClient) },
+    );
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+
+    act(() => result.current.markRead.mutate("notif-2"));
+
+    await waitFor(() =>
+      expect(readAtOf(result.current.list.data, "notif-2")).toEqual(expect.any(String)),
+    );
+    expect(readAtOf(result.current.list.data, "notif-1")).toBeNull();
+  });
+
+  it("keeps it read when a refetch lands before the PATCH commits", async () => {
+    const queryClient = makeQueryClient();
+    // The second read differs elsewhere, so the list really is replaced.
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: serverRows(), error: undefined })
+      .mockResolvedValue({
+        data: [...serverRows(), { id: "notif-3", title: "C", read_at: null }],
+        error: undefined,
+      });
+    const { patch } = deferredPatch();
+    const { result } = renderInbox({ GET: get, PATCH: patch }, queryClient);
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+
+    act(() => result.current.markRead.mutate("notif-1"));
+    await waitFor(() =>
+      expect(readAtOf(result.current.list.data, "notif-1")).not.toBeNull(),
+    );
+    // Another write's refetch, or a realtime ping, reads the row unread.
+    await act(async () => {
+      await result.current.list.refetch();
+    });
+
+    expect(get).toHaveBeenCalledTimes(2);
+    await waitFor(() =>
+      expect(readAtOf(result.current.list.data, "notif-3")).toBeNull(),
+    );
+    expect(readAtOf(result.current.list.data, "notif-1")).toEqual(expect.any(String));
+  });
+
+  it("shows the row unread again when the PATCH fails", async () => {
+    const queryClient = makeQueryClient();
+    const get = vi.fn().mockResolvedValue({ data: serverRows(), error: undefined });
+    const { patch, fail } = deferredPatch();
+    const { result } = renderInbox({ GET: get, PATCH: patch }, queryClient);
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+
+    act(() => result.current.markRead.mutate("notif-1"));
+    await waitFor(() =>
+      expect(readAtOf(result.current.list.data, "notif-1")).not.toBeNull(),
+    );
+    await act(async () => fail());
+
+    await waitFor(() => expect(result.current.markRead.isError).toBe(true));
+    expect(readAtOf(result.current.list.data, "notif-1")).toBeNull();
+  });
+
+  it("holds the row read through a first fetch that read it before the write committed (push-tap cold start)", async () => {
+    const queryClient = makeQueryClient();
+    // The list's first GET is still in flight when the receipt goes out, and
+    // read the row unread; a GET started after the write reads it read.
+    let landFirstFetch!: (rows: Row[]) => void;
+    const get = vi
+      .fn()
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          landFirstFetch = (rows) => resolve({ data: rows, error: undefined });
+        }),
+      )
+      .mockResolvedValue({
+        data: [{ id: "notif-1", title: "A", read_at: "2026-11-09T05:00:00.000Z" }],
+        error: undefined,
+      });
+    const patch = vi.fn().mockResolvedValue({
+      data: { id: "notif-1", read_at: "2026-11-09T05:00:00.000Z" },
+      error: undefined,
+      response: { ok: true, status: 200 },
+    });
+    const { result } = renderHook(
+      () => ({
+        list: useNotifications(),
+        markRead: useMarkNotificationRead({ sentOnOpen: true }),
+      }),
+      { wrapper: createWrapper({ GET: get, PATCH: patch }, queryClient) },
+    );
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+
+    act(() => result.current.markRead.mutate("notif-1"));
+    await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
+    // The write has succeeded; the stale first read lands after it.
+    await act(async () => landFirstFetch([{ id: "notif-1", title: "A", read_at: null }]));
+
+    await waitFor(() => expect(result.current.markRead.isSuccess).toBe(true));
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(readAtOf(result.current.list.data, "notif-1")).toBe(
+      "2026-11-09T05:00:00.000Z",
+    );
+  });
+
+  it("writes the server's stamp into the cache on success, and refetches lists, not preferences", async () => {
+    const queryClient = makeQueryClient();
+    const prefsKey = notificationKeys.preferences("chapter-1");
+    queryClient.setQueryData(prefsKey, [{ category: "events", is_enabled: true }]);
+    // The refetch after the write must not be what clears the row here.
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: serverRows(), error: undefined })
+      .mockReturnValue(new Promise(() => {}));
+    const patch = vi.fn().mockResolvedValue({
+      data: { id: "notif-1", read_at: "2026-11-09T05:00:00.000Z" },
+      error: undefined,
+      response: { ok: true, status: 200 },
+    });
+    const { result } = renderInbox({ GET: get, PATCH: patch }, queryClient);
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+
+    act(() => result.current.markRead.mutate("notif-1"));
+    await waitFor(() => expect(result.current.markRead.isSuccess).toBe(true));
+
+    expect(
+      readAtOf(queryClient.getQueryData(notificationKeys.list("chapter-1", undefined)), "notif-1"),
+    ).toBe("2026-11-09T05:00:00.000Z");
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(queryClient.getQueryState(prefsKey)?.isInvalidated).toBe(false);
+  });
+});
+
+describe("markChannelNotificationsReadInCache (#3788)", () => {
+  const listKey = notificationKeys.list("chapter-1", undefined);
+  const chat = (channelId: string) => ({ target: { screen: "chat", channelId } });
+
+  it("clears only that channel's unread chat rows and says whether it changed any", () => {
+    const queryClient = makeQueryClient();
+    queryClient.setQueryData(listKey, [
+      { id: "in-channel", read_at: null, data: chat("chan-1") },
+      { id: "other-channel", read_at: null, data: chat("chan-2") },
+      { id: "event", read_at: null, data: { target: { screen: "events" } } },
+      { id: "already-read", read_at: "2026-01-01T00:00:00.000Z", data: chat("chan-1") },
+      // Names the channel but isn't a chat row: only chat rows clear.
+      { id: "report", read_at: null, data: { target: { screen: "chat_reports", channelId: "chan-1" } } },
+    ]);
+
+    expect(
+      markChannelNotificationsReadInCache(queryClient, "chan-1", "2026-11-09T00:00:00.000Z"),
+    ).toBe(true);
+    expect(queryClient.getQueryData(listKey)).toEqual([
+      { id: "in-channel", read_at: "2026-11-09T00:00:00.000Z", data: chat("chan-1") },
+      { id: "other-channel", read_at: null, data: chat("chan-2") },
+      { id: "event", read_at: null, data: { target: { screen: "events" } } },
+      { id: "already-read", read_at: "2026-01-01T00:00:00.000Z", data: chat("chan-1") },
+      // Names the channel but isn't a chat row: only chat rows clear.
+      { id: "report", read_at: null, data: { target: { screen: "chat_reports", channelId: "chan-1" } } },
+    ]);
+    expect(markChannelNotificationsReadInCache(queryClient, "chan-1")).toBe(false);
   });
 });
 
@@ -574,6 +776,52 @@ describe("useUpdateUserSettings", () => {
         quiet_hours_end: null,
         quiet_hours_tz: null,
       });
+    });
+
+    await act(async () => {
+      succeed();
+    });
+  });
+
+  // #3845: the status pairs are predicted the way the server applies them.
+  it.each([
+    [
+      "a status sent alone clears the old end time",
+      { status: "dnd", status_expires_at: "2026-11-10T08:00:00.000Z" },
+      { status: "invisible" },
+      { status: "invisible", status_expires_at: null },
+    ],
+    [
+      "Online never keeps an end time",
+      { status: "dnd", status_expires_at: "2026-11-10T08:00:00.000Z" },
+      { status: "online", status_expires_at: "2026-11-10T09:00:00.000Z" },
+      { status: "online", status_expires_at: null },
+    ],
+    [
+      "a blank line clears the line and its end time",
+      { custom_status: "Out", custom_status_expires_at: "2026-11-10T00:00:00.000Z" },
+      { custom_status: "  " },
+      { custom_status: null, custom_status_expires_at: null },
+    ],
+    [
+      "a line sent alone has no end time",
+      { custom_status: "Out", custom_status_expires_at: "2026-11-10T00:00:00.000Z" },
+      { custom_status: " Back at 6 " },
+      { custom_status: "Back at 6", custom_status_expires_at: null },
+    ],
+  ])("%s", async (_name, cached, body, expected) => {
+    queryClient.setQueryData(userSettingsKey, cached);
+    const { patch, succeed } = deferredPatch();
+    const { result } = renderHook(() => useUpdateUserSettings(), {
+      wrapper: createWrapper({ PATCH: patch }, queryClient),
+    });
+
+    act(() => {
+      result.current.mutate(body as Parameters<typeof result.current.mutate>[0]);
+    });
+
+    await waitFor(() => {
+      expect(queryClient.getQueryData(userSettingsKey)).toEqual(expected);
     });
 
     await act(async () => {

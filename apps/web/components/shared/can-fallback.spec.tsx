@@ -371,6 +371,9 @@ describe("the branches this change did not touch", () => {
  * heuristic: the mistake was in the classification, so the classification is
  * what has to be written down.
  *
+ * **`polls-page` left both lists by ceasing to exist** (#3871): the `/polls`
+ * page and its `polls:view_all` surface gate were retired, not reclassified.
+ *
  * **`invoice-admin-card` has since left this list, by ceasing to exist.** The
  * greenfield Finance lane merged it into `components/billing/invoice-list.tsx`,
  * where there is no longer a gate standing in for the invoice surface: the
@@ -382,7 +385,6 @@ describe("the branches this change did not touch", () => {
  * make someone justify.
  */
 const SURFACE_GATES: readonly { file: string; match: string }[] = [
-  { file: "components/polls/polls-page.tsx", match: 'permission="polls:view_all"' },
   { file: "components/reports/reports-page.tsx", match: 'permission="reports:export"' },
   { file: "components/geofences/geofences-admin-page.tsx", match: 'permission="geofences:manage"' },
   { file: "components/roles/roles-page.tsx", match: 'permission="roles:manage"' },
@@ -417,7 +419,6 @@ const CONSUMERS: readonly string[] = [
   "components/events/events-page.tsx",
   "components/geofences/geofences-admin-page.tsx",
   "components/points/points-audit-card.tsx",
-  "components/polls/polls-page.tsx",
   "components/reports/reports-page.tsx",
   "components/roles/roles-page.tsx",
   "components/service/service-page.tsx",

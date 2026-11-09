@@ -23,6 +23,7 @@ import {
   useSheetVisit,
   SheetBackToClose,
   useSheetClose,
+  SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -291,6 +292,7 @@ export const EditProfileSheet = forwardRef<
   return (
     <BottomSheetModal
       ref={ref}
+      stackBehavior={SHEET_STACK_BEHAVIOR}
       snapPoints={SNAP_POINTS}
       enableDynamicSizing={false}
       keyboardBehavior="interactive"

@@ -1000,9 +1000,9 @@ export class ChatReportService {
  * the question, not `content`), then one `- label` line per option. The web
  * queue renders the snapshot with its line breaks.
  *
- * Polls come in two shapes, and both are read: the web client's `/poll`
- * posts `kind: 'poll'` with `payload.options: [{ id, label }]` (chat-core's
- * `dispatchPoll`; mobile creates no polls), and the older
+ * Polls come in two shapes, and both are read: web's `/poll` and New poll
+ * dialog and mobile's New poll sheet post `kind: 'poll'` with `payload.options: [{ id, label }]`
+ * (both built by chat-core's `buildPollMessage`), and the older
  * `POST /v1/channels/:id/polls` writes
  * `type: 'POLL'` with `metadata.options: string[]` (`PollService.createPoll`).
  * A malformed card falls back to `content`, the same as any other message:

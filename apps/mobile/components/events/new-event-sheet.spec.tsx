@@ -33,6 +33,7 @@ const FAILED = {
   error: "Internal Server Error",
   message: "Event service is unavailable.",
 };
+import { EVENT_CREATE_UNCONFIRMED } from "@repo/hooks";
 const TRY_AGAIN = "That didn't save. Your event is still here, so try again.";
 
 type Options = {
@@ -294,6 +295,17 @@ describe("New event", () => {
     expect(createButton(tree).props.disabled).toBe(true);
     act(() => createButton(tree).props.onPress());
     expect(mutate).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("says to check Events, not to try again, when the server's answer was lost (#1717)", () => {
+    outcome = { ok: false, error: new Error(EVENT_CREATE_UNCONFIRMED) };
+    const tree = render();
+    type(tree, "Event name", "Formal");
+    act(() => createButton(tree).props.onPress());
+
+    expect(screenText(tree)).toContain("We couldn't confirm it saved");
+    expect(screenText(tree)).not.toContain(TRY_AGAIN);
     act(() => tree.unmount());
   });
 

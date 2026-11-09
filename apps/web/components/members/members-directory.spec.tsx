@@ -94,11 +94,12 @@ vi.mock("@repo/hooks", () => ({
 
 vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
+const customLines = vi.hoisted(() => ({ value: {} as Record<string, string> }));
 vi.mock("@/lib/providers/chapter-presence-provider", () => ({
   useChapterPresenceContext: () => ({
     isReady: true,
     statusOf: () => "online",
-    lineOf: () => null,
+    lineOf: (id: string) => customLines.value[id] ?? null,
   }),
 }));
 
@@ -119,13 +120,17 @@ vi.mock("@/components/members/invite-member-dialog", () => ({
 vi.mock("@/components/members/member-detail-sheet", () => ({
   MemberDetailSheet: ({
     open,
-    member,
+    userId,
+    initialMember,
   }: {
     open: boolean;
-    member: { display_name?: string } | null;
+    userId: string | null;
+    initialMember?: { display_name?: string } | null;
   }) =>
     open ? (
-      <div data-testid="detail-sheet">{member?.display_name ?? "none"}</div>
+      <div data-testid="detail-sheet" data-user-id={userId ?? ""}>
+        {initialMember?.display_name ?? "none"}
+      </div>
     ) : null,
 }));
 
@@ -178,6 +183,22 @@ describe("Directory on the greenfield shell", () => {
     expect(row?.className).toContain("pointer-coarse:min-h-11");
   });
 
+  // #3845: the custom line sits under the name, and the row's name carries it
+  // just before the status, which stays last.
+  it("shows a member's custom status under their name", () => {
+    customLines.value = { "u-1": "At practice till 6" };
+    try {
+      render(<MembersDirectory />);
+      const row = screen.getByRole("button", { name: /^Ada Lovelace,/ });
+      expect(row).toHaveTextContent("At practice till 6");
+      expect(row.getAttribute("aria-label")).toMatch(
+        /, At practice till 6, Online$/,
+      );
+    } finally {
+      customLines.value = {};
+    }
+  });
+
   it("makes the row itself the control that opens a member", async () => {
     const user = userEvent.setup();
     render(<MembersDirectory />);
@@ -189,6 +210,11 @@ describe("Directory on the greenfield shell", () => {
     await user.click(screen.getByRole("button", { name: /^Ada Lovelace,/ }));
     expect(screen.getByTestId("detail-sheet")).toHaveTextContent(
       "Ada Lovelace",
+    );
+    // The sheet reads the profile by user id itself (#3726).
+    expect(screen.getByTestId("detail-sheet")).toHaveAttribute(
+      "data-user-id",
+      "u-1",
     );
   });
 

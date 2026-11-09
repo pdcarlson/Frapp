@@ -14,7 +14,11 @@ export {
   RELEASE_NOTES,
   formatReleaseNoteDate,
   releaseNoteText,
+  releaseNoteVersion,
+  parseReleaseNoteVersion,
+  isNewerReleaseNoteVersion,
   type ReleaseNote,
+  type ReleaseNoteVersion,
 } from "./release-notes";
 
 // ── Legal / compliance ───────────────────────────────────────────────────────
@@ -134,6 +138,18 @@ const inviteEmailSchema = z.string().email();
  */
 export function isInviteEmail(value: string): boolean {
   return inviteEmailSchema.safeParse(value.trim()).success;
+}
+
+/**
+ * Splits pasted or typed text into addresses (a pasted column, a CSV row, a
+ * mail client's `Name <a@b.edu>` copy loses its brackets). Web's chip field
+ * and mobile's Invite by email field read a draft the same way.
+ */
+export function splitAddresses(text: string): string[] {
+  return text
+    .split(/[\s,;]+/)
+    .map((part) => part.trim().replace(/^<|>$/g, ""))
+    .filter(Boolean);
 }
 
 /**
@@ -670,6 +686,7 @@ export {
   canAny,
   CHAPTER_PROFILE_PERMISSIONS,
   CHAT_REPORT_QUEUE_PERMISSIONS,
+  EVENT_CREATE_PERMISSIONS,
   memberAccessRoleIds,
   removesMemberAccess,
   WILDCARD_PERMISSION,
@@ -730,9 +747,12 @@ export {
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
   MAJOR_MAX_LENGTH,
+  POLL_OPTION_MAX_LENGTH,
   POLL_OPTIONS_MAX,
   POLL_OPTIONS_MIN,
+  POLL_QUESTION_MAX_LENGTH,
   SERVICE_DESCRIPTION_MAX_LENGTH,
+  TASK_TITLE_MAX_LENGTH,
   YEAR_MAX,
 } from "./field-limits";
 
@@ -755,6 +775,17 @@ export type {
   ChapterMarkBranding,
   ChapterTextMarkSource,
 } from "./chapter-mark";
+
+// ── Backwork course names and nicknames (#3848) ──
+export {
+  MAX_COURSE_NAME_LENGTH,
+  MAX_COURSE_NICKNAMES,
+  MAX_COURSE_NICKNAME_LENGTH,
+  collapseCourseText,
+  courseTextLength,
+  courseTextTooLong,
+  normalizeCourseNicknames,
+} from "./backwork-courses";
 
 // ── Upload MIME / extension allowlists + size caps (25 MB; backwork 100 MB) ──
 export {
@@ -882,11 +913,14 @@ export type { SidebarFixedSectionKey, SidebarSectionKey } from "./chat-sidebar";
 export {
   ROLE_COLOR_HEXES,
   ROLE_COLOR_PALETTE,
+  resolveCustomRoleNames,
+  resolveRoleChips,
   roleColor,
   roleColorOrNull,
   topRoleColor,
 } from "./role-colors";
 export type {
+  MemberRoleChip,
   RoleColorHex,
   RoleColorKey,
   RoleColorSource,
@@ -913,3 +947,8 @@ export {
   copyForServerMessage,
   refusalCopy,
 } from "./error-copy";
+export {
+  SERVICE_MINUTES_PER_POINT_DEFAULT,
+  effectiveMinutesPerPoint,
+  servicePointsForDuration,
+} from "./service-points";

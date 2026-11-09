@@ -1,19 +1,21 @@
 import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
+  CLOSE_POLL_LABEL,
   POLL_VOTE_ACTION_TYPE,
-  pollsGateOf,
+  canClosePoll,
+  isPollCardClosed,
   pollsGateReason,
   readPollPayload,
   tallyPollVotes,
   type PollOption,
 } from "@repo/chat-core/polls";
-import { parseInstant } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
-import { isModuleEnabled } from "@repo/validation";
 import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { useCurrentChapter, useNow } from "@repo/hooks";
+import { useMyPermissions, useNow } from "@repo/hooks";
+import { can } from "@repo/validation";
+import { usePollsGate } from "@/lib/chat/use-polls-gate";
 import {
   CardEyebrow,
   CardTitle,
@@ -43,14 +45,16 @@ import {
  * Voting itself is the generic inline-card-action mechanism (`actOnCard` in
  * `@repo/chat-core/chat-client`, wired through `useChatChannel`'s `act`) —
  * the same one reactions use — **not** the separate `/v1/polls` REST
- * resource (`usePoll`/`useVoteOnPoll` in `@repo/hooks`). Those hooks back
- * the standalone `/polls` dashboard page and its own `poll_votes` table;
- * `chat_messages.type='POLL'` rows they create default to `kind: 'text'`
+ * resource and its own `poll_votes` table, which no client reads any more
+ * (web's `/polls` page and its hooks were retired, #3871).
+ * `chat_messages.type='POLL'` rows that resource creates default to `kind: 'text'`
  * (never set by `PollService.createPoll`) and so never reach this renderer.
- * The `/poll` slash command (`packages/chat-core/src/dispatch.ts`) is the
- * only thing that creates a `kind: 'poll'` message, and it votes through
- * `chat_message_actions`, not `poll_votes` — confirmed by reading both
- * paths before choosing which one to mirror.
+ * A `kind: 'poll'` message is created only by web's `/poll` slash command
+ * (`packages/chat-core/src/dispatch.ts`), web's New poll dialog (#3865) and
+ * this app's New poll sheet (`new-poll-sheet.tsx`, #3701), all through `buildPollMessage` in
+ * `@repo/chat-core/polls`, and it votes through `chat_message_actions`, not
+ * `poll_votes` — confirmed by reading both paths before choosing which one
+ * to mirror.
  */
 
 /**
@@ -65,10 +69,16 @@ export interface PollCardProps extends ChatCardFrameProps {
     actionType: string,
     payload: Record<string, unknown>,
   ) => void;
+  /**
+   * Close poll on the viewer's own open poll (#3794). The caller confirms
+   * first (`confirmClosePoll`); the card only offers it (`canClosePoll`).
+   */
+  onClosePoll?: (messageId: string) => void;
 }
 
 export function PollCard(props: PollCardProps) {
-  const { message, viewerId, isConfirmed, onVote, onOpenActions } = props;
+  const { message, viewerId, isConfirmed, onVote, onClosePoll, onOpenActions } =
+    props;
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand);
@@ -80,19 +90,16 @@ export function PollCard(props: PollCardProps) {
   const now = useNow();
   // A card vote is a Polls write, and the server refuses it while Polls is off
   // (#2993). The gate is mirrored here so the member sees that before tapping
-  // (#3012). It reads the member view (`useCurrentChapter`'s
-  // `enabled_modules`, as `app/(app)/study.tsx` does), never the officer-only
-  // config, and fails closed until that read answers, saying whether it is
-  // still running or needs a Retry (`pollsGateOf`, shared with web). A missing
-  // `polls` key is on.
-  const chapterQuery = useCurrentChapter();
-  const pollsGate = pollsGateOf({
-    pollsEnabled:
-      chapterQuery.data === undefined
-        ? undefined
-        : isModuleEnabled(chapterQuery.data?.enabled_modules, "polls"),
-    fetchStatus: chapterQuery.fetchStatus,
-  });
+  // (#3012), failing closed until the chapter read answers and saying whether
+  // it is still running or needs a Retry (`usePollsGate`, which the
+  // composer's Poll offer reads too).
+  const { gate: pollsGate, recheck: recheckPolls } = usePollsGate();
+  // The close route requires `polls:create`, which posting a card doesn't
+  // (#3007). Unknown until the read lands, which withholds Close poll.
+  const canCreatePolls = can(
+    "polls:create",
+    useMyPermissions().data?.permissions,
+  );
 
   const {
     byOption,
@@ -116,8 +123,16 @@ export function PollCard(props: PollCardProps) {
     );
   }
 
-  const closesAt = parseInstant(payload.closes_at);
-  const isClosed = closesAt ? closesAt.getTime() < now : false;
+  // Closed by its deadline or, early, by its creator (#3794). The server row's
+  // `payload.closed_at` arrives as a Realtime UPDATE, so every open card
+  // redraws closed the moment the creator closes it.
+  const isClosed = isPollCardClosed(payload, now);
+  const showClose =
+    !!onClosePoll &&
+    canClosePoll(message, payload, viewerId, now, {
+      pollsGate,
+      canCreatePolls,
+    });
   const canVote = isConfirmed && !isClosed && pollsGate === "on";
   const gateReason = pollsGateReason(pollsGate, { isClosed, isConfirmed });
 
@@ -196,6 +211,16 @@ export function PollCard(props: PollCardProps) {
           ? `No votes yet${canVote ? " · be the first to vote" : ""}.`
           : `${total} vote${total === 1 ? "" : "s"}${viewerVote ? " · your vote is highlighted" : ""}`}
       </Text>
+      {showClose ? (
+        <Pressable
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={() => onClosePoll?.(message.id)}
+          style={styles.closeButton}
+        >
+          <Text style={styles.closeText}>{CLOSE_POLL_LABEL}</Text>
+        </Pressable>
+      ) : null}
       {gateReason ? (
         <View style={styles.gateRow}>
           <Text style={styles.gateText}>{gateReason}</Text>
@@ -204,7 +229,7 @@ export function PollCard(props: PollCardProps) {
               accessibilityRole="button"
               accessibilityLabel="Retry checking whether polls are on"
               hitSlop={8}
-              onPress={() => void chapterQuery.refetch()}
+              onPress={recheckPolls}
             >
               <Text style={styles.retryText}>Retry</Text>
             </Pressable>
@@ -273,6 +298,15 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       color: tokens.color.text.mutedForeground,
     },
     retryText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: brand.accent,
+    },
+    closeButton: {
+      alignSelf: "flex-start",
+      marginTop: tokens.spacing.xs,
+      paddingVertical: tokens.spacing.xs,
+    },
+    closeText: {
       ...typeRole(tokens.typography.role.caption),
       color: brand.accent,
     },

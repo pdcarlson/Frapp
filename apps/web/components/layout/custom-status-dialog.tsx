@@ -82,9 +82,10 @@ export function CustomStatusDialog({
       await handleClear();
       return;
     }
-    const duration =
-      CLEAR_AFTER.find((option) => option.value === clearAfter)?.duration ??
-      DEFAULT_LINE_DURATION;
+    // Not `?? DEFAULT_LINE_DURATION`: "Don't clear" *is* `null`, and `??`
+    // would turn it back into Today.
+    const option = CLEAR_AFTER.find((o) => o.value === clearAfter);
+    const duration = option ? option.duration : DEFAULT_LINE_DURATION;
     const saved = await save({
       custom_status: trimmed,
       custom_status_expires_at: lineEndsAt(duration, new Date()),

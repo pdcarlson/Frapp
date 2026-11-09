@@ -222,7 +222,9 @@ export class UpdateUserSettingsDto {
       'The status the member picks (#3845). Sending it replaces `status_expires_at` with the value sent alongside it (absent: no end time). `online` never carries an end time.',
     enum: MEMBER_STATUSES,
   })
-  @IsOptional()
+  // Not `@IsOptional`, which also skips `null`: a null status would pass and
+  // change nothing behind a 200. Absent is fine; null is refused.
+  @ValidateIf((_, value) => value !== undefined)
   @IsIn(MEMBER_STATUSES, {
     message: `status must be one of: ${MEMBER_STATUSES.join(', ')}`,
   })
@@ -230,13 +232,14 @@ export class UpdateUserSettingsDto {
 
   @ApiPropertyOptional({
     description:
-      'When `status` reverts to `online`, as an ISO 8601 instant in the future. Accepted only together with `status`. Null or absent: until the member changes it.',
+      'When `status` reverts to `online`, as an ISO 8601 instant in the future. Accepted only together with `status`; null, blank or absent means no end time (and alone is ignored).',
     nullable: true,
     type: String,
     format: 'date-time',
     pattern: ISO_INSTANT_PATTERN,
   })
   @IsOptional()
+  @Transform(({ value }) => normalizeBlankToNull(value))
   @ValidateIf((_, value) => value !== null)
   @IsString()
   @Matches(ISO_INSTANT_REGEX, { message: `$property ${ISO_INSTANT_MESSAGE}` })
@@ -257,13 +260,14 @@ export class UpdateUserSettingsDto {
 
   @ApiPropertyOptional({
     description:
-      'When the custom status line clears, as an ISO 8601 instant in the future. Accepted only together with `custom_status`. Null or absent: until the member clears it.',
+      'When the custom status line clears, as an ISO 8601 instant in the future. Accepted only together with `custom_status`; null, blank or absent means no end time (and alone is ignored).',
     nullable: true,
     type: String,
     format: 'date-time',
     pattern: ISO_INSTANT_PATTERN,
   })
   @IsOptional()
+  @Transform(({ value }) => normalizeBlankToNull(value))
   @ValidateIf((_, value) => value !== null)
   @IsString()
   @Matches(ISO_INSTANT_REGEX, { message: `$property ${ISO_INSTANT_MESSAGE}` })

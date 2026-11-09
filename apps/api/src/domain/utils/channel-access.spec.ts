@@ -175,6 +175,61 @@ describe('canAccessChannel', () => {
     ).toBe(false);
   });
 
+  // #3909: `#chapter-audit` is system-write only. A President once posted
+  // there because the read-only gate lets `*` through.
+  describe('the audit log channel', () => {
+    const auditLog = {
+      type: 'PUBLIC' as const,
+      member_ids: null,
+      required_permissions: null,
+      is_read_only: true,
+      is_audit_log: true,
+    };
+
+    it('every member can read it', () => {
+      expect(
+        canAccessChannel({ ...base, channel: auditLog, operation: 'read' }),
+      ).toBe(true);
+    });
+
+    it.each([
+      ['the wildcard', ['*']],
+      ['announcements:post', ['announcements:post']],
+      ['no permission', []],
+    ])('refuses a post from a member holding %s', (_label, permissions) => {
+      expect(
+        canAccessChannel({
+          ...base,
+          permissions,
+          channel: auditLog,
+          operation: 'post',
+        }),
+      ).toBe(false);
+    });
+
+    it('refuses a post even when read-only has been switched off', () => {
+      expect(
+        canAccessChannel({
+          ...base,
+          permissions: ['*'],
+          channel: { ...auditLog, is_read_only: false },
+          operation: 'post',
+        }),
+      ).toBe(false);
+    });
+
+    it('refuses a vote', () => {
+      expect(
+        canAccessChannel({
+          ...base,
+          permissions: ['*'],
+          channel: auditLog,
+          operation: 'vote',
+        }),
+      ).toBe(false);
+    });
+  });
+
   describe('operation: "post" on a read-only channel', () => {
     const readOnly = {
       type: 'PUBLIC' as const,

@@ -54,16 +54,22 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 vi.mock("@/components/members/member-detail-sheet", () => ({
   MemberDetailSheet: ({
     open,
-    member,
+    userId,
+    initialMember,
     points,
   }: {
     open: boolean;
-    member: { display_name?: string } | null;
+    userId: string | null;
+    initialMember?: { display_name?: string } | null;
     points?: number | null;
   }) =>
     open ? (
-      <div data-testid="detail-sheet" data-points={String(points)}>
-        {member?.display_name ?? "none"}
+      <div
+        data-testid="detail-sheet"
+        data-user-id={userId ?? ""}
+        data-points={String(points)}
+      >
+        {initialMember?.display_name ?? "none"}
       </div>
     ) : null,
 }));
@@ -98,7 +104,9 @@ describe("AlumniDirectory rows (#2484)", () => {
 
     const sheet = screen.getByTestId("detail-sheet");
     expect(sheet).toHaveTextContent("Charles Whitmore III");
-    expect(sheet).toHaveAttribute("data-points", "null");
+    // The sheet reads the profile by user id itself (#3726).
+    expect(sheet).toHaveAttribute("data-user-id", "u-1");
+    expect(sheet).toHaveAttribute("data-points", "undefined");
   });
 
   it("keeps the sheet on the member after they leave the alumni list", async () => {

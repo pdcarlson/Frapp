@@ -84,6 +84,14 @@ describe("end times", () => {
     expect(dndEndsAt("tomorrow", now)).toBe(end.toISOString());
   });
 
+  // After midnight, "tomorrow" means this morning, not the morning after.
+  test("until tomorrow, picked after midnight, ends at 8:00 AM that morning", () => {
+    const end = tomorrowMorning(new Date(2026, 10, 10, 0, 30));
+    expect([end.getDate(), end.getHours()]).toEqual([10, 8]);
+    const atEight = tomorrowMorning(new Date(2026, 10, 10, 8, 0));
+    expect([atEight.getDate(), atEight.getHours()]).toEqual([11, 8]);
+  });
+
   test("Today ends at the next local midnight", () => {
     const now = new Date(2026, 10, 9, 15, 30);
     const end = endOfToday(now);
@@ -117,6 +125,8 @@ describe("lineProblem", () => {
   test("a pasted line break is refused", () => {
     expect(lineProblem("one\ntwo", 80)).toMatch(/one line/);
     expect(lineProblem("one\u2028two", 80)).toMatch(/one line/);
+    // C1, as the API's \p{Cc} refuses: U+0085 is a line break.
+    expect(lineProblem("one\u0085two", 80)).toMatch(/one line/);
   });
 
   test("surrounding spaces don't count against the cap", () => {

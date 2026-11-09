@@ -19,15 +19,22 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * (`app/(app)/invite.tsx`) is inside one, so it passes the chapter accent as
  * `tile`, and its Share invite button as `action`, which sits between the
  * card and the list so the list can grow without pushing the button away.
+ * That screen lists its invites itself (`InvitedList`), so it passes no
+ * `shared`.
  */
 export function InviteLinksCard({
-  shared,
-  isJoined,
+  shared = [],
+  isJoined = () => false,
   tile,
   action,
 }: {
-  shared: readonly SharedInvite[];
-  isJoined: (token: string) => boolean;
+  /**
+   * The links shared on this visit, listed under Shared. The Invite members
+   * screen leaves it out: its Invited list holds every link, so it would
+   * list each one twice.
+   */
+  shared?: readonly SharedInvite[];
+  isJoined?: (token: string) => boolean;
   /** The link tile's fill, border and glyph. Defaults to house gold. */
   tile?: { fill: string; border: string; ink: string };
   action?: ReactNode;
