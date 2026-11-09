@@ -64,7 +64,7 @@ describe("apps/web/proxy.ts", () => {
 
     // Static routes: Next reuses their prefetch as the navigation, so the
     // proxy must run on the prefetch too.
-    const staticRoutes = ["/", ...AUTH_ROUTES, "/join", "/no-access", "/dashboard"];
+    const staticRoutes = ["/", ...AUTH_ROUTES, "/join", "/no-access", "/new-account", "/dashboard"];
     for (const path of staticRoutes) {
       expect(onNavigation(path), path).toBe(true);
       expect(onPrefetch(path), path).toBe(true);

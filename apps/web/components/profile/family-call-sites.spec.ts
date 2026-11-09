@@ -43,6 +43,8 @@ const FAMILY = [
   "app/(auth)/sign-up/page.tsx",
   "app/(auth)/join/page.tsx",
   "app/(auth)/no-access/page.tsx",
+  // The notice a sign-in that created a new account lands on (#3786).
+  "app/(auth)/new-account/page.tsx",
   "app/global-error.tsx",
   "app/(dashboard)/profile/page.tsx",
   "components/auth/auth-screen.tsx",
@@ -55,6 +57,8 @@ const FAMILY = [
   "components/auth/chapter-showcase.tsx",
   // `/no-access`'s sign-out action, split out as a client component (#3236).
   "components/auth/no-access-sign-out.tsx",
+  // `/new-account`'s sign-out and continue actions (#3786).
+  "components/auth/new-account-actions.tsx",
   "components/auth/signet-mark.tsx",
   "components/profile/profile-panel.tsx",
   "components/profile/profile-glyphs.tsx",

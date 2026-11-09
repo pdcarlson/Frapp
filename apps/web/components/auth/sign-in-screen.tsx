@@ -177,6 +177,7 @@ function SignInPageContent() {
         provider,
         window.location.origin,
         redirectTo,
+        "sign-in",
       );
       if (error) throw error;
     } catch (error) {
