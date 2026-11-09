@@ -65,7 +65,7 @@ export function DateFilterChip({
           <ChevronDown className="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-64 p-1">
+      <PopoverContent align="start" className="w-72 p-1">
         <div role="radiogroup" aria-label="Date added">
           {presets.map((preset) => (
             <button
