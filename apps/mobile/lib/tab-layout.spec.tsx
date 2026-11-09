@@ -37,6 +37,10 @@ vi.mock("@/components/onboarding/tour", () => ({
   useTourAnchor: () => undefined,
   useTourReady: () => undefined,
 }));
+// So does What's new's host beside it (`components/whats-new/whats-new-host.spec.tsx`).
+vi.mock("@/components/whats-new/whats-new-host", () => ({
+  WhatsNewHost: () => null,
+}));
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#F4CB63" }),
 }));
