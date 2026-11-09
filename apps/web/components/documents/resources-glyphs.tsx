@@ -40,7 +40,6 @@ import { NavGlyph } from "@/components/layout/nav-glyphs";
 
 export {
   DocumentsGlyph,
-  PollsGlyph,
   ReportsGlyph,
   SearchGlyph,
 } from "@/components/layout/nav-glyphs";

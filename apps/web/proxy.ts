@@ -16,7 +16,6 @@ export const PROTECTED_ROUTE_PREFIXES = [
   "/discord-import",
   "/geofences",
   "/study",
-  "/polls",
   "/chat",
   "/chat-admin",
   "/points",

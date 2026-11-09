@@ -30,7 +30,6 @@ export const DASHBOARD_ROUTES = [
   "/discord-import",
   "/geofences",
   "/study",
-  "/polls",
   "/chat",
   "/points",
   "/billing",

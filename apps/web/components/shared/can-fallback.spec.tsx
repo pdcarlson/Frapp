@@ -382,7 +382,6 @@ describe("the branches this change did not touch", () => {
  * make someone justify.
  */
 const SURFACE_GATES: readonly { file: string; match: string }[] = [
-  { file: "components/polls/polls-page.tsx", match: 'permission="polls:view_all"' },
   { file: "components/reports/reports-page.tsx", match: 'permission="reports:export"' },
   { file: "components/geofences/geofences-admin-page.tsx", match: 'permission="geofences:manage"' },
   { file: "components/roles/roles-page.tsx", match: 'permission="roles:manage"' },
@@ -417,7 +416,6 @@ const CONSUMERS: readonly string[] = [
   "components/events/events-page.tsx",
   "components/geofences/geofences-admin-page.tsx",
   "components/points/points-audit-card.tsx",
-  "components/polls/polls-page.tsx",
   "components/reports/reports-page.tsx",
   "components/roles/roles-page.tsx",
   "components/service/service-page.tsx",

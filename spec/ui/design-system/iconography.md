@@ -569,7 +569,8 @@ is accented.
 Two of the swaps were corrections rather than a pack change, in §6.2.4's sense:
 
 - `/polls` drew `RefreshCcw`, which §6.2.3 already recorded as "a stray second
-  spelling of §6.2.2's `RefreshCw`". It was the last one in the tree.
+  spelling of §6.2.2's `RefreshCw`". It was the last one in the tree. (The
+  page itself was retired in #3871.)
 - `/reports` marked **Generate report** with `FileSpreadsheet` and **Download
   PDF** with `FileText` — a spreadsheet labelling a report, and a generic page
   labelling the PDF. Both now name what the control produces.

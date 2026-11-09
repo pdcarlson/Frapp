@@ -244,8 +244,8 @@ function RowLeadBlock({ lead }: { lead: RowLead }) {
 }
 
 /**
- * A framed item, for the two pages whose loaded items are framed (`/tasks`
- * cards, `/polls` cards). Same radius and hairline as the real frame, and no
+ * A framed item, for a page whose loaded items are framed (`/tasks` cards).
+ * Same radius and hairline as the real frame, and no
  * fill, because the real frame has none.
  */
 export function SkeletonFrame({
