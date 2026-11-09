@@ -6,10 +6,16 @@ const {
   mockCurrentChapter,
   mockToast,
   eventQueryState,
+  permissionsState,
 } = vi.hoisted(() => ({
   eventQueryState: { isLoading: false },
   mockCurrentChapter: vi.fn(),
   mockToast: vi.fn(),
+  // What `useMyPermissions` answers: the viewer's permissions, or `undefined`
+  // while the read is still in flight.
+  permissionsState: {
+    value: ["billing:manage"] as string[] | undefined,
+  },
 }));
 
 // usingPreviewData renders from the `event` prop and gates out AttendancePanel;
@@ -26,9 +32,14 @@ vi.mock("@repo/hooks", () => ({
   // chapter's subscription now (#841). Existing cases default to active.
   useCurrentChapter: () => mockCurrentChapter(),
   useMyPermissions: () => ({
-    data: { permissions: ["billing:manage"] },
-    isPending: false,
+    data:
+      permissionsState.value === undefined
+        ? undefined
+        : { permissions: permissionsState.value },
+    isPending: permissionsState.value === undefined,
     isError: false,
+    fetchStatus: permissionsState.value === undefined ? "fetching" : "idle",
+    refetch: vi.fn(),
   }),
 }));
 
@@ -42,7 +53,13 @@ vi.mock("@/lib/hooks/use-toast", () => ({
 }));
 
 vi.mock("@/components/events/attendance-panel", () => ({
-  AttendancePanel: () => null,
+  AttendancePanel: () => <div data-testid="attendance-roster" />,
+}));
+
+vi.mock("@/components/events/my-check-in", () => ({
+  MyCheckIn: ({ zone }: { zone: string }) => (
+    <div data-testid="my-check-in" data-zone={zone} />
+  ),
 }));
 
 import { EventDetailSheet } from "./event-detail-sheet";
@@ -59,6 +76,7 @@ const chapter = chapterSubscription(mockCurrentChapter);
 beforeEach(() => {
   chapter.active();
   mockToast.mockReset();
+  permissionsState.value = ["billing:manage"];
 });
 
 describe("EventDetailSheet who's coming", () => {
@@ -459,5 +477,86 @@ describe("EventDetailSheet required badge", () => {
     const badge = screen.getByText("Required for everyone");
     expect(badge.className).toContain("text-destructive-text");
     expect(badge.className).not.toContain("text-accent-text");
+  });
+});
+
+describe("EventDetailSheet for a live event, by role (#3855)", () => {
+  function renderLive(event: Record<string, unknown> = baseEvent) {
+    return render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        event={event}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+  }
+
+  it("gives a member their own check-in, and never mounts the officer roster", () => {
+    permissionsState.value = ["members:view"];
+    renderLive();
+
+    expect(screen.getByTestId("my-check-in")).toBeInTheDocument();
+    // Mounted, the roster's `events:update` read 403s into "Your role can't
+    // do this" on the member's sheet.
+    expect(screen.queryByTestId("attendance-roster")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit event" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete event" })).toBeNull();
+    expect(
+      screen.queryByText(/subscription is not active/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("gives an officer the roster and the header actions, as well as their own check-in", () => {
+    permissionsState.value = [
+      "members:view",
+      "events:update",
+      "events:delete",
+    ];
+    renderLive();
+
+    expect(screen.getByTestId("attendance-roster")).toBeInTheDocument();
+    expect(screen.getByTestId("my-check-in")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit event" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Delete event" }),
+    ).toBeInTheDocument();
+  });
+
+  it("splits Edit from Delete by their own permissions", () => {
+    permissionsState.value = ["members:view", "events:update"];
+    renderLive();
+
+    expect(screen.getByRole("button", { name: "Edit event" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete event" })).toBeNull();
+  });
+
+  it("holds the roster and the header actions back while permissions load", () => {
+    permissionsState.value = undefined;
+    renderLive();
+
+    expect(screen.queryByTestId("attendance-roster")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit event" })).toBeNull();
+    expect(screen.getByTestId("my-check-in")).toBeInTheDocument();
+  });
+
+  it("tells the check-in block which zone the event has", () => {
+    permissionsState.value = ["members:view"];
+    const zone = [
+      { lat: 1, lng: 2 },
+      { lat: 3, lng: 4 },
+      { lat: 5, lng: 6 },
+    ];
+    const { unmount } = renderLive({ ...baseEvent, check_in_zone: zone });
+    expect(screen.getByTestId("my-check-in")).toHaveAttribute("data-zone", "zone");
+    unmount();
+
+    renderLive({ ...baseEvent, check_in_zone: zone.slice(0, 2) });
+    expect(screen.getByTestId("my-check-in")).toHaveAttribute(
+      "data-zone",
+      "malformed",
+    );
   });
 });

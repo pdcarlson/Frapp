@@ -1,6 +1,6 @@
 "use client";
 
-import { checkInZoneLine } from "@repo/validation";
+import { can, checkInZoneLine } from "@repo/validation";
 import { useMemo } from "react";
 import {
   AlertTriangle,
@@ -19,6 +19,7 @@ import {
 import {
   useDeleteEvent,
   useEvent,
+  useMyPermissions,
   useRoles,
 } from "@repo/hooks";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -40,6 +41,9 @@ import {
   PanelHeader,
 } from "@/components/shared/panel";
 import { AttendancePanel } from "@/components/events/attendance-panel";
+import { MyCheckIn } from "@/components/events/my-check-in";
+import { Can } from "@/components/shared/can";
+import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { normalizeRoleOptions } from "@/lib/roles";
 import { formatDayTimeRange } from "@repo/formatting";
 import { pointsLabel, recurrenceLabel } from "@/components/events/event-labels";
@@ -76,6 +80,17 @@ export function EventDetailSheet({
   const { confirm, confirmDialog } = useConfirmDialog();
   const rolesQuery = useRoles();
   const { toast } = useToast();
+  // Edit and Delete are `events:update` and `events:delete` on the server, so
+  // a member gets neither icon rather than two that 403 (#3855). A boolean,
+  // not a `<Can>`: the header has no room for an offline chip per icon, and
+  // `undefined` permissions (still loading) read as denied, so the icons
+  // never flash for a member. The preview sheet keeps both, disabled by its
+  // own notice.
+  const { data: permissionsPayload } = useMyPermissions();
+  const canEditEvent =
+    usingPreviewData || can("events:update", permissionsPayload?.permissions);
+  const canDeleteEvent =
+    usingPreviewData || can("events:delete", permissionsPayload?.permissions);
 
   const resolvedEvent = useMemo(() => {
     if (!event) return null;
@@ -221,28 +236,32 @@ export function EventDetailSheet({
         <PanelHeader
           actions={
             <>
-              <IconButton
-                label="Edit event"
-                {...editControl}
-                onClick={() => {
-                  if (!resolvedEvent) return;
-                  onRequestEdit(resolvedEvent);
-                }}
-              >
-                <Pencil aria-hidden="true" />
-              </IconButton>
-              <IconButton
-                label="Delete event"
-                className="hover:text-destructive-text"
-                {...deleteControl}
-                onClick={handleDelete}
-              >
-                {deleteEventMutation.isPending ? (
-                  <Loader2 className="animate-spin" aria-hidden="true" />
-                ) : (
-                  <Trash2 aria-hidden="true" />
-                )}
-              </IconButton>
+              {canEditEvent ? (
+                <IconButton
+                  label="Edit event"
+                  {...editControl}
+                  onClick={() => {
+                    if (!resolvedEvent) return;
+                    onRequestEdit(resolvedEvent);
+                  }}
+                >
+                  <Pencil aria-hidden="true" />
+                </IconButton>
+              ) : null}
+              {canDeleteEvent ? (
+                <IconButton
+                  label="Delete event"
+                  className="hover:text-destructive-text"
+                  {...deleteControl}
+                  onClick={handleDelete}
+                >
+                  {deleteEventMutation.isPending ? (
+                    <Loader2 className="animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Trash2 aria-hidden="true" />
+                  )}
+                </IconButton>
+              ) : null}
             </>
           }
         >
@@ -267,9 +286,32 @@ export function EventDetailSheet({
             </SectionSkeleton>
           ) : null}
 
-          <SubscriptionNotice gate={gate} feature="editing events" />
+          {canEditEvent || canDeleteEvent ? (
+            <SubscriptionNotice gate={gate} feature="editing events" />
+          ) : null}
 
           <div className="mt-5 grid gap-3">
+            {/*
+              Every viewer's own check-in, first because it is the one thing
+              on the sheet a member can act on. Officers check in too, so they
+              get it as well as the roster below.
+            */}
+            {eventId && !usingPreviewData ? (
+              <MyCheckIn
+                eventId={eventId}
+                start={resolvedEvent?.start_time}
+                end={resolvedEvent?.end_time}
+                opensMinutes={resolvedEvent?.check_in_opens_minutes}
+                pointValue={resolvedEvent?.point_value}
+                zone={
+                  hasCheckInZone
+                    ? "zone"
+                    : checkInZoneIsMalformed
+                      ? "malformed"
+                      : "none"
+                }
+              />
+            ) : null}
             <div className="rounded-lg border border-border p-3">
               <p className="mb-2 flex items-center gap-1 text-caption text-muted-foreground">
                 <RolesGlyph className="h-3.5 w-3.5" />
@@ -381,11 +423,28 @@ export function EventDetailSheet({
               </div>
             ) : null}
 
+            {/*
+              The roster is `events:update` on the server, so it mounts only
+              for a viewer who holds it: mounted for a member, its read 403'd
+              and the sheet said "Your role can't do this" where their own
+              check-in belonged (#3855). `<Can>` holds it back while
+              permissions load, so it never mounts and fires that read first.
+            */}
             {eventId && !usingPreviewData ? (
-              <AttendancePanel
-                eventId={eventId}
-                eventStart={resolvedEvent?.start_time}
-              />
+              <Can
+                permission="events:update"
+                offlineFallback={(retry) => (
+                  <PermissionsOfflineSurface
+                    description="Reconnect to see who checked in to this event."
+                    onRetry={retry}
+                  />
+                )}
+              >
+                <AttendancePanel
+                  eventId={eventId}
+                  eventStart={resolvedEvent?.start_time}
+                />
+              </Can>
             ) : null}
           </div>
         </PanelBody>
