@@ -65,7 +65,8 @@ export class PollController {
   @Post('polls/:messageId/vote')
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'Cast vote on a poll' })
-  // The `/polls` page's vote (`usePolls` in `@repo/hooks`). The service
+  // No client calls this since web's `/polls` page and its hooks were retired
+  // (#3871); the route goes in #3887. The service
   // replaces any earlier vote without saying whether there was one, so there
   // is no `is_revote`, and a repeat counts again. A multi-choice vote with
   // nothing selected clears the vote, which is not a vote cast.

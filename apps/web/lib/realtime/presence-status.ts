@@ -75,7 +75,7 @@ export function presenceLabel(status: PresenceStatus): string {
  * The dot treatment for a status — the colour decision, in a named mapper
  * rather than inline in JSX.
  *
- * This repo keeps one mapper per domain status vocabulary (`poll-status.ts`,
+ * This repo keeps one mapper per domain status vocabulary (`geofence-status.ts`,
  * `settings-status.ts`, and friends) because the shared invariant is that **no
  * domain status is ever painted in the chapter accent** — #1202 found five that
  * were, and the ones that had no mapper were the ones nobody could check.
