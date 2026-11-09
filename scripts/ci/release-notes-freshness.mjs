@@ -145,8 +145,9 @@ export function memberFacingChanges(files) {
 }
 
 /**
- * `{stale, message}`. Stale when something members could notice changed and
- * the newest entry reads exactly as it did in what production already shipped.
+ * `{stale, message}`. Stale when the same day's entry got shorter than what
+ * production shipped, or when something members could notice changed and
+ * What's new gained neither a newer entry nor new lines.
  */
 export function releaseNotesVerdict({ tag, floor, ship, changedFiles }) {
   if (ship && floor && ship.date === floor.date && ship.lines < floor.lines) {
