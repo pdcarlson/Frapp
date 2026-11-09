@@ -161,7 +161,7 @@ const submitCommand = (store, build) =>
   `\`npm run eas -- submit --platform ${store} --profile production --id ${build} --non-interactive${store === "ios" ? " --no-auto-testflight-setup" : ""}\` from the repo root`;
 
 const DROP =
-  "drop its entry from the record PR before merging, or in a PR of its own once that has merged (`apps/mobile/store/README.md` § Shipped builds and the API contract)";
+  "drop its entry from the record PR before merging, or, once that has merged, move it to the registry's `dropped` list with this run as the reason, in a PR of its own (`apps/mobile/store/README.md` § Shipped builds and the API contract)";
 
 /** What a person does about one row that didn't finish. */
 export function nextStep(row) {

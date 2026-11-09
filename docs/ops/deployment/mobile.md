@@ -368,6 +368,10 @@ calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111
    build until it was listed. Fix it on `main` before the next production ship, or waive a route
    no shipped binary calls ([`apps/mobile/store/README.md` § Shipped builds and the API contract](../../../apps/mobile/store/README.md#shipped-builds-and-the-api-contract)).
    Don't merge around it.
+   Every record PR appends to the same array, so it conflicts with any other record PR that merges
+   first. The PR base sync sweep merges `main` into it itself; when it can't, the PR gets the
+   usual conflict comment
+   ([`pr-babysitting.md` § Base-branch sync](../../ci-cd/pr-babysitting.md#base-branch-sync-scriptscipr-base-syncmjs)).
    Once that PR merges, the **Mobile release tags** workflow tags the build's commit
    `mobile-vX.Y.Z` (the store version) with its own GitHub Release, never marked latest
    (`scripts/ci/mint-mobile-release-tags.mjs`). The plain `vX.Y.Z` tags count web and API
@@ -407,8 +411,10 @@ nothing is still building.
 - **EAS accepted a submission and then failed to upload it** (the `confirm` job is red): the
   record PR already lists the build. Either, while its commit is still the latest `v*` tag, fix
   the cause and upload it again with the `npm run eas -- submit … --id <build id>` the `confirm`
-  summary gives, and keep the entry, or drop the entry: from the record PR before merging, or in a PR of its own if it has merged. A
-  build that never reached a store can be dropped at once
+  summary gives, and keep the entry, or drop the entry: delete it from the record PR before
+  merging, or, if that has merged, move it to the registry's `dropped` list with the run as its
+  reason, in a PR of its own (a plain deletion fails `api-contract-check`). A build that never
+  reached a store can be dropped at once
   ([`apps/mobile/store/README.md` § Shipped builds and the API contract](../../../apps/mobile/store/README.md#shipped-builds-and-the-api-contract)).
 - **A build was still running when the job stopped waiting:** it may finish on EAS. Don't start
   another. When it finishes, and its commit is still the latest `v*` tag, upload it with the same

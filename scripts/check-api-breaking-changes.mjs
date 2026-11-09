@@ -64,7 +64,10 @@
  *
  * Usage:
  *   node scripts/check-api-breaking-changes.mjs --base <ref>
- *   node scripts/check-api-breaking-changes.mjs --shipped apps/mobile/store/shipped-builds.json
+ *   node scripts/check-api-breaking-changes.mjs --shipped apps/mobile/store/shipped-builds.json [--registry-base <ref>]
+ *
+ * `--registry-base` (CI passes the PR's base) also fails the shipped check when
+ * the registry lost or rewrote an entry the base has (`compareRegistries`).
  */
 
 import { execFileSync } from "node:child_process";
@@ -73,14 +76,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
+import { compareRegistries, parseRegistry } from "./ci/lib/shipped-builds-registry.mjs";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SPEC_PATH = "apps/api/openapi.json";
 const OASDIFF_BIN = path.join(REPO_ROOT, ".cache", "oasdiff", "oasdiff");
 const IGNORE_PATH = "apps/mobile/store/api-breaking-ignore.txt";
 
-const PLATFORMS = new Set(["ios", "android"]);
-const ENTRY_KEYS = new Set(["platform", "version", "build", "sha", "recorded", "note"]);
 
 function getArg(name) {
   const idx = process.argv.indexOf(name);
@@ -142,65 +144,23 @@ export function runOasdiff({ bin, basePath, headPath, ignorePath }) {
 }
 
 /**
- * Parse and validate the shipped-builds registry.
- *
- * Strict on purpose. A typo'd key (`commit` for `sha`) or a short SHA that
- * parsed as "no builds" would turn a blocking gate into one that compares
- * against nothing, so every problem is an error rather than a skip.
- *
- * @returns {{ builds: Array<{platform: string, version: string, build: string, sha: string, recorded: string}> }}
- * @throws {Error} listing every problem found
+ * A registry's entries as written, for comparing against a base this branch's
+ * parse refuses: every object in `builds` and `dropped` with a string id, or
+ * null when the text isn't a JSON object at all.
  */
-export function parseRegistry(text) {
+export function lenientRegistry(text) {
   let data;
   try {
     data = JSON.parse(text);
-  } catch (error) {
-    throw new Error(`not valid JSON: ${error.message}`);
+  } catch {
+    return null;
   }
-  if (data === null || typeof data !== "object" || Array.isArray(data)) {
-    throw new Error("the top level must be an object with a `builds` array");
-  }
-  if (!Array.isArray(data.builds)) {
-    throw new Error("`builds` must be an array (empty when nothing has shipped)");
-  }
-
-  const problems = [];
-  const seen = new Set();
-  data.builds.forEach((entry, i) => {
-    const at = `builds[${i}]`;
-    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
-      problems.push(`${at} must be an object`);
-      return;
-    }
-    for (const key of Object.keys(entry)) {
-      if (!ENTRY_KEYS.has(key)) problems.push(`${at} has an unknown key \`${key}\``);
-    }
-    if (!PLATFORMS.has(entry.platform)) {
-      problems.push(`${at}.platform must be "ios" or "android"`);
-    }
-    if (typeof entry.version !== "string" || !/^\d+\.\d+\.\d+$/.test(entry.version)) {
-      problems.push(`${at}.version must be the store version, e.g. "1.0.0"`);
-    }
-    if (typeof entry.build !== "string" || !/^[1-9]\d*$/.test(entry.build)) {
-      problems.push(`${at}.build must be the native build number as a string, e.g. "12"`);
-    }
-    if (typeof entry.sha !== "string" || !/^[0-9a-f]{40}$/.test(entry.sha)) {
-      problems.push(`${at}.sha must be the full 40-character commit SHA the build was made from`);
-    }
-    if (typeof entry.recorded !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(entry.recorded)) {
-      problems.push(`${at}.recorded must be the date it was recorded, e.g. "2026-10-01"`);
-    }
-    if (entry.note !== undefined && typeof entry.note !== "string") {
-      problems.push(`${at}.note must be a string when present`);
-    }
-    const id = `${entry.platform}/${entry.version}+${entry.build}`;
-    if (seen.has(id)) problems.push(`${at} repeats ${id}`);
-    seen.add(id);
-  });
-
-  if (problems.length > 0) throw new Error(problems.join("\n"));
-  return { builds: data.builds };
+  if (data === null || typeof data !== "object" || Array.isArray(data)) return null;
+  const entries = (list) =>
+    (Array.isArray(list) ? list : []).filter(
+      (e) => e !== null && typeof e === "object" && ["platform", "version", "build", "sha"].every((k) => typeof e[k] === "string"),
+    );
+  return { builds: entries(data.builds), dropped: entries(data.dropped) };
 }
 
 /** One baseline per distinct SHA, naming every build made from it. */
@@ -234,12 +194,19 @@ export function waiverLines(text) {
  * Dependencies are injected so the tests can drive every branch without git
  * history or an oasdiff binary.
  *
+ * With `baseRegistryText` (the PR base's registry), it first checks that the
+ * head keeps every base entry (`compareRegistries`), and a lost or rewritten
+ * entry fails it as a break does.
+ *
  * @returns {0 | 1 | 2} 0 = compatible with every shipped build (or none
- *   listed), 1 = at least one breaking change, 2 = the check could not run
+ *   listed), 1 = at least one breaking change or lost entry, 2 = the check
+ *   could not run
  */
 export function checkShipped({
   registryText,
   registryLabel,
+  baseRegistryText,
+  baseLabel = "the base branch's registry",
   headPath,
   oasdiffBin,
   ignoreText = null,
@@ -259,13 +226,47 @@ export function checkShipped({
     return 2;
   }
 
+  // `undefined`: no base was asked for (a push to main). `null`: the base has
+  // no registry yet, so there is nothing it could have lost.
+  let lost = false;
+  if (baseRegistryText === null) {
+    log(`${baseLabel} doesn't exist, so there is no earlier registry to compare with.`);
+  } else if (baseRegistryText !== undefined) {
+    let base = null;
+    try {
+      base = parseRegistry(baseRegistryText);
+    } catch (e) {
+      // The PR that fixes a bad base registry, or tightens the parser and
+      // migrates the file with it, must be able to pass, and must still not
+      // lose an entry doing it: compare against the base's entries as written.
+      base = lenientRegistry(baseRegistryText);
+      log(
+        `::warning::${baseLabel} doesn't pass this branch's parse (${e.message.split("\n", 1)[0]}), ` +
+          (base ? "so its entries were compared as written." : "and isn't JSON, so this registry was not compared with it."),
+      );
+    }
+    const problems = base ? compareRegistries(base, registry) : [];
+    for (const problem of problems) log(`::error::${registryLabel}: ${problem}`);
+    if (problems.length > 0) {
+      log(
+        `${registryLabel} lost or rewrote ${problems.length} entr${problems.length === 1 ? "y" : "ies"} from ${baseLabel}. ` +
+          "That is what a bad conflict resolution looks like, and the contract check below would " +
+          "simply compare against fewer builds. An entry leaves `builds` only by moving to `dropped` " +
+          "(apps/mobile/store/README.md § Shipped builds and the API contract).",
+      );
+      lost = true;
+    } else if (base) {
+      log(`Every entry in ${baseLabel} is still recorded here.`);
+    }
+  }
+
   const baselines = baselinesFor(registry.builds);
   if (baselines.length === 0) {
     log(
       `No shipped mobile builds are listed in ${registryLabel}, so this compared against nothing. ` +
         "It passes until the first binary ships and its SHA is recorded.",
     );
-    return 0;
+    return lost ? 1 : 0;
   }
 
   if (!exists(oasdiffBin)) {
@@ -340,7 +341,7 @@ export function checkShipped({
     );
   }
   if (failed) return 2;
-  return broken ? 1 : 0;
+  return broken || lost ? 1 : 0;
 }
 
 function mainBase(base) {
@@ -419,9 +420,29 @@ function mainBase(base) {
   return 0;
 }
 
+/**
+ * The registry at `ref`: its text, null when the commit has no such file, or
+ * undefined when the commit itself can't be read (a shallow clone).
+ */
+export function registryAtRef(ref, file, cwd = REPO_ROOT) {
+  const git = (args) =>
+    execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  try {
+    git(["cat-file", "-e", `${ref}^{commit}`]);
+  } catch {
+    return undefined;
+  }
+  try {
+    return git(["show", `${ref}:${file}`]);
+  } catch {
+    return null;
+  }
+}
+
 function main() {
   const base = getArg("--base");
   const shipped = getArg("--shipped");
+  const registryBase = getArg("--registry-base");
 
   if (Boolean(base) === Boolean(shipped)) {
     console.error(
@@ -431,6 +452,19 @@ function main() {
   }
 
   if (base) return mainBase(base);
+
+  let baseRegistryText;
+  if (registryBase) {
+    const file = path.relative(REPO_ROOT, path.resolve(REPO_ROOT, shipped)).split(path.sep).join("/");
+    baseRegistryText = registryAtRef(registryBase, file);
+    if (baseRegistryText === undefined) {
+      console.log(
+        `::error::Cannot read commit ${registryBase}, so ${shipped} can't be compared with the base branch's. ` +
+          "Fetch it (the job needs the base commit), then re-run.",
+      );
+      return 2;
+    }
+  }
 
   const registryPath = path.resolve(REPO_ROOT, shipped);
   let registryText;
@@ -444,6 +478,8 @@ function main() {
   return checkShipped({
     registryText,
     registryLabel: shipped,
+    baseRegistryText,
+    baseLabel: `${shipped} at the base (${registryBase?.slice(0, 12)})`,
     headPath: path.join(REPO_ROOT, SPEC_PATH),
     oasdiffBin: OASDIFF_BIN,
     ignoreText: existsSync(ignorePath) ? readFileSync(ignorePath, "utf8") : null,
