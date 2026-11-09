@@ -1,8 +1,12 @@
 "use client";
 
 import { Check, Loader2 } from "lucide-react";
-import { statusOf } from "@repo/api-sdk";
-import { useCheckIn, useMyAttendance, useNow } from "@repo/hooks";
+import {
+  selectOwnAttendance,
+  useMyAttendance,
+  useNow,
+  type OwnAttendanceRow,
+} from "@repo/hooks";
 import { checkInWindowBounds } from "@repo/validation";
 import {
   formatDayTime,
@@ -17,45 +21,17 @@ import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
-import { useToast } from "@/lib/hooks/use-toast";
-import { getErrorMessage } from "@/lib/utils";
+import { useSelfCheckIn } from "@/lib/hooks/use-self-check-in";
 import { checkInLabel, pointsLabel } from "@/components/events/event-labels";
-import {
-  attendanceStatusLabel,
-  type AttendanceStatus,
-} from "@/components/events/attendance-status";
-
-/** The viewer's own row, as `GET …/attendance/me` answers it. */
-export type OwnAttendance = {
-  status: AttendanceStatus;
-  checkInTime: string | null;
-};
-
-const STATUSES = new Set<string>(["PRESENT", "LATE", "EXCUSED", "ABSENT"]);
-
-/**
- * `{ attendance: row | null }` → the row, or `null` when there is none or the
- * answer is unreadable. Mobile reads the same answer through its own
- * `selectMyAttendance` (`apps/mobile/lib/events/select.ts`).
- */
-export function readOwnAttendance(data: unknown): OwnAttendance | null {
-  if (!data || typeof data !== "object") return null;
-  const row = (data as { attendance?: unknown }).attendance;
-  if (!row || typeof row !== "object") return null;
-  const { status, check_in_time } = row as Record<string, unknown>;
-  if (typeof status !== "string" || !STATUSES.has(status)) return null;
-  return {
-    status: status as AttendanceStatus,
-    checkInTime: typeof check_in_time === "string" ? check_in_time : null,
-  };
-}
+import { attendanceStatusLabel } from "@/components/events/attendance-status";
 
 /** Where the event's check-in zone leaves a web viewer. */
 export type ZoneState = "none" | "zone" | "malformed";
 
 export type MyCheckInView =
   | { kind: "loading" }
-  | { kind: "checked-in"; label: string }
+  /** `label` is `null` just after this session's own check-in, before the row is re-read. */
+  | { kind: "checked-in"; label: string | null }
   | { kind: "marked"; label: string }
   | { kind: "open"; closesAt: Date; zone: ZoneState }
   | { kind: "upcoming"; opensAt: Date }
@@ -70,6 +46,10 @@ export type MyCheckInView =
  * - Any other row is an officer's mark ("Marked excused"), and offers no
  *   check-in: the server refuses a second row, so a button could only answer
  *   "already checked in".
+ * - A check-in this session just made counts as one while the row is being
+ *   re-read, so Check in doesn't come back for a second click that can only
+ *   be refused.
+ * - An event that can't be read (deleted, or out of reach) offers nothing.
  * - With no row, the window decides (`checkInWindowBounds`, the rule the API
  *   enforces). Held as `loading` while the row is first read, so a member
  *   already in never sees Check in flash. A failed read falls through to the
@@ -78,14 +58,18 @@ export type MyCheckInView =
 export function myCheckInView({
   own,
   ownLoading,
+  justCheckedIn = false,
+  eventUnavailable = false,
   start,
   end,
   opensMinutes,
   zone,
   now,
 }: {
-  own: OwnAttendance | null;
+  own: OwnAttendanceRow | null;
   ownLoading: boolean;
+  justCheckedIn?: boolean;
+  eventUnavailable?: boolean;
   start: unknown;
   end: unknown;
   opensMinutes: unknown;
@@ -103,6 +87,8 @@ export function myCheckInView({
       label: `Marked ${attendanceStatusLabel(own.status).toLowerCase()}`,
     };
   }
+  if (justCheckedIn) return { kind: "checked-in", label: null };
+  if (eventUnavailable) return { kind: "unavailable" };
   if (ownLoading) return { kind: "loading" };
   const startAt = parseInstant(start);
   const endAt = parseInstant(end);
@@ -128,10 +114,10 @@ function clockLabel(at: Date, now: Date): string {
  * The viewer's own check-in for one event: any member may read their own row
  * (`GET /v1/events/:eventId/attendance/me`), unlike the `events:update`
  * roster, so this is what a member sees on the event sheet (#3855). Check in
- * sends the plain self check-in the web chat card sends, with no token and no
- * coordinates; an event with a check-in zone needs the member's location, which
- * web doesn't ask for, so it says to use the mobile app instead
- * (`spec/behavior/events.md` § Check-In).
+ * is the chat card's (`useSelfCheckIn`): no token and no coordinates, so an
+ * event with a check-in zone, which needs the member's location, says to use
+ * the mobile app instead (`spec/behavior/events.md` § Check-In). Live updates
+ * arrive through the sheet's `attendance:<eventId>` subscription.
  */
 export function MyCheckIn({
   eventId,
@@ -140,6 +126,7 @@ export function MyCheckIn({
   opensMinutes,
   pointValue,
   zone,
+  eventUnavailable = false,
 }: {
   eventId: string;
   start: unknown;
@@ -147,17 +134,20 @@ export function MyCheckIn({
   opensMinutes: unknown;
   pointValue: unknown;
   zone: ZoneState;
+  /** The event's own read failed (deleted, or out of reach). */
+  eventUnavailable?: boolean;
 }) {
   const mine = useMyAttendance(eventId);
-  const checkIn = useCheckIn();
+  const checkIn = useSelfCheckIn();
   // `POST …/attendance/check-in` carries no `@FreeTier`, so it is paid-ops,
   // as on the chat card (#841).
   const gate = useSubscriptionGate();
-  const { toast } = useToast();
   const now = new Date(useNow());
 
   const view = myCheckInView({
-    own: readOwnAttendance(mine.data),
+    own: selectOwnAttendance(mine.data),
+    justCheckedIn: checkIn.checkedInEventId === eventId,
+    eventUnavailable,
     // Not while the read is paused offline: then the window is still worth
     // saying, and the server refuses a repeat anyway.
     ownLoading: mine.isPending && mine.fetchStatus !== "paused",
@@ -168,30 +158,6 @@ export function MyCheckIn({
     now,
   });
   const points = pointsLabel(pointValue);
-
-  const handleCheckIn = async (): Promise<void> => {
-    try {
-      await checkIn.mutateAsync({ eventId });
-      toast({
-        title: "Checked in",
-        description:
-          typeof pointValue === "number" && pointValue > 0
-            ? `+${pointValue} pts`
-            : undefined,
-      });
-    } catch (error) {
-      // A repeat is answered 409 by decision (#3703): you're in. `useCheckIn`
-      // re-reads this row on it, so the block turns to "Checked in".
-      const alreadyIn = statusOf(error) === 409;
-      toast({
-        title: alreadyIn ? "Already checked in" : "Couldn't check in",
-        description: alreadyIn
-          ? "You're already on the attendance list for this event."
-          : getErrorMessage(error, "Couldn't check in."),
-        variant: alreadyIn ? "default" : "destructive",
-      });
-    }
-  };
 
   if (view.kind === "loading") {
     return (
@@ -208,7 +174,7 @@ export function MyCheckIn({
   let detail: string | null = null;
   switch (view.kind) {
     case "checked-in":
-      title = view.label;
+      title = view.label ?? "Checked in";
       detail = points;
       break;
     case "marked":
@@ -250,7 +216,7 @@ export function MyCheckIn({
           <Button
             size="sm"
             {...gate.controlProps(checkIn.isPending)}
-            onClick={() => void handleCheckIn()}
+            onClick={() => void checkIn.run(eventId, pointValue)}
           >
             {checkIn.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />

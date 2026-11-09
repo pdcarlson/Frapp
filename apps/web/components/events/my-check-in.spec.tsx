@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-const { mine, mutateAsync, mockToast, clock } = vi.hoisted(() => ({
+const { mine, mutateAsync, mockToast, clock, lastCheckIn } = vi.hoisted(() => ({
   mine: {
     value: {
       data: { attendance: null } as unknown,
@@ -12,11 +12,23 @@ const { mine, mutateAsync, mockToast, clock } = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
   mockToast: vi.fn(),
   clock: { now: 0 },
+  // `useCheckIn`'s settled state: the event a successful POST was for.
+  lastCheckIn: { eventId: undefined as string | undefined },
 }));
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  // `selectOwnAttendance` stays real; only the data hooks are stubbed.
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
   useMyAttendance: () => mine.value,
-  useCheckIn: () => ({ mutateAsync, isPending: false }),
+  useCheckIn: () => ({
+    mutateAsync,
+    isPending: false,
+    isSuccess: lastCheckIn.eventId !== undefined,
+    variables:
+      lastCheckIn.eventId === undefined
+        ? undefined
+        : { eventId: lastCheckIn.eventId },
+  }),
   useNow: () => clock.now,
 }));
 
@@ -31,12 +43,7 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
-import {
-  MyCheckIn,
-  myCheckInView,
-  readOwnAttendance,
-  type ZoneState,
-} from "./my-check-in";
+import { MyCheckIn, myCheckInView, type ZoneState } from "./my-check-in";
 
 // Local times, so the same-day labels hold in any test runner's zone.
 const start = new Date(2026, 10, 9, 19, 0);
@@ -57,22 +64,6 @@ function view(
     ...overrides,
   });
 }
-
-describe("readOwnAttendance", () => {
-  it("reads the row out of `/attendance/me`'s answer", () => {
-    expect(
-      readOwnAttendance({
-        attendance: { status: "LATE", check_in_time: "2026-11-09T19:05:00Z" },
-      }),
-    ).toEqual({ status: "LATE", checkInTime: "2026-11-09T19:05:00Z" });
-  });
-
-  it("is null for no row or an unreadable one", () => {
-    expect(readOwnAttendance({ attendance: null })).toBeNull();
-    expect(readOwnAttendance({ attendance: { status: "GONE" } })).toBeNull();
-    expect(readOwnAttendance(undefined)).toBeNull();
-  });
-});
 
 describe("myCheckInView", () => {
   it("says when a member checked in, for PRESENT and LATE alike", () => {
@@ -121,6 +112,18 @@ describe("myCheckInView", () => {
   it("is unavailable when the event has no readable times", () => {
     expect(view({ start: null }).kind).toBe("unavailable");
   });
+
+  it("is unavailable when the event itself can't be read", () => {
+    // Deleted while the sheet was open: the list row's times still say open.
+    expect(view({ eventUnavailable: true }).kind).toBe("unavailable");
+  });
+
+  it("counts this session's own check-in before the row is re-read", () => {
+    expect(view({ justCheckedIn: true })).toEqual({
+      kind: "checked-in",
+      label: null,
+    });
+  });
 });
 
 describe("<MyCheckIn />", () => {
@@ -131,6 +134,7 @@ describe("<MyCheckIn />", () => {
       fetchStatus: "idle",
     };
     clock.now = during.getTime();
+    lastCheckIn.eventId = undefined;
     mutateAsync.mockReset();
     mockToast.mockReset();
   });
@@ -161,6 +165,43 @@ describe("<MyCheckIn />", () => {
       ),
     );
     expect(mutateAsync).toHaveBeenCalledWith({ eventId: "e1" });
+  });
+
+  it("holds Check in back once the POST succeeds, until the row is re-read", () => {
+    lastCheckIn.eventId = "e1";
+    renderBlock();
+
+    expect(screen.getByText("Checked in")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /check in/i })).toBeNull();
+  });
+
+  it("does not hold it back for a check-in to another event", () => {
+    lastCheckIn.eventId = "e2";
+    renderBlock();
+
+    expect(screen.getByRole("button", { name: /check in/i })).toBeInTheDocument();
+  });
+
+  it("toasts a refused check-in as a failure", async () => {
+    mutateAsync.mockRejectedValue({ statusCode: 500 });
+    renderBlock();
+
+    fireEvent.click(screen.getByRole("button", { name: /check in/i }));
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Couldn't check in",
+          variant: "destructive",
+        }),
+      ),
+    );
+  });
+
+  it("says when an open window closes", () => {
+    renderBlock();
+
+    expect(screen.getByText(/^Closes 9:15\sPM$/)).toBeInTheDocument();
   });
 
   it("reads a 409 as already in, not a failure", async () => {

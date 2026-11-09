@@ -1,0 +1,51 @@
+"use client";
+
+import { statusOf } from "@repo/api-sdk";
+import { useCheckIn } from "@repo/hooks";
+import { useToast } from "@/lib/hooks/use-toast";
+import { getErrorMessage } from "@/lib/utils";
+
+/**
+ * Web's plain self check-in, with the toasts it answers with. The chat event
+ * card and the event sheet's own check-in both call it, so the two say the
+ * same words for the same outcome (`spec/behavior/events.md` § Check-In).
+ *
+ * No token and no coordinates: for an event with a check-in geofence the
+ * server rejects that, so a caller that knows the event has a zone says to use
+ * the mobile app instead of offering it. A repeat is answered 409 by decision
+ * (#3703) and toasts "Already checked in", not a failure; `useCheckIn` re-reads
+ * the member's own row on it.
+ */
+export function useSelfCheckIn() {
+  const checkIn = useCheckIn();
+  const { toast } = useToast();
+
+  const run = async (eventId: string, pointValue: unknown): Promise<void> => {
+    try {
+      await checkIn.mutateAsync({ eventId });
+      toast({
+        title: "Checked in",
+        description:
+          typeof pointValue === "number" && pointValue > 0
+            ? `+${pointValue} pts`
+            : undefined,
+      });
+    } catch (error) {
+      const alreadyIn = statusOf(error) === 409;
+      toast({
+        title: alreadyIn ? "Already checked in" : "Couldn't check in",
+        description: alreadyIn
+          ? "You're already on the attendance list for this event."
+          : getErrorMessage(error, "Couldn't check in."),
+        variant: alreadyIn ? "default" : "destructive",
+      });
+    }
+  };
+
+  return {
+    run,
+    isPending: checkIn.isPending,
+    /** The event this session last checked in to, once the POST succeeded. */
+    checkedInEventId: checkIn.isSuccess ? checkIn.variables?.eventId : undefined,
+  };
+}

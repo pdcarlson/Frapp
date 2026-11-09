@@ -19,6 +19,7 @@ import {
   useMintCheckInToken,
   useMyAttendance,
   useUpdateAttendanceStatus,
+  selectOwnAttendance,
 } from "./use-attendance";
 import { FrappClientProvider } from "./use-frapp-client";
 
@@ -873,6 +874,25 @@ describe("the officer's attendance writes", () => {
     await expect(absent.result.current.mutateAsync("event-1")).resolves.toEqual(
       { marked: 3 },
     );
+  });
+});
+
+describe("selectOwnAttendance", () => {
+  it("reads the row out of `/attendance/me`'s answer", () => {
+    expect(
+      selectOwnAttendance({
+        attendance: { status: "LATE", check_in_time: "2026-11-09T19:05:00Z" },
+      }),
+    ).toEqual({ status: "LATE", checkInTime: "2026-11-09T19:05:00Z" });
+    expect(
+      selectOwnAttendance({ attendance: { status: "EXCUSED" } }),
+    ).toEqual({ status: "EXCUSED", checkInTime: null });
+  });
+
+  it("is null for no row or an unreadable one", () => {
+    expect(selectOwnAttendance({ attendance: null })).toBeNull();
+    expect(selectOwnAttendance({ attendance: { status: "GONE" } })).toBeNull();
+    expect(selectOwnAttendance(undefined)).toBeNull();
   });
 });
 

@@ -7,6 +7,7 @@ const {
   mockToast,
   eventQueryState,
   permissionsState,
+  realtimeCalls,
 } = vi.hoisted(() => ({
   eventQueryState: { isLoading: false },
   mockCurrentChapter: vi.fn(),
@@ -15,7 +16,11 @@ const {
   // while the read is still in flight.
   permissionsState: {
     value: ["billing:manage"] as string[] | undefined,
+    // How the read stands when `value` is undefined.
+    fetchStatus: "fetching" as "fetching" | "paused" | "idle",
+    isError: false,
   },
+  realtimeCalls: [] as { table: string; scopeId: string; enabled?: boolean }[],
 }));
 
 // usingPreviewData renders from the `event` prop and gates out AttendancePanel;
@@ -37,10 +42,24 @@ vi.mock("@repo/hooks", () => ({
         ? undefined
         : { permissions: permissionsState.value },
     isPending: permissionsState.value === undefined,
-    isError: false,
-    fetchStatus: permissionsState.value === undefined ? "fetching" : "idle",
+    isError: permissionsState.value === undefined && permissionsState.isError,
+    fetchStatus:
+      permissionsState.value === undefined
+        ? permissionsState.fetchStatus
+        : "idle",
     refetch: vi.fn(),
   }),
+  useActiveChapterId: () => "chap-1",
+}));
+
+vi.mock("@/lib/realtime/use-realtime-table", () => ({
+  useRealtimeTable: (options: {
+    table: string;
+    scopeId: string;
+    enabled?: boolean;
+  }) => {
+    realtimeCalls.push(options);
+  },
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -77,6 +96,9 @@ beforeEach(() => {
   chapter.active();
   mockToast.mockReset();
   permissionsState.value = ["billing:manage"];
+  permissionsState.fetchStatus = "fetching";
+  permissionsState.isError = false;
+  realtimeCalls.length = 0;
 });
 
 describe("EventDetailSheet who's coming", () => {
@@ -480,6 +502,26 @@ describe("EventDetailSheet required badge", () => {
   });
 });
 
+describe("EventDetailSheet preview", () => {
+  it("mounts no live check-in, roster or subscription for preview data", () => {
+    permissionsState.value = ["members:view", "events:update"];
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={baseEvent}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+
+    expect(screen.queryByTestId("my-check-in")).toBeNull();
+    expect(screen.queryByTestId("attendance-roster")).toBeNull();
+    expect(realtimeCalls.every((call) => call.enabled === false)).toBe(true);
+  });
+});
+
 describe("EventDetailSheet for a live event, by role (#3855)", () => {
   function renderLive(event: Record<string, unknown> = baseEvent) {
     return render(
@@ -504,9 +546,43 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
     expect(screen.queryByTestId("attendance-roster")).toBeNull();
     expect(screen.queryByRole("button", { name: "Edit event" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Delete event" })).toBeNull();
+  });
+
+  it("tells a member on a lapsed chapter nothing about editing events", () => {
+    chapter.incomplete();
+    permissionsState.value = ["members:view"];
+    renderLive();
+
     expect(
       screen.queryByText(/subscription is not active/i),
     ).not.toBeInTheDocument();
+  });
+
+  it("subscribes every viewer to the event's attendance pings", () => {
+    // The member's own row refreshes from it too, so it can't live in the
+    // officer-only roster any more.
+    permissionsState.value = ["members:view"];
+    renderLive();
+
+    expect(realtimeCalls).toContainEqual(
+      expect.objectContaining({
+        table: "event_attendance",
+        scopeId: "e1",
+        enabled: true,
+      }),
+    );
+  });
+
+  it("keeps the header actions when permissions can't be answered offline", () => {
+    // Hidden would say the role lacks them; nobody checked.
+    permissionsState.value = undefined;
+    permissionsState.fetchStatus = "paused";
+    renderLive();
+
+    expect(screen.getByRole("button", { name: "Edit event" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Delete event" }),
+    ).toBeInTheDocument();
   });
 
   it("gives an officer the roster and the header actions, as well as their own check-in", () => {
@@ -531,6 +607,8 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
 
     expect(screen.getByRole("button", { name: "Edit event" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete event" })).toBeNull();
+    // The roster is `events:update`'s, not `events:delete`'s.
+    expect(screen.getByTestId("attendance-roster")).toBeInTheDocument();
   });
 
   it("holds the roster and the header actions back while permissions load", () => {

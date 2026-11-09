@@ -17,11 +17,13 @@ import {
   StudyZonesGlyph,
 } from "@/components/events/chapter-ops-glyphs";
 import {
+  useActiveChapterId,
   useDeleteEvent,
   useEvent,
   useMyPermissions,
   useRoles,
 } from "@repo/hooks";
+import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { useToast } from "@/lib/hooks/use-toast";
 import {
   EVENT_ATTENDANCE_LABELS,
@@ -82,15 +84,45 @@ export function EventDetailSheet({
   const { toast } = useToast();
   // Edit and Delete are `events:update` and `events:delete` on the server, so
   // a member gets neither icon rather than two that 403 (#3855). A boolean,
-  // not a `<Can>`: the header has no room for an offline chip per icon, and
-  // `undefined` permissions (still loading) read as denied, so the icons
-  // never flash for a member. The preview sheet keeps both, disabled by its
-  // own notice.
-  const { data: permissionsPayload } = useMyPermissions();
+  // not a `<Can>`: the header has no room for an offline chip per icon. While
+  // permissions load they read as denied, so the icons never flash for a
+  // member; when they can't be answered at all (no cached answer, and the read
+  // paused or failed) both stay, as before, disabled offline by the
+  // subscription gate, rather than hidden as if the role lacked them. The
+  // preview sheet keeps both too.
+  const permissionsQuery = useMyPermissions();
+  const permissionsUnanswerable =
+    permissionsQuery.data === undefined &&
+    (permissionsQuery.isError || permissionsQuery.fetchStatus === "paused");
+  const permissions = permissionsQuery.data?.permissions;
   const canEditEvent =
-    usingPreviewData || can("events:update", permissionsPayload?.permissions);
+    usingPreviewData ||
+    permissionsUnanswerable ||
+    can("events:update", permissions);
   const canDeleteEvent =
-    usingPreviewData || can("events:delete", permissionsPayload?.permissions);
+    usingPreviewData ||
+    permissionsUnanswerable ||
+    can("events:delete", permissions);
+
+  // Live attendance for every viewer: an officer's mark, or a check-in from
+  // another device, refreshes both the roster and the member's own row (both
+  // live under `["attendance", eventId]`). Held here, not in the roster, so a
+  // member gets it too; one subscription per topic, because a second channel
+  // on `attendance:<eventId>` releases the first.
+  const chapterId = useActiveChapterId();
+  useRealtimeTable({
+    table: "event_attendance",
+    scopeId: eventId,
+    invalidate: useMemo(
+      () => [
+        ["attendance", eventId],
+        // Must match useEvent(id) → ["events", chapterId, id]; ["events", id] never matches.
+        ["events", chapterId, eventId],
+      ],
+      [chapterId, eventId],
+    ),
+    enabled: Boolean(eventId) && !usingPreviewData,
+  });
 
   const resolvedEvent = useMemo(() => {
     if (!event) return null;
@@ -303,6 +335,7 @@ export function EventDetailSheet({
                 end={resolvedEvent?.end_time}
                 opensMinutes={resolvedEvent?.check_in_opens_minutes}
                 pointValue={resolvedEvent?.point_value}
+                eventUnavailable={eventQuery.isError}
                 zone={
                   hasCheckInZone
                     ? "zone"

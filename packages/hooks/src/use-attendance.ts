@@ -76,6 +76,46 @@ export function useMyAttendance(
   });
 }
 
+/** The four statuses the server stores on an `event_attendance` row. */
+export const ATTENDANCE_ROW_STATUSES = [
+  "PRESENT",
+  "LATE",
+  "EXCUSED",
+  "ABSENT",
+] as const;
+export type AttendanceRowStatus = (typeof ATTENDANCE_ROW_STATUSES)[number];
+
+/** The viewer's own row, as {@link useMyAttendance} answers it. */
+export interface OwnAttendanceRow {
+  status: AttendanceRowStatus;
+  /** The raw `check_in_time`, or `null` when the row has none. */
+  checkInTime: string | null;
+}
+
+/**
+ * {@link useMyAttendance}'s answer (`{ attendance: row | null }`) → the row,
+ * or `null` when there is none or it is unreadable. The one parser for that
+ * answer: mobile's event page and scanner and web's event sheet all read
+ * through it, so a status the server adds can't be known to one and not the
+ * other.
+ */
+export function selectOwnAttendance(data: unknown): OwnAttendanceRow | null {
+  if (!data || typeof data !== "object") return null;
+  const row = (data as { attendance?: unknown }).attendance;
+  if (!row || typeof row !== "object") return null;
+  const { status, check_in_time } = row as Record<string, unknown>;
+  if (
+    typeof status !== "string" ||
+    !(ATTENDANCE_ROW_STATUSES as readonly string[]).includes(status)
+  ) {
+    return null;
+  }
+  return {
+    status: status as AttendanceRowStatus,
+    checkInTime: typeof check_in_time === "string" ? check_in_time : null,
+  };
+}
+
 /**
  * How many rows of an attendance roster (`useAttendance`'s data) are a member
  * who is there: `PRESENT` or `LATE`. A member marked LATE did attend, so
